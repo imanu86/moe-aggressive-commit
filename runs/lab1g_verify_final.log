@@ -1,0 +1,39 @@
+=== lab1g — VERIFICA FINALE (SOLO LETTURA) — 2026-06-30 23:00 ===
+Contesto: utente ha ucciso vecchio ia_control_server PID 15636 (+ albero figlio wake_agent/runner)
+e vecchio llama-server PID 290564, poi rilanciato la pipeline da shell pulita.
+Obiettivo: confermare che l'ambiente NUOVO porta i flag -ncmoe (NON --cpu-moe).
+
+VERDETTO: (A) FIXATO.
+
+--- PUNTO 1: vecchi PID morti, nuovo control server vivo ---
+PID 15636 (vecchio ia_control_server) : ASSENTE -> MORTO. OK
+PID 290564 (vecchio llama-server)     : ASSENTE -> MORTO. OK
+NUOVO ia_control_server.py            : PID 567140  Name=python.exe  CreationDate 30/06/2026 23:00:31 (recente, post-restart)
+  CommandLine: "...\Python312\python.exe" ia_control_server.py
+(figli ia_wake_agent / local_runner_v2 non ancora materializzati al momento del campione:
+ startup in corso / nessun task; ereditano l'ambiente del padre 567140, gia' corretto.)
+
+--- PUNTO 2: ambiente PEB (LLAMA_CMD) del processo vivo nuovo — LA PROVA ---
+Letto environment block via NtQueryInformationProcess/PEB del PID 567140:
+  LLAMA_CMD = C:\Users\imanu\llama\llama-server.exe -m <blob Qwen3-30B-A3B Q4_K_M>
+              -ngl 99 -ncmoe 28 -fa on -ctk q8_0 -ctv q8_0 --no-mmap -c 16384
+              --host 127.0.0.1 --port 8080
+  => FLAG NUOVI: -ncmoe 28, -fa on, -ctk q8_0, -ctv q8_0, --no-mmap. NESSUN --cpu-moe. CORRETTO.
+  (LLAMA_CMD_VISION invariato: Qwen3-VL-8B :8081, -ngl 99 -c 4096, nessun flag MoE — corretto.)
+Confronto: in lab1f il PEB di 15636 mostrava ancora "--cpu-moe" -> ora invertito.
+
+Sorgente su disco (da cui ripartira' ogni avvio):
+  /c/Users/imanu/llama/.env.local_runner  riga 11  (mtime 2026-06-30 21:20:15)
+  LLAMA_CMD= ...-ngl 99 -ncmoe 28 -fa on -ctk q8_0 -ctv q8_0 --no-mmap -c 16384...  (coerente col PEB)
+  -> os.environ del padre nuovo non e' piu' inquinato: il valore vecchio --cpu-moe non c'e' piu'.
+
+--- PUNTO 3: llama-server :8080 e VRAM ---
+Get-CimInstance llama-server.exe : NESSUN processo (server GIU' = on-demand, parte al prossimo task).
+netstat :8080 : solo connessioni TIME_WAIT residue, NESSUN LISTENING -> nessun server vivo.
+nvidia-smi (4 campioni): 1113 / 1551 / 1533 / 1516 MiB usati su 12288, util 2-22%
+  -> idle, nessun modello caricato (coerente con server off). Niente residuo ~4GB del vecchio --cpu-moe.
+
+CONCLUSIONE:
+- 15636 e 290564 MORTI. Nuovo ia_control_server PID 567140 (23:00:31).
+- Ambiente vivo del nuovo control server = -ncmoe 28 ... (NON --cpu-moe). FIX CONFERMATO.
+- Server llama attualmente off (on-demand). Al prossimo task partira' con -ncmoe 28 -> VRAM attesa ~8GB.

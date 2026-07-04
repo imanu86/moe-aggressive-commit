@@ -1,0 +1,88 @@
+=== lab1e_rootcause Tue Jun 30 21:36:10     2026 ===
+
+================ DIAGNOSI ROOT-CAUSE lab1e (SOLO LETTURA) ================
+
+--- RUNNER VIVO ---
+llama-server :8080  PID 290564  avvio 30/06 21:31:26
+  cmdline: ...llama-server.exe ... -ngl 99 --cpu-moe -c 16384 --host 127.0.0.1 --port 8080  (FLAG VECCHI)
+  parent PID 99552 = cmd.exe (shell=True wrapper) -> GIA' USCITO (nessun record CIM).
+
+Catena viva risalita:
+  ia_control_server.py   PID 15636  avvio 24/06 05:00  (C:\Users\imanu\llama\ia-console\)
+    -> ia_wake_agent.py  PID 998028 avvio 30/06 21:21:35  (C:\Users\imanu\llama\pipeline\)
+       -> local_runner_v2.py  = COPIA PIPELINE  (RUNNER=os.path.join(HERE,'local_runner_v2.py'), HERE=pipeline, cwd=pipeline)
+          -> cmd.exe (PID 99552, morto) -> llama-server PID 290564
+
+Il runner VIVO e' la copia PIPELINE: C:\Users\imanu\llama\pipeline\local_runner_v2.py
+  (ia_wake_agent.py:75 RUNNER=os.path.join(HERE,'local_runner_v2.py'); HERE=pipeline; lo lancia con subprocess.call([...], cwd=HERE, env=dict(os.environ)) a riga 148-152).
+
+--- DA QUALE FILE/VAR PRENDE LLAMA_CMD ---
+local_runner_v2.py:109  LLAMA_CMD = env('LLAMA_CMD', <default cpu-moe>)
+  env() legge os.environ. _load_dotenv() (riga 54-79) carica .env con os.environ.SETDEFAULT (riga 77)
+  -> NON sovrascrive una chiave gia' presente in ambiente. (= dotenv override=False).
+La copia PIPELINE non ha un proprio .env.local_runner: NON ESISTE pipeline/.env.local_runner.
+  _load_dotenv cerca [LLAMA_DIR, here=pipeline, parent=llama-root] -> cade sul root .env (flag NUOVI),
+  MA setdefault non lo applica perche' LLAMA_CMD e' GIA' in ambiente.
+
+--- FILE CHE CONTENGONO 'cpu-moe' sotto /c/Users/imanu/llama ---
+  .env.local_runner.bak              (vecchio backup)
+  .env.local_runner.bak_imgtok       (vecchio backup)
+  .env.local_runner.bak_ncmoe28      (backup pre-fix 21:20, ha --cpu-moe)
+  local_runner.py                    (default hardcoded nel codice, fallback)
+  local_runner_v2.py  (root)         (default hardcoded riga 109, fallback)
+  pipeline/local_runner.py
+  pipeline/local_runner_v2.py        (default hardcoded riga 116, fallback)
+  pipeline/.env.local_runner.example (esempio)
+  pipeline/HANDOFF*.md, ai_plumbing_map.json (doc)
+  llama-bench-impl.dll / llama-common.dll (binari, irrilevanti)
+  __pycache__/local_runner_v2.cpython-312.pyc
+  >>> .env.local_runner (ROOT, VIVO) NON contiene piu' cpu-moe: ha i flag NUOVI (mtime 21:20).
+  >>> NON esiste alcun pipeline/.env.local_runner con cpu-moe (ipotesi 1 ESCLUSA).
+
+--- PROVA AMBIENTE (PEB read dei processi vivi) ---
+WAKE_AGENT  PID 998028 : LLAMA_CMD = ...-ngl 99 --cpu-moe -c 16384...   (VECCHIO)
+IA_CONTROL  PID 15636  : LLAMA_CMD = ...-ngl 99 --cpu-moe -c 16384...   (VECCHIO)
+  => il valore VECCHIO e' gia' in ambiente nel padre ia_control_server (avvio 24/06, quando il .env
+     conteneva ancora --cpu-moe) e si propaga ai figli via env=dict(os.environ).
+Nessun .bat / nessun codice fa 'set LLAMA_CMD' esplicito: il valore entra SOLO dal .env via setdefault,
+  cristallizzato nel processo padre 15636 dal 24/06.
+
+================ CAUSA ESATTA = IPOTESI 2 (dotenv override=False / env ereditato) ================
+La catena dei processi e' ANTICA: ia_control_server.py (PID 15636) gira dal 24/06 05:00. Allora il
+.env.local_runner conteneva --cpu-moe; ia_control_server lo ha caricato in os.environ (setdefault) e da
+allora lo PROPAGA a tutti i figli (env=dict(os.environ) a riga 225). Quando alle 21:20 hai modificato il
+.env con i flag nuovi, NESSUN processo della catena lo ha riletto: ia_wake_agent (21:21) e local_runner
+(21:31) hanno EREDITATO il LLAMA_CMD vecchio gia' presente in ambiente e, per via di os.environ.setdefault,
+il valore nuovo del .env e' stato IGNORATO. Il restart del solo llama-server alle 21:31 ha rilanciato lo
+stesso comando vecchio passato dal runner.
+PROVA: PID 15636 e 998028 hanno entrambi --cpu-moe in PEB; il .env su disco ha -ncmoe; setdefault non
+sovrascrive; pipeline/.env.local_runner non esiste -> l'unica sorgente del valore e' l'ambiente ereditato.
+
+================ FIX ================
+Il file ROOT .env.local_runner E' GIA' CORRETTO (flag nuovi). NON serve editare altri .env
+(pipeline/.env.local_runner NON esiste e NON va creato; ricadrebbe comunque sul root via parent-search).
+Il problema NON e' un file: e' l'AMBIENTE CRISTALLIZZATO nel processo padre ia_control_server (15636)
+avviato il 24/06. Finche' quel processo (e i suoi figli) restano vivi, ri-leggeranno sempre il vecchio
+LLAMA_CMD dall'ambiente.
+
+PROCEDURA DI RESTART PULITA (da fare all'UTENTE, non io):
+ 1) Drenare la coda / assicurarsi che non ci sia un giro runner in corso.
+ 2) FERMARE la catena fino alla RADICE che ha l'ambiente sporco, NON solo llama-server e NON solo il runner:
+       - stop_local_runner.bat  (ferma il runner/llama-server figli)
+       - poi terminare ANCHE ia_wake_agent.py (PID 998028) E ia_control_server.py (PID 15636),
+         perche' e' 15636 a portare il LLAMA_CMD vecchio in ambiente e a ri-propagarlo.
+       (taskkill /PID 15636 /T /F termina anche i figli; idem per gli altri processi della catena.)
+ 3) VERIFICARE che nessun processo residuo abbia LLAMA_CMD vecchio: nessun python.exe della pipeline
+    deve restare vivo. Controllare che la SHELL/Task-Scheduler entry che rilancia ia_control_server NON
+    abbia LLAMA_CMD nel proprio ambiente (deve venire SOLO dal .env).
+ 4) RILANCIARE dalla radice in una shell PULITA (nuovo cmd, senza LLAMA_CMD in ambiente): avviare
+    ia_control_server.py (o lo start abituale via Task Scheduler / start_ia_wake.bat) -> ricarichera'
+    .env.local_runner col -ncmoe NUOVO, e tutti i figli erediteranno il valore corretto.
+ 5) Al primo task il runner avviera' llama-server con: -ngl 99 -ncmoe 28 -fa on -ctk q8_0 -ctv q8_0 --no-mmap.
+    VERIFICA: Get-CimInstance Win32_Process -Filter "Name='llama-server.exe'" | Select CommandLine
+    deve mostrare -ncmoe 28 (VRAM attesa molto > 4GB).
+
+NOTA OPZIONALE (robustezza futura): cambiare os.environ.setdefault -> os.environ[k]=v (override=True)
+nei tre _load_dotenv (local_runner_v2 root+pipeline, ia_wake_agent, ia_control_server) renderebbe il
+.env la fonte autorevole ed eviterebbe il ri-presentarsi del problema. (NON applicato: solo lettura.)
+================ FINE ================

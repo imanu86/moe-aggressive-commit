@@ -1,0 +1,40 @@
+=== VERIFICA RESTART PULITO (SOLO LETTURA) - 2026-06-30 ===
+
+VERDETTO: (C) FALLITO - il restart NON ha pulito. Ambiente vivo ancora --cpu-moe.
+
+--- PUNTO 1: processo radice ---
+PID 15636 ia_control_server.py = ANCORA VIVO (CreationDate 24/06/2026 05:00:09). NON ucciso.
+Nessun nuovo ia_control_server.py trovato (l'unico con quel nome e' il vecchio 15636).
+
+Processi pipeline vivi:
+- PID 15636  ia_control_server.py   creato 24/06 05:00:09  ParentPID 15984
+- PID 6272   discord_lane.py        creato 28/06 12:14:34  ParentPID 15636
+- PID 1222320 ia_wake_agent.py      creato 30/06 22:50:37  ParentPID 15636   <- figlio del vecchio
+- PID 1859680 local_runner_v2.py    creato 30/06 22:55:42  ParentPID 1222320 <- nipote del vecchio
+
+--- PUNTO 2: ambiente PEB (LLAMA_CMD) dei processi vivi - LA PROVA ---
+discord_lane(6272)        : ... -ngl 99 --cpu-moe -c 16384 ...        <- VECCHIO
+ia_control_server(15636)  : ... -ngl 99 --cpu-moe -c 16384 ...        <- VECCHIO
+ia_wake_agent(1222320)    : ... -ngl 99 --cpu-moe -c 16384 ...        <- VECCHIO
+local_runner_v2(1859680)  : ... -ngl 99 --cpu-moe -c 16384 ...        <- VECCHIO
+
+TUTTI portano --cpu-moe. NESSUNO ha -ncmoe 28 / -fa on / --no-mmap.
+
+File .env.local_runner (su disco) = GIA' CORRETTO:
+  LLAMA_CMD= ... -ngl 99 -ncmoe 28 -fa on -ctk q8_0 -ctv q8_0 --no-mmap -c 16384 ...
+=> il file e' giusto ma i processi vivi non lo rileggono (os.environ.setdefault, valore gia' presente ereditato).
+
+--- PUNTO 3: server :8080 ---
+PID 290564 llama-server.exe creato 30/06 21:31:26
+CommandLine: ... -ngl 99 --cpu-moe -c 16384 --host 127.0.0.1 --port 8080   <- VECCHIO (--cpu-moe, NO -ncmoe)
+VRAM: 4022 MiB / 12288 MiB  (~4GB = comportamento --cpu-moe, NON ~8GB)
+netstat :8080 -> LISTENING su PID 290564
+
+--- CAUSA RADICE ---
+Il vecchio ia_control_server PID 15636 (del 24/06) NON e' mai stato ucciso.
+E' il PADRE dell'intera catena nuova:
+  15636 -> ia_wake_agent 1222320 -> local_runner_v2 1859680
+I processi "nuovi" hanno ereditato l'os.environ inquinato (--cpu-moe congelato) dal padre 15636.
+Inoltre il llama-server :8080 (PID 290564, 21:31) e' precedente al "restart" delle 22:50 e gira ancora --cpu-moe.
+
+=> Il restart pulito NON e' avvenuto: il root server vecchio e' vivo e propaga i flag vecchi.

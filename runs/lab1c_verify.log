@@ -1,0 +1,33 @@
+=== lab1c_verify — verifica SOLO LETTURA flag llama-server ===
+Data verifica: 2026-06-30 ~21:23 (NOW di sistema: 2026-06-30 21:23:14)
+
+[1] EDIT IN PLACE? -> SI
+  .env.local_runner riga 11 (LLAMA_CMD, server testuale :8080):
+    ...-ngl 99 -ncmoe 28 -fa on -ctk q8_0 -ctv q8_0 --no-mmap -c 16384 --host 127.0.0.1 --port 8080
+  Flag NUOVI presenti: -ncmoe 28, -fa on, -ctk q8_0, -ctv q8_0, --no-mmap. NESSUN --cpu-moe.
+  .env.local_runner LastWrite: 2026-06-30 21:20:15 (coerente con edit "pochi minuti fa", appena prima del restart runner 21:21).
+  (riga 20 LLAMA_CMD_VISION invariata: Qwen3-VL-8B :8081, -ngl 99 -c 4096, nessun flag MoE — corretto.)
+
+[2] SERVER TESTUALE :8080 ATTIVO ORA? -> NO
+  Get-CimInstance Win32_Process Name='llama-server.exe' -> vuoto (2 tentativi)
+  Get-Process llama-server -> NO llama-server process running
+  netstat :8080 -> nessun listener ; netstat :8081 -> nessun listener
+  VRAM: 1281 MiB / 12288 MiB (GPU sostanzialmente idle, nessun modello caricato)
+  Runner: python PID 998028 avviato 2026-06-30 21:21:35 (= restart utente ~21:21). In attesa di task.
+
+[3] SERVER.LOG
+  C:\Users\imanu\llama\server.log LastWrite: 2026-06-16 18:27:55 (STALE, 14 giorni fa)
+  La coda del log appartiene a una sessione VECCHIA (task ~22851-23265), NON a oggi.
+  Ultimo banner di avvio nel log (VECCHIO, pre-edit):
+    - riga 15 WARN: "tensor overrides to CPU are used with mmap enabled - consider using --no-mmap"
+      => avvio vecchio era SENZA --no-mmap (config --cpu-moe pre-edit).
+    - riga 41: "server is listening on http://127.0.0.1:8080"
+  NESSUN avvio dopo le 21:21 -> il server non e' ancora ripartito dall'edit.
+
+[4] STATO: (B) FLAG STAGED / IN CANNA — NORMALE
+  Server on-demand non ancora avviato (nessun task dall'edit/restart). I nuovi flag
+  (-ncmoe 28 / -fa on / ctk=ctv q8_0 / --no-mmap) si applicheranno al PROSSIMO avvio
+  on-demand quando arrivera' un task BonusX. VRAM idle (~1.3GB) conferma: nessun modello
+  in GPU adesso.
+
+SOLO LETTURA: nessun processo toccato/avviato/killato.

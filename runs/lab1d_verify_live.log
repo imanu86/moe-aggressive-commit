@@ -1,0 +1,42 @@
+==============================================
+LAB1D VERIFY LIVE (read-only)  2026-06-30 21:33:14 +0200
+==============================================
+[VRAM samples] (memory.used, total, util.gpu)
+  4109 MiB / 12288 MiB / 33%
+  4099 / 4064 / 4042 MiB su 3 campioni  (~4.0 GB, util 33-35%)
+
+[PROC :8080 testuale]  PID 290564  start 2026-06-30 21:31:26
+  CMDLINE: llama-server.exe -m <Qwen3-30B-A3B Q4> -ngl 99 --cpu-moe -c 16384 --host 127.0.0.1 --port 8080
+  => FLAG VECCHI (--cpu-moe). NESSUN -ncmoe/-fa/-ctk/-ctv/--no-mmap.
+
+[PORTE] :8080 LISTENING (pid 290564). :8081 (vision) NON in ascolto (vision lane spenta).
+
+[/props :8080] risponde 200. n_ctx=16384, total_slots=4, model=Qwen3-30B-A3B blob a015794..., vision=false.
+
+[RUNNER] local_runner_v2.py  PID 1224440  start 2026-06-30 21:31:23 (DOPO edit .env 21:20:15)
+  .env.local_runner LLAMA_CMD = ...-ncmoe 28 -fa on -ctk q8_0 -ctv q8_0 --no-mmap... (flag NUOVI, corretti)
+  Ma riga 77: os.environ.setdefault(k, v)  -> NON sovrascrive una env var gia' presente.
+  Popen(LLAMA_CMD, shell=True) senza redirect stdout/stderr -> NESSUN server.log vivo creato.
+
+[ENV LLAMA_CMD pre-set] (verifica origine flag vecchi):
+  [Environment] LLAMA_CMD a livello User = (vuoto), Machine = (vuoto), Process = (vuoto)
+  => NON e' una env var pre-set a sovrascrivere via setdefault.
+
+[CATENA PROCESSI - PROVATA]
+  runner python PID 1224440 (start 21:31:23, legge .env nuovo con -ncmoe)
+    -> cmd.exe PID 99552 (shell=True)  cmd: ...llama-server.exe ... --cpu-moe -c 16384...
+      -> llama-server.exe PID 290564 (start 21:31:26)  [FLAG VECCHI]
+  Una sola generazione di runner. E' proprio QUESTO runner ad aver lanciato il server coi flag VECCHI.
+
+[LOG VIVO] Nessuno. Popen senza redirect stdout/stderr => server.log resta stale (16 giu). Banner non catturato su file.
+
+------------------------------------------------
+VERDETTO: (C) Server :8080 SU ma coi FLAG VECCHI (--cpu-moe).
+  - VRAM ~4.0 GB (non ~8 GB attesi coi flag nuovi). Util 33-35%.
+  - Nessun guadagno LIVE dai flag nuovi: NON sono attivi sul processo in esecuzione.
+  - Il file .env e' corretto (-ncmoe 28 -fa on -ctk/-ctv q8_0 --no-mmap) ma il processo vivo NON li ha.
+  - Probabile: il server e' stato avviato da questo runner con il vecchio LLAMA_CMD in memoria
+    (oppure restart necessario per rileggere il comando aggiornato).
+SOLO LETTURA: nulla ucciso/riavviato. Una sola GET /props (leggera).
+Fine: 2026-06-30 21:34:10 +0200
+================================================

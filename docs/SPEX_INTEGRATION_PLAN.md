@@ -137,3 +137,52 @@ va verificata chiamabile fuori contesto senza side-effect; `cap` da `cuda_stream
 ## Prossimo passo concreto
 Leggere il consumer expert in ds4_cuda.cu (dietro `cuda_stream_selected_load`) per chiudere la
 domanda-chiave race → poi Stadio 0 (contatori) → misurare baseline sul 3060. **Se il margine c'è, Stadio 1.**
+
+---
+
+# Fase 1b — DOMANDA-RACE CHIUSA (2026-07-04, analisi sorgente verificata)
+
+**Verdetto: la race È reale** (silenziosa, timing-dependent) se il prefetch va async in modo ingenuo.
+Numeri di riga verificati sul sorgente (`scratchpad/ds4-src/`).
+
+**Mappa stream CUDA:** esistono 3 stream non-default, TUTTI per I/O host→device
+(`g_model_prefetch_stream` :89, `g_model_upload_stream` :90, `g_stream_selected_upload_stream` :222).
+**Non esiste uno stream di compute:** tutti i kernel MoE (`ds4_cuda.cu:12424-12599`) lanciano con
+`<<<grid,block>>>` senza 4° arg → **default stream (0)**; `cublasSetStream` = 0 occorrenze. Quindi
+**compute su stream 0, copia expert su `g_stream_selected_upload_stream` = stream diversi, non ordinati.**
+
+**Oggi è sicuro solo per DOPPIA barriera bloccante:** `ds4_gpu_end_commands` (:14286 = `cudaDeviceSynchronize`)
+incornicia + `cudaStreamSynchronize(upload_stream)` a **:2237** dentro ogni copia. Il kernel MoE assume slot
+già residenti. **`cudaStreamWaitEvent` = ZERO occorrenze in tutto ds4-src** (è la primitiva mancante). Gli
+eventi esistenti servono solo a riciclare i 4 pinned staging buffer, NON a ordinare compute↔copia. L'"async"
+esistente (`overlap_selected_shared`) è un worker pthread con copia bloccante, non pipelining GPU.
+
+**Protocollo evento (la fix), per-LAYER non per-slot:**
+- RECORD: in `cuda_model_copy_to_device_streamed` (:2152), variante async che a **:2237** fa
+  `cudaEventRecord(g_selected_upload_done_event, g_stream_selected_upload_stream)` invece del sync e ritorna.
+  Creare l'evento una volta accanto a :1749 (`cudaEventCreateWithFlags(..., cudaEventDisableTiming)`).
+- WAIT: nuova API `ds4_gpu_wait_selected_upload()` = `cudaStreamWaitEvent(0, g_selected_upload_done_event, 0)`,
+  inserita in `metal_graph_decode_cuda_selected_load` (`ds4.c:14304`) PRIMA del kernel MoE (`ds4.c:15691`).
+- Un evento per batch-prefetch di un layer (il kernel MoE consuma tutti gli slot insieme).
+- MISS fallback: il ramo miss on-demand (`ds4_cuda.cu:2966-3068`, LRU + direct-load bloccante) RESTA — corretto.
+
+**Correzioni ai punti d'aggancio:**
+- A3: la funzione da forkare è la primitiva reale `cuda_model_copy_to_device_streamed` (:2152) /
+  `cuda_stream_selected_cache_begin_compact_load` (:2875), NON `seed_experts` (:3246, è il path hotlist-priorità).
+- A4: giusto (parametrizza async/out_event a :2237). A5: giusto (`cudaStreamWaitEvent` su stream 0, oggi 0 usi).
+
+**3 NODI PIÙ PROFONDI che il piano non aveva colto (il vero design dello Stadio 1):**
+1. **Il `cudaDeviceSynchronize` a monte (:14286) serializza tutto.** Per prefetchare L+1 devi predirne gli
+   expert PRIMA di quel sync (dal router di L o dal predittore) — altrimenti non anticipi nulla. **Questo è
+   il nodo centrale, non un dettaglio.**
+2. **Upload stream condiviso:** miss-on-demand e prefetch userebbero lo stesso `g_stream_selected_upload_stream`
+   → si serializzano. Valuta un 2° upload stream per il prefetch, o accetta la serializzazione (ok Stadio 1).
+3. **Destination cache a buffer singolo:** `g_stream_selected_cache.gate_ptr` è unica → prefetchare L+1 negli
+   stessi buffer mentre il kernel di L li legge = overwrite. Serve ping-pong dei buffer destinazione, o usare
+   la LRU `g_stream_expert_cache` già esistente per ospitare il prefetch senza toccare il compact di L.
+
+**PRIMO MICRO-STEP (Stadio 1a, iso-comportamento, env-gated `DS4_SELECTED_UPLOAD_EVENT=1`):** sostituire il
+sync esistente con un vero evento sullo STESSO layer (non ancora prefetch di L+1): crea evento a :1749; variante
+async di copy a :2237 (record invece di sync); `cudaStreamWaitEvent(0, evt, 0)` nel consumer prima del kernel.
+Verifica **token IDENTICI** con flag ON vs OFF (nessuna race introdotta) → POI sposta il record al prefetch di L+1.
+Serve build (task #2) per testare. Verifica race a runtime con `compute-sanitizer --tool racecheck` (sul pod).

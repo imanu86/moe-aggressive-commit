@@ -53,6 +53,15 @@ un modello ~50GB **sta INTERAMENTE caldo in RAM** = SSD eliminato del tutto per 
   split-half 0.83 (`runs/reap/mask_stability_splithalf.json`). Findings: greedy CUDA non
   bit-riproducibile; profiler upstream Metal-only (niente cross-check su CUDA).
 - [x] piano eval — `docs/REAP_DS4_eval_plan.md`: Stage A bias-mask
-  (tool: `scripts/reap_bias_mask_ds4.py`), ppl `--perplexity-file` dom+gen 30k tok,
+  (tool: `scripts/reap_bias_mask_ds4.py`), ppl `--perplexity-file` dom+gen,
   full/reap_k50/rand_k50 dalla stessa mask, criteri pre-registrati, V0 mechanism-check.
-  Field-accuracy N=50/152 = fase 2 su ok utente (fuori budget trace).
+- [x] **EVAL ESEGUITA (2026-07-05, 3 pod paralleli, `runs/reap/2026-07-05_eval_biasmask/`):**
+  **REAP K50 dom 1.013× full (PASS near-lossless), random 1.365× (>reap, selezione conta,
+  ma <1.5× pre-registrato → PARTIAL: soglia tarata sul 30B bf16 troppo severa per ds4 IQ2).**
+  V0 mechanism-check: 11280 selezioni, 0 expert pruned selezionati. random gen 2.11× (F3 confermato).
+  → il potato 50% dominio (~47 GiB) è **quasi-lossless in ppl e batte decisamente il random a pari K.**
+
+## Prossimi (post-eval)
+- Stage B surgery (file fisico ~47 GiB) + patch 0007 per-layer expert count → misura t/s reale su
+  workstation 64GB (claim velocità, gratis) + field-accuracy N=152 completa lì.
+- Opzionali: reap/gen misurato (qui saltato); K25 dose-response; ablation freq-vs-g-only (gratis, stessa trace).

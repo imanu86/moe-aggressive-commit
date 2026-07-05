@@ -79,6 +79,13 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
 - [x] union-load VERIFICATA E QUANTIFICATA a runtime: prefill 670 tok → 4020 slot/layer
       compattati in 132-191 unici (media 163, **-95.9%**), 43 layer. Stesso meccanismo
       che al blocco-8 vale il 49%. Log compact_counts committati.
+- [x] **FASE B offline (2026-07-05)**: STS fittata sui 585 cicli reali (holdout valida;
+      chat ECE dimezzata) + scheduler R=1 IO-aware simulato sugli esiti veri:
+      **dynamic-STS 1.91× IO/token vs fixed-5 1.46×**, 97-99% dell'oracolo; su chat il
+      blocco fisso è 0.92× (peggio del liscio) e il dinamico 1.71× — riprodotto il
+      motivo per cui la produzione era ferma a MTP-1. Codice `src/msc/dspark/`,
+      risultati `runs/dspark/20260705_fase_b_sts/RISULTATI.md`, `sts_params.json`
+      pronto per il loader C. Prossimo: Fase C su 3060 (innesti ds4 + misura vera).
 - [x] **STRADA B MISURATA (2026-07-05)**: DSpark ufficiale su V4-Flash (2×H200, ~1h, $9):
       τ = **5.18/5.00/2.70** (code/math/chat) su blocco-5; confidence head ottima come
       ranking ma sottocalibrata in profondità (ECE fino a 0.44 su chat) = caso d'uso

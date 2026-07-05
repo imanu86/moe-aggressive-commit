@@ -11,11 +11,12 @@
 - `fa48071 chore(ds4): record spex stage0 cuda stats patch`
 - `47ba91e docs: refresh spex handoff checkpoint`
 - `5d57e07 chore(ds4): add stage0 baseline runner`
-- nuovo commit in corso: Stage 1a selected upload event patch + smoke logs
+- `cdeaa71 chore(ds4): add selected upload event patch`
+- nuovo checkpoint in corso: Stage 1 L+1 prefetch scaffold + smoke logs
 
 **Sorgente ds4 reale:** WSL `/root/ds4`, upstream `github.com/antirez/ds4`, base `80ebbc3`.
 Branch locale attivo: `codex/spex-stage0`, commit nostro:
-`d7bbee6 chore(spex): add selected upload event`.
+`8c8df19 chore(spex): add stage1 next-layer prefetch`.
 Nota: ds4 ha artifact non tracciati da build/test (`build_smoke.log`, `ds4-server.prebuild.bak`,
 `tests/cuda_long_context_smoke`). Non cancellarli senza motivo.
 
@@ -54,9 +55,24 @@ come non verificato/confabulato. I numeri vecchi non sono source of truth.
   ON: sync selected 216 / 25.738 ms; OFF: sync selected 9288 / 1491.401 ms. Questo prova plumbing,
   non ancora una baseline chat.
 
-**Prossima azione obbligatoria:** implementare il prefetch L+1 minimo sopra Stage 1a, poi misurarlo sul
+**Stadio 1b reale (Codex 2026-07-05):**
+- Patch ds4 registrata in `patches/ds4/0003-spex-stage1-next-layer-prefetch.patch`.
+- La patch aggiunge `DS4_SPEX_PREFETCH_NEXT_LAYER=1` sopra `DS4_SELECTED_UPLOAD_EVENT=1`.
+- Default invariato: senza flag, il nuovo prefetch L+1 non parte.
+- Implementa la variante async `ds4_gpu_stream_expert_cache_seed_experts_async()` e un hook decode-only:
+  gli expert selected del layer L vengono usati come prefetch per L+1.
+- Build verificata su WSL RTX 3060: `make cuda CUDA_ARCH=sm_86`.
+- Regression verificata su WSL RTX 3060: `make cuda-regression`.
+- Runtime smoke vero su `/root/models/ds4-2bit.gguf`: `runs/ds4_stage1_prefetch_smoke/`.
+  Event-only: generation 0.70 t/s. Prefetch L+1: generation 0.43 t/s, hit-rate 0.0000.
+- Interpretazione: questo è uno scaffold async valido, non una ottimizzazione. Il predictor ingenuo
+  "stessi expert L -> L+1" non è utile sullo smoke locale e aggiunge copie. Serve collegare il predictor
+  SPEX/Markov reale.
+
+**Prossima azione obbligatoria:** innestare loader `.spex` Markov nel nuovo hook Stage 1b e misurarlo sul
 setup DwarfStar reale (`/root/models/ds4-2bit.gguf`, `--cuda --ssd-streaming`, stesso profilo cache).
-Solo dopo ha senso innestare loader `.spex` Markov e poi hidden live.
+Stock/RunPod va bene per build, regression e plumbing, ma non per claim di velocità DwarfStar.
+Solo dopo ha senso passare a hidden live.
 
 **Regola di sicurezza:** ogni misura o claim deve avere diff/build/log/output committato.
 Non fidarsi di report agentici senza artifact verificabili.

@@ -217,12 +217,21 @@ On 9p, across reserve 5→0: hit-rate 0→0.35–0.38, t/s pinned 0.06→0.11.
 <!-- src: runs/reap/reap_mask_ds4_domain.json (method gonly_conditional_mean, est_file_gib 46.98); runs/reap/gonly_vs_eq9_30b.json (retention@32 0.8969, retention@64 0.7619 for base row); runs/reap/mask_stability_splithalf.json (mean 0.8295, min 0.7578) -->
 Note: the headline "0.902" is retention@32 for the base row; retention@64 is 0.762. We report both to avoid the cherry-pick (§7.7).
 
-### 5.4 SPEX hidden-state prefetch [PENDING-D2]
+### 5.4 SPEX hidden-state prefetch — D2 measured on the target
 
-The strong predictor (hidden-state probe) is not yet self-contained: it needs a per-token probe dump from the pod, and the Python→C `.spex` exporter **does not exist** (`spex_loop.py` only saves miss-rate/ECE). Expected hidden recall 0.93–0.99 vs markov 0.51–0.89 on the proxy; **recall on the target (DS4) is the open number D2**, not yet measured. The 3-domain trace manifest is on disk (input only, no result CSV).
-<!-- src: docs/SPEX_INTEGRATION_PLAN.md:62 (exporter missing), :100 (hidden not self-contained, recall 0.93-0.99 vs markov 0.51-0.89); runs/spex/2026-07-05_trace_prompts/prompts_manifest.json (input only); docs/EXPERIMENTS_LEDGER.md:260 (per-token re-dump needed) -->
-Every wired predictor to date has hit-rate ~0: naive L→L+1 prefetch (hit 0.0000, t/s 0.70→0.43), synthetic markov loader (hit 0.0037). **A predictor that actually predicts on the target does not yet exist** (§7.5).
-<!-- src: runs/ds4_stage1_prefetch_smoke/prefetch_l1_decode.log (hit 0, gen 0.43); HANDOFF.md:84-85 (markov synthetic hit 0.0037, gen 0.44) -->
+**D2 is now measured on the deployment model.** A per-layer ridge probe fitted on the router's exact input (`ffn_norm`, captured by the 0007 trace patch on a pod session: 32 documents / 3 domains, 263k training pairs, per-document 70/30 split, test on 11 held-out documents) predicts the **next layer's** top-6 experts with the following recall vs a window-8 recency baseline on the same test pairs:
+
+| set | probe@6 | probe@12 | probe@32 | recency@6 | recency@32 |
+|---|---|---|---|---|---|
+| domain (3 docs) | **0.680** | **0.829** | **0.920** | 0.282 | 0.598 |
+| general-ITA (4 docs) | 0.538 | 0.665 | 0.797 | 0.484 | 0.730 |
+| coding-EN (4 docs) | 0.455 | 0.581 | 0.728 | 0.374 | 0.658 |
+
+<!-- src: runs/spex/fit_results.json; runs/spex/fit_full_32doc.log; scripts/spex_fit_predictor.py (ridge 10.0, seed 42); trace: runs/spex/2026-07-05_trace_pod/ (patch 0006+0007, sha-verified 32/32) -->
+
+Three observations. (1) On domain traffic the probe reaches **0.92 recall at a 12.5% prefetch budget** (32/256), +32pt over recency — prediction carries signal that recency cannot: this is the regime where hidden-prefetch (and the bounded-loss skip mode, §5.5) is decisive. (2) On general/coding the edge is consistent but modest (+5–8pt at all budgets) — regime-dependence, coherent with §4. (3) The next-*token* variant is uniformly weaker than next-*layer* (domain 0.599@6 vs 0.680@6; general 0.424 vs prevtok baseline 0.511), fixing the integration design as next-layer-centric (predict L+1 during L's compute, matching the async upload plumbing of §5.1). Recall improved with training-set size (preliminary 15-doc fit: domain 0.62@6/0.82@32 → full 0.68/0.92), so the current numbers are a floor, not a ceiling. The earlier wired predictors with hit-rate ~0 (naive L→L+1 identity, synthetic markov) remain reported in §7.5 as the negative baseline that motivated this design.
+<!-- src: runs/spex/fit_preliminare_15doc.log (15-doc preliminary); runs/ds4_stage1_prefetch_smoke/prefetch_l1_decode.log (hit 0); HANDOFF.md:84-85 (markov synthetic 0.0037) -->
+**Still open:** the Python→C `.spex` export of the fitted probe (W per layer, fp16) and the in-engine hook (predictor → admission → async prefetch) — engineering, not measurement.
 
 ### 5.5 Skip-on-miss + REAP loop (design + verified actuator)
 

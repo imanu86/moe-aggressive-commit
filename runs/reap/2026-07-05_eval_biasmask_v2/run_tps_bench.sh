@@ -8,8 +8,11 @@ BIN=/root/ds4/ds4
 MODEL=/root/models/ds4-2bit.gguf
 OUT=/root/tps
 mkdir -p $OUT
-TOTAL_GB=$(free -g | awk 'NR==2{print $2}')
-echo "TOTAL_RAM_GB=$TOTAL_GB" | tee $OUT/results_tps.csv
+HOST_GB=$(free -g | awk 'NR==2{print $2}')
+CGMAX=$(cat /sys/fs/cgroup/memory.max 2>/dev/null || echo max)
+if [ "$CGMAX" != "max" ] && [ -n "$CGMAX" ]; then CG_GB=$(( CGMAX / 1073741824 )); else CG_GB=$HOST_GB; fi
+TOTAL_GB=$(( CG_GB < HOST_GB ? CG_GB : HOST_GB ))
+echo "HOST_GB=$HOST_GB CGROUP_GB=$CG_GB TOTAL_GB=$TOTAL_GB" | tee $OUT/results_tps.csv
 echo "scenario,mask,rep,prefill_tps,gen_tps,spex_stats" >> $OUT/results_tps.csv
 COMMON="--cuda --ssd-streaming --ssd-streaming-cache-experts 156 -c 4096 --nothink --temp 0"
 

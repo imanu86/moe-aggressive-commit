@@ -179,6 +179,37 @@ attivo va rispettato `ds4_gpu_wait_selected_upload()` prima dei kernel MoE consu
   terminato a baseline completa come da playbook: se serve prima, se ne rideploya uno
   equivalente).
 
+## 4-ter. PAESAGGIO UPSTREAM (aggiornato 2026-07-05 sera — riposizionamento fase B)
+
+Upstream si è mosso OGGI su tre fronti (segnalazione SPEX-main, PR lette):
+- **PR #480 (audreyt)**: runtime DSpark REALE su Metal + converter checkpoint + partial
+  commits via prefix-checkpoint. **PR #482 (machiabeli)**: B2 rejection sampling temp>0
+  (bug noto: draft via argmax ⇒ non-lossless; fix di audreyt in review) + **adaptive
+  block sizing `DS4_DSPARK_ADAPTIVE=1`**: euristica REATTIVA (accepted/drafted del ciclo
+  precedente in `ds4_session`, block 2→5 dopo full-commit, rollback su partial). Niente
+  confidence head, niente calibrazione, niente modello di costo. **PR #502** le riconcilia.
+  Nota dolori upstream documentati (lobanov §7): divergenza argmax batch-vs-decode nel
+  verifier (fp order — fenomeno già noto a noi da ds4.c:27342 e dal finding REAP),
+  replay KV dominante (~75ms/ciclo anche su full-accept nel loro runtime).
+- **PR #504 (iCreil)**: per-size-class expert caches + warm attraverso i prefill in
+  ds4_cuda.cu → è LA base per il nostro problema VRAM/cache (M8): NON scriviamo un fix
+  nostro; SPEX-main la testa domani. La 0011 (no device-cache statics support model)
+  resta complementare.
+- **Issue #468**: thread sul checkpoint V4-Flash-DSpark — i nostri τ misurati
+  (5.18/5.00/2.70) sono materiale per l'outreach.
+
+**Riposizionamento del contributo (deciso col track SPEX-main):**
+1. **Ramo CUDA+STREAMING = esclusiva nostra**: upstream è Metal-only su DSpark runtime;
+   la guardia #495 l'abbiamo sbloccata solo noi (0009/0010 non duplicano nulla, verificato).
+2. **Twist expert-IO nella cost-table = esclusiva nostra**: upstream ragiona dense/Metal;
+   l'ammortamento union-load in streaming (misurato: −49% @ blocco-8, slots=12→~10 live)
+   non esiste nel loro modello di costo.
+3. **Fase B on-device = ESTENSIONE di DS4_DSPARK_ADAPTIVE, non alternativa**: stessa
+   interfaccia/points d'innesto; la nostra politica diventa una modalità in più (es.
+   `DS4_DSPARK_ADAPTIVE=sts`): sopravvivenze STS-calibrate × cost-table IO-aware al
+   posto della sola euristica reattiva. Così il patch resta upstream-able qualunque
+   esito abbia la #502.
+
 ## 5. Rischi aperti
 1. Snapshot/rollback della frontiera compressor sotto streaming mai esercitato (fase C).
 2. Costo readback logits MTP per passo di draft (host round-trip): mitigazione = kernel

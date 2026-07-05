@@ -85,7 +85,16 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
       blocco fisso è 0.92× (peggio del liscio) e il dinamico 1.71× — riprodotto il
       motivo per cui la produzione era ferma a MTP-1. Codice `src/msc/dspark/`,
       risultati `runs/dspark/20260705_fase_b_sts/RISULTATI.md`, `sts_params.json`
-      pronto per il loader C. Prossimo: Fase C su 3060 (innesti ds4 + misura vera).
+      pronto per il loader C.
+- [x] **FASE C SBLOCCATA (2026-07-05 sera)**: primo spec-dec MTP in streaming su ds4,
+      sul 3060 reale. Patch 0009 (guardia env-gated + fix PR#497) e 0010 (slot
+      registrazione durevole mappa MTP — bug upstream: il remap streaming la
+      de-registrava). 33-34 cicli verify/run, acceptance pos2 0.848, union-load viva
+      nel verify (slots=12→~10 unici), spec2 **+9/10% vs baseline** col PAVIMENTO
+      (expert cache spenta: le statics MTP device-cachate mangiano il budget su 12GB
+      → prossimo innesto 0011). → `runs/dspark/20260705_fase_c_smoke_3060/RISULTATI.md`
+- [ ] 0011 (statics support model non cachate) → misura con expert cache vera
+- [ ] scheduler+STS on-device (innesti 1-4 design) + ds4-eval appaiato (paletto 3)
 - [x] **STRADA B MISURATA (2026-07-05)**: DSpark ufficiale su V4-Flash (2×H200, ~1h, $9):
       τ = **5.18/5.00/2.70** (code/math/chat) su blocco-5; confidence head ottima come
       ranking ma sottocalibrata in profondità (ECE fino a 0.44 su chat) = caso d'uso

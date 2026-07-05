@@ -61,7 +61,15 @@ un modello ~50GB **sta INTERAMENTE caldo in RAM** = SSD eliminato del tutto per 
   V0 mechanism-check: 11280 selezioni, 0 expert pruned selezionati. random gen 2.11× (F3 confermato).
   → il potato 50% dominio (~47 GiB) è **quasi-lossless in ppl e batte decisamente il random a pari K.**
 
+- [x] **EVAL v2 PAPER-GRADE (2026-07-05, H200, 10 chunk, bootstrap CI95, `runs/reap/2026-07-05_eval_biasmask_v2/`):**
+  **reap_k50 dom 1.010× CI95 [0.996,1.025] = statisticamente LOSSLESS** (il CI attraversa 1.0; replica v1).
+  **reap_k67 dom 1.076× [1.046,1.110] = operating-point che ENTRA nei 32GB di oggi** (working-set ~25GiB).
+  random dom 1.388× (selezione conta). **F3: reap_k50 gen 1.403×** (più mite del Qwen ~1.68×). V0 0 viol.
+  t/s dial: prefill +43%/+87% (K50/K70), expert-load −37%/−57%. "fits-hot-32GB" empirico da confermare
+  su workstation (RunPod blocca mlock+cgroup+hog). Dose masks K25/K60/K64/K67/K70 pronte.
+
 ## Prossimi (post-eval)
-- Stage B surgery (file fisico ~47 GiB) + patch 0007 per-layer expert count → misura t/s reale su
-  workstation 64GB (claim velocità, gratis) + field-accuracy N=152 completa lì.
-- Opzionali: reap/gen misurato (qui saltato); K25 dose-response; ablation freq-vs-g-only (gratis, stessa trace).
+- Stage B surgery (file fisico) + patch per-layer expert count → t/s reale su workstation (gratis) +
+  field-accuracy N=152 lì. **K67 = config da deployare oggi sul 3060+32GB; K50 quando arrivano i 64GB.**
+- Opzionali: dose-response completa K25/K70 su 1 macchina (qui K50/K67 puliti + K70 dal 3090); multi-seed
+  rand 3× pulito; ablation freq-vs-g-only (gratis, stessa trace).

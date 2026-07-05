@@ -49,7 +49,15 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
 - Aggiorna lo stato qui in coda.
 
 ## Stato
-- [ ] recon MTP in ds4 (mappa file:riga)
-- [ ] misura acceptance/t-s (se già supportato)
-- [ ] design DSpark (confidence+STS+scheduler)
-- [ ] verifica union-load nel path batch
+- [x] recon MTP in ds4 (mappa file:riga) → `docs/dspark/RECON_MTP_DS4.md` (2026-07-05).
+      ds4@80ebbc3 ha GIÀ lo spec-dec MTP completo (`ds4_session_eval_speculative_argmax`,
+      ds4.c:27167) con margin gate e probe di acceptance (`DS4_MTP_PROBE`). MA
+      `--mtp` + `--ssd-streaming` è VIETATO dall'engine (ds4.c:25685) → il 49% vive
+      esattamente nella combinazione bloccata.
+- [x] verifica union-load nel path batch → SÌ: dedup+compact-load per blocco in
+      `ds4_gpu_stream_expert_cache_prepare_selected_batch` (ds4_cuda.cu:3176), invocato dal
+      path batch streaming (ds4.c:18938). Il verifier MTP usa lo stesso encode_layer_batch
+      → union-load "gratis" una volta sbloccato MTP+streaming. Dettagli nel RECON §1.7.
+- [ ] misura acceptance/t-s su pod 3090 (DS4_MTP_PROBE + DS4_MTP_CONF_LOG, non-streaming;
+      acceptance trasferisce al 3060, t/s NO)
+- [ ] design DSpark (confidence+STS+scheduler) — innesti candidati già in RECON §2

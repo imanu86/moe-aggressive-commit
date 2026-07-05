@@ -181,8 +181,8 @@ On 9p, across reserve 5→0: hit-rate 0→0.35–0.38, t/s pinned 0.06→0.11.
 **Union-load arithmetic (transfers; TRUE).** At block-8 the verifier's unique experts per layer = **24.3 vs 48** (6×8) = **−49% expert-IO**; block-4 = 16.4 (−32%), block-2 = 10.6 (−12%). In the prefill batch the same mechanism gives mean **163.0 unique/layer** (min 132, max 191) vs 4020 slots = 95.9% avoided.
 <!-- src: docs/briefs/BRIEF_DSPARK_MTP_DS4.md:30-32 (10.6/12%, 16.4/32%, 24.3/49%); runs/dspark/20260705_mtp_acceptance_pod3090/out_v3/unionload_compact_counts.log (43 prefill rows slots=4020, mean 163.0; decode rows slots=6 compact=6 must be filtered — see §7.1) -->
 
-**Fase C unlock (mechanism runs on the 3060).** `--mtp` + `--ssd-streaming` was forbidden by the engine (`ds4.c:25685`); patches 0009 (one-liner from upstream PR #497) + 0010 (durable secondary MTP model-map registration) unlock it. The block verifier completes 100 tokens with no crash; spec2 acceptance = **56 committed=2 / 66 cycles = 0.848**; wall time base 186/181 s vs spec2 168/166 s = **~10% faster**.
-<!-- src: runs/dspark/20260705_fase_c_smoke_3060/out/spec2_r1.log (56 committed=2 / 66 conf cycles); runtimes.csv (base 186/181, spec2 168/166, spec4 229); patches/ds4/0009,0010 -->
+**Fase C unlock (mechanism runs on the 3060).** `--mtp` + `--ssd-streaming` was forbidden by the engine (`ds4.c:25685`); patches 0009 (one-liner from upstream PR #497) + 0010 (durable secondary MTP model-map registration) unlock it. The block verifier completes 100 tokens with no crash; spec2 acceptance = **56 committed=2 / 66 cycles = 0.848 [Wilson 95% CI 0.743–0.916]**; wall time base 186/181 s vs spec2 168/166 s = **0.910× [boot CI 0.893–0.928], i.e. ~10% faster** — but the CI rests on n=2 runs per arm (**[CI: braccia n=2, non affidabile]**; the direction is consistent, the magnitude is not defensible until S3/M8 add reps).
+<!-- src: runs/dspark/20260705_fase_c_smoke_3060/out/spec2_r1.log (56 committed=2 / 66 conf cycles); runtimes.csv (base 186/181, spec2 168/166, spec4 229); patches/ds4/0009,0010; CIs runs/paper_ci_results.json (fase_c_spec2 wilson [0.7431,0.9156]; spec2_over_base 0.9101 ci95 [0.8925,0.9282] n=2/arm flagged) -->
 
 **[OPEN] — the 2× IO payoff is NOT demonstrated.** Fase C ran with the **expert cache disabled** the entire run (available 5.73 ≤ reserve 6.00, hit-rate 0.0000, ~190–270 GiB copied from SSD for 100 tokens), so union-load could not be monetized: block-4 is *slower* than baseline (0.49 vs 0.64 t/s). The tested regime is the worst case, not the thesis. "−49% → ~2×" remains **[OPEN]** on all hardware.
 <!-- src: runs/dspark/20260705_fase_c_smoke_3060/out/spec2_r1.log:18-28 (cache disabled), runtimes.csv (spec4_r1=229s) -->
@@ -265,8 +265,8 @@ Statistics (bootstrap 10k, seed 42, `scripts/paper_ci.py`): reap/dom paired t(3d
 | DSpark drafter τ | 5.18/5.00/2.70 | **H200, fp8/fp4** (proxy) | <!-- src: runs/dspark/20260705_dspark_b_v4flash_2xh200/RISULTATI.md:17-19 --> |
 | Union-load @block-8 | 24.3/48 = −49% | arithmetic (transfers) | <!-- src: docs/briefs/BRIEF_DSPARK_MTP_DS4.md:32 --> |
 | Union prefill | 163.0 unique/layer (95.9% avoided) | prefill rows only | <!-- src: runs/dspark/20260705_mtp_acceptance_pod3090/out_v3/unionload_compact_counts.log --> |
-| Fase C spec2 acceptance | 0.848 (56/66) | 3060, cache **disabled** | <!-- src: runs/dspark/20260705_fase_c_smoke_3060/out/spec2_r1.log --> |
-| Fase C spec2 wall | ~10% faster (183.5→167 s) | 3060, N=2, 1 prompt | <!-- src: runtimes.csv --> |
+| Fase C spec2 acceptance | 0.848 (56/66) [Wilson CI 0.743–0.916] | 3060, cache **disabled** | <!-- src: runs/dspark/20260705_fase_c_smoke_3060/out/spec2_r1.log; runs/paper_ci_results.json --> |
+| Fase C spec2 wall ratio | 0.910× [CI 0.893–0.928] (~10% faster; n=2/arm, CI insuff.) | 3060, N=2, 1 prompt | <!-- src: runtimes.csv; runs/paper_ci_results.json (spec2_over_base n=2 flagged) --> |
 | Scheduler dynamic-STS | 1.91× (oracle 1.96×) | **simulation**, proxy drafter | <!-- src: runs/dspark/20260705_fase_b_sts/SCHED_SIM.md --> |
 | 2× IO payoff | **[OPEN]** — undemonstrated | — | — |
 
@@ -290,10 +290,10 @@ Statistics (bootstrap 10k, seed 42, `scripts/paper_ci.py`): reap/dom paired t(3d
 
 This section is the paper's real contribution: it separates the honest engineering study from a hobby demo. We incorporate the five adversarial critiques directly.
 
-### 7.1 Statistics: point estimates without confidence intervals
+### 7.1 Statistics: confidence intervals now computed, but the sample floor remains
 
-Every ratio in the paper (1.013×, 1.365×, τ 5.18/5.00/2.70, 1.91×, 0.848) is a **naked point estimate**: zero bootstrap, zero significance test, zero standard error is computed on disk. The one headline (REAP 1.013× near-lossless) is **not significant** (paired t(3df)=1.32); the scheduler speedups rest on u(k) fitted to **4 points** from a 65-token degenerate prompt with 1 residual degree of freedom. Single-shot runs pervade: ext4 config A is N=1 (A2 truncated, no generation line); the 9p sweep is non-iso-workload (s740 generated 8831 tokens vs 7283 for the others, s156 rep2 truncated). MTP-1 baseline and union-load are single-prompt/single-shot. **Minimum fix (zero-GPU): bootstrap per-token/per-cycle on the CSVs already on disk before any comparative claim.**
-<!-- src: runs/ds4_bench_clean_ext4_20260705/run_A2.log (no generation line); runs/ds4_cache_sweep_9p_20260705/run_s740_r1.log (total 8831); src/msc/dspark/sched_sim.py:31 (4 points) -->
+The comparative ratios that *have replicates on disk* now carry a percentile bootstrap 95% CI (`scripts/paper_ci.py`, 10k resamples, seed 42, `runs/paper_ci_results.json`): REAP reap/dom 1.013× **[0.995–1.028] — crosses 1.0, not significant**; rand/dom 1.365× [1.280–1.455] (clear of 1.0, below the 1.5× pre-reg threshold); Fase C acceptance 0.848 [Wilson 0.743–0.916]; spec2/base wall 0.910× [0.893–0.928]. **The CIs do not rescue the sample floor — they expose it.** reap/dom is N=4 chunks (single run); rand/gen is N=2 (CI flagged insufficient); the DSpark wall ratio is n=2 per arm (flagged); the scheduler speedups still rest on u(k) fitted to **4 points** from a 65-token degenerate prompt with 1 residual degree of freedom (no CI attempted — [CI: dati insufficienti]); τ 5.18/5.00/2.70 are single-prompt/domain (per-position N collapses under the accepted-prefix conditioning, S5 — not yet bootstrapped). Single-shot runs pervade the cache sweeps: ext4 config A is N=1 (A2 truncated, no generation line); the 9p sweep is non-iso-workload (s740 generated 8831 tokens vs 7283 for the others, s156 rep2 truncated). **Remaining fix (needs GPU): the multi-seed/multi-chunk and N≥3 re-runs (M8/S2/S4/S5) that turn these CIs from n<5 to defensible.**
+<!-- src: runs/paper_ci_results.json (all CIs, seed 42); runs/ds4_bench_clean_ext4_20260705/run_A2.log (no generation line); runs/ds4_cache_sweep_9p_20260705/run_s740_r1.log (total 8831); src/msc/dspark/sched_sim.py:31 (4 points) -->
 
 ### 7.2 Confounds: order, filesystem, model, and hardware are entangled
 
@@ -358,12 +358,13 @@ We set out to run a 158B MoE on a 12 GB consumer GPU by extending an expert-offl
 
 We consider the value of this paper to be the *measured gap* between the offload literature and a real SSD-bound deployment, plus a costed roadmap (`GAPS_AND_FIXES.md`) of exactly what turns each OPEN/PENDING into a claim.
 
-**Artifacts (repo `moe-aggressive-commit @ 31c38f2`):**
+**Artifacts (repo `moe-aggressive-commit`, `main`):**
 - `docs/EXPERIMENTS_LEDGER.md` (~100 experiments F1–F6, anti-repetition ledger)
 - `docs/REAP_DS4_{design,eval_plan}.md`, `runs/reap/2026-07-05_eval_biasmask/` (biasmask eval, mask, split-half)
 - `runs/dspark/{20260705_dspark_b_v4flash_2xh200, 20260705_fase_b_sts, 20260705_mtp_acceptance_pod3090, 20260705_fase_c_smoke_3060}/`
 - `runs/ds4_{routing_trace_smoke, bench_clean_ext4_20260705, cache_sweep_9p_20260705}/`
 - `patches/ds4/0001-0010`, `src/msc/dspark/{sts_fit.py, sched_sim.py}`, `src/msc/spex/spex_loop.py`
+- **`scripts/paper_ci.py` + `runs/paper_ci_results.json`** — bootstrap 95% CIs (10k resamples, seed 42) for every key ratio; reproducible from the committed CSVs with one command.
 - **[PENDING to commit]** `runs/spex/2026-07-05_trace_prompts/dominio_kb/` (gitignored — MUST-FIX)
 
 <!-- src (durable positioning): docs/CONSOLIDATION.md, docs/PRIOR_ART.md, docs/PAPER_STATE.md (pre-pivot), docs/SPEX_INTEGRATION_PLAN.md, docs/HANDOFF*.md -->

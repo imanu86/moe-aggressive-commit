@@ -34,7 +34,14 @@ Roles: **SPEX-main** = the driving agent (coding, analysis, offline stats). **SP
 - **Fix (prose, zero-GPU):** claim only the *ordinal contrast* reap≪rand (rand t≈7.8, real); report "pre-registered threshold NOT met (1.36× < 1.5×); ordering holds; IQ2-redundancy attribution is a POST-HOC hypothesis to test on held-out K/seed."
 - **Cost:** ~20 min. **Who:** SPEX-main (done in PAPER_DRAFT §5.3/§7.7).
 
-### M4 — Bootstrap CIs on every ratio already on disk (low cost, zero GPU, fixes the "no statistics" attack)
+### M4 — Bootstrap CIs on every ratio already on disk (low cost, zero GPU, fixes the "no statistics" attack) — **RESOLVED**
+- **RESOLVED (2026-07-05).** `scripts/paper_ci.py` computes percentile bootstrap 95% CIs (10k resamples, numpy seed 42) and writes `runs/paper_ci_results.json`. Executed; CIs inserted into the draft (§5.2, §5.3, §6.2, §6.3, §7.1, §7.7). Results:
+  - **reap/dom 1.013× → CI [0.995–1.028]** — **crosses 1.0** (not significant; matches paired t(3df)=1.32).
+  - **rand/dom 1.365× → CI [1.280–1.455]** — clear of 1.0, upper bound below the 1.5× pre-reg threshold (FAIL, M3).
+  - **rand/gen 2.115× → CI [2.104–2.126]** but **N=2 chunks → flagged `[CI: dati insufficienti]`**.
+  - **Fase C spec2 acceptance 56/66 = 0.848 → Wilson 95% [0.743–0.916]** (bootstrap cross-check [0.758–0.924]).
+  - **spec2/base wall 0.910× → CI [0.893–0.928]** but **n=2 per arm → flagged insufficient** (direction ~10% faster consistent, magnitude not defensible).
+  - Statistic for perplexity ratios = geomean of paired per-chunk ppl ratios (paired bootstrap over chunks). Where a per-key ratio had <3 replicates the CI is emitted but flagged, per the no-invented-numbers rule; ratios with no ≥3-replica data on disk (τ per position, scheduler u(k) on 4 points) were **not** fabricated — left as `[CI: dati insufficienti]` and routed to S5/S3.
 - **Missing:** zero CI, zero bootstrap, zero significance test on disk for *any* number (1.013×, 1.365×, τ, 1.91×, 0.848).
 - **Why:** every comparative claim is a naked point estimate; the whole statistical critique collapses onto this one omission.
 - **Fix:** per-token / per-cycle bootstrap (≥10k resamples) on the existing CSVs: REAP per-chunk log-ratios, DSpark accept.csv per-cycle, Fase C committed-distribution (Wilson CI on 56/66), MTP-1 acceptance. Emit `*_bootstrap.json` next to each result. No new runs needed.

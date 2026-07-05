@@ -42,8 +42,13 @@ def main():
                    if (c, k) in rows},
            "aggregate": {}, "ratios_vs_full": {}, "paired_per_chunk": {}}
 
+    def has_all(c, ks):
+        return ks and all((c, k) in rows for k in ks)
+
     for c in cfgs:
         for corpus, ks in (("dom", doms), ("gen", gens)):
+            if not has_all(c, ks):
+                continue
             tot_nll = sum(rows[(c, k)]["nll"] for k in ks)
             tot_sc = sum(rows[(c, k)]["scored"] for k in ks)
             res["aggregate"][f"{c}/{corpus}"] = {
@@ -54,6 +59,8 @@ def main():
         if c == "full":
             continue
         for corpus, ks in (("dom", doms), ("gen", gens)):
+            if not (has_all(c, ks) and has_all("full", ks)):
+                continue
             r = res["aggregate"][f"{c}/{corpus}"]["ppl"] / \
                 res["aggregate"][f"full/{corpus}"]["ppl"]
             res["ratios_vs_full"][f"{c}/{corpus}"] = round(r, 4)
@@ -61,6 +68,8 @@ def main():
                                      rows[("full", k)]["avg_nll"]), 4)
                       for k in ks]
             res["paired_per_chunk"][f"{c}/{corpus}"] = paired
+            res["paired_per_chunk"][f"{c}/{corpus}_geomean"] = round(
+                math.exp(sum(math.log(x) for x in paired) / len(paired)), 4)
 
     reap_dom = res["ratios_vs_full"].get("reap/dom")
     rand_dom = res["ratios_vs_full"].get("rand/dom")

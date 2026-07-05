@@ -131,6 +131,54 @@ token insieme → union-load deterministica. Composizione naturale in fase C+: d
 verify del blocco al layer L, SPEX può seminare L+1. Nessuna dipendenza di codice oggi:
 l'unico punto di contatto è la expert-cache CUDA, già condivisa.
 
+## 4-bis. PERCHÉ ESISTE LA GUARDIA ds4.c:25685 (indagine 2026-07-05, paletto 1 del go-ahead)
+
+Indagine svolta PRIMA di scrivere codice, come richiesto. Tre fonti concordanti:
+
+1. **Upstream non documenta una race**: il clone locale è shallow (8 commit), ma su GitHub
+   l'issue **antirez/ds4#495** (aperta 2026-07-04 da terzi, con la nostra stessa tesi:
+   4060Ti disk-bound, 2.2 t/s gen vs 28.7 t/s prefill → stima 4-6 t/s con MTP) chiede
+   esattamente "cosa blocca --mtp con --ssd-streaming?" e **non ha risposta del
+   maintainer**. Il testo del messaggio d'errore dice "yet": non-implementato, non vietato
+   per principio.
+2. **Il blocco concreto è identificato dalla PR upstream #497** (aperta, one-liner):
+   sotto streaming il verifier MTP emette encode batch **single-position** (es. re-verify
+   del prefisso con `commit_drafts==1`, ds4.c:27630); l'early-return `n_tokens <= 1` in
+   `metal_graph_cuda_stream_prefill_batch_selected_load` (ds4.c:14345) salta la
+   selected-load → il MoE ricade sui range expert RESIDENTI → "CUDA model arena alloc
+   failed for moe_gate (1792.00 MiB chunk)" → "MTP verifier failed". Fix della PR:
+   `n_tokens <= 1` → `n_tokens == 0` (con commento esplicativo). Diff verificato da noi.
+3. **Il nostro probe streaming (patch misura) ha già dimostrato** che drafting MTP,
+   registrazione della mappa MTP (3.55GiB full anche sotto streaming) e decode streaming
+   convivono: i gap sono SOLO nel path di verify batch.
+
+**Conclusione (paletto 1)**: la guardia protegge un percorso non finito, non una race
+documentata. L'assunto di residenza rotto è quello del punto 2. Restano DA VERIFICARE in
+smoke (non escludibili dal solo sorgente): (a) mapping dei pesi densi/attn nel batch
+verify sotto streaming — ipotesi: coperti dal device cache statico (3.94GiB q8) come nel
+prefill batch streaming, quindi nessun map mancante; (b) snapshot/restore della frontiera
+compressor su partial-accept sotto streaming; (c) protocollo evento upload
+(`DS4_SELECTED_UPLOAD_EVENT`): la selected-load compatta del verifier è sincrona
+(end/begin commands attorno, ds4.c:14369-14396) quindi safe di default, ma con l'evento
+attivo va rispettato `ds4_gpu_wait_selected_upload()` prima dei kernel MoE consumatori.
+
+**Piano innesto rivisto (compone con upstream, non duplica)**:
+- serie patch dal **0008** (0006-0007 riservate al track SPEX; il vecchio probe-patch
+  rinumerato 0008): 0008 = probe di misura (già usato); **0009** = one-liner della PR
+  #497 (accreditata nel commento) + rilascio guardia dietro `DS4_MTP_STREAMING=1`
+  (default OFF) + wait-event nei punti di consumo se l'evento è attivo; 0010+ = eventuali
+  fix emersi dallo smoke (mapping, frontiere).
+- branch `dspark/unlock-streaming` da `bee9eb3` in un **git worktree separato**
+  (`/root/ds4-dspark`) per non toccare il tree condiviso né i binari dello sweep SPEX.
+- validazione (paletto 3): niente diff dei token (greedy CUDA non bit-riproducibile,
+  finding REAP); **`ds4-eval` appaiato** ON vs OFF (harness nativo, supporta
+  --ssd-streaming) su set fisso di domande + coerenza distribuzioni acceptance/τ.
+  PPL ds4-nativa non esiste nel repo (quella REAP è pipeline HF/torch): se serve PPL
+  vera, da concordare col track SPEX-main.
+- smoke: 3060 SOLO dopo fine sweep (~20:00-20:30) o pod 3090 $0.22/h (il pod A è stato
+  terminato a baseline completa come da playbook: se serve prima, se ne rideploya uno
+  equivalente).
+
 ## 5. Rischi aperti
 1. Snapshot/rollback della frontiera compressor sotto streaming mai esercitato (fase C).
 2. Costo readback logits MTP per passo di draft (host round-trip): mitigazione = kernel

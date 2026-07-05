@@ -19,6 +19,11 @@ Uso: python spex_loop.py D:/models/spex/traces_q235_general.npz --caps 2,4,6,8,1
 import sys, argparse, json, numpy as np
 from collections import OrderedDict
 
+try:
+    from msc.spex.c_export import write_markov_spex
+except ModuleNotFoundError:  # direct `python spex_loop.py ...` execution
+    from c_export import write_markov_spex
+
 def sigmoid(z): return 1.0 / (1.0 + np.exp(-np.clip(z, -30, 30)))
 
 # ----------------------------------------------------------------------------- dati + split per doc
@@ -226,6 +231,21 @@ def run(path, caps, seeds, topN, tau, max_test_tok, pred, M=15):
             'miss': {p: {c: [float(x) for x in rows[p][c]] for c in caps} for p in POLICIES},
             'ece_raw': float(np.mean(eb)), 'ece_sts': float(np.mean(ea))}
 
+def export_c(path, out_path, seed, topN, pred, M=15):
+    if pred != 'markov':
+        raise ValueError("--export-c currently supports only --predictor markov")
+    E, S, bounds, nexp, topk, L = load(path); ndoc = len(bounds)-1
+    tr, ca, _ = split_docs(ndoc, seed)
+    trd = doc_tokens(E, S, bounds, tr)
+    cad = doc_tokens(E, S, bounds, ca)
+    C = build_markov(trd, L, nexp, topk)
+    a, b = fit_confidence(trd, C, L, nexp, topk, topN, pred)
+    Zc, Yc = collect_cand(cad, C, L, nexp, topk, topN, a, b, pred)
+    T = fit_sts(Zc, Yc, L, M=M)
+    write_markov_spex(out_path, a=a, b=b, T=T, C=C, n_layer=L, n_expert=nexp, topN=topN)
+    print(f"exported {out_path} [markov]: docs={ndoc} train={len(tr)} cal={len(ca)} L={L} E={nexp} topN={topN} seed={seed}", flush=True)
+    return {'path': out_path, 'predictor': pred, 'nexp': nexp, 'L': L, 'topN': topN, 'seed': seed}
+
 if __name__ == '__main__':
     ap = argparse.ArgumentParser()
     ap.add_argument('paths', nargs='+')
@@ -233,8 +253,14 @@ if __name__ == '__main__':
     ap.add_argument('--topN', type=int, default=32); ap.add_argument('--tau', type=float, default=0.5)
     ap.add_argument('--max_test_tok', type=int, default=6000)
     ap.add_argument('--predictor', default='markov', choices=['markov', 'hidden'])
+    ap.add_argument('--export-c', default=None, help="Export markov SPEX params to a ds4 .spex file")
     ap.add_argument('--out', default=None)
     a = ap.parse_args()
     caps = [int(x) for x in a.caps.split(',')]; seeds = [int(x) for x in a.seeds.split(',')]
+    if a.export_c:
+        if len(a.paths) != 1:
+            raise SystemExit("--export-c expects exactly one input .npz")
+        export_c(a.paths[0], a.export_c, seeds[0], a.topN, a.predictor)
+        raise SystemExit(0)
     res = [run(p, caps, seeds, a.topN, a.tau, a.max_test_tok, a.predictor) for p in a.paths]
     if a.out: json.dump([r for r in res if r], open(a.out, 'w'), indent=1); print("saved", a.out)

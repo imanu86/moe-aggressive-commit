@@ -72,10 +72,15 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
       `ds4_gpu_stream_expert_cache_prepare_selected_batch` (ds4_cuda.cu:3176), invocato dal
       path batch streaming (ds4.c:18938). Il verifier MTP usa lo stesso encode_layer_batch
       → union-load "gratis" una volta sbloccato MTP+streaming. Dettagli nel RECON §1.7.
-- [~] misura acceptance/t-s su pod 3090 IN CORSO (2026-07-05): pod `o6ksysllgnpuxk`
-      $0.22/h deployato, protocollo+script in `runs/dspark/20260705_mtp_acceptance_pod3090/`
-      (DS4_MTP_PROBE + CONF_LOG, stock 80ebbc3, non-streaming; acceptance trasferisce
-      al 3060, t/s NO)
+- [~] misura acceptance baseline MTP-1 su pod 3090 QUASI COMPLETA (2026-07-05 sera):
+      in streaming (non-streaming+mtp = OOM su 24GB) con combo probe
+      draft2+SPEC_DISABLE+UNSAFE. Primi numeri: code 0.872 (×2 run identici,
+      determinismo greedy ✓), math 0.846. Log in `runs/dspark/20260705_mtp_acceptance_pod3090/`.
+- [x] **STRADA B MISURATA (2026-07-05)**: DSpark ufficiale su V4-Flash (2×H200, ~1h, $9):
+      τ = **5.18/5.00/2.70** (code/math/chat) su blocco-5; confidence head ottima come
+      ranking ma sottocalibrata in profondità (ECE fino a 0.44 su chat) = caso d'uso
+      esatto della STS. Dataset calibrazione (585 cicli) + risultati:
+      `runs/dspark/20260705_dspark_b_v4flash_2xh200/RISULTATI.md`. Pod terminato+verificato.
 - [x] design DSpark (confidence+STS+scheduler) → `docs/dspark/DESIGN_DSPARK_DS4.md`
       (2026-07-05): confidence-lite dal margine MTP calibrata via STS, scheduler Alg.1
       ridotto a R=1 con cost-table IO-aware, sblocco streaming = guardia ds4.c:25685 +

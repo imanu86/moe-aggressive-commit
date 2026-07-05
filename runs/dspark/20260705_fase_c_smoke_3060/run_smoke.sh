@@ -13,10 +13,10 @@ CTX=2048
 CACHE=6GB
 P_code="Write a Python function that parses a CSV file and returns the sum of the second column. Include error handling and a short docstring."
 
-log_run() { # nome, env-string, argomenti...
+log_run() { # nome, env-string, argomenti... (DS4_SPEX_STATS=1 sempre: richiesta SPEX-main)
   local name="$1"; shift; local envs="$1"; shift
   local t0=$(date +%s)
-  env $envs "$DS4" -m "$MODEL" --cuda --ssd-streaming --ssd-streaming-cache-experts $CACHE \
+  env DS4_SPEX_STATS=1 $envs "$DS4" -m "$MODEL" --cuda --ssd-streaming --ssd-streaming-cache-experts $CACHE \
       -c $CTX --temp 0 --nothink "$@" > "$OUT/$name.log" 2>&1
   local rc=$?; local t1=$(date +%s)
   echo "$name,$rc,$((t1-t0))" >> "$OUT/runtimes.csv"

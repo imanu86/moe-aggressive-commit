@@ -42,6 +42,10 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
 ## Regole
 - Branch tuo, commit piccoli, push frequente. Misure solo da log su disco, citati.
 - GPU locale contesa: coordina i run (un solo processo ds4 alla volta).
+- **Pod autorizzati: budget $1-2 TOTALE per questo track** (RTX 3090 community, sm_86 come il 3060).
+  Metodo di misura e disciplina deploy/terminate: segui ALLA LETTERA `docs/briefs/POD_PLAYBOOK.md`.
+  Caso d'uso pod perfetto per te: misurare l'**acceptance-rate MTP** (proprietà del modello → trasferisce)
+  e verificare l'union-load nel path batch. I t/s del pod NON trasferiscono al 3060: dichiaralo.
 - Aggiorna lo stato qui in coda.
 
 ## Stato

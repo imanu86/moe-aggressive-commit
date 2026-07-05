@@ -33,6 +33,9 @@ un modello ~50GB **sta INTERAMENTE caldo in RAM** = SSD eliminato del tutto per 
 
 ## Regole
 - NIENTE run GPU locale senza coordinarti (il 3060 è conteso col bench SPEX). Analisi/design/patch: liberi.
+- **Pod autorizzati: budget $1-2 TOTALE per questo track** (RTX 3090 community). Metodo di misura e
+  disciplina deploy/terminate: segui ALLA LETTERA `docs/briefs/POD_PLAYBOOK.md`. La trace dominio con
+  gate-weights è il tuo caso d'uso pod perfetto (routing = proprietà del modello, trasferisce al 3060).
 - Ogni misura riportata deve avere il file su disco citato. Niente numeri a memoria.
 - Commit piccoli sul tuo branch, push frequente, aggiorna questo brief con lo stato in coda.
 

@@ -202,14 +202,14 @@ On 9p, across reserve 5→0: hit-rate 0→0.35–0.38, t/s pinned 0.06→0.11.
 **Actuator (system contribution).** Domain pruning is actuated at runtime by writing `-1e9` into the selection bias (`exp_probs_b`) — exactly equivalent to physical pruning given the ds4 router math (independent per-expert probs + renorm over top-6), at ~zero cost, no surgery, on the stock 2-bit engine. Verified on the field: `selections checked=11280 violations=0` — with the mask active the router *never* selected a pruned expert.
 <!-- src: docs/REAP_DS4_design.md:48-60 (router math); runs/reap/2026-07-05_eval_biasmask/reap/biasmask.log (V0_OK, 11280 checks, 0 violations) -->
 
-**Result.** REAP K50 on-domain ppl = 3.8604 vs full 3.8111 = **1.0129×** (near-identity); random control = 5.2001 = **1.3645×**. REAP degrades ~27× less than random.
-<!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json (reap/dom 1.0129, rand/dom 1.3645, rand/gen 2.1149) -->
+**Result — the claim is the ordinal contrast, not a near-lossless point.** REAP K50 on-domain ppl = 3.8604 vs full 3.8111 = **1.013× [CI 0.995–1.028]** (bootstrap 95%, geomean of 4 paired per-chunk ppl ratios, 10k resamples, seed 42); random control = 5.2001 = **1.365× [CI 1.280–1.455]**. The REAP CI **crosses 1.0** — REAP-K50 is statistically indistinguishable from the full model on-domain at N=4 chunks — while the random CI does not and sits far above it. **The defensible claim is therefore the contrast reap ≪ rand (the two CIs do not overlap), not "1.013× near-lossless."** REAP degrades ~27× less than random *as a point estimate*, but that ratio too is CI-unquantified at N=4.
+<!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json (reap/dom 1.0129, rand/dom 1.3645, rand/gen 2.1149); CIs runs/paper_ci_results.json (reap_over_full_dom ci95 [0.9953,1.0277] crosses 1.0; rand_over_full_dom ci95 [1.2797,1.4549]) -->
 
 **Three honest problems (see §7.7, §6.2):**
-1. **The near-lossless point is not statistically significant.** Paired per-chunk reap/dom = [1.0332, 0.9868, 1.0112, 1.0212]; one chunk (0.9868) shows pruning *improving* ppl; mean-excess 0.0131 < its own cross-chunk stdev 0.0197 → paired t(3df) ≈ 1.32 < t\_crit 3.18. The defensible claim is the *contrast* reap≪rand (rand t≈7.8), not "1.013× near-lossless."
-<!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json (paired_per_chunk reap/dom [1.0332,0.9868,1.0112,1.0212]) -->
-2. **The pre-registered random threshold FAILED.** The verdict file literally reads `rand_dom 1.3645x (>=1.5 e >reap) -> FAIL`. Calling it "PARTIAL" and attributing the gap to IQ2 redundancy is a *post-hoc* hypothesis, not a pass.
-<!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json (verdict_preregistrato: "rand_dom 1.3645x ... -> FAIL") -->
+1. **The near-lossless point is not statistically significant.** Paired per-chunk reap/dom = [1.0332, 0.9868, 1.0112, 1.0212]; one chunk (0.9868) shows pruning *improving* ppl; mean-excess 0.0131 < its own cross-chunk stdev 0.0197 → paired t(3df) ≈ 1.32 < t\_crit 3.18, and the bootstrap CI [0.995–1.028] crosses 1.0. The defensible claim is the *contrast* reap≪rand (rand t≈7.8, CI [1.280–1.455] clear of 1.0), not "1.013× near-lossless."
+<!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json (paired_per_chunk reap/dom [1.0332,0.9868,1.0112,1.0212]); runs/paper_ci_results.json (reap ci95 crosses 1.0) -->
+2. **The pre-registered random threshold FAILED — no post-hoc rescue.** The verdict file literally reads `rand_dom 1.3645x (>=1.5 e >reap) -> FAIL`. The run README relabels this "PARTIAL" and attributes the shortfall to IQ2 redundancy; **we reject that relabeling as HARKing.** The pre-registered criterion was `rand_dom ≥ 1.5×`; the measured 1.365× (CI [1.280–1.455], upper bound below 1.5) **does not meet it — this is a FAIL, full stop.** What *is* defensible is the ordering (rand ≫ reap, non-overlapping CIs); what the threshold miss *does not* license is a claim that 1.5× "would have been met on cleaner data." We record three candidate explanations for why random is less catastrophic here than the 30B-bf16 prior (2.5×) suggested — **as discussion to be tested on held-out K/seed, not as a relaxation of the threshold**: (i) **granularity** — at K50 of E=256 the surviving 128 experts leave more per-token routing redundancy than at the coarser 30B geometry, so a random 50% cut is cushioned; (ii) **shared-expert floor** — the always-on shared/attention path carries load the router cut cannot touch, bounding the damage of *any* expert removal; (iii) **2-bit floor** — at IQ2\_XXS the per-expert precision is already so low that swapping experts costs less relative ppl than at bf16. All three are *hypotheses that predict a lower random-damage ratio*; the honest test is to re-run random at a more aggressive K (e.g. K25) where even IQ2 should degrade, so the control bites, and multi-seed to separate the hypotheses from noise (§7.7). **[PENDING] — a multi-seed / multi-chunk (≥8 chunks, ≥3 seeds) re-eval on identical GPUs is in progress; until it lands, the near-lossless and threshold results stand as N=4, single-run, and the only claim carried forward is the ordinal contrast.**
+<!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json (verdict_preregistrato: "rand_dom 1.3645x ... -> FAIL"); runs/reap/2026-07-05_eval_biasmask/README.md:23-27 (the "PARTIAL"+IQ2 relabel we reject); GAPS_AND_FIXES.md S1/S2/N1 (held-out K, identical-GPU, multi-seed pending) -->
 3. **reap/gen was never run** — the domain-vs-general cost of REAP on the target is unknown; only random/gen (2.11×) is measured. We cannot claim REAP preserves the general.
 <!-- src: runs/reap/2026-07-05_eval_biasmask/README.md (reap/gen not executed); eval_summary.json (only rand/gen present) -->
 
@@ -248,14 +248,14 @@ Every number carries its source. Sections marked **[PENDING]** await the multi-d
 
 ### 6.2 REAP domain pruning (paired, N=4 chunks)
 
-| Config | ppl | ratio vs full | paired per-chunk | source |
+| Config | ppl | ratio vs full [boot 95% CI] | paired per-chunk | source |
 |---|---|---|---|---|
 | full/dom | 3.8111 | 1.000 | — | <!-- src: runs/reap/2026-07-05_eval_biasmask/eval_summary.json --> |
-| reap/dom | 3.8604 | **1.0129×** | [1.033, 0.987, 1.011, 1.021] | <!-- src: eval_summary.json paired_per_chunk --> |
-| rand/dom | 5.2001 | 1.3645× (**pre-reg FAIL**) | [1.265, 1.295, 1.505, 1.406] | <!-- src: eval_summary.json verdict_preregistrato -->|
-| rand/gen | 11.3014 | 2.1149× | [2.126, 2.104] | <!-- src: eval_summary.json --> |
+| reap/dom | 3.8604 | **1.013× [0.995–1.028]** (CI crosses 1.0) | [1.033, 0.987, 1.011, 1.021] | <!-- src: eval_summary.json paired_per_chunk; runs/paper_ci_results.json --> |
+| rand/dom | 5.2001 | 1.365× [1.280–1.455] (**pre-reg FAIL: <1.5×**) | [1.265, 1.295, 1.505, 1.406] | <!-- src: eval_summary.json verdict_preregistrato; runs/paper_ci_results.json -->|
+| rand/gen | 11.3014 | 2.115× [2.104–2.126] (N=2, CI insuff.) | [2.126, 2.104] | <!-- src: eval_summary.json; runs/paper_ci_results.json (n=2 flagged) --> |
 
-Statistics: reap/dom paired t(3df)≈1.32 (**not significant**); rand/dom t≈7.8 (significant). Defensible claim = ordinal contrast only. reap/gen **missing**.
+Statistics (bootstrap 10k, seed 42, `scripts/paper_ci.py`): reap/dom paired t(3df)≈1.32 (**not significant**; CI [0.995–1.028] crosses 1.0); rand/dom t≈7.8 (significant; CI [1.280–1.455] clear of 1.0 but below the 1.5× pre-reg threshold → FAIL). rand/gen CI is at N=2 chunks and flagged insufficient. Defensible claim = ordinal contrast reap ≪ rand only. reap/gen **missing**.
 
 ### 6.3 Speculative decoding
 
@@ -322,8 +322,8 @@ Both the axis-flip ("temporal signal strong / L→L+1 dead") *and* the 49% union
 
 ### 7.7 REAP: framing and downgrades
 
-The bias-mask actuator is a property of the ds4/DeepSeek router (mask ≡ logical pruning), not an invention — REAP/NAEE/EASY-EP define pruning as removal from the active set, indifferent to physical vs masked. The real delta versus REAP is **g-only without ‖f‖**, which is a *downgrade* (retention 0.762@K64, not 1.0), forced by the trace, validated only on the *proxy* (Qwen-30B). The pre-registered random threshold **failed** (§5.3). reap/gen is missing. **Fix: sell the engineering (runtime bias-mask on a stock 2-bit engine) as a systems contribution; declare g-only as a lower-bound approximation, not a better criterion; run reap/gen; re-run random at more aggressive K (K25) where even IQ2 degrades, so the control bites.**
-<!-- src: docs/REAP_DS4_design.md:48-60; runs/reap/gonly_vs_eq9_30b.json (retention@64 0.7619); runs/reap/2026-07-05_eval_biasmask/eval_summary.json (FAIL) -->
+The bias-mask actuator is a property of the ds4/DeepSeek router (mask ≡ logical pruning), not an invention — REAP/NAEE/EASY-EP define pruning as removal from the active set, indifferent to physical vs masked. The real delta versus REAP is **g-only without ‖f‖**, which is a *downgrade* (retention 0.762@K64, not 1.0), forced by the trace, validated only on the *proxy* (Qwen-30B). The pre-registered random threshold **failed** (`rand_dom 1.365× < 1.5×`, §5.3); we do **not** relabel it "PARTIAL" and we treat the three candidate explanations (granularity, shared-expert floor, 2-bit floor) strictly as **discussion to be tested, never as an ex-post relaxation of the criterion**. The near-lossless point's bootstrap CI [0.995–1.028] crosses 1.0, so only the ordinal contrast survives. reap/gen is missing. **Fix: sell the engineering (runtime bias-mask on a stock 2-bit engine) as a systems contribution; declare g-only as a lower-bound approximation, not a better criterion; run reap/gen; re-run random at more aggressive K (K25) where even IQ2 degrades, so the control bites; multi-seed/multi-chunk re-eval [PENDING].**
+<!-- src: docs/REAP_DS4_design.md:48-60; runs/reap/gonly_vs_eq9_30b.json (retention@64 0.7619); runs/reap/2026-07-05_eval_biasmask/eval_summary.json (FAIL); runs/paper_ci_results.json (reap ci crosses 1.0) -->
 
 ### 7.8 The most novel piece (union-IO term) is arithmetic, not a measured gain
 

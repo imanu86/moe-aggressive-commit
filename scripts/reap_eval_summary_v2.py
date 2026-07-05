@@ -111,7 +111,8 @@ def main():
     # dose-response
     for corpus in corpora:
         row = {}
-        for kname, cfg in (("K25", "reap_k25"), ("K50", "reap_k50"), ("K70", "reap_k70")):
+        for kname, cfg in (("K25", "reap_k25"), ("K50", "reap_k50"),
+                           ("K67", "reap_k67"), ("K70", "reap_k70")):
             p = res["paired"].get(f"{cfg}/{corpus}")
             if p:
                 row[kname] = {"geomean": p["geomean"], "ci95": p["ci95"]}

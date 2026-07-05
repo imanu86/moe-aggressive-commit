@@ -12,11 +12,12 @@
 - `47ba91e docs: refresh spex handoff checkpoint`
 - `5d57e07 chore(ds4): add stage0 baseline runner`
 - `cdeaa71 chore(ds4): add selected upload event patch`
-- nuovo checkpoint in corso: Stage 1 L+1 prefetch scaffold + smoke logs
+- `2846ff6 chore(ds4): add stage1 prefetch scaffold`
+- nuovo checkpoint in corso: Stage 2 Markov `.spex` loader + synthetic smoke
 
 **Sorgente ds4 reale:** WSL `/root/ds4`, upstream `github.com/antirez/ds4`, base `80ebbc3`.
 Branch locale attivo: `codex/spex-stage0`, commit nostro:
-`8c8df19 chore(spex): add stage1 next-layer prefetch`.
+`0d9b8d3 chore(spex): add markov loader prefetch`.
 Nota: ds4 ha artifact non tracciati da build/test (`build_smoke.log`, `ds4-server.prebuild.bak`,
 `tests/cuda_long_context_smoke`). Non cancellarli senza motivo.
 
@@ -69,10 +70,24 @@ come non verificato/confabulato. I numeri vecchi non sono source of truth.
   "stessi expert L -> L+1" non è utile sullo smoke locale e aggiunge copie. Serve collegare il predictor
   SPEX/Markov reale.
 
-**Prossima azione obbligatoria:** innestare loader `.spex` Markov nel nuovo hook Stage 1b e misurarlo sul
-setup DwarfStar reale (`/root/models/ds4-2bit.gguf`, `--cuda --ssd-streaming`, stesso profilo cache).
-Stock/RunPod va bene per build, regression e plumbing, ma non per claim di velocità DwarfStar.
-Solo dopo ha senso passare a hidden live.
+**Stadio 2a reale (Codex 2026-07-05):**
+- Patch ds4 registrata in `patches/ds4/0004-spex-markov-loader-prefetch.patch`.
+- La patch aggiunge loader `.spex` Markov in `ds4.c`, dietro `DS4_SPEX_FILE` / `DS4_SPEX_PATH` /
+  `DS4_SPEX_MARKOV_FILE`.
+- Valida shape contro il modello caricato (`L=43 E=256` per Flash, `L=61 E=384` per Pro); un file Qwen/DS2Lite
+  viene rifiutato e non ricade più sul fallback L+1.
+- Env runtime: `DS4_SPEX_CAP` (default `DS4_N_EXPERT_USED`) e `DS4_SPEX_TAU` (default `0.5`).
+- Build verificata su WSL RTX 3060: `make cuda CUDA_ARCH=sm_86`.
+- Regression verificata su WSL RTX 3060: `make cuda-regression`.
+- Smoke su `/root/models/ds4-2bit.gguf`: `runs/ds4_stage2_markov_loader_smoke/`.
+  File usato: `/root/ds4_synthetic_flash.spex` sintetico, Flash-shaped. Risultato: loader carica una volta,
+  prefetch `SPEX markov` attivo, generation 0.44 t/s, hit-rate 0.0037. Questo prova plumbing, non predizione.
+
+**Prossima azione obbligatoria:** produrre una trace routing V4-Flash reale e generare il `.spex` Markov con
+`src/msc/spex/spex_loop.py --export-c`. In locale sono presenti trace Q30/Q235/DS2Lite, ma non una trace
+V4-Flash dedicata. Solo con quel file ha senso misurare t/s/miss sul setup DwarfStar reale
+(`/root/models/ds4-2bit.gguf`, `--cuda --ssd-streaming`, stesso profilo cache). Stock/RunPod va bene per
+build, regression e plumbing, ma non per claim di velocità DwarfStar. Solo dopo ha senso passare a hidden live.
 
 **Regola di sicurezza:** ogni misura o claim deve avere diff/build/log/output committato.
 Non fidarsi di report agentici senza artifact verificabili.

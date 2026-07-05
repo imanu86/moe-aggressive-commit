@@ -41,6 +41,15 @@ La tesi è il collo di bottiglia **IO da SSD del 3060**. Su GPU con VRAM grande 
 Più potenza = più lontano dal regime da dimostrare. Per la Strada A la GPU giusta è il
 3060 reale (o 3090 sm_86 solo per acceptance + correttezza union-load).
 
-## Stato budget
-Pod #1 (guasto, terminato): ~$0.35 totali track finora. Saldo $22.54. Tetto autorizzato $1-2.
-Pod #2 `oot30v9rb3ho8a` (3090 fresh, macchina gkckwlfw6fwt) attivo per Strada A.
+## Stato budget / pod (aggiornato 15:15 UTC)
+- Pod #1 `o6ksysllgnpuxk`: GUASTO HARDWARE (alert RunPod) → terminato. Spiega gli
+  `illegal memory access` visti sui run non-streaming.
+- Pod #2 `oot30v9rb3ho8a` (machine gkckwlfw6fwt): rete 10MB/s anche con aria2c x16 →
+  terminato (2h di download non giustificate a $0.22/h).
+- Pod #3 `jr0c4j4484jwab` "dspark-A-candidate2" (machine 0qh6584rg5n2): deployato con
+  `minDownload: 800`; speedtest reale 109MB/s, 251GB RAM → ATTIVO per Strada A.
+- Lezione playbook: sempre `minDownload` nel deploy + speedtest da HF prima del download
+  grosso.
+- Track speso finora ≈ $0.6 (pod1 ~2h + pod2 ~35min + pod3). Saldo account $22.08
+  (drenato anche dai 3 pod REAP, non nostri). Tetto autorizzato $1-2: ancora dentro,
+  margine ridotto — pod B (Strada B Qwen3-4B) solo dopo i numeri di A.

@@ -9,10 +9,13 @@
 `main` resta stabile a `ffc1ca1` (piano SPEX + Fase 1b race). Il branch di lavoro contiene:
 - `1b1e403 feat(spex): export markov params for ds4`
 - `fa48071 chore(ds4): record spex stage0 cuda stats patch`
+- `47ba91e docs: refresh spex handoff checkpoint`
+- `5d57e07 chore(ds4): add stage0 baseline runner`
+- nuovo commit in corso: Stage 1a selected upload event patch + smoke logs
 
 **Sorgente ds4 reale:** WSL `/root/ds4`, upstream `github.com/antirez/ds4`, base `80ebbc3`.
 Branch locale attivo: `codex/spex-stage0`, commit nostro:
-`6776af6 chore(spex): add stage0 cuda stats`.
+`d7bbee6 chore(spex): add selected upload event`.
 Nota: ds4 ha artifact non tracciati da build/test (`build_smoke.log`, `ds4-server.prebuild.bak`,
 `tests/cuda_long_context_smoke`). Non cancellarli senza motivo.
 
@@ -37,18 +40,23 @@ come non verificato/confabulato. I numeri vecchi non sono source of truth.
 - Smoke log: `runs/ds4_spex_stage0_smoke.log`.
 - Smoke stats NON sono baseline paper: prompt corto, cold-ish, solo prova che la strumentazione funziona.
 
-**Prossima azione obbligatoria:** fare una baseline Stage 0 vera e ripetibile prima di Stage 1a:
-- prompt fisso
-- almeno 5 run
-- 256+ token generati
-- cold vs RAM-warm
-- annotare env: `DS4_CUDA_NO_DIRECT_IO`, `DS4_CUDA_KEEP_MODEL_PAGES`, cache expert budget,
-  context, model file, prompt, `.wslconfig`
-- output: tok/s, hit-rate, miss/direct per token, copied MiB, `copy_ms`, `sync_ms`
+**Stadio 1a reale (Codex 2026-07-05):**
+- Patch ds4 registrata in `patches/ds4/0002-spex-selected-upload-event.patch`.
+- La patch aggiunge `DS4_SELECTED_UPLOAD_EVENT=1` (alias `DS4_CUDA_SELECTED_UPLOAD_EVENT=1`).
+- Default invariato: senza flag, il path selected resta sincrono come upstream+0001.
+- Con flag, le copie H2D degli expert selected registrano un CUDA event su `g_stream_selected_upload_stream`;
+  i consumer chiamano `ds4_gpu_wait_selected_upload()` prima del MoE.
+- Build verificata su WSL RTX 3060: `make cuda CUDA_ARCH=sm_86`.
+- Regression verificata su WSL RTX 3060: `make cuda-regression`.
+- Build pulita verificata su RunPod RTX 3090: stock `antirez/ds4` `80ebbc3` + patch `0001` + `0002`,
+  `make cuda CUDA_ARCH=sm_86`, `make cuda-regression`.
+- Runtime smoke vero su `/root/models/ds4-2bit.gguf`: `runs/ds4_selected_upload_event_smoke/`.
+  ON: sync selected 216 / 25.738 ms; OFF: sync selected 9288 / 1491.401 ms. Questo prova plumbing,
+  non ancora una baseline chat.
 
-**Dopo Stage 0:** solo se c'è margine reale, implementare Stadio 1a:
-`DS4_SELECTED_UPLOAD_EVENT=1`, stesso layer, evento CUDA upload→stream0, token identici ON/OFF.
-Poi prefetch L+1 minimo, poi loader `.spex` Markov, poi hidden live.
+**Prossima azione obbligatoria:** implementare il prefetch L+1 minimo sopra Stage 1a, poi misurarlo sul
+setup DwarfStar reale (`/root/models/ds4-2bit.gguf`, `--cuda --ssd-streaming`, stesso profilo cache).
+Solo dopo ha senso innestare loader `.spex` Markov e poi hidden live.
 
 **Regola di sicurezza:** ogni misura o claim deve avere diff/build/log/output committato.
 Non fidarsi di report agentici senza artifact verificabili.

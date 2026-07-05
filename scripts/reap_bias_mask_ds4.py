@@ -9,6 +9,11 @@ Uso:
   python scripts/reap_bias_mask_ds4.py --gguf PATH --maskfile reap_mask_ds4_domain.json \
       --apply reap      # keep-list della mask
   ... --apply random    # keep-list del random_control (stesso K, seed loggato)
+  ... --apply random --random-seed N   # rigenera il random a pari K con seed N
+      (STESSO algoritmo della mask: random.Random(N), rng.sample(range(E), keep_n)
+       in sequenza sui layer potabili in ordine crescente -> seed 0 riproduce
+       bit-exact il random_control della mask; il keep generato viene salvato in
+       <gguf>.random_seedN.json per provenienza)
   ... --restore         # ripristina i bias originali dal backup .biasbak.json
   ... --verify          # confronta i bias su file con la config attesa (nessuna scrittura)
 
@@ -19,9 +24,19 @@ import argparse
 import base64
 import json
 import os
+import random
 import struct
 
 MINUS_INF = struct.pack("<f", -1e9)
+
+
+def regen_random_keep(mask, seed):
+    """Replica reap_saliency_ds4.py: un solo rng, sample per layer in ordine."""
+    keep_n = int(mask["keep_n"])
+    n_expert = int(mask["n_expert"])
+    prunable = sorted(int(l) for l in mask["keep"])
+    rng = random.Random(seed)
+    return {str(l): sorted(rng.sample(range(n_expert), keep_n)) for l in prunable}
 
 
 def read_str(f):
@@ -86,6 +101,8 @@ def main():
     ap.add_argument("--gguf", required=True)
     ap.add_argument("--maskfile")
     ap.add_argument("--apply", choices=["reap", "random"])
+    ap.add_argument("--random-seed", type=int, default=None,
+                    help="rigenera il random keep con questo seed (default: usa random_control della mask)")
     ap.add_argument("--restore", action="store_true")
     ap.add_argument("--verify", action="store_true")
     a = ap.parse_args()
@@ -105,8 +122,21 @@ def main():
         return
 
     mask = json.load(open(a.maskfile))
-    keep_src = mask["keep"] if a.apply == "reap" or a.verify else \
-        mask["random_control"]["keep"]
+
+    def random_keep():
+        if a.random_seed is None:
+            return mask["random_control"]["keep"]
+        keep = regen_random_keep(mask, a.random_seed)
+        side = a.gguf + f".random_seed{a.random_seed}.json"
+        json.dump({"seed": a.random_seed, "keep_n": mask["keep_n"],
+                   "keep": keep}, open(side, "w"))
+        print(f"random keep seed={a.random_seed} salvato in {side}")
+        if a.random_seed == int(mask["random_control"]["seed"]):
+            assert keep == {k: list(v) for k, v in mask["random_control"]["keep"].items()}, \
+                "regen seed non riproduce il random_control della mask!"
+        return keep
+
+    keep_src = mask["keep"] if a.apply == "reap" or a.verify else random_keep()
     if a.verify and not a.apply:
         raise SystemExit("--verify richiede anche --apply reap|random per sapere la config attesa")
 
@@ -120,7 +150,6 @@ def main():
                                    "data": base64.b64encode(f.read(4 * n)).decode()}
             json.dump(bak, open(bak_path, "w"))
             print(f"backup bias -> {bak_path}")
-        keep_src = mask["keep"] if a.apply == "reap" else mask["random_control"]["keep"]
         n_written = 0
         with open(a.gguf, "r+b") as f:
             for l_str, kept in keep_src.items():

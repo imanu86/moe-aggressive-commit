@@ -24,6 +24,10 @@ TRACE_EXPLAIN = {7, 45, 91, 133}
 USED_BY_TRACE = TRACE_EXTRACT | TRACE_EXPLAIN
 DOM_CHUNKS, DOM_CHARS = 4, 2800
 GEN_CHUNKS, GEN_CHARS = 2, 2900
+# v2 (mandato paper-grade): >=10 chunk appaiati per bootstrap CI
+V2_DOM_CHUNKS, V2_DOM_CHARS = 10, 2200
+V2_GEN_CHUNKS, V2_GEN_CHARS = 10, 2200
+V2_WIKI_ARTICLES = 40
 
 
 def sha(t):
@@ -48,7 +52,17 @@ def pack(pieces, n_chunks, chars_per_chunk):
 
 
 def main():
-    os.makedirs(BASE, exist_ok=True)
+    import argparse
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--v2", action="store_true",
+                    help="corpora v2: 10+10 chunk per bootstrap CI (mandato paper-grade)")
+    a = ap.parse_args()
+    base = BASE.replace("_eval_biasmask", "_eval_biasmask_v2") if a.v2 else BASE
+    dom_chunks, dom_chars = (V2_DOM_CHUNKS, V2_DOM_CHARS) if a.v2 else (DOM_CHUNKS, DOM_CHARS)
+    gen_chunks, gen_chars = (V2_GEN_CHUNKS, V2_GEN_CHARS) if a.v2 else (GEN_CHUNKS, GEN_CHARS)
+    n_wiki = V2_WIKI_ARTICLES if a.v2 else 12
+
+    os.makedirs(base, exist_ok=True)
     manifest = {"dom": [], "gen": [],
                 "nota": "dom: raft_eval item DISGIUNTI dalla trace (anti-overfit mask); "
                         "gen: wikimedia/wikipedia 20231101.it come build_general_it.py"}
@@ -60,9 +74,9 @@ def main():
             continue
         m = r["messages"]
         pieces.append((i, m[1]["content"] + "\n" + m[2]["content"]))
-    for ci, (text, ids) in enumerate(pack(pieces, DOM_CHUNKS, DOM_CHARS)):
+    for ci, (text, ids) in enumerate(pack(pieces, dom_chunks, dom_chars)):
         name = f"dom_chunk{ci}.txt"
-        with open(os.path.join(BASE, name), "w", encoding="utf-8", newline="\n") as f:
+        with open(os.path.join(base, name), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         manifest["dom"].append({"file": name, "raft_indices": ids,
                                 "chars": len(text), "sha256": sha(text)})
@@ -76,21 +90,21 @@ def main():
         if len(t) < 600:
             continue
         wiki.append((r.get("title", f"art{j}"), t[:3000]))
-        if len(wiki) >= 12:
+        if len(wiki) >= n_wiki:
             break
-    for ci, (text, titles) in enumerate(pack(wiki, GEN_CHUNKS, GEN_CHARS)):
+    for ci, (text, titles) in enumerate(pack(wiki, gen_chunks, gen_chars)):
         name = f"gen_chunk{ci}.txt"
-        with open(os.path.join(BASE, name), "w", encoding="utf-8", newline="\n") as f:
+        with open(os.path.join(base, name), "w", encoding="utf-8", newline="\n") as f:
             f.write(text)
         manifest["gen"].append({"file": name, "wiki_titles": titles,
                                 "chars": len(text), "sha256": sha(text)})
 
-    with open(os.path.join(BASE, "corpus_manifest.json"), "w") as f:
+    with open(os.path.join(base, "corpus_manifest.json"), "w") as f:
         json.dump(manifest, f, indent=1, ensure_ascii=False)
     for k in ("dom", "gen"):
         tot = sum(c["chars"] for c in manifest[k])
         print(f"{k}: {len(manifest[k])} chunk, {tot} char (~{tot // 3.6:.0f} tok stimati)")
-    print("manifest:", os.path.join(BASE, "corpus_manifest.json"))
+    print("manifest:", os.path.join(base, "corpus_manifest.json"))
 
 
 if __name__ == "__main__":

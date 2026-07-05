@@ -4,12 +4,19 @@
 > Tutti i riferimenti file:riga sono su **`antirez/ds4` commit `80ebbc3`** (verificati con
 > `git show 80ebbc3:<file>` nel repo WSL `/root/ds4`). Nessuna riga di codice modificata.
 
+> ⚠️ **INQUADRAMENTO (correzione brief 2026-07-05, commit `563d7d3`): tutto ciò che questo
+> RECON mappa è il BASELINE del paper, non DSpark.** Lo spec-dec `--mtp` di ds4 = l'"MTP-1"
+> che il paper usa come production baseline e batte del 60-85%. Il drafter ricorsivo MTP è
+> AUTOREGRESSIVO puro (T_draft ∝ profondità), non il semi-AR addestrato di DSpark. La mappa
+> resta il fondamento della **Strada A**: tenere questo drafter, sostituire N/margine fissi
+> con la verifica confidence-scheduled.
+
 ## TL;DR (3 fatti che decidono il track)
 
-1. **ds4 ha GIÀ lo speculative decoding MTP completo**: drafter ricorsivo, tre verifier
-   (batch layer-major, exact N=2, sequential fallback), gate di margine, strumentazione di
-   acceptance. Non c'è niente da riscrivere: `ds4_session_eval_speculative_argmax` è a
-   `ds4.c:27167`.
+1. **ds4 ha GIÀ lo speculative decoding del baseline MTP-1 completo**: drafter ricorsivo,
+   tre verifier (batch layer-major, exact N=2, sequential fallback), gate di margine,
+   strumentazione di acceptance. Non c'è niente da riscrivere: `ds4_session_eval_speculative_argmax`
+   è a `ds4.c:27167`. (È il BASELINE del paper, non DSpark — vedi inquadramento sopra.)
 2. **MA è esplicitamente bloccato nel regime streaming**: `ds4.c:25685`
    `"ds4: --ssd-streaming is not compatible with --mtp yet"` → engine si rifiuta di partire.
    Il 49% di risparmio IO che motiva questo track vive ESATTAMENTE nella combinazione vietata.

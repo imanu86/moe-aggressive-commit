@@ -2,7 +2,7 @@
   "track": "dspark",
   "test": "mtp_acceptance_pod3090",
   "date": "2026-07-05",
-  "purpose": "Misurare l'acceptance-rate dell'MTP nativo di ds4 (spec-dec upstream, ds4@80ebbc3, STOCK senza patch) su RTX 3090 community. L'acceptance e' proprieta' del modello e trasferisce al 3060; i t/s del pod NON trasferiscono (modello in RAM/page-cache, zero-copy PCIe, regime diverso dallo streaming SSD del 3060) e non vanno mai presentati come velocita' 3060.",
+  "purpose": "Misurare l'acceptance-rate del BASELINE MTP-1 (lo spec-dec --mtp nativo di ds4@80ebbc3 = il production baseline del paper DSpark, NON DSpark) su RTX 3090 community. Doppio uso: (1) riferimento baseline richiesto dal brief; (2) dati di calibrazione per la Strada A (drafter invariato -> l'acceptance e i margini misurati qui SONO quelli che la confidence calibrata deve predire). L'acceptance e' proprieta' del modello e trasferisce al 3060; i t/s del pod NON trasferiscono (modello in RAM/page-cache, zero-copy PCIe, regime diverso dallo streaming SSD del 3060) e non vanno mai presentati come velocita' 3060.",
   "pod": {
     "gpu": "NVIDIA GeForce RTX 3090 24GB (sm_86, come il 3060)",
     "cloud": "COMMUNITY",

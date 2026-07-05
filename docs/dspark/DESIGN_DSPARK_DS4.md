@@ -4,15 +4,21 @@
 > file:riga @ `80ebbc3`, tutte le citazioni qui sotto sono allo stesso pin).
 > Paper: `docs/references/DSpark_paper.txt`. Stato: DESIGN — nessun codice ancora.
 
-## 0. Tesi
+## 0. Tesi (aggiornata dopo la correzione del brief, commit `563d7d3`)
 
-ds4 ha già il 70% della meccanica (drafter MTP ricorsivo, verifier batch layer-major,
-partial-accept, probe). Quello che manca è il *cervello* di DSpark — quanto draftare e
-quanto verificare, deciso da probabilità calibrate e da un modello di costo hardware — e
-lo *sblocco streaming* che trasforma il verifier batch in un risparmio IO (49% a blocco-8).
-Il design quindi NON introduce un nuovo drafter (niente DFlash/testa Markov: l'MTP di
-DeepSeek-V4 è già semi-autoregressivo per costruzione, condiziona ogni draft sul
-precedente), ma porta su ds4 i tre meccanismi di sistema del paper.
+**Ciò che ds4 ha oggi con `--mtp` È il baseline MTP-1 del paper** (quello battuto del
+60-85%), non DSpark. DSpark vero = (1) drafter semi-AR ADDESTRATO (backbone parallelo +
+testa sequenziale, checkpoint open-sourced + repo DeepSpec) e (2) verifica
+confidence-scheduled. Questo design implementa la **Strada A** del brief: tenere l'MTP
+nativo come drafter (autoregressivo ricorsivo: T_draft cresce linearmente con la
+profondità — il contrario del backbone parallelo del paper, e il costo va modellato così
+nella cost-table) e costruirci sopra la componente (2): confidence per-posizione
+calibrata via STS + scheduler hardware-aware. La **Strada B** (portare i checkpoint
+DSpark in formato ds4/GGUF) resta per dopo, se la A non basta.
+Il *twist paper-worthy* nostro: nel regime streaming-MoE il costo di verifica si
+ammortizza col blocco (−49% IO expert a k=8, misurato) → il termine expert-IO entra nel
+profilo di throughput dello scheduler e sposta la lunghezza ottima del draft più in alto
+che nel paper denso (§2.2).
 
 ## 1. Gap-analysis puntuale
 
@@ -23,6 +29,7 @@ precedente), ma porta su ds4 i tre meccanismi di sistema del paper.
 | Scheduler hardware-aware (Alg. 1): massimizza Θ = τ·SPS(B) con curva di costo profilata | Profondità FISSA `--mtp-draft` (default 1, "production depth is two", `ds4.c:27441`); margin gate on/off | Nessuna nozione di costo del passo di verifica; nessun adattamento per-token/dominio |
 | Verifica batch con blocco lungo | C'è (`verify_suffix_tops`, 16 righe max via `spec_logits`, `ds4.c:11169`) | Solo greedy match; e in streaming è VIETATA (`ds4.c:25685`) |
 | Rejection sampling lossless a T>0 | Solo greedy (`ds4_cli.c:483`) | Fuori scope per ora: il regime 3060 usa greedy |
+| Drafter semi-AR addestrato (backbone parallelo + testa sequenziale, T_draft ~ O(1) nel blocco) | MTP-1 ricorsivo autoregressivo: T_draft ∝ profondità | = Strada B (checkpoint DSpark→GGUF, repo DeepSpec); NON in questo design. La Strada A assorbe il costo lineare del draft nella cost-table dello scheduler |
 
 ## 2. Adattamento dei tre meccanismi alla realtà ds4
 
@@ -112,8 +119,10 @@ violazione non-anticipating).
 - **Fase C — sblocco streaming**: innesti 5-6; misura su 3060 reale (regime DwarfStar,
   `--cuda --ssd-streaming`, coordinandosi per la GPU contesa): byte SSD/token accettato e
   t/s vs baseline streaming senza MTP. Qui vive il claim 49% → obiettivo ~2× sul collo IO.
-- **Fase D (opzionale)**: confidence da softmax-prob; head allenata via DeepSpec se
-  arrivano checkpoint compatibili.
+- **Fase D (= Strada B del brief, solo se la A non basta)**: portare il drafter DSpark
+  vero (checkpoint open-sourced V4-Flash + repo DeepSpec) in formato ds4/GGUF: backbone
+  parallelo + testa Markov + confidence head addestrata. Progetto a sé (conversione
+  formato, kernel per il blocco parallelo); da valutare coi numeri della Fase B/C in mano.
 
 ## 4. Interazione col track SPEX (solo interfaccia, non toccare)
 Complementari, stessa cache expert: SPEX predice gli expert del token FUTURO (prefetch

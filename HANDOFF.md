@@ -13,11 +13,12 @@
 - `5d57e07 chore(ds4): add stage0 baseline runner`
 - `cdeaa71 chore(ds4): add selected upload event patch`
 - `2846ff6 chore(ds4): add stage1 prefetch scaffold`
-- nuovo checkpoint in corso: Stage 2 Markov `.spex` loader + synthetic smoke
+- `9a8755f chore(ds4): add markov spex loader patch`
+- nuovo checkpoint in corso: DS4 routing trace capture + nearby-token finding
 
 **Sorgente ds4 reale:** WSL `/root/ds4`, upstream `github.com/antirez/ds4`, base `80ebbc3`.
 Branch locale attivo: `codex/spex-stage0`, commit nostro:
-`0d9b8d3 chore(spex): add markov loader prefetch`.
+`bee9eb3 chore(spex): add routing trace capture`.
 Nota: ds4 ha artifact non tracciati da build/test (`build_smoke.log`, `ds4-server.prebuild.bak`,
 `tests/cuda_long_context_smoke`). Non cancellarli senza motivo.
 
@@ -83,11 +84,23 @@ come non verificato/confabulato. I numeri vecchi non sono source of truth.
   File usato: `/root/ds4_synthetic_flash.spex` sintetico, Flash-shaped. Risultato: loader carica una volta,
   prefetch `SPEX markov` attivo, generation 0.44 t/s, hit-rate 0.0037. Questo prova plumbing, non predizione.
 
-**Prossima azione obbligatoria:** produrre una trace routing V4-Flash reale e generare il `.spex` Markov con
-`src/msc/spex/spex_loop.py --export-c`. In locale sono presenti trace Q30/Q235/DS2Lite, ma non una trace
-V4-Flash dedicata. Solo con quel file ha senso misurare t/s/miss sul setup DwarfStar reale
-(`/root/models/ds4-2bit.gguf`, `--cuda --ssd-streaming`, stesso profilo cache). Stock/RunPod va bene per
-build, regression e plumbing, ma non per claim di velocità DwarfStar. Solo dopo ha senso passare a hidden live.
+**Trace routing DS4 reale (Codex 2026-07-05):**
+- Patch ds4 in corso: `patches/ds4/0005-spex-routing-trace-capture.patch`.
+- Env nuovo: `DS4_SPEX_TRACE_ROUTING=/path/trace.csv`.
+- Formato CSV: `pos,layer,n,e0,e1,e2,e3,e4,e5`, solo decode/logits, zero overhead se env assente.
+- Build verificata su WSL RTX 3060: `make cuda CUDA_ARCH=sm_86`.
+- Regression verificata su WSL RTX 3060: `make cuda-regression`.
+- Run reale su `/root/models/ds4-2bit.gguf`: `runs/ds4_routing_trace_smoke/`, prompt `Conta da 1 a 200:`,
+  65 token decode, 40 layer routed, 2600 righe dati.
+- Finding chiave DS4 Flash: stesso-token layer precedente è quasi nullo (`~0.025` recall top6), mentre
+  token recenti stesso layer sono molto informativi: window4 top6/top12 `0.342/0.507`, window8 top6/top12
+  `0.366/0.550`. Quindi il prossimo predictor live deve usare memoria temporale per layer, non solo L->L+1.
+
+**Prossima azione obbligatoria:** implementare una variante prefetch "nearby temporal" nel nuovo hook:
+per ogni layer, mantieni una piccola finestra degli expert selected dei token recenti e prefetcha top-N per
+lo stesso layer al token successivo. Solo dopo ha senso rilanciare benchmark lunghi e, se serve, parallelizzare
+su pod economici. Stock/RunPod va bene per build, regression e plumbing, ma i claim restano sul setup
+DwarfStar reale (`/root/models/ds4-2bit.gguf`, `--cuda --ssd-streaming`, stesso profilo cache).
 
 **Regola di sicurezza:** ogni misura o claim deve avere diff/build/log/output committato.
 Non fidarsi di report agentici senza artifact verificabili.

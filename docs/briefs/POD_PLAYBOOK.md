@@ -50,3 +50,14 @@ make cuda CUDA_ARCH=sm_86
 ## 5. Sicurezza
 - MAI stampare/committare: RunPod key, token HF, chiavi ssh. Se un tool li logga, redigi prima del commit.
 - Ricorda: la key RunPod è segnata "da ruotare" — usala ma non peggiorare l'esposizione.
+
+## 6. Lezioni operative (dai pod già fatti — track REAP 2026-07-05)
+- **Gate-check CUDA APPENA dentro, PRIMA di scaricare il modello**: `nvidia-smi && nvcc --version` +
+  un micro-kernel di prova. Una macchina con CUDA rotto a livello container esiste e RunPod te la
+  RIASSEGNA a ogni deploy con gli stessi filtri → per uscirne, cambia i filtri (es. alza `minVcpuCount`).
+- **Determinismo: greedy temp-0 su ds4-CUDA NON è bit-riproducibile** (repeat dello stesso prompt:
+  1933/2720 righe di routing diverse). Le trace sono CAMPIONI della distribuzione di decode: robustezza
+  via split-half/statistica, MAI via diff bit-exact. Vale anche per i test di correttezza ON/OFF.
+- **Profiler upstream (`--expert-profile`/`DS4_EXPERT_HOTLIST`) è Metal-only**: su CUDA non si attiva.
+  Non contarci per cross-check.
+- Invariante sanity per trace con pesi: somma dei 6 gate-weights per riga ≈ 1.5 (`expert_weights_scale` Flash).

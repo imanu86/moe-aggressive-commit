@@ -58,6 +58,11 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
       `ds4_gpu_stream_expert_cache_prepare_selected_batch` (ds4_cuda.cu:3176), invocato dal
       path batch streaming (ds4.c:18938). Il verifier MTP usa lo stesso encode_layer_batch
       → union-load "gratis" una volta sbloccato MTP+streaming. Dettagli nel RECON §1.7.
-- [ ] misura acceptance/t-s su pod 3090 (DS4_MTP_PROBE + DS4_MTP_CONF_LOG, non-streaming;
-      acceptance trasferisce al 3060, t/s NO)
-- [ ] design DSpark (confidence+STS+scheduler) — innesti candidati già in RECON §2
+- [~] misura acceptance/t-s su pod 3090 IN CORSO (2026-07-05): pod `o6ksysllgnpuxk`
+      $0.22/h deployato, protocollo+script in `runs/dspark/20260705_mtp_acceptance_pod3090/`
+      (DS4_MTP_PROBE + CONF_LOG, stock 80ebbc3, non-streaming; acceptance trasferisce
+      al 3060, t/s NO)
+- [x] design DSpark (confidence+STS+scheduler) → `docs/dspark/DESIGN_DSPARK_DS4.md`
+      (2026-07-05): confidence-lite dal margine MTP calibrata via STS, scheduler Alg.1
+      ridotto a R=1 con cost-table IO-aware, sblocco streaming = guardia ds4.c:25685 +
+      stream-map del verifier. Fasi A(misura)/B(scheduler)/C(streaming)/D(head).

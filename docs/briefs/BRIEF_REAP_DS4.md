@@ -40,7 +40,19 @@ un modello ~50GB **sta INTERAMENTE caldo in RAM** = SSD eliminato del tutto per 
 - Commit piccoli sul tuo branch, push frequente, aggiorna questo brief con lo stato in coda.
 
 ## Stato
-- [ ] design doc
-- [ ] patch trace weights
-- [ ] saliency + mask
-- [ ] piano eval
+- [x] design doc — `docs/REAP_DS4_design.md` (2026-07-05). Chiavi: bias-mask Stage A (eval senza
+  surgery su runtime stock), hash layer 0-2 esclusi, saliency g-only validata offline
+  (`runs/reap/gonly_vs_eq9_30b.json`: retention@K64 0.902), K50 → ~47 GiB
+  (`runs/reap/gguf_flash_expert_geometry.txt`).
+- [x] patch trace weights — `patches/ds4/0006-spex-routing-trace-weights.patch`
+  (`DS4_SPEX_TRACE_ROUTING_WEIGHTS=1` → colonne w0..w5). Build+regression OK su pod 3090
+  sm_86 (`runs/reap/2026-07-05_trace_dominio/meta.json`); validazione: somma pesi/riga ≈ 1.5.
+- [x] saliency + mask — trace dominio 3155 token decode su pod 3090 (~$0.3, pod terminato
+  con verifica) → `runs/reap/reap_mask_ds4_domain.json` (g-only conditional mean, K50,
+  keep 128/256 su 40 layer, random control embedded, stima **46.98 GiB**). Stabilità
+  split-half 0.83 (`runs/reap/mask_stability_splithalf.json`). Findings: greedy CUDA non
+  bit-riproducibile; profiler upstream Metal-only (niente cross-check su CUDA).
+- [x] piano eval — `docs/REAP_DS4_eval_plan.md`: Stage A bias-mask
+  (tool: `scripts/reap_bias_mask_ds4.py`), ppl `--perplexity-file` dom+gen 30k tok,
+  full/reap_k50/rand_k50 dalla stessa mask, criteri pre-registrati, V0 mechanism-check.
+  Field-accuracy N=50/152 = fase 2 su ok utente (fuori budget trace).

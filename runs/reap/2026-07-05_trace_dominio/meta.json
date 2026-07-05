@@ -1,0 +1,52 @@
+{
+  "test": "trace routing dominio Segnali con gate-weights (patch 0006)",
+  "date_utc": "2026-07-05",
+  "track": "reap/ds4-domain-prune",
+  "pod": {
+    "provider": "RunPod community",
+    "pod_id": "hx72m7ee7t0egq",
+    "machine_id": "ufclxexlptjl",
+    "gpu": "NVIDIA GeForce RTX 3090 24GB (sm_86)",
+    "vcpu": 128,
+    "ram_gb": 251,
+    "container_disk_gb": 130,
+    "cost_per_hr_usd": 0.22,
+    "image": "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
+    "terminato": "2026-07-05 ~14:05Z, verificato myself.pods = solo pod DSpark (altro track)",
+    "note_pod_precedente": "primo pod ljbns4jn95lgr2 (machine q0nrurbibmwi) TERMINATO subito: CUDA rotto a livello container (/dev/nvidia1 senza nvidia0, torch.cuda.is_available()=False, cudaSetDevice 'unknown error'); RunPod ha riassegnato la stessa macchina 3 volte -> esclusa con minVcpuCount 24. LEZIONE PLAYBOOK: gate-check CUDA (torch) PRIMA di scaricare il modello."
+  },
+  "costi": {
+    "balance_prima_usd": 23.1597,
+    "balance_dopo_usd": 22.8018,
+    "delta_finestra_usd": 0.358,
+    "nota_attribuzione": "balance condiviso: nella stessa finestra (~61 min) girava anche il pod DSpark ($0.22/h, ~$0.22). Attribuzione track REAP stimata ~$0.25-0.30: pod rotto ~25min + pod buono ~49min a $0.22/h. Ampiamente dentro il budget $1-2."
+  },
+  "software": {
+    "ds4_base": "80ebbc3 (github.com/antirez/ds4)",
+    "patches": ["0001", "0002", "0003", "0004", "0005", "0006-spex-routing-trace-weights"],
+    "build": "make cuda CUDA_ARCH=sm_86 -j32, exit 0 (build_pod.log nel tgz)",
+    "regression": "make cuda-regression CUDA_ARCH=sm_86, exit 0: 'cuda long-context regression: OK' (regression_pod.log nel tgz)",
+    "model": "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
+    "model_bytes": 86720111488,
+    "model_source": "https://huggingface.co/antirez/deepseek-v4-gguf (byte-size identico al daily-driver locale D:/models/ds4/)"
+  },
+  "metodo": {
+    "cmdline_template": "./ds4 -m /root/models/ds4-2bit.gguf --cuda --ssd-streaming -c 4096 --nothink --temp 0 -n {320|512} --prompt-file /root/prompts/pNN_*.txt",
+    "env": "DS4_SPEX_TRACE_ROUTING=trace_pNN.csv DS4_SPEX_TRACE_ROUTING_WEIGHTS=1 DS4_EXPERT_PROFILE=... DS4_EXPERT_HOTLIST=... DS4_SPEX_STATS=1",
+    "warmup": "1 run -n 8 SCARTATA; usata solo per validare le colonne pesi: somma dei 6 pesi per riga = 1.4999 ~ expert_weight_scale 1.5, zero nan",
+    "prompts": "20 (16 extract -n 320, fermati a EOS naturale ~58-78 tok; 4 explain -n 512 pieni) da raft_eval.jsonl — vedi prompts_manifest.json (testi KB non committati, sha256 nel manifest)",
+    "stato_cache": "warm dopo warm-up (RAM pod 251GB > file 80.76GiB: modello interamente in page cache)",
+    "velocita_osservata_NON_trasferibile": "prefill 24.23 t/s, generation 1.52 t/s (gen_p00_extract.log) — regime RAM-hot 3090, NON presentare come velocita' 3060 (playbook §4.3)"
+  },
+  "risultati": {
+    "durata_run": "13:21:27Z -> 14:02:48Z (~41 min, run_traces.log)",
+    "trace_files": 20,
+    "decode_tokens_totali": 3155,
+    "righe_nan_pesi": 0,
+    "layer_routed_osservati": "3..42 (40; i hash layer 0-2 non compaiono nella trace, come atteso)",
+    "determinismo": "DETERMINISM_DIFF: repeat greedy di p00 diverge (1933/2720 righe con expert-ID diversi) — non-determinismo CUDA run-to-run su quasi-pareggi argmax. La saliency e' un aggregato campionario: robustezza documentata con split-half (mask_stability_splithalf.json: drop-set overlap medio 0.8295, min 0.7578)",
+    "profiler_upstream": "DS4_EXPERT_PROFILE/DS4_EXPERT_HOTLIST NON si attivano su build CUDA (nessun file, nessuna riga 'profiler active' nei log): il profiler e' davvero Metal-only (rischio 4 del design CONFERMATO). Cross-check indipendente non disponibile; validazione interna: somma pesi = 1.5 per riga, 0 nan.",
+    "mask": "runs/reap/reap_mask_ds4_domain.json — keep 128/256 su 40 layer, cnt0 medio 34.2/layer (min 13, max 59), freq-vs-gonly bottom128 overlap medio 0.735, stima file potato 46.98 GiB"
+  },
+  "artefatti": "trace_dominio.tgz (22 csv + profile/gen log + build/regression/run log); estratto in trace/ (gitignored, il tgz e' la fonte committata)"
+}

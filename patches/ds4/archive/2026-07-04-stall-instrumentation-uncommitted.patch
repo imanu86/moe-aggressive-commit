@@ -1,0 +1,135 @@
+diff --git a/ds4_cuda.cu b/ds4_cuda.cu
+index 188b341..e9c9884 100644
+--- a/ds4_cuda.cu
++++ b/ds4_cuda.cu
+@@ -7,6 +7,7 @@
+ #include <stdint.h>
+ #include <errno.h>
+ #include <limits.h>
++#include <signal.h>
+ #include <math.h>
+ #include <fcntl.h>
+ #include <stdio.h>
+@@ -221,6 +222,51 @@ static cudaEvent_t g_stream_selected_stage_event[4];
+ static uint64_t g_stream_selected_stage_bytes;
+ static cudaStream_t g_stream_selected_upload_stream;
+ 
++/* --- SPEX STADIO 0 instrumentation (env-gated, zero behavior change) --- */
++/* Enabled once at startup via DS4_SPEX_STATS. When off, the hot-path timer and
++ * counters are fully skipped (single branch on a static flag). Only ever
++ * increments counters / accumulates wall time; never alters control flow. */
++static int g_spex_stats_enabled = 0;              /* read once in ds4_gpu_init */
++static struct {
++    unsigned long long hit;                        /* expert served from global cache */
++    unsigned long long miss;                       /* on-demand load into a cache slot */
++    unsigned long long direct;                     /* on-demand load bypassing cache   */
++    unsigned long long stall_streamed_calls;       /* # of blocking streamed loads timed */
++    double             stall_sec;                  /* wall time inside the blocking
++                                                      on-demand streamed copy path      */
++} g_spex_stat;
++
++static inline double spex_now_sec(void) {
++    struct timespec ts;
++    clock_gettime(CLOCK_MONOTONIC, &ts);
++    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
++}
++
++static void spex_stats_dump(void) {
++    unsigned long long h = g_spex_stat.hit;
++    unsigned long long m = g_spex_stat.miss;
++    unsigned long long d = g_spex_stat.direct;
++    unsigned long long tot = h + m + d;
++    unsigned long long md = m + d;
++    double hit_rate = tot ? (double)h / (double)tot : 0.0;
++    double stall_ms_per_load = g_spex_stat.stall_streamed_calls
++        ? (g_spex_stat.stall_sec * 1000.0) / (double)g_spex_stat.stall_streamed_calls
++        : 0.0;
++    fprintf(stderr,
++            "[SPEX_STATS] hit=%llu miss=%llu direct=%llu total=%llu "
++            "hit_rate=%.4f miss+direct=%llu streamed_loads=%llu "
++            "stall_sec=%.6f stall_ms_per_streamed_load=%.4f\n",
++            h, m, d, tot, hit_rate, md,
++            g_spex_stat.stall_streamed_calls,
++            g_spex_stat.stall_sec, stall_ms_per_load);
++    fflush(stderr);
++}
++
++static void spex_sigusr1_handler(int sig) {
++    (void)sig;
++    spex_stats_dump();
++}
++
+ static int cuda_ok(cudaError_t err, const char *what);
+ static const char *cuda_model_range_ptr_from_fd(
+         const void *model_map,
+@@ -2169,6 +2215,11 @@ static int cuda_model_copy_to_device_streamed(
+                        what ? what : "stream selected expert copy");
+     }
+ 
++    /* SPEX STADIO 0: this is the blocking on-demand streamed load (SSD/mmap ->
++     * staged host buffers -> device, ending in cudaStreamSynchronize below).
++     * Time the whole successful path: it is the exposed stall SPEX would hide. */
++    const double spex_stall_t0 = g_spex_stats_enabled ? spex_now_sec() : 0.0;
++
+     const uint64_t chunk = cuda_model_copy_chunk_bytes();
+     const uint64_t stage_bytes = chunk + (g_model_direct_align > 1 ? g_model_direct_align : 1);
+     if (!cuda_stream_selected_stage_pool_alloc(stage_bytes)) return 0;
+@@ -2243,6 +2294,10 @@ static int cuda_model_copy_to_device_streamed(
+         (void)cudaGetLastError();
+         return 0;
+     }
++    if (g_spex_stats_enabled) {
++        g_spex_stat.stall_sec += spex_now_sec() - spex_stall_t0;
++        g_spex_stat.stall_streamed_calls++;
++    }
+     return 1;
+ }
+ 
+@@ -2253,6 +2308,26 @@ static int cublas_ok(cublasStatus_t st, const char *what) {
+ }
+ 
+ extern "C" int ds4_gpu_init(void) {
++    /* SPEX STADIO 0: one-time setup of env-gated instrumentation. */
++    {
++        static int spex_setup_done = 0;
++        if (!spex_setup_done) {
++            spex_setup_done = 1;
++            g_spex_stats_enabled = (getenv("DS4_SPEX_STATS") != NULL);
++            if (g_spex_stats_enabled) {
++                struct sigaction sa;
++                memset(&sa, 0, sizeof(sa));
++                sa.sa_handler = spex_sigusr1_handler;
++                sigemptyset(&sa.sa_mask);
++                sa.sa_flags = SA_RESTART;
++                (void)sigaction(SIGUSR1, &sa, NULL);
++                (void)atexit(spex_stats_dump);
++                fprintf(stderr,
++                        "[SPEX_STATS] enabled: send SIGUSR1 to dump, "
++                        "also dumped at exit\n");
++            }
++        }
++    }
+     int dev = 0;
+     if (!cuda_ok(cudaSetDevice(dev), "set device")) return 0;
+     cudaDeviceProp prop;
+@@ -2993,10 +3068,12 @@ static int cuda_stream_selected_cache_begin_compact_load(
+                                               down_expert_bytes);
+             if (cache_slot >= 0) {
+                 cache_hits++;
++                if (g_spex_stats_enabled) g_spex_stat.hit++;
+                 expert_cache->slots[(uint32_t)cache_slot].age =
+                     ++expert_cache->tick;
+             } else {
+                 cache_misses++;
++                if (g_spex_stats_enabled) g_spex_stat.miss++;
+                 const uint32_t load_slot =
+                     cuda_stream_expert_cache_lru_slot(expert_cache);
+                 const int append = !expert_cache->slots[load_slot].valid;
+@@ -3044,6 +3121,7 @@ static int cuda_stream_selected_cache_begin_compact_load(
+             const uint64_t up_src = up_offset + expert * gate_expert_bytes;
+             const uint64_t down_src = down_offset + expert * down_expert_bytes;
+             direct_loads++;
++            if (g_spex_stats_enabled) g_spex_stat.direct++;
+             if (!cuda_model_copy_to_device_streamed(g_stream_selected_cache.gate_ptr + gate_dst,
+                                                     model_map,
+                                                     model_size,

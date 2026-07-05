@@ -5,6 +5,20 @@
 > - **DSpark** = paper DeepSeek (`docs/references/DSpark_paper.txt`): speculative decoding a livello di
 >   TOKEN (draft semi-autoregressivo + confidence head + STS + scheduler). QUESTO track.
 > - **SPEX** = prefetch predittivo degli EXPERT (altro track, altro branch). Non toccarlo.
+>
+> ⚠️⚠️ **SECONDA TRAPPOLA TERMINOLOGICA (dal paper, abstract): il `--mtp` di ds4 NON è DSpark — è il
+> BASELINE.** ds4 ha `--mtp FILE --mtp-draft N (default 1) --mtp-margin F` = spec-dec naive con la testa
+> MTP nativa = esattamente il "**MTP-1**" che il paper usa come production baseline e batte del 60-85%.
+> Quindi: misurare `--mtp` = misurare il BASELINE (necessario come riferimento), NON il metodo.
+> **DSpark vero = 2 componenti assenti in ds4:** (1) drafter semi-autoregressivo ADDESTRATO (backbone
+> parallelo + testa sequenziale; checkpoint open-sourced da DeepSeek + repo DeepSpec) e (2) verifica
+> **confidence-scheduled** (lunghezza adattiva per richiesta da prefix-survival probability + STS +
+> profilo throughput del motore) al posto di N/margine FISSI.
+> **Strada A (prima):** tieni l'MTP nativo come drafter, implementa la verifica confidence-scheduled sopra.
+> **Strada B (dopo, se serve):** portare i checkpoint DSpark in formato ds4.
+> **Twist nostro (paper-worthy):** nello scheduler, il costo di verifica in streaming-MoE si AMMORTIZZA
+> col blocco (−49% IO expert a k=8, misurato dalla trace) → la lunghezza ottima del draft è più lunga
+> che nel paper denso; aggiungere il termine expert-IO al profilo di throughput.
 
 ## Obiettivo
 Portare lo **speculative decoding a blocchi** su ds4 per il regime streaming del 3060. Il razionale è

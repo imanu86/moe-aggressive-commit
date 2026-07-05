@@ -72,10 +72,13 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
       `ds4_gpu_stream_expert_cache_prepare_selected_batch` (ds4_cuda.cu:3176), invocato dal
       path batch streaming (ds4.c:18938). Il verifier MTP usa lo stesso encode_layer_batch
       → union-load "gratis" una volta sbloccato MTP+streaming. Dettagli nel RECON §1.7.
-- [~] misura acceptance baseline MTP-1 su pod 3090 QUASI COMPLETA (2026-07-05 sera):
-      in streaming (non-streaming+mtp = OOM su 24GB) con combo probe
-      draft2+SPEC_DISABLE+UNSAFE. Primi numeri: code 0.872 (×2 run identici,
-      determinismo greedy ✓), math 0.846. Log in `runs/dspark/20260705_mtp_acceptance_pod3090/`.
+- [x] misura acceptance baseline MTP-1 COMPLETA (2026-07-05): **code 0.872, math 0.846,
+      chat 0.604** (×2 run bit-identici, greedy, trasferisce al 3060). In streaming con
+      combo probe draft2+SPEC_DISABLE+UNSAFE (patch `patches/ds4/0006`).
+      → `runs/dspark/20260705_mtp_acceptance_pod3090/RISULTATI.md`
+- [x] union-load VERIFICATA E QUANTIFICATA a runtime: prefill 670 tok → 4020 slot/layer
+      compattati in 132-191 unici (media 163, **-95.9%**), 43 layer. Stesso meccanismo
+      che al blocco-8 vale il 49%. Log compact_counts committati.
 - [x] **STRADA B MISURATA (2026-07-05)**: DSpark ufficiale su V4-Flash (2×H200, ~1h, $9):
       τ = **5.18/5.00/2.70** (code/math/chat) su blocco-5; confidence head ottima come
       ranking ma sottocalibrata in profondità (ECE fino a 0.44 su chat) = caso d'uso

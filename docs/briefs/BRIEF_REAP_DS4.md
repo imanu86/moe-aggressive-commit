@@ -40,7 +40,10 @@ un modello ~50GB **sta INTERAMENTE caldo in RAM** = SSD eliminato del tutto per 
 - Commit piccoli sul tuo branch, push frequente, aggiorna questo brief con lo stato in coda.
 
 ## Stato
-- [ ] design doc
+- [x] design doc — `docs/REAP_DS4_design.md` (2026-07-05). Chiavi: bias-mask Stage A (eval senza
+  surgery su runtime stock), hash layer 0-2 esclusi, saliency g-only validata offline
+  (`runs/reap/gonly_vs_eq9_30b.json`: retention@K64 0.902), K50 → ~47 GiB
+  (`runs/reap/gguf_flash_expert_geometry.txt`).
 - [ ] patch trace weights
 - [ ] saliency + mask
 - [ ] piano eval

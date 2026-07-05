@@ -14,6 +14,21 @@
 > -n 800/chunk gen (×2)** ≈ 5k tok/config; col design appaiato il SE sul delta-NLL resta ~1e-2,
 > ampiamente sotto gli effetti attesi (criteri §3 invariati).
 
+> **ESTENSIONE PAPER-GRADE 2026-07-05** (mandato SPEX-main): ppl v2 con ≥10 chunk/config +
+> bootstrap CI95, random multi-seed {0,1,2}, reap sul generale, dose-response K25/50/70
+> (`run_eval_v2.sh`, `reap_eval_summary_v2.py`, corpora in `2026-07-05_eval_biasmask_v2/`).
+> Più t/s bench 3060-proxy mask ON/OFF × RAM {60,28}GB (`run_tps_hog.sh`).
+>
+> **Metodologia RAM-capping (t/s) — realtà del container RunPod:** l'idea originale
+> `--simulate-used-memory` (flag ds4 nativo) **FALLISCE**: usa `mlock`, e i container RunPod
+> non hanno `CAP_IPC_LOCK` (`mlock: Cannot allocate memory`). Anche la **scrittura su cgroup**
+> (`/sys/fs/cgroup/*/memory.max`) è **negata** (cgroupfs read-only, no delega). L'unico
+> meccanismo che funziona senza privilegi è un **hog-process**: un processo Python che alloca
+> e tocca `CG_GB − avail` GB di RAM anonima; con **swap=0** sul pod le pagine restano residenti
+> e non evictabili → la page-cache del modello mmap'd si comprime → streaming SSD come su una
+> workstation con `avail` GB. I **DELTA** (mask ON/OFF, 60/28) trasferiscono al 3060; gli
+> **ASSOLUTI** no (banda/SM del 3090 ≠ 3060) — dichiarato in ogni numero.
+
 ## 0. Principio
 
 Tutte le eval di qualità si fanno in **Stage A (bias-mask)**: si scrive `-1e9` nel bias di

@@ -26,6 +26,20 @@ Appaiato per-chunk (ppl config/full sullo **stesso testo**, geomean 4 chunk dom)
   expert lascia più ridondanza → random meno catastrofico. **La tesi regge**: a pari K la
   selezione REAP vale, il random no; il verdetto binario 1.5 era tarato troppo severo.
 
+### Perché il random su DS4 fa 1.36× dove su Qwen-30B faceva ~2.5× (ipotesi, per il paper)
+
+Tre ipotesi **cumulative**, dichiarate e non tutte testate (mandato SPEX-main 2026-07-05):
+1. **Granularità più fine**: DS4-Flash ha 256 expert/layer con 6 attivi (Qwen 128/8). A pari
+   frazione potata, ogni expert perso porta via meno capacità e i 6 slot trovano sostituti
+   semanticamente più vicini nel pool superstite più numeroso → il danno random si diluisce.
+2. **Shared expert**: DS4 ha 1 shared expert per layer sempre attivo (Qwen3-MoE non ne ha):
+   un "pavimento" di capacità che non è potabile e ammortizza la perdita dei routed.
+3. **Floor di rumore del 2-bit**: la quantizzazione IQ2_XXS aggiunge un errore di base che
+   comprime i RAPPORTI di ppl (il denominatore full è già "degradato" dal 2-bit); su bf16 il
+   full è più pulito e lo stesso danno assoluto appare come rapporto più grande.
+Confound dichiarato: modello E precisione cambiano insieme (30B bf16 vs DS4 IQ2) → le ipotesi
+non sono separabili con i dati attuali; il multi-seed v2 quantifica almeno la varianza del random.
+
 ## Il meccanismo è verificato (non solo l'esito)
 
 `reap/biasmask.log`: `apply reap: scritti 5120 bias a -1e9 su 40 layer` +

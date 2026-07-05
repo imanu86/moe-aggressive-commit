@@ -215,6 +215,44 @@ ma richiede riassegnare i token dei pruned → rischio qualità non quantificato
 7. **Eval generativa costosa su pod** — il piano eval (deliverable 4) usa ppl forward-only e budget
    token ridotto; la field-accuracy N=152 completa va fatta una sola volta sulla config vincente.
 
+## 7.bis Bias-mask come ATTUATORE del REAP-loop dinamico (gap per il toggle in-memory)
+
+Contesto (mandato SPEX-main 2026-07-05): l'obiettivo di progetto è un motore
+`ds4flash-dwarf-spex-reap_loop` dove la mask segue la deriva del dominio a runtime.
+La bias-mask è candidata ad attuatore. Stato e gap:
+
+**Oggi (Stage A come implementato):** la mask si applica **scrivendo il FILE gguf**
+(`scripts/reap_bias_mask_ds4.py`, byte-patch dei 40×1KB `exp_probs_b`) e serve un
+**riavvio del processo** perché il bias viene letto al load e caricato sulla GPU.
+Apply/remove ≈ secondi (40KB scritti), ma il ciclo completo costa un restart
+(re-init CUDA + re-warm cache ≈ minuti su hardware piccolo).
+
+**Vantaggio strutturale della bias-mask come attuatore** (vs surgery Stage B): gli
+expert-ID restano quelli ORIGINALI — niente rinumerazione `old2new`, quindi Markov
+`.spex`, hotlist, trace e ogni stato SPEX restano validi attraverso i cambi di mask.
+È la proprietà che rende il REAP-loop componibile con SPEX senza re-dump (il
+tier-mixing naive che backfirava in E7 nasceva proprio dal doppio ID-space).
+
+**Gap per il toggle in-memory (proposta patch `0008-reap-runtime-mask`):**
+1. Host: array override per-layer `float bias_override[DS4_MAX_LAYER][DS4_MAX_EXPERT]`
+   caricato da `DS4_EXPERT_MASK_FILE` (stesso formato mask json); consultato nel path
+   CPU al posto di `tensor_data(model, ffn_exp_probs_b)` (`ds4.c:7415-7418`).
+2. GPU: il bias vive in un buffer residente usato da `ds4_gpu_router_select_tensor`
+   (`ds4.c:15566`); serve una `ds4_gpu_tensor_write` dei 1KB/layer al toggle
+   (banda irrisoria, 40KB totali) — stessa primitiva già usata a `ds4.c:14124`.
+3. Trigger: endpoint su ds4-server (o SIGUSR1 + reread del file) che ricarica la mask
+   e riesegue l'upload dei bias. Nessuna invalidazione necessaria: la mask agisce SOLO
+   sulla selezione; expert pruned eventualmente ancora in cache GPU/RAM sono innocui
+   (mai più selezionati → evicted naturalmente via LFU).
+4. Attenzione all'unico stato derivato: il **profiler/le stats hit-rate** contano per
+   expert-id — ok, ID-space invariato. Il KV-cache non dipende dagli expert. Il punto
+   delicato è il prefetch SPEX in-flight al momento del toggle: al più prefetcha expert
+   appena mascherati (spreco una tantum, non errore).
+
+Effort stimato: patch piccola (~100 righe) sopra 0006; nessun cambio di formato file.
+Fino ad allora il loop può già funzionare in modalità "coarse" (apply→restart) usando
+il tool attuale, con il costo del re-warm.
+
 ## 8. Sequenza operativa (stato → brief)
 
 1. ✅ Design (questo doc) + validazione g-only (`runs/reap/gonly_vs_eq9_30b.json`).

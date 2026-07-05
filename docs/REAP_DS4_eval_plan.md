@@ -3,6 +3,16 @@
 > PIANO, non esecuzione. Presuppone: `reap_mask_ds4_domain.json` (deliverable 3) e il design
 > `docs/REAP_DS4_design.md` (Stage A bias-mask §2). Budget: dentro il tetto $1-2 TOTALE del track
 > (spesa trace già sostenuta); la fase generativa completa è opzionale e fuori budget → richiede ok.
+>
+> **REVISIONE ESECUZIONE 2026-07-05** (ok utente: "non abbiamo un budget se non temporale"):
+> (a) vincolo di costo rimosso per la fase eval → **3 pod sm_86 in parallelo, uno per config**
+> (full/reap/rand), niente apply→restore sequenziale: ogni pod applica la bias-mask alla propria
+> copia; il confronto resta appaiato sul TESTO (teacher-forced sugli stessi token; il jitter
+> numerico cross-run/cross-macchina si media su 850 tok/chunk). Runner: `run_eval_one.sh` (in
+> `runs/reap/2026-07-05_eval_biasmask/`). (b) `--perplexity-file` scora in decode ~1.5 t/s →
+> i 30k tok/config del §3 sono infattibili in tempi utili: cap **-n 850/chunk dom (×4) e
+> -n 800/chunk gen (×2)** ≈ 5k tok/config; col design appaiato il SE sul delta-NLL resta ~1e-2,
+> ampiamente sotto gli effetti attesi (criteri §3 invariati).
 
 ## 0. Principio
 

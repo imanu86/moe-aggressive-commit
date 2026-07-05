@@ -3,6 +3,58 @@
 > **PUNTO D'INGRESSO UNICO.** Leggi §0 per riprendere il lavoro attivo. Le sezioni "STORICO" più sotto
 > (fase probe/memmap Python, giu-2026) sono contesto precedente, non la direzione corrente.
 
+## §0. STATO CORRENTE (2026-07-05) — SPEX → ds4 (integrazione live)
+
+**Branch attivo:** `codex/spex-integration` su `imanu86/moe-aggressive-commit`.
+`main` resta stabile a `ffc1ca1` (piano SPEX + Fase 1b race). Il branch di lavoro contiene:
+- `1b1e403 feat(spex): export markov params for ds4`
+- `fa48071 chore(ds4): record spex stage0 cuda stats patch`
+
+**Sorgente ds4 reale:** WSL `/root/ds4`, upstream `github.com/antirez/ds4`, base `80ebbc3`.
+Branch locale attivo: `codex/spex-stage0`, commit nostro:
+`6776af6 chore(spex): add stage0 cuda stats`.
+Nota: ds4 ha artifact non tracciati da build/test (`build_smoke.log`, `ds4-server.prebuild.bak`,
+`tests/cuda_long_context_smoke`). Non cancellarli senza motivo.
+
+**Transcript Claude recuperato e letto con 4 agenti:** output in
+`C:\Users\imanu\Documents\Codex\2026-07-05\imanu86-moe-aggressive-commit-https-github\outputs\`.
+Il punto d'ingresso sintetico è `claude_session_agent_consolidation.md`.
+Verdetto importante: lo "Stadio 0" delegato nella vecchia sessione Claude era stato smentito
+come non verificato/confabulato. I numeri vecchi non sono source of truth.
+
+**Stato SPEX oggi:**
+- Offline: `src/msc/spex/spex_loop.py` contiene il loop DSpark-fedele.
+- Export C Markov: implementato in `src/msc/spex/c_export.py`, CLI `--export-c`, testato.
+- Test Python repo: `166 passed, 1 skipped`.
+- Hidden+STS è il salto vero nei risultati offline: Markov è utile ma insufficiente.
+- 235B hidden resta extrapolazione nel transcript, non misura finale.
+
+**Stadio 0 reale (nuovo, Codex 2026-07-05):**
+- Patch ds4 registrata in `patches/ds4/0001-spex-stage0-cuda-stats.patch`.
+- La patch aggiunge `DS4_SPEX_STATS=1` con contatori hit/miss/direct load e timing copy/sync.
+- Build verificata: `make cuda CUDA_ARCH=sm_86`.
+- Regression verificata: `make cuda-regression`.
+- Smoke log: `runs/ds4_spex_stage0_smoke.log`.
+- Smoke stats NON sono baseline paper: prompt corto, cold-ish, solo prova che la strumentazione funziona.
+
+**Prossima azione obbligatoria:** fare una baseline Stage 0 vera e ripetibile prima di Stage 1a:
+- prompt fisso
+- almeno 5 run
+- 256+ token generati
+- cold vs RAM-warm
+- annotare env: `DS4_CUDA_NO_DIRECT_IO`, `DS4_CUDA_KEEP_MODEL_PAGES`, cache expert budget,
+  context, model file, prompt, `.wslconfig`
+- output: tok/s, hit-rate, miss/direct per token, copied MiB, `copy_ms`, `sync_ms`
+
+**Dopo Stage 0:** solo se c'è margine reale, implementare Stadio 1a:
+`DS4_SELECTED_UPLOAD_EVENT=1`, stesso layer, evento CUDA upload→stream0, token identici ON/OFF.
+Poi prefetch L+1 minimo, poi loader `.spex` Markov, poi hidden live.
+
+**Regola di sicurezza:** ogni misura o claim deve avere diff/build/log/output committato.
+Non fidarsi di report agentici senza artifact verificabili.
+
+---
+
 ## §0. STATO CORRENTE (2026-07-04) — SPEX → ds4 (integrazione live)
 
 **Direzione attiva:** integrare **SPEX** (prefetch predittivo degli expert MoE) DENTRO il motore live

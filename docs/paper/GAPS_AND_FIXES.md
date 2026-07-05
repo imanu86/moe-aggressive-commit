@@ -11,7 +11,8 @@ Roles: **SPEX-main** = the driving agent (coding, analysis, offline stats). **SP
 
 ## MUST-FIX (blocking publication)
 
-### M1 — Commit the gitignored `dominio_kb` prompts (BLOCKING artifact-eval, trivial cost)
+### M1 — Commit the gitignored `dominio_kb` prompts — **RESOLVED (decisione utente)**
+- **RESOLVED (2026-07-05, user decision).** The `dominio_kb` prompt texts derive from a **proprietary KB and will NOT enter the repo/paper.** Mitigation adopted: **(a)** commit the generator `scripts/spex_build_trace_prompts.py` and the sha256 manifest `runs/spex/2026-07-05_trace_prompts/prompts_manifest.json` (both already tracked on disk); **(b)** commit `coding_en` + `generale_ita` in full (done); **(c)** the `dominio_kb` texts are **withheld (proprietary), available on request**; **(d)** a **synthetic surrogate `dominio_kb` set for reviewers is planned** so the domain branch is end-to-end reproducible without the private KB. Paper: §7.9.1 rewritten from "MUST-FIX commit the texts" to this disclosed proprietary-data trade-off; §8 Artifacts updated. **This trades full artifact-eval reproducibility of the domain branch for KB confidentiality — a disclosed, deliberate limitation, not an oversight.**
 - **Missing:** the 8 `dominio_kb` k00–k07 prompts are gitignored (`dominio_kb/*.txt`) and untracked; their source (`raft_eval.jsonl`, sha 94b9b7f1) is a private out-of-repo file. The *entire* domain branch — trace, REAP mask, biasmask eval (the headline 1.013×/1.365×) — descends from prompts a reviewer cannot obtain.
   <!-- src: runs/spex/2026-07-05_trace_prompts/.gitignore; git ls-files (only coding_en + generale_ita tracked) -->
 - **Why:** any artifact evaluation fails at clone; the most original branch ("Segnali") is non-reproducible for anyone without the user's disk.
@@ -47,7 +48,8 @@ Roles: **SPEX-main** = the driving agent (coding, analysis, offline stats). **SP
 - **Fix:** per-token / per-cycle bootstrap (≥10k resamples) on the existing CSVs: REAP per-chunk log-ratios, DSpark accept.csv per-cycle, Fase C committed-distribution (Wilson CI on 56/66), MTP-1 acceptance. Emit `*_bootstrap.json` next to each result. No new runs needed.
 - **Cost:** ~2–3 h coding, zero GPU. **Who:** SPEX-main.
 
-### M5 — Resolve the target-model / title drift to ONE regime (blocks the whole novelty map)
+### M5 — Resolve the target-model / title drift to ONE regime — **RESOLVED (decisione utente)**
+- **RESOLVED (2026-07-05, user decision).** Scope of the paper = **DeepSeek-V4-Flash 158B (IQ2\_XXS 2-bit, ds4/DwarfStar) as the sole deployment model.** Every primary claim is scoped to that model on the 3060. The Qwen-30B / 235B-A22B measurements are demoted to a **preliminary / motivating study** — they establish that the routing structure replicates across families and scales (a strength, keeps the cross-model replications a plus) but carry **no primary claim about 235B as a deployment target**. Regime (a) 158B-Flash domain-specialized chosen → REAP + concentration *help* (§7.4). Paper: §1.3 retitled "Target scope (resolved)" and rewritten; §2.5 novelty row changed to "158B (V4-Flash); 235B as motivating proxy only"; §4.3 retitled "preliminary/motivating study"; abstract already 158B-centric. The 235B-general deployment thesis is retired.
 - **Missing:** `PAPER_STATE.md` says 158B general; `CONSOLIDATION.md` says 235B-A22B full-quality general. The regime decides which prior art preempts us and whether the domain-vs-general finding *helps or hurts*.
   <!-- src: docs/PAPER_STATE.md:1; docs/CONSOLIDATION.md:3,94 -->
 - **Why:** under "general full-quality," the F3 domain-concentration ace reverses against us; two durable docs with incompatible theses = a reviewer cannot tell what is claimed.

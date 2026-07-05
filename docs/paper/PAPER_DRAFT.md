@@ -31,11 +31,11 @@ predictive (not reactive) expert fetch; saliency-guided (not frequency-guided) r
 
 This paper is **not** a demonstration that the target runs at usable speed. On the contrary, one of our headline anatomy findings (§3.1) is that *we have not yet made it fast*, and we are explicit about which numbers are simulation, which are worst-case, and which are non-transferable data-center measurements. It is a **measured anatomy plus a lever stack**: each lever is individually validated (or shown to fail) with a control, and the composition into an end-to-end fast system is left as clearly-scoped future work with costs attached (see companion `GAPS_AND_FIXES.md`).
 
-### 1.3 A note on target scope (unresolved, flagged)
+### 1.3 Target scope (resolved)
 
-Our two durable positioning documents currently disagree on the target: `PAPER_STATE.md` (marked pre-pivot) titles a **158B general** model on a 12 GB GPU; `CONSOLIDATION.md` titles a **235B-A22B full-quality general** model.
-<!-- src: docs/PAPER_STATE.md:1 ("158B general MoE ... 12GB"); docs/CONSOLIDATION.md:3 ("235B-A22B ... qualità piena ... uso generale") -->
-This is not cosmetic: the regime determines which prior art preempts us and *whether our domain-vs-general finding helps or hurts* (§7.4). **This draft targets the 158B DeepSeek-V4-Flash model** — the model we actually run on the 3060 — and treats all 235B/Qwen numbers as **cross-scale evidence from a proxy model**, never as evidence on the target. Resolving the two documents to one target is a MUST-FIX (see `GAPS_AND_FIXES.md`, G-STRUCT-1).
+**The deployment model of this paper is exactly one system: DeepSeek-V4-Flash 158B (IQ2\_XXS 2-bit, the ds4/DwarfStar engine) on the RTX 3060.** Every primary claim — the anatomy (§3), the REAP bias-mask (§5.3), the block/union-load speculative decoder (§5.2), the SPEX prefetch (§5.4) — is scoped to that model on that hardware. The Qwen-30B and 235B-A22B measurements are demoted to a **preliminary / motivating study**: they establish that the routing structure (concentration, hidden-state predictability, sub-expert redundancy) exists and *replicates across model families and scales*, which is a genuine strength (the cross-model replication is a point in our favor), but they carry **no primary claim about 235B as a deployment target**. Where a number comes from Qwen or 235B it is labeled "proxy / motivating" and never composed into a target-hardware result.
+<!-- src: docs/PAPER_STATE.md:1 ("158B ... 12GB", the chosen regime); docs/CONSOLIDATION.md:3 (235B-A22B — demoted to motivating study, not the deployment target); model geometry runs/reap/2026-07-05_trace_dominio/meta.json -->
+This resolves the earlier documentation drift (two durable docs disagreed on the target). We adopt regime (a): **158B-Flash domain-specialized**, under which REAP + routing concentration *help* rather than obstruct (§7.4). The 235B-general framing is retired as a deployment thesis and retained only as cross-scale evidence.
 
 ---
 
@@ -69,7 +69,7 @@ DSpark (confidence-scheduled verification) schedules speculative blocks to save 
 | FT-router disperses; domain concentrates | **NOVELTY-CANDIDATE #1** | counter-case ReMoE [2412.14711]; ESFT, ST-MoE |
 | Domain-vs-general gap grows with scale | **KNOWN** (we quantify) | EASY-EP Tab.4, PreMoE, Less-is-MoE |
 | Cross-layer hidden prediction + adaptive loop | **NOVELTY-CANDIDATE #2** (robustness/transfer) | Fate, Pre-gated, SiDA, ExpertFlow |
-| Offload 158–235B on 12 GB | **MECHANISMS KNOWN**, extreme regime | ProMoE, MoE-Infinity, PowerInfer-2, HOBBIT |
+| Offload 158B (V4-Flash) on 12 GB; 235B as motivating proxy only | **MECHANISMS KNOWN**, extreme regime | ProMoE, MoE-Infinity, PowerInfer-2, HOBBIT |
 | Mass < random at scale (control exposes it) | **NOVELTY-CANDIDATE** (confound-limited) | How-to-Score, DeepSeekMoE, REAP |
 | Sub-expert weight-space redundancy = zero (3 families) | **NOVEL and ROBUST** (see §4.5) | — |
 <!-- src: docs/EXPERIMENTS_LEDGER.md:133-139 (G1-G7 verdicts); docs/CONSOLIDATION.md:15-19; sub-expert docs/EXPERIMENTS_LEDGER.md:55-56 -->
@@ -141,9 +141,9 @@ The defensible statement is: *on a real deployment model, the cheap ID-only pred
 Window-8 adds little over window-4 (top-12 0.507→0.550), suggesting a short recency window captures most of the temporal signal.
 <!-- src: runs/ds4_routing_trace_smoke/routing_trace_count64_summary.json (window4_same_layer_top12=0.506836, window8_same_layer_top12=0.549544) -->
 
-### 4.3 Cross-model replications (proxy Qwen, value doubled by transfer)
+### 4.3 Cross-model replications (proxy Qwen/235B — preliminary/motivating study, §1.3)
 
-The routing structure replicates across models on the *sign*, not always the *magnitude*:
+These are the **motivating study**, not target claims: the deployment model is 158B-Flash (§1.3); Qwen-30B and 235B enter only to show the routing structure *replicates across families and scales*. The structure replicates on the *sign*, not always the *magnitude*:
 - **Static-cache recall dominated by concentration in-distribution:** Qwen-30B gate @25% static .693 (general) / .744 (domain), markov +.10/+.13 cross-layer.
 <!-- src: docs/EXPERIMENTS_LEDGER.md:111-112 (E3/E4) -->
 - **Static prediction does NOT transfer cross-distribution** (static @25% collapses ~.75→.44), while markov holds its margin — a pro-SPEX argument under workload shift.
@@ -331,8 +331,8 @@ The −49% is *arithmetic* (unique experts/block, a model property that transfer
 
 ### 7.9 Reproducibility gaps (artifact evaluation)
 
-1. **The 8 `dominio_kb` prompts — the core of the "Segnali" domain study — are gitignored and untracked** (`dominio_kb/*.txt`), and their source (`raft_eval.jsonl`, sha 94b9b7f1) is a private out-of-repo file. The entire domain branch (trace, mask, biasmask eval — the headline 1.013×/1.365×) descends from prompts a reviewer cannot obtain. **MUST-FIX (trivial): commit the ~155 KB of k00–k07, or the generator + a sanitized source.**
-<!-- src: runs/spex/2026-07-05_trace_prompts/.gitignore (dominio_kb/*.txt); git ls-files confirms only coding_en + generale_ita tracked -->
+1. **The 8 `dominio_kb` prompts are withheld as proprietary KB (RESOLVED by decision).** The `dominio_kb/*.txt` texts derive from a private knowledge base (`raft_eval.jsonl`, sha 94b9b7f1) and are **not committed to the repo**. To keep the domain branch (trace, mask, biasmask eval — the 1.013×/1.365× results) auditable without exposing the KB, we commit **(a)** the generator `scripts/spex_build_trace_prompts.py` and **(b)** the sha256 manifest `runs/spex/2026-07-05_trace_prompts/prompts_manifest.json` (per-prompt sha256 + source sha256), so a reviewer can verify integrity and regenerate from an equivalent source; the `coding_en` and `generale_ita` sets are committed in full. The prompt texts are **available on request**, and a **synthetic surrogate `dominio_kb` set for reviewers is planned** to make the branch end-to-end reproducible without the private KB. This is a deliberate proprietary-data trade-off, disclosed here, not an oversight.
+<!-- src: runs/spex/2026-07-05_trace_prompts/.gitignore (dominio_kb/*.txt withheld); scripts/spex_build_trace_prompts.py (generator, committed); runs/spex/2026-07-05_trace_prompts/prompts_manifest.json (sha256 manifest, committed); git ls-files confirms coding_en + generale_ita tracked, dominio_kb texts withheld -->
 2. **The "disjoint" corpus is index-disjoint, not distribution-disjoint** — calibration and eval both derive from the same self-curated `raft_eval.jsonl`, so the near-lossless claim is in-distribution. **Fix: evaluate REAP-K50 on an independent held-out domain.**
 3. **The engine source is an ephemeral out-of-repo copy**; line offsets (§3.2–3.3) are not checkable by a cloner, and the plan mixes commit `80ebbc3` (stock) with `bee9eb3` (patched) without stating which tree each offset refers to. **Fix: pin the commit and cite `git show 80ebbc3:file:NNNN` per claim, as the RECON doc already does.**
 <!-- src: docs/SPEX_INTEGRATION_PLAN.md:4-5,146; docs/dspark/RECON_MTP_DS4.md:4-5 (good-practice model) -->
@@ -365,6 +365,6 @@ We consider the value of this paper to be the *measured gap* between the offload
 - `runs/ds4_{routing_trace_smoke, bench_clean_ext4_20260705, cache_sweep_9p_20260705}/`
 - `patches/ds4/0001-0010`, `src/msc/dspark/{sts_fit.py, sched_sim.py}`, `src/msc/spex/spex_loop.py`
 - **`scripts/paper_ci.py` + `runs/paper_ci_results.json`** — bootstrap 95% CIs (10k resamples, seed 42) for every key ratio; reproducible from the committed CSVs with one command.
-- **[PENDING to commit]** `runs/spex/2026-07-05_trace_prompts/dominio_kb/` (gitignored — MUST-FIX)
+- **Trace-prompt provenance (M1 decision):** generator `scripts/spex_build_trace_prompts.py` + sha256 manifest `runs/spex/2026-07-05_trace_prompts/prompts_manifest.json` **committed**; `coding_en` + `generale_ita` prompt sets committed in full; `dominio_kb` texts **withheld (proprietary KB), available on request**; a synthetic reviewer surrogate is **planned** (see §7.9.1).
 
-<!-- src (durable positioning): docs/CONSOLIDATION.md, docs/PRIOR_ART.md, docs/PAPER_STATE.md (pre-pivot), docs/SPEX_INTEGRATION_PLAN.md, docs/HANDOFF*.md -->
+<!-- src (durable positioning): docs/CONSOLIDATION.md, docs/PRIOR_ART.md, docs/PAPER_STATE.md (pre-pivot), docs/SPEX_INTEGRATION_PLAN.md, docs/HANDOFF*.md; M1: generator+manifest committed, texts withheld, surrogate planned -->

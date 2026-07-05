@@ -26,14 +26,20 @@ e la scoperta che la macchina del primo pod aveva un guasto hardware critico.
     per riprodurre la fame di memoria del 3060 (28GB) su macchina con più RAM.
   - ⚠️ Il guadagno **t/s** dell'IO NON è misurabile su NESSUN pod (banda NVMe + 28GB RAM =
     setup fisico del 3060). Quel claim finale resta sul 3060 reale.
-- **Strada B (validazione paper, pod separato)**: NON il V4-Flash-DSpark (48 shard fp8,
-  multi-GPU, fuori budget) ma il checkpoint offline **`deepseek-ai/dspark_qwen3_4b_block7`**
-  (draft head minuscola) + Qwen3-4B target su un solo 3090/4090. Riproduce l'accepted-length
-  della Tabella 1 del paper = tetto teorico del metodo. Accepted-length è GPU-indipendente →
-  un pod capace non inquina. Serve l'harness DeepSpec (repo ufficiale non su HF; fork
-  community su GitHub: `47thtechcorner/RayCodes_Deepspec`, `Extended-Systems-Intelligence/
-  nemotron-dspark-recipe` — da verificare). Da deployare DOPO che A ha i numeri, per non
-  correre due pod a lungo dentro il budget $1-2.
+- **Strada B (CORRETTA dall'utente 2026-07-05 sera)**: sul MODELLO TARGET, cioè
+  **`deepseek-ai/DeepSeek-V4-Flash-DSpark`** (167GB fp8/fp4 = lo stesso checkpoint
+  V4-Flash + modulo DSpark attaccato; NON Qwen — Qwen non trasferirebbe nulla sul V4).
+  Vincolo dichiarato dall'utente: **niente tetto di spesa, il vincolo è la VELOCITÀ**
+  (il tetto $1-2 del playbook è superato per questo track su autorizzazione esplicita;
+  resta la disciplina: mai pod idle, terminate immediato a fine test).
+  Pod: **2×H200 secure ($8.78/h)** — 167GB/2 = 84GB pesi per GPU, MP=2, kernel fp8
+  richiedono sm_90 (A100 escluso). Inference di riferimento inclusa nel repo
+  (convert.py + generate.py); config conferma DSpark-5 production: n_mtp_layers=3,
+  dspark_block_size=5, markov_rank=256, confidence head, target layers [40,41,42].
+  Misura: eval teacher-forcing (`dspark_accept_eval.py`) — greedy GT + forward_spec
+  per token → acceptance per posizione (Fig.2 analog), τ atteso, coppie
+  (confidence, esito) per calibrare la STS della Strada A. Repo harness ufficiale:
+  github.com/deepseek-ai/DeepSpec (linkato dal model card).
 
 ## Perché un pod PIÙ POTENTE inquina la Strada A
 La tesi è il collo di bottiglia **IO da SSD del 3060**. Su GPU con VRAM grande (A100/H100

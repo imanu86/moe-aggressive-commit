@@ -1,0 +1,267 @@
+```ds4: REAP mask reload da /root/runs/loop/mask_d5.txt: 0 entry potate
+html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>One‑page · Light & Dark</title>
+    <!-- clean, modern styling – no external dependencies -->
+    <style>
+        /* ----- reset & base ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system,ds4: CUDA loading model tensors 7.86 GiB cached
+ 'Segoe UI', Roboto, 'Helvetica Neue', sans-serif;
+            line-height: 1.5;
+            transition: background-color 0.3sds4: REAP mask reload da /root/runs/loop/mask_d5.txt: 7680 entry potate
+ ease, color 0.3s ease;
+        }
+
+        /* ----- light (default) ----- */
+        :root {
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --nav-bg: #f8f9f9;
+            --nav-border: #eaeaea;
+            --hero-bg: #f6f9f8;
+            --hero-acat: #1a6a4c;
+            --hero-acat-hover: #003b2a;
+            --card-bg: #ffffff;
+            --input-bg: #ffffff;
+            --input-border: #d8d8d8;
+            --btn-light: #1a1ds4: REAP mask reload da /root/runs/loop/mask_d5.txt: 8640 entry potate
+a1a;
+            --btn-light-hout: #333333;
+            --error: #b0241a;
+            --footer-bg: #f8f9f9;
+            --footer-border: #eaeaea;
+        }
+
+        /* ----- dark theme ----- */
+        [data-theme="dark"] {
+            --bg: #1e1e1e;
+            --text: #f0f0f0;
+            --nav-bg: #1e1e1e;
+            --nav-border: #444;
+            --hero-bg: #1e1e1e;
+            --hero-acat: #6c9f7c;
+            --hero-acat-hover: #a0f0a0;
+            --card-bds4: REAP mask reload da /root/runs/loop/mask_d5.txt: 9320 entry potate
+g: #1e1e1e;
+            --input-bg: #1e1e1e;
+            --input-border: #444;
+            --btn-light: #f0f0f0;
+            --btn-light-hout: #ddd;
+            --error: #ff7f7f;
+            --footer-bg: #1e1e1e;
+            --footer-border: #444;
+        }
+
+        /* ----- global elements ----- */
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* navigation */
+        nav {
+            background-color: var(--nav-bg);
+            border-bottom: 1px solid var(--nav-border);
+            padding: 0.75rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+               transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 1.2rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            color: var(--text);
+            text-decoration: none;
+            font-weight: 500;
+            padding: 0.25rem 0.25rem;
+            border-bottom: 2px solid transparent;
+            transition: 0.2s;
+        }
+
+        .nav-links a:hover {
+            border-bottom-color: var(--hero-acat);
+        }
+
+        .theme-toggle {
+            background: transparent;
+            border: 1px solid var(--text);
+            padding: 0.4rem 1rem;
+            border-radius: 6px;
+            font-weight: 500;
+            color: var(--text);
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s;
+            font-size: 1rem;
+               background-color: var(--bg);
+        }
+
+        .theme-toggle:hover {
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        /* main */
+        main {
+            flex: 1;
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 2rem 1.5rem;
+            width: 100%;
+        }
+
+        /* hero */
+        .hero {
+            background-color: var(--hero-bg);
+            padding: 3rem 2rem;
+            border-radius: 20px;
+            text-align: center;
+            margin-bottom: 2.5rem;
+            transition: background-color 0.3s;
+        }
+
+        .hero h1 {
+            font-size: 2.4rem;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.1px;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            color: var(--text);
+            opacity: 0.8;
+            max-width: 480px;
+            margin: 0 auto 1.5rem;
+        }
+
+        .hero .cta {
+            background-color: var(--hero-acat);
+            color: #fff;
+            border: none;
+            padding: 0.75rem 2.2rem;
+            font-size: 1.2rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            display: inline-block;
+            text-decoration: none;
+        }
+
+        .hero .cta:hover {
+            background-color: var(--hero-acat-hover);
+        }
+
+        /* contact form */
+        .form-card {
+            background-color: var(--card-bg);
+            padding: 2rem 2rem;
+            border-radius: 20px;
+            box-shadow: 0 2px 10px rgba 0 0 0 / 0.1);
+            border: 1px solid var(--nav-border);
+            max-width: 480px;
+            margin: 0 auto;
+            transition: background 0.3s, border-color 0.3s;
+        }
+
+        .form-card h2 {
+            margin-bottom: 1.2rem;
+        }
+
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 4px;
+            font-weight: 500;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 0.6rem 0.8rem;
+            font-size: 1rem;
+            border: 1px solid var(--input-border);
+            border-radius: 6px;
+            background-color: var(--input-bg);
+            color: var(--text);
+            transition: border 0.2s, background 0.2s;
+        }
+
+        input:focus, textarea:focus {
+            outline: none;
+            border-color: var(--hero-acat);
+        }
+
+        textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .error-message {
+            color: var(--error);
+            font-size: 0.85rem;
+            margin-top: 4px;
+            min-height: 1.2rem;
+        }
+
+        .submit-btn {
+            background-color: var(--hero-acat);
+            color: #fff;
+            border: none;
+            padding: 0.7rem 1.5rem;
+            font-size: 1.1rem;
+            font-weight: 600;
+            border-radius: 6px;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 0.5rem;
+        }
+
+        .submit-btn:hover {
+            background-color: var(--hero-acat-hover);
+        }
+
+        /* footer */
+        footer {
+            background-color: var(--footer-bg);
+            border-top: 1px solid var(--footer-border);
+            padding: 1.5rem 2rem;
+            text-align: center;
+            font-size: 0.9rem;
+            transition: background 0.3s, border-color 0.3s;
+        }
+
+        /* responsive */
+        @media (max-width: 480px) {
+            nav {
+                flex-direction: column;
+                align-items: stretch;
+                gap: 0.8rem;
+            }
+            .nav-links {
+                justify-content: center;
+                flex-wrap: wrap;
+            }

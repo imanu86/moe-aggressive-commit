@@ -1,0 +1,398 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3090 (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.360s
+ds4: cuda backend initialized for graph diagnostics
+ds4: context buffers 108.25 MiB (ctx=3072, backend=cuda, prefill_chunk=512, raw_kv_rows=768, compressed_kv_rows=770)
+ds4: using GPU graph generation with graph prefill
+ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
+```ds4: REAP mask reload da /root/runs/loop/mask.txt: 0 entry potate
+ds4: REAP mask applied: 40 layer, 0 device range aggiornati
+ds4: SPEX routing trace enabled: /root/runs/loop/trace_site.csv (weights: on)
+html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>One‑file · Light & Dark</title>
+ds4: REAP mask reload da /root/runs/loop/mask.txt: 7686 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+  <style>
+    /* ----- reset & global ----- */
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html {
+      font-size: 16px;
+      scrollds4: REAP mask reload da /root/runs/loop/mask.txt: 8640 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+-behavior: smooth;
+    }
+
+    body {
+      fontds4: CUDA loading model tensors 7.86 GiB cached
+-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+      line-height: 1.5;
+      background: var(--bg, #fff);
+ds4: REAP mask reload da /root/runs/loop/mask.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+      color: var(--text, #dark);
+      transition: background 0.3s ease, color 0.3s ease;
+      display: flex;
+      flex-direction: column;
+      min-height: 100vh;
+    }
+
+    /* ----- theme variables ----- */
+    :root {
+      --bg: #ffffff;
+      --text: #000;
+      --nav-bg: #light;
+      --hero-bg: #fff;
+      --card-bg: #fff;
+      --border-color: #light;
+      --primary-btn-bg: #blue;
+      --primary-btn-text: #white;
+      --ac1: #blue;
+    }
+
+    /* dark mode class later applied via JS */
+    body.dark {
+      --bg: #12130;
+      --text: #gray-100;
+      --nav-bg: #dark-sone;
+      --hero-bg: #12130;
+      --card-bg: #12130;
+      --border-color: #gray-700;
+      --primary-btn-bg: #blue-500;
+      --primary-btn-text: #white;
+    }
+
+    /* ----- navigation ----- */
+    nav {
+      background: var(--nav-bg, #fff);
+      border-bottom: 1px solid var(--border-color, #gray-200);
+      padding: 0.5rem 1rem;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    .nav-l {
+      list-style: none;
+      display: flex;
+      gap: 2rem;
+      margin: 0;
+      padding: 0;
+    }
+
+    .nav-l li a {
+      text-decoration: none;
+      color: var(--text, #dark);
+      font-weight 600;
+      padding: 0.5rem 0.5rem;
+      transition: color 0.3s;
+    }
+
+    .nav-l li a:hover {
+      color: var(--ac1, #blue);
+    }
+
+    /* ----- hero section ----- */
+    .hero {
+      background: var(--hero-bg, #fff);
+      padding: 8rem 2rem;
+      text-align: center;
+      transition: background 0.3s;
+    }
+
+    .hero h1 {
+      font-size: 3rem;
+      margin-bottom: 0.5rem;
+    }
+
+    .hero p {
+      font-size: 1.5rem;
+      max-width: 600;
+      margin: 0 auto 1rem;
+    }
+
+    .hero .cta-btn {
+      background: var(--primary-btn-bg, #blue);
+      color: var(--primary-btn-text, #white);
+      border: none;
+      padding: 0.5rem 2rem;
+      font-size: 1.5rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s, color 0.3s;
+    }
+
+    .hero .cta-btn:hover {
+      background: var(--ac1, #blue-700);
+    }
+
+    /* ----- contact form ----- */
+    .form-section {
+      padding: 2rem 2rem;
+      display: flex;
+      justify-content: center;
+      background: var(--bg, #fff);
+      transition: background 0.3s;
+    }
+
+    .form-card {
+      max-width: 450;
+      width: 100%;
+      background: var(--card-bg, #fff);
+      padding: 2rem;
+      border-radius: 8px;
+      border: 1px solid var(--border-color, #gray-200);
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    .form-card h2 {
+      margin-bottom: 1rem;
+    }
+
+    .form-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      font-weight 600;
+    }
+
+    input, textarea {
+      width: 100%;
+      padding: 0.5rem;
+      border: 1px solid var(--border-color, #gray-200);
+      border-radius: 4px;
+      background: var(--bg, #fff);
+      color: var(--text, #dark);
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    textarea {
+      rows: 4;
+      resize: vertical;
+    }
+
+    .error-m {
+      margin-top: 0.5rem;
+      color: red;
+      font-size: 0.5rem;
+      display: none;
+    }
+
+    .error-m.show {
+      display: block;
+    }
+
+    .submit-btn {
+      background: var(--primary-btn-bg, #blue);
+      color: var(--primary-btn-text, #white);
+      border: none;
+      padding: 0.5rem 2rem;
+      font-size: 1rem;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.3s;
+    }
+
+    .submit-btn:hover {
+      background: var(--ac1, #blue-700);
+    }
+
+    /* ----- theme toggle button ----- */
+    .theme-toggle {
+      position: fixed;
+      bottom: 1rem;
+      right: 1rem;
+      background: var(--primary-btn-bg, #blue);
+      color: var(--primary-btn-text, #white);
+      border: none;
+      padding: 0.5rem 1rem;
+      font-size: 1rem;
+      border-radius: 8px;
+      cursor: pointer;
+      transition: background 0.3s, color 0.3s;
+      z-index: 100;
+    }
+
+    .theme-toggle:hover {
+      background: var(--ac1, #blue-700);
+    }
+
+    /* ----- footer ----- */
+    footer {
+      text-align: center;
+      padding: 1rem;
+      background: var(--nav-bg, #fff);
+      border-top: 1px solid var(--border-color, #gray-200);
+      transition: background 0.3s, border-color 0.3s;
+    }
+
+    /* ----- utilities ----- */
+    .container {
+      max-width: 800;
+      margin: 0 auto;
+      width: 100%;
+    }
+
+    /* ----- responsive ----- */
+    @media (max-width: 600px) {
+      .nav-l {
+        gap: 0.5rem;
+        flex-wrap: wrap;
+        justify-content: center;
+      }
+      .hero h1 {
+        font-size: 2rem;
+      }
+    }
+  </style>
+</head>
+<body>
+  <!-- navigation -->
+  <nav>
+    <ul class="nav-l">
+      <li><a href="#home">Home</a></li>
+      <li><a href="#about">About</a></li>
+      <li><a href="#services">Services</a></li>
+      <li><a href="#contact">Contact</a></li>
+    </ul>
+  </nav>
+
+  <!-- hero section -->
+  <section class="hero" id="home">
+    <div class="container">
+      <h1>Explore the future</h1>
+      <p>Lightweight, clean, accessible. Built with one‑file simplicity.</p>
+      <button class="cta-btn" onclick="alert('Call to action :)')">Get ready</button>
+    </div>
+  </section>
+
+  <!-- contact form -->
+  <section class="form-section" id="contact">
+    <div class="form-card">
+      <h2>�---- contact ----�</h2>
+      <form id="contactForm">
+        <div class="form-group">
+          <label for="name">Name</label>
+          <input type="text" id="name" name="name" placeholder="Your name">
+          <div class="error-m" id="nameError">Please fill name.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="email">Email</label>
+          <input type="email" id="email" name="email" placeholder="Your email">
+          <div class="error-m" id="emailError">Invalid email or empty.</div>
+        </div>
+
+        <div class="form-group">
+          <label for="message">Message</label>
+          <textarea id="message" name="message" placeholder="Your message"></textarea>
+          <div class="error-m" id="messageError">Please fill message.</div>
+        </div>
+
+        <button type="submit" class="submit-btn">Send message</button>
+      </form>
+      <p style="margin-top: 1rem; font-size: 0.75;" id="formSuccess"></p>
+    </div>
+  </section>
+
+  <!-- theme toggle button -->
+  <button class="theme-toggle" id="themeToggle">�️ Light / Dark</button>
+
+  <!-- footer -->
+  <footer>
+    <p>one‑file · light/dark toggle · 2020</p>
+  </footer>
+
+  <script>
+    // ----- theme toggle -----
+    const themeToggle = document.getElementById('themeToggle');
+    const body = document.querySelector('body');
+
+    // initial: no, but prefers? we can local storage? simple
+    function setTheme() {
+      // add .dark class
+      if document.body.classList.contains('dark')? we manually
+    }
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if themeToggle inner change
+    });
+    // but we also toggle
+    themeToggle.addEventListener('click', function() {
+      document.body.classList('dark');
+      if theme
+ds4: prefill: 10.13 t/s, generation: 13.78 t/s
+ds4: SPEX stats: selected_batches=111800 selected_experts=675912 cache_hits=625256 cache_misses=45286 hit_rate=0.9325 miss_per_expert=0.0670 direct_loads=5370 copy_calls=151968 copied=341928.00 MiB copy_ms=98177.452 copy_ms_per_batch=0.878 sync_calls=151968 sync_ms=25287.836 sync_ms_per_batch=0.226

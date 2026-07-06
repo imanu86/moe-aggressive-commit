@@ -1,40 +1,52 @@
 --- a/ds4.c
 +++ b/ds4.c
-@@ -14269,6 +14269,64 @@
- #endif
- }
+@@ -7383,6 +7383,76 @@
  
-+
-+/* ---- patch 0008: REAP runtime mask (DS4_REAP_MASK_FILE) ----
-+ * File di testo: righe "<layer> <expert>" = expert POTATO. mtime-poll per token.
-+ * v0: solo path CUDA decode (il bias effettivo viene riscritto nelle copie HBM).
-+ * Il bias ORIGINALE viene letto dal mmap a ogni reload: la mask e' un delta
-+ * ricostruito da zero, quindi togliere righe = ripristino. */
+ /* Later layers choose the six experts by biased top-k, but weight them using
+  * the unbiased router probabilities. */
++/* ---- patch 0011 v2: REAP runtime mask (DS4_REAP_MASK_FILE) ----
++ * File: righe "<layer> <expert>" = potato. mtime-poll a ogni token decode.
++ * GPU: upsert di range device per i bias (vince sul fallback registered).
++ * CPU: override del bias in layer_topk_selected_experts_from_probs. */
 +static char *g_reap_mask_path;
 +static long g_reap_mask_mtime_s = -1;
 +static long g_reap_mask_mtime_ns = -1;
 +static bool g_reap_mask_env_checked;
++static bool g_reap_mask_on;
 +static uint8_t g_reap_mask_pruned[DS4_MAX_LAYER][DS4_MAX_EXPERT];
++static float g_reap_bias_masked[DS4_MAX_LAYER][DS4_MAX_EXPERT];
++static const void *g_reap_bias_tensor[DS4_MAX_LAYER];
++static uint32_t g_reap_bias_n;
++
++static const float *ds4_reap_mask_cpu_bias(const void *bias_tensor) {
++    if (!g_reap_mask_on || !bias_tensor) return NULL;
++    for (uint32_t i = 0; i < g_reap_bias_n; i++) {
++        if (g_reap_bias_tensor[i] == bias_tensor) return g_reap_bias_masked[i];
++    }
++    return NULL;
++}
 +
 +static void ds4_reap_mask_apply(const ds4_model *model, const ds4_weights *weights) {
-+    float biasbuf[DS4_MAX_EXPERT];
-+    uint32_t layers_touched = 0, ranges_updated = 0;
-+    for (uint32_t il = 0; il < DS4_N_LAYER; il++) {
++    uint32_t slot = 0, ranges_updated = 0;
++    for (uint32_t il = 0; il < DS4_N_LAYER && slot < DS4_MAX_LAYER; il++) {
 +        const ds4_layer_weights *layer = &weights->layer[il];
 +        if (!layer->ffn_exp_probs_b) continue;
 +        const float *orig = (const float *)tensor_data(model, layer->ffn_exp_probs_b);
 +        for (uint32_t e = 0; e < DS4_N_EXPERT; e++) {
-+            biasbuf[e] = orig[e] + (g_reap_mask_pruned[il][e] ? -1.0e9f : 0.0f);
++            g_reap_bias_masked[slot][e] = orig[e] + (g_reap_mask_pruned[il][e] ? -1.0e9f : 0.0f);
 +        }
++        g_reap_bias_tensor[slot] = layer->ffn_exp_probs_b;
 +        int upd = ds4_gpu_model_range_update(model->map,
 +                                             layer->ffn_exp_probs_b->abs_offset,
-+                                             biasbuf,
++                                             g_reap_bias_masked[slot],
 +                                             (uint64_t)DS4_N_EXPERT * sizeof(float));
-+        layers_touched++;
 +        ranges_updated += (uint32_t)(upd > 0 ? upd : 0);
++        slot++;
 +    }
-+    fprintf(stderr, "ds4: REAP mask applied: %u layer, %u device range aggiornati\n",
-+            layers_touched, ranges_updated);
++    g_reap_bias_n = slot;
++    g_reap_mask_on = true;
++    fprintf(stderr, "ds4: REAP mask applied: %u layer, %u device range aggiornati/creati\n",
++            slot, ranges_updated);
 +}
 +
 +static void ds4_reap_mask_poll(const ds4_model *model, const ds4_weights *weights) {
@@ -62,10 +74,19 @@
 +    ds4_reap_mask_apply(model, weights);
 +}
 +
- static FILE *g_spex_trace_routing_fh;
- static char *g_spex_trace_routing_path;
- static bool g_spex_trace_routing_failed;
-@@ -20116,6 +20174,7 @@
+ static void layer_topk_selected_experts_from_probs(
+         int                    selected[DS4_MAX_EXPERT_USED],
+         float                  expert_weight[DS4_MAX_EXPERT_USED],
+@@ -7414,6 +7484,8 @@
+ 
+     if (layer->ffn_exp_probs_b) {
+         const float *bias = tensor_data(model, layer->ffn_exp_probs_b);
++        const float *reap_bias = ds4_reap_mask_cpu_bias(layer->ffn_exp_probs_b);
++        if (reap_bias) bias = reap_bias;
+         for (uint32_t i = 0; i < DS4_N_EXPERT; i++) selection[i] += bias[i];
+     }
+ 
+@@ -20116,6 +20188,7 @@
      bool ok = true;
      g->spex_trace_decode_active = logits != NULL;
      g->spex_trace_pos = pos;
@@ -75,26 +96,33 @@
              ok = metal_graph_stream_map_decode_static_all(model, weights);
 --- a/ds4_cuda.cu
 +++ b/ds4_cuda.cu
-@@ -13497,3 +13497,20 @@
+@@ -13497,3 +13497,27 @@
             ds4_gpu_hc_expand_split_tensor(out_hc, block_out, residual_hc,
                                              split, n_embd, n_hc);
  }
 +
 +
-+/* patch 0008: REAP runtime mask - sovrascrive un range del modello nelle copie
-+ * HBM cachate (il kernel router legge il bias da li'). Ritorna n. range aggiornati. */
++/* patch 0011 v2: REAP runtime mask - upsert di range device (vince sul fallback). */
 +extern "C" int ds4_gpu_model_range_update(const void *model_map, uint64_t offset, const void *data, uint64_t bytes) {
 +    int updated = 0;
 +    for (size_t i = 0; i < g_model_ranges.size(); i++) {
 +        cuda_model_range &r = g_model_ranges[i];
 +        if (r.host_base != model_map) continue;
 +        if (offset < r.offset || bytes > r.bytes || offset - r.offset > r.bytes - bytes) continue;
-+        if (r.device_ptr) {
++        if (r.device_ptr && !r.host_registered) {
 +            if (cudaMemcpy(r.device_ptr + (offset - r.offset), data, bytes, cudaMemcpyHostToDevice) == cudaSuccess) updated++;
 +            else (void)cudaGetLastError();
 +        }
 +    }
-+    return updated;
++    if (updated) return updated;
++    void *dev = NULL;
++    if (cudaMalloc(&dev, (size_t)bytes) != cudaSuccess) { (void)cudaGetLastError(); return 0; }
++    if (cudaMemcpy(dev, data, (size_t)bytes, cudaMemcpyHostToDevice) != cudaSuccess) {
++        (void)cudaGetLastError(); (void)cudaFree(dev); return 0;
++    }
++    g_model_ranges.push_back({model_map, offset, bytes, (char *)dev, NULL, NULL, 0, 0, 0});
++    g_model_range_by_offset[offset] = g_model_ranges.size() - 1u;
++    return 1;
 +}
 --- a/ds4_gpu.h
 +++ b/ds4_gpu.h

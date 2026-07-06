@@ -46,6 +46,20 @@ Una-tantum Windows: `.wslconfig [wsl2] autoMemoryReclaim=disabled` → `wsl --sh
 
 **Profilo DAILY dell'utente (preferenza 2026-07-06): REAP-loop SEMPRE ON.** Quando la LEVA 2 è costruita, il daily = **warm + cache + REAP-loop** (+ SPEX se vince l'A/B). Il toggle env resta per la MISURA/isolamento (protocollo A/B/A), ma il default-utente è acceso ("è figo e velocizza tanto"). ⚠️ NB Segnali = **draft CORTI** (non un sito da 2600 tok) → la mask va **imparata-una-volta da un batch/warm-up del dominio e RIUSATA tra i draft**, non ri-appresa per-draft (il test transfer cross-sessione dice se il riuso regge — probabile SÌ su dominio stretto stabile).
 
+## REAP-loop — parametri da ESPORRE (design 2026-07-06, NON hardcodare)
+Principio utente: *"non fissiamoci con parametri statici; in fase di creazione del sistema vanno esposti"* — corretto: è la differenza tra un ESPERIMENTO (una ricetta) e un SISTEMA (un framework tunabile). Il **"termometro" dell'utente = il ROUTER stesso** (nessun modello extra): misura lo **scostamento dal working-set iniziale**.
+- **S1 = gate-mass sugli expert POTATI** = "quanto il router VUOLE ciò che ho tolto" → il termometro di drift diretto.
+- **S2 = stabilità del routing** (Jaccard top-k tra token) = "sta scegliendo gli STESSI expert" → segnale di MANTIENI.
+- (Caveat onesto: il router mostra cosa VUOLE, pre-mask; "volere un potato" **precede** ma non **garantisce** il collasso → per questo il test lead-time (C); combinare S1+S2 è più robusto di uno solo.)
+
+**Knob da esporre (env/CLI)** — non hardcodarli, i task diversi vogliono valori diversi:
+- Schedule: keep-levels (es. 50,23) + **numero di step**, warm-up length (~150), diretto-vs-gradini.
+- Respiro: cap (ogni N tok), lunghezza (M tok), keep-level del respiro (40/64), re-learn on/off.
+- Trigger adattivo: sorgente-segnale (S1/S2/S3), **soglia** di drift, isteresi → respiro a soglia, non a orologio.
+Esporli = ciò che permette alla **community** di estenderlo (ethos ds4-open di antirez) e al paper di essere un *framework caratterizzato*, non una singola ricetta hardcoded.
+
+**End-state (la vera visione, utente 2026-07-06)**: lo schedule NON è una sequenza di K fissi (K0→K91→K20→K91 = numeri a mano) ma un **controller closed-loop**: `keep-level = f(termometro-drift)`. Drift basso → tieni/stringi; drift che sale → allarga **proporzionalmente** (drift piccolo = respiro leggero; grande = respiro profondo). È un problema di **controllo** (termostato con isteresi). I schedule fissi della serie-D sono i **datapoint che mappano la curva di risposta**; l'algoritmo li generalizza. Caveat onesti: (1) serve **isteresi/damping** (evitare oscillazioni respiro↔stringi); (2) il termometro deve **PRECEDERE** il collasso (test C) o il controller reagisce tardi; (3) è oltre la serie-D (schedule fissi) → il test #1 (respiro adattivo a soglia) è il **primo gradino**, il controller continuo è l'orizzonte-ricerca (e un pezzo di paper forte: *"dynamic MoE pruning come problema di controllo, keep-level pilotato da un sensore di drift del routing"*).
+
 ## Protocollo di misura
 - **Rumore ±50%** → ogni numero = **mediana-di-3** run identici (mai media). Spread >50% → +2 run.
 - **Primaria**: t/s aggregate. **Secondaria**: hit-rate robusto (REAP: token dentro il working-set mascherato; SPEX: prefetch L+1 che coincidono coi selezionati veri, `DS4_SPEX_PREFETCH_PROFILE=1`).

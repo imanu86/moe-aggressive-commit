@@ -62,11 +62,21 @@ make cuda CUDA_ARCH=sm_86
   Non contarci per cross-check.
 - Invariante sanity per trace con pesi: somma dei 6 gate-weights per riga ≈ 1.5 (`expert_weights_scale` Flash).
 
-## 7. Run lunghi LOCALI in WSL (lezione 2026-07-06, DIAGNOSI CORRETTA)
-- **NON era il sonno del PC** (verificato: Windows su ininterrottamente, zero reboot, zero OOM). Il vero
-  killer: **WSL2 FERMA la distro quando diventa "orfana"** — quando il processo Windows che ha lanciato
-  il job termina e non resta nulla che tenga viva la VM, dopo il timeout di idle WSL stoppa la distro e
-  con essa muore tmux + tutto. `nohup`/`tmux` proteggono dal SIGHUP del terminale, NON dallo stop-distro.
+## 7. Run lunghi LOCALI in WSL (lezione 2026-07-06, DIAGNOSI FINALE)
+- **DUE post-mortem sbagliati prima di quello giusto** (né sonno PC né orfanaggio WSL). Verità verificata
+  sul box da DSpark: il tmux era VIVO tutta la notte, la fase OFF si è COMPLETATA (10/20, 3h47m); a
+  bloccarsi era la fase ON, in **thrash-loop delle statics** (il conflitto VRAM di M8: statics MTP ~3.5GB
+  vs expert-cache su 12GB, GPU al 3%, churn 0.13↔0.15GiB) — poi uccisa a mano. Quando l'ho controllata io
+  (a job già morto/killato) la distro risultava Stopped, e ho dedotto l'orfanaggio: SBAGLIATO.
+- **LEZIONE #1 — verifica sul box PRIMA di dichiarare morto un run**: `journalctl`/tmux/pgrep/progress-log,
+  non lo stato "Stopped" della distro (che è normale a job finito). Un run "fermo" può essere in thrash, non morto.
+- **LEZIONE #2 (grave, mia) — NON rilanciare un job che scrive in una working-dir CONDIVISA senza
+  verificare lo stato dell'altro track**: ho rilanciato JOB1 via systemd non sapendo che l'OFF era già
+  fatto → ho TRONCATO la copia viva `/root/out_night/eval_off.*` (lo script usa `>`). Salvati solo perché
+  DSpark aveva committato la trace. Regola: coordina (cross-message) prima di toccare risorse condivise;
+  gli output committati sono la fonte-verità, la working-dir no.
+- Fix operativo comunque valido per i run lunghi (indipendente dalla causa): systemd-run transiente
+  (sotto), progress-log su /mnt/c/... per raccolta a freddo, e per >2-3h critici valuta il POD.
 - FIX ROBUSTO (Ubuntu-24.04 HA systemd): lancia il job come **unità systemd transiente**, che PID 1 tiene
   viva indipendente dalla shell e impedisce alla distro di risultare idle:
   `wsl -d Ubuntu-24.04 -e bash -lc "systemd-run --unit=job_<nome> --same-dir --property=Type=oneshot bash /root/job.sh"`

@@ -68,6 +68,17 @@ un modello ~50GB **sta INTERAMENTE caldo in RAM** = SSD eliminato del tutto per 
   t/s dial: prefill +43%/+87% (K50/K70), expert-load −37%/−57%. "fits-hot-32GB" empirico da confermare
   su workstation (RunPod blocca mlock+cgroup+hog). Dose masks K25/K60/K64/K67/K70 pronte.
 
+- [x] **REPLICA PUBBLICA (task #16, 2026-07-06, branch `reap/public-domain-replica`,
+  `runs/reap/public_replica/`):** ramo-dominio REAP replicato su corpus 100% PUBBLICO
+  (`prodotto_json`, scheda prodotto→JSON, generabile senza KB). Pod A6000 sm_86 ($1.62,
+  terminato+verificato). **Tabella equivalenza (novità metodologica, `scripts/reap_neff.py`):**
+  n_eff@64 42/35 vs BonusX 46/40, reuse 0.407 vs 0.395 → VALID. **3/4 proprietà replicano
+  identiche:** equivalenza routing, V0_OK (11280 sel, 0 viol), selezione-conta
+  (reap 1.052× [1.039,1.066] ≪ rand 1.197× [1.181,1.211]). **4ª (lossless stretto) NO:**
+  reap_k50 near-lossless +5.2% (CI non attraversa 1.0) invece che strettamente lossless
+  come BonusX. → REPLICA PARZIALE: il finding NON dipende dai dati privati (segno+meccanismo+
+  ordine di grandezza), solo la soglia esatta "lossless" è dominio-specifica. Paper §7.9.1.
+
 ## Prossimi (post-eval)
 - Stage B surgery (file fisico) + patch per-layer expert count → t/s reale su workstation (gratis) +
   field-accuracy N=152 lì. **K67 = config da deployare oggi sul 3060+32GB; K50 quando arrivano i 64GB.**

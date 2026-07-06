@@ -1,6 +1,6 @@
 --- a/ds4.c
 +++ b/ds4.c
-@@ -7383,6 +7383,76 @@
+@@ -7383,6 +7383,82 @@
  
  /* Later layers choose the six experts by biased top-k, but weight them using
   * the unbiased router probabilities. */
@@ -56,6 +56,12 @@
 +        if (p && *p) g_reap_mask_path = ds4_strdup(p);
 +    }
 +    if (!g_reap_mask_path || !model || !weights) return;
++    /* v3: re-apply periodico - l'upsert puo' venire soppiantato da range registrati
++     * DOPO l'apply (model-load in corso nei primi token): riconquista l'indice. */
++    {
++        static uint32_t poll_n;
++        if (g_reap_mask_on && (++poll_n % 32u) == 0u) ds4_reap_mask_apply(model, weights);
++    }
 +    struct stat st;
 +    if (stat(g_reap_mask_path, &st) != 0) return;
 +    if ((long)st.st_mtim.tv_sec == g_reap_mask_mtime_s &&
@@ -77,7 +83,7 @@
  static void layer_topk_selected_experts_from_probs(
          int                    selected[DS4_MAX_EXPERT_USED],
          float                  expert_weight[DS4_MAX_EXPERT_USED],
-@@ -7414,6 +7484,8 @@
+@@ -7414,6 +7490,8 @@
  
      if (layer->ffn_exp_probs_b) {
          const float *bias = tensor_data(model, layer->ffn_exp_probs_b);
@@ -86,7 +92,7 @@
          for (uint32_t i = 0; i < DS4_N_EXPERT; i++) selection[i] += bias[i];
      }
  
-@@ -20116,6 +20188,7 @@
+@@ -20116,6 +20194,7 @@
      bool ok = true;
      g->spex_trace_decode_active = logits != NULL;
      g->spex_trace_pos = pos;

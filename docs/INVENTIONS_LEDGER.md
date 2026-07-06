@@ -12,6 +12,16 @@ meccanismi** ma *il transfer al regime 12GB + i controlli onesti + i negativi mi
 ogni idea ha almeno un doc nel repo (HANDOFF + EXPERIMENTS_LEDGER fanno il loro lavoro) — tranne 1 gemma trovata solo
 in chat (vedi §Recuperi). Le eventuali altre gemme solo-in-chat sono nei transcript Codex/Claude, fuori da questo sweep.
 
+## ⭐ AGGIORNAMENTO 2026-07-06 (pm) — REAP-loop v1 CHIUSO E2E e FUNZIONA (chat K91)
+La leva che qui era `[M] IDEA-SOLA` è ora **misurata end-to-end con esito positivo** → passa a **`[M] IMPLEMENTATA-v1`** ed è **il contributo-headline ORIGINALE-MANU più forte del progetto**. Branch `reap/k91-coding-vram`, 11 commit, patch 0011, giornata $2.97.
+- **Asimmetria salita/discesa (finding nuovo)**: potare un modello *già in delirio* NON recupera (il contesto sporco vince); ma **partire full + stringere a scalini** (keep-64→40→23) tiene il **codice pulito fino a keep-9%** — dove il keep-9% *a freddo* collassa all'istante. È il cuore del loop.
+- **Mask imparata dalla sessione** (primi 150 token) copre **62% vs 15%** delle statiche, gira **~2× più veloce** (4.5 vs 2.4 t/s, hit 0.79 vs 0.57).
+- **Correzione onesta**: il collasso K91/K96 era soprattutto il **criterio di selezione** (teneva specialisti rari), non solo il numero → tenere i "cavalli da tiro" ad alta massa regge 700 token dove prima crollava in 40.
+- **Sensore distress** gratis (dal routing) → all'onset **rewind**, non solo allargare.
+- **Ricetta v1**: full (contesto sano + osserva routing) → a ~150 tok mask-dalla-sessione + stringi a caldo (0011) → scala a gradini a keep-9% (veloce, in VRAM, coerente) → sensore acceso → se degenera, rewind.
+- **Caveat**: 700 token di CSS coerente ≠ sito completo con JS verificato (il verdetto "produzione" vuole gen completa + render).
+- **PROSSIMO RIGORE prima di rivendicarlo nel paper**: **novelty check** — il domain-pruning *dinamico, session-learned, con rewind-on-distress* è pubblicato? In letteratura il domain-pruning è sempre statico → plausibilmente la parte più nuova, ma da verificare (come per tutto).
+
 ## I 3 pilastri difendibili per il paper (in ordine di solidità)
 1. **REAP bias-mask come protocollo di eval surgery-free** — l'unica invenzione IMPLEMENTATA + misurata lossless
    (K50/dom ppl 1.010× vs full, CI95 [0.996,1.025]; random 1.388×; dose-response K50/K67/K70; 0/11280 violazioni V0).

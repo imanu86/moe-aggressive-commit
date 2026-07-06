@@ -1,0 +1,274 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3090 (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.452s
+ds4: cuda backend initialized for graph diagnostics
+ds4: context buffers 108.25 MiB (ctx=3072, backend=cuda, prefill_chunk=512, raw_kv_rows=768, compressed_kv_rows=770)
+ds4: using GPU graph generation with graph prefill
+ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
+Hereds4: CUDA loading model tensors 1.09 GiB cached
+’s a complete single-file website with a navigation bar, hero section, contact form with validation, and a theme toggle button.
+```html
+<!DOCTYPE html]
+<html lang="en"
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>One-File Wonder</title>
+    <style>
+        /* light theme (default) */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+       ds4: CUDA loading model tensors 7.86 GiB cached
+ }
+        body {
+            font-family: 'Inter', sans-serif;
+            line-height: 1.6;
+            color: #333;
+            background: #f8f9fa;
+        }
+        /* utility for theme colors */
+        :root {
+            --bg: #f8f9fa;
+            --text: #333;
+            --heading: #2c3e4f;
+            --btn-bg: #e0e1e2;
+            --btn-text: #555;
+            --nav-bg: #d1d2d3;
+            --nav-link: #aabbcc;
+            --hero-bg: #b0c1d2;
+            --hero-head: #c3d4e5;
+            --form-bg: #e5e6e7;
+            --form-border: #d0d1d2;
+            --error-color: #e8e9ea;
+        }
+
+        /* dark theme overrides */
+        .dark {
+            --bg: #2f3f4f;
+            --text: #1a1b1c;
+            --heading: #4e5f6f;
+            --btn-bg: #3a4b5c;
+            --btn-text: #2d3e4f;
+            --nav-bg: #5f6e7d;
+            --nav-link: #7a8b9c;
+            --hero-bg: #6d7e8f;
+            --hero-head: #8a9b0c;
+            --form-bg: #4c5d6e;
+            --form-border: #3b4c5d;
+            --error-color: #9a8b7c;
+        }
+
+        /* apply theme via class on body */
+        .dark-theme {
+            background: #2f3f4f;
+            color: #1a1b1c;
+        }
+        /* we'll use js to toggle, but keep base styles using variables */
+        /* easier: just define two sets and switch via js adding class to body */
+
+        /* layout */
+        .page {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+        /* navigation */
+        nav {
+            background: #d1d2d3;
+            padding: 0.8rem 1.2rem;
+            border-radius: 0.3rem;
+            display: flex;
+            justify-content: center;
+            gap: 1.2rem;
+        }
+        nav a {
+            color: #aabbcc;
+            text-decoration: none;
+            font-weight: 600;
+            padding: 0.4rem 0.8rem;
+            border-radius: 0.2rem;
+        }
+        nav a:hover {
+            color: #ddff;
+        }
+
+        /* hero */
+        .hero {
+            background: #b0c1d2;
+            padding: 2rem 1.5rem;
+            border-radius: 0.5rem;
+            text-align: center;
+        }
+        .hero h2 {
+            color: #c3d4e5;
+            font-size: 2.2rem;
+            margin-bottom: 0.6rem;
+        }
+        .hero p {
+            color: #333;
+            font-size: 1.2rem;
+            margin: 0.8rem 0;
+        }
+        .hero button {
+            background: #e0e1e2;
+            color: #555;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 0.3rem;
+            font-size: 1rem;
+            cursor: pointer;
+        }
+
+        /* contact form */
+        .form {
+            background: #e5e6e7;
+            padding: 1.5rem 1rem;
+            border: 1px solid #d0d1d2;
+            border-radius: 0.4rem;
+        }
+        .form label {
+            display: block;
+            margin-bottom: 0.5rem;
+        }
+        .form input, .form textarea {
+            width: 100%;
+            padding: 0.5rem 0.8rem;
+            border: 1px solid #d0d1d2;
+            border-radius: 0.2rem;
+        }
+        .form .error {
+            color: #e8e9ea;
+            font-size: 0.9rem;
+            margin: 0.2rem 0;
+        }
+        .form button {
+            background: #e0e1e2;
+            color: #555;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 0.3rem;
+            margin-top: 0.5rem;
+        }
+
+        /* theme toggle button */
+        .theme-btn {
+            background: #e0e1e2;
+            color: #555;
+            padding: 0.6rem 1.2rem;
+            border: none;
+            border-radius: 0.3rem;
+            cursor: pointer;
+            margin: 0.5rem 0;
+        }
+
+        /* responsive */
+        @media (max-width: 600px) {
+            nav { flex-direction: column; }
+        }
+    </style>
+</head>
+<body class="light-theme">
+    <!-- we'll use a class to toggle, but also keep inline style for demo -->
+    <div class="page">
+        <!-- navigation bar -->
+        <nav>
+            <a href="#home">Home</a>
+            <a href="#about">About</a>
+            <a href="#contact">Contact</a>
+        </nav>
+
+        <!-- hero section -->
+        <div class="hero">
+            <h2>Welcome to the Future</h2>
+            <p>Your journey begins here. One step at a time.</p>
+            <button onclick="alert('Hero CTA clicked!')">Get Started</button>
+        </div>
+
+        <!-- contact form -->
+        <div class="form">
+            <h3>Contact Us</h3>
+            <form id="contactForm" onsubmit="return validateForm(event)">
+                <label>Name:</label>
+                <input type="text" id="name" name="name" placeholder="Your name" />
+                <div class="error" id="nameError"></div>
+
+                <label>Email:</label>
+                <input type="email" id="email" name="email" placeholder="you@example.com" />
+                <div class="error" id="emailError"></div>
+
+                <label>Message:</label>
+                <textarea id="message" name="message" rows="3" placeholder="Your message"></textarea>
+                <div class="error" id="msgError"></div>
+
+                <button type="submit">Send</button>
+            </form>
+        </div>
+
+        <!-- theme toggle -->
+        <div>
+            <button class="theme-btn" onclick="toggleTheme()">Toggle Theme</button>
+        </div>
+    </div>
+
+    <script>
+        // -------- validation --------
+        function validateForm(e) {
+            e.preventDefault();
+            let valid = true;
+
+            const name = document.getElementById('name').value.trim();
+            const email = document.getElementById('email').value.trim();
+            const message = document.getElementById('message').value.trim();
+
+            const nameErr = document.getElementById('nameError');
+            const emailErr = document.getElementById('emailError');
+            const msgErr = document.getElementById('msgError');
+
+            // reset errors
+            nameErr.textContent = '';
+            emailErr.textContent = '';
+            msgErr.textContent = '';
+
+            if (name === '') {
+                nameErr.textContent = 'Name is required.';
+                valid = false;
+            }
+            if (email === '') {
+                emailErr.textContent = 'Email is required.';
+                valid = false;
+            } else if (!isValidEmail(email)) {
+                emailErr.textContent = 'Please enter a valid email (e.g., name@domain.com).';
+                valid = false;
+            }
+            if (message === '') {
+                msgErr.textContent = 'Message cannot be empty.';
+                valid = false;
+            }
+
+            if (valid) {
+                alert('Form submitted successfully!');
+                // optionally reset
+                document.getElementById('contactForm').reset();
+            }
+            return false; // prevent actual submit
+        }
+
+        function isValidEmail(email) {
+            // basic email pattern
+            return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email);
+        }
+
+        // -------- theme toggle --------
+        function toggleTheme() {
+            // we'll toggle a class on body and also update root colors via js
+            const body = document.body;
+            const isDark = body.classList.contains('dark-theme');
+            if (is
+ds4: prefill: 6.98 t/s, generation: 2.70 t/s
+ds4: SPEX stats: selected_batches=86000 selected_experts=520437 cache_hits=305229 cache_misses=210513 hit_rate=0.5918 miss_per_expert=0.4045 direct_loads=4695 copy_calls=645624 copied=1452654.00 MiB copy_ms=659780.387 copy_ms_per_batch=7.672 sync_calls=645624 sync_ms=69688.350 sync_ms_per_batch=0.810

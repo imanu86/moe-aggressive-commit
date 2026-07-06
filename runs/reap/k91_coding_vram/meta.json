@@ -22,9 +22,13 @@
   },
   "costi": {
     "balance_prima_usd": 18.8196548086,
-    "balance_dopo_usd": 17.3521774807,
-    "costo_esperimento_usd": 1.47,
-    "nota": "budget autorizzato $2-4; K91/K0/K50/K96 su 3 pod ($1.20) + K35 su 1 pod aggiuntivo ($0.27) = $1.47. Tutti terminati. Mai toccato i pod di altre sessioni (A6000 reap-public-replica, dspark-native-parallel)."
+    "balance_dopo_usd": 16.0642849404,
+    "costo_esperimento_usd": 2.76,
+    "nota": "budget autorizzato $2-4. Fase 1 (fit+quality K91/K0/K50/K96 + K35): $1.47 su 4 pod 3080Ti. Fase 2 (REAP-loop A/E0/0011/B/C su pod 3090 24GB $0.22/h): $1.29. Tutti i pod MIEI terminati e verificati. Mai toccati pod di altre sessioni (A6000 reap-public-replica, dspark-native-parallel, dspark-lowram-cell2)."
+  },
+  "loop_test": {
+    "dir": "loop/",
+    "verdetto": "sensore OK (S1 0.86 capacita'-gap, cross-validato 3x; S2 0.475 vs 0.269; detector 30-80 tok 0 falsi pos); attuatore runtime OK (patch 0011 v2 upsert, toggle a caldo 0.00% violazioni); recovery live FALLISCE per contesto avvelenato (C1); controprova C2 conferma causalita' (K35 sano -> switch K91 -> degenera subito). Design-lesson: il loop richiede early-detect O rewind allo switch."
   },
   "software": {
     "ds4_base": "80ebbc3 (github.com/antirez/ds4)",

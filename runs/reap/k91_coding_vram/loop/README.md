@@ -63,6 +63,37 @@ l'attrattore si formi, **oppure (b) rewind** dei token degeneri allo switch (il 
 Tier B è il rewind estremo, e funziona). Sensore ✅ e attuatore ✅ ora esistono e sono
 misurati; il pezzo mancante del loop è la politica di rewind/timing.
 
+## D3/D4 — la manopola intelligente (stessa data, secondo giro)
+
+**D3 (analisi locale, gratis).** Copertura della massa di gate a keep-23 sulla gen sito:
+statica media-condizionale **14.1%**, statica per-MASSA (12 prompt) **15.3%**, oracle
+in-sample **71.3%**, **mask di SESSIONE dai primi 100/150/300 tok: 55/62/66%** (a keep-64:
+74/79/83%). → il working-set a K91 e' **per-sessione** e si impara online in ~150 token.
+
+**D4a (pod 3090) — discesa a scalini con session-mask: FUNZIONA.**
+K0 fino a tok 151 → session keep-64 → tok 309 keep-40 → tok 462 **keep-23 (K91)** → fine 700.
+Detector **CLEAN su tutto**, codice CSS/HTML valido anche nella fase keep-23 e in coda.
+Aderenza keep-set 0.05/0.00/0.08% per fase. hit_rate finale 0.79, 4.46 t/s aggregate.
+
+**D4b (controllo statico) — CORREZIONE ONESTA del verdetto fase-1.**
+La statica K91 **per-MASSA** dal token 0 resta **CLEAN a 700 token** (CSS valido, hit 0.57,
+2.44 t/s) — mentre la K91 media-condizionale collassava in ~40 token. Quindi:
+- il collasso di K91 in fase 1 era in gran parte **colpa del criterio di ranking**
+  (media condizionale = specialisti rari, zero cavalli-da-tiro), non della sola capacita';
+- la copertura di massa (15%) NON predice il collasso: per la fluidita' contano i workhorses;
+- la **session-mask resta superiore in efficienza** (hit 0.79 vs 0.57, 4.46 vs 2.44 t/s)
+  e in copertura (62% vs 15%), ma la coerenza a K91 e' raggiungibile anche in statico
+  col ranking giusto. Caveat: 700 tok di CSS coerente ≠ sito completo con JS funzionante
+  (per il verdetto pieno serve una gen 2600 tok + render, non fatta qui).
+
+**Risposte alle domande di design:**
+1. *Scendere vs salire*: asimmetrico — scendere con contesto sano funziona (D4a);
+   salire dopo il collasso no (C1, serve rewind).
+2. *Ripulire l'allucinazione*: detector→taglio all'onset→resume largo (rewind coarse);
+   con D4a/D4b la degenerazione si PREVIENE, il rewind resta rete di sicurezza.
+3. *Resa a K alto*: due corsie misurate — statica per-massa (semplice, 2.4 t/s) e
+   session-adaptive a scalini (piu' efficiente, 4.5 t/s, hit 0.79).
+
 ## Artefatti
 
 `loop_signals.json` (analisi A), `loop_traces.tgz` (trace k91/k0), `c_traces.tgz` (trace

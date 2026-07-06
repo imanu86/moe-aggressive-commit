@@ -22,17 +22,26 @@
   },
   "costi": {
     "balance_prima_usd": 18.8196548086,
-    "balance_dopo_usd": 16.0642849404,
-    "costo_esperimento_usd": 2.76,
-    "nota": "budget autorizzato $2-4. Fase 1 (fit+quality K91/K0/K50/K96 + K35): $1.47 su 4 pod 3080Ti. Fase 2 (REAP-loop A/E0/0011/B/C su pod 3090 24GB $0.22/h): $1.29. Tutti i pod MIEI terminati e verificati. Mai toccati pod di altre sessioni (A6000 reap-public-replica, dspark-native-parallel, dspark-lowram-cell2)."
+    "balance_dopo_usd": 15.8510439568,
+    "costo_esperimento_usd": 2.97,
+    "nota": "budget autorizzato $2-4. Fase 1 (fit+quality K91/K0/K50/K96 + K35): $1.47 su 4 pod 3080Ti. Fase 2 (REAP-loop A/E0/0011/B/C su pod 3090 24GB $0.22/h): $1.29. Tutti i pod MIEI terminati e verificati. Mai toccati pod di altre sessioni (A6000 reap-public-replica, dspark-native-parallel, dspark-lowram-cell2). Fase 3 (D3 locale + D4 scalini su pod 3090): $0.21 (+$0.02 pod ssh-rotto terminato subito)."
   },
   "loop_test": {
     "dir": "loop/",
-    "verdetto": "sensore OK (S1 0.86 capacita'-gap, cross-validato 3x; S2 0.475 vs 0.269; detector 30-80 tok 0 falsi pos); attuatore runtime OK (patch 0011 v2 upsert, toggle a caldo 0.00% violazioni); recovery live FALLISCE per contesto avvelenato (C1); controprova C2 conferma causalita' (K35 sano -> switch K91 -> degenera subito). Design-lesson: il loop richiede early-detect O rewind allo switch."
+    "verdetto": "sensore OK (S1 0.86 capacita'-gap, cross-validato 3x; S2 0.475 vs 0.269; detector 30-80 tok 0 falsi pos); attuatore runtime OK (patch 0011 v2 upsert, toggle a caldo 0.00% violazioni); recovery live FALLISCE per contesto avvelenato (C1); controprova C2 conferma causalita' (K35 sano -> switch K91 -> degenera subito). Design-lesson: il loop richiede early-detect O rewind allo switch.",
+    "d4": "D4a scalini session-mask K0->keep64@151->keep40@309->keep23@462: CLEAN 700 tok, hit 0.79, 4.46 t/s. D4b statica per-MASSA K91: CLEAN 700 tok (hit 0.57, 2.44 t/s) -> CORREZIONE: il collasso K91 fase-1 era principalmente il criterio media-condizionale (specialisti senza workhorses), non la sola capacita'. Session-mask resta superiore in efficienza e copertura (62% vs 15%)."
   },
   "software": {
     "ds4_base": "80ebbc3 (github.com/antirez/ds4)",
-    "patches": ["0001", "0002", "0003", "0004", "0005", "0006", "0007"],
+    "patches": [
+      "0001",
+      "0002",
+      "0003",
+      "0004",
+      "0005",
+      "0006",
+      "0007"
+    ],
     "build": "make cuda CUDA_ARCH=sm_86 -j: BUILD_OK",
     "regression": "make cuda-regression CUDA_ARCH=sm_86: 'cuda long-context regression: OK'",
     "model": "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
@@ -40,9 +49,17 @@
     "model_source": "https://huggingface.co/antirez/deepseek-v4-gguf"
   },
   "geometria": {
-    "n_layer": 43, "n_expert": 256, "hash_layers": [0, 1, 2], "prunable_layers": 40,
+    "n_layer": 43,
+    "n_expert": 256,
+    "hash_layers": [
+      0,
+      1,
+      2
+    ],
+    "prunable_layers": 40,
     "bytes_per_expert": 7077888,
-    "K91_keep_per_layer": 23, "K91_keep_frac": 0.09,
+    "K91_keep_per_layer": 23,
+    "K91_keep_frac": 0.09,
     "K91_expert_residenti": 920,
     "K91_expert_gib_atteso": 6.06
   },
@@ -51,9 +68,23 @@
     "usable_expert_cache_experts_12GB": 407,
     "usable_cache_note": "backbone 5.82 + arene q8_0 ~1.8GiB + overhead -> solo ~2.7GiB cache; >=440 OOM. La stima task 6.2GiB->910exp ignorava le arene.",
     "V0_mechanism": "checked=5760 violations=0",
-    "fit_K0_full":  {"hit_rate": 0.3509, "direct_loads": 2670, "gen_ts": 2.16},
-    "fit_K91":      {"hit_rate": 0.6725, "direct_loads": 993,  "gen_ts": 3.67, "working_set": 920},
-    "fit_K96":      {"hit_rate": 0.9593, "direct_loads": 631,  "gen_ts": 12.02, "working_set": 360},
+    "fit_K0_full": {
+      "hit_rate": 0.3509,
+      "direct_loads": 2670,
+      "gen_ts": 2.16
+    },
+    "fit_K91": {
+      "hit_rate": 0.6725,
+      "direct_loads": 993,
+      "gen_ts": 3.67,
+      "working_set": 920
+    },
+    "fit_K96": {
+      "hit_rate": 0.9593,
+      "direct_loads": 631,
+      "gen_ts": 12.02,
+      "working_set": 360
+    },
     "esito_ABC": "K91 = esito C (non entra: 920>407 cache) E fallisce qualita' (degenera). K96 = esito B (entra hit_rate 0.96 ma degenera). Nessun K entra in 12GB reali E codifica.",
     "caveat_2bit": "expert IQ2_XXS/Q2_K: il 2-bit da solo ~-20pt coding (eval_gold 55% vs 75% 4-bit, HANDOFF_7:170). Degrado = pavimento-2-bit + potatura. Lettura RELATIVA al tetto K0-2bit (che pero' renderizza pulito -> collasso e' potatura-driven). Q4 non testato.",
     "quality_1run_greedy": {

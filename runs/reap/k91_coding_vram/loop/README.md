@@ -100,3 +100,20 @@ La statica K91 **per-MASSA** dal token 0 resta **CLEAN a 700 token** (CSS valido
 c1/c2), `gen_*.log` (tutte le generazioni), `analyze_loop_signals.py`, `b_run.log`/`c_run.log`
 (orchestrazione), patch in `patches/ds4/0011-reap-runtime-mask.patch`.
 Pod 3090 terminato + verificato; costi in `../meta.json`.
+
+## POST-SCRIPTUM (secondo giro, v3): ritrattazioni e verdetti finali — TUTTI aderenza-verificati
+
+**Bug cold-start scoperto e fixato (0011 v3)**: l'apply al token ~1 veniva soppiantato dai
+range del model-load → mask silenziosamente OFF nei run cold (A1F 52% violazioni, D4b 85%).
+v3 = re-apply ogni 32 token. REGOLA NUOVA: aderenza verificata su OGNI run mascherata.
+
+| Verdetto finale | Dato (mask verificata) |
+|---|---|
+| Statica K91 (media O massa) sul coding | **collassa** (mass: onset 8%, hit 0.99) — "mass regge" RITRATTATO |
+| Scala sessione HOT sul coding | regge 94%-100% (2 seed) |
+| Stessa mask COLD sul coding | **degenera al 70%** (hit 0.96, 11.4 t/s) → **asimmetria di QUALITÀ reale**; quella di efficienza era artefatto |
+| Segnali (north-star): K91-reuse cold | **pareggio col full a livello campo (0.70 vs 0.70)**; danno solo di formato |
+| Head-to-head vs reattiva 2x VRAM | loop vince 3.7x (9.2 vs 2.5 t/s) |
+| Sensori router (S2 lag 1-16) | morti (0% sopra soglia durante il loop) |
+| Sensore S1 (0012) | deriva monotona reale 0.80→0.89, ma lenta: indicatore, non allarme |
+| ppl keep-23: session/domain/random | 1.22× / 3.5-3.7× / **9.34×**; transfer stesso-output-type 1.19× |

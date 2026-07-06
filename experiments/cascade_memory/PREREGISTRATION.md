@@ -41,6 +41,24 @@ Otherwise: honest negative (complexity > gain).
 Confirm the gain reappears on **RULER** and **LongMemEval_s** with consistent sign;
 abstention must not degrade.
 
+## E4 — learned trigger in a 2-tier memory (pre-registered 2026-07-06, before results)
+Follow-up after the cascade negative + FINDING 3. The many-level cascade is dropped; the
+test is the 2-tier (small window + one direct RAG) with the **learned trigger** vs the
+**abstention-only trigger**, on **recency-skewed access**, measuring **amortized cost**
+(mean over the mixture, denominator N_total).
+
+- Arms: B0_sw (floor), B1 always-RAG (ceiling ref), **B2_reactive swept over theta**.
+  Mechanism (already in code): escalate iff `abstained OR mean_logprob < theta`.
+  - `theta = -2.0` → logprob gate never fires → trigger = **abstention-only** (T_abst, baseline).
+  - `theta ≈ -0.006..-0.001` → also recovers confident-wrong non-abstainers → **learned trigger** (T_learned).
+- Dataset: `--dist-profile recency` (exponential mean 8, ~half the facts in-window).
+- **GO** for the learned trigger only if its cost/accuracy frontier **dominates** the
+  T_abst point: higher total accuracy at amortized cost ≤ 1.15× T_abst's, with a bootstrap
+  CI95 on Δaccuracy that excludes 0 (or equal accuracy at lower cost). Otherwise **honest
+  negative**: the +0.029 AUROC edge (F3) does not convert into a frontier gain.
+- Anti-gaming: same fixed grid of theta declared here; amortized cost includes the native
+  attempt and all recoveries; failures/abstentions stay in the denominator.
+
 ## Anti-gaming, fixed
 Denominator always `N_total`; primary cost = tokens+calls; no metric chosen post-hoc;
 RANDOM-at-equal-budget control (B3) is mandatory in Step 2 — if the cascade cannot beat

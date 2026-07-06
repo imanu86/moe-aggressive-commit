@@ -133,6 +133,26 @@ def make_item(seed, distance, category, difficulty, has_plant=True):
     }
 
 
+def generate_recency(n_items, categories, difficulties, seed0=700000, scale=8.0,
+                     max_dist=80):
+    """Recency-skewed access profile: the target fact's turn-distance is sampled from
+    an exponential (mean=scale) instead of a uniform grid, so MOST queries reference
+    recent turns (in-window -> no recovery) and only a long tail reaches far back.
+    This is the realistic conversational regime, and the amortized cost = mean over
+    this mixture (denominator N_total). Each item's distance/category/difficulty is
+    sampled from its own seed for reproducibility."""
+    import math
+    items = []
+    for i in range(n_items):
+        rng = random.Random(seed0 + i)
+        d = 1 + int(rng.expovariate(1.0 / scale))
+        d = max(1, min(d, max_dist))
+        cat = rng.choice(categories)
+        diff = rng.choice(difficulties)
+        items.append(make_item(seed0 + i, d, cat, diff, has_plant=True))
+    return items
+
+
 def generate(n_per_cell, distances, categories, difficulties, seed0=1000,
              leak_control=False):
     items = []
@@ -159,19 +179,32 @@ def main():
     ap.add_argument("--difficulties", default="easy,hard")
     ap.add_argument("--seed0", type=int, default=1000)
     ap.add_argument("--leak-control", action="store_true")
+    ap.add_argument("--dist-profile", default="grid", choices=["grid", "recency"],
+                    help="grid = uniform distance cells; recency = exponential (realistic)")
+    ap.add_argument("--n-items", type=int, default=800, help="total items for --dist-profile recency")
+    ap.add_argument("--recency-scale", type=float, default=8.0, help="mean turn-distance (exponential)")
     a = ap.parse_args()
-    dists = [int(x) for x in a.distances.split(",")]
     cats = a.categories.split(",")
     diffs = a.difficulties.split(",")
-    items = generate(a.n_per_cell, dists, cats, diffs, a.seed0, a.leak_control)
+    if a.dist_profile == "recency":
+        items = generate_recency(a.n_items, cats, diffs, a.seed0, a.recency_scale)
+    else:
+        dists = [int(x) for x in a.distances.split(",")]
+        items = generate(a.n_per_cell, dists, cats, diffs, a.seed0, a.leak_control)
     os.makedirs(os.path.dirname(os.path.abspath(a.out)), exist_ok=True)
     with open(a.out, "w", encoding="utf-8") as f:
         for it in items:
             f.write(json.dumps(it, ensure_ascii=False) + "\n")
     n_plant = sum(1 for it in items if it["has_plant"])
-    print(f"wrote {len(items)} items ({n_plant} with plant) to {a.out}")
-    print(f"cells: {len(dists)}x{len(cats)}x{len(diffs)} = "
-          f"{len(dists)*len(cats)*len(diffs)} @ {a.n_per_cell}/cell")
+    print(f"wrote {len(items)} items ({n_plant} with plant) to {a.out}  [profile={a.dist_profile}]")
+    if a.dist_profile == "recency":
+        ds = sorted(it["distance"] for it in items)
+        within = sum(1 for d in ds if d <= 6)
+        print(f"  distance: median={ds[len(ds)//2]}  min={ds[0]}  max={ds[-1]}  "
+              f"within-native(<=6)={within}/{len(ds)} ({within/len(ds):.0%})")
+    else:
+        print(f"  cells: {len(dists)}x{len(cats)}x{len(diffs)} = "
+              f"{len(dists)*len(cats)*len(diffs)} @ {a.n_per_cell}/cell")
 
 
 if __name__ == "__main__":

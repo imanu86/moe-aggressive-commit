@@ -223,7 +223,7 @@ This is the finding that upgrades the demarcation from "different" to "load-bear
 
 ### 5.5 North-star on a real task (Segnali)
 
-On the real "Segnali" extraction task, scored by `eval_gold`, with learn-once-reuse (mask learned once from 4 warm items, reused cold on 10 drafts): aggressive keep-9% (K91) is **on par with the full model in knowledge** — **lenient field-acc full 0.70 = K50 = K91 = two-step 0.70.** Under strict scoring, full 0.583 vs masked 0.08–0.23, but the damage is **only formatting** (splintered keys, verbose JSON overrunning `-n 200`), **not knowledge** — a trivial production fix (+50 tokens or JSON-repair). With hit 0.89–0.99, K91-on-Segnali is operationally ~par with full, and **learn-once-reuse is confirmed.**
+On the real "Segnali" extraction task, scored by `eval_gold`, with learn-once-reuse (mask learned once from 4 warm items, reused cold on 10 drafts): aggressive keep-9% (K91) is **on par with the full model in knowledge** — **lenient field-acc full 0.70 = K50 = K91 = two-step 0.70.** Under strict scoring, full 0.583 vs masked 0.08–0.23, but the damage is **only formatting** (splintered keys, verbose JSON overrunning `-n 200`), **not knowledge** — a **hypothesized** production fix (+50 tokens or JSON-repair) that we have **not yet measured [OPEN]**. With hit 0.89–0.99, K91-on-Segnali is operationally ~par with full in knowledge, and **learn-once-reuse is confirmed.**
 <!-- src: docs/INVENTIONS_LEDGER.md:46 (north-star validated: lenient full 0.70 = k50/k91/two-step 0.70; strict damage format-only, fix +50 tok/JSON-repair; hit 0.89-0.99; learn-once-reuse confirmed) -->
 
 ---
@@ -321,7 +321,7 @@ Every number carries its source. **[PENDING]** marks data not yet on disk (3060-
 | Head-to-head (VRAM, t/s, hit) | 6.9 GB / 9.22 t/s / 0.91 | reactive 13.8 GB / 2.51 t/s / 0.60 | **3.7× at ½ VRAM** | pod 3080Ti; hit transfers, **[PENDING 3060 abs t/s]** <!-- src: docs/INVENTIONS_LEDGER.md:47 --> |
 | keep-9 dynamic clean | 726 tok @ 23.6 t/s | — | above ~11 t/s PCIe ceiling | pod; VRAM-resident, sidesteps PCIe <!-- src: docs/INVENTIONS_LEDGER.md:30,38 --> |
 | Segnali field-acc (lenient) | K50=K91=two-step 0.70 | full 0.70 | **par in knowledge** | eval_gold, learn-once-reuse <!-- src: docs/INVENTIONS_LEDGER.md:46 --> |
-| Segnali damage (strict) | masked 0.08–0.23 | full 0.583 | **format-only**, +50 tok fix | hit 0.89–0.99 <!-- src: docs/INVENTIONS_LEDGER.md:46 --> |
+| Segnali damage (strict) | masked 0.08–0.23 | full 0.583 | **format-only**; +50-tok fix **[OPEN, unmeasured]** | hit 0.89–0.99 <!-- src: docs/INVENTIONS_LEDGER.md:46 --> |
 | Downstream ppl @ keep-9% | session 1.22× | domain 3.5×, random 9.3× | session near-lossless | Control B <!-- src: docs/INVENTIONS_LEDGER.md:32 --> |
 | Cross-task transfer (ppl) | session-mask 1.19× | domain 3.5× | output-type ≪ domain | learn-once-reuse <!-- src: docs/INVENTIONS_LEDGER.md:35 --> |
 

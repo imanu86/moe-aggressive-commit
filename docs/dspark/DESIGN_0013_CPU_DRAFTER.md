@@ -6,11 +6,29 @@
 > a draft-2, contro +30-60% di expert-cache sbloccata (M8). Mappa sorgente: agente
 > esplorativo 2026-07-06 su worktree `/root/ds4-dspark` (bee9eb3+0009-0011).
 
-## Perché
-Nel regime consumer la GPU è IO-starved e la CPU oziosa. Spostando il drafter su CPU:
-la VRAM del drafter torna INTERA all'expert cache; spariscono 0011, 0012 e il bug di
-accounting WSL2 (il drafter non tocca più CUDA) → stack piattaforma-indifferente.
+## Perché — FRAMING CORRETTO (correzioni SPEX-main 2026-07-06, incassate)
+⚠️ Tre errori del framing iniziale, corretti:
+1. **Host ≠ device**: i "3.55GB" sono mmap HOST; il footprint DEVICE delle statics MTP
+   è ~0.34GB. Il blocco della cache su WSL2 NON è VRAM recuperabile: è il bug di
+   accounting `cudaHostRegisterMapped` (`cudaMemGetInfo available=0.00`) — M8-BIS/TRIS
+   lo provano (statics tolte via 0011, cache ancora negata).
+2. **Il "+30-60%" era un confronto a DUE variabili** (base senza --mtp E con
+   RESERVE_GB=1 vs spec con --mtp): NON è il beneficio attribuibile alla cache. Il
+   numero pulito (cache-on vs cache-off a parità di --mtp) è l'oggetto del PROBE sotto.
+3. Il bench 47ms era su GEMV sintetico: il costo drafter-CPU va rimisurato sul path
+   ds4-CPU reale prima di qualsiasi build.
+
+**Beneficio VERO ipotizzato dalla 0013**: il drafter CPU non richiede NESSUNA
+registrazione host-mapped → l'accounting si sblocca → l'expert cache può abilitarsi
+con --mtp su WSL2. Da PROVARE col probe (sotto), non da inferire.
 Rischio correttezza nullo per costruzione: il target verifica ogni draft.
+
+## PROBE decisionale (mandato SPEX-main, PRIMA di ogni build — soglia: delta <10% = NO-GO)
+(a) meccanismo: `available` riportato con vs senza registrazione host del support model
+    (env diagnostica `DS4_MTP_NO_REGISTER=1`, patch measurement-only nel worktree);
+(b) numero pulito: cache-on vs cache-off **a parità di --mtp** (draft-1 inerte su
+    entrambi i lati: mappa caricata, drafting spento, path identico — l'unica variabile
+    è registrazione→cache). Sul 3060 daily, MAI pod (regime cache/warm non trasferisce).
 
 ## La mappa (verificata sul sorgente, riusabilità 34/36 componenti)
 Call-site da sostituire (worktree, righe attuali):

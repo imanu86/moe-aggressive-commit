@@ -1,54 +1,0 @@
-ds4: Linux cuda backend set oom_score_adj=1000
-ds4: CUDA backend initialized on NVIDIA GeForce RTX 3080 Ti (sm_86)
-ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
-ds4: CUDA preparing model tensor mappings
-ds4: CUDA loading model tensors into device cache
-ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.382s
-ds4: cuda backend initialized for graph diagnostics
-ds4: context buffers 208.09 MiB (ctx=2048, backend=cuda, prefill_chunk=2048, raw_kv_rows=2048, compressed_kv_rows=514)
-ds4: using GPU graph generation with graph prefill
-ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: CUDA loading model tensors 0.13 GiB cached
-ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
-Ids4: SPEX routing trace enabled: /root/runs/trace_coding/trace_p06_c06_git-rebase.csv (weights: on)
-ds4: CUDA model arena alloc failed for q8_0 (1792.00 MiB chunk): out of memory
-'ll explain git rebase vs merge with concrete scenarios, and show how to safely rewrite local history.
-
-## Git Rebase vs Merge: Core Concepts
-
-**Merge** preserves the exact history and creates a merge commit when combining branches.
-**Rebase** rewrites history by moving commits to a new base, creating a linear history.
-
-## Concrete Scenarios
-
-### Scenario 1: Feature Branch with Regular Updates from Main
-
-**Merge approach:**
-```
-main:    A---B---C---D
-                \
-feature:         E---F---G
-```
-After `git merge main` into feature:
-```
-main:    A---B---C---D
-                \       \
-feature:         E---F---G---H (merge commit)
-```
-
-**Rebase approach:**
-```
-main:    A---B---C---D
-                \
-feature:         E---F---G
-```
-After `git rebase main`:
-```
-main:    A---B---C---D
-                      \
-feature:               E'---F'---G' (rewritten commits)
-```
-
-**When to use each:**
-- **Merge**: When you want to preserve the exact timeline and show when integration happened
-- **Rebase**: When you want
-ds4: prefill: 2.51 t/s, generation: 1.56 t/s

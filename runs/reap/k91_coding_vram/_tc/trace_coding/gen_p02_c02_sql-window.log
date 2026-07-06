@@ -1,52 +1,0 @@
-ds4: Linux cuda backend set oom_score_adj=1000
-ds4: CUDA backend initialized on NVIDIA GeForce RTX 3080 Ti (sm_86)
-ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
-ds4: CUDA preparing model tensor mappings
-ds4: CUDA loading model tensors into device cache
-ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.372s
-ds4: cuda backend initialized for graph diagnostics
-ds4: context buffers 208.09 MiB (ctx=2048, backend=cuda, prefill_chunk=2048, raw_kv_rows=2048, compressed_kv_rows=514)
-ds4: using GPU graph generation with graph prefill
-ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: gpu prefill layer 40/43ds4: CUDA loading model tensors 0.04 GiB cached
-ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
-Ids4: SPEX routing trace enabled: /root/runs/trace_coding/trace_p02_c02_sql-window.csv (weights: on)
-'ll explain SQL window functions with practical examples for three common use cases.
-
-## What are Window Functions?
-
-Window functions perform calculations across a set of rows that are related to the current row, while still maintaining the individual row identity. Unlike `GROUP BY`, they don't collapse rows into a single output.
-
-## 1. Running Totals
-
-A running total accumulates values progressively as you move through ordered rows.
-
-### Example: Monthly Sales Running Total
-
-```sql
--- Sample data: monthly sales
-ds4: CUDA loading model tensors 7.86 GiB cached
-CREATE TABLE monthly_sales (
-    month_date DATE,
-    sales_amount DECIMAL(10,2)
-);
-
-INSERT INTO monthly_sales VALUES
-('2024-01-01', 10000.00),
-('2024-02-01', 15000.00),
-('2024-03-01', 12000.00),
-('2024-04-01', 18000.00);
-
--- Running total query
-SELECT 
-    month_date,
-    sales_amount,
-    SUM(sales_amount) OVER (
-        ORDER BY month_date
-        ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
-    ) AS running_total
-FROM monthly_sales;
-```
-
-**Result:**
-| month_date | sales_amount | running_total
-ds4: prefill: 2.48 t/s, generation: 1.54 t/s

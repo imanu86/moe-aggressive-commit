@@ -72,9 +72,15 @@ make cuda CUDA_ARCH=sm_86
   non lo stato "Stopped" della distro (che è normale a job finito). Un run "fermo" può essere in thrash, non morto.
 - **LEZIONE #2 (grave, mia) — NON rilanciare un job che scrive in una working-dir CONDIVISA senza
   verificare lo stato dell'altro track**: ho rilanciato JOB1 via systemd non sapendo che l'OFF era già
-  fatto → ho TRONCATO la copia viva `/root/out_night/eval_off.*` (lo script usa `>`). Salvati solo perché
-  DSpark aveva committato la trace. Regola: coordina (cross-message) prima di toccare risorse condivise;
-  gli output committati sono la fonte-verità, la working-dir no.
+  fatto → ho TRONCATO la copia viva `/root/out_night/eval_off.*` (lo script usa `>`). Credevo salvi perché
+  DSpark aveva committato la trace. **CORREZIONE 2026-07-06 (DSpark, verificata sul box): FALSO, NON eravamo salvi.**
+  Il commit aveva fotografato i file **già troncati** (trace committata = 358 byte = solo header; log = 893 byte):
+  i dati per-domanda dell'OFF originale sono **persi ovunque**. Sopravvive solo il sommario **10/20** nel transcript
+  DSpark → per la regola anti-confabulazione **NON è una fonte committabile**. Rimedio: RERUN OFF pulito in dir
+  timestampata (DSpark, pom. 2026-07-06). Regole che ne escono: (a) coordina (cross-message) prima di toccare
+  risorse condivise; (b) **MAI riusare gli stessi path di output tra run di sessioni diverse → dir timestampata PER RUN**;
+  (c) **un commit NON è un salvataggio se il file era già corrotto** — verifica dimensione/integrità dell'artefatto
+  PRIMA di fidarti di un 'committato' (un trace di 358 byte non è un trace).
 - Fix operativo comunque valido per i run lunghi (indipendente dalla causa): systemd-run transiente
   (sotto), progress-log su /mnt/c/... per raccolta a freddo, e per >2-3h critici valuta il POD.
 - FIX ROBUSTO (Ubuntu-24.04 HA systemd): lancia il job come **unità systemd transiente**, che PID 1 tiene

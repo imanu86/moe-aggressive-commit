@@ -1,0 +1,49 @@
+{
+  "test": "REAP K91 coding-domain extreme prune -> 12GB VRAM fit + coding quality",
+  "date_utc": "2026-07-06",
+  "track": "reap/k91-coding-vram",
+  "status": "IN_PROGRESS",
+  "pod": {
+    "provider": "RunPod community",
+    "pod_id": "s7shhzvwu25knm",
+    "machine_id": "oelj0arf6zti",
+    "gpu": "NVIDIA GeForce RTX 3080 Ti 12288 MiB (sm_86)",
+    "gpu_note": "sm_86 = stessa arch del RTX 3060 target; VRAM reale 12GB = tetto hardware vero, NON budget forzato",
+    "vcpu": 19,
+    "ram_gb_api": 24,
+    "ram_gb_free_host": 125,
+    "container_disk_gb": 130,
+    "cost_per_hr_usd": 0.18,
+    "image": "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
+    "ssh": "direct TCP (ip:porta), key id_ed25519",
+    "terminato": "PENDING"
+  },
+  "costi": {
+    "balance_prima_usd": 18.8196548086,
+    "balance_dopo_usd": "PENDING",
+    "nota": "budget autorizzato $2-4; pod separato (l'utente ha chiesto di non toccare il pod A6000 'reap-public-replica' gia' in uso da un'altra eval)"
+  },
+  "software": {
+    "ds4_base": "80ebbc3 (github.com/antirez/ds4)",
+    "patches": ["0001", "0002", "0003", "0004", "0005", "0006", "0007"],
+    "build": "make cuda CUDA_ARCH=sm_86 -j: BUILD_OK",
+    "regression": "make cuda-regression CUDA_ARCH=sm_86: 'cuda long-context regression: OK'",
+    "model": "DeepSeek-V4-Flash-IQ2XXS-w2Q2K-AProjQ8-SExpQ8-OutQ8-chat-v2-imatrix.gguf",
+    "model_bytes": 86720111488,
+    "model_source": "https://huggingface.co/antirez/deepseek-v4-gguf"
+  },
+  "geometria": {
+    "n_layer": 43, "n_expert": 256, "hash_layers": [0, 1, 2], "prunable_layers": 40,
+    "bytes_per_expert": 7077888,
+    "K91_keep_per_layer": 23, "K91_keep_frac": 0.09,
+    "K91_expert_residenti": 920,
+    "K91_expert_gib_atteso": 6.06
+  },
+  "risultati": {
+    "backbone_vram_gib_misurato": "PENDING",
+    "fit_hit_rate": "PENDING",
+    "fit_direct_loads_plateau": "PENDING",
+    "quality_verdict": "PENDING",
+    "esito_ABC": "PENDING"
+  }
+}

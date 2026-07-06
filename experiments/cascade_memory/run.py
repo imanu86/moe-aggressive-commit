@@ -47,15 +47,15 @@ def load_dataset(path):
         return [json.loads(l) for l in f if l.strip()]
 
 
-def _process_one(arm, it, base_url, model, k):
+def _process_one(arm, it, base_url, model, params):
     """Worker (thread-safe: pure compute + its own HTTP call). Retries transient
     errors; a persistent failure is flagged so it can be EXCLUDED from task metrics
-    (infra noise, not a model measurement)."""
-    kwargs = {"k": k} if arm == "B1_always_rag" else {}
+    (infra noise, not a model measurement). `params` (k/theta/window) is passed to
+    every runner; runners ignore what they don't use via **_."""
     last_err = None
     for attempt in range(3):
         try:
-            out = arms_mod.ARMS[arm](it, base_url, model, **kwargs)
+            out = arms_mod.ARMS[arm](it, base_url, model, **params)
             res = out["result"]
             sc = score_item(res.text, it["answer"])
             fmt_re = _FMT_RE.get(it.get("answer_type", "code"))
@@ -67,7 +67,7 @@ def _process_one(arm, it, base_url, model, k):
     return {"it": it, "out": None, "res": None, "sc": None, "cf": None, "error": last_err}
 
 
-def run_arm(arm, items, base_url, model, k, limit, concurrency=1):
+def run_arm(arm, items, base_url, model, params, limit, concurrency=1):
     manifest = {
         "dataset_n": len(items),
         "base_url": base_url,
@@ -77,10 +77,12 @@ def run_arm(arm, items, base_url, model, k, limit, concurrency=1):
         "retriever_backend": backend_name(),
         "gen_defaults": config.GEN_DEFAULTS,
         "git_commit": _git_commit(os.path.dirname(os.path.abspath(__file__))),
-        "k_retrieval": k,
+        "params": params,
         "concurrency": concurrency,
     }
-    logger = RunLogger(config.RUNS_DIR, arm, manifest)
+    theta = params.get("theta")
+    label = arm if theta is None else f"{arm}_th{theta}"
+    logger = RunLogger(config.RUNS_DIR, label, manifest)
     n_correct = n_abst = n_plant = n_ctl = n_err = 0
     tot_tokens = 0
     use = items[:limit] if limit else items
@@ -98,7 +100,7 @@ def run_arm(arm, items, base_url, model, k, limit, concurrency=1):
                 confidence=None, sensor_used=None, correct=False, abstained=False,
                 pred="", gold=it["answer"], question=it["question"],
                 n_distractors=it.get("n_distractors"),
-                extra={"has_plant": has_plant, "error": r["error"]})
+                extra={"has_plant": has_plant, "error": r["error"], "theta": theta})
             return
         out, res, sc, cf = r["out"], r["res"], r["sc"], r["cf"]
         logger.log_item(
@@ -106,8 +108,8 @@ def run_arm(arm, items, base_url, model, k, limit, concurrency=1):
             difficulty=it["difficulty"], category=it["category"], cost=out["cost"],
             confidence=cf["primary"], sensor_used=cf["used"], correct=sc["correct"],
             abstained=sc["abstained"], pred=res.text, gold=it["answer"], question=it["question"],
-            n_distractors=it.get("n_distractors"),
-            extra={"has_plant": has_plant, "answer_type": it.get("answer_type"),
+            n_distractors=it.get("n_distractors"), rung_stop=out.get("meta", {}).get("rung_stop"),
+            extra={"has_plant": has_plant, "answer_type": it.get("answer_type"), "theta": theta,
                    "conf_signals": cf["signals"], "backend": res.backend, **out.get("meta", {})})
         tot_tokens += out["cost"].total_tokens
         if has_plant:
@@ -119,10 +121,10 @@ def run_arm(arm, items, base_url, model, k, limit, concurrency=1):
 
     if concurrency <= 1:
         for it in use:
-            _handle(_process_one(arm, it, base_url, model, k))
+            _handle(_process_one(arm, it, base_url, model, params))
     else:
         with ThreadPoolExecutor(max_workers=concurrency) as ex:
-            futs = [ex.submit(_process_one, arm, it, base_url, model, k) for it in use]
+            futs = [ex.submit(_process_one, arm, it, base_url, model, params) for it in use]
             done = 0
             for fut in as_completed(futs):
                 _handle(fut.result())
@@ -134,27 +136,51 @@ def run_arm(arm, items, base_url, model, k, limit, concurrency=1):
     N = logger.n
     acc = n_correct / n_plant if n_plant else float("nan")
     abst = n_abst / n_plant if n_plant else float("nan")
-    print(f"[{arm}] N={N} (plant={n_plant}, ctl={n_ctl}, err={n_err})  acc={acc:.3f} "
+    th = f"theta={theta} " if theta is not None else ""
+    print(f"[{arm}] {th}N={N} (plant={n_plant}, ctl={n_ctl}, err={n_err})  acc={acc:.3f} "
           f"(correct/N_plant)  abst={abst:.3f}  mean_tokens={tot_tokens/max(1,N):.1f}  "
           f"[{time.perf_counter()-t0:.0f}s] -> {logger.path}")
     return logger.path
 
 
+_GROUPS = {
+    "all": list(arms_mod.ARMS),
+    "step1": ["B0_no_memory", "B1_always_rag"],
+    "step2": ["B0_sw", "B1_always_rag", "B2_reactive", "B3_random",
+              "B4_cascade", "B5_cascade_no_rung0"],
+}
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dataset", required=True)
-    ap.add_argument("--arm", default="all", help="B0_no_memory | B1_always_rag | all")
+    ap.add_argument("--arm", default="all",
+                    help="an arm name, or a group: all | step1 | step2")
     ap.add_argument("--base-url", default=config.BASE_URL)
     ap.add_argument("--model", default=config.MODEL)
-    ap.add_argument("--k", type=int, default=5)
+    ap.add_argument("--k", type=int, default=3)
     ap.add_argument("--limit", type=int, default=0)
     ap.add_argument("--concurrency", type=int, default=1,
                     help="parallel HTTP calls (I/O-bound). 1 = serial.")
+    ap.add_argument("--theta", type=float, default=-1.0,
+                    help="confidence threshold for cascade arms (single value)")
+    ap.add_argument("--theta-grid", default="",
+                    help="comma list; sweeps cascade arms over these theta (Pareto frontier)")
+    ap.add_argument("--native-turns", type=int, default=6)
+    ap.add_argument("--buffer-turns", type=int, default=45)
     a = ap.parse_args()
     items = load_dataset(a.dataset)
-    arm_list = list(arms_mod.ARMS) if a.arm == "all" else [a.arm]
+    arm_list = _GROUPS.get(a.arm, [a.arm])
+    thetas = [float(x) for x in a.theta_grid.split(",")] if a.theta_grid else [a.theta]
+    base = {"k": a.k, "native_turns": a.native_turns, "buffer_turns": a.buffer_turns}
     for arm in arm_list:
-        run_arm(arm, items, a.base_url, a.model, a.k, a.limit, concurrency=a.concurrency)
+        if arm in arms_mod.THETA_ARMS:
+            for th in thetas:
+                run_arm(arm, items, a.base_url, a.model, {**base, "theta": th},
+                        a.limit, concurrency=a.concurrency)
+        else:
+            run_arm(arm, items, a.base_url, a.model, {**base, "theta": None},
+                    a.limit, concurrency=a.concurrency)
 
 
 if __name__ == "__main__":

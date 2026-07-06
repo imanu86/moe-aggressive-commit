@@ -14,7 +14,13 @@ class RunLogger:
     def __init__(self, runs_dir: str, arm: str, manifest: dict):
         os.makedirs(runs_dir, exist_ok=True)
         ts = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-        self.run_id = f"{ts}_{arm}"
+        base = f"{ts}_{arm}"
+        # guarantee a unique run_id: multiple runs of the same arm (e.g. a theta
+        # sweep) can land in the same second -> never let them overwrite each other.
+        run_id, i = base, 1
+        while os.path.exists(os.path.join(runs_dir, f"{run_id}.jsonl")):
+            run_id, i = f"{base}_{i}", i + 1
+        self.run_id = run_id
         self.path = os.path.join(runs_dir, f"{self.run_id}.jsonl")
         self.manifest_path = os.path.join(runs_dir, f"{self.run_id}.manifest.json")
         manifest = dict(manifest)

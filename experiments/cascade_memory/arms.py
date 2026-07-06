@@ -31,7 +31,7 @@ def _mock_meta(item, effective_distance=None):
     }
 
 
-def run_b0(item, base_url, model):
+def run_b0(item, base_url, model, **_):
     history = item["messages"]
     msgs = [{"role": "system", "content": SYSTEM}] + history + \
            [{"role": "user", "content": item["question"]}]
@@ -41,7 +41,7 @@ def run_b0(item, base_url, model):
     return {"result": res, "cost": cost, "arm": "B0_no_memory", "meta": {}}
 
 
-def run_b1(item, base_url, model, k=5):
+def run_b1(item, base_url, model, k=5, **_):
     retr = MemoryRetriever(item["messages"])
     hits = retr.search(item["question"], k=k)
     notes = "\n".join(f"- {h['content']}" for h in hits) or "(no notes found)"
@@ -63,4 +63,20 @@ def run_b1(item, base_url, model, k=5):
             "meta": {"retriever": retr.backend, "n_hits": len(hits), "plant_retrieved": found}}
 
 
-ARMS = {"B0_no_memory": run_b0, "B1_always_rag": run_b1}
+import cascade as _casc
+
+ARMS = {
+    # Step 1 (full-window baselines)
+    "B0_no_memory": run_b0,
+    "B1_always_rag": run_b1,
+    # Step 2 (small-native-window regime)
+    "B0_sw": _casc.run_b0_sw,
+    "B2_reactive": _casc.run_b2_reactive,
+    "B3_random": _casc.run_b3_random,
+    "B4_cascade": _casc.run_b4_cascade,
+    "B5_cascade_no_rung0": _casc.run_b5_cascade_no_rung0,
+}
+
+# Arms that need the confidence threshold theta (cascade family). run.py sweeps theta
+# for these and tags each run with it; B0/B1/B0_sw ignore theta.
+THETA_ARMS = {"B2_reactive", "B3_random", "B4_cascade", "B5_cascade_no_rung0"}

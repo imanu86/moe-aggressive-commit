@@ -152,6 +152,24 @@ def _mock_chat(messages, mode="echo", mock_meta=None, **overrides) -> LLMResult:
         usage = {"prompt_tokens": prefill, "completion_tokens": decode}
         return LLMResult(text, usage, lps, "stop", 0.0, "mock/oracle_decay")
 
+    if mode == "oracle_context":
+        # Correctness tied to whether the gold fact is actually PRESENT in the
+        # context the model sees (native window OR recovered notes). This is the
+        # right fixture for the cascade: each rung either surfaces the fact or not.
+        gold = str(mock_meta.get("answer", "UNKNOWN"))
+        key = mock_meta.get("item_id", prompt_text[:32])
+        present = gold.lower() in prompt_text.lower()
+        if present:
+            text = gold
+            base_lp = -0.12 - 0.6 * _stable_unit("hi", key)
+        else:
+            text = "I don't know"
+            base_lp = -2.3 - 1.4 * _stable_unit("lo", key)
+        decode = _approx_tokens(text)
+        lps = [base_lp + 0.15 * (_stable_unit("j", key, j) - 0.5) for j in range(decode)]
+        usage = {"prompt_tokens": prefill, "completion_tokens": decode}
+        return LLMResult(text, usage, lps, "stop", 0.0, "mock/oracle_context")
+
     raise ValueError(f"unknown mock mode: {mode}")
 
 

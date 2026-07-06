@@ -1,6 +1,17 @@
 # Design 0013 — drafter MTP su CPU+RAM (env `DS4_MTP_CPU_DRAFTER=1`)
 
-> Stato: PROGETTATO E BENCHMARCATO, in attesa di go (SPEX-main + utente).
+> **STATO: NO-GO (probe 2026-07-06, `runs/dspark/20260706_probe_0013/`).**
+> Probe decisionale (mandato SPEX-main, soglia <10%): (a) meccanismo NO — nella config
+> daily (cache a conteggio, reserve default) il gate `available=0.00` non scatta MAI,
+> con o senza registrazioni host della mappa MTP (isolate entrambe con la diagnostica
+> `DS4_MTP_NO_REGISTER`, patch 0012): l'accounting mordeva solo le config a budget-GB
+> di M8. (b) delta reg-vs-noreg a parità di --mtp: ~5% sulle mediane (0.42 vs 0.44),
+> dentro un rumore intra-lato di ±50% (0.27-0.59 su config identiche). (c) NO-GO.
+> Il beneficio ipotizzato era un artefatto di configurazione. Il design resta agli atti
+> (mappa componenti valida) se il quadro cambia — es. target di produzione con config
+> a budget-GB, o drafter DSpark-vero con footprint device reale.
+> Nota metodologica: la varianza ±50% tra run identici sul 3060 daily impone mediane
+> di ≥3 run a stato controllato per QUALSIASI claim t/s futuro su questa macchina.
 > Bench: `runs/dspark/20260706_cpu_drafter_bench/` — testa LM Q8 43.5ms (bandwidth-bound
 > 13.7GB/s, satura a 8 thread), draft completo stimato ~47ms = +2-3% del ciclo streaming
 > a draft-2, contro +30-60% di expert-cache sbloccata (M8). Mappa sorgente: agente

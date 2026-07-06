@@ -1,0 +1,41 @@
+From b8418b7995db487d439ff04f6d95fffb3d476968 Mon Sep 17 00:00:00 2001
+From: dspark-track <imanu86@gmail.com>
+Date: Mon, 6 Jul 2026 17:18:35 +0200
+Subject: [PATCH] diag: DS4_MTP_NO_REGISTER skips both MTP map registrations
+ (probe 0013, measurement-only)
+
+---
+ ds4.c | 10 ++++++++--
+ 1 file changed, 8 insertions(+), 2 deletions(-)
+
+diff --git a/ds4.c b/ds4.c
+index decad2e..908b65e 100644
+--- a/ds4.c
++++ b/ds4.c
+@@ -26562,6 +26562,7 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+             return 1;
+         }
+         if (e->mtp_ready &&
++            getenv("DS4_MTP_NO_REGISTER") == NULL &&
+             !ds4_gpu_set_model_map_range(e->mtp_model.map,
+                                            e->mtp_model.size,
+                                            e->mtp_model.tensor_data_pos,
+@@ -26627,8 +26628,13 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+                                 "(DS4_MTP_HOST_STATICS)\n");
+             }
+             (void)ds4_gpu_set_model_fd_for_map(e->model.fd, e->model.map);
+-            (void)ds4_gpu_register_support_model_map(e->mtp_model.map,
+-                                                     e->mtp_model.size);
++            /* 0013-probe: DS4_MTP_NO_REGISTER=1 skips the host-mapped registration
++             * to measure its effect on reported free VRAM (WSL2 accounting).
++             * Drafting will fail on fallbacks: measurement-only toggle. */
++            if (getenv("DS4_MTP_NO_REGISTER") == NULL) {
++                (void)ds4_gpu_register_support_model_map(e->mtp_model.map,
++                                                         e->mtp_model.size);
++            }
+         }
+         fprintf(stderr, "ds4: %s backend initialized for graph diagnostics\n",
+                 ds4_backend_name(e->backend));
+-- 
+2.43.0
+

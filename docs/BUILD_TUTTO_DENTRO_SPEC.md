@@ -44,6 +44,8 @@ Una-tantum Windows: `.wslconfig [wsl2] autoMemoryReclaim=disabled` → `wsl --sh
 
 **Profilo TARGET = P2** (warm+cache+SPEX, le 3 leve componibili). REAP preventivo e MTP si misurano a parte. Non esiste profilo streaming+MTP.
 
+**Profilo DAILY dell'utente (preferenza 2026-07-06): REAP-loop SEMPRE ON.** Quando la LEVA 2 è costruita, il daily = **warm + cache + REAP-loop** (+ SPEX se vince l'A/B). Il toggle env resta per la MISURA/isolamento (protocollo A/B/A), ma il default-utente è acceso ("è figo e velocizza tanto"). ⚠️ NB Segnali = **draft CORTI** (non un sito da 2600 tok) → la mask va **imparata-una-volta da un batch/warm-up del dominio e RIUSATA tra i draft**, non ri-appresa per-draft (il test transfer cross-sessione dice se il riuso regge — probabile SÌ su dominio stretto stabile).
+
 ## Protocollo di misura
 - **Rumore ±50%** → ogni numero = **mediana-di-3** run identici (mai media). Spread >50% → +2 run.
 - **Primaria**: t/s aggregate. **Secondaria**: hit-rate robusto (REAP: token dentro il working-set mascherato; SPEX: prefetch L+1 che coincidono coi selezionati veri, `DS4_SPEX_PREFETCH_PROFILE=1`).

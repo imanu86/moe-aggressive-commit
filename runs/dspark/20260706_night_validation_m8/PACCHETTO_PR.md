@@ -45,12 +45,19 @@ test, McNemar esatto — `paired_verdict.py`):
 | WSL2 12GB, disk-bound, cache-off pari | negata a entrambi | **+9/10%** | fase C smoke |
 | WSL2 12GB, base cache-on | negata SOLO allo spec | −30% (0.65-0.70 vs 0.90-1.06) | M8/M8-BIS/M8-TRIS |
 | Linux nativo 24GB, RAM-backed, cache-on pari | attiva a entrambi | **−50%** (2.11 vs 4.27) | M8-NATIVO |
-| **Linux nativo, SSD-bound (= target DwarfStar)** | attiva con 0011 | **DA MISURARE** — il regime della tesi | prossimo esperimento |
+| Linux nativo, disk-bound su NVMe datacenter (cgroup 46G e 16G di finestra cache) | attiva | **−50%** (base ~2.3 vs spec2 ~1.1; finestra irrilevante) | CELLA (`runs/dspark/20260706_lowram_cell_pod/`) |
+| **3060 + storage consumer (= target DwarfStar)** | negata (WSL2) | **+9/10%** a parità | fase C smoke |
 
-Lettura: la speculazione a blocchi paga **solo dove c'è IO da ammortizzare**; su sistemi
-RAM-backed è controproducente (coerente coi dati GB10 di PR #482 e con la premessa
-disk-bound di #495). La cella mancante (nativo+SSD-bound) è misurabile con un pod
-low-RAM (~16-32GB, modello su disco) o boot nativo sulla workstation.
+**Lettura definitiva della matrice (con la cella misurata)**: la variabile che decide non
+è "disco vs RAM" ma il **costo IO per token relativo all'overhead di verifica**. Prova:
+banda di copia expert misurata (DS4_SPEX_STATS) — pod NVMe **1.92 GB/s** sostenuti vs
+3060 **~620 MiB/s**: a 3× di banda il per-token IO si sgonfia e lo spec paga solo il suo
+overhead (stesso −50% del RAM-backed, e la finestra cache 16G vs 46G non sposta nulla).
+La speculazione a blocchi in ds4 conviene **dove lo storage è lento rispetto all'appetito
+del modello** — il caso consumer di #495 (4060Ti, 2.2 t/s) e del nostro 3060
+(0.65-1.06 t/s), dove il +9/10% a parità di condizioni è misurato. Emulare storage
+consumer sui pod richiederebbe `io.max` (cgroup non scrivibile nei container RunPod):
+il regime consumer resta misurato dove vive, sul 3060.
 
 ## Limiti dichiarati (onestà da PR)
 1. **WSL2**: `cudaHostRegisterMapped` della mappa support (3.55GB) viene addebitata da

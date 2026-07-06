@@ -97,30 +97,41 @@ Stesso prompt (`sites/` → `website.txt`: nav + hero + form con validazione + t
 greedy `--temp 0`, `-n 2600`, config safe cache 64. **1 run generativa per config** (greedy CUDA
 NON è bit-riproducibile, playbook §6 → trend chiaro, singolo campione). Output grezzi in `sites/`.
 
-| Config | keep | render | tag reali | verdetto qualità |
-|---|---|---|---|---|
-| **K0 full** | 100% | ✅ **sito completo e pulito** (nav MySite+4 link, hero "Build Something Amazing"+CTA, form Name/Email/Message, toggle 🌙 Dark, footer) | 9 `<div>`, 0 pseudo | **codifica bene** — 0 errori console |
-| **K50** | 50% | ⚠️ nav ok, **body degrada a pseudo-HTML** | 0 `<div>`, 5 pseudo (`<toggle>`,`<error>`,`<button "..`) | CSS valido ma markup rotto |
-| **K91** | 9% | ❌ nessun HTML | 0 | **degenera**: ripete "The answer is a single-file HTML document..." all'infinito |
-| **K96** | 3.5% | ❌ nessun HTML | 0 | **degenera**: `index_html` × 88 |
+**⚠️ CAVEAT PAVIMENTO 2-BIT (rigore, cross-session SPEX-main):** gli expert sono IQ2_XXS/Q2_K
+(backbone Q8). Il **2-bit da solo** costa ~−20pt sul coding (eval_gold 55% 2-bit vs 75% 4-bit,
+HANDOFF_7:170). Quindi il degrado qui **somma** pavimento-2-bit + potatura REAP. La lettura corretta è
+**relativa al TETTO K0-2bit** (no-prune): misuro *dove la potatura si stacca dal tetto*, non un degrado
+assoluto. Nota chiave: **K0-2bit renderizza PULITO** → il 2-bit abbassa l'accuratezza ma resta
+coerente; quindi il **collasso** (loop, pseudo-tag) di K50/K91/K96 è un fenomeno di **POTATURA**, non
+del 2-bit. Per separare del tutto i due assi servirebbero punti K su expert Q4 (non fatti in questo run).
 
-Render K0 verificato via snapshot DOM (nav+hero+form+toggle+footer tutti presenti, 0 errori console).
-Degradazione **monotòna** con la potatura: K0 pulito → K50 degradato → K91 loop-prosa → K96 loop-token.
+| Config | keep | render | tag reali | verdetto qualità (vs tetto K0-2bit) |
+|---|---|---|---|---|
+| **K0 full** (TETTO) | 100% | ✅ **sito completo e pulito** (nav+hero+form+toggle 🌙+footer) | 9 `<div>`, 0 pseudo | **tetto**: codice valido, 0 errori console |
+| **K35** | 65% | ✅ **renderizza** nav+hero+form+CTA; **JS coerente e corretto** (theme toggle `setAttribute('data-theme')`, validazione con `getElementById`) | 5 `<div>`, 0 pseudo | **codifica bene** — 1 solo bug: campo message non chiuso (leak visivo), 0 errori console |
+| **K50** | 50% | ⚠️ nav ok, **body degrada a pseudo-HTML** | 0 `<div>`, **5 pseudo** (`<toggle>`,`<error>`) | markup rotto: inventa tag non validi |
+| **K91** | 9% | ❌ nessun HTML | 0 | **collasso**: loop "The answer is a single-file HTML document..." |
+| **K96** | 3.5% | ❌ nessun HTML | 0 | **collasso**: `index_html` × 88 |
+
+Render K0 e K35 verificati via snapshot DOM (0 errori console). Degradazione **monotòna** e stacco dal
+tetto progressivo: **K0 pulito → K35 coerente (1 bug minore) → K50 pseudo-tag → K91 loop-prosa → K96
+loop-token**. **Il precipizio di coerenza sta tra keep-65% (K35, pulito) e keep-50% (K50, rotto).**
 
 ### VERDETTO A/B/C — onesto, entrambi i lati misurati
 
 - **K91 (il target del task) = esito (C) + fallimento qualità**: NON entra del tutto in 12GB reali
-  (hit_rate 0.67, working set 920 > cache 407) **E** non sa più scrivere codice (degenera in loop di
-  meta-testo). Il peggio dei due mondi.
+  (hit_rate 0.67, working set 920 > cache 407) **E** non sa più scrivere codice (collasso in loop).
+  Il peggio dei due mondi.
 - **K96 (il K che ENTRA in 12GB) = esito (B)**: entra (hit_rate 0.96, 12 t/s) ma è **troppo potato per
-  codificare** (degenera). Ciò che entra in un 3060, non codifica.
-- **K0/K50 = esito "codifica ma non entra"**: K0 pulito, K50 già degradato — sul dominio **generativo
-  coding** anche keep-50% inizia a rompersi (diverso dalla ppl Segnali lossless a K50: la coerenza
-  generativa long-form è più fragile della ppl su dominio stretto).
+  codificare** (collasso). Ciò che entra in un 3060, non codifica.
+- **K0/K35/K50 = "codifica ma NON entra"**: K35 (keep 65%) codifica ancora bene (staccandosi appena dal
+  tetto); K50 inizia a rompere il markup. Il coding generativo long-form regge la potatura solo fino a
+  ~keep-65%, poi crolla — molto prima del punto che entrerebbe in 12GB (~keep-3.5%).
 
 **Conclusione (il "quanto strizzo un 158B per un 3060"):** per il DeepSeek-V4-Flash 2-bit sul dominio
 **largo del coding generativo**, **non esiste un K che entri in 12GB reali E scriva ancora codice**.
-C'è un muro netto: quello che entra (~K96) è già oltre il precipizio di coerenza; K91 non entra e non
-codifica. La causa strutturale doppia: (1) le arene ds4 lasciano solo ~407 expert di cache reale
-(non 910), (2) il coding è un dominio largo → intollerante alla potatura estrema (a differenza del
-dominio stretto "Segnali" dove K67 gira e K50 è lossless in ppl). K91 è nella terra di nessuno.
+Muro netto: il K che entra (~K96) è ben oltre il precipizio di coerenza (che sta a ~keep-50/65%); K91
+non entra e non codifica. Causa doppia: (1) le arene ds4 lasciano solo ~407 expert di cache reale
+(non 910), (2) il coding è dominio largo → intollerante alla potatura estrema (vs "Segnali" stretto:
+K67 gira, K50 lossless in ppl). K91 è nella terra di nessuno. *Caveat 2-bit: verdetto su modello già
+handicappato a 2-bit; il collasso è però potatura-driven (il tetto K0-2bit è coerente).*

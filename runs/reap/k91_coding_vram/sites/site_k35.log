@@ -1,0 +1,298 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3080 Ti (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.651s
+ds4: cuda backend initialized for graph diagnostics
+ds4: context buffers 85.13 MiB (ctx=3072, backend=cuda, prefill_chunk=256, raw_kv_rows=512, compressed_kv_rows=770)
+ds4: using GPU graph generation with graph prefill
+ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
+Here's a complete single-file website with a navigation bar, hero section, contact form with validation, and a theme toggle button.
+
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Complete Single-Page Website</title>
+  <style>
+    /* Light theme (default) */
+    :root {
+      --bg-color: #f5f5f5;
+      --text-color: #2cds4: CUDA loading model tensors 7.86 GiB cached
+2c2c;
+      --heading-color: #3a3a3a;
+      --link-color: #4a4a4a;
+      --btn-bg: #5a5a5a;
+      --btn-text: #6a6a6a;
+      --form-bg: #7a7a7a;
+      --form-border: #8a8a8a;
+      --error-color: #9a9a9a;
+      --hero-bg: #1a1a1a;
+      --hero-heading: #2b2b2b;
+      --hero-subtitle: #3b3b3b;
+      --hero-btn: #4b4b4b;
+    }
+
+    /* Dark theme overrides */
+    [data-theme="dark"] {
+      --bg-color: #2d2d2d;
+      --text-color: #3d3d3d;
+      --heading-color: #4d4d4d;
+      --link-color: #5d5d5d;
+      --btn-bg: #6d6d6d;
+      --btn-text: #7d7d7d;
+      --form-bg: #8d8d8d;
+      --form-border: #9d9d9d;
+      --error-color: #adadad;
+      --hero-bg: #1d1d1d;
+      --hero-heading: #2d2d2d;
+      --hero-subtitle: #3d3d3d;
+      --hero-btn: #4d4d4d;
+    }
+
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      background-color: var(--bg-color);
+      color: var(--text-color);
+      font-family: 'Segoe UI', 'Arial', sans-serif;
+      padding: 20px;
+    }
+
+    /* Navigation */
+    nav {
+      background-color: var(--heading-color);
+      padding: 10px 20px;
+      display: flex;
+      justify-content: space-around;
+    }
+
+    nav a {
+      color: var(--link-color);
+      margin: 0 10px;
+      text-decoration: none;
+      font-weight: bold;
+    }
+
+    /* Hero */
+    .hero {
+      background-color: var(--hero-bg);
+      padding: 40px;
+      text-align: center;
+    }
+
+    .hero h1 {
+      color: var(--hero-heading);
+      font-size: 2.5rem;
+      margin-bottom: 10px;
+    }
+
+    .hero p {
+      color: var(--hero-subtitle);
+      font-size: 1.2rem;
+      margin: 10px 0 20px;
+    }
+
+    .hero button {
+      background-color: var(--hero-btn);
+      padding: 12px 24px;
+      border: 2px solid var(--hero-btn);
+      color: var(--hero-btn);
+      font-size: 1.2rem;
+      cursor: pointer;
+    }
+
+    /* Contact form */
+    .contact-form {
+      background-color: var(--form-bg);
+      border: 2px solid var(--form-border);
+      padding: 20px;
+      max-width: 500px;
+    }
+
+    .contact-form label {
+      display: block;
+      margin: 8px 0;
+    }
+
+    .contact-form input, 
+    .contact-form textarea {
+      width: 100%;
+      padding: 8px 12px;
+      border: 1px solid var(--form-border);
+      background-color: var(--form-bg);
+    }
+
+    .contact-form .error {
+      color: var(--error-color);
+      font-size: 0.9rem;
+      margin: 4px 0;
+    }
+
+    .contact-form button {
+      background-color: var(--btn-bg);
+      color: var(--btn-text);
+      padding: 10px 20px;
+      border: 1px solid var(--btn-bg);
+      cursor: pointer;
+    }
+
+    /* Theme toggle */
+    .theme-toggle {
+      background-color: var(--btn-bg);
+      color: var(--btn-text);
+      padding: 10px 20px;
+      border: 1px solid var(--btn-bg);
+      cursor: pointer;
+      margin: 20px 0;
+    }
+
+    /* Layout helpers */
+    .container {
+      max-width: 900px;
+      margin: 0 auto;
+      padding: 20px;
+    }
+
+    /* Responsive */
+    @media (max-width: 600px) {
+      nav { flex-direction: column; }
+      .hero { padding: 20px; }
+      .contact-form { max-width: 100%; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <!-- Navigation Bar -->
+    <nav>
+      <a href="#home">Home</a>
+      <a href="#about">About</a>
+      <a href="#contact">Contact</a>
+    </nav>
+
+    <!-- Hero Section -->
+    <div class="hero">
+      <h1>Welcome to Our Platform</h1>
+      <p>Discover insights, build skills, and connect with a community that grows together.</p>
+      <button>Get Started Now</button>
+    </div>
+
+    <!-- Contact Form -->
+    <div class="contact-form">
+      <h3>Contact Us</h3>
+      <form id="contactForm">
+        <label>Name:</label>
+        <input type="text" id="name" placeholder="Your name" required>
+
+        <label>Email:</label>
+        <input type="email" id="email" placeholder="your@email.com" required>
+
+        <label>Message:</label>
+        <textarea id="message" placeholder="Write your message here" required>
+
+        <div class="error" id="formError"> </div>
+
+        <button type="submit">Send Message</button>
+      </form>
+    </div>
+
+    <!-- Theme Toggle -->
+    <div class="theme-toggle">
+      <button id="themeBtn">Toggle Theme</button>
+    </div>
+  </div>
+
+  <script>
+    (function() {
+      'use strict';
+
+      // --- Theme Toggle ---
+      const themeBtn = document.getElementById('themeBtn');
+      let darkMode = false;
+
+      themeBtn.addEventListener('click', function() {
+        darkMode = !darkMode;
+        document.documentElement.setAttribute('data-theme', darkMode ? 'dark' : 'light');
+        themeBtn.textContent = darkMode ? 'Switch to Light' : 'Switch to Dark';
+      });
+
+      // --- Contact Form Validation ---
+      const form = document.getElementById('contactForm');
+      const nameInput = document.getElementById('name');
+      const emailInput = document.getElementById('email');
+      const messageInput = document.getElementById('message');
+      const errorDiv = document.getElementById('formError');
+
+      form.addEventListener('submit', function(event) {
+        event.preventDefault();
+        let errorMsg = '';
+
+        // Name validation
+        const name = nameInput.value.trim();
+        if (name === '') {
+          errorMsg += 'Name cannot be empty. ';
+        }
+
+        // Email validation
+        const email = emailInput.value.trim();
+        if (email === '') {
+          errorMsg += 'Email cannot be empty. ';
+        } else {
+          // Basic email format check
+          const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+          if (!emailRegex.test(email)) {
+            errorMsg += 'Please enter a valid email address. ';
+          }
+        }
+
+        // Message validation
+        const message = messageInput.value.trim();
+        if (message === '') {
+          errorMsg += 'Message cannot be empty.';
+        }
+
+        // Show error or success
+        if (errorMsg !== '') {
+          errorDiv.textContent = errorMsg;
+          errorDiv.style.display = 'block';
+        } else {
+          errorDiv.textContent = 'Form submitted successfully!';
+          errorDiv.style.display = 'block';
+          // Optionally clear fields
+          nameInput.value = '';
+          emailInput.value = '';
+          messageInput.value = '';
+          // Hide success after 3 seconds
+          setTimeout(() => {
+            errorDiv.style.display = 'none';
+          }, 3000);
+        }
+      });
+
+      // Extra: clear error on input focus
+      [nameInput, emailInput, messageInput].forEach(el => {
+        el.addEventListener('focus', () => {
+          errorDiv.style.display = 'none';
+        });
+      });
+
+    })();
+  </script>
+</body>
+</html>
+```
+
+### Interactive Features
+- **Theme Toggle**: Click the button to switch between light and dark themes, changing the page's color palette.
+- **Contact Form Validation**: The form checks for empty fields and validates the email format before showing a success or error message.
+ds4: prefill: 8.51 t/s, generation: 1.48 t/s
+ds4: SPEX stats: selected_batches=86946 selected_experts=526110 cache_hits=0 cache_misses=521418 hit_rate=0.0000 miss_per_expert=0.9911 direct_loads=4692 copy_calls=1578330 copied=3551242.50 MiB copy_ms=1277100.688 copy_ms_per_batch=14.688 sync_calls=1578330 sync_ms=135867.664 sync_ms_per_batch=1.563

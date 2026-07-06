@@ -60,6 +60,10 @@ Esporli = ciò che permette alla **community** di estenderlo (ethos ds4-open di 
 
 **End-state (la vera visione, utente 2026-07-06)**: lo schedule NON è una sequenza di K fissi (K0→K91→K20→K91 = numeri a mano) ma un **controller closed-loop**: `keep-level = f(termometro-drift)`. Drift basso → tieni/stringi; drift che sale → allarga **proporzionalmente** (drift piccolo = respiro leggero; grande = respiro profondo). È un problema di **controllo** (termostato con isteresi). I schedule fissi della serie-D sono i **datapoint che mappano la curva di risposta**; l'algoritmo li generalizza. Caveat onesti: (1) serve **isteresi/damping** (evitare oscillazioni respiro↔stringi); (2) il termometro deve **PRECEDERE** il collasso (test C) o il controller reagisce tardi; (3) è oltre la serie-D (schedule fissi) → il test #1 (respiro adattivo a soglia) è il **primo gradino**, il controller continuo è l'orizzonte-ricerca (e un pezzo di paper forte: *"dynamic MoE pruning come problema di controllo, keep-level pilotato da un sensore di drift del routing"*).
 
+## STEP 3g — Control-endpoint per la GUI (fase successiva, dopo che il loop gira)
+**Frontend**: ds4 è già **OpenAI-compat** (`:8000`, `/v1/chat/completions`) → per CHATTARE basta puntarci una GUI esistente (OpenWebUI / open-code), zero interfaccia da scrivere. Per l'uso VERO Segnali → `local_runner_v2.py` (`LLAMA_URL`) su ds4-server :8000.
+**Il control-endpoint aggiunge SOLO il tuning-LIVE dei knob**: espone i parametri REAP (keep-level, schedule, respiro cap/len/keep, soglia drift, isteresi, trigger-source) anche via un endpoint runtime (oltre che env-al-lancio) → una GUI/dashboard può leggerli/settarli **senza riavviare** e mostrare i **termometri** (S1/S2, hit-rate, keep-level nel tempo). È lo STEP 3g, dopo il loop base. È ciò che rende "i parametri implementati nella GUI".
+
 ## Protocollo di misura
 - **Rumore ±50%** → ogni numero = **mediana-di-3** run identici (mai media). Spread >50% → +2 run.
 - **Primaria**: t/s aggregate. **Secondaria**: hit-rate robusto (REAP: token dentro il working-set mascherato; SPEX: prefetch L+1 che coincidono coi selezionati veri, `DS4_SPEX_PREFETCH_PROFILE=1`).

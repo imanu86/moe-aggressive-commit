@@ -1,0 +1,380 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3090 (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.465s
+ds4: cuda backend initialized for graph diagnostics
+ds4: context buffers 108.25 MiB (ctx=3072, backend=cuda, prefill_chunk=512, raw_kv_rows=768, compressed_kv_rows=770)
+ds4: using GPU graph generation with graph prefill
+ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: CUDA loading model tensors 0.14 GiB cached
+ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
+```ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 0 entry potate
+ds4: REAP mask applied: 40 layer, 0 device range aggiornati
+ds4: SPEX routing trace enabled: /root/runs/loop/trace_d8.csv (weights: on)
+html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Light & Dark · Simple Site</title>
+    <!-- clean, modern styling -->
+    <style>
+        /* ----- reset & base ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI',ds4: CUDA loading model tensors 7.86 GiB cached
+ Roboto, sans-serif;
+            background-color: #f9f9f9;
+            color: #1e1e1e;
+            transition: background-color 0.ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+3s, color 0.3s;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* ----- theme variables (light default ----- */
+        :root {
+            --bg: #f9f9f9;
+            --text: #1e1e1e;
+            --nav-bg: #ffffff;
+            --nav-border: #e0e0e0;
+            --hero-bg: #ffffff;
+            --hero-acple: #2a2a2a;
+            --btn-primary: #1e1e1e;
+            --btn-primary-text: #f9f9f9;
+            --btn-hop: #3a3a3a;
+            --form-bg: #ffffff;
+            --form-border: #d5d5d5;
+            --input-bg: #ffffff;
+            --input-border: #ccc;
+            --error-bg: #ffeaea;
+            --error-text: #b0003a;
+            --footer-bg: #f2f2f2;
+        }
+
+        /* ----- dark theme ----- */
+        [data-theme="dark"] {
+            --bg: #1a1a1a;
+            --text: #f1f1f1;
+            --nav-bg: #2a2a2a;
+            --nav-border: #555;
+            --hero-bg: #2e2e2e;
+            --hero-acple: #f1f1f1;
+            --btn-primary: #f1f1f1;
+            --btn-primary-text: #1a1a1a;
+            --btn-hop: #e0e0e0;
+            --form-bg: #2e2e2e;
+            --form-border: #5f5f5f;
+            --input-bg: #3a3a3a;
+           ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 7680 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+ --input-border: #777;
+            --error-bg: #3a2020;
+            --error-text: #ffb0b0;
+            --footer-bg: #2a2a2a;
+        }
+
+        /* ----- layout ----- */
+        .page {
+            display: flex;
+            flex-direction: column;
+            min-height: 100ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+vh;
+        }
+
+        /* ----- navigation ----- */
+        nav {
+            background: var(--nav-bg);
+            border-bottom: 1px solid var(--nav-border);
+            padding: 0.75rem 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            transition: background 0.3s, border 0.3s;
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2.5rem;
+            list-style: none;
+        }
+
+        .nav-links a {
+            text-decoration: none;
+            color: var(--text);
+            font-weight: 500;
+            padding: 0.25rem 0.125rem;
+            border-bottom: 2px solid transparent;
+            transition: border-color 0.2s, color 0.2s;
+        }
+
+        .nav-links a:hover {
+            border-bottom-color: currentColor;
+        }
+
+        .theme-toggle {
+            background: transparent;
+            border: 1px solid var(--text);
+            color: var(--text);
+            padding: 0.5rem 1.25rem;
+            font-size: 1rem;
+            font-weight: 500;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background 0.2s, color 0.2s, border 0.2s;
+        }
+
+        .theme-toggle:hover {
+            background: var(--text);
+            color: var(--bg);
+        }
+
+        /* ----- hero section ----- */
+        .hero {
+            background: var(--hero-bg);
+            padding: 4rem 1.5rem;
+            text-align: center;
+            transition: background 0.3s;
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+        }
+
+        .hero h1 {
+            font-size:ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 7680 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+ 2.8rem;
+            font-weight: 600;
+            margin-bottom: 0.5rem;
+            letter-spacing: -0.02em;
+        }
+
+        .hero p {
+            font-size: 1.25rem;
+            max-width: 480px;
+            margin: 0.5rem auto 1.8rem;
+ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+            opacity: 0.9;
+        }
+
+        .hero .cta-btn {
+            background: var(--btn-primary);
+            color: var(--btn-primary-text);
+            border: none;
+            padding: 0.8rem 2.5rem;
+            font-size: 1.25rem;
+            font-weight: 500;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: background 0.2s, transform 0.1s;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.15);
+        }
+
+        .hero .cta-btn:hover {
+            background: var(--btn-hop);
+            transform: scale(1.02);
+        }
+
+        /* ----- contact form ----- */
+        .contact-form-wrap {
+            background: var(--form-bg);
+            padding: 2rem 1.5rem;
+            border-top: 1px solid var(--form-border);
+            transition: background 0.3s, border 0.3s;
+        }
+
+        .contact-form {
+            max-width: 600px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .contact-form h2 {
+            font-size: 1.8rem;
+            font-weight: 500;
+            margin-bottom: 0.25rem;
+        }
+
+        .form-group {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+
+        label {
+            font-weight: 500;
+            font-size: 1.05rem;
+        }
+
+        input, textarea {
+            background: var(--input-bg);
+            border: 1px solid var(--input-border);
+            color: var(--text);
+            padding: 0.6rem 0.75rem;
+            font-size: 1rem;
+            border-radius: ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 7680 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+8px;
+            transition: border 0.2s, background 0.2s;
+            width: 100%;
+        }
+
+        input:focus, textarea:focus {
+            outline: 2px solid currentColor;
+            outline-offset: 2px;
+        }
+
+        textarea {
+            min-height: 100ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+px;
+            resize: vertical;
+        }
+
+        .error-m-m {
+            background: var(--error-bg);
+            color: var(--error-text);
+            padding: 0.5rem 1rem;
+            border-radius: 6px;
+            font-size: 0.9rem;
+            display: none;
+            margin-top: 0.25rem;
+        }
+
+        .error-m-m.show {
+            display: block;
+        }
+
+        .submit-btn {
+            background: var(--btn-primary);
+            color: var(--btn-primary-text);
+            border: none;
+            padding: 0.6rem 2rem;
+            font-size: 1.2rem;
+            font-weight: 500;
+            border-radius: 30px;
+            cursor: pointer;
+            transition: background 0.2s;
+            align-self: flex-start;
+        }
+
+        .submit-btn:hover {
+            background: var(--btn-hop);
+        }
+
+        /* ----- footer ----- */
+        footer {
+            background: var(--footer-bg);
+            padding: 1rem 1.5rem;
+            text-align: center;
+            font-size: 0.9rem;
+            border-top: 1px solid var(--nav-border);
+            transition: background 0.3s, border 0.3s;
+        }
+
+        /* ----- responsive ----- */
+        @media (max-width: 480px) {
+            .nav-links {
+                gap: 1rem;
+            }
+            .hero h1 {
+                font-size: 2.2rem;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="page" id="page">
+        <!-- top navigation bar -->
+        <nav>
+            <ul class="nav-links">
+                <li><a href="#">Home</a></li>
+                <li><a href="#">About</a></li>
+                <li><a href="#">Services</a></li>
+                <li><a href="#">Contact</a></li>
+            </ul>
+            <!-- light/darkds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 7680 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+ toggle button -->
+            <button class="theme-toggle" id="themeToggle" aria-label="Toggle theme">🌗 Dark</button>
+        </nav>
+
+        <!-- hero section -->
+        <section class="hero">
+            <h1>Discover theds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+ future</h1>
+            <p>Bright & clean · build tomorrow. Light or dark just toggle.</p>
+            <button class="cta-btn" id="cta-btn">Get action</button>
+        </section>
+
+        <!-- contact form -->
+        <div class="contact-form-wrap">
+            <form class="contact-form" id="contactForm" novitty>
+                <h2>�−− reach us</h2>
+                <div class="form-group">
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" placeholder="Your name">
+                </div>
+                <div class="form-group">
+                    <label for="email">Email</label>
+                    <input type="email" id="email" name="email" placeholder="your@email">
+                </div>
+                <div class="form-group">
+                    <label for="message">Message</label>
+                    <textarea id="message" name="message" placeholder="Write your message"></textarea>
+                </div>
+                <!-- error display -->
+                <div class="error-m-m" id="formError">⚠️ field empty or invalid email</div>
+                <button class="submit-btn" type="submit">Send message</button>
+            </form>
+        </div>
+
+        <!-- small footer -->
+        <footer>
+            <span>�◆ 2025 · minimal toggle</span>
+        </footer>
+    </div>
+
+    <script>
+        // ========== DOM references ==========
+        const themeToggle   = document.getElementById('themeToggle');
+        const page         = document.getElementById('page');   // optional but not
+        const htmlElement        = document.querySelector('html');   // root
+        const heroBtn          = document.getElementById('cta-btn');
+        const contactForm      = document.getElementById('contactForm');
+        const errorMessage    = document.getElementById('formError');
+
+        // ---------- light / dark theme toggle ----------
+ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 7680 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+        themeToggle.addEventListener('click', function () {
+            const currentTheme = document.querySelector('html').getCurrentTheme() ??
+                                 document.querySelector('html') data-;
+            // simpler: get data-theme attribute
+            const html = document.querySelector('html');
+            const dataTheme = html.getAttribute('data-theme');
+            if dataTheme === 'ds4: REAP mask reload da /root/runs/loop/mask_d8.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+dark' or 'light'?   // but we toggle
+            const html = document.querySelector('html');
+            const computed  style;
+            // but we use data-theme="dark"
+ds4: prefill: 6.16 t/s, generation: 7.08 t/s
+ds4: SPEX stats: selected_batches=111800 selected_experts=675931 cache_hits=601068 cache_misses=69474 hit_rate=0.8964 miss_per_expert=0.1028 direct_loads=5389 copy_calls=224589 copied=505325.25 MiB copy_ms=277527.638 copy_ms_per_batch=2.482 sync_calls=224589 sync_ms=37226.302 sync_ms_per_batch=0.333

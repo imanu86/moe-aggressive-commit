@@ -1,0 +1,3 @@
+=== A1-FULL: mask_d5 a freddo, n=2600 START 2026-07-06T17:15:54Z
+/root/run_a1full.sh: line 8: syntax error near unexpected token `('
+/root/run_a1full.sh: line 8: `  ( while true; do echo "$(date +%s.%N) $(tail -n +2 $OUT/trace_a1f.csv 2>/dev/null | cut -d, -f1 | sort -un | wc -l)" >> $OUT/tps_a1f.log; sleep 1.5; done ) & SMP=$!; /root/ds4/ds4 -m /root/models/ds4-2bit.gguf --cuda --ssd-streaming --ssd-streaming-cold --ssd-streaming-cache-experts 1024 --prefill-chunk 512 -c 3072 --nothink --temp 0 -n 2600 --prompt-file /root/prompts/website.txt > $OUT/gen_a1full.log 2>&1'

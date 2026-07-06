@@ -1,0 +1,114 @@
+```ds4: REAP mask reload da /root/runs/loop/mask.txt: 0 entry potate
+html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Snake Game</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+    body {
+      background: #1a1a2e;
+      display: flex;
+      justify-content: center;
+      align-items: center;
+      min-height: 100vh;
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    }
+    .game-container {
+      background: #162ds4: REAP mask reload da /root/runs/loop/mask.txt: 7680 entry potate
+13e;
+      padding: 20px 20px 25px;
+      border-radius: 20px;
+      box-shadow: 0 0 20px rgba(0,0,0,0.6);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+    }
+    canvas {
+      background: #0f0f2e;
+      border: 3px solid #e94560;
+      border-radius: 10px;
+      display: block;
+      box-shadow: inset 0 0 10px #00000080;
+    }
+    .info-panel {
+      width: 100%;
+      display: flex;
+      justify-content: space-between;
+      align-items: centerds4: REAP mask reload da /root/runs/loop/mask.txt: 8640 entry potate
+;
+      margin-top: 15px;
+      color: #eee;
+      font-size: 1.3rem;
+      font-weight: bold;
+      padding: 0 10px;
+    }
+    .score {
+      background: #0f0f2e;
+      padding: 8px 20px;
+      border-radius: 30px;
+      border: 1px solid #e94560;
+      letter-spacing: 1px;
+    }
+    .restart-btn {
+      background: #e94560;
+      border: none;
+      padding: 8px 20px;
+      border-radius: 30px;
+      font-size: 1.2rem;
+      font-weight:ds4: REAP mask reload da /root/runs/loop/mask.txt: 9320 entry potate
+ bold;
+      color: #fff;
+      cursor: pointer;
+      transition: 0.2s;
+      box-shadow: 0 0 10px #e94560;
+      letter-spacing: 1px;
+    }
+    .restart-btn:hover {
+      background: #b62a3f;
+      transform: scale(0.95);
+      box-shadow: 0 0 15px #b62a3f;
+    }
+    .restart-btn:active {
+      transform: scale(0.9);
+    }
+    .game-status {
+      margin-top: 10px;
+      color: #ffd580;
+      font-size: 1.1rem;
+      min-height: 1.8rem;
+    }
+    @media (max-width: 600px) {
+      .game-container {
+        padding: 15px;
+      }
+      canvas {
+        width: 300px;
+        height: 300px;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="game-container">
+  <canvas id="gameCanvas" width="400" height="400"></canvas>
+  <div class="info-panel">
+    <span class="score" id="scoreDisplay">0</span>
+    <button class="restart-btn" id="restartButton">Restart</button>
+  </div>
+  <div class="game-status" id="gameStatus"> </div>
+</div>
+<script>
+  const canvas = document.getElementById('gameCanvas');
+  const ctx = getCanvasContext('2d');
+  const scoreDisplay = document.getElementById('scoreDisplay');
+  const gameStatus = document.getElementById('gameStatus');
+
+  // Game settings
+  const gridSize = 20;

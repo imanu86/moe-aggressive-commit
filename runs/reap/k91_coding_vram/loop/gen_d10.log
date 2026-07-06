@@ -1,0 +1,438 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3090 (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.330s
+ds4: cuda backend initialized for graph diagnostics
+ds4: context buffers 108.25 MiB (ctx=3072, backend=cuda, prefill_chunk=512, raw_kv_rows=768, compressed_kv_rows=770)
+ds4: using GPU graph generation with graph prefill
+ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: CUDA loading model tensors 0.11 GiB cached
+ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
+/*ds4: REAP mask reload da /root/runs/loop/mask_d10.txt: 0 entry potate
+ds4: REAP mask applied: 40 layer, 0 device range aggiornati
+ds4: SPEX routing trace enabled: /root/runs/loop/trace_d10.csv (weights: on)
+ TASK 1: CSS Stylesheet */
+:root {
+  --bg-light: #f8f9fa;
+  --text-light: #212529;
+  --accent-light: #0d6efd;
+  --card-bg-light: #ffffff;
+  --nav-bg-light: #ffffff;
+  --footer-bg-light: #e9ecef;
+  --border-light: #dee2e6;
+  --bg-dark: #1a1a2e;
+  --text-dark: #eaeaea;
+  --accent-dark: #7c8bff;
+  --card-bg-dark: #16213e;
+  --nav-bg-dark: #0f0f23;
+ds4: REAP mask reload da /root/runs/loop/mask_d10.txt: 9320 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati
+  --footer-bg-dark: #0f0f23;
+  --border-dark: #2d2d4a;
+  --transition: background-color 0.3s ease, color 0.3s ease, border-color 0.3s ease;
+  --font-main: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  --radius: 0.5rem;
+  --shadow: 0 2px 10px rgba(0,0,0,0.1);
+}
+
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: var(--font-main);
+  background-color: var(--bg-light);
+  color: var(--text-light);
+  line-height: 1.6;
+  transition: background-color var(--transition), color var(--transition);
+}
+
+[data-theme="dark"] body {
+  background-color: var(--bg-dark);
+  color: var(--text-dark);
+}
+
+/* Navbar */
+navbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem 2rem;
+  background-color: var(--nav-bg-light);
+  border-bottom: 1px solid var(--border-light);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+  transition: background-color var(--transition, border-color var(--transition);
+}
+
+[data-theme="dark"] navbar {
+  background-color: var(--nav-bg-dark);
+  border-bottom-color: var(--border-dark);
+}
+
+navbar .logo {
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: var(--accent-light);
+  text-decoration: none;
+}
+
+[data-theme="dark"] navbar .logo {
+  color: var(--accent-dark);
+}
+
+navbar .nav-links {
+  display: flex;
+  gap: 1.5rem;
+  list-style: none;
+}
+
+navbar .nav-links a {
+  color: inherit;
+  text-decoration: none;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: var(--radius);
+  transition: color 0.2s, background-color 0.2s;
+}
+
+navbar .nav-links a:hover {
+  color: var(--accent-light);
+  background-color: rgba(13,110,253,0.1);
+}
+
+[data-theme="dark"] navbar .nav-links a:hover {
+  color: var(--accent-dark);
+  background-color: rgba(124,139,255,0.1);
+}
+
+navbar .theme-toggle {
+  background: none;
+  border: 1px solid var(--border-light);
+  padding: 0.5rem 1rem;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 1.25rem;
+  color: inherit;
+  transition: background-color 0.2s, border-color 0.2s;
+}
+
+[data-theme="dark"> navbar .theme-toggle {
+  border-color: var(--border-dark);
+}
+
+/* Hero */
+hero {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+  padding: 4rem 2rem;
+  background: linear-gradient to bottom, var(--bg-light, transparent);
+  min-height: 80vh;
+  justify-content: center;
+}
+
+[data-theme="dark"> hero {
+  background: linear-gradient to bottom, var(--bg-dark, transparent);
+}
+
+hero h1 {
+  font-size: 3rem;
+  font-weight: 800;
+  margin-bottom: 1.25rem;
+  max-width: 800px;
+}
+
+hero p {
+  font-size: 1.25rem;
+  margin-bottom: 2rem;
+  max-width: 600px;
+  opacity: 0.9;
+}
+
+hero .cta {
+  display: inline-block;
+  padding: 1rem 2.5rem;
+  background-color: var(--accent-light);
+  color: #fff;
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-weight: 600;
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+[data-theme="dark"> hero .cta {
+  background-color: var(--accent-dark);
+}
+
+hero .cta:hover {
+  transform: translateY -2px;
+  box-shadow: 0 4px 15px rgba(13,110,253,0.3);
+}
+
+[data-theme="dark"> hero .cta:hover {
+  box-shadow: 0 4px 15px rgba(124,139,255,0.3);
+}
+
+/* Cards Grid */
+cards-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, min(300px, 1fr);
+  gap: 2rem;
+  padding: 2rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+card {
+  background-color: var(--card-bg-light);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+  transition: transform 0.3s, box-shadow 0.3s, background-color var(--transition);
+}
+
+[data-theme="dark"> card {
+  background-color: var(--card-bg-dark);
+  border-color: var(--border-dark);
+}
+
+card:hover {
+  transform: translateY -5px;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.15);
+}
+
+[data-theme="dark"> card:hover {
+  box-shadow: 0 8px 20px rgba(0,0,0,0.5);
+}
+
+card h3 {
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
+}
+
+card p {
+  margin-bottom: 1rem;
+  opacity: 0.8;
+}
+
+card .btn {
+  display: inline-block;
+  padding: 0.5rem 1.25rem;
+  background-color: var(--accent-light);
+  color: #fff;
+  border-radius: var(--radius);
+  text-decoration: none;
+  font-weight: 500;
+  transition: background-color 0.2s;
+}
+
+[data-theme="dark"> card .btn {
+  background-color: var(--accent-dark);
+}
+
+card .btn:hover {
+  background-color: #0a58ca;
+}
+
+[data-theme="dark"> card .btn:hover {
+  background-color: #6a7bff;
+}
+
+/* Footer */
+footer {
+  background-color: var(--footer-bg-light);
+  border-top: 1px solid var(--border-light);
+  padding: 2rem;
+  text-align: center;
+  transition: background-color var(--transition, border-color var(--transition);
+}
+
+[data-theme="dark"> footer {
+  background-color: var(--footer-bg-dark);
+  border-top-color: var(--border-dark);
+}
+
+footer .footer-content {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1rem;
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+footer .footer-links {
+  display: flex;
+  gap: 1.5rem;
+  list-style: none;
+}
+
+footer .footer-links a {
+  color: inherit;
+  text-decoration: none;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+footer .footer-links a:hover {
+  opacity: 1;
+}
+
+footer .copyright {
+  opacity: 0.6;
+  font-size: 0.875rem;
+}
+
+/* Responsive adjustments */
+@media (min-width: 768px) {
+  hero h1 {
+    font-size: 4rem;
+  }
+  hero p {
+    font-size: 1.5rem;
+  }
+  cards-grid {
+    padding: 4rem 2rem;
+  }
+}
+
+/* Utility classes */
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 2rem;
+}
+
+.section {
+  padding: 4rem 0;
+}
+
+/* Theme toggle icon */
+theme-toggle {
+  font-size: 1.25rem;
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0.5rem;
+  border-radius: var(--radius);
+  transition: background-color 0.2s;
+}
+
+theme-toggle:hover {
+  background-color: rgba(0,0,0,0.1);
+}
+
+[data-theme="dark"> theme-toggle:hover {
+  background-color: rgba(255,255,255,0.1);
+}
+
+/* Additional global styles */
+img {
+  max-width: 100%;
+  height: auto;
+}
+
+a {
+  color: var(--accent-light);
+  transition: color 0.2s;
+}
+
+[data-theme="dark"> a {
+  color: var(--accent-dark);
+}
+
+a:hover {
+  color: #0a58ca;
+}
+
+[data-theme="dark"> a:hover {
+  color: #6a7bff;
+}
+
+/* Button base */
+button {
+  font-family: inherit;
+  cursor: pointer;
+  border: none;
+  outline: none;
+}
+
+/* Card grid layout */
+@media (max-width: 600px) {
+  cards-grid {
+  grid-template-columns: 1fr;
+  padding: 1rem;
+}
+
+navbar {
+  flex-direction: column;
+  gap: 1rem;
+  padding: 1rem;
+}
+
+navbar .nav-links {
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* Spacing helpers */
+mt-1 { margin-top: 1rem; }
+mb-1 { margin-bottom: 1rem; }
+pt-2 { padding-top: 2rem; }
+pb-2 { padding-bottom: 2rem; }
+
+/* Dark mode variables applied */
+[data-theme="dark"] {
+  --bg-light: var(--bg-dark);
+  --text-light: var(--text-dark);
+  --accent-light: var(--accent-dark);
+  --card-bg-light: var(--card-bg-dark);
+  --nav-bg-light: var(--nav-bg-dark);
+  --footer-bg-light: var(--footer-bg-dark);
+  --border-light: var(--border-dark);
+}
+
+/* Light mode default */
+:root {
+  --bg-dark: initial;
+  --text-dark: initial;
+  --accent-dark: initial;
+  --card-bg-dark: initial;
+  --nav-bg-dark: initial;
+  --footer-bg-dark: initial;
+  --border-dark: initial;
+}
+
+/* Ensure smooth transitions */
+body, navbar, card, footer, hero {
+  transition: background-color var(--transition, color var(--transition, border-color var(--transition);
+}
+
+/* Focus styles */
+:focus {
+  outline: 2px solid var(--accent-light);
+  outline-offset: 2px;
+}
+
+[data-theme="dark"> :focus {
+  outline-color: var(--accent-dark);
+}
+
+/* Selection */
+::selection {
+  background: var(--accent-light);
+  color: #fff;
+}
+
+[data-theme="dark"> ::selection {
+  background: var(--accent-dark);
+  color: #1a1
+ds4: prefill: 8.37 t/s, generation: 12.07 t/s
+ds4: SPEX stats: selected_batches=111800 selected_experts=676304 cache_hits=618310 cache_misses=52232 hit_rate=0.9221 miss_per_expert=0.0772 direct_loads=5762 copy_calls=173982 copied=391459.50 MiB copy_ms=121826.839 copy_ms_per_batch=1.090 sync_calls=173982 sync_ms=16015.564 sync_ms_per_batch=0.143

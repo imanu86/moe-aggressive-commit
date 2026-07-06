@@ -1,9 +1,60 @@
 # HANDOFF — moe-aggressive-commit
 
-> **PUNTO D'INGRESSO UNICO.** Leggi §0 per riprendere il lavoro attivo. Le sezioni "STORICO" più sotto
-> (fase probe/memmap Python, giu-2026) sono contesto precedente, non la direzione corrente.
+> **PUNTO D'INGRESSO UNICO.** Leggi §0-LIVE (stato più recente). Sotto: §0-STORICO e STORICO = contesto precedente.
 
-## §0. STATO CORRENTE (2026-07-05) — SPEX → ds4 (integrazione live)
+## §0-LIVE (2026-07-06) — ds4flash-dwarf-spex-reap_loop: 5 leve + paper
+
+### Cos'è il progetto (in una riga)
+Far girare **DeepSeek-V4-Flash 158B** (2-bit, 256 exp/layer, 6 attivi, 40 layer MoE, expert 6.75MiB) sul motore
+**ds4/DwarfStar** (antirez) su **RTX 3060 12GB + 28GB RAM** (64GB in arrivo), via uno stack di leve componibili.
+Utente = **imanu86** (dominio + intuizioni; io = manovale/integratore). Paper in bozza. Reviewer target: **antirez** (S. Sanfilippo).
+
+### Repo / branch (fonte di verità = i file committati, MAI i numeri a memoria)
+- `main` HEAD `dfd99fb` su GitHub PRIVATO `imanu86/moe-aggressive-commit`. Tutto mergiato qui.
+- Branch paralleli (worktree in `.claude/worktrees/`): `dspark/mtp-spec-dec` (HEAD `44b24c9`), `reap/ds4-domain-prune` (HEAD `af67048`), `reap/public-domain-replica` (agente, in corso).
+- **Sorgente ds4:** WSL `/root/ds4` (⚠️ distro **Ubuntu-24.04**, non `Ubuntu`), upstream `github.com/antirez/ds4` base `80ebbc3`, nostro tip `bee9eb3`. Worktree DSpark: `/root/ds4-dspark`. Le patch nostre stanno in `patches/ds4/0001..0011` (applicare in ordine 0001→0011).
+
+### LE 5 LEVE — stato e numeri (ogni numero ha fonte nel repo)
+1. **Cache expert VRAM** — MISURATA (`runs/ds4_bench_clean_ext4_20260705/`): hit 0→44% ma t/s piatto su ext4+28GB (collo = coda SSD, non copie H2D). Sweet-spot cache PICCOLA (reserve=1, ~700-880 slot). Si ACCENDE con RAM 64GB.
+2. **Spec-dec a blocchi (DSpark-ispirato)** — Fase C SBLOCCATA e funzionante sul 3060 (`patches 0009+0010`, `runs/dspark/20260705_fase_c_smoke_3060/`): union-load −49%, acceptance pos2 0.848, spec2 +10% col freno tirato. Strada B (drafter ufficiale, 2×H200): τ=5.18/5.00/2.70 (`runs/dspark/20260705_dspark_b_v4flash_2xh200/RISULTATI.md`). MTP-1 baseline 0.872/0.846/0.604.
+3. **REAP bias-mask** — PAPER-GRADE (`runs/reap/2026-07-05_eval_biasmask/`, verdetto v2 `e32649b`): **K50 LOSSLESS dominio** ppl 1.010× CI[0.996,1.025] (replicato cross-macchina), **K67 = 1.076× = operating-point che entra nei 28GB di oggi**, F3 generale 1.403×, random 1.388× (controllo, selezione ~5×). Dial RAM-cap: K70 prefill **+87%**, expert-load −57%. V0 attuatore 0/11280 violazioni.
+4. **SPEX hidden prefetch (D2)** — MISURATO sul target (`runs/spex/fit_results.json`, paper §5.4): probe next-layer **DOMINIO 0.68@6/0.83@12/0.92@32 vs recency 0.28/0.41/0.60**; generale/coding +5-8pt; next-token più debole → design NEXT-LAYER-centric. **Export .spex FATTO** (`runs/spex/spex_model/ds4flash_d2_nextlayer.spex`, 90MB, gitignored — rigenera con `python scripts/spex_fit_predictor.py --export-spex <path> --export-only`). Loader C di riferimento: `patches/ds4/ds4_spex_predict.{c,h}`.
+5. **REAP-loop + skip-on-miss** — DESIGN (task #13/#14): la bias-mask è l'ATTUATORE (hard=mai-selezionare / soft=skip-on-miss); sensore = n_eff/deriva del profilo dal router. Da valutare in sim quando arrivano le trace generali.
+
+### Il collo strutturale del 3060 (ricorrente, 3 volte) e la sua chiave
+**Conflitto VRAM: statics MTP (~3.5GB device-cachate) vs expert-cache, su 12GB non ci stanno insieme** → spec-dec e cache si escludono. **La patch 0011** (`DS4_MTP_HOST_STATICS`, statics host-side zero-copy, `44b24c9`) è IL fix — sviluppata+buildata; il suo test sotto carico è l'eval ON in corso.
+
+### IN VOLO ADESSO (owner + risorsa, NON toccare fuori dal proprio)
+- **JOB1 validazione appaiata ON/OFF** — 3060, owner **chat DSpark** (`local_3e05c04f...`): OFF completato+committato (`44b24c9`, trace in worktree dspark `runs/dspark/20260706_night_validation_m8/out/eval_off.trace`), ON in corso con binario 0011 dalle ~05:35. A fine (~pom.) → verdetto appaiato + **M8-bis** (spec2+cache CON 0011, atteso ~1.2 t/s) + **pacchetto PR 0009+0010+0011** per antirez. DSpark ha keepalive `sleep infinity` sulla distro (da uccidere a fine).
+- **Replica REAP dominio pubblico (#16)** — pod, owner agente `afa597020a8de4eb6`: sceglie corpus pubblico → verifica equivalenza routing (n_eff ~40-47 come BonusX) → mask K50 → eval ppl+CI. Chiude M1 del paper (riproducibilità senza KB privata).
+- **Corso cold-vs-warm** — chat-tutor separata (task_fed362be), per l'utente: armarlo a progettare la soluzione al cold-start (= futuro §6 paper).
+
+### PAPER (`docs/paper/PAPER_DRAFT.md` + `docs/paper/GAPS_AND_FIXES.md`)
+Bozza completa, tesi = "estendere gli engine di expert-offload giù per la scala di memoria: anatomia misurata + stack di leve". Panel avversariale 5-lenti incorporato (§7 Threats). **M1-M5 RISOLTI** (M1=KB proprietaria withheld+surrogato pubblico #16; M5=scope 158B-only, Qwen=preliminary; M2=sim-t/s ritirati; M3=REAP soglia FAIL onesto; M4=`scripts/paper_ci.py` bootstrap CI). D2 dentro (§5.4). **RESTA: M8-bis** (il numero che sblocca la tesi-velocità, in corso via DSpark) + camera-ready.
+
+### PROSSIMI PASSI (in ordine)
+1. [attesa] Verdetto JOB1 + M8-bis + pacchetto PR (DSpark, pomeriggio) → poi mergiare su main.
+2. **Hook C del predittore SPEX**: cablare `ds4_spex_predict` all'hook `ds4.c:19415` (dopo `g->cur_hc=hidden(L)`) → top-K → `seed_experts_async` (plumbing 0002). COORDINARE con 0011 (stesso file ds4_cuda.cu). = ultimo miglio Stadio 2/3.
+3. [attesa] Replica pubblica #16 → aggiorna paper §7.9.1.
+4. **Test K67 bias-mask sul 3060 vero** (dominio ON vs OFF): conferma "turbo Segnali oggi su 28GB" + il `gen` del dial sulla macchina target.
+5. **Pacchetto antirez** (#17): PR 0009+0010+0011 validate → poi outreach reviewer (bozza msg in italiano da scrivere con l'utente).
+6. STS (Stadio 3, task #6) + camera-ready.
+
+### LEZIONI OPERATIVE (vedi anche `docs/briefs/POD_PLAYBOOK.md` §6-7)
+- **DUE distro WSL**: usa SEMPRE `wsl -d Ubuntu-24.04`, mai `wsl` nudo (l'altra è `Ubuntu`, modello via /mnt/d 9p lento).
+- **Processi persistenti**: Windows-side = `Start-Process -WindowStyle Hidden`; WSL run lunghi = `systemd-run` transiente (systemd c'è su 24.04). `nohup` da Git Bash MUORE col padre.
+- **NON toccare working-dir/GPU condivise senza coordinare** (cross-message): ho troncato una trace altrui rilanciando un job — salvata solo perché committata. Verifica sul box prima di dichiarare morto un run.
+- **Determinismo**: greedy CUDA NON bit-riproducibile → correttezza via equivalenza statistica (ppl/CI), mai diff-token.
+- **Pod**: playbook alla lettera; secure a volte non alza sshd (×3, ~$2 persi) → community/piggyback o cambia macchina; terminate+verifica `myself.pods` a fine; parser manifest sha = `filename hash size`.
+- **Trasferibilità**: routing/saliency/acceptance/recall = proprietà del MODELLO → i pod trasferiscono. I **t/s NO** (solo hardware target).
+
+### MACCHINE / SOLDI (stato ~2026-07-06 mattina)
+RunPod balance **$20.06** (utente ha ricaricato +$15). Pod attivi: 1 (replica pubblica #16). 3060 = DSpark (JOB1). Hardware in arrivo: **kit RAM 2×32 DDR4-3600 (64GB) a €300** (Corsair CMK64GX4M2D3600C16 usato, TuttoSubito) — all'arrivo: DOCP 3600→fallback 3200, memtest, poi test K67+leve a warm reale.
+⚠️ **Segreti da ROTARE** (esposti in vecchi transcript, mai committati nel repo): RunPod key (`Desktop\Runapod.txt`), token HF, Supabase service_role, Discord — azione utente.
+
+---
+
+## §0-STORICO (2026-07-05 mattina) — dettaglio branch codex/spex-integration
 
 **Branch attivo:** `codex/spex-integration` su `imanu86/moe-aggressive-commit`.
 `main` resta stabile a `ffc1ca1` (piano SPEX + Fase 1b race). Il branch di lavoro contiene:

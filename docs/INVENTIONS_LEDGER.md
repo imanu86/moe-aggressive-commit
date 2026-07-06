@@ -20,7 +20,12 @@ La leva che qui era `[M] IDEA-SOLA` è ora **misurata end-to-end con esito posit
 - **Sensore distress** gratis (dal routing) → all'onset **rewind**, non solo allargare.
 - **Ricetta v1**: full (contesto sano + osserva routing) → a ~150 tok mask-dalla-sessione + stringi a caldo (0011) → scala a gradini a keep-9% (veloce, in VRAM, coerente) → sensore acceso → se degenera, rewind.
 - **Caveat**: 700 token di CSS coerente ≠ sito completo con JS verificato (il verdetto "produzione" vuole gen completa + render).
-- **PROSSIMO RIGORE prima di rivendicarlo nel paper**: **novelty check** — il domain-pruning *dinamico, session-learned, con rewind-on-distress* è pubblicato? In letteratura il domain-pruning è sempre statico → plausibilmente la parte più nuova, ma da verificare (come per tutto).
+- **Novelty check FATTO** (`docs/REAP_LOOP_NOVELTY.md`): **PARZIALE** — la composizione closed-loop + l'asimmetria + il segnale gate-mass-su-potati sono difendibili; i mattoni singoli sono prior-art (GRIFFIN/Zhu-Gupta/μ-MoE). Citazioni verificate reali.
+
+### AGGIORNAMENTO D3–D5 (2026-07-06 sera) — rafforza la novelty E valida la velocità
+- **D3** (`69567e1`): il working-set a keep-estremo è **PER-SESSIONE, non di dominio** → mask statiche **morte**, session-mask **4×**. È il **perché causale**: la potatura statica (il prior-art, GRIFFIN incluso) **NON PUÒ** raggiungere keep-9% coerente perché il set giusto cambia per-sessione → il loop session-learned è **necessario, non solo migliore**. Questo *rafforza* la linea difendibile (spiega perché il prior-art statico fallisce dove il loop regge).
+- **D4** (`87d2a93`): scalini session-mask CLEAN fino a keep-23 (=keep-9%); la statica **per-massa** ("cavalli da tiro") regge (conferma la correzione criterio-di-selezione).
+- **D5** (`05044ac`): **sito COMPLETO** a scalini → chiude il caveat "700 token ≠ sito", a **9.2 t/s / hit 0.91**. ⚠️ **9.2 t/s è sul pod 3080Ti** (stessa arch 12GB, non il 3060); **l'hit-rate 0.91 è la metrica che TRASFERISCE**. Valida l'ipotesi "REAP-loop = leva di velocità più grossa" (da riconfermare sul 3060 con mediana-3).
 
 ## I 3 pilastri difendibili per il paper (in ordine di solidità)
 1. **REAP bias-mask come protocollo di eval surgery-free** — l'unica invenzione IMPLEMENTATA + misurata lossless

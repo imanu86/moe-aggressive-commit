@@ -26,6 +26,11 @@ La leva che qui era `[M] IDEA-SOLA` è ora **misurata end-to-end con esito posit
 - **D3** (`69567e1`): il working-set a keep-estremo è **PER-SESSIONE, non di dominio** → mask statiche **morte**, session-mask **4×**. È il **perché causale**: la potatura statica (il prior-art, GRIFFIN incluso) **NON PUÒ** raggiungere keep-9% coerente perché il set giusto cambia per-sessione → il loop session-learned è **necessario, non solo migliore**. Questo *rafforza* la linea difendibile (spiega perché il prior-art statico fallisce dove il loop regge).
 - **D4** (`87d2a93`): scalini session-mask CLEAN fino a keep-23 (=keep-9%); la statica **per-massa** ("cavalli da tiro") regge (conferma la correzione criterio-di-selezione).
 - **D5** (`05044ac`): **sito COMPLETO** a scalini → chiude il caveat "700 token ≠ sito", a **9.2 t/s / hit 0.91**. ⚠️ **9.2 t/s è sul pod 3080Ti** (stessa arch 12GB, non il 3060); **l'hit-rate 0.91 è la metrica che TRASFERISCE**. Valida l'ipotesi "REAP-loop = leva di velocità più grossa" (da riconfermare sul 3060 con mediana-3).
+- **D6-D8 (sera) — due scoperte grosse + il Controllo B FATTO**:
+  - **23.6 t/s misurati** su keep-9 DINAMICO (`1b231b6`) — **SOPRA** il tetto PCIe ~11, perché il working-set piccolo è **VRAM-resident** → **conferma che il REAP-loop SCHIVA il PCIe** (non lo accelera). Pod 3080Ti; l'hit-rate trasferisce, l'assoluto no.
+  - **"Respiro" (D6b, idea utente)**: ciclo [~400 tok K91 → ~80 tok breath keep-64 + **re-learn della mask**] → il respiro periodico **resetta la deriva** prima che si accumuli (dove D5 scivolava nel comment-loop, D6b restava sano). Il loop non è "scendi e tieni" ma "scendi → tieni → respira+ri-impara". Rafforza la novelty (loop periodico di ri-apprendimento, non mask statica).
+  - **CONTROLLO B (ppl downstream) FATTO** (uno dei 3 che avevo mandato): session-mask **ppl 1.22×** vs full, domain-mask **3.5×** → session **near-lossless**, domain **distrugge**. Metrica quantitativa, non più "renderizza pulito".
+  - **D8-turbo** (discesa SECCA a keep-23 + respiro = ricetta di produzione candidata, ~11-13 t/s) in misura.
 
 ## I 3 pilastri difendibili per il paper (in ordine di solidità)
 1. **REAP bias-mask come protocollo di eval surgery-free** — l'unica invenzione IMPLEMENTATA + misurata lossless

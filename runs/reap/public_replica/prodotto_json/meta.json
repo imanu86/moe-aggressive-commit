@@ -16,7 +16,9 @@
  },
  "costi": {
   "balance_prima_usd": 20.0605,
-  "nota_attribuzione": "balance_dopo e delta si aggiornano al teardown. Budget autorizzato $4-5; regime SSD-streaming (modello 86.7GB > 48GB VRAM) -> ppl ~5min/chunk, 50 chunk ~4h a $0.33/h ~$1.3."
+  "balance_dopo_usd": 18.4439,
+  "delta_usd": 1.6166,
+  "nota_attribuzione": "Pod REAP replica terminato+verificato (myself.pods non contiene 91xbin1wey8el3; resta solo un pod di ALTRO track 'k91-coding-vram' s7shhzvwu25knm, non mio). Costo REAP replica $1.62, dentro il budget autorizzato $4-5. Regime SSD-streaming (86.7GB > 48GB VRAM, mlock bloccato dal container) -> ppl ~7min/chunk, 30 chunk in ~2.7h a $0.33/h."
  },
  "software": {
   "ds4_base": "80ebbc3 (github.com/antirez/ds4)",
@@ -42,14 +44,14 @@
   "verdetto": "VALIDO (n_eff64_count in [35,50] AND reuse > 0.30)",
   "fonte": "runs/reap/public_replica/prodotto_json/neff.json"
  },
- "risultati_eval_interim": {
-  "nota": "full + reap_k50 completi (10 chunk ciascuno); rand50_s0 in corso. Numeri da results_raw.csv.",
-  "reap_k50_vs_full_geomean": 1.0522,
-  "reap_k50_ci95": [1.0389, 1.0664],
-  "reap_k50_crosses_1.0": false,
-  "full_ppl": 2.1754,
-  "reap_k50_ppl": 2.2889,
-  "V0_mechanism_check": "checked=11280 violations=0 V0_OK (bias-mask = pruning esatto, come BonusX)",
-  "confronto_bonusx": "BonusX reap_k50 dom 1.010x CI[0.996,1.025] LOSSLESS (CI attraversa 1.0). Surrogato: 1.052x CI[1.039,1.066] NON attraversa 1.0 = near-lossless (+5.2%) ma NON strettamente lossless. Replica del segno/ordine di grandezza; il controllo random (in corso) conferma se la selezione conta."
+ "risultati_eval": {
+  "nota": "COMPLETO: full/reap_k50/rand50_s0 x 10 dom_chunk. Numeri da eval/results_raw.csv + eval/replica_ci.json (bootstrap B=10000).",
+  "aggregate_ppl": {"full": 2.1754, "reap_k50": 2.2889, "rand50_s0": 2.6038},
+  "reap_k50_vs_full": {"geomean": 1.0522, "ci95": [1.0389, 1.0664], "crosses_1.0": false},
+  "rand50_s0_vs_full": {"geomean": 1.1969, "ci95": [1.1811, 1.2105], "crosses_1.0": false},
+  "selezione_conta": "rand 1.197x > reap 1.052x -> PASS (la saliency batte il random a pari K, come BonusX)",
+  "V0_mechanism_check": "checked=11280 violations=0 V0_OK (bias-mask = pruning esatto per selezione, identico a BonusX)",
+  "confronto_bonusx": "BonusX reap_k50 dom 1.010x CI[0.996,1.025] = LOSSLESS (CI attraversa 1.0). Surrogato pubblico: 1.052x CI[1.039,1.066] = near-lossless (+5.2%), CI NON attraversa 1.0 -> NON strettamente lossless. Random: BonusX 1.388x, surrogato 1.197x (entrambi >> reap).",
+  "verdetto": "REPLICA PARZIALE — equivalenza VALIDA, V0_OK, selezione-conta PASS (3 proprieta' su 4 replicano identiche); reap_k50 near-lossless (+5.2%) ma NON strettamente lossless come BonusX. Il finding replica in SEGNO, MECCANISMO e ORDINE DI GRANDEZZA senza dati privati."
  }
 }

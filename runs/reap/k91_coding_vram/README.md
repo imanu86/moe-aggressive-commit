@@ -42,6 +42,19 @@ oltre K70, nessun dominio coding, nessun target 12GB → **questo esperimento è
   esistevano in repo; solo i prompt) con `DS4_SPEX_TRACE_ROUTING`+`DS4_SPEX_TRACE_ROUTING_WEIGHTS=1`
   (patch 0006).
 
+## Findings operativi misurati (pod 3080Ti 12GB)
+
+- **Backbone reserve = 5.82 GiB** (misurato: ds4 logga `reserve 5.82 GiB` nel sizing cache) →
+  **conferma la stima del task (~5.8 GiB)**.
+- **Il full model va in OOM con i default a 12GB**: ds4 prova cache 512→cap 398 expert, poi
+  `CUDA model arena alloc failed for q8_0 (1792 MiB): out of memory` (le compute-arena q8_0/q8_hc
+  non entrano oltre backbone+cache). Il full genera 1 token ("Here") e crolla.
+- **Nuance importante per la matematica-fit**: la stima ingenua "12 − 5.8 = 6.2 GiB → ~910 expert"
+  ignora le **compute-arena** (~1.8 GiB q8_0). Serve un budget cache esplicito. Config funzionante
+  full-model: `--ssd-streaming-cache-experts 256 -c 2048` → gira pulito, **1.38 t/s**.
+- Velocità full-model in streaming SSD (24GB RAM < 86GB modello): **~0.46-1.4 t/s**, NON trasferibile
+  come velocità (playbook §4.3); qui serve solo per il costo e per il contrasto entra/non-entra.
+
 ## Metodo (playbook §4)
 
 1. Trace coding (12 prompt, greedy temp0, `--nothink`, `-n` fisso, weights) → CSV.
@@ -55,8 +68,28 @@ oltre K70, nessun dominio coding, nessun target 12GB → **questo esperimento è
 
 _PENDING — compilati man mano che le misure arrivano dal pod._
 
-### Fit (entra in VRAM?)
-_pending_
+### Fit (entra in VRAM?) — MISURATO
+
+**Config di misura** (stesso prompt BST, `-n 90`, cache=380, `--ssd-streaming-cold --prefill-chunk 512 -c 2048`, `DS4_SPEX_STATS=1`). V0 meccanismo: `checked=5760 violations=0` (ogni expert selezionato ∈ keep-list K91).
+
+| Config | keep/layer | working set | **hit_rate** | direct_loads | gen t/s |
+|---|---|---|---:|---:|---:|
+| **K0 full** | 256 | illimitato | **0.35** | 2670 (cresce) | 2.16 |
+| **K91** (9%) | 23 | ~920 | **0.67** | 993 (≈plateau) | 3.67 |
+| **K96** (3.5%) | 9 | ~360 | **0.96** | 631 | **12.02** |
+
+**Capacità cache reale su 12GB = ~407 expert** (non ~910): backbone 5.82 GiB + arene `q8_0`
+~1.8 GiB + ctx/CUDA overhead lasciano solo ~2.7 GiB. `≥440` va in OOM sull'arena. Indipendente
+dal `prefill-chunk` (è backbone-bound, cap sempre ~407).
+
+**VERDETTO FIT → esito (C) per K91, con datapoint costruttivo:**
+- **K91 NON entra del tutto in 12GB reali**: working set 920 > cache 407 → hit_rate 0.67, non 1.0.
+  La matematica del task (`12−5.8=6.2 GiB → 910 exp`) **ignorava ~2 GiB di arene/overhead ds4** →
+  la cache vera è ~2× più piccola.
+- **MA K91 funziona lo stesso come REAP**: bounda il working set (`direct_loads` plateau ~993 =
+  920 unici caricati una volta, vs full 2670 **in crescita illimitata**) e va **~8× il full**.
+- **Il K che ENTRA DAVVERO in un 3060 è ~K96** (keep 3.5%, working set 360 ≤ cache 407 →
+  **hit_rate 0.96, 12 t/s = 33× il full**). Questo è il vero "quanto devi strizzare un 158B per un 3060".
 
 ### Qualità (3 siti)
 _pending_

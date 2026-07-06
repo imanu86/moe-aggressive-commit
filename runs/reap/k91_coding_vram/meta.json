@@ -40,10 +40,14 @@
     "K91_expert_gib_atteso": 6.06
   },
   "risultati": {
-    "backbone_vram_gib_misurato": "PENDING",
-    "fit_hit_rate": "PENDING",
-    "fit_direct_loads_plateau": "PENDING",
-    "quality_verdict": "PENDING",
-    "esito_ABC": "PENDING"
+    "backbone_reserve_gib_misurato": 5.82,
+    "usable_expert_cache_experts_12GB": 407,
+    "usable_cache_note": "backbone 5.82 + arene q8_0 ~1.8GiB + overhead -> solo ~2.7GiB cache; >=440 OOM. La stima task 6.2GiB->910exp ignorava le arene.",
+    "V0_mechanism": "checked=5760 violations=0",
+    "fit_K0_full":  {"hit_rate": 0.3509, "direct_loads": 2670, "gen_ts": 2.16},
+    "fit_K91":      {"hit_rate": 0.6725, "direct_loads": 993,  "gen_ts": 3.67, "working_set": 920},
+    "fit_K96":      {"hit_rate": 0.9593, "direct_loads": 631,  "gen_ts": 12.02, "working_set": 360},
+    "esito_ABC": "C per K91 (non entra del tutto: 920>407 cache); K96 (keep 3.5%) e' il K che entra davvero (hit_rate 0.96, 12 t/s). Quality PENDING.",
+    "quality_verdict": "PENDING"
   }
 }

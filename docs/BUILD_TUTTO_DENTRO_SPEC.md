@@ -20,7 +20,7 @@ Creare **`ds4-flash-unified`** da **`spex/trace-ext` @ 7a93e3b** (ha già SPEX 0
 | Leva | Buildable | Cosa manca |
 |---|---|---|
 | **L1 CONFIG** (leva-RAM+cache+prefill) | ✅ **SÌ, zero codice** | nulla in codice; solo taratura runtime (reserve clamp, MiB/expert) col GPU |
-| **L2 REAP-loop** | 🟡 **PARZIALE (il build vero)** | v2-upsert device-range, override router CPU (`7415`), sensore-live in-process, rewind wired+politica — **tutti da riscrivere** (erano sul pod spento) |
+| **L2 REAP-loop** | 🟢 **PIÙ FACILE del previsto** | ✅ `42086b1`: **0011-V2 UPSERT** (v2-upsert device-range + override router CPU-bias + mtime-poll runtime-mask) e **0012** (sensore S1 gate-mass) GIÀ COMMITTATI su `reap/k91-coding-vram` (la 0011-v1 era ROTTA → sostituita). Il rischioso è FATTO. Resta: **applicare 0011-V2+0012 a unified + loop-driver (sidecar che scrive DS4_REAP_MASK_FILE per schedule/respiro) + params esposti**; rewind KV opzionale |
 | **L3 SPEX** | ✅ **SÌ, già cablato** | nulla; puntare `DS4_SPEX_MARKOV_FILE` al `.spex ds4flash_d2_nextlayer`; si accende **solo con `--ssd-streaming`** |
 | **L4 spec-dec unlock** | ❌ **FUORI** (NO-GO) | MTP nativo resta ma **hard-exclusive con streaming** (`ds4.c:26500`) → non combinabile col warm |
 

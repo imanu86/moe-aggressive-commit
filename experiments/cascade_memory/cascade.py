@@ -33,6 +33,7 @@ import hashlib
 from llm_client import chat
 from cost import from_usage, CostVector
 from confidence import score as conf_score
+from scorer import is_abstention
 from retrieval_adapter import MemoryRetriever
 
 SYSTEM = (
@@ -144,29 +145,41 @@ def run_controller(item, base_url, model, theta=-1.0, order_mode="ascending",
     mm = _mock_meta(item)
     trace = []
 
+    # A generation is "resolved" if it is NOT an abstention AND its logprob clears
+    # theta. Abstention is the decisive low-confidence signal here: in the small-window
+    # regime the model abstains at logprob ~0, so mean_logprob alone never triggers
+    # (measured: abstained mean_logprob = -0.003). We escalate on abstention OR low conf.
+    def _resolved(res_, conf_):
+        return (not is_abstention(res_.text)) and conf_ >= theta
+
     # rung "native": generate from the small window alone
     res, conf, cost = _generate(_native_only(native, item["question"]), base_url, model, mm)
-    trace.append(("native", conf))
-    best = (conf, res, "native")          # most-confident answer seen so far
+    abst = is_abstention(res.text)
+    trace.append(("native", round(conf, 3), abst))
+    # best-answer key: prefer a NON-abstaining answer, then higher confidence
+    best = ((not abst, conf), res, "native")
     rung_stop = "native"
 
-    if conf < theta:
+    if not _resolved(res, conf):
         early = False
         for rung in _rung_order(item, order_mode):
             recovered, extra = _recover(rung, item, buffer, history, item["question"], k)
             r2, c2, cc = _generate(_augmented(recovered, native, item["question"]),
                                    base_url, model, mm)
             cost = cost + cc + extra       # cost accrues for every rung actually run
-            trace.append((str(rung), c2))
-            if c2 > best[0]:
-                best = (c2, r2, str(rung))
-            if c2 >= theta:                # early-exit at the first rung that clears theta
+            a2 = is_abstention(r2.text)
+            trace.append((str(rung), round(c2, 3), a2))
+            key = (not a2, c2)
+            if key > best[0]:
+                best = (key, r2, str(rung))
+            if _resolved(r2, c2):          # early-exit at the first rung that resolves
                 res, conf, rung_stop, early = r2, c2, str(rung), True
                 break
         if not early:
-            # no rung cleared theta -> return the MOST-CONFIDENT answer seen, not the
-            # last (more retrieval can regress: bigger haystack ranks the plant lower)
-            conf, res, rung_stop = best
+            # nothing resolved -> return the BEST answer seen (non-abstain preferred),
+            # not the last (more retrieval can regress: bigger haystack ranks plant lower)
+            (_, res, rung_stop) = best
+            conf = best[0][1]
 
     return {"result": res, "cost": cost, "arm": None,
             "meta": {"rung_stop": rung_stop, "theta": theta, "order_mode": order_mode,

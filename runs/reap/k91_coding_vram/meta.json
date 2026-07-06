@@ -16,12 +16,15 @@
     "cost_per_hr_usd": 0.18,
     "image": "runpod/pytorch:1.0.2-cu1281-torch280-ubuntu2404",
     "ssh": "direct TCP (ip:porta), key id_ed25519",
-    "terminato": "PENDING"
+    "pod_paralleli": "3x RTX 3080 Ti 12GB (uno per config: pod1 K91/K96, pod2 K0, pod3 K50) per parallelizzare la generazione lenta in streaming",
+    "terminato": "2026-07-06: tutti e 3 i pod (s7shhzvwu25knm, u3f6acnbz4oql4, wgkj4s66jo3sia) podTerminate OK, myself.pods VUOTO verificato. A6000 dell'altra eval MAI toccato.",
+    "nota_reboot": "l'host oelj0arf6zti (condiviso dai 3 pod) si e' riavviato una volta sotto carico (3 download+build concorrenti); container-disk sopravvissuto, processi ripresi con wget -c."
   },
   "costi": {
     "balance_prima_usd": 18.8196548086,
-    "balance_dopo_usd": "PENDING",
-    "nota": "budget autorizzato $2-4; pod separato (l'utente ha chiesto di non toccare il pod A6000 'reap-public-replica' gia' in uso da un'altra eval)"
+    "balance_dopo_usd": 17.6207145047,
+    "costo_esperimento_usd": 1.20,
+    "nota": "budget autorizzato $2-4; 3 pod x $0.18/h ~2-2.5h totali = $1.20. Pod separato (l'utente ha chiesto di non toccare il pod A6000 'reap-public-replica' di un'altra eval)."
   },
   "software": {
     "ds4_base": "80ebbc3 (github.com/antirez/ds4)",
@@ -47,7 +50,13 @@
     "fit_K0_full":  {"hit_rate": 0.3509, "direct_loads": 2670, "gen_ts": 2.16},
     "fit_K91":      {"hit_rate": 0.6725, "direct_loads": 993,  "gen_ts": 3.67, "working_set": 920},
     "fit_K96":      {"hit_rate": 0.9593, "direct_loads": 631,  "gen_ts": 12.02, "working_set": 360},
-    "esito_ABC": "C per K91 (non entra del tutto: 920>407 cache); K96 (keep 3.5%) e' il K che entra davvero (hit_rate 0.96, 12 t/s). Quality PENDING.",
-    "quality_verdict": "PENDING"
+    "esito_ABC": "K91 = esito C (non entra: 920>407 cache) E fallisce qualita' (degenera). K96 = esito B (entra hit_rate 0.96 ma degenera). Nessun K entra in 12GB reali E codifica.",
+    "quality_1run_greedy": {
+      "K0_full": "sito completo, renderizza pulito (nav+hero+form+toggle+footer), 0 errori console",
+      "K50": "degradato: CSS valido ma body a pseudo-HTML (<toggle>,<error>), nav ok form rotto",
+      "K91": "degenera: loop 'The answer is a single-file HTML document...' - nessun codice",
+      "K96": "degenera: index_html x88 - nessun codice"
+    },
+    "quality_verdict": "degradazione monotona K0 pulito -> K50 degradato -> K91 loop-prosa -> K96 loop-token; coding generativo troppo largo per potatura estrema"
   }
 }

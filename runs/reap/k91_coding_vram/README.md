@@ -91,8 +91,36 @@ dal `prefill-chunk` (è backbone-bound, cap sempre ~407).
 - **Il K che ENTRA DAVVERO in un 3060 è ~K96** (keep 3.5%, working set 360 ≤ cache 407 →
   **hit_rate 0.96, 12 t/s = 33× il full**). Questo è il vero "quanto devi strizzare un 158B per un 3060".
 
-### Qualità (3 siti)
-_pending_
+### Qualità (siti web) — MISURATO
 
-### Verdetto A/B/C
-_pending_
+Stesso prompt (`sites/` → `website.txt`: nav + hero + form con validazione + toggle tema),
+greedy `--temp 0`, `-n 2600`, config safe cache 64. **1 run generativa per config** (greedy CUDA
+NON è bit-riproducibile, playbook §6 → trend chiaro, singolo campione). Output grezzi in `sites/`.
+
+| Config | keep | render | tag reali | verdetto qualità |
+|---|---|---|---|---|
+| **K0 full** | 100% | ✅ **sito completo e pulito** (nav MySite+4 link, hero "Build Something Amazing"+CTA, form Name/Email/Message, toggle 🌙 Dark, footer) | 9 `<div>`, 0 pseudo | **codifica bene** — 0 errori console |
+| **K50** | 50% | ⚠️ nav ok, **body degrada a pseudo-HTML** | 0 `<div>`, 5 pseudo (`<toggle>`,`<error>`,`<button "..`) | CSS valido ma markup rotto |
+| **K91** | 9% | ❌ nessun HTML | 0 | **degenera**: ripete "The answer is a single-file HTML document..." all'infinito |
+| **K96** | 3.5% | ❌ nessun HTML | 0 | **degenera**: `index_html` × 88 |
+
+Render K0 verificato via snapshot DOM (nav+hero+form+toggle+footer tutti presenti, 0 errori console).
+Degradazione **monotòna** con la potatura: K0 pulito → K50 degradato → K91 loop-prosa → K96 loop-token.
+
+### VERDETTO A/B/C — onesto, entrambi i lati misurati
+
+- **K91 (il target del task) = esito (C) + fallimento qualità**: NON entra del tutto in 12GB reali
+  (hit_rate 0.67, working set 920 > cache 407) **E** non sa più scrivere codice (degenera in loop di
+  meta-testo). Il peggio dei due mondi.
+- **K96 (il K che ENTRA in 12GB) = esito (B)**: entra (hit_rate 0.96, 12 t/s) ma è **troppo potato per
+  codificare** (degenera). Ciò che entra in un 3060, non codifica.
+- **K0/K50 = esito "codifica ma non entra"**: K0 pulito, K50 già degradato — sul dominio **generativo
+  coding** anche keep-50% inizia a rompersi (diverso dalla ppl Segnali lossless a K50: la coerenza
+  generativa long-form è più fragile della ppl su dominio stretto).
+
+**Conclusione (il "quanto strizzo un 158B per un 3060"):** per il DeepSeek-V4-Flash 2-bit sul dominio
+**largo del coding generativo**, **non esiste un K che entri in 12GB reali E scriva ancora codice**.
+C'è un muro netto: quello che entra (~K96) è già oltre il precipizio di coerenza; K91 non entra e non
+codifica. La causa strutturale doppia: (1) le arene ds4 lasciano solo ~407 expert di cache reale
+(non 910), (2) il coding è un dominio largo → intollerante alla potatura estrema (a differenza del
+dominio stretto "Segnali" dove K67 gira e K50 è lossless in ppl). K91 è nella terra di nessuno.

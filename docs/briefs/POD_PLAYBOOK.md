@@ -62,9 +62,17 @@ make cuda CUDA_ARCH=sm_86
   Non contarci per cross-check.
 - Invariante sanity per trace con pesi: somma dei 6 gate-weights per riga ≈ 1.5 (`expert_weights_scale` Flash).
 
-## 7. Run notturni LOCALI (lezione 2026-07-06)
-- **tmux/setsid dentro WSL NON sopravvive a sleep/spegnimento della macchina Windows** (WSL muore
-  con l'host → muore tutto). "Puoi spegnere tranquillo" con un run locale in corso = run morto.
-- Regola: run notturno locale ⇒ sospensione Windows DISATTIVATA (powercfg) e coperchio/alimentazione
-  gestiti; altrimenti il run notturno si fa su POD (che vive di suo). Il watcher che deve raccogliere
-  il risultato muore anche lui col PC: prevedere raccolta a freddo al mattino (log su disco).
+## 7. Run lunghi LOCALI in WSL (lezione 2026-07-06, DIAGNOSI CORRETTA)
+- **NON era il sonno del PC** (verificato: Windows su ininterrottamente, zero reboot, zero OOM). Il vero
+  killer: **WSL2 FERMA la distro quando diventa "orfana"** — quando il processo Windows che ha lanciato
+  il job termina e non resta nulla che tenga viva la VM, dopo il timeout di idle WSL stoppa la distro e
+  con essa muore tmux + tutto. `nohup`/`tmux` proteggono dal SIGHUP del terminale, NON dallo stop-distro.
+- FIX ROBUSTO (Ubuntu-24.04 HA systemd): lancia il job come **unità systemd transiente**, che PID 1 tiene
+  viva indipendente dalla shell e impedisce alla distro di risultare idle:
+  `wsl -d Ubuntu-24.04 -e bash -lc "systemd-run --unit=job_<nome> --same-dir --property=Type=oneshot bash /root/job.sh"`
+  (verifica con `systemctl status job_<nome>`, log con `journalctl -u job_<nome>`).
+- FIX ALTERNATIVO (se systemd-run dà noie): pinna la distro con un keepalive prima del job —
+  `wsl -d Ubuntu-24.04 -e bash -lc "setsid nohup sleep infinity >/dev/null 2>&1 & disown"` — poi lancia
+  il job detached; il `sleep infinity` impedisce lo stop-distro. Ricorda di ucciderlo a fine.
+- In ogni caso: progress-log timestampato su disco Windows-visibile (/mnt/c/...) per raccolta a freddo.
+- Se il run è >2-3h e critico: valuta comunque il POD (vive di suo, zero dipendenza dal ciclo-vita WSL).

@@ -1,9 +1,16 @@
 # REAP-loop v1 — verdetto novelty (per il paper, reviewer target: antirez)
 
 > Novelty check avversariale a 3 fronti (workflow `w8ms2k2n1`). **Verdetto: PARZIALE.**
-> ⚠️ **CAVEAT CITAZIONI**: alcuni arxiv-id sotto sono **post-cutoff (2026)** e **NON verificati** dagli agenti (2604.*, 2606.*,
-> LoopGuard, LPSR, SpecRA). Potrebbero essere confabulati. **Aprire l'abstract reale (WebFetch) PRIMA di citarli** —
-> una citazione inesistente davanti ad antirez azzera la credibilità dell'intero paper. Stesso caveat per l'axis-flip (2606.15453) già nel ledger.
+> ✅ **CITAZIONI VERIFICATE (2026-07-06, WebFetch/WebSearch) — tutte REALI, nessuna confabulata**:
+> LoopGuard `2604.10044` ("Breaking Self-Reinforcing Attention Loops via Dynamic KV Cache Intervention"),
+> LPSR `2604.18567` ("Latent Phase-Shift Rollback: Inference-Time Error Correction via Residual Stream Monitoring and KV-Cache Steering"),
+> ST-MoE `2606.15453` ("A Spatio-Temporal Expert Prefetching Framework for Efficient MoE-based LLM Inference" — conferma anche l'axis-flip del ledger),
+> SpecRA (OpenReview `xVO4BqmzVD`, "Monitor Degenerative Repetition in LLM Agents using Randomized FFT"). Il do-not-claim REGGE.
+>
+> ⭐ **SHARPENING dalla verifica (rafforza il tuo contributo)**: ogni prior-art di detection usa un **segnale DIVERSO** —
+> LoopGuard = attention/KV, LPSR = residual-stream, SpecRA = testo/vocab (FFT), ST-MoE = pattern di prefetch (loading).
+> **Nessuno** usa il tuo segnale — **gate-mass-sugli-esperti-potati, causalmente legato all'AZIONE di potatura** — né lo
+> accoppia a un attuatore bias-mask sul routing. Questa è la linea difendibile, ora più netta di prima.
 
 ## Verdetto in una riga
 **Nessun singolo mattone è nuovo.** L'unica novità che regge a un reviewer severo è la **COMPOSIZIONE closed-loop** + il **finding causale dell'asimmetria** + il **segnale gate-mass-su-potati**. REAP-loop v1 è un'**integrazione originale**, non una primitiva nuova → si rivendica come **sistema + finding causale**, MAI come "abbiamo inventato X".
@@ -27,8 +34,8 @@
 | "adaptive top-k / dynamic-k per token" | DynMoE/AdaMoE (2406.13233), Ada-K, LExI (2509.02753) | **tu NON lo rivendichi — tienilo così** |
 | "working-set di sessione a runtime" | MoE-Infinity (2401.14361), HOBBIT (2411.01433), AdapMoE | ⭐ ma per **prefetch/cache/offload, NON toccano il routing** → **questa è la tua linea di demarcazione, marcala netta** |
 | "rewiring/re-routing on-the-fly" | arXiv:2510.14853 | |
-| "detect onset → rewind/KV-edit" | LoopGuard (2604.10044), LPSR (2604.18567) | ⚠️ **id da verificare** |
-| "periodicità via autocorrelazione" | SpecRA (OpenReview xVO4BqmzVD) | ⚠️ da verificare |
+| "detect onset → rewind/KV-edit" | LoopGuard (2604.10044), LPSR (2604.18567) | ✅ reali; ma segnale attention/KV & residual-stream, NON routing |
+| "periodicità via autocorrelazione" | SpecRA (OpenReview xVO4BqmzVD) | ✅ reale; ma FFT sul testo, NON Jaccard sul routing |
 | "entropia/spettro attivazioni = health-signal" | EigenTrack (arXiv:2509.15735) | gate-entropy = folklore MoE-training |
 | "REAP" come naming | arXiv:2510.13999 | è compressione one-shot **statica** = l'opposto; non spacciare continuità di metodo |
 

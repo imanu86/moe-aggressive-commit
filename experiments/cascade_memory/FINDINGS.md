@@ -94,6 +94,32 @@ modest; whether it converts into a better cost/accuracy frontier needs an ONLINE
 (apply the trigger live in the 2-tier memory, compare vs trigger=abstention-only) — a
 clean pre-registered next experiment.
 
+## FINDING 4 — E4: the learned trigger CONVERTS to a frontier gain (GO), but the 2-tier is still dominated by always-RAG
+Pre-registered E4 (PREREGISTRATION.md): 2-tier (small window + one direct RAG) with the
+learned trigger vs abstention-only, recency-skewed access (800 items, median distance 6,
+51% in-window), amortized cost. Learned trigger = B2_reactive swept theta.
+
+| arm / trigger | acc | amortized cost (tok) | note |
+|---|---|---|---|
+| B0_sw (no recovery, floor) | 0.425 | 275 | |
+| **B1 always-RAG** | **0.944** | **153** | **dominates everything** |
+| T_abst (B2, theta=-2, abstention-only) | 0.899 | 462 | baseline |
+| T_learned (B2, theta=-0.001) | **0.929** | 478 | **+0.030 acc, CI95 [+0.019,+0.042], 1.04x cost** |
+
+- **E4 verdict: GO** for the learned trigger over abstention-only: +0.030 accuracy (CI95
+  excludes 0) at 1.04x amortized cost. The +0.029 AUROC edge from F3 **does convert** to a
+  real frontier gain — catching the confident-hallucination residual buys ~3 accuracy
+  points for ~4% cost. The trigger-router idea is validated online.
+- **BUT** always-RAG (B1) dominates the whole 2-tier family: higher accuracy (0.944) at 3x
+  lower cost (153 vs ≥462 tok). Cause: the native attempt (6-turn window ≈275 tok) costs
+  MORE than a direct RAG (top-k=3 ≈153 tok), so "try the cheap tier first" is ill-posed —
+  the native tier isn't cheap. B1 skips it and goes straight to the cheap RAG.
+- Net: the learned trigger wins its pre-registered race, but the 2-tier is the wrong
+  strategy in THIS regime. The trigger only earns its keep when skipping the RAG on easy
+  (in-window) items actually saves — i.e. when **RAG is expensive** (large KB, embeddings,
+  rerank, network) or the native window is cheaper than retrieval. With free in-memory
+  BM25, always-RAG wins upstream. (Pre-registered boundary condition, not post-hoc.)
+
 ## Boundary conditions (stated as caveats, not re-run to fish a positive)
 The negative is specific to: (a) **uniform fact-distance** (adversarial to buffer-scoped
 cheap rungs) — under **recency-skewed access** (most references recent, realistic for
@@ -115,7 +141,11 @@ These would each be pre-registered hypotheses for any follow-up, not post-hoc re
 - F1 (regime-fragility of a single-threshold logprob sensor) stands but is corrected by F3:
   the signal is there, it was being read over the wrong population.
 - MLA/ds4 substrate (pre-registered inert) not needed for the cascade negative.
-- **Next pre-registered experiment**: 2-tier memory (small window + RAG) with the *learned
-  trigger* vs *abstention-only trigger*, on recency-skewed realistic access, measuring the
-  amortized cost/accuracy frontier over a long conversation (not per-item). That is the
-  honest test of the idea that actually survived.
+- **E4 done (F4)**: the learned trigger CONVERTS its AUROC edge into a frontier gain over
+  abstention-only (+0.030 acc, CI excludes 0, 1.04x cost) — GO. But always-RAG still
+  dominates the 2-tier here because the native attempt costs more than the cheap RAG. So
+  the trigger-router is real and validated, yet only pays off when RAG is expensive.
+- **Open, if pursued**: re-run E4 with EXPENSIVE retrieval (embedding+rerank, or a large
+  KB) and/or a cheaper native tier, where skipping the RAG on in-window items saves — that
+  is the one regime where the whole idea (small window + learned trigger + on-demand RAG)
+  could beat always-RAG. Pre-register before running.

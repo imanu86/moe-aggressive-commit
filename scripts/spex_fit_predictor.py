@@ -83,6 +83,8 @@ def main():
     ap.add_argument('--data', default=DATA)
     ap.add_argument('--ridge', type=float, default=10.0)
     ap.add_argument('--smoke', action='store_true')
+    ap.add_argument('--export-spex', default=None, help='scrive i pesi del probe next-layer in un .spex')
+    ap.add_argument('--export-only', action='store_true', help='esporta e salta la PASS 2 di eval')
     a = ap.parse_args()
 
     dsh_files = sorted(glob.glob(os.path.join(a.data, 'dsh', '*.dsh')))
@@ -168,6 +170,25 @@ def main():
             except np.linalg.LinAlgError:
                 W[tag][l] = np.linalg.lstsq(A, XtY[tag][l], rcond=None)[0]
         print(f'probe {tag}: risolto ({NL} layer)')
+
+    # ── EXPORT .spex (formato per il loader C del motore ds4)
+    #   Header 32B: magic 'SPX1' | version u32=1 | predictor u32=2(hidden-next-layer)
+    #               n_layer u32 | n_embd u32 | n_expert u32 | ridge_f32 | reserved u32
+    #   Per SOURCE layer l in [0..NL-1]: W_nl[l] fp16[n_embd*n_expert] (row-major, x @ W = score[E]).
+    #   score(experts di L+1) = h(pos, L) @ W[L].  L'ultimo layer ha W nullo (nessun L+1).
+    if a.export_spex:
+        with open(a.export_spex, 'wb') as f:
+            f.write(b'SPX1')
+            f.write(struct.pack('<IIIIIfI', 1, 2, NL, NE, E, float(a.ridge), 0))
+            for l in range(NL):
+                f.write(W['nl'][l].astype(np.float16).tobytes())   # (NE, E) row-major
+        sz = os.path.getsize(a.export_spex)
+        print(f'.spex esportato: {a.export_spex} ({sz/1e6:.1f} MB, {NL} layer x {NE}x{E} fp16)')
+        # scrittore di riferimento python (per validare il loader C): salva anche npz
+        np.savez_compressed(a.export_spex + '.npz', W_nl=W['nl'].astype(np.float16),
+                            n_layer=NL, n_embd=NE, n_expert=E)
+        if a.export_only:
+            print('export-only: salto la PASS 2 di eval'); return
 
     # ── PASS 2: eval sul TEST, per set, con baseline temporali sugli STESSI pair
     res = defaultdict(lambda: defaultdict(list))

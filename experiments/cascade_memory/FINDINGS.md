@@ -120,6 +120,24 @@ learned trigger vs abstention-only, recency-skewed access (800 items, median dis
   rerank, network) or the native window is cheaper than retrieval. With free in-memory
   BM25, always-RAG wins upstream. (Pre-registered boundary condition, not post-hoc.)
 
+## FINDING 5 — the RAG-price threshold: when does the 2-tier finally beat always-RAG?
+Counterfactual on the E4 data (cost_sensitivity.py, NO new pod): price an expensive
+retrieval as `cost = total_tokens + C_rag * n_rag_calls` (C_rag = query embedding + rerank,
+real compute the token count ignores). B1 pays C_rag on every item; B2 only on the ~55% it
+retrieves.
+
+- **Crossover C_rag\* = 722 token-equivalents.** Below it, always-RAG is cheaper (BM25
+  in-memory ≈0 → B1 wins). Above it, the 2-tier is cheaper — because B2 skips retrieval on
+  the in-window half.
+- The threshold is high because B2 pays the native attempt on EVERY item (base 478 vs 153
+  tok) and only saves 0.45 retrievals/item: 325/0.45 ≈ 722.
+- Realistic? Only with **reranking**: a cross-encoder over ~15-20 candidates, or an
+  LLM-reranker, clears 722 tok-equiv easily; plain BM25 or light embedding does not.
+- **Even past the threshold it is a TRADE-OFF, not domination**: the 2-tier is cheaper but
+  ~0.015 LESS accurate (B1 retrieves everything; B2's trigger misses a few confident
+  hallucinations). That 1.5-pt gap is exactly what a **white-box (hidden-state) trigger**
+  could close — the one place white-box probing would re-earn its keep.
+
 ## Boundary conditions (stated as caveats, not re-run to fish a positive)
 The negative is specific to: (a) **uniform fact-distance** (adversarial to buffer-scoped
 cheap rungs) — under **recency-skewed access** (most references recent, realistic for
@@ -145,7 +163,18 @@ These would each be pre-registered hypotheses for any follow-up, not post-hoc re
   abstention-only (+0.030 acc, CI excludes 0, 1.04x cost) — GO. But always-RAG still
   dominates the 2-tier here because the native attempt costs more than the cheap RAG. So
   the trigger-router is real and validated, yet only pays off when RAG is expensive.
-- **Open, if pursued**: re-run E4 with EXPENSIVE retrieval (embedding+rerank, or a large
-  KB) and/or a cheaper native tier, where skipping the RAG on in-window items saves — that
-  is the one regime where the whole idea (small window + learned trigger + on-demand RAG)
-  could beat always-RAG. Pre-register before running.
+- **E4 expensive-retrieval answered by counterfactual (F5)**: the 2-tier beats always-RAG
+  on cost only when retrieval costs > ~722 tok-equiv (realistic only with reranking), and
+  even then it is a cost/accuracy TRADE-OFF (−0.015 acc), not domination. No pod needed —
+  the threshold is exact arithmetic on the E4 data.
+- **The one thing that could still turn it into a win**: a white-box (hidden-state) trigger
+  to close the 1.5-pt accuracy gap, combined with expensive reranked retrieval. That is the
+  only remaining open lead; everything cheaper is dominated by plain always-RAG.
+
+## Full arc (one line each)
+Gate #1 GO (sensor separates, full window) → Gate #2 NEGATIVE (many-level cascade dominated
+by one RAG) → F3 (the learned *trigger* works black-box, AUROC 0.984, corrects F1) → E4/F4
+GO (learned trigger converts to +0.030 acc over abstention-only) but 2-tier dominated by
+always-RAG → F5 (2-tier only wins cost when retrieval > 722 tok-equiv, and only as a
+trade-off). Net: the cascade idea dies; the trigger-router idea lives but pays off only
+under expensive retrieval. Total pod spend ≈ $0.60.

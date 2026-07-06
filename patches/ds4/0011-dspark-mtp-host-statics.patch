@@ -1,0 +1,56 @@
+From 57844585c5a64b4f6530fa641ddf34493093dd7f Mon Sep 17 00:00:00 2001
+From: dspark-track <imanu86@gmail.com>
+Date: Mon, 6 Jul 2026 05:35:03 +0200
+Subject: [PATCH] mtp: DS4_MTP_HOST_STATICS keeps support-model statics
+ host-side under streaming
+
+On 12GB cards the support-model device cache (~3.5GB) competes with the
+routed expert cache (M8: baseline-with-cache 1.06 t/s vs spec2-denied 0.70)
+and can thrash-loop during evals (0.13<->0.15 GiB churn, GPU at 3%). With
+the durable support mapping (previous commit) drafter reads are zero-copy,
+so the device cache is redundant under streaming. Default off.
+---
+ ds4.c | 26 +++++++++++++++++++-------
+ 1 file changed, 19 insertions(+), 7 deletions(-)
+
+diff --git a/ds4.c b/ds4.c
+index 342bb43..decad2e 100644
+--- a/ds4.c
++++ b/ds4.c
+@@ -26605,14 +26605,26 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+         /* Also apply explicit optional Q8 preload settings to the MTP support
+          * model when loaded. */
+         if (e->mtp_ready) {
++            /* Under SSD streaming the support-model device cache competes with
++             * the routed expert cache for scarce VRAM (and can thrash-loop on
++             * 12GB cards).  With the durable support mapping registered below,
++             * drafter reads are zero-copy: DS4_MTP_HOST_STATICS=1 skips the
++             * device cache entirely and leaves VRAM to the expert cache. */
++            const bool mtp_host_statics =
++                e->ssd_streaming && getenv("DS4_MTP_HOST_STATICS") != NULL;
+             (void)ds4_gpu_set_model_fd_for_map(e->mtp_model.fd, e->mtp_model.map);
+-            if (!accelerator_cache_model_tensors(e->backend, &e->mtp_model,
+-                                                 NULL, NULL, 0)) {
+-                fprintf(stderr, "ds4: %s failed to prepare optional MTP model cache\n",
+-                        ds4_backend_name(e->backend));
+-                ds4_engine_close(e);
+-                *out = NULL;
+-                return 1;
++            if (!mtp_host_statics) {
++                if (!accelerator_cache_model_tensors(e->backend, &e->mtp_model,
++                                                     NULL, NULL, 0)) {
++                    fprintf(stderr, "ds4: %s failed to prepare optional MTP model cache\n",
++                            ds4_backend_name(e->backend));
++                    ds4_engine_close(e);
++                    *out = NULL;
++                    return 1;
++                }
++            } else {
++                fprintf(stderr, "ds4: MTP support model statics kept host-side "
++                                "(DS4_MTP_HOST_STATICS)\n");
+             }
+             (void)ds4_gpu_set_model_fd_for_map(e->model.fd, e->model.map);
+             (void)ds4_gpu_register_support_model_map(e->mtp_model.map,
+-- 
+2.43.0
+

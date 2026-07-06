@@ -83,6 +83,18 @@ il regime consumer resta misurato dove vive, sul 3060.
 - [x] M8-TRIS: negativo (cap q8f16 insufficiente su WSL2 → 0012 per quella piattaforma)
 - [x] **CONSEGNATO a SPEX-main** per l'aggancio al task #17 (outreach antirez)
 
-## Prossima misura suggerita (la cella mancante della matrice)
-Pod 3090 **low-RAM** (16-32GB: modello NON in page-cache = nativo disk-bound) con lo
-stack 0009-0011: spec2+cache vs base+cache nel regime esatto della tesi. ~$0.30, 1h.
+## Coordinamento upstream (ricognizione 2026-07-06)
+- **Finestra favorevole**: #495 resta senza risposta del maintainer — questo pacchetto
+  può essere la risposta canonica. Attenzione upstream alta sul CUDA streaming
+  (#503/#504).
+- **#497 (giannisanni)**: volutamente parziale (il guard engine resta) — il nostro è un
+  SUPERSET che la accredita; coordinarsi con l'autore prima dell'invio, non competere.
+- **Rischio rebase con #504** (per-size-class expert caches, stesso `ds4_cuda.cu`):
+  benchmark upstream fortissimi (0.9→25 t/s, 97% hit su Blackwell 96GB) → probabile
+  merge; verificare l'ordine e ribasare le nostre 0010/0011 se atterra prima.
+- **Framing**: #493 "supportereste DSpark?" chiusa *not planned* (attore non confermato)
+  → pitch corretto = "sbloccare l'MTP nativo esistente nel regime streaming" (codice del
+  maintainer), NON "aggiungere DSpark". Il pacchetto è già impostato così.
+- **#508** (SSD streaming expert su backend CPU, pread+LRU): sinergica con l'eventuale
+  drafter-CPU (design 0013, bench 43.5ms/GEMV committato in
+  `runs/dspark/20260706_cpu_drafter_bench/`).

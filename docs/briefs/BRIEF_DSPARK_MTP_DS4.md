@@ -93,8 +93,14 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
       nel verify (slots=12→~10 unici), spec2 **+9/10% vs baseline** col PAVIMENTO
       (expert cache spenta: le statics MTP device-cachate mangiano il budget su 12GB
       → prossimo innesto 0011). → `runs/dspark/20260705_fase_c_smoke_3060/RISULTATI.md`
-- [ ] 0011 (statics support model non cachate) → misura con expert cache vera
-- [ ] scheduler+STS on-device (innesti 1-4 design) + ds4-eval appaiato (paletto 3)
+- [x] **PACCHETTO PR CONSEGNATO (2026-07-06, b06872e)**: validazione appaiata su 2
+      piattaforme (equivalenza, p=1.0, 38/40 concordanti), serie 0009-0011 pulita su
+      stock, matrice M8 completa: **+9/10% disk-bound / −50% RAM-backed / WSL2 cache
+      negata (0012 progettata, serve solo lì)**. La speculazione a blocchi paga solo
+      dove c'è IO da ammortizzare = la tesi, affilata. → `PACCHETTO_PR.md`
+- [ ] cella mancante matrice: pod low-RAM (nativo disk-bound = regime tesi/#495)
+- [ ] 0012 (drafter via fd/staging) se il target resta WSL2; inutile su nativo
+- [ ] scheduler+STS on-device (innesti 1-4, estensione DS4_DSPARK_ADAPTIVE)
 - [x] **STRADA B MISURATA (2026-07-05)**: DSpark ufficiale su V4-Flash (2×H200, ~1h, $9):
       τ = **5.18/5.00/2.70** (code/math/chat) su blocco-5; confidence head ottima come
       ranking ma sottocalibrata in profondità (ECE fino a 0.44 su chat) = caso d'uso

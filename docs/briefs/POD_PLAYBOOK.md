@@ -61,3 +61,10 @@ make cuda CUDA_ARCH=sm_86
 - **Profiler upstream (`--expert-profile`/`DS4_EXPERT_HOTLIST`) è Metal-only**: su CUDA non si attiva.
   Non contarci per cross-check.
 - Invariante sanity per trace con pesi: somma dei 6 gate-weights per riga ≈ 1.5 (`expert_weights_scale` Flash).
+
+## 7. Run notturni LOCALI (lezione 2026-07-06)
+- **tmux/setsid dentro WSL NON sopravvive a sleep/spegnimento della macchina Windows** (WSL muore
+  con l'host → muore tutto). "Puoi spegnere tranquillo" con un run locale in corso = run morto.
+- Regola: run notturno locale ⇒ sospensione Windows DISATTIVATA (powercfg) e coperchio/alimentazione
+  gestiti; altrimenti il run notturno si fa su POD (che vive di suo). Il watcher che deve raccogliere
+  il risultato muore anche lui col PC: prevedere raccolta a freddo al mattino (log su disco).

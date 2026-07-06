@@ -51,7 +51,13 @@ def _http_chat(messages, base_url, model, timeout, **overrides) -> LLMResult:
     body.pop("mock_meta", None)
 
     data = json.dumps(body).encode("utf-8")
-    headers = {"Content-Type": "application/json"}
+    # Non-default User-Agent: some proxies (e.g. RunPod's Cloudflare front) 403 the
+    # stdlib "Python-urllib/x" UA. A browser/curl-like UA passes.
+    headers = {
+        "Content-Type": "application/json",
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                      "(KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+    }
     if config.API_KEY:
         headers["Authorization"] = f"Bearer {config.API_KEY}"
 

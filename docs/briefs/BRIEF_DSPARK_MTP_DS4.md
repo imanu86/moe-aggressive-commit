@@ -98,7 +98,11 @@ sul collo di bottiglia, CUMULABILE con cache-sizing e SPEX.
       stock, matrice M8 completa: **+9/10% disk-bound / −50% RAM-backed / WSL2 cache
       negata (0012 progettata, serve solo lì)**. La speculazione a blocchi paga solo
       dove c'è IO da ammortizzare = la tesi, affilata. → `PACCHETTO_PR.md`
-- [ ] cella mancante matrice: pod low-RAM (nativo disk-bound = regime tesi/#495)
+- [x] cella matrice MISURATA (2026-07-06, 14445ff): nativo disk-bound NVMe dc, finestre
+      46G e 16G via cgroup+hog → spec2 −50% IDENTICO su entrambe. La variabile è il
+      COSTO IO/token (banda copia: pod 1.92GB/s vs 3060 620MiB/s): lo spec paga dove lo
+      storage è lento rispetto al modello = il regime consumer del 3060 (+9/10% già
+      misurato). Matrice completa in PACCHETTO_PR.md. Outreach: decisione utente.
 - [ ] 0012 (drafter via fd/staging) se il target resta WSL2; inutile su nativo
 - [ ] scheduler+STS on-device (innesti 1-4, estensione DS4_DSPARK_ADAPTIVE)
 - [x] **STRADA B MISURATA (2026-07-05)**: DSpark ufficiale su V4-Flash (2×H200, ~1h, $9):

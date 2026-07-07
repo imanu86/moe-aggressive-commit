@@ -1,0 +1,20 @@
+```python
+def merge_intervals(intervals):
+    if not intervals:
+        return []
+    
+    merged = []
+    intervals = sorted(intervals, key=lambda x: x[0])
+    
+    for i in range(len(intervals)):
+        if i == 0:
+            merged.append(list(intervals[i]))
+        else:
+            current = intervals[i]
+            if current[0] <= merged[-1][1] + 1:
+                merged[-1][1] = max(merged[-1][1], current[1])
+            else:
+                merged.append(list(current))
+    
+    return merged
+```

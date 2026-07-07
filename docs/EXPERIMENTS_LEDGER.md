@@ -381,3 +381,7 @@ stream separati, auto-gate aderenza (0.000 = mask attive), greedy n=1 (determini
   → DISACCOPPIA hit-rate da dimensione-cache = sblocca il 12GB; batte n-gram ovunque; recall(0.63)≈
   hit(0.616) ~1:1; recall tiene con lead (d=1/2/3=0.63/0.62/0.61 → margine SSD). Prossimo: patch ds4
   per t/s reale. Resta APERTO solo: feedback-qualita' live via slope(S1) (PACE parked).
+- **Test precisione q2 vs q2-q4** (`precision/`): il soffitto e' la TAGLIA non i BIT. Entrambi L1
+  sul task-hard (todo-app) → aggiungere 4-bit a 6 layer NON alza il livello = capacita'-bound.
+  q2-q4 (98GB) piu' lento (1.5 vs 1.7-2.2 t/s) e completa in 14.8min vs 12.4 (+19%) = lose-lose.
+  q4-full escluso (170GB>130GB disco). Strada mixed-precision CHIUSA per il soffitto complesso.

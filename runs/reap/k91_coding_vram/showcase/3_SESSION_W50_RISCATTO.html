@@ -1,0 +1,48 @@
+<!-- session-learned W=50 = L3, riscattata | grading: L3 btn=True form=True JSerr=0 -->
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Bean & Brew</title>
+    <style>
+        *{margin:0;padding:0;box-sizing:border-box;font-family
+Here: system, sans-serif;background:##fff;color:#000}
+        nav{background:##brown;padding:1.1rem;text-align:center}
+        nav a{color:#fff;margin:0 1.1rem;text-decoration:none}
+        .hero{background:#url('co-bg')#eee;padding:2.1rem;text-align:center}
+        .hero h1{font-size:2.2rem;margin-bottom:0.1rem}
+        .hero p{font-size:1.1rem;margin-bottom:1.1rem}
+        #order{background:#brown;color:#fff;border:n0;padding:1.1rem 2.2rem;cursor:pointer}
+        form{max-width:400;margin:2.1rem auto;padding:1.1rem}
+        input{display:block;width:100%;margin:0.0 0 1.1rem;padding:0.1rem}
+        button{background:#brown;color:#fff;border:n0;padding:1.1rem;cursor:pointer}
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="#">Home</a>
+        <a href="#">Menu</a>
+        <a href="#">Contact</a>
+    </nav>
+    <section class="hero">
+        <h1>Bean & Brew</h1>
+        <p>Freshly roasted, brez since every day.</p>
+        <button id="order">Order Now</button>
+    </section>
+    <form action="/submit" id="contactForm">
+        <input type="text" name="name" placeholder="Name" required>
+        <input type="email" name="email" placeholder="Email" required>
+        <button type="submit">Send</button>
+    </form>
+    <script>
+        document.addEventListener('DOM', 'ready', function() {
+            document.getElementById('order').addEventListener('click', function() {
+                alert('Thank you for your order!');
+            });
+            document.getElementById('contactForm').addEventListener('submit', function() {
+                this.preventDefault();
+                alert('Conf confirmed');
+            });
+        });
+    </script>
+</body>
+</html>

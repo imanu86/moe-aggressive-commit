@@ -1,0 +1,59 @@
+<!-- full (no mask) = L3, la pagina che funziona | grading: L3 btn=True form=True JSerr=0 -->
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bean & Brew</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { font-family: system-ui, sans-serif; background: #f5f0e8; color: #2e241f; }
+        nav { background: #3e2c25; padding: 0.8rem 1.5rem; display: flex; gap: 1.5rem; }
+        nav a { color: #f5f0e8; text-decoration: none; font-weight: 500; }
+        nav a:hover { color: #dbbd9a; }
+        .hero { background: #dbbd9a; padding: 3rem 1.5rem; text-align: center; }
+        .hero h1 { font-size: 2.8rem; letter-spacing: 1px; }
+        .hero p { font-size: 1.2rem; margin-top: 0.3rem; opacity: 0.9; }
+        #order { margin-top: 1.2rem; padding: 0.7rem 2rem; font-size: 1.1rem; background: #2e241f; color: #f5f0e8; border: none; border-radius: 6px; cursor: pointer; }
+        #order:hover { background: #4a3a32; }
+        .contact-form { padding: 2rem 1.5rem; max-width: 480px; margin: 0 auto; }
+        .contact-form input { width: 100%; padding: 0.6rem; margin-bottom: 0.8rem; border: 1px solid #b7a18b; border-radius: 4px; background: #fff; }
+        .contact-form button { padding: 0.6rem 1.5rem; background: #2e241f; color: #f5f0e8; border: none; border-radius: 6px; cursor: pointer; }
+        .contact-form button:hover { background: #4a3a32; }
+        footer { text-align: center; padding: 1rem; background: #3e2c25; color: #f5f0e8; font-size: 0.9rem; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="#">Home</a>
+        <a href="#">Menu</a>
+        <a href="#">Contact</a>
+    </nav>
+
+    <section class="hero">
+        <h1>Bean & Brew</h1>
+        <p>Freshly roasted, lovingly brewed.</p>
+        <button id="order">Order Now</button>
+    </section>
+
+    <form class="contact-form" action="/submit" id="contactForm">
+        <input type="text" name="name" placeholder="Your name" required>
+        <input type="email" name="email" placeholder="Email address" required>
+        <button type="submit">Send message</button>
+    </form>
+
+    <footer>
+        <p>© Bean & Brew — coffee made simple</p>
+    </footer>
+
+    <script>
+        document.getElementById('order').addEventListener('click', function() {
+            alert('Thank you for your order!');
+        });
+
+        document.getElementById('contactForm').addEventListener('submit', function(e) {
+            e.preventDefault();
+            alert('Thank you, we received your message.');
+        });
+    </script>
+</body>
+</html>

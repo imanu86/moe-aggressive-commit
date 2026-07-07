@@ -1,0 +1,14 @@
+token 299 (train 209 test 90) | layer MoE 3..42
+  recall@23 lead d=1: 0.631  (lead-time = 1 layer di compute)
+  recall@23 lead d=2: 0.622  (lead-time = 2 layer di compute)
+  recall@23 lead d=3: 0.610  (lead-time = 3 layer di compute)
+
+HIT-RATE cache (test), prefetch budget P=23:
+ cache  no-prefetch    ngram  ahead d=1  ahead d=2  ahead d=3
+   120        0.000    0.334      0.616      0.591      0.565
+   200        0.000    0.334      0.616      0.591      0.565
+   400        0.369    0.369      0.616      0.591      0.565
+   800        0.556    0.556      0.616      0.591      0.565
+
+VERDETTO: il prefetch aiuta la VELOCITA' solo se ahead > no-prefetch E > ngram.
+Se recall alto ma hit-rate non sale => recall != velocita' (evict/cache-pressure).

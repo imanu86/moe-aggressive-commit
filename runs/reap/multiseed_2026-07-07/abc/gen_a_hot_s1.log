@@ -1,0 +1,449 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3090 (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.418s
+ds4: cuda backend initialized for graph diagnostics
+ds4: context buffers 108.25 MiB (ctx=3072, backend=cuda, prefill_chunk=512, raw_kv_rows=768, compressed_kv_rows=770)
+ds4: using GPU graph generation with graph prefill
+ds4: gpu prefill layer 1/43ds4: gpu prefill layer 2/43ds4: gpu prefill layer 3/43ds4: gpu prefill layer 4/43ds4: gpu prefill layer 5/43ds4: gpu prefill layer 6/43ds4: gpu prefill layer 7/43ds4: gpu prefill layer 8/43ds4: gpu prefill layer 9/43ds4: gpu prefill layer 10/43ds4: gpu prefill layer 11/43ds4: gpu prefill layer 12/43ds4: gpu prefill layer 13/43ds4: gpu prefill layer 14/43ds4: gpu prefill layer 15/43ds4: gpu prefill layer 16/43ds4: gpu prefill layer 17/43ds4: gpu prefill layer 18/43ds4: gpu prefill layer 19/43ds4: gpu prefill layer 20/43ds4: gpu prefill layer 21/43ds4: gpu prefill layer 22/43ds4: gpu prefill layer 23/43ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: gpu prefill layer 24/43ds4: gpu prefill layer 25/43ds4: gpu prefill layer 26/43ds4: gpu prefill layer 27/43ds4: gpu prefill layer 28/43ds4: gpu prefill layer 29/43ds4: gpu prefill layer 30/43ds4: gpu prefill layer 31/43ds4: gpu prefill layer 32/43ds4: gpu prefill layer 33/43ds4: gpu prefill layer 34/43ds4: gpu prefill layer 35/43ds4: gpu prefill layer 36/43ds4: gpu prefill layer 37/43ds4: gpu prefill layer 38/43ds4: gpu prefill layer 39/43ds4: gpu prefill layer 40/43ds4: gpu prefill layer 41/43ds4: gpu prefill layer 42/43ds4: gpu prefill layer 43/43
+```ds4: REAP mask reload da /root/ms/mask_a_hot_s1.txt: 0 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ds4: SPEX routing trace enabled: /root/ms/trace_a_hot_s1.csv (weights: on)
+htmlds4: CUDA loading model tensors 7.86 GiB cached
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="widthds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+=device-width, initial-scale=1.0">
+    <title>Complete Single-File Website</title>
+    <!-- clean, modern design with embedded CSS -->
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+    <style>
+        /* ----- reset & base ----- */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: borderds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+-box;
+        }
+
+        body {
+            font-family: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', sansds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+-serif;
+            background-color: #ffffff;
+            color: #1a1a1a;
+            transition: background-color 0.3s ease,ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ color 0.3s ease;
+            line-height: 1.5;
+        }
+
+        /* ----- light/dark theme variables (used via data-theds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+me) ----- */
+        :root {
+            --bg: #ffffff;
+            --text: #1a1a1a;
+            --nav-bgds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+: #f8f9fa;
+            --nav-border: #dee2e6;
+            --hero-bg: #e9ecef;
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+            --btn-bg: #0d6efd;
+            --btn-text: #ffffff;
+            --btn-hover: #0b5edds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+7;
+            --form-bg: #f1f3f5;
+            --form-border: #ced4da;
+            --error-color: #ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+dc3545;
+            --footer-bg: #f8f9fa;
+        }
+
+        [data-theme="dark"] {
+            --bg:ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ #212529;
+            --text: #f8f9fa;
+            --nav-bg: #343a40;
+            --nav-border: #ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+495057;
+            --hero-bg: #2b3035;
+            --btn-bg: #6ea8fe;
+            --btn-text:ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ #212529;
+            --btn-hover: #5a9bfc;
+            --form-bg: #2b3035;
+            --formds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+-border: #495057;
+            --error-color: #f77f7f;
+            --footer-bg: #343a40;
+        }
+
+       ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ /* apply theme colors */
+        body {
+            background-color: var(--bg);
+            color: var(--text);
+        }
+
+        /* ----- layout & components -----ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ */
+        .container {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+       ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ /* navigation */
+        nav {
+            background-color: var(--nav-bg);
+            border-bottom: 1px solid var(--nav-border);
+            padding:ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ 0.75rem 0;
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        nav .ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+        }
+
+        nav .logods4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ {
+            font-weight: 600;
+            font-size: 1.25rem;
+            color: var(--text);
+            text-decoration: none;
+       ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ }
+
+        nav ul {
+            list-style: none;
+            display: flex;
+            gap: 1.5rem;
+        }
+
+        nav ul li ads4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ {
+            text-decoration: none;
+            color: var(--text);
+            font-weight: 500;
+            padding: 0.25rem 0.ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+5rem;
+            border-radius: 6px;
+            transition: background-color 0.2s;
+        }
+
+        nav ul li a:hover {
+           ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ background-color: rgba(128, 128, 128, 0.15);
+        }
+
+        /* theme toggle button (in nav) */
+        .ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+theme-toggle {
+            background: transparent;
+            border: 1px solid var(--text);
+            color: var(--text);
+            padding: 0.ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+3rem 0.9rem;
+            border-radius: 20px;
+            font-weight: 500;
+            cursor: pointer;
+            transition: backgroundds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+-color 0.2s, color 0.2s, border-color 0.2s;
+            font-size: 0.9rem;
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+        }
+
+        .theme-toggle:hover {
+            background-color: var(--text);
+            color: var(--bg);
+        }
+
+        /* hero */
+        .herods4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ {
+            background-color: var(--hero-bg);
+            padding: 3rem 0;
+            text-align: center;
+            transition: background-color ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+0.3s;
+        }
+
+        .hero h1 {
+            font-size: 2.5rem;
+            margin-bottom: 0.5remds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            max-width: 600px;
+            margin: 0 autods4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ 1.5rem;
+            opacity: 0.85;
+        }
+
+        .hero .cta-button {
+            background-color: var(--btn-bds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+g);
+            color: var(--btn-text);
+            border: none;
+            padding: 0.75rem 2rem;
+            font-size: ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+1.1rem;
+            font-weight: 600;
+            border-radius: 40px;
+            cursor: pointer;
+            transition: background-color 0ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+.2s, transform 0.1s;
+            box-shadow: 0 2px 6px rgba(0,0,0,0ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+.1);
+        }
+
+        .hero .cta-button:hover {
+            background-color: var(--btn-hover);
+            transform: scale(1.02ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+);
+        }
+
+        /* contact form */
+        .contact-section {
+            padding: 2.5rem 0;
+        }
+
+        .contact-section h2ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ {
+            margin-bottom: 1.5rem;
+            font-size: 1.8rem;
+        }
+
+        .contact-form {
+            background-color:ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ var(--form-bg);
+            border: 1px solid var(--form-border);
+            padding: 2rem;
+            border-radius: 16pxds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+;
+            max-width: 600px;
+            margin: 0 auto;
+            transition: background-color 0.3s, border-color 0.ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+3s;
+        }
+
+        .contact-form label {
+            display: block;
+            margin-bottom: 0.3rem;
+            font-weight: 500ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+;
+        }
+
+        .contact-form input,
+        .contact-form textarea {
+            width: 100%;
+            padding: 0.6rem 0ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+.8rem;
+            margin-bottom: 1rem;
+            border: 1px solid var(--form-border);
+            border-radius: 10px;
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+            font-size: 1rem;
+            background-color: var(--bg);
+            color: var(--text);
+            transition: border-color 0.2ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+s, background-color 0.3s, color 0.3s;
+        }
+
+        .contact-form input:focus,
+        .contact-form textds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+area:focus {
+            outline: 2px solid var(--btn-bg);
+            outline-offset: 2px;
+        }
+
+        .contact-formds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .form-error {
+            color: var(--error-color);
+           ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ font-size: 0.9rem;
+            margin-bottom: 0.5rem;
+            min-height: 1.2em;
+        }
+
+       ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ .contact-form .submit-btn {
+            background-color: var(--btn-bg);
+            color: var(--btn-text);
+            border: none;
+            paddingds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+: 0.6rem 1.5rem;
+            font-size: 1rem;
+            font-weight: 600;
+            border-radius: ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+30px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            margin-top: 0.5rem;
+        }
+
+       ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ .contact-form .submit-btn:hover {
+            background-color: var(--btn-hover);
+        }
+
+        /* footer */
+        footer {
+            background-color: vards4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+(--footer-bg);
+            text-align: center;
+            padding: 1.2rem 0;
+            border-top: 1px solid var(--ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+nav-border);
+            transition: background-color 0.3s, border-color 0.3s;
+        }
+
+        footer p {
+            font-size:ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ 0.9rem;
+            opacity: 0.8;
+        }
+
+        /* responsive */
+        @media (max-width: 600px) {
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+            nav ul {
+                gap: 0.8rem;
+            }
+            .hero h1 {
+                font-size: 2rem;
+            }
+       ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ }
+    </style>
+</head>
+<body>
+
+    <!-- ===== TOP NAVIGATION ===== -->
+    <nav>
+        <div class="container">
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+            <a href="#" class="logo">MySite</a>
+            <ul>
+                <li><a href="#">Home</a></li>
+               ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ <li><a href="#">About</a></li>
+                <li><a href="#">Services</a></li>
+                <li><a href="#">ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+Contact</a></li>
+            </ul>
+            <!-- light/dark toggle button -->
+            <button id="themeToggle" class="theme-toggle">ðŸŒds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+“ Theme</button>
+        </div>
+    </nav>
+
+    <!-- ===== HERO SECTION ===== -->
+    <section class="hero">
+        <ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+div class="container">
+            <h1>Build something amazing</h1>
+            <p>Clean, responsive, and fully interactive â€” a complete singleds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+â€‘file website with a contact form and theme toggle.</p>
+            <button class="cta-button" id="heroCTA">Get started</button>
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+        </div>
+    </section>
+
+    <!-- ===== CONTACT FORM ===== -->
+    <section class="contact-section">
+        <div class="containerds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+">
+            <h2>Contact us</h2>
+            <div class="contact-form">
+                <form id="contactForm" novalidate>
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+                    <!-- Name -->
+                    <label for="name">Name</label>
+                    <input type="text" id="name" name="name" placeholder="ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+Your name" required>
+                    
+                    <!-- Email -->
+                    <label for="email">Email</label>
+                    <input type="email" id="email"ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ name="email" placeholder="you@example.com" required>
+                    
+                    <!-- Message -->
+                    <label for="message">Message</label>
+                    <textareads4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ id="message" name="message" placeholder="Write your message here..." required></textarea>
+                    
+                    <!-- error display area -->
+                    <div class="formds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+-error" id="formError"></div>
+                    
+                    <button type="submit" class="submit-btn">Send message</button>
+                </form>
+               ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ <!-- optional success message (hidden by default) -->
+                <div id="formSuccess" style="display: none; margin-top: 1rem; fontds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+-weight: 500; color: #2b8a2b;"></div>
+            </div>
+        </div>
+    </section>
+
+    <!-- =ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+==== FOOTER ===== -->
+    <footer>
+        <div class="container">
+            <p>&copy; 2025 MySite. All rightsds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ reserved.</p>
+        </div>
+    </footer>
+
+    <!-- ===== JAVASCRIPT ===== -->
+    <script>
+        (function() {
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+            'use strict';
+
+            // ----- 1. LIGHT/DARK THEME TOGGLE -----
+            const themeToggle = document.getElementById('themeToggleds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+');
+            // On page load, check localStorage or system preference? We'll default to light.
+            // But we can respect localStorage if set.
+            const storedds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+Theme = localStorage.getItem('theme');
+            if (storedTheme === 'dark') {
+                document.body.setAttribute('data-theme', 'dark');
+           ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ } else {
+                document.body.setAttribute('data-theme', 'light');
+            }
+
+            themeToggle.addEventListener('click', function() {
+                const currentThemeds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ = document.body.getAttribute('data-theme');
+                const newTheme = currentTheme === 'dark' ? 'light' : 'dark';
+                document.bodyds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+.setAttribute('data-theme', newTheme);
+                localStorage.setItem('theme', newTheme);
+            });
+
+            // ----- 2. CONTACT FORM VALds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+IDATION -----
+            const form
+ds4: prefill: 8.07 t/s, generation: 2.47 t/s
+ds4: SPEX stats: selected_batches=111800 selected_experts=675929 cache_hits=373372 cache_misses=297170 hit_rate=0.5568 miss_per_expert=0.4396 direct_loads=5387 copy_calls=907671 copied=2042259.75 MiB copy_ms=951810.399 copy_ms_per_batch=8.514 sync_calls=907671 sync_ms=106292.428 sync_ms_per_batch=0.951

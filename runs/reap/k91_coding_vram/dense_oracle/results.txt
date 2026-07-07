@@ -1,0 +1,19 @@
+token decode: 299 | layer MoE: 3..42 | hidden righe: 15099 | layer in hidden: 0..42
+layer sorgente (primo con hidden in decode): L3
+
+src->tgt    recall@6  recall@12  recall@23  ngram@23 chance@23
+L3->L4          0.511      0.633      0.731     0.326     0.090
+L3->L5          0.393      0.493      0.589     0.372     0.090
+L3->L6          0.469      0.580      0.656     0.291     0.090
+L3->L8          0.507      0.607      0.685     0.317     0.090
+L3->L12         0.387      0.520      0.596     0.409     0.090
+L3->L22         0.317      0.433      0.520     0.431     0.090
+L3->L32         0.170      0.265      0.354     0.435     0.090
+L3->L42         0.354      0.485      0.550     0.209     0.090
+
+[adiacente src=tgt-1, upper-bound del segnale hidden]
+L3->L4      recall@23=0.731
+L9->L10     recall@23=0.807
+L41->L42     recall@23=0.683
+
+VERDETTO: dense-oracle utile se recall@23 (L2->L3..) >> chance 0.09 e >= n-gram.

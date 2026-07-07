@@ -31,14 +31,18 @@ ROUT = sys.argv[2] if len(sys.argv) > 2 else "routing.csv"
 
 
 def load_hidden(path):
-    """{(pos,layer): np.float32[4096]}"""
+    """{(pos,layer): np.float32[n_embd]}. File = 16B header DSH1 + record da
+    [pos:u32][layer:u32][hidden:f16 x n_embd]."""
     out = {}
-    row = 8 + N_EMBD * 2
     with open(path, "rb") as f:
         blob = f.read()
-    for off in range(0, len(blob) - row + 1, row):
+    assert blob[:4] == b"DSH1", f"magic inatteso: {blob[:4]!r}"
+    version, n_layer, n_embd = struct.unpack_from("<III", blob, 4)
+    row = 8 + n_embd * 2
+    start = 16
+    for off in range(start, len(blob) - row + 1, row):
         pos, layer = struct.unpack_from("<II", blob, off)
-        h = np.frombuffer(blob, dtype=np.float16, count=N_EMBD,
+        h = np.frombuffer(blob, dtype=np.float16, count=n_embd,
                           offset=off + 8).astype(np.float32)
         out[(pos, layer)] = h
     return out
@@ -92,16 +96,23 @@ def main():
     rout = load_routing(ROUT)
     poss = sorted({p for (p, l) in rout})
     moe_layers = sorted({l for (p, l) in rout})
+    hid_layers = sorted({l for (p, l) in hid})
+    # sorgente = primo layer che ha hidden CON overlap sulle posizioni di routing (decode).
+    # I densi 0-2 sono dumpati solo in prefill (no routing lì) -> il primo utile e' L3, il
+    # cui router-input = uscita del front-end denso + attention di L3 = "front-end effettivo".
+    dec_pos = set(poss)
+    src_dense = min((l for l in hid_layers if len({p for (p, ll) in hid if ll == l} & dec_pos) >= 30),
+                    default=min(moe_layers))
     print(f"token decode: {len(poss)} | layer MoE: {min(moe_layers)}..{max(moe_layers)} "
-          f"| hidden righe: {len(hid)}")
-    src_dense = 2  # ultimo layer denso = input al primo MoE
+          f"| hidden righe: {len(hid)} | layer in hidden: {min(hid_layers)}..{max(hid_layers)}")
+    print(f"layer sorgente (primo con hidden in decode): L{src_dense}")
     split = int(len(poss) * 0.7)
     tr_pos, te_pos = poss[:split], poss[split:]
 
     print(f"\n{'src->tgt':10} {'recall@6':>9} {'recall@12':>10} {'recall@23':>10} "
           f"{'ngram@23':>9} {'chance@23':>9}")
     results = {}
-    for tgt in [m for m in (3, 4, 6, 10, 22, 42) if m in moe_layers]:
+    for tgt in [m for m in (4, 5, 6, 8, 12, 22, 32, 42) if m in moe_layers and m > src_dense]:
         # dataset: hidden(src_dense) del token t -> experts(tgt) del token t
         def build(pos_list):
             X, Y, T = [], [], []

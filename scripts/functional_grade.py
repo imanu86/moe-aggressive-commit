@@ -192,51 +192,107 @@ def grade_frontpage(text):
     return 2, det  # feature ci sono ma difetti minori (o restart del documento)
 
 
-def grade_python(text, unit_tests=None, func_name=None):
-    code = extract_block(text, ["python", "py"])
-    det = {}
-    try:
-        compile(code, "<gen>", "exec")
-        det["syntax"] = "ok"
-    except SyntaxError as e:
-        det["syntax"] = f"error: {e}"
-        return 0, det
-    ns = {}
-    try:
-        exec(code, ns)
-    except Exception as e:
-        det["exec"] = f"error: {e}"
-        return 1, det
-    if not unit_tests:
-        return 2, det  # gira, senza test non distinguo L2/L3
+def _function_blocks(code, name=None):
+    """tutti i blocchi def (def-line + corpo indentato) — gestisce ripetizioni dai due-fase."""
+    code = re.sub(r"```[a-zA-Z]*", "", code)  # toglie marcatori fence ripetuti
+    lines = code.splitlines()
+    pat = re.compile(rf"^\s*def\s+{name}\b") if name else re.compile(r"^\s*def\s+\w+")
+    starts = [i for i, ln in enumerate(lines) if pat.match(ln)]
+    blocks = []
+    for s in starts:
+        indent = len(lines[s]) - len(lines[s].lstrip())
+        out = [lines[s]]
+        for ln in lines[s + 1:]:
+            if ln.strip() == "" or (len(ln) - len(ln.lstrip())) > indent:
+                out.append(ln)
+            else:
+                break
+        blocks.append("\n".join(out))
+    return blocks or [code]
 
-    def norm(x):  # tuple->list ricorsivo per confronto tollerante
-        if isinstance(x, (list, tuple)):
-            return [norm(e) for e in x]
-        return x
-    passed = 0
-    for args, expected in unit_tests:
+
+def grade_python(text, unit_tests=None, func_name=None):
+    # opera sul testo PIENO (fence-scrubbed): i due-fase ripetono la funzione, la completa
+    # puo' stare in un fence successivo che extract_block non catturerebbe.
+    raw = re.sub(r"```[a-zA-Z]*", "", scrub(text))
+    det = {}
+
+    def norm(x):
+        return [norm(e) for e in x] if isinstance(x, (list, tuple)) else x
+
+    def run_tests(ns):
+        p = 0
+        for args, expected in unit_tests or []:
+            try:
+                p += int(norm(ns[func_name](*args)) == norm(expected))
+            except Exception:
+                pass
+        return p
+
+    # prova ogni candidato-funzione (i due-fase ripetono: la completa puo' essere la 2a)
+    best = None  # (livello, passed, det)
+    for cand in [raw] + _function_blocks(raw, func_name):
         try:
-            got = ns[func_name](*args)
-            passed += int(norm(got) == norm(expected))
+            compile(cand, "<gen>", "exec")
+        except SyntaxError:
+            continue
+        ns = {}
+        try:
+            exec(cand, ns)
         except Exception:
-            pass
-    det["passed"] = f"{passed}/{len(unit_tests)}"
-    if passed == len(unit_tests):
-        return 3, det
-    if passed > 0:
-        return 2, det
-    return 1, det
+            best = best or (1, 0, {"syntax": "ok", "exec": "error"})
+            continue
+        if func_name and func_name not in ns:
+            continue
+        if not unit_tests:
+            return 2, {"syntax": "ok"}
+        passed = run_tests(ns)
+        lvl = 3 if passed == len(unit_tests) else (2 if passed > 0 else 1)
+        cd = {"syntax": "ok", "passed": f"{passed}/{len(unit_tests)}"}
+        if best is None or (lvl, passed) > (best[0], best[1]):
+            best = (lvl, passed, cd)
+        if lvl == 3:
+            break
+    if best is None:
+        return 0, {"syntax": "error"}
+    lvl, _, det = best
+    return lvl, det
+
+
+def _first_json(blk):
+    """primo oggetto/array JSON BILANCIATO (ignora ripetizioni/junk dopo la risposta)."""
+    m = re.search(r"[\{\[]", blk)
+    if not m:
+        return blk
+    start = m.start()
+    open_c = blk[start]
+    close_c = "}" if open_c == "{" else "]"
+    depth = 0
+    in_str = False
+    esc = False
+    for i in range(start, len(blk)):
+        ch = blk[i]
+        if in_str:
+            if esc:
+                esc = False
+            elif ch == "\\":
+                esc = True
+            elif ch == '"':
+                in_str = False
+            continue
+        if ch == '"':
+            in_str = True
+        elif ch == open_c:
+            depth += 1
+        elif ch == close_c:
+            depth -= 1
+            if depth == 0:
+                return blk[start:i + 1]
+    return blk[start:]
 
 
 def grade_json(text, required_keys=None, expected=None):
-    blk = extract_block(text, ["json"])
-    m = re.search(r"[\{\[]", blk)
-    if m:
-        blk = blk[m.start():]
-        last = max(blk.rfind("}"), blk.rfind("]"))
-        if last > 0:
-            blk = blk[:last + 1]
+    blk = _first_json(extract_block(text, ["json"]))
     det = {}
     try:
         obj = json.loads(blk)

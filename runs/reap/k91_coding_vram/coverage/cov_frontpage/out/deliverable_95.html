@@ -1,0 +1,68 @@
+```html
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bean & Brew</title>
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bean & Brew</title>
+    <style>
+        /* minimal styles */
+        body { font-family: sans-serif; margin: 0; padding: 0; background: url(https://images.unsplash?q=coffee-beans) center/cover; background-attachment: fixed; }
+        nav { background: black; padding: 10px; text-align: center; }
+        nav a { color: white; margin: 0 10px; text-decoration: none; }
+        section { text-align: center; padding: 40px 0; }
+        h1 { font-size: 40px; margin-bottom: 0; }
+        p { margin-top: 0; font-size: 18px; }
+        button { margin: 20px; padding: 8px 20px; background: black; color: white; border: none; cursor: pointer; }
+        form { max-width: 300px; margin: auto; padding: 20px; background: white; border-radius: 8px; }
+        input { width: 100%; padding: 6px; margin-bottom: 6px; }
+        footer { text-align: center; padding: 20px; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="#">Home</a>
+        <a href="#">Menu</a>
+        <a href="#">Contact</a>
+    </nav>
+
+    <section>
+        <h1>Bean & Brew</h1>
+        <p>Freshly roasted, every sip, big flavor.</p>
+        <button id="order">Order Now</button>
+    </section>
+
+    <form action="/submit" id="contactForm">
+        <input type="text" name="name" placeholder="Your name" required>
+        <input type="email" name="email" placeholder="Email address" required>
+        <button type="submit">Send message</button>
+    </form>
+
+    <footer>
+        <p>© Bean & Brew</p>
+    </footer>
+
+    <script>
+        document.getElementById("order").addEventListener("click", () => alert("Thank you for your order!");
+
+        document.getElementById("contactForm").addEventListener("submit", (e) => {
+            e.preventDefault();
+            const name = document.querySelector('[name="name"]').value;
+            const email = document.querySelector('[name="email"]').value;
+            if name.value && email.value === '') {
+                alert("Thank you, we will send confirmation!");
+            } else {
+                alert("Thank you, we will send confirmation!");
+            }
+        });
+    </script>
+</body>
+</html>
+```

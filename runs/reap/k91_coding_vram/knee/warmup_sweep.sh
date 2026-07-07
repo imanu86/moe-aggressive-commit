@@ -17,8 +17,8 @@ $BIN -m $MODEL --cuda --ssd-streaming --ssd-streaming-cold --ssd-streaming-cache
 
 for W in 30 50 80 110 130 150; do
   echo "=== W=$W ===" | tee -a $OUT/summary.txt
-  # FASE 1: wide (no mask), n=W, trace routing ON. STDOUT=testo pulito, STDERR=diagnostiche
-  DS4_SPEX_TRACE_ROUTING=$OUT/route_W$W.csv \
+  # FASE 1: wide (no mask), n=W, trace routing ON (con PESI). STDOUT=testo, STDERR=diag
+  DS4_SPEX_TRACE_ROUTING=$OUT/route_W$W.csv DS4_SPEX_TRACE_ROUTING_WEIGHTS=1 \
     $BIN -m $MODEL --cuda --ssd-streaming --ssd-streaming-cold --ssd-streaming-cache-experts $CACHE \
     -c 2048 --nothink --temp 0 -n $W --prompt-file $PROMPT > $OUT/tw_W$W.txt 2> $OUT/p1_W$W.diag
   ts1=$(grep -oE "generation: *[0-9.]+ t/s" $OUT/p1_W$W.diag | grep -oE "[0-9.]+" | tail -1)

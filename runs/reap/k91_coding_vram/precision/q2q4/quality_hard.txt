@@ -1,0 +1,176 @@
+Here is a complete, single-file HTML page for an interactive to-do list app. It includes a navigation bar with a task counter, an input field and add button, a filter form with All/Active radio buttons, and delete functionality for each task.
+```html
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Tasks · To‑Do List</title>
+    <style>
+        /* minimal, clean styling */
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            font-family: system-ui, 'Segoe UI', Roboto, sans-serif;
+        }
+        body {
+            background: #f4f7fc;
+            display: flex;
+            justify-content: center;
+            padding: 2rem 1rem;
+        }
+        .app {
+            max-width: 500px;
+            width: 100%;
+            background: white;
+            border-radius: 20px;
+            box-shadow: 0 8px 20px rgba(0,0,0,0.05);
+            padding: 1.5rem 1.5rem 2rem;
+        }
+        nav {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            background: #eef2f7;
+            padding: 0.6rem 1rem;
+            border-radius: 40px;
+            margin-bottom: 1.5rem;
+        }
+        nav h1 {
+            font-size: 1.3rem;
+            font-weight: 600;
+            color: #1e2b3c;
+        }
+        #count {
+            background: #1e2b3c;
+            color: white;
+            font-weight: 600;
+            padding: 0.2rem 0.8rem;
+            border-radius: 40px;
+            font-size: 0.9rem;
+        }
+        .input-row {
+            display: flex;
+            gap: 0.5rem;
+            margin-bottom: 1.2rem;
+        }
+        #task {
+            flex: 1;
+            padding: 0.6rem 1rem;
+            border: 1px solid #d0d8e3;
+            border-radius: 40px;
+            font-size: 1rem;
+            outline: none;
+        }
+        #task:focus {
+            border-color: #4a7cf7;
+            box-shadow: 0 0 0 3px rgba(74,124,247,0.15);
+        }
+        #add {
+            background: #4a7cf7;
+            border: none;
+            color: white;
+            font-weight: 600;
+            padding: 0.6rem 1.4rem;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 1rem;
+            transition: background 0.1s;
+        }
+        #add:hover {
+            background: #3b67d9;
+        }
+        #add:active {
+            background: #2f54b0;
+        }
+        #filter {
+            display: flex;
+            gap: 1.2rem;
+            background: #f0f4fa;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            margin-bottom: 1rem;
+            font-size: 0.9rem;
+        }
+        #filter label {
+            display: flex;
+            align-items: center;
+            gap: 0.3rem;
+            cursor: pointer;
+        }
+        #filter input[type="radio"] {
+            accent-color: #4a7cf7;
+        }
+        ul {
+            list-style: none;
+            padding: 0;
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+        li {
+            background: #f9faff;
+            padding: 0.5rem 1rem;
+            border-radius: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            border: 1px solid #e6ecf5;
+            transition: background 0.1s;
+        }
+        li .task-text {
+            word-break: break-word;
+            padding-right: 0.5rem;
+            color: #1e2b3c;
+        }
+        .delete-btn {
+            background: transparent;
+            border: 1px solid #d6dce8;
+            color: #4b5a6e;
+            padding: 0.2rem 0.8rem;
+            border-radius: 40px;
+            cursor: pointer;
+            font-size: 0.8rem;
+            font-weight: 500;
+            transition: 0.1s;
+            flex-shrink: 0;
+        }
+        .delete-btn:hover {
+            background: #f0f4fc;
+            border-color: #b0bed0;
+            color: #1e2b3c;
+        }
+        .delete-btn:active {
+            background: #e0e8f2;
+        }
+        .empty-message {
+            text-align: center;
+            color: #7b8a9e;
+            padding: 1.2rem 0;
+            font-style: italic;
+            font-size: 0.95rem;
+        }
+        /* hide empty message when list has items */
+        ul:not(:empty) ~ .empty-message {
+            display: none;
+        }
+        .empty-message {
+            display: block;
+        }
+        /* keep layout stable */
+        .list-wrapper {
+            min-height: 100px;
+        }
+    </style>
+</head>
+<body>
+<div class="app">
+    <!-- nav bar with title + live counter -->
+    <nav>
+        <h1>My Tasks</h1>
+        <span id="count">0</span>
+    </nav>
+
+    <!-- input + add button -->
+    <div class="input-row">
+        <input type="text" id="task" placeholder

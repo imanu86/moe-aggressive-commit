@@ -47,12 +47,21 @@ def extract_block(text, langs):
 
 
 def extract_html(text):
-    text = scrub(text)
-    blk = extract_block(text, ["html", "xml"])
-    m = re.search(r"(<!doctype html|<html|<head|<body|<div|<section|<main)", blk, re.IGNORECASE)
-    if m:
-        blk = blk[m.start():]
-    # taglia dopo l'ultimo tag di chiusura sensato
+    # NB: non dipende dai fence ``` (il doc buono puo' stare FUORI dal fence chiuso quando il
+    # modello riparte). Toglie diagnostiche + marcatori fence, poi sceglie il doc piu' completo.
+    blk = scrub(text)
+    blk = re.sub(r"```[a-zA-Z]*", "", blk)
+    starts = [m.start() for m in re.finditer(r"(<!doctype html|<html)", blk, re.IGNORECASE)]
+    if starts:
+        bounds = starts + [len(blk)]
+        cands = [blk[bounds[i]:bounds[i + 1]] for i in range(len(starts))]
+        # piu' completo: ha </html>, poi ha <script>, poi il piu' lungo
+        cands.sort(key=lambda c: ("</html>" in c.lower(), "<script" in c.lower(), len(c)))
+        blk = cands[-1]
+    else:
+        m = re.search(r"(<head|<body|<div|<section|<main)", blk, re.IGNORECASE)
+        if m:
+            blk = blk[m.start():]
     last = max((blk.rfind(t) for t in ("</html>", "</body>", "</div>", "</section>")), default=-1)
     if last > 0:
         end = blk.find(">", last)
@@ -121,6 +130,8 @@ def js_syntax_errors(js):
 
 def grade_frontpage(text):
     html = extract_html(text)
+    # restart del documento (piu' <!doctype) = difetto reale: cap a L2 anche se il doc buono c'e'
+    restart = len(re.findall(r"<!doctype html", scrub(text), re.IGNORECASE)) > 1
     c = Collector()
     try:
         c.feed(html)
@@ -175,9 +186,10 @@ def grade_frontpage(text):
         return 1, det
     required = ["nav", "hero", "form", "style", "script", "button"]
     present = sum(1 for r in required if det[r])
-    if present == len(required) and det["tag_mismatch"] == 0:
+    det["restart"] = restart
+    if present == len(required) and det["tag_mismatch"] == 0 and not restart:
         return 3, det
-    return 2, det
+    return 2, det  # feature ci sono ma difetti minori (o restart del documento)
 
 
 def grade_python(text, unit_tests=None, func_name=None):

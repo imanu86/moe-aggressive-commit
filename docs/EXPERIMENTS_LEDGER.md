@@ -336,3 +336,39 @@ Pod `3wnmm9fpvzvve8` (A100-80GB) **TERMINATO** a fine batch (balance residuo $12
 ---
 
 *Note di deduplica: duplicati esatti collassati — (A14-A16 == eval_mass_dom_*), (A19-A21 == eval_mass_gen_*), (C3 == eval_full235==eval_p235_full), (C5 == p235_cold25==prune235_25), (C6 == p235_cold50==prune235_50), (C8 == p235_rand50==prune235_50_rand). stepf_base235 e stepf_base235v2 hanno aggregati identici (differiscono solo per-layer). `subexpert.py` non è in `scripts_pod/` (monkeypatch, mai portato nel repo).*
+
+---
+
+## Batch graded-eval L0-L3 (2026-07-07, K91, `runs/reap/k91_coding_vram/{knee,warmup,coverage}/`)
+
+Mandato SPEX: repeat-rate/ppl non distinguono "pagina col bottone rotto" da "pagina che non apre".
+Suite di task AUTOCONCLUSIVI con SCALA funzionale automatica (L0=non apre · L1=apre-feature rotta ·
+L2=feature presenti difetti minori · L3=pieno). FRONTPAGE (HTML nav+hero+bottone-cablato+form) ·
+PYTHON (merge_intervals, unit test) · JSON (estrazione schema). Pod 3090, ds4+reap, cache-1024,
+stream separati, auto-gate aderenza (0.000 = mask attive), greedy n=1 (deterministico).
+
+- **Ginocchio cold-static SCALA con la larghezza del task** (mask coding-corpus da tok0): JSON regge
+  a **keep-20** (L3, esatto col 7.8% esperti), Python a **keep-32** (L3, tutti gli unit test; keep-28
+  rompe), Frontpage **collassa a OGNI K** (anche keep-32 → L0, loop rep 0.87-0.99). Random control
+  collassa ovunque → conta il RANKING di salienza. La potatura tollerabile e' funzione della
+  larghezza del dominio, non una costante. Frontpage-hard (todo-app): perfino full=L1 (soffitto 2-bit).
+- **Session-learning riscatta il task largo** (osserva W wide → congela session-mask keep-23 rank
+  massa-gate): cold-static keep-23 frontpage = uniforme L0; session-learned = **L2-L3 da W≥50**
+  (L3 pulito a W=50, W=130). **Pavimento del learn ≈ W=50.** Non monotono oltre (W=150→L1, freeze-point).
+- **Adaptive-K via COPERTURA di massa-gate** (idea SPEX/utente: fissa COV%, K=conseguenza per-layer):
+  **copertura universale = 90%** → json L3, python L3, frontpage L2 (manopola task-INDIPENDENTE, K-auto
+  ~36-39). Nessun COV da' L3 su tutti (frontpage session-learned cap L2). Scoperte: (a) K-auto NON
+  diverge tra task (~stessa concentrazione massa su W=50) — a divergere e' il LIVELLO; (b) session-learning
+  batte cold-static (Python L3 gia' a K~23 vs knee cold keep-32). Velocita' mask 3-24 t/s vs full 2.5-3.5.
+- **Streaming (chiarimento hardware):** sul pod la generazione fa **0 letture da disco fisico** (il
+  modello 80GB sta nella page-cache RAM 119GiB); i t/s misurati sono ottimistici per un 3060 reale
+  (poca RAM → le miss colpiscono l'SSD). RSS processo ~3MB (modello mmap-ato, non in RAM-app).
+- **Fix metodologici (grader = strumento di misura del batch):** bug `2>&1` intrecciava diagnostiche
+  ds4: nel testo (mask re-apply/32tok) → stream separati; grader HTML fence-robusto + cap-restart;
+  grader python/json robusti alla ripetizione due-fase (primo JSON bilanciato / miglior blocco-def).
+  ds4 single-instance lock + stalli I/O da problema di RETE (processi in stato-D, sbloccati da soli
+  al ritorno rete). Tool: `scripts/{functional_grade,knee_aggregate,make_keepK_mask,build_session_mask,
+  build_coverage_mask,coverage_aggregate}.py`. Commit 7f5d951..226df38.
+- **[APERTI]** Part A timing segmentato (TTFT/1-64/65-256/257+, non fatto — solo t/s aggregato);
+  Part C-T2 prefetcher layer-ahead recall→t/s (dense-oracle L3→L4 recall@23=0.731 misurato, ma
+  recall≠velocita' NON provato); feedback-qualita' live (alza cov se slope(S1) sale, da Q2).

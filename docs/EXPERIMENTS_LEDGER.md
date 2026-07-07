@@ -372,3 +372,12 @@ stream separati, auto-gate aderenza (0.000 = mask attive), greedy n=1 (determini
 - **[APERTI]** Part A timing segmentato (TTFT/1-64/65-256/257+, non fatto — solo t/s aggregato);
   Part C-T2 prefetcher layer-ahead recall→t/s (dense-oracle L3→L4 recall@23=0.731 misurato, ma
   recall≠velocita' NON provato); feedback-qualita' live (alza cov se slope(S1) sale, da Q2).
+- **Part A timing SEGMENTATO fatto** (`segtiming/`, cache=400): 3 regimi che il blended nasconde —
+  full DEGRADA (2.05→0.98→0.76 t/s, thrash accumula), keep-8 ACCELERA (12.95→23.55→25.82, page-in
+  poi steady 2× cold; entra in cache), keep-32 STUCK (~3.4, working-set 1280 > cache 400). La
+  velocita' reale = segmento 257+, non l'aggregato. TTFT ~14-18s (prefill-bound).
+- **Part C-T2 prefetcher fatto** (`prefetch_sim/`, sim cache LRU su trace): il recall SI traduce in
+  velocita' — ahead d=1 hit-rate **0.616 COSTANTE a ogni cache** (anche 120, dove no-prefetch=0.000)
+  → DISACCOPPIA hit-rate da dimensione-cache = sblocca il 12GB; batte n-gram ovunque; recall(0.63)≈
+  hit(0.616) ~1:1; recall tiene con lead (d=1/2/3=0.63/0.62/0.61 → margine SSD). Prossimo: patch ds4
+  per t/s reale. Resta APERTO solo: feedback-qualita' live via slope(S1) (PACE parked).

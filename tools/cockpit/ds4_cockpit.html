@@ -117,6 +117,23 @@
     </div>
 
     <div class="card">
+      <h2>RAM di WSL 🧠</h2>
+      <div class="body">
+        <label class="row">Cap attuale <span class="v" id="wsl_cur" style="font:700 13px var(--mono)">— GB</span></label>
+        <label class="row">RAM fisica <span class="v" id="wsl_phys" style="font:700 13px var(--mono);color:var(--dim)">— GB</span></label>
+        <label class="row">Nuovo cap <span class="keeplbl"><span id="wsl_gbv">28</span> GB</span></label>
+        <input type="range" id="wsl_gbr" min="8" max="64" value="28" style="width:100%">
+        <input type="number" id="wsl_gb" value="28" min="8" style="width:100%">
+        <label class="row hint">Più RAM = più modello resta in RAM invece che sull'SSD → più veloce. NON superare la RAM fisica meno ~4 GB per Windows. Cambiare la RAM richiede il riavvio di WSL (ferma ds4).</label>
+        <div class="btnrow">
+          <button class="btn" id="wsl_save">Salva in .wslconfig</button>
+          <button class="btn stop" id="wsl_apply">Riavvia WSL &amp; applica ⚠</button>
+        </div>
+        <div class="logline" id="wsl_log"></div>
+      </div>
+    </div>
+
+    <div class="card">
       <h2>Streaming / Cache</h2>
       <div class="body">
         <label class="row">ssd-streaming <span class="sw"><input type="checkbox" id="stream" checked><span></span></span></label>
@@ -267,6 +284,27 @@ $('applylive').onclick = async () => {
   }catch(e){ $('launchlog').textContent='live update non disponibile: '+e.message; }
 };
 
+// ---- WSL RAM ----
+$('wsl_gb').oninput = e => { $('wsl_gbr').value=e.target.value; $('wsl_gbv').textContent=e.target.value; };
+$('wsl_gbr').oninput = e => { $('wsl_gb').value=e.target.value; $('wsl_gbv').textContent=e.target.value; };
+async function loadWslRam(){
+  try{ const r=await fetch(API+'/api/wslram'); const w=await r.json();
+    $('wsl_cur').textContent=(w.current_gb??'—')+' GB'; $('wsl_phys').textContent=(w.physical_gb??'—')+' GB';
+    if(w.physical_gb) $('wsl_gbr').max = w.physical_gb;
+    if(w.current_gb){ $('wsl_gb').value=w.current_gb; $('wsl_gbr').value=w.current_gb; $('wsl_gbv').textContent=w.current_gb; }
+  }catch(e){}
+}
+$('wsl_save').onclick = async () => {
+  try{ const r=await post('/api/wslram',{gb:+$('wsl_gb').value});
+    $('wsl_log').textContent = r.ok?('✓ salvato: memory='+$('wsl_gb').value+'GB in .wslconfig. Serve "Riavvia WSL & applica" per attivarlo.'):'✗ '+(r.error||'errore');
+  }catch(e){ $('wsl_log').textContent='backend offline: '+e.message; }
+};
+$('wsl_apply').onclick = async () => {
+  if(!confirm('Questo salva memory='+$('wsl_gb').value+'GB, FERMA ds4 e riavvia WSL (wsl --shutdown). La cockpit tornerà viva tra ~15-30s (poi ri-lancia ds4). Continuare?')) return;
+  $('wsl_log').textContent='riavvio WSL in corso… la pagina torna viva tra ~15-30s, poi premi "Applica & (Ri)avvia ds4".';
+  try{ await post('/api/wslram/apply',{gb:+$('wsl_gb').value}); }catch(e){ /* il backend muore col shutdown: atteso */ }
+};
+
 // ---- chat (SSE) ----
 function addMsg(cls, txt){ const d=document.createElement('div'); d.className='msg '+cls; d.textContent=txt; $('msgs').appendChild(d); $('msgs').scrollTop=1e9; return d; }
 $('prompt').addEventListener('keydown', e=>{ if(e.key==='Enter'&&!e.shiftKey){ e.preventDefault(); $('send').click(); }});
@@ -305,7 +343,7 @@ async function poll(){
     $('chatphase').textContent = t.running?`[${t.phase||'—'} · keep ${t.keep_current??'?'}]`:'';
   }catch(e){ $('status').className='pill off'; $('status').textContent='backend offline'; }
 }
-setInterval(poll, 1000); poll();
+setInterval(poll, 1000); poll(); loadWslRam();
 </script>
 </body>
 </html>

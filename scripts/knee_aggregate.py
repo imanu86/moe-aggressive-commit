@@ -14,11 +14,31 @@ import re
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from functional_grade import grade_frontpage  # noqa: E402
+from functional_grade import grade_frontpage, grade_python, grade_json  # noqa: E402
 
 N_EXPERT = 256
 OUT = sys.argv[1]
 MASKS = sys.argv[2]
+TASK = sys.argv[3] if len(sys.argv) > 3 else "frontpage"
+
+# config dei task gradati
+PY_TESTS = [
+    (([[1, 3], [2, 6], [8, 10], [15, 18]],), [[1, 6], [8, 10], [15, 18]]),
+    (([[1, 4], [4, 5]],), [[1, 5]]),
+    (([],), []),
+    (([[1, 4], [0, 4]],), [[0, 4]]),
+    (([[1, 4], [2, 3]],), [[1, 4]]),
+]
+JSON_KEYS = ["name", "age", "email", "city"]
+JSON_EXPECTED = {"name": "Maria Rossi", "age": 34, "email": "maria.rossi@example.com", "city": "Milan"}
+
+
+def grade(task, txt):
+    if task == "python":
+        return grade_python(txt, unit_tests=PY_TESTS, func_name="merge_intervals")
+    if task == "json":
+        return grade_json(txt, required_keys=JSON_KEYS, expected=JSON_EXPECTED)
+    return grade_frontpage(txt)
 
 
 def keep_from_mask(mask_path):
@@ -86,13 +106,16 @@ def mask_for_tag(tag):
 
 
 rows = []
-for gp in sorted(glob.glob(f"{OUT}/gen_*.log")):
-    tag = re.match(r"gen_(.+)\.log", os.path.basename(gp)).group(1)
+gen_glob = sorted(glob.glob(f"{OUT}/gen_*.txt")) or sorted(glob.glob(f"{OUT}/gen_*.log"))
+for gp in gen_glob:
+    tag = re.match(r"gen_(.+)\.(txt|log)", os.path.basename(gp)).group(1)
     K, arm = tag_to_KA(tag)
     txt = open(gp, encoding="utf-8", errors="ignore").read()
-    lvl, det = grade_frontpage(txt)
-    ts = re.findall(r"generation: *([0-9.]+) t/s", txt)
-    hit = re.findall(r"hit_rate=([0-9.]+)", txt)
+    lvl, det = grade(TASK, txt)
+    diag_p = f"{OUT}/gen_{tag}.diag"
+    diag = open(diag_p, encoding="utf-8", errors="ignore").read() if os.path.exists(diag_p) else txt
+    ts = re.findall(r"generation: *([0-9.]+) t/s", diag)
+    hit = re.findall(r"hit_rate=([0-9.]+)", diag)
     mp = mask_for_tag(tag)
     ad = aderenza(f"{OUT}/route_{tag}.csv", keep_from_mask(mp)) if mp and os.path.exists(mp) else None
     rows.append(dict(tag=tag, K=K, arm=arm, level=lvl, ts=float(ts[-1]) if ts else None,

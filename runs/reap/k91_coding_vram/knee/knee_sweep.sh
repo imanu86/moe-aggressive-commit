@@ -15,9 +15,9 @@ gen() {  # tag  maskfile("none" per full)
   [ "$mf" != "none" ] && env="DS4_REAP_MASK_FILE=$MD/$mf"
   env $env $BIN -m $MODEL --cuda --ssd-streaming --ssd-streaming-cold \
      --ssd-streaming-cache-experts $CACHE -c 2048 --nothink --temp 0 -n $NGEN \
-     --prompt-file $PROMPT > $OUT/gen_$tag.log 2>&1
-  local ts=$(grep -oE "generation: *[0-9.]+ t/s" $OUT/gen_$tag.log | grep -oE "[0-9.]+" | tail -1)
-  local hit=$(grep -oE "hit_rate=[0-9.]+" $OUT/gen_$tag.log | grep -oE "[0-9.]+" | tail -1)
+     --prompt-file $PROMPT > $OUT/gen_$tag.txt 2> $OUT/gen_$tag.diag
+  local ts=$(grep -oE "generation: *[0-9.]+ t/s" $OUT/gen_$tag.diag | grep -oE "[0-9.]+" | tail -1)
+  local hit=$(grep -oE "hit_rate=[0-9.]+" $OUT/gen_$tag.diag | grep -oE "[0-9.]+" | tail -1)
   printf "%-14s cache=%s -> gen %s t/s  hit=%s\n" "$tag" "$CACHE" "${ts:-NA}" "${hit:-NA}" | tee -a $OUT/summary.txt
 }
 probe() {  # tag maskfile: aderenza trace-on n=40

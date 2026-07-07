@@ -25,8 +25,19 @@ import sys
 from html.parser import HTMLParser
 
 
+# ---------- pulizia diagnostiche ds4 (se sfuggite nello stdout) ----------
+_DS4_DIAG = re.compile(
+    r"ds4: ?(REAP mask (applied|reload)|CUDA loading|gpu prefill|prefill:|SSD streaming|"
+    r"context buffers|using GPU|streaming initial)[^\n]*")
+
+
+def scrub(text):
+    return _DS4_DIAG.sub("", text)
+
+
 # ---------- estrazione blocco codice dalla generazione ----------
 def extract_block(text, langs):
+    text = scrub(text)
     """prende il blocco ```lang ... ``` piu' lungo, altrimenti euristica per tag."""
     fences = re.findall(r"```(?:" + "|".join(langs) + r")?\s*\n(.*?)```", text,
                         re.DOTALL | re.IGNORECASE)
@@ -36,6 +47,7 @@ def extract_block(text, langs):
 
 
 def extract_html(text):
+    text = scrub(text)
     blk = extract_block(text, ["html", "xml"])
     m = re.search(r"(<!doctype html|<html|<head|<body|<div|<section|<main)", blk, re.IGNORECASE)
     if m:
@@ -185,12 +197,16 @@ def grade_python(text, unit_tests=None, func_name=None):
         return 1, det
     if not unit_tests:
         return 2, det  # gira, senza test non distinguo L2/L3
+
+    def norm(x):  # tuple->list ricorsivo per confronto tollerante
+        if isinstance(x, (list, tuple)):
+            return [norm(e) for e in x]
+        return x
     passed = 0
-    for i, (args, expected) in enumerate(unit_tests):
+    for args, expected in unit_tests:
         try:
             got = ns[func_name](*args)
-            ok = got == expected
-            passed += int(ok)
+            passed += int(norm(got) == norm(expected))
         except Exception:
             pass
     det["passed"] = f"{passed}/{len(unit_tests)}"
@@ -201,7 +217,7 @@ def grade_python(text, unit_tests=None, func_name=None):
     return 1, det
 
 
-def grade_json(text, required_keys=None):
+def grade_json(text, required_keys=None, expected=None):
     blk = extract_block(text, ["json"])
     m = re.search(r"[\{\[]", blk)
     if m:
@@ -222,11 +238,16 @@ def grade_json(text, required_keys=None):
         return 1, det
     present = [k for k in required_keys if k in obj]
     det["keys"] = f"{len(present)}/{len(required_keys)}"
-    if len(present) == len(required_keys):
-        return 3, det
-    if present:
-        return 2, det
-    return 1, det
+    if len(present) < len(required_keys):
+        return (2 if present else 1), det
+    # tutte le chiavi presenti: L3 solo se i valori sono esatti (se dati), altrimenti L2
+    if expected:
+        def eq(a, b):
+            return str(a).strip().lower() == str(b).strip().lower()
+        ok = all(eq(obj.get(k), v) for k, v in expected.items())
+        det["values_exact"] = ok
+        return (3 if ok else 2), det
+    return 3, det
 
 
 def main():

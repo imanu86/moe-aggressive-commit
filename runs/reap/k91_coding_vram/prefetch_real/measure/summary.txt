@@ -1,0 +1,14 @@
+=== VERIFICA probe load + prefetch ===
+ds4: SPEX hidden-probe loaded /root/probe.spex (43 layer, 4096 embd, 256 expert)
+prefetch-events(hidden): 0 / totali: 0
+--- BASELINE ---
+baseline n=64 gen=2.09
+baseline n=256 gen=2.27
+baseline n=576 gen=2.32
+--- 0003 selection-continuity ---
+pf0003 n=64 gen=0.88
+pf0003 n=256 gen=0.61
+pf0003 n=576 gen=0.52
+--- HIDDEN-PROBE K=6 ---
+probeK6 n=64 gen=0.83
+probeK6 n=256 gen=0.86

@@ -385,3 +385,11 @@ stream separati, auto-gate aderenza (0.000 = mask attive), greedy n=1 (determini
   sul task-hard (todo-app) → aggiungere 4-bit a 6 layer NON alza il livello = capacita'-bound.
   q2-q4 (98GB) piu' lento (1.5 vs 1.7-2.2 t/s) e completa in 14.8min vs 12.4 (+19%) = lose-lose.
   q4-full escluso (170GB>130GB disco). Strada mixed-precision CHIUSA per il soffitto complesso.
+- **Prefetcher hidden-probe t/s REALE** (`prefetch_real/`, patch 0015 wiring): il dense-oracle
+  wire-ato in ds4 (predict da cpu_router_norm -> prefetch async L+1) FUNZIONA (verificato:
+  "SPEX hidden prefetch L4->L5 experts=6 ok=1"). MA sul pod (RAM calda 251GB) il prefetch RALLENTA
+  2.5-4.5x (baseline 2.2 t/s, prefetch 0.5-0.9) perche' le miss sono servite dalla page-cache
+  (gratis) -> l'overhead del prefetch domina. Il GATE (cache FREDDA) mostrava il contrario (0003
+  cold-start 0.24->0.77 = 3.2x). VERDETTO: recall!=velocita' CONFERMATO e raffinato -> il prefetch
+  converte il recall in t/s SOLO se SSD-latency-bound (3060/RAM-povera), non sul pod RAM-ricco. Il
+  numero definitivo serve hardware SSD-bound. Wiring buildato ds4-probe sm_86.

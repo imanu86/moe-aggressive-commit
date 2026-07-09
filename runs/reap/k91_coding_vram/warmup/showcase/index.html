@@ -1,0 +1,14 @@
+<!DOCTYPE html><html lang="it"><head><meta charset="UTF-8"><title>Warmup sweep — session-learned keep-23</title>
+<style>body{font-family:system-ui,sans-serif;margin:0;background:#1a1a1a;color:#eee}h1{padding:1rem;font-size:1.2rem;background:#111;margin:0}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:1rem;padding:1rem}
+.card{background:#222;border-radius:8px;overflow:hidden;border:1px solid #333}.hd{padding:.6rem .8rem;font-weight:600;font-size:.9rem}
+iframe{width:100%;height:360px;border:0;background:#fff}.desc{padding:.5rem .8rem;font-size:.8rem;color:#aaa}</style></head>
+<body><h1>Warmup sweep — osserva-wide (K0) W token → congela keep-23. Stesso task, W crescente.</h1>
+<div class="grid"><div class="card"><div class="hd">W=30 <span style="float:right;color:#e67e22;font-family:monospace">L1</span></div>
+<iframe src="W30.html"></iframe><div class="desc">poca osservazione → bottone non cablato · t/s_frozen ~18.8</div></div><div class="card"><div class="hd">W=50 <span style="float:right;color:#2ecc71;font-family:monospace">L3</span></div>
+<iframe src="W50.html"></iframe><div class="desc">pulito e cablato ✅ · t/s_frozen ~13.6</div></div><div class="card"><div class="hd">W=80 <span style="float:right;color:#f1c40f;font-family:monospace">L2</span></div>
+<iframe src="W80.html"></iframe><div class="desc">funziona, restart doc · t/s_frozen ~13.6</div></div><div class="card"><div class="hd">W=110 <span style="float:right;color:#f1c40f;font-family:monospace">L2</span></div>
+<iframe src="W110.html"></iframe><div class="desc">funziona, restart · t/s_frozen ~13.8</div></div><div class="card"><div class="hd">W=130 <span style="float:right;color:#2ecc71;font-family:monospace">L3</span></div>
+<iframe src="W130.html"></iframe><div class="desc">pulito ✅ · t/s_frozen ~13.7</div></div><div class="card"><div class="hd">W=150 <span style="float:right;color:#e67e22;font-family:monospace">L1</span></div>
+<iframe src="W150.html"></iframe><div class="desc">degenera · t/s_frozen ~15.0</div></div></div>
+<p style="padding:0 1rem 2rem;color:#888;font-size:.85rem">Pavimento del learn ≈ W=50: sotto (W=30) degenera; da W≥50 la pagina regge (L2-L3). W=50 e W=130 puliti L3. La stessa keep-23 a freddo dal tok0 dava L0 uniforme.</p></body></html>

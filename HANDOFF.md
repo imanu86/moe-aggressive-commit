@@ -2,7 +2,27 @@
 
 > **PUNTO D'INGRESSO UNICO.** Leggi §0-LIVE (stato più recente). Sotto: §0-STORICO e STORICO = contesto precedente.
 
-## §0-LIVE (2026-07-06) — ds4flash-dwarf-spex-reap_loop: 5 leve + paper
+## §0-LIVE (2026-07-10) — REAP-LOOP: il lavoro vivo è nel repo `reap-loop`; questo repo = storico + dati multiseed + cockpit
+
+### Dove si lavora ADESSO
+Dal **2026-07-07** runtime ed esperimenti vivono nel repo **`reap-loop`**
+(`C:\Users\imanu\source\repos\reap-loop`, GitHub `imanu86/reap-loop`, `main` aggiornato al 2026-07-10):
+- **Piano operativo corrente:** `reap-loop/docs/NEXT_STEPS_PLAN_20260710.md` (igiene → pavimento di misura n=3 + grading funzionale L0-L3 → test decisionali T1-T5 → leve L1-L7). Goal: **>3 t/s stabili sul 3060 con qualità coding/HTML ≥L2 al render**. SOTA_LOCAL_3060 oggi: static K23 3.03-3.39 t/s (degenera ~tok116) / rotate32 2.61-3.03 t/s.
+- **Paper CANONICO:** `reap-loop/docs/paper/PAPER.md` (più avanti di 2 commit rispetto al draft qui). **Single source of truth dei claim:** `reap-loop/docs/CLAIMS_CURRENT.md`.
+
+### Questo repo (moe-aggressive-commit) al 2026-07-10
+- `main` @ `d021685` su GitHub PRIVATO `imanu86/moe-aggressive-commit` (include il merge K91 `f7aefc5`).
+- **Verdetto K91 coding→VRAM** (`f7aefc5`): NESSUN K entra in 12GB reali E scrive ancora codice — muro netto per il dominio largo coding. Cache reale ~407 expert (non ~910: ignorava ~2GiB di arene ds4), backbone reserve misurato 5.82 GiB.
+- Branch (tutti pushati su origin):
+  - `cascade-memory/harness` — **paper v2 CONGELATO** (`docs/paper/PAPER_DRAFT_v2.md`, banner FROZEN: canonico in reap-loop) + **cockpit** `tools/cockpit/ds4_cockpit.html` (UI leve + telemetria live + controllo RAM WSL).
+  - `reap/k91-coding-vram` @ `c8a7569` — contiene **`runs/reap/multiseed_2026-07-07/`** (N=3: ritrattazione asimmetria HOT/COLD, paired rand/reap 1.345× CI[1.27,1.42]), citato dal paper canonico; pointer in `reap-loop/runs/reap/multiseed_2026-07-07_POINTER.md`. Checkout attivo nel worktree `.claude/worktrees/elastic-bose-6ae1c7`.
+  - `dspark/mtp-spec-dec` @ `082aaa3` — probe 0013: VERDETTO NO-GO (meccanismo assente nella config daily; delta dentro il rumore ±50%).
+- `docs/PAPER_STATE.md` = SUPERSEDED (fotografa la vecchia tesi impact-weighted prefetch; vedi banner nel file).
+- La sezione sotto (§0-STORICO 2026-07-06) resta com'era: contesto valido ma numeri/stati NON più live.
+
+---
+
+## §0-STORICO (2026-07-06) — ds4flash-dwarf-spex-reap_loop: 5 leve + paper
 
 ### Cos'è il progetto (in una riga)
 Far girare **DeepSeek-V4-Flash 158B** (2-bit, 256 exp/layer, 6 attivi, 40 layer MoE, expert 6.75MiB) sul motore

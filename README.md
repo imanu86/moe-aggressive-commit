@@ -7,8 +7,8 @@ Studio + prototipo di una policy di inferenza MoE: **commit aggressivo per-sessi
 > evictabile / offloadato in RAM / quantizzato. Per workload ad **alta località** baratto un filo
 > di accuratezza per molto meno footprint VRAM, e **misuro esattamente il cambio**.
 
-**Questa repo è in fase di studio + scaffold** (no implementazione pesante). Vedi
-[`docs/00_architecture.md`](docs/00_architecture.md) per il disegno completo.
+**Stato 2026-07-10: repo storico/dati — punto d'ingresso [HANDOFF.md](HANDOFF.md); il lavoro vivo è nel repo [reap-loop](https://github.com/imanu86/reap-loop).** Vedi
+[`docs/00_architecture.md`](docs/00_architecture.md) per il disegno storico completo.
 
 ## Domanda decisiva
 Per un task ad alta località, esiste una regione in cui taglio gran parte degli expert dalla VRAM

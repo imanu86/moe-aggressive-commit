@@ -1,5 +1,7 @@
 # PAPER STATE — "Impact-weighted expert prefetch: running a 158B general MoE on a 12GB consumer GPU"
 
+> ⚠️ **SUPERSEDED (2026-07-10).** Questo doc fotografa la tesi PRE-REAP-LOOP (impact-weighted prefetch) ed è mantenuto SOLO come storico. La tesi attuale è REAP-LOOP; il paper canonico è `reap-loop/docs/paper/PAPER.md` e la **single source of truth dei claim è `reap-loop/docs/CLAIMS_CURRENT.md`** (repo `github.com/imanu86/reap-loop`). Non usare i numeri qui sotto come stato corrente.
+
 > Stato del paper a 2026-07-04. NON ripartire da capo: dati, esperimenti e citazioni sono TUTTI durevoli (vedi §Dati e §Citazioni). Questo doc lega le scoperte al paper. Compagni: `EXPERIMENTS_LEDGER.md` (100 esp), `PRIOR_ART.md` (citazioni), `HANDOFF_5_paper_study.md`, `HANDOFF_6.md`, `HANDOFF_7.md`, `references/DSpark_paper.txt`, `references/DwarfStar_ds4_README.md`.
 
 ## TESI CENTRALE

@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<title>REAP K91 — galleria risultati graded L0-L3</title>
+<style>
+  body{font-family:system-ui,sans-serif;margin:0;background:#1a1a1a;color:#eee}
+  h1{padding:1rem;margin:0;font-size:1.3rem;background:#111}
+  .grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(360px,1fr));gap:1rem;padding:1rem}
+  .card{background:#222;border-radius:8px;overflow:hidden;border:1px solid #333}
+  .hd{padding:.6rem .8rem;font-size:.9rem;font-weight:600}
+  .L3{border-top:4px solid #2ecc71}.L2{border-top:4px solid #f1c40f}
+  .L1{border-top:4px solid #e67e22}.L0{border-top:4px solid #e74c3c}
+  .badge{float:right;font-family:monospace}
+  iframe{width:100%;height:380px;border:0;background:#fff}
+  .desc{padding:.5rem .8rem;font-size:.8rem;color:#aaa}
+</style>
+</head>
+<body>
+<h1>REAP K91 — risultati graded L0-L3 (stesso task frontpage, diverse strategie)</h1>
+<div class="grid">
+  <div class="card L3"><div class="hd">1. FULL (no mask) <span class="badge" style="color:#2ecc71">L3 ✓</span></div>
+    <iframe src="1_FULL_reference.html"></iframe>
+    <div class="desc">La reference: bottone "Order Now" funziona, form cablato. La pagina che funziona.</div></div>
+  <div class="card L0"><div class="hd">2. COLD-static keep-32 <span class="badge" style="color:#e74c3c">L0 ✗</span></div>
+    <iframe src="2_COLD_keep32_COLLASSO.html"></iframe>
+    <div class="desc">Stessa potatura di #3 ma a freddo dal tok0 → degenera/loop, niente pagina.</div></div>
+  <div class="card L3"><div class="hd">3. SESSION-learned W=50 <span class="badge" style="color:#2ecc71">L3 ✓</span></div>
+    <iframe src="3_SESSION_W50_RISCATTO.html"></iframe>
+    <div class="desc">Il RISCATTO: osserva 50 token poi congela la stessa potatura → pagina completa.</div></div>
+  <div class="card L3"><div class="hd">4. SESSION-learned W=130 <span class="badge" style="color:#2ecc71">L3 ✓</span></div>
+    <iframe src="4_SESSION_W130.html"></iframe>
+    <div class="desc">Altra session-learned pulita.</div></div>
+  <div class="card L2"><div class="hd">5. COVERAGE adaptive-K 90% <span class="badge" style="color:#f1c40f">L2</span></div>
+    <iframe src="5_COVERAGE_cov90.html"></iframe>
+    <div class="desc">Manopola task-indipendente: funziona con difetto minore (restart).</div></div>
+</div>
+<p style="padding:0 1rem 2rem;color:#888;font-size:.85rem">Il contrasto <b>#2 vs #3</b> è il finding centrale: stessa aggressività di potatura, il session-learning trasforma il collasso in una pagina funzionante.</p>
+</body>
+</html>

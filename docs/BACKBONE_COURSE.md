@@ -5,23 +5,25 @@
 > on-device; ciò che non è verificato è marcato **(da misurare)**. Un verificatore su 16 è fallito (retry cap) —
 > il suo candidato (cap della Q8→F16 device-cache) resta non concluso.
 
-## Verdetto in una riga
-**Sì, si può limare — e il candidato è UNO solo: `static-Q4` sul backbone.** Porta il blocco statico residente da
-**7.64 GB → 3.50 GB** (byte-count), liberando **~3.5 GB device** sul 3060 (scontato il token_embd). **NON i ~5 GB**
-di HANDOFF_7:149 (gonfiato). Il gguf è **già costruito** (`/root/models/ds4-staticQ4.gguf`, 82GB, Jul 4) ma **MAI
-misurato**. Le altre due leve storiche (patch 0011 MTP-host, reserve-tuning) sono **REFUTED**.
+## Verdetto in una riga (⚠️ CORRETTO 2026-07-06 — era "PROMISING", è REFUTED)
+**`static-Q4` sul backbone è CHIUSO: il backbone residente NON è limabile a Q4_K su questo motore.** Verificato con tre
+fonti convergenti — sorgente (letto), misura gguf fresca, e la memoria del 04-07 (`project_ds4_realtest_inflight.md:23`).
+`weights_validate_layout` (chiamata al load, ds4.c:4105) inchioda TUTTO il non-expert a Q8_0/F16/F32 con `exit(1)` sul
+primo mismatch di tipo (ds4.c:3144-3151); l'unico tensore libero è il routed-expert (ds4.c:3626-3628). Esito a due facce,
+**entrambe misurate**:
+- `/root/models/ds4-staticQ4.gguf` (82GB, backbone Q4_K reale su 704 tensori) → **NON carica** (`token_embd` Q4_K vs pin F16 a ds4.c:3566 → `exit(1)`).
+- `D:\models\ds4\ds4-staticQ4.gguf` (86.72GB, "riparato" 04-07) → **carica ma è un GEMELLO del 2-bit** (istogramma dtype identico, backbone F16/Q8_0, zero Q4_K; Δ 288 byte) → **0 GB device liberati**.
+Non esiste una versione che *insieme* carichi E rimpicciolisca il backbone. Le leve storiche patch 0011 MTP-host e
+reserve-tuning restano **REFUTED**.
 
-## ⚠️ Scoperta che corregge la memoria (da risolvere col caricamento)
-Due cose che credevo vere NON sono nel repo / sono contraddette dai byte-count:
-- **"static-Q4 è FALLITO su 704 tensori / è un redundant twin del 2-bit"** → nessun artefatto nel repo lo sostiene.
-  Il byte-count del file dice **backbone genuinamente Q4_K** (statico 3.50GB, metà del 2-bit) = un **vero static-Q4**,
-  non un twin. **MA** il grounding sul sorgente ha trovato un **assert HARD F16 su `token_embd`** (`ds4.c:3566`
-  `tensor_expect_layout(..., DS4_TENSOR_F16, ...)`). Quindi resta UN dubbio aperto e gating: **la staticQ4.gguf
-  carica davvero?** O la build ha tenuto token_embd in F16 (→ carica, win reale ~3.5GB), o l'ha portato a Q4_K
-  (→ l'assert spara, non carica — possibile ORIGINE della storia "fallito"). **Solo caricarla lo decide.** Non
-  fidarsi di nessuna delle due narrazioni finché non si carica.
-- **"backbone ~5.8GB, ~6.2GB liberi"** (mio brief) → contraddetto: backbone reale **7.64GB**, e la cache già a
-  7.86GiB device senza MTP.
+## ✅ Dubbio-gating RISOLTO (2026-07-06) — non era aperto
+Il "dubbio" sul caricamento era **già chiuso il 04-07**; la rilettura sorgente + misura fresca lo conferma:
+- La `staticQ4.gguf` 82GB ha **token_embd = Q4_K** (misurato) → collide col pin F16 (ds4.c:3566) → `exit(1)`. Non carica.
+- Non è "704 tensori falliti misteriosi": il quantizzatore ha **onorato** tutti i flag (`--attention/-shared/-embedding/-output q4_k`) → istogramma staticQ4 = **704 Q4_K** = esattamente i 359 F16 + 345 Q8_0 del 2-bit. È un Q4-backbone genuino, e per questo NON passa il validatore.
+- La versione **riparata** (trapianto dei 704 tensori dal 2-bit buono, 04-07) è su `D:\models\ds4\ds4-staticQ4.gguf` (86.72GB), **carica**, ma ha il backbone di nuovo F16/Q8_0 → gemello del 2-bit, **0 GB liberati**.
+La vecchia frase "nessun artefatto sostiene il fallimento" era un buco di questo doc, non della realtà: gli artefatti
+erano nella memoria 04-07 e sul disco D:. Il backbone reale resta **7.64GB** (Q8_0 5.45 + F16 2.19), non limabile via
+quant su questo engine.
 
 ## Convergenza con la traccia memoria
 Lo studio confidence-cascade è arrivato alla **stessa conclusione da un altro angolo**: il muro dei 12GB **non** è
@@ -56,7 +58,7 @@ serve `--prefill-chunk 512` (HANDOFF_7:116). **Liberare VRAM dal backbone è l'U
 ## Candidati di limatura — verificati avversarialmente
 | Leva | Verdetto | GB reali device | Fattibilità | Rischio | Dove si tocca |
 |---|---|---|---|---|---|
-| **static-Q4 backbone** | **PROMISING** | **~3.5** (7.64→3.50, meno token_embd ~0.30 host) | Gguf GIÀ costruito (82GB, 1328 tensori). Nessuna patch. **Ma: carica? vedi assert F16** | **ALTO, non misurato**: attn→Q4_K si somma al -20pt coding 2-bit; zero eval_gold | build offline deepseek4-quantize (HANDOFF_7:138-146); runtime auto ds4_cuda.cu:1658 |
+| **static-Q4 backbone** | **REFUTED** (verificato 07-06, misura+sorgente) | **0** (motore-bloccato) | Impossibile su questo engine: `weights_validate_layout` pinna il backbone a Q8_0/F16 (ds4.c:3566,3577,3592-3599,3633-3635) → il Q4_K fa `exit(1)` al load; il file "riparato" è un gemello del 2-bit | — | servirebbe patch al validatore **+ kernel CUDA Q4_K per MLA/HC/compressor/indexer** (non verificati esistere); e comunque nutrirebbe un device-cache dal beneficio non dimostrato |
 | **REAP bias-mask K50/K67** | **SOLID** (ma altro asse) | ~0 sul backbone | fatto | basso | libera **RAM/disco** (72.56GiB expert), non VRAM device. Utile per la % in RAM, non per la cache |
 | **cap context length** (6144→4096) | **MARGINAL** | ~0.75 (32768→4096; da 6144 molto meno) | runtime | perde contesto | kv_cache_init ds4.c:8491-8516 |
 | **quant token_embd/LM head → Q6/Q5** | **REFUTED** | tetto ~0.9 ma bloccato | token_embd F16 OBBLIGATA (assert ds4.c:3566) | — | non fattibile senza toccare l'assert |
@@ -75,7 +77,12 @@ Vive nella chat-tutor aperta a parte; sintesi dei check pratici:
 - **M5** le finte-leve → la riga "cache disabled" in `runs/dspark/20260706_night_validation_m8/out/eval_on.log`.
 - **M6** decisione → `HANDOFF_7:188-194` (roadmap: static-Q4 test PRIMA del temperature-per-expert).
 
-## Prossimo passo obbligato (HANDOFF_7:189)
-Caricare `ds4-staticQ4.gguf` sul 3060 col comando server + env leva-RAM e **misurare due cose**: (1) **carica?** (assert
-F16 su token_embd) → risolve la storia "fallito/twin"; (2) se sì, **t/s** (cache più grande?) e **qualità** (eval_gold:
-l'attention-Q4 rompe il task Segnali?). Solo allora il ~3.5GB diventa un win adottabile.
+## Prossimo passo (aggiornato 2026-07-06 — l'ex "passo obbligato" è OBSOLETO)
+Il vecchio "carica staticQ4 e misura" è **superato**: sappiamo già che non carica (82GB) o è un gemello (86.72GB). E
+l'anello a monte — *un device-cache più grande alza i t/s?* — **è GIÀ MISURATO** (`runs/ds4_bench_clean_ext4_20260705/`,
+verificato dai log): cache 31→~700 slot, **hit-rate 0%→44%**, ma **generation t/s 0.18→0.15 = PIATTO** (dentro il rumore).
+Nel regime **28GB cold/SSD-bound** il collo è la **coda SSD**, non le copie H2D → il device-cache è irrilevante e
+ingrandirlo liberando VRAM dal backbone sarebbe moot. La limatura vera è sull'asse **RAM** (leva-RAM 4.3× + REAP bias-mask
+−72.6GiB + 64GB in arrivo). **Unico anello ancora aperto:** il device-cache *si accende* nel regime **64GB-warm**
+(working-set in RAM, coda SSD sparita, l'H2D diventa il gate)? Da misurare **solo sul 3060** quando arriva il kit RAM —
+**NON su pod** (t/s non trasferibili, POD_PLAYBOOK §4.3; una 3090 ha troppa RAM → regime sbagliato).

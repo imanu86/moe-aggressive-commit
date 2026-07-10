@@ -18,11 +18,14 @@
   POST /api/reap       body = { keep, descent, warmup, breath:{...}, trigger:{...} }
        -> aggiorna a RUNTIME i parametri REAP se il driver lo supporta.
           { ok:bool, applied_live:bool, needs_relaunch:bool }
-  POST /api/chat       body = { prompt }
+  POST /api/chat       body = { prompt, trace?:bool, scope_trace?:bool }
        -> Server-Sent Events. Eventi:
           event: token   data: {"t":"...pezzo di testo..."}
           event: done     data: { gen_tps, prefill_tps, hit_rate, in_keep_rate,
-                                   violations, copied_mib, tokens }
+                                   violations, copied_mib, tokens,
+                                   scope_url?: "http://localhost:3847/spatial.html?..." }
+       Se scope_url non e' presente, la UI prova GET /api/scope/latest
+       -> { ok:bool, scope_url?:string, stock_trace_url?:string, modified_trace_url?:string }
   GET  /api/telemetry
        -> snapshot live (poll 1s): { running, gen_tps, prefill_tps, hit_rate,
             in_keep_rate, violations, copied_mib, copied_mib_per_tok, masks_written,
@@ -73,6 +76,12 @@
   .btn.stop{color:var(--bad)}
   .btn:disabled{opacity:.5;cursor:not-allowed}
   .btnrow{display:flex;gap:8px;flex-wrap:wrap}
+  .chattools{display:flex;align-items:center;gap:8px;margin-left:auto}
+  .minirow{display:flex;align-items:center;gap:5px;color:var(--dim);font:600 11px var(--mono);text-transform:none;letter-spacing:0}
+  .minirow input{accent-color:var(--accent)}
+  .scopebtn{min-height:26px;padding:4px 8px;border-radius:6px;font-size:11px}
+  .msg .scopeopen{display:inline-flex;margin-top:8px;border:1px solid var(--edge);background:#132235;color:var(--ink);border-radius:6px;padding:5px 8px;font:700 11px system-ui;cursor:pointer}
+  .msg .scopeopen:hover{border-color:var(--accent)}
   .keeplbl{font:700 13px var(--mono);color:var(--accent)}
   /* chat */
   .chat{display:flex;flex-direction:column;height:calc(100vh - 100px);min-height:420px}
@@ -148,14 +157,14 @@
       <div class="body">
         <label class="row">Attiva REAP <span class="sw"><input type="checkbox" id="reap" checked><span></span></span></label>
         <label class="row">Sorgente mask
-          <select id="masksrc"><option value="learn">impara live</option><option value="load">carica file</option></select></label>
-        <label class="row" id="maskfilerow" style="display:none">file mask <input type="text" id="maskfile" value=""></label>
+          <select id="masksrc"><option value="load">carica file (veloce da subito)</option><option value="learn">impara live (warmup)</option></select></label>
+        <label class="row" id="maskfilerow">file mask <input type="text" id="maskfile" value="/root/ds4/runs_reap/20260706_2210_phaseB/stats_learned.json"></label>
         <label class="row">warmup token <input type="number" id="warmup" value="150"></label>
         <label class="row">discesa
           <select id="descent"><option value="direct">diretta</option><option value="stepwise">a gradini</option></select></label>
-        <label class="row">keep esperti/strato <span class="keeplbl"><span id="keepv">23</span>/256</span></label>
-        <input type="range" id="keep" min="6" max="256" value="23" style="width:100%">
-        <label class="row hint">keep-23 ≈ keep-9%. Più basso = più veloce/aggressivo, più rischio qualità.</label>
+        <label class="row">Discesa keep (K% = quanto POTI) <input type="text" id="kschedule" value="91" style="width:130px"></label>
+        <label class="row">→ <span class="keeplbl" id="kexperts">tieni 23 esperti</span></label>
+        <label class="row hint">K = quanto poti (%). "91"=keep-23 (aggressivo, veloce). "50"=keep-128 (blando, qualità). "50, 91"=parti keep-128 poi stringi a keep-23 (discesa a gradini). Ordine consigliato: dal K basso al K alto.</label>
         <hr style="border:0;border-top:1px solid var(--edge);width:100%">
         <label class="row">Respiro <span class="sw"><input type="checkbox" id="breath" checked><span></span></span></label>
         <label class="row">ogni N token <input type="number" id="bevery" value="400"></label>
@@ -195,7 +204,13 @@
   <!-- ============ COLONNA CENTRALE: CHAT ============ -->
   <div class="col">
     <div class="card chat">
-      <h2>Chat <span id="chatphase" style="color:var(--dim);font:600 11px var(--mono)"></span></h2>
+      <h2>
+        <span>Chat <span id="chatphase" style="color:var(--dim);font:600 11px var(--mono)"></span></span>
+        <span class="chattools">
+          <label class="minirow"><input type="checkbox" id="scopeTrace" checked> Trace Scope</label>
+          <button class="btn scopebtn" id="openScope" type="button">Apri in Scope</button>
+        </span>
+      </h2>
       <div class="msgs" id="msgs"></div>
       <div class="composer">
         <textarea id="prompt" placeholder="Scrivi qui e premi Invio (Shift+Invio = a capo)…"></textarea>
@@ -224,7 +239,7 @@
       <div class="body">
         <div class="gauge"><span class="k">VRAM</span><span class="v" id="g_vram">—</span></div>
         <div class="bar"><i id="b_vram" style="width:0%"></i></div>
-        <div class="gauge" style="margin-top:6px"><span class="k">RAM</span><span class="v" id="g_ram">—</span></div>
+        <div class="gauge" style="margin-top:6px"><span class="k">RAM (cache modello)</span><span class="v" id="g_ram">—</span></div>
         <div class="bar"><i id="b_ram" style="width:0%;background:var(--warn)"></i></div>
       </div>
     </div>
@@ -241,11 +256,81 @@
 
 <script>
 const API = localStorage.getItem('ds4_api') || 'http://localhost:8000';
+const SCOPE_BASE = localStorage.getItem('scope_url') || 'http://localhost:3847/spatial.html';
 const $ = id => document.getElementById(id);
 const fmt = (v,d=2)=> (v==null||isNaN(v))?'—':(+v).toFixed(d);
+let lastScopeUrl = '';
+
+function absApiUrl(value){
+  if(!value || typeof value !== 'string') return '';
+  if(/^https?:\/\//i.test(value)) return value;
+  if(value.startsWith('/')) return new URL(value, API).href;
+  return value;
+}
+
+function buildScopeUrlFromPayload(data){
+  if(!data || typeof data !== 'object') return '';
+  const direct = data.scope_url || data.scopeUrl || data.scope_replay_url || data.scopeReplayUrl;
+  if(typeof direct === 'string' && direct.trim()) return direct.trim();
+
+  const samples = data.scope_samples || data.samples;
+  if(Array.isArray(samples) && samples.length){
+    return SCOPE_BASE + '?samples=' + samples.map(absApiUrl).map(encodeURIComponent).join(',') + '&mode=' + (samples.length > 1 ? 'diff' : 'router');
+  }
+
+  const stock = data.stock_trace_url || data.base_trace_url || data.stock_csv || data.base_csv;
+  const modified = data.modified_trace_url || data.reap_trace_url || data.trace_url || data.trace_csv || data.modified_csv || data.reap_csv;
+  if(stock && modified){
+    return SCOPE_BASE + '?samples=' + encodeURIComponent(absApiUrl(stock)) + ',' + encodeURIComponent(absApiUrl(modified)) + '&mode=diff';
+  }
+  if(modified){
+    return SCOPE_BASE + '?samples=' + encodeURIComponent(absApiUrl(modified)) + '&mode=router';
+  }
+  return '';
+}
+
+function setScopeUrl(url){
+  if(!url) return;
+  lastScopeUrl = url;
+  $('openScope').title = url;
+}
+
+async function latestScopeUrl(){
+  if(lastScopeUrl) return lastScopeUrl;
+  const r = await fetch(API + '/api/scope/latest', { cache:'no-store' });
+  if(!r.ok) throw new Error('nessuna sessione Scope disponibile');
+  const data = await r.json();
+  const url = buildScopeUrlFromPayload(data);
+  if(!url) throw new Error('il backend non ha restituito scope_url');
+  setScopeUrl(url);
+  return url;
+}
+
+function attachScopeButton(container, url){
+  setScopeUrl(url);
+  const b = document.createElement('button');
+  b.className = 'scopeopen';
+  b.type = 'button';
+  b.textContent = 'Apri in Scope';
+  b.onclick = () => window.open(url, '_blank', 'noopener');
+  container.appendChild(b);
+}
+
+$('openScope').onclick = async () => {
+  try{
+    const url = await latestScopeUrl();
+    window.open(url, '_blank', 'noopener');
+  }catch(e){
+    alert('Nessuna trace reale pronta per Scope. Avvia una chat con Trace Scope attivo e fai restituire al backend scope_url oppure /api/scope/latest.');
+  }
+};
 
 // keep slider label + mask-source toggle
-$('keep').oninput = e => $('keepv').textContent = e.target.value;
+// K% = quanto POTI → keep-esperti = 256*(1-K/100). Lista "50, 91" = discesa keep-128→keep-23.
+function parseK(){ const a=($('kschedule').value||'91').replace(/[^\d.]+/g,' ').trim().split(/\s+/).map(Number).filter(x=>x>=0&&x<100); return a.length?a:[91]; }
+function kToKeep(K){ return Math.max(1, Math.round(256*(1-K/100))); }
+function updateKexperts(){ $('kexperts').textContent='tieni '+parseK().map(kToKeep).join(' → ')+' esperti'; }
+$('kschedule').oninput = updateKexperts; updateKexperts();
 $('masksrc').onchange = e => $('maskfilerow').style.display = e.target.value==='load'?'grid':'none';
 
 function buildConfig(){
@@ -255,12 +340,12 @@ function buildConfig(){
     streaming:{ enabled:$('stream').checked, cache_experts:+$('cache').value, reserve_gb:+$('reserve').value },
     reap:{
       enabled:$('reap').checked, mask_source:$('masksrc').value, mask_file:$('maskfile').value,
-      warmup:+$('warmup').value, descent:$('descent').value, keep:+$('keep').value,
+      warmup:+$('warmup').value, descent:$('descent').value, keep_schedule:parseK().map(kToKeep), keep:kToKeep(parseK().slice(-1)[0]),
       breath:{ enabled:$('breath').checked, every:+$('bevery').value, len:+$('blen').value, keep:+$('bkeep').value, relearn:$('brelearn').checked },
       trigger:{ type:$('trigger').value, threshold:+$('thr').value, relative:+$('rel').value, hysteresis:+$('hyst').value }
     },
     fattorino:{ enabled:$('fattorino').checked },
-    trace:false
+    trace:$('scopeTrace').checked
   };
 }
 
@@ -313,14 +398,23 @@ $('send').onclick = async () => {
   $('prompt').value=''; addMsg('u', p);
   const out = addMsg('a', ''); const meta = document.createElement('span'); meta.className='meta'; out.appendChild(meta);
   try{
-    const r = await fetch(API+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p})});
+    const wantsScope = $('scopeTrace').checked;
+    let r = await fetch(API+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p, trace:wantsScope, scope_trace:wantsScope})});
+    if(!r.ok && r.status >= 400 && r.status < 500){
+      r = await fetch(API+'/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({prompt:p})});
+    }
+    if(!r.ok || !r.body) throw new Error('chat HTTP '+r.status);
     const rd = r.body.getReader(); const dec = new TextDecoder(); let buf='';
     for(;;){ const {value,done}=await rd.read(); if(done)break; buf+=dec.decode(value,{stream:true});
       let i; while((i=buf.indexOf('\n\n'))>=0){ const chunk=buf.slice(0,i); buf=buf.slice(i+2);
         const ev=(chunk.match(/event:\s*(\w+)/)||[])[1]; const dm=chunk.match(/data:\s*(.*)/s); if(!dm)continue;
         let data={}; try{data=JSON.parse(dm[1]);}catch(_){}
         if(ev==='token'){ out.insertBefore(document.createTextNode(data.t||''), meta); $('msgs').scrollTop=1e9; }
-        else if(ev==='done'){ meta.textContent=`⏱ ${fmt(data.gen_tps)} t/s · hit ${fmt(data.hit_rate)} · in-keep ${fmt(data.in_keep_rate,3)} · copiato ${fmt(data.copied_mib,0)} MiB`; }
+        else if(ev==='done'){
+          meta.textContent=`⏱ ${fmt(data.gen_tps)} t/s · hit ${fmt(data.hit_rate)} · in-keep ${fmt(data.in_keep_rate,3)} · copiato ${fmt(data.copied_mib,0)} MiB`;
+          const scopeUrl = buildScopeUrlFromPayload(data);
+          if(scopeUrl) attachScopeButton(out, scopeUrl);
+        }
       }
     }
   }catch(e){ meta.textContent='errore: '+e.message; }
@@ -330,6 +424,8 @@ $('send').onclick = async () => {
 async function poll(){
   try{
     const r = await fetch(API+'/api/telemetry'); const t = await r.json();
+    const scopeUrl = buildScopeUrlFromPayload(t);
+    if(scopeUrl) setScopeUrl(scopeUrl);
     $('status').className='pill '+(t.running?'on':'off'); $('status').textContent = t.running?'ds4 attivo':'ds4 fermo';
     $('tps_big').textContent = fmt(t.gen_tps);
     $('g_gen').textContent=fmt(t.gen_tps)+' t/s'; $('g_pre').textContent=fmt(t.prefill_tps)+' t/s';

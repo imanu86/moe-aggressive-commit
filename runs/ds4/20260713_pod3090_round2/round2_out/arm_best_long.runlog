@@ -1,0 +1,39 @@
+[best_long] GPU lock...
+[best_long] ready
+warmup_rc=0 dur=50.9
+{"finish_reason": "length", "client_stop": null, "stream_error": null}
+[best_long] === METRICS ===
+{
+  "arm": "arm_best_long",
+  "completion_tokens": 1500,
+  "overall_tps": 3.992,
+  "decode_tps": 4.346,
+  "H2D_total_MiB_decode": 803221.0,
+  "H2D_MiB_per_token": 535.481,
+  "dmon_samples_s": 360,
+  "engine_hit_rate": 0.7368,
+  "engine_direct_copied_MiB": 56956.5,
+  "engine_misses": 104584,
+  "vram_fb_peak_MiB_dmon": 22676.0,
+  "vram_used_after": "22676 MiB, 1460 MiB",
+  "grade": {
+    "task": "frontpage",
+    "level": 0,
+    "detail": {
+      "has_body_struct": false,
+      "nav": false,
+      "hero": false,
+      "form": false,
+      "style": true,
+      "script": false,
+      "button": false,
+      "js_errors": 0,
+      "button_wired": false,
+      "form_wired": false,
+      "tag_mismatch": 0
+    }
+  }
+}
+[best_long] tiering summary:
+ds4: expert tiering observe summary batches=66306 slots=437568 compact=405758 hit_rate=0.7368 hits=292736 misses=104584 direct=8438 evictions=101024 direct=56956.50 MiB compact=2738866.50 MiB
+ARM_DONE=0

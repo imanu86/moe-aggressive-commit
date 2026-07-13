@@ -1,0 +1,41 @@
+Ecco una landing page HTML/CSS/JS single-file per un negozio di programmazione AI in stile cyberpunk, con modulo contatti e popup di conferma.
+
+```html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code · Cyberpunk Store</title>
+    <!-- Font futuristico -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0f1e;
+            font-family: 'Orbitron', sans-serif;
+            color: #d0f0ff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background-image: 
+                linear-gradient(45deg, rgba(0, 255, 255, 0.03) 0%, transparent 70%),
+                repeating-linear-gradient(0deg, transparent, transparent 2px, #0ff1 2px, #0ff1 3px);
+            background-size: 100% 100%, 100% 30px;
+        }
+
+        /* Glitch overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, #0ff2 2px, #0ff2 4px);
+            pointer-events: none;
+           

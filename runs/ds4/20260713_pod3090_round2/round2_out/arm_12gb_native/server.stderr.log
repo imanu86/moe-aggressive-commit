@@ -1,0 +1,34 @@
+ds4: Linux cuda backend set oom_score_adj=1000
+ds4: CUDA backend initialized on NVIDIA GeForce RTX 3090 (sm_86)
+ds4: SSD streaming initial cuda model map restricted to token embedding (1 spans, 0.99 GiB tensor span)
+ds4: CUDA preparing model tensor mappings
+ds4: CUDA loading model tensors into device cache
+ds4: CUDA startup model preparation covered 0.99 GiB of tensor spans in 0.405s
+ds4: cuda backend initialized for graph diagnostics
+0713 10:24:39 ds4-server: context buffers 122.69 MiB (ctx=4096, backend=cuda, prefill_chunk=512, raw_kv_rows=768, compressed_kv_rows=1026)
+0713 10:24:39 ds4-server: listening on http://127.0.0.1:8091
+0713 10:24:41 ds4-server: chat ctx=0..78:78 prompt start
+ds4: expert tiering observe enabled (DS4_EXPERT_TIERING=observe; log=stderr-summary)
+ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: CUDA loading model tensors 0.15 GiB cached
+ds4: CUDA loading model tensors 0.13 GiB cached
+ds4: CUDA loading model tensors 0.00 GiB cached
+0713 10:25:23 ds4-server: chat ctx=0..78:78 prompt done 42.629s
+ds4: REAP mask reload da /root/reap-loop/runs/ds4/20260712_virtual_bake/masks/mask60_self.txt: 4080 entry potate
+ds4: REAP mask applied: 40 layer, 40 device range aggiornati/creati
+ds4: CUDA model arena alloc failed for q8_0_pair0 (256.00 MiB chunk): out of memory
+ds4: CUDA model range alloc failed for attn_out_a (34.00 MiB): out of memory
+0713 10:25:25 ds4-server: chat ctx=0..78:78 gen=0 finish=error error="cuda decode failed" 44.778s
+0713 10:25:26 ds4-server: chat ctx=78..78:0 prompt start
+ds4: CUDA loading model tensors 0.15 GiB cached
+0713 10:25:39 ds4-server: chat ctx=78..78:0 prompt done 12.827s
+ds4: CUDA model arena alloc failed for q8_0_pair0 (256.00 MiB chunk): out of memory
+ds4: CUDA model range alloc failed for attn_out_a (34.00 MiB): out of memory
+0713 10:25:41 ds4-server: chat ctx=78..78:0 gen=0 finish=error error="cuda decode failed" 14.784s
+0713 10:25:41 ds4-server: shutdown requested, draining requests
+ds4: expert tiering observe summary batches=148 slots=40620 compact=8810 hit_rate=0.0000 hits=0 misses=372 direct=8438 evictions=0 direct=56956.50 MiB compact=59467.50 MiB
+ds4: expert tiering observe layer=1 batches=4 slots=948 compact=424 hit_rate=0.0000 misses=12 direct=412 evictions=0 cap=450 top=82:14,204:14,25:12,32:12,51:12,184:12
+ds4: expert tiering observe layer=2 batches=4 slots=948 compact=418 hit_rate=0.0000 misses=12 direct=406 evictions=0 cap=450 top=128:20,65:16,182:16,89:14,159:14,84:12
+ds4: expert tiering observe layer=0 batches=4 slots=948 compact=412 hit_rate=0.0000 misses=12 direct=400 evictions=0 cap=450 top=11:14,52:14,109:14,174:14,177:14,74:12
+ds4: expert tiering observe layer=19 batches=4 slots=948 compact=248 hit_rate=0.0000 misses=12 direct=236 evictions=0 cap=450 top=136:86,81:55,226:54,116:50,111:30,67:24
+ds4: expert tiering observe layer=3 batches=4 slots=948 compact=234 hit_rate=0.0000 misses=12 direct=222 evictions=0 cap=450 top=60:148,74:100,237:54,241:44,138:42,150:40

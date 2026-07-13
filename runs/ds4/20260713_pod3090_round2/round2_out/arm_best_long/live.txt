@@ -1,0 +1,188 @@
+Ecco una landing page HTML/CSS/JS single-file per un negozio di programmazione AI in stile cyberpunk, con modulo contatti e popup di conferma.
+
+```html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Code · Cyberpunk Store</title>
+    <!-- Font futuristico -->
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&display=swap" rel="stylesheet">
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            background: #0a0f1e;
+            font-family: 'Orbitron', sans-serif;
+            color: #d0f0ff;
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            background-image: 
+                linear-gradient(45deg, rgba(0, 255, 255, 0.03) 0%, transparent 70%),
+                repeating-linear-gradient(0deg, transparent, transparent 2px, #0ff1 2px, #0ff1 3px);
+            background-size: 100% 100%, 100% 30px;
+        }
+
+        /* Glitch overlay */
+        body::before {
+            content: '';
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: repeating-linear-gradient(0deg, transparent, transparent 2px, #0ff2 2px, #0ff2 4px);
+            pointer-events: none;
+            z-index: 100;
+            opacity: 0.3;
+        }
+
+        .card {
+            max-width: 700px;
+            width: 100%;
+            background: rgba(10, 20, 40, 0.8);
+            backdrop-filter: blur(4px);
+            border: 2px solid #0ff;
+            box-shadow: 0 0 30px #0ff4, 0 0 60px #0ff2, inset 0 0 20px #0ff3;
+            padding: 2.5rem 2rem;
+            border-radius: 24px;
+            position: relative;
+            transition: 0.2s;
+        }
+
+        .card:hover {
+            box-shadow: 0 0 40px #0ff, 0 0 80px #0ff5, inset 0 0 30px #0ff;
+        }
+
+        h1 {
+            font-size: 2.8rem;
+            font-weight: 900;
+            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 6px;
+            color: #fff;
+            text-shadow: 0 0 10px #0ff, 0 0 30px #0ff, 0 0 60px #0ff;
+            margin-bottom: 0.5rem;
+            word-break: break-word;
+        }
+
+        .sub {
+            text-align: center;
+            font-size: 1rem;
+            color: #8affff;
+            border-bottom: 1px solid #0ff6;
+            padding-bottom: 1rem;
+            margin-bottom: 1.8rem;
+            letter-spacing: 2px;
+        }
+
+        .grid {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1.2rem;
+            justify-content: center;
+            margin-bottom: 2rem;
+        }
+
+        .item {
+            background: #0b1628;
+            border: 1px solid #0ff7;
+            padding: 1.2rem 1.5rem;
+            border-radius: 16px;
+            flex: 1 1 130px;
+            text-align: center;
+            box-shadow: 0 0 15px #0ff3;
+            transition: 0.2s;
+            font-weight: 700;
+            color: #bdfaff;
+        }
+
+        .item:hover {
+            background: #0f1f35;
+            border-color: #0ff;
+            box-shadow: 0 0 25px #0ff;
+            transform: scale(1.02);
+        }
+
+        .item span {
+            display: block;
+            font-size: 0.8rem;
+            color: #7affcc;
+            margin-top: 6px;
+            font-weight: 400;
+        }
+
+        .price {
+            font-size: 1.4rem;
+            color: #ffd0f0;
+            text-shadow: 0 0 8px #ff0ff5;
+        }
+
+        /* MODULO */
+        .form-section {
+            background: #0a1428b3;
+            border: 1px solid #0ff6;
+            border-radius: 20px;
+            padding: 1.8rem 1.5rem;
+            margin-top: 1rem;
+            backdrop-filter: blur(2px);
+        }
+
+        .form-section h2 {
+            font-size: 1.4rem;
+            letter-spacing: 3px;
+            margin-bottom: 1.2rem;
+            text-align: center;
+            color: #0ff;
+            text-shadow: 0 0 10px #0ff;
+        }
+
+        .form-group {
+            margin-bottom: 1.2rem;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 0.9rem;
+            color: #9efff0;
+        }
+
+        input, textarea {
+            width: 100%;
+            padding: 12px 14px;
+            background: #0a0f1e;
+            border: 1px solid #0ff8;
+            border-radius: 12px;
+            font-family: 'Orbitron', sans-serif;
+            font-size: 0.9rem;
+            color: #e0f0ff;
+            outline: none;
+            transition: 0.2s;
+            box-shadow: inset 0 0 8px #0ff3;
+        }
+
+        input:focus, textarea:focus {
+            border-color: #f0f;
+            box-shadow: 0 0 20px #f0f6, inset 0 0 10px #f0f;
+        }
+
+        textarea {
+            min-height: 100px;
+            resize: vertical;
+        }
+
+        .btn {
+            background: #0ff;
+            color: #0a0f1e;
+            border: none;
+            padding: 14px 28px;
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 700;
+            font-size: 1.2rem;
+           

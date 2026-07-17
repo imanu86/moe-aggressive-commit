@@ -93,19 +93,29 @@ static float ds4_f16_to_f32(uint16_t h) {
 
 size_t ds4_q1_ref_row_size(int type_id, int64_t ncols) {
     if (ncols <= 0) return 0;
+    int64_t blocks = 0;
+    size_t block_bytes = 0;
     switch (type_id) {
         case DS4_Q1_REF_TYPE_Q2_K:
             if (ncols % DS4_Q1_REF_QK_K) return 0;
-            return (size_t)(ncols / DS4_Q1_REF_QK_K) * DS4_Q1_REF_Q2_K_BLOCK_BYTES;
+            blocks = ncols / DS4_Q1_REF_QK_K;
+            block_bytes = DS4_Q1_REF_Q2_K_BLOCK_BYTES;
+            break;
         case DS4_Q1_REF_TYPE_IQ2_XXS:
             if (ncols % DS4_Q1_REF_QK_K) return 0;
-            return (size_t)(ncols / DS4_Q1_REF_QK_K) * DS4_Q1_REF_IQ2_XXS_BLOCK_BYTES;
+            blocks = ncols / DS4_Q1_REF_QK_K;
+            block_bytes = DS4_Q1_REF_IQ2_XXS_BLOCK_BYTES;
+            break;
         case DS4_Q1_REF_TYPE_Q1_0:
             if (ncols % DS4_Q1_REF_QK1_0) return 0;
-            return (size_t)(ncols / DS4_Q1_REF_QK1_0) * DS4_Q1_REF_Q1_0_BLOCK_BYTES;
+            blocks = ncols / DS4_Q1_REF_QK1_0;
+            block_bytes = DS4_Q1_REF_Q1_0_BLOCK_BYTES;
+            break;
         default:
             return 0;
     }
+    if ((uint64_t)blocks > (uint64_t)SIZE_MAX / block_bytes) return 0;
+    return (size_t)blocks * block_bytes;
 }
 
 static void dequantize_row_iq2_xxs(const ds4_block_iq2_xxs *x, float *y, int64_t k) {
@@ -229,7 +239,14 @@ int ds4_q1_ref_convert_rows_to_q1_0(
     const size_t src_row = ds4_q1_ref_row_size(type_id, ncols);
     const size_t dst_row = ds4_q1_ref_row_size(DS4_Q1_REF_TYPE_Q1_0, ncols);
     if (!src_row || !dst_row) return -2;
-    if (src_size < src_row * (size_t)nrows || dst_size < dst_row * (size_t)nrows) return -3;
+    if ((uint64_t)nrows > (uint64_t)SIZE_MAX / src_row ||
+        (uint64_t)nrows > (uint64_t)SIZE_MAX / dst_row ||
+        (uint64_t)ncols > (uint64_t)SIZE_MAX / sizeof(float)) {
+        return -3;
+    }
+    const size_t expected_src = src_row * (size_t)nrows;
+    const size_t expected_dst = dst_row * (size_t)nrows;
+    if (src_size != expected_src || dst_size != expected_dst) return -3;
 
     float *row = (float *)malloc((size_t)ncols * sizeof(float));
     if (!row) return -4;

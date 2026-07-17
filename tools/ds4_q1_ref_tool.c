@@ -35,6 +35,20 @@ static int read_all(uint8_t *dst, size_t n) {
     return 0;
 }
 
+static int checked_mul_size(size_t a, size_t b, size_t *out) {
+    if (a != 0 && b > SIZE_MAX / a) return -1;
+    *out = a * b;
+    return 0;
+}
+
+static int stdin_has_extra_payload(void) {
+    unsigned char c = 0;
+    const size_t got = fread(&c, 1, 1, stdin);
+    if (got == 1) return 1;
+    if (ferror(stdin)) return -1;
+    return 0;
+}
+
 int main(int argc, char **argv) {
 #ifdef _WIN32
     _setmode(_fileno(stdin), _O_BINARY);
@@ -57,8 +71,14 @@ int main(int argc, char **argv) {
         fprintf(stderr, "unsupported row geometry\n");
         return 2;
     }
-    const size_t src_size = src_row * (size_t)nrows;
-    const size_t dst_size = dst_row * (size_t)nrows;
+    size_t src_size = 0;
+    size_t dst_size = 0;
+    if ((uint64_t)nrows > (uint64_t)SIZE_MAX ||
+        checked_mul_size(src_row, (size_t)nrows, &src_size) != 0 ||
+        checked_mul_size(dst_row, (size_t)nrows, &dst_size) != 0) {
+        fprintf(stderr, "payload size overflow\n");
+        return 2;
+    }
     uint8_t *src = (uint8_t *)malloc(src_size);
     uint8_t *dst = (uint8_t *)malloc(dst_size);
     if (!src || !dst) {
@@ -69,6 +89,13 @@ int main(int argc, char **argv) {
     }
     if (read_all(src, src_size) != 0) {
         fprintf(stderr, "stdin payload too short\n");
+        free(src);
+        free(dst);
+        return 4;
+    }
+    const int extra = stdin_has_extra_payload();
+    if (extra != 0) {
+        fprintf(stderr, extra > 0 ? "stdin payload too long\n" : "stdin read failed\n");
         free(src);
         free(dst);
         return 4;

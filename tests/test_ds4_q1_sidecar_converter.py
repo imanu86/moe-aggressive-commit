@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import struct
 
 from tools.ds4_q1_sidecar_converter import (
     GGUF_VALUE_TYPE_STRING,
@@ -105,6 +106,55 @@ def _runtime_real_like_blocked_fixture(path, target_layer: int = 42) -> None:
     write_gguf(
         path,
         [GgufMetadata("general.name", GGUF_VALUE_TYPE_STRING, "ds4-real-like-blocked-fixture")],
+        tensors,
+    )
+
+
+def _q2_k_fixture_payload() -> bytes:
+    scales = bytes(((i % 4) + 1) | (((i % 3) + 1) << 4) for i in range(16))
+    qs = bytes(((i * 37 + 11) & 0xFF) for i in range(64))
+    return scales + qs + struct.pack("<e", 1.0) + struct.pack("<e", 0.5)
+
+
+def _runtime_mixed_real_fixture(path, target_layer: int = 42) -> None:
+    tensors: list[GgufWriteTensor] = []
+    for layer in range(43):
+        for suffix in ("attn_norm.weight", "ffn_norm.weight"):
+            tensors.append(
+                GgufWriteTensor(
+                    f"blk.{layer}.{suffix}",
+                    (8,),
+                    SYNTHETIC_IQ2_TYPE_ID,
+                    _i16_payload(8, seed=layer * 13 + len(tensors)),
+                )
+            )
+    for layer in range(3, 43):
+        tensors.append(
+            GgufWriteTensor(
+                f"blk.{layer}.exp_probs_b.bias",
+                (4,),
+                SYNTHETIC_IQ2_TYPE_ID,
+                _i16_payload(4, seed=700 + layer),
+            )
+        )
+    iq2_payload = struct.pack("<e", 1.0) + bytes(64)
+    q2_payload = _q2_k_fixture_payload()
+    for kind, type_id, payload in (
+        ("ffn_gate_exps.weight", 16, iq2_payload),
+        ("ffn_up_exps.weight", 16, iq2_payload),
+        ("ffn_down_exps.weight", 10, q2_payload),
+    ):
+        tensors.append(
+            GgufWriteTensor(
+                f"blk.{target_layer}.{kind}",
+                (256,),
+                type_id,
+                payload,
+            )
+        )
+    write_gguf(
+        path,
+        [GgufMetadata("general.name", GGUF_VALUE_TYPE_STRING, "ds4-real-mini-fixture")],
         tensors,
     )
 

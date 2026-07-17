@@ -13,6 +13,8 @@ import hashlib
 import json
 import math
 import mmap
+import os
+import subprocess
 import struct
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -399,6 +401,63 @@ def _int16_payload_to_q1(payload: bytes, dims: tuple[int, ...]) -> bytes:
     return bytes(out)
 
 
+def _runtime_tensor_rows(dims: tuple[int, ...]) -> tuple[int, int]:
+    if not dims:
+        raise ValueError("runtime tensor dims are empty")
+    ncols = int(dims[0])
+    if ncols <= 0:
+        raise ValueError("runtime tensor row width is empty")
+    elems = math.prod(dims)
+    if elems % ncols:
+        raise ValueError("runtime tensor dims do not form whole rows")
+    return elems // ncols, ncols
+
+
+def _q1_ref_tool() -> Path | None:
+    value = os.environ.get("DS4_Q1_REF_TOOL")
+    if not value:
+        return None
+    path = Path(value)
+    if not path.exists():
+        raise ValueError(f"DS4_Q1_REF_TOOL does not exist: {path}")
+    return path
+
+
+def _convert_real_payload_to_q1(payload: bytes, info: GgufTensorInfo) -> bytes:
+    tool = _q1_ref_tool()
+    if tool is None:
+        raise ValueError(
+            f"{REAL_DEQUANT_BLOCKED_MESSAGE}; set DS4_Q1_REF_TOOL to the built "
+            "CPU reference helper before converting real type16/type10 payloads"
+        )
+    nrows, ncols = _runtime_tensor_rows(info.dims)
+    type_arg = "iq2_xxs" if info.type_id == 16 else "q2_k"
+    proc = subprocess.run(
+        [str(tool), "convert", type_arg, str(nrows), str(ncols)],
+        input=payload,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        check=False,
+    )
+    if proc.returncode != 0:
+        raise ValueError(
+            f"Q1_0 reference helper failed for {info.name}: "
+            f"exit={proc.returncode} stderr={proc.stderr.decode('utf-8', errors='replace')}"
+        )
+    expected = math.prod(info.dims) // Q1_BLOCK_WEIGHTS * Q1_BLOCK_BYTES
+    if len(proc.stdout) != expected:
+        raise ValueError(f"Q1_0 reference helper returned {len(proc.stdout)} bytes, expected {expected}")
+    return proc.stdout
+
+
+def _payload_to_q1(payload: bytes, info: GgufTensorInfo) -> bytes:
+    if info.type_id == SYNTHETIC_IQ2_TYPE_ID:
+        return _int16_payload_to_q1(payload, info.dims)
+    if info.type_id in {16, 10}:
+        return _convert_real_payload_to_q1(payload, info)
+    raise ValueError(f"{REAL_DEQUANT_BLOCKED_MESSAGE}; unsupported={info.name}:type{info.type_id}")
+
+
 def _parse_synthetic_gguf(path: Path) -> tuple[list[SyntheticSourceTensor], int, bytes]:
     data = path.read_bytes()
     if len(data) < 24:
@@ -640,11 +699,21 @@ def _runtime_conversion_preflight(model: GgufModel, tensor_names: Sequence[str])
     unsupported = [
         (name, model.tensors[name].type_id)
         for name in tensor_names
-        if model.tensors[name].type_id != SYNTHETIC_IQ2_TYPE_ID
+        if model.tensors[name].type_id not in {SYNTHETIC_IQ2_TYPE_ID, 16, 10}
     ]
     if unsupported:
         detail = ", ".join(f"{name}:type{type_id}" for name, type_id in unsupported)
         raise ValueError(f"{REAL_DEQUANT_BLOCKED_MESSAGE}; unsupported={detail}")
+    real = [
+        (name, model.tensors[name].type_id)
+        for name in tensor_names
+        if model.tensors[name].type_id in {16, 10}
+    ]
+    if real and _q1_ref_tool() is None:
+        detail = ", ".join(f"{name}:type{type_id}" for name, type_id in real)
+        raise ValueError(
+            f"{REAL_DEQUANT_BLOCKED_MESSAGE}; DS4_Q1_REF_TOOL not set; real={detail}"
+        )
 
 
 def convert_runtime_valid_single_layer_sidecar(
@@ -667,7 +736,7 @@ def convert_runtime_valid_single_layer_sidecar(
                 source_sha = hashlib.sha256(source_payload).hexdigest()
                 if name in plan.tensors_to_convert:
                     output_type = Q1_TYPE_ID
-                    output_payload = _int16_payload_to_q1(source_payload, info.dims)
+                    output_payload = _payload_to_q1(source_payload, info)
                     action = "convert_iq2_or_q2_to_q1_0"
                 else:
                     output_type = info.type_id

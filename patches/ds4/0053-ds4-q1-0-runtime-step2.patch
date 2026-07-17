@@ -1,5 +1,5 @@
 diff --git a/ds4.c b/ds4.c
-index a88e1aa..fdecb55 100644
+index 6ced79d..c6faa05 100644
 --- a/ds4.c
 +++ b/ds4.c
 @@ -2428,6 +2428,21 @@ typedef struct {
@@ -64,7 +64,34 @@ index a88e1aa..fdecb55 100644
      if (!iq1_s_mixed_cold_one_requested() &&
          iq1_s_sidecar_layer_active(model, layer_index)) {
          source.model = g_iq1_s_sidecar.model;
-@@ -3263,6 +3297,97 @@ static void iq1_s_sidecar_bind(
+@@ -3203,7 +3237,9 @@ static void iq1_s_sidecar_bind(
+     config_validate_model(model);
+     iq1_s_sidecar_validate_checkpoint_identity(model, primary_model);
+ 
+-    uint32_t first_layer = 0;
++    const uint32_t routed_first_layer = 3u;
++    const uint32_t routed_last_layer = DS4_N_LAYER - 1u;
++    uint32_t first_layer = routed_first_layer;
+     uint32_t last_layer = DS4_N_LAYER - 1;
+     const char *first_env = getenv("DS4_IQ1_S_LAYER_FIRST");
+     const char *last_env = getenv("DS4_IQ1_S_LAYER_LAST");
+@@ -3212,11 +3248,13 @@ static void iq1_s_sidecar_bind(
+         char *last_end = NULL;
+         errno = 0;
+         const unsigned long first = first_env && first_env[0]
+-            ? strtoul(first_env, &first_end, 10) : 0ul;
++            ? strtoul(first_env, &first_end, 10)
++            : (unsigned long)routed_first_layer;
+         const int first_errno = errno;
+         errno = 0;
+         const unsigned long last = last_env && last_env[0]
+-            ? strtoul(last_env, &last_end, 10) : (unsigned long)(DS4_N_LAYER - 1);
++            ? strtoul(last_env, &last_end, 10)
++            : (unsigned long)routed_last_layer;
+         const int last_errno = errno;
+         if (first_errno != 0 || last_errno != 0 ||
+             (first_env && first_env[0] &&
+@@ -3262,6 +3300,99 @@ static void iq1_s_sidecar_bind(
              DS4_N_LAYER, first_layer, last_layer);
  }
  
@@ -96,7 +123,9 @@ index a88e1aa..fdecb55 100644
 +             (first_end == first_env || *first_end != '\0')) ||
 +            (last_env && last_env[0] &&
 +             (last_end == last_env || *last_end != '\0')) ||
-+            first >= DS4_N_LAYER || last >= DS4_N_LAYER || first > last) {
++            first < routed_first_layer || first > routed_last_layer ||
++            last < routed_first_layer || last > routed_last_layer ||
++            first > last) {
 +            ds4_die("invalid Q1_0 sidecar layer range");
 +        }
 +        first_layer = (uint32_t)first;
@@ -104,7 +133,7 @@ index a88e1aa..fdecb55 100644
 +    }
 +
 +    uint64_t routed_bytes = 0;
-+    for (uint32_t il = 0; il < DS4_N_LAYER; il++) {
++    for (uint32_t il = first_layer; il <= last_layer; il++) {
 +        ds4_tensor *gate = required_tensorf(
 +            model, "blk.%u.ffn_gate_exps.weight", il);
 +        ds4_tensor *up = required_tensorf(
@@ -151,7 +180,7 @@ index a88e1aa..fdecb55 100644
 +    g_q1_0_sidecar.ready = true;
 +    fprintf(stderr,
 +            "ds4: Q1_0 routed-expert sidecar validated: "
-+            "layers=%u active=%u..%u gate_up_down=q1_0 block=128/18B "
++            "layers=%u active=%u..%u gate_up_down=q1_0 routed-only block=128/18B "
 +            "routed_bytes=%llu dispatch=fail-closed\n",
 +            DS4_N_LAYER,
 +            first_layer,
@@ -162,7 +191,7 @@ index a88e1aa..fdecb55 100644
  static void mtp_weights_bind(ds4_mtp_weights *w, const ds4_model *m) {
      memset(w, 0, sizeof(*w));
  
-@@ -16241,6 +16366,7 @@ struct ds4_engine {
+@@ -16240,6 +16371,7 @@ struct ds4_engine {
      ds4_model model;
      ds4_model mtp_model;
      ds4_model iq1_s_sidecar_model;
@@ -170,7 +199,7 @@ index a88e1aa..fdecb55 100644
      ds4_vocab vocab;
      ds4_weights weights;
      ds4_mtp_weights mtp_weights;
-@@ -16255,6 +16381,7 @@ struct ds4_engine {
+@@ -16254,6 +16386,7 @@ struct ds4_engine {
      bool metal_ready;
      bool mtp_ready;
      bool iq1_s_sidecar_ready;
@@ -178,7 +207,7 @@ index a88e1aa..fdecb55 100644
  };
  
  static bool cpu_directional_steering_enabled(
-@@ -19117,6 +19244,7 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+@@ -19116,6 +19249,7 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
      os_mmap_init(&e->model.mmap);
      os_mmap_init(&e->mtp_model.mmap);
      os_mmap_init(&e->iq1_s_sidecar_model.mmap);
@@ -186,7 +215,7 @@ index a88e1aa..fdecb55 100644
      e->backend = opt->backend;
      e->quality = opt->quality;
      e->mtp_draft_tokens = opt->mtp_draft_tokens > 0 ? opt->mtp_draft_tokens : 1;
-@@ -19153,15 +19281,18 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+@@ -19152,15 +19286,18 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
          if (e->backend != DS4_BACKEND_CUDA || e->model.bake_embedded) {
              fprintf(stderr,
                      "ds4: Q1_0 expert sidecar requires CUDA and a non-baked primary model\n");
@@ -213,7 +242,21 @@ index a88e1aa..fdecb55 100644
      }
      const char *iq1_s_sidecar_path = getenv("DS4_IQ1_S_EXPERT_SIDECAR");
      if (iq1_s_sidecar_path && iq1_s_sidecar_path[0]) {
-@@ -19354,6 +19485,8 @@ void ds4_engine_close(ds4_engine *e) {
+@@ -19180,6 +19317,13 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+         fprintf(stderr, "ds4: IQ1_S expert sidecar source: %s\n",
+                 iq1_s_sidecar_path);
+     }
++    if (e->q1_0_sidecar_ready && iq1_s_mixed_cold_one_requested()) {
++        fprintf(stderr,
++                "ds4: Q1_0 expert sidecar is not compatible with DS4_IQ1_S_MIXED_COLD_K=1 in this smoke\n");
++        ds4_engine_close(e);
++        *out = NULL;
++        return 1;
++    }
+     if (iq1_s_mixed_cold_one_requested() && !e->iq1_s_sidecar_ready) {
+         fprintf(stderr,
+                 "ds4: DS4_IQ1_S_MIXED_COLD_K=1 requires an IQ1_S expert sidecar\n");
+@@ -19353,6 +19497,8 @@ void ds4_engine_close(ds4_engine *e) {
  #endif
      ds4_reap_mask_host_reset();
      memset(&g_iq1_s_sidecar, 0, sizeof(g_iq1_s_sidecar));
@@ -223,10 +266,10 @@ index a88e1aa..fdecb55 100644
      if (e->mtp_ready) model_close(&e->mtp_model);
      model_close(&e->model);
 diff --git a/ds4_cuda.cu b/ds4_cuda.cu
-index bbd91b3..06a1650 100644
+index 00211d1..286e841 100644
 --- a/ds4_cuda.cu
 +++ b/ds4_cuda.cu
-@@ -15173,6 +15173,112 @@ __global__ static void moe_down_iq1_s_qwarp32_kernel(
+@@ -15172,6 +15172,112 @@ __global__ static void moe_down_iq1_s_qwarp32_kernel(
      }
  }
  

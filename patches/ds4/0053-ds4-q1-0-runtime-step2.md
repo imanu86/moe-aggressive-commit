@@ -17,6 +17,9 @@ Status:
 - Scope remains fail-closed. The patch adds metadata/offset binding for a Q1_0 routed-expert sidecar and compiles Q1_0 qwarp32 gate/up/down kernels, but does not dispatch them.
 - `DS4_Q1_0_EXPERT_SIDECAR` now opens and validates a sidecar instead of immediately aborting. The sidecar state is `g_q1_0_sidecar`, separate from `g_iq1_s_sidecar`.
 - Q1_0 routed source selection is separate from IQ1_S and has priority only when `g_q1_0_sidecar.ready` and the layer is inside `DS4_Q1_0_LAYER_FIRST..DS4_Q1_0_LAYER_LAST`.
+- The Q1_0 binder is routed-only: defaults are layer `3..42`, env overrides outside `3..42` fail closed, and layers `0..2` remain outside this sidecar contract instead of inflating the Q1_0 payload.
+- Type 41 acceptance is explicit to this sidecar binder through `tensor_expect_layout(... DS4_TENSOR_Q1_0 ...)`; the primary model's generic routed-expert validation still rejects Q1_0.
+- `DS4_Q1_0_EXPERT_SIDECAR` plus `DS4_IQ1_S_MIXED_COLD_K=1` fails closed at engine open for this smoke, because the first runtime path does not yet support mixed IQ1_S and Q1_0 route ownership in the same open.
 - Existing IQ1_S env-off behavior is preserved; the patch does not change `DS4_IQ1_S_EXPERT_SIDECAR`, `DS4_IQ1_S_MIXED_COLD_K`, or IQ1_S dispatch conditions.
 - Verification on 2026-07-17:
   - `python -m pytest tests\test_ds4_q1_runtime_step2_patch.py tests\test_ds4_q1_runtime_patch.py tests\test_ds4_q1_smoke.py -q`: 17 passed.
@@ -26,7 +29,7 @@ Status:
 
 Binder details:
 
-- Validates all `blk.%u.ffn_gate_exps.weight`, `blk.%u.ffn_up_exps.weight`, and `blk.%u.ffn_down_exps.weight` tensors as type 41/Q1_0.
+- Validates `blk.%u.ffn_gate_exps.weight`, `blk.%u.ffn_up_exps.weight`, and `blk.%u.ffn_down_exps.weight` tensors as type 41/Q1_0 only for the active routed layer range.
 - Gate/up layout: `[DS4_N_EMBD, DS4_N_FF_EXP, DS4_N_EXPERT]`.
 - Down layout: `[DS4_N_FF_EXP, DS4_N_EMBD, DS4_N_EXPERT]`.
 - Stores per-layer row/expert byte spans for gate/up/down using the step1 type-aware 128/18B row sizing.

@@ -23,14 +23,41 @@ def test_q1_0_type41_layout_and_block_size_are_declared() -> None:
     assert "case DS4_TENSOR_Q1_0: return 128u" in text
 
 
+def test_q1_0_is_not_admitted_as_primary_routed_expert_type() -> None:
+    text = _patch_text()
+    deleted_lines = [
+        line
+        for line in text.splitlines()
+        if line.startswith("-") and not line.startswith("---")
+    ]
+    assert "+           type == DS4_TENSOR_Q1_0 ||" not in text
+    assert not any("type == DS4_TENSOR_Q1_0" in line for line in deleted_lines)
+    assert "case DS4_TENSOR_Q1_0:    return sizeof(block_q1_0)" in text
+    assert "case DS4_TENSOR_Q1_0: return 128u" in text
+
+
 def test_q1_0_offsets_use_two_128_blocks_per_q8_k_block() -> None:
     text = _patch_text()
     assert "dev_dot_q1_0_q8_K_half128" in text
     assert "dev_dot_q1_0_q8_K_pair" in text
-    assert "const uint32_t byte_base = half * 16u" in text
     assert "const uint32_t q8_base = half * 128u" in text
     assert "y->bsums[half * 8u + i]" in text
+    assert "x->qs[byte]" in text
+    assert "x->qs[byte_base + byte]" not in text
     assert "return (t->dim[0] / block_elems) * routed_expert_block_bytes(t->type)" in text
+
+
+def test_q1_0_half128_indices_do_not_read_past_q1_block() -> None:
+    q1_indices = {byte for byte in range(16)}
+    q8_half0 = {0 * 128 + byte * 8 + lane for byte in range(16) for lane in range(8)}
+    q8_half1 = {1 * 128 + byte * 8 + lane for byte in range(16) for lane in range(8)}
+
+    assert min(q1_indices) == 0
+    assert max(q1_indices) == 15
+    assert min(q8_half0) == 0
+    assert max(q8_half0) == 127
+    assert min(q8_half1) == 128
+    assert max(q8_half1) == 255
 
 
 def test_q1_0_polarity_formula_is_positive_bit_and_fail_closed() -> None:

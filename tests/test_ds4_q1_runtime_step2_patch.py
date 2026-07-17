@@ -25,6 +25,12 @@ def test_step2_adds_separate_q1_sidecar_binder_and_source() -> None:
 
 def test_step2_binder_validates_type41_offsets_and_bounds() -> None:
     text = _patch_text()
+    assert "const uint32_t routed_first_layer = 3u" in text
+    assert "const uint32_t routed_last_layer = DS4_N_LAYER - 1u" in text
+    assert "uint32_t first_layer = routed_first_layer" in text
+    assert "for (uint32_t il = first_layer; il <= last_layer; il++)" in text
+    assert "first < routed_first_layer || first > routed_last_layer" in text
+    assert "last < routed_first_layer || last > routed_last_layer" in text
     assert "tensor_expect_layout(gate, DS4_TENSOR_Q1_0" in text
     assert "tensor_expect_layout(up, DS4_TENSOR_Q1_0" in text
     assert "tensor_expect_layout(down, DS4_TENSOR_Q1_0" in text
@@ -32,6 +38,21 @@ def test_step2_binder_validates_type41_offsets_and_bounds() -> None:
     assert "g_q1_0_sidecar.down_expert_bytes[il] = down_expert_bytes" in text
     assert "Q1_0 sidecar routed expert tensor extends past file end" in text
     assert "dispatch=fail-closed" in text
+
+
+def test_step2_accepts_type41_only_through_explicit_sidecar_binder() -> None:
+    text = _patch_text()
+    assert "q1_0_sidecar_bind" in text
+    assert "tensor_expect_layout(gate, DS4_TENSOR_Q1_0, 3" in text
+    assert "tensor_expect_layout(up, DS4_TENSOR_Q1_0, 3" in text
+    assert "tensor_expect_layout(down, DS4_TENSOR_Q1_0, 3" in text
+    assert "q1_0_sidecar_layer_active(model, layer_index)" in text
+
+
+def test_step2_q1_sidecar_rejects_iq1_mixed_smoke_combo() -> None:
+    text = _patch_text()
+    assert "e->q1_0_sidecar_ready && iq1_s_mixed_cold_one_requested()" in text
+    assert "Q1_0 expert sidecar is not compatible with DS4_IQ1_S_MIXED_COLD_K=1" in text
 
 
 def test_step2_adds_q1_qwarp32_kernels_without_dispatching_them() -> None:

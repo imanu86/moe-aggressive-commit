@@ -17,6 +17,8 @@ Status:
 
 - Scope is intentionally fail-closed. It adds Q1_0 type/layout recognition, a Q1_0 sidecar env binder guard, CUDA block layout, Q1_0 dequant/dot helpers against Q8_K, and a routed-dispatch discriminator separate from IQ1_S.
 - Q1_0 routed row sizing is type-aware: type 41 uses 128 elements per 18-byte block, while existing IQ/K routed experts keep `QK_K=256`.
+- Q1_0 dot geometry is fixed to two independent 128-weight blocks per Q8_K block: the second Q1_0 block reads `qs[0..15]` from its own block while Q8_K uses offset `128..255`, avoiding the prior `qs[16..31]` OOB pattern.
+- Q1_0 is not admitted by the generic primary routed-expert type gate. Until CPU prefill has Q1_0 kernels, type 41 is known for explicit sidecar sizing/dequant only; a primary GGUF with routed type 41 must fail closed during normal validation.
 - It does not enable full routed Q1_0 execution yet. `DS4_Q1_0_EXPERT_SIDECAR` exits during engine open and `gate_type=41` routed CUDA dispatch returns 0 with a diagnostic until selected-expert binding and kernels are wired.
 - It preserves the existing IQ1_S env-off path: no `DS4_IQ1_S_EXPERT_SIDECAR` or `DS4_IQ1_S_MIXED_COLD_K` behavior is deleted or retargeted.
 - Verification on 2026-07-17:
@@ -34,6 +36,6 @@ Primary source checks:
 Numbered next steps:
 
 1. Apply-check and compile this fail-closed step against a clean worktree generated from DS4 commit `d1505358f429128943cadd8424fcaf0f6911f931`.
-2. Add a Q1_0 selected-expert sidecar binder that validates only routed expert tensors (`gate/up` Q1_0, `down` Q1_0 or Q2_K), keeps IQ1_S sidecar state separate, and provides Q1_0 route pointers to CUDA without touching the authoritative IQ2 model.
+2. Add a Q1_0 selected-expert sidecar binder that validates only routed expert tensors (`gate/up/down` Q1_0 for layers 3..42), keeps IQ1_S sidecar state separate, and provides Q1_0 route pointers to CUDA without touching the authoritative IQ2 model.
 3. Port qwarp32 gate/up and down kernels from IQ1_S shape to Q1_0, using two 128-weight Q1_0 blocks per 256-weight Q8_K block for dot.
 4. Add CPU-only GGUF synthetic fixture tests for Q1_0 sidecar metadata and selected-route pointer offsets before any GPU smoke is proposed.

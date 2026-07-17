@@ -1,5 +1,5 @@
 diff --git a/ds4.c b/ds4.c
-index 4cda897..a88e1aa 100644
+index 4cda897..6ced79d 100644
 --- a/ds4.c
 +++ b/ds4.c
 @@ -188,12 +188,18 @@ typedef struct {
@@ -37,15 +37,7 @@ index 4cda897..a88e1aa 100644
      DS4_TENSOR_I32      = 26,
  };
  
-@@ -2659,6 +2667,7 @@ static bool tensor_is_routed_expert_type(uint32_t type) {
-     return type == DS4_TENSOR_IQ2_XXS ||
-            type == DS4_TENSOR_IQ1_S ||
-            type == DS4_TENSOR_Q2_K ||
-+           type == DS4_TENSOR_Q1_0 ||
-            type == DS4_TENSOR_Q4_K;
- }
- 
-@@ -2667,15 +2676,26 @@ static DS4_MAYBE_UNUSED uint64_t routed_expert_block_bytes(uint32_t type) {
+@@ -2667,15 +2675,26 @@ static DS4_MAYBE_UNUSED uint64_t routed_expert_block_bytes(uint32_t type) {
      case DS4_TENSOR_IQ2_XXS: return sizeof(block_iq2_xxs);
      case DS4_TENSOR_IQ1_S:   return sizeof(block_iq1_s);
      case DS4_TENSOR_Q2_K:    return sizeof(block_q2_K);
@@ -74,7 +66,7 @@ index 4cda897..a88e1aa 100644
  }
  
  static void tensor_expect_routed_expert(
-@@ -19128,6 +19148,21 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+@@ -19128,6 +19147,21 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
      config_validate_model(&e->model);
      weights_bind(&e->weights, &e->model);
      ds4_reap_mask_install_bake(&e->model, &e->weights);
@@ -97,7 +89,7 @@ index 4cda897..a88e1aa 100644
      if (iq1_s_sidecar_path && iq1_s_sidecar_path[0]) {
          if (e->backend != DS4_BACKEND_CUDA || e->model.bake_embedded) {
 diff --git a/ds4_cuda.cu b/ds4_cuda.cu
-index 590233e..bbd91b3 100644
+index 590233e..00211d1 100644
 --- a/ds4_cuda.cu
 +++ b/ds4_cuda.cu
 @@ -169,8 +169,15 @@ typedef struct {
@@ -116,7 +108,7 @@ index 590233e..bbd91b3 100644
  
  #include "ds4_iq2_tables_cuda.inc"
  #include "ds4_iq1_tables_cuda.inc"
-@@ -14643,6 +14650,53 @@ __device__ static float dev_dot_iq1_s_q8_K_block(
+@@ -14643,6 +14650,52 @@ __device__ static float dev_dot_iq1_s_q8_K_block(
      return d * sum;
  }
  
@@ -131,7 +123,6 @@ index 590233e..bbd91b3 100644
 +        const cuda_block_q1_0 *x,
 +        const cuda_block_q8_K *y,
 +        uint32_t half) {
-+    const uint32_t byte_base = half * 16u;
 +    const uint32_t q8_base = half * 128u;
 +    int32_t positive_sum = 0;
 +    int32_t sum_all = 0;
@@ -143,7 +134,7 @@ index 590233e..bbd91b3 100644
 +
 +#pragma unroll
 +    for (uint32_t byte = 0; byte < 16u; byte++) {
-+        const uint32_t bits = (uint32_t)x->qs[byte_base + byte];
++        const uint32_t bits = (uint32_t)x->qs[byte];
 +#pragma unroll
 +        for (uint32_t lane = 0; lane < 8u; lane++) {
 +            if ((bits >> lane) & 1u) {
@@ -170,7 +161,7 @@ index 590233e..bbd91b3 100644
  __device__ static void dev_dot_iq2_xxs_q8_K_block8_deq_lut(
          const cuda_block_iq2_xxs *x,
          const cuda_block_q8_K *y0,
-@@ -23309,7 +23363,9 @@ static int routed_moe_launch(
+@@ -23309,7 +23362,9 @@ static int routed_moe_launch(
      const uint32_t route_iq2_q2 = gate_type == 16u && down_type == 10u;
      const uint32_t route_iq1_s =
          gate_type == 19u && (down_type == 19u || down_type == 10u);
@@ -181,7 +172,7 @@ index 590233e..bbd91b3 100644
      if (route_iq1_s) {
          g_iq1_s_route_calls++;
          g_iq1_s_route_slots += (uint64_t)n_tokens * n_expert;
-@@ -23321,6 +23377,14 @@ static int routed_moe_launch(
+@@ -23321,6 +23376,14 @@ static int routed_moe_launch(
              return 0;
          }
      }

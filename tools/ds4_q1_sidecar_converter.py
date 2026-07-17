@@ -64,6 +64,10 @@ REAL_DEQUANT_PRIMARY_SOURCE = (
     "quantize_row_q1_0_ref, dequantize_row_q1_0, quantize_q1_0; "
     "ggml/src/ggml-common.h block layouts"
 )
+RUNTIME_QUALITY_NOTE = (
+    "production IQ2_XXS/Q2_K -> float -> Q1_0 reference conversion for real "
+    "payloads; not quality-optimal"
+)
 GGUF_VALUE_TYPE_UINT32 = 4
 GGUF_VALUE_TYPE_STRING = 8
 GGUF_VALUE_TYPE_ARRAY = 9
@@ -390,6 +394,29 @@ def _sha256_payload(mm: mmap.mmap, model: GgufModel, tensor: GgufTensorInfo) -> 
     return hashlib.sha256(_tensor_payload(mm, model, tensor)).hexdigest()
 
 
+def _sha256_file_streaming(path: Path, chunk_size: int = 8 * 1024 * 1024) -> str:
+    h = hashlib.sha256()
+    with path.open("rb") as f:
+        while True:
+            chunk = f.read(chunk_size)
+            if not chunk:
+                break
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def _helper_manifest_record() -> dict[str, object] | None:
+    tool = _q1_ref_tool()
+    if tool is None:
+        return None
+    resolved = tool.resolve()
+    return {
+        "path": str(resolved),
+        "size": resolved.stat().st_size,
+        "sha256": _sha256_file_streaming(resolved),
+    }
+
+
 def _int16_payload_to_q1(payload: bytes, dims: tuple[int, ...]) -> bytes:
     elems = math.prod(dims)
     if elems * 2 != len(payload):
@@ -648,6 +675,21 @@ def _required_runtime_metadata(model: GgufModel) -> list[GgufMetadata]:
     return list(model.metadata.values())
 
 
+def _runtime_metadata_manifest(metadata: Sequence[GgufMetadata]) -> list[dict[str, object]]:
+    out: list[dict[str, object]] = []
+    for m in metadata:
+        raw = m.raw_value
+        out.append(
+            {
+                "key": m.key,
+                "value_type": m.value_type,
+                "value": m.value,
+                "raw_sha256": hashlib.sha256(raw).hexdigest() if raw is not None else None,
+            }
+        )
+    return out
+
+
 def runtime_sidecar_tensor_names(layer: int, n_layers: int = 43) -> tuple[list[str], list[str]]:
     if not (3 <= layer <= 42):
         raise ValueError("runtime Q1_0 sidecar target layer must be in 3..42")
@@ -784,22 +826,20 @@ def convert_runtime_valid_single_layer_sidecar(
         "layer": layer,
         "derived_from_IQ2": True,
         "not_quality_optimal": True,
-        "quality_note": "deterministic IQ2XXS/Q2_K-style int16 fixture dequant -> float -> Q1_0; not quality-optimal",
+        "quality_note": RUNTIME_QUALITY_NOTE,
+        "conversion_source": REAL_DEQUANT_PRIMARY_SOURCE,
+        "helper": _helper_manifest_record(),
         "source": {"path": str(source), "size": model.size},
         "output": {
             "path": str(output),
             "size": output.stat().st_size,
-            "sha256": hashlib.sha256(output.read_bytes()).hexdigest(),
+            "sha256": _sha256_file_streaming(output),
         },
         "estimated_read_bytes": plan.estimated_read_bytes,
         "estimated_output_bytes": plan.estimated_output_bytes,
-        "metadata": [
-            {"key": m.key, "value_type": m.value_type, "value": m.value}
-            for m in metadata
-        ],
+        "metadata": _runtime_metadata_manifest(metadata),
         "tensors": [asdict(t) for t in adjusted],
         "full_quality_path": "rebuild Q1_0 from richer checkpoint/original precision weights, not from IQ2-derived values",
-        "blocked_real_dequant_source": REAL_DEQUANT_PRIMARY_SOURCE,
     }
     manifest.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
     validate_runtime_sidecar_manifest(source, output, manifest)
@@ -812,11 +852,64 @@ def validate_runtime_sidecar_manifest(source: Path, output: Path, manifest: Path
         raise ValueError("unexpected runtime manifest schema")
     if obj.get("derived_from_IQ2") is not True or obj.get("not_quality_optimal") is not True:
         raise ValueError("runtime sidecar must be marked derived and not quality-optimal")
+    if obj.get("quality_note") != RUNTIME_QUALITY_NOTE:
+        raise ValueError("runtime quality note/provenance mismatch")
+    if obj.get("conversion_source") != REAL_DEQUANT_PRIMARY_SOURCE:
+        raise ValueError("runtime conversion source provenance mismatch")
+    if "blocked_real_dequant_source" in obj:
+        raise ValueError("stale blocked_real_dequant_source field is not allowed")
     model = parse_gguf_header(source)
     sidecar = parse_gguf_header(output)
+    if obj.get("output", {}).get("sha256") != _sha256_file_streaming(output):
+        raise ValueError("runtime sidecar full hash mismatch")
+    helper = obj.get("helper")
+    current_helper = _helper_manifest_record()
+    if current_helper is not None:
+        if helper != current_helper:
+            raise ValueError("runtime helper provenance mismatch")
+    elif helper is not None:
+        helper_path = Path(str(helper.get("path", "")))
+        if helper_path.exists():
+            expected = {
+                "path": str(helper_path.resolve()),
+                "size": helper_path.stat().st_size,
+                "sha256": _sha256_file_streaming(helper_path),
+            }
+            if helper != expected:
+                raise ValueError("runtime helper provenance mismatch")
     if "general.name" not in sidecar.metadata or sidecar.metadata["general.name"].value != model.metadata["general.name"].value:
         raise ValueError("general.name provenance mismatch")
+    metadata_records = obj.get("metadata", [])
+    metadata_by_key = {m["key"]: m for m in metadata_records}
+    if len(metadata_by_key) != len(metadata_records):
+        raise ValueError("duplicate runtime metadata records")
+    for key, src_meta in model.metadata.items():
+        side_meta = sidecar.metadata.get(key)
+        rec = metadata_by_key.get(key)
+        if side_meta is None or rec is None:
+            raise ValueError(f"missing runtime metadata record: {key}")
+        raw_sha = hashlib.sha256(src_meta.raw_value or b"").hexdigest()
+        if (
+            side_meta.value_type != src_meta.value_type
+            or side_meta.value != src_meta.value
+            or rec.get("value_type") != src_meta.value_type
+            or rec.get("value") != src_meta.value
+            or rec.get("raw_sha256") != raw_sha
+        ):
+            raise ValueError(f"runtime metadata provenance mismatch: {key}")
     records = obj.get("tensors", [])
+    if not isinstance(records, list):
+        raise ValueError("runtime tensor records must be a list")
+    copy_names, convert_names = runtime_sidecar_tensor_names(int(obj["layer"]))
+    expected_names = list(copy_names) + list(convert_names)
+    record_names = [rec.get("name") for rec in records]
+    if len(record_names) != len(set(record_names)):
+        raise ValueError("duplicate runtime tensor records")
+    if set(record_names) != set(expected_names):
+        raise ValueError("runtime tensor record set mismatch")
+    for name in expected_names:
+        if name not in sidecar.tensors:
+            raise ValueError(f"missing runtime sidecar tensor: {name}")
     with source.open("rb") as sf, output.open("rb") as of:
         with mmap.mmap(sf.fileno(), 0, access=mmap.ACCESS_READ) as smm, mmap.mmap(of.fileno(), 0, access=mmap.ACCESS_READ) as omm:
             for rec in records:

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import struct
+import hashlib
 
 from tools.ds4_q1_sidecar_converter import (
     GGUF_VALUE_TYPE_STRING,
@@ -217,6 +218,14 @@ def test_runtime_valid_single_layer_sidecar_fixture(tmp_path) -> None:
     assert obj["schema"] == RUNTIME_MANIFEST_SCHEMA
     assert obj["derived_from_IQ2"] is True
     assert obj["not_quality_optimal"] is True
+    assert "production IQ2_XXS/Q2_K -> float -> Q1_0" in obj["quality_note"]
+    assert "int16 fixture" not in obj["quality_note"]
+    assert "blocked_real_dequant_source" not in obj
+    assert obj["helper"] is None
+    assert obj["output"]["sha256"] == hashlib.sha256(sidecar.read_bytes()).hexdigest()
+    metadata_records = {m["key"]: m for m in obj["metadata"]}
+    assert metadata_records["general.name"]["value"] == "ds4-mini-fixture"
+    assert metadata_records["general.name"]["raw_sha256"]
 
     parsed = parse_gguf_header(sidecar)
     assert parsed.metadata["general.name"].value == "ds4-mini-fixture"
@@ -232,6 +241,7 @@ def test_runtime_valid_single_layer_sidecar_fixture(tmp_path) -> None:
     copy_records = [t for t in validated["tensors"] if t["action"] == "copy_byte_identical"]
     assert copy_records
     assert all(t["source_sha256"] == t["output_sha256"] for t in copy_records)
+    assert len(validated["tensors"]) == 43 * 2 + 40 + 3
 
 
 def test_runtime_sidecar_rejects_out_of_range_layer(tmp_path) -> None:
@@ -243,6 +253,45 @@ def test_runtime_sidecar_rejects_out_of_range_layer(tmp_path) -> None:
         assert "3..42" in str(exc)
     else:
         raise AssertionError("layer 2 should not be accepted for Q1_0 runtime sidecar")
+
+
+def test_runtime_validator_rejects_incomplete_duplicate_or_stale_metadata(tmp_path) -> None:
+    source = tmp_path / "ds4-mini-primary.gguf"
+    sidecar = tmp_path / "ds4-mini-q1-sidecar.gguf"
+    manifest = tmp_path / "ds4-mini-q1-sidecar.manifest.json"
+    _runtime_fixture(source, target_layer=42)
+    convert_runtime_valid_single_layer_sidecar(source, sidecar, manifest, layer=42)
+
+    obj = json.loads(manifest.read_text(encoding="utf-8"))
+    original = json.dumps(obj, indent=2, sort_keys=True)
+    obj["tensors"] = obj["tensors"][:-1]
+    manifest.write_text(json.dumps(obj), encoding="utf-8")
+    try:
+        validate_runtime_sidecar_manifest(source, sidecar, manifest)
+    except ValueError as exc:
+        assert "record set mismatch" in str(exc)
+    else:
+        raise AssertionError("validator accepted an incomplete runtime tensor manifest")
+
+    obj = json.loads(original)
+    obj["tensors"].append(obj["tensors"][0])
+    manifest.write_text(json.dumps(obj), encoding="utf-8")
+    try:
+        validate_runtime_sidecar_manifest(source, sidecar, manifest)
+    except ValueError as exc:
+        assert "duplicate runtime tensor records" in str(exc)
+    else:
+        raise AssertionError("validator accepted duplicate runtime tensor records")
+
+    obj = json.loads(original)
+    obj["metadata"][0]["value"] = "wrong-model-name"
+    manifest.write_text(json.dumps(obj), encoding="utf-8")
+    try:
+        validate_runtime_sidecar_manifest(source, sidecar, manifest)
+    except ValueError as exc:
+        assert "metadata provenance mismatch" in str(exc)
+    else:
+        raise AssertionError("validator accepted stale runtime metadata")
 
 
 def test_runtime_real_iq2_payload_conversion_is_blocked_without_verified_dequant(tmp_path) -> None:

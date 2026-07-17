@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import os
+import hashlib
 import struct
 import subprocess
 from pathlib import Path
@@ -220,6 +221,11 @@ def test_converter_accepts_real_types_only_with_explicit_ref_tool(tmp_path, monk
     monkeypatch.setenv("DS4_Q1_REF_TOOL", str(tool))
     obj = convert_runtime_valid_single_layer_sidecar(source, sidecar, manifest, layer=42)
     assert obj["schema"] == "ds4_q1_0_runtime_sidecar_manifest_v1"
+    assert obj["helper"]["path"] == str(tool.resolve())
+    assert obj["helper"]["size"] == tool.stat().st_size
+    assert obj["helper"]["sha256"] == hashlib.sha256(tool.read_bytes()).hexdigest()
+    assert "production IQ2_XXS/Q2_K -> float -> Q1_0" in obj["quality_note"]
+    assert "blocked_real_dequant_source" not in obj
     parsed = parse_gguf_header(sidecar)
     for suffix in ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight"):
         assert parsed.tensors[f"blk.42.{suffix}"].type_id == Q1_TYPE_ID

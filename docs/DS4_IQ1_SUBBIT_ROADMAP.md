@@ -29,6 +29,10 @@ Primary local references:
 - `ds4_iq1_s_bench.cu:1-8` upstream provenance:
   `ggml-org/llama.cpp` commit `b15ca938ad00aa6b3ee6c2edda7363fd02826b18`,
   files `ggml/src/ggml-common.h` and `ggml/src/ggml-cuda/vecdotq.cuh`.
+- `gguf-tools/quants.h:52` and `gguf-tools/quants.c:73` already know
+  `Q1_0` as type 41, block size 128, 18 bytes per block. That is 1.125 bpw
+  metadata in the tools, but the DS4 runtime `ds4.c` routed tensor binder does
+  not yet accept Q1_0 for execution.
 
 ## Size Ledger
 
@@ -39,6 +43,7 @@ Per routed expert:
 | Current IQ2_XXS gate/up + Q2_K down | 6.7500 | 67.5000 |
 | IQ1_S gate/up/down | 4.6875 | 46.8750 |
 | IQ1_S gate/up + Q2_K down | 5.7500 | 57.5000 |
+| Q1_0 g128 candidate | 3.3750 | 33.7500 |
 | Ideal uniform 1.25 bpw | 3.7500 | 37.5000 |
 | Ideal uniform 1.125 bpw | 3.3750 | 33.7500 |
 | Ideal uniform 1.0 bpw | 3.0000 | 30.0000 |
@@ -123,3 +128,31 @@ Sub-1bit is a memory hypothesis, not a quality result. Bonsai or other 1-bit
 schemes may be useful as prior art, but DS4 integration should start with
 ggml-compatible block layouts and DS4 tensor geometry. Any quality claim needs
 held-out prompts, n>=3, L0-L3 grading, and exact provenance.
+
+## Fork / Prior-Art Survey Addendum
+
+This was added after a targeted fork check.
+
+- PrismML Bonsai / llama.cpp Q1_0 is the best immediate lead. The Bonsai demo
+  reports 1-bit Bonsai GGUF availability and says Q1_0 is merged in upstream
+  llama.cpp for CPU, Metal, CUDA, and Vulkan. For DS4, this maps naturally to a
+  1.125 bpw accounting target if using 18 bytes per 128 weights, but DS4 runtime
+  support still has to be implemented and tested.
+- Mintplex/prism-ml-llama.cpp is an experimental bridge fork for Bonsai 1-bit
+  models. It is useful for format archaeology, but the README itself says it is
+  not production-ready.
+- carlosfundora/llama.cpp-1-bit-turbo is a ROCm-focused fork that remaps GGUF
+  type 41 to `Q1_0_g128` and claims HIP/CUDA/Metal dequant and dot-product
+  kernels. It is useful as a kernel/layout reference, but not a drop-in RTX 3060
+  DS4 patch.
+- LittleBit is true sub-1-bit research, down to 0.1 bpw, but it relies on latent
+  factorization/QAT and changes the layer representation. It is not a direct
+  GGUF block quantizer for DS4 experts.
+- BTC-LLM and UltraSketchLLM are relevant sub-1-bit algorithmic leads, but they
+  are not immediately DS4/ggml routed-expert compatible. Treat them as research
+  candidates after Q1_0 metadata-only and synthetic smoke tests.
+
+Conclusion: for near-term DS4 work, Q1_0 g128/type 41 is more concrete than a
+new homegrown sub-1bit block. The next smoke should validate metadata and
+synthetic Q1_0 expert sizing first, then decide whether to port runtime
+dot/dequant.

@@ -26,3 +26,8 @@ def test_hot_iq2_plus_warm_iq1_is_larger_than_all_iq1() -> None:
     mixed = mixed_hot_iq2_warm_iq1(8)
     assert mixed["all_routed_gib"] == 47.51953125
     assert mixed["all_routed_bytes"] > IQ1_ALL.all_routed_bytes
+
+
+def test_q1_0_g128_candidate_matches_1p125_bpw_accounting() -> None:
+    assert BLOCK_BYTES["Q1_0_G128"] == 36
+    assert BLOCK_BYTES["Q1_0_G128"] * 8 / 256 == 1.125

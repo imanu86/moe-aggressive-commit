@@ -29,6 +29,10 @@ BLOCK_BYTES: dict[str, int] = {
     "IQ2_XXS": 66,
     "Q2_K": 84,
     "IQ1_S": 50,
+    # Q1_0 g128 uses 18 bytes per 128 weights, normalized here to 36 bytes
+    # per 256-weight DS4 accounting unit. DS4 gguf-tools has type 41 metadata;
+    # ds4.c routed execution does not yet accept this tensor type.
+    "Q1_0_G128": 36,
     "SUB1_32B": 32,
     "SUB1_34B": 34,
     "SUB1_36B": 36,
@@ -45,6 +49,7 @@ PROVENANCE = {
             "ds4.c:920-941 GGUF type id 19 = iq1_s",
             "ds4.c:3179-3243 IQ1_S sidecar binding and down Q2_K[0..2]",
             "ds4_cuda.cu:2025-2232 IQ1_S RAM cache/preload path",
+            "gguf-tools/quants.h:52 and quants.c:73 Q1_0 type 41 metadata only",
             "ds4_iq1_s_bench.cu:1-8 upstream llama.cpp provenance",
         ],
     },
@@ -167,6 +172,7 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
     layouts = [
         CURRENT_IQ2,
         IQ1_ALL,
+        ExpertLayout("q1_0_g128_candidate", "Q1_0_G128", "Q1_0_G128", "Q1_0_G128"),
         ExpertLayout("iq1_s_gate_up_q2k_down", "IQ1_S", "IQ1_S", "Q2_K"),
         ExpertLayout("sub1_1p000bpw_uniform_32B", "SUB1_32B", "SUB1_32B", "SUB1_32B"),
         ExpertLayout("sub1_1p0625bpw_uniform_34B", "SUB1_34B", "SUB1_34B", "SUB1_34B"),
@@ -218,6 +224,32 @@ def build_report(args: argparse.Namespace) -> dict[str, Any]:
                 "finding": "Full routed IQ1_S residency requires 46.875 GiB and paged on 64GB Windows with DS4 IQ2 runtime.",
                 "all_iq1_routed_gib": IQ1_ALL.all_routed_bytes / GIB,
                 "claim_scope": "Use smaller resident tiers or tighter ultracold format.",
+            },
+        ],
+        "fork_survey": [
+            {
+                "name": "PrismML Bonsai / upstream llama.cpp Q1_0",
+                "status": "primary reusable lead",
+                "finding": "Bonsai 1-bit GGUF uses Q1_0-style blocks; public demo says Q1_0 is merged upstream for CPU, Metal, CUDA, and Vulkan.",
+                "ds4_gap": "DS4 runtime routed tensors still accept IQ1_S, not Q1_0 type 41.",
+            },
+            {
+                "name": "llama.cpp-1-bit-turbo",
+                "status": "fork lead",
+                "finding": "ROCm-focused fork remaps GGUF type 41 to Q1_0_g128 and claims GPU dot/dequant kernels.",
+                "ds4_gap": "AMD/ROCm target; useful layout/kernel reference, not drop-in for RTX 3060 DS4 CUDA.",
+            },
+            {
+                "name": "LittleBit",
+                "status": "research lead",
+                "finding": "Sub-1-bit latent factorization supports 1.0 down to 0.1 bpw, but requires QAT/factorized layers.",
+                "ds4_gap": "Not GGUF block-compatible and not prompt-free post-training conversion.",
+            },
+            {
+                "name": "BTC-LLM / UltraSketchLLM",
+                "status": "research lead",
+                "finding": "Sub-1-bit papers/code exist, but integration is custom and not directly DS4/ggml routed-expert compatible.",
+                "ds4_gap": "Treat as algorithmic inspiration, not immediate runtime patch.",
             },
         ],
         "recommended_next_smoke": {

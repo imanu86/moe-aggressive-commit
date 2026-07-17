@@ -6,6 +6,13 @@ Base checkout: `C:\Users\imanu\AppData\Local\Packages\Claude_pzs8sxrjxfjjc\Local
 
 Base commit: `d1505358f429128943cadd8424fcaf0f6911f931`
 
+Base blob checks:
+
+- `ds4.c`: `4cda897f489d42f131cf681447d4cb5919256c2b`
+- `ds4_cuda.cu`: `590233ef127262177b18a794d963bf00ac88c735`
+
+Patch encoding: ASCII/UTF-8 bytes, no BOM, no NUL, LF newlines. The first four bytes are `64 69 66 66` (`diff`).
+
 Status:
 
 - Scope is intentionally fail-closed. It adds Q1_0 type/layout recognition, a Q1_0 sidecar env binder guard, CUDA block layout, Q1_0 dequant/dot helpers against Q8_K, and a routed-dispatch discriminator separate from IQ1_S.
@@ -14,7 +21,7 @@ Status:
 - It preserves the existing IQ1_S env-off path: no `DS4_IQ1_S_EXPERT_SIDECAR` or `DS4_IQ1_S_MIXED_COLD_K` behavior is deleted or retargeted.
 - Verification on 2026-07-17:
   - `python -m pytest tests\test_ds4_q1_runtime_patch.py tests\test_ds4_q1_smoke.py -q`: 11 passed.
-  - `git apply --check` against clean DS4 commit `d1505358f429128943cadd8424fcaf0f6911f931`: passed.
+  - `git apply --check` against clean DS4 commit `d1505358f429128943cadd8424fcaf0f6911f931`, without whitespace flags: passed.
   - Temporary source clone build: `cmake --build build --config Release --target ds4_cuda` with `DS4_CUDA_ARCHITECTURES=86`: passed. No GPU runtime, DS4 launch, or model file access was used.
 
 Primary source checks:

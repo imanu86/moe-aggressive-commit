@@ -4,6 +4,14 @@ Patch artifact: `patches/ds4/0053-ds4-q1-0-runtime-step2.patch`
 
 Base: apply after `patches/ds4/0052-ds4-q1-0-runtime-step1.patch` on DS4 commit `d1505358f429128943cadd8424fcaf0f6911f931`.
 
+Base blob checks before step1:
+
+- `ds4.c`: `4cda897f489d42f131cf681447d4cb5919256c2b`
+- `ds4_cuda.cu`: `590233ef127262177b18a794d963bf00ac88c735`
+- `ds4_gpu.h`: `92609ec4fe17fbf36b548cff5b820a10aa0d8511`
+
+Patch encoding: ASCII/UTF-8 bytes, no BOM, no NUL, LF newlines. The first four bytes are `64 69 66 66` (`diff`).
+
 Status:
 
 - Scope remains fail-closed. The patch adds metadata/offset binding for a Q1_0 routed-expert sidecar and compiles Q1_0 qwarp32 gate/up/down kernels, but does not dispatch them.
@@ -13,7 +21,7 @@ Status:
 - Verification on 2026-07-17:
   - `python -m pytest tests\test_ds4_q1_runtime_step2_patch.py tests\test_ds4_q1_runtime_patch.py tests\test_ds4_q1_smoke.py -q`: 17 passed.
   - `python tools\ds4_q1_smoke.py --write-fixture <work>\q1_0_type41_fixture.gguf --pretty`: wrote a 3-tensor type41 GGUF fixture with offsets `0,64,128`.
-  - Apply sequence check: step1 then step2 applied cleanly to DS4 commit `d1505358f429128943cadd8424fcaf0f6911f931`.
+  - Apply sequence check: step1 then step2 applied cleanly to DS4 commit `d1505358f429128943cadd8424fcaf0f6911f931`, without whitespace flags.
   - Temporary source clone build: `cmake --build build --config Release --target ds4_cuda ds4` with `DS4_CUDA_ARCHITECTURES=86`: passed. No GPU runtime, DS4 launch, or real model file access was used.
 
 Binder details:

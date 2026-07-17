@@ -13,6 +13,7 @@ import json
 import math
 import struct
 from dataclasses import asdict, dataclass
+from pathlib import Path
 from typing import Any, Iterable
 
 GIB = 1024**3
@@ -32,6 +33,9 @@ Q8K_BLOCK_WEIGHTS = 256
 
 IQ2_XXS_BLOCK_BYTES = 66
 Q2_K_BLOCK_BYTES = 84
+GGUF_MAGIC = 0x46554747
+GGUF_VERSION = 3
+GGUF_ALIGNMENT = 32
 
 
 @dataclass(frozen=True)
@@ -160,6 +164,117 @@ def q1_row_bytes(input_dim: int) -> int:
 
 def q1_expert_bytes(input_dim: int, output_dim: int) -> int:
     return output_dim * q1_row_bytes(input_dim)
+
+
+def _align(value: int, alignment: int = GGUF_ALIGNMENT) -> int:
+    return ((value + alignment - 1) // alignment) * alignment
+
+
+def _gguf_string(value: str) -> bytes:
+    raw = value.encode("utf-8")
+    return struct.pack("<Q", len(raw)) + raw
+
+
+@dataclass(frozen=True)
+class SyntheticGgufTensor:
+    name: str
+    dims: tuple[int, ...]
+    type_id: int
+    offset: int
+    nbytes: int
+
+
+def synthetic_q1_gguf_tensors(experts: int = 2) -> list[SyntheticGgufTensor]:
+    if experts <= 0:
+        raise ValueError("fixture experts must be positive")
+    dims = (Q1_BLOCK_WEIGHTS, 1, experts)
+    blocks = math.prod(dims) // Q1_BLOCK_WEIGHTS
+    nbytes = blocks * Q1_BLOCK_BYTES
+    names = (
+        "blk.3.ffn_gate_exps.weight",
+        "blk.3.ffn_up_exps.weight",
+        "blk.3.ffn_down_exps.weight",
+    )
+    offset = 0
+    tensors: list[SyntheticGgufTensor] = []
+    for name in names:
+        tensors.append(SyntheticGgufTensor(name, dims, Q1_TYPE_ID, offset, nbytes))
+        offset = _align(offset + nbytes)
+    return tensors
+
+
+def write_synthetic_q1_gguf(path: Path, experts: int = 2) -> list[SyntheticGgufTensor]:
+    """Write a tiny GGUF v3 fixture with routed expert tensors of type 41.
+
+    The file is deliberately not a complete DS4 model.  It is a CPU-only fixture
+    for metadata, tensor type, offset, and Q1_0 payload accounting.
+    """
+
+    tensors = synthetic_q1_gguf_tensors(experts)
+    header = bytearray()
+    header += struct.pack("<I", GGUF_MAGIC)
+    header += struct.pack("<I", GGUF_VERSION)
+    header += struct.pack("<Q", len(tensors))
+    header += struct.pack("<Q", 0)
+    for tensor in tensors:
+        header += _gguf_string(tensor.name)
+        header += struct.pack("<I", len(tensor.dims))
+        for dim in tensor.dims:
+            header += struct.pack("<Q", dim)
+        header += struct.pack("<I", tensor.type_id)
+        header += struct.pack("<Q", tensor.offset)
+    data_start = _align(len(header))
+    payload = bytearray(data_start - len(header))
+    for tensor_index, tensor in enumerate(tensors):
+        while len(payload) < tensor.offset:
+            payload.append(0)
+        block = quantize_q1_0(deterministic_values(Q1_BLOCK_WEIGHTS, seed=41 + tensor_index)).pack()
+        repeats = tensor.nbytes // Q1_BLOCK_BYTES
+        payload += block * repeats
+        while len(payload) < _align(tensor.offset + tensor.nbytes):
+            payload.append(0)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_bytes(bytes(header) + bytes(payload))
+    return tensors
+
+
+def read_synthetic_q1_gguf(path: Path) -> list[SyntheticGgufTensor]:
+    data = path.read_bytes()
+    if len(data) < 24:
+        raise ValueError("fixture is too small")
+    magic, version = struct.unpack_from("<II", data, 0)
+    if magic != GGUF_MAGIC or version != GGUF_VERSION:
+        raise ValueError("fixture is not GGUF v3")
+    tensor_count, kv_count = struct.unpack_from("<QQ", data, 8)
+    if kv_count != 0:
+        raise ValueError("fixture parser expects zero key-values")
+    pos = 24
+    tensors: list[SyntheticGgufTensor] = []
+    for _ in range(tensor_count):
+        name_len = struct.unpack_from("<Q", data, pos)[0]
+        pos += 8
+        name = data[pos : pos + name_len].decode("utf-8")
+        pos += name_len
+        n_dims = struct.unpack_from("<I", data, pos)[0]
+        pos += 4
+        dims = struct.unpack_from("<" + "Q" * n_dims, data, pos)
+        pos += 8 * n_dims
+        type_id, offset = struct.unpack_from("<IQ", data, pos)
+        pos += 12
+        if type_id == Q1_TYPE_ID:
+            elems = math.prod(dims)
+            if elems % Q1_BLOCK_WEIGHTS:
+                raise ValueError("Q1_0 fixture tensor is not block aligned")
+            nbytes = elems // Q1_BLOCK_WEIGHTS * Q1_BLOCK_BYTES
+        else:
+            raise ValueError(f"unexpected fixture type {type_id}")
+        tensors.append(SyntheticGgufTensor(name, tuple(int(d) for d in dims), type_id, int(offset), int(nbytes)))
+    data_start = _align(pos)
+    for tensor in tensors:
+        abs_start = data_start + tensor.offset
+        if abs_start + tensor.nbytes > len(data):
+            raise ValueError("fixture tensor payload extends past file end")
+    return tensors
 
 
 def current_iq2_row_bytes(input_dim: int, block_bytes: int) -> int:
@@ -301,7 +416,21 @@ def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--pretty", action="store_true")
     parser.add_argument("--output", default=None)
+    parser.add_argument("--write-fixture", default=None)
     args = parser.parse_args()
+    if args.write_fixture:
+        tensors = write_synthetic_q1_gguf(Path(args.write_fixture))
+        payload = json.dumps(
+            {"fixture": args.write_fixture, "tensors": [asdict(t) for t in tensors]},
+            indent=2 if args.pretty else None,
+            sort_keys=True,
+        )
+        if args.output:
+            with open(args.output, "w", encoding="utf-8") as f:
+                f.write(payload + "\n")
+        else:
+            print(payload)
+        return 0
     payload = json.dumps(smoke_report(), indent=2 if args.pretty else None, sort_keys=True)
     if args.output:
         with open(args.output, "w", encoding="utf-8") as f:

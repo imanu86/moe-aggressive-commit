@@ -11,10 +11,13 @@ from tools.ds4_q1_smoke import (
     expert_offsets,
     q1_row_bytes,
     quantize_q1_0,
+    read_synthetic_q1_gguf,
     reference_dot,
     residual_entry,
     routed_sizes,
     smoke_report,
+    synthetic_q1_gguf_tensors,
+    write_synthetic_q1_gguf,
 )
 
 
@@ -75,3 +78,22 @@ def test_smoke_report_passes_without_model_payloads() -> None:
     assert report["synthetic_block"]["dot_pass"] is True
     assert report["sizes"]["q1_all_routed_gib"] == pytest.approx(33.75)
     assert report["sizes"]["q1_all_routed_gib"] * GIB == report["sizes"]["q1_expert_bytes"] * 256 * 40
+
+
+def test_synthetic_q1_gguf_fixture_type41_offsets(tmp_path) -> None:
+    path = tmp_path / "q1_0_type41_fixture.gguf"
+    expected = synthetic_q1_gguf_tensors(experts=2)
+    written = write_synthetic_q1_gguf(path, experts=2)
+    parsed = read_synthetic_q1_gguf(path)
+    assert written == expected
+    assert parsed == expected
+    assert path.stat().st_size < 1024
+    assert [t.name for t in parsed] == [
+        "blk.3.ffn_gate_exps.weight",
+        "blk.3.ffn_up_exps.weight",
+        "blk.3.ffn_down_exps.weight",
+    ]
+    assert all(t.type_id == Q1_TYPE_ID for t in parsed)
+    assert all(t.dims == (Q1_BLOCK_WEIGHTS, 1, 2) for t in parsed)
+    assert all(t.nbytes == 2 * Q1_BLOCK_BYTES for t in parsed)
+    assert [t.offset for t in parsed] == [0, 64, 128]

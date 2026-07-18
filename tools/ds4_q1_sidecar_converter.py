@@ -102,6 +102,7 @@ GGUF_TENSOR_BLOCK = {
 }
 RUNTIME_COPY_TENSOR_SUFFIXES = ("attn_norm.weight", "ffn_norm.weight")
 RUNTIME_COPY_ROUTED_SUFFIX = "exp_probs_b.bias"
+RUNTIME_COPY_ROUTER_SUFFIX = "ffn_gate_inp.weight"
 RUNTIME_ROUTED_SUFFIXES = {
     "gate": "ffn_gate_exps.weight",
     "up": "ffn_up_exps.weight",
@@ -699,6 +700,8 @@ def runtime_sidecar_tensor_names(layer: int, n_layers: int = 43) -> tuple[list[s
             copy_names.append(f"blk.{il}.{suffix}")
     for il in range(3, 43):
         copy_names.append(f"blk.{il}.{RUNTIME_COPY_ROUTED_SUFFIX}")
+    # Primary router IDs address the experts stored in this sidecar.
+    copy_names.append(f"blk.{layer}.{RUNTIME_COPY_ROUTER_SUFFIX}")
     convert_names = [
         f"blk.{layer}.{suffix}" for suffix in RUNTIME_ROUTED_SUFFIXES.values()
     ]

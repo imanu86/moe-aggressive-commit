@@ -81,6 +81,8 @@ Do this as an isolated DS4 patch only after coordination with the main task.
    - Validate gate/up/down routed tensors as Q1_0 for layers 3..42 only at
      first; leave layers 0..2 out unless a real sidecar proves matching layout.
    - Preserve existing checkpoint identity checks for non-routed controls.
+   - Copy and compare byte-identical `ffn_gate_inp.weight` for every active
+     Q1 layer before primary-router IDs may address sidecar experts.
 
 3. Add CUDA layout and dot helper.
    - In `ds4_cuda.cu`, add:

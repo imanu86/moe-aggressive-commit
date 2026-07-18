@@ -54,6 +54,14 @@ def _runtime_fixture(path, target_layer: int = 42) -> None:
                 _i16_payload(4, seed=200 + layer),
             )
         )
+    tensors.append(
+        GgufWriteTensor(
+            f"blk.{target_layer}.ffn_gate_inp.weight",
+            (8,),
+            SYNTHETIC_IQ2_TYPE_ID,
+            _i16_payload(8, seed=500 + target_layer),
+        )
+    )
     for kind, type_id in (
         ("ffn_gate_exps.weight", SYNTHETIC_IQ2_TYPE_ID),
         ("ffn_up_exps.weight", SYNTHETIC_IQ2_TYPE_ID),
@@ -95,6 +103,14 @@ def _runtime_real_like_blocked_fixture(path, target_layer: int = 42) -> None:
                 _i16_payload(4, seed=300 + layer),
             )
         )
+    tensors.append(
+        GgufWriteTensor(
+            f"blk.{target_layer}.ffn_gate_inp.weight",
+            (8,),
+            SYNTHETIC_IQ2_TYPE_ID,
+            _i16_payload(8, seed=600 + target_layer),
+        )
+    )
     for kind in ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight"):
         tensors.append(
             GgufWriteTensor(
@@ -138,6 +154,14 @@ def _runtime_mixed_real_fixture(path, target_layer: int = 42) -> None:
                 _i16_payload(4, seed=700 + layer),
             )
         )
+    tensors.append(
+        GgufWriteTensor(
+            f"blk.{target_layer}.ffn_gate_inp.weight",
+            (8,),
+            SYNTHETIC_IQ2_TYPE_ID,
+            _i16_payload(8, seed=800 + target_layer),
+        )
+    )
     iq2_payload = struct.pack("<e", 1.0) + bytes(64)
     q2_payload = _q2_k_fixture_payload()
     for kind, type_id, payload in (
@@ -210,7 +234,7 @@ def test_runtime_valid_single_layer_sidecar_fixture(tmp_path) -> None:
 
     plan = estimate_runtime_sidecar_plan(source, sidecar, manifest, layer=42)
     assert plan.layer == 42
-    assert len(plan.tensors_to_copy) == 43 * 2 + 40
+    assert len(plan.tensors_to_copy) == 43 * 2 + 40 + 1
     assert len(plan.tensors_to_convert) == 3
     assert plan.estimated_read_bytes < source.stat().st_size
 
@@ -234,6 +258,7 @@ def test_runtime_valid_single_layer_sidecar_fixture(tmp_path) -> None:
         assert f"blk.{layer}.ffn_norm.weight" in parsed.tensors
     for layer in range(3, 43):
         assert f"blk.{layer}.exp_probs_b.bias" in parsed.tensors
+    assert "blk.42.ffn_gate_inp.weight" in parsed.tensors
     for suffix in ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight"):
         assert parsed.tensors[f"blk.42.{suffix}"].type_id == Q1_TYPE_ID
 
@@ -241,7 +266,7 @@ def test_runtime_valid_single_layer_sidecar_fixture(tmp_path) -> None:
     copy_records = [t for t in validated["tensors"] if t["action"] == "copy_byte_identical"]
     assert copy_records
     assert all(t["source_sha256"] == t["output_sha256"] for t in copy_records)
-    assert len(validated["tensors"]) == 43 * 2 + 40 + 3
+    assert len(validated["tensors"]) == 43 * 2 + 40 + 1 + 3
 
 
 def test_runtime_sidecar_rejects_out_of_range_layer(tmp_path) -> None:

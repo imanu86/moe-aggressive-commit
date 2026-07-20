@@ -1,0 +1,294 @@
+{
+  "schema": "ds4_ternary_b_single_expert_probe_v1",
+  "mode": "CPU-only read-only single expert",
+  "model": {
+    "path": "C:\\ds4-models\\ds4-2bit.gguf",
+    "bytes": 86720111488,
+    "sha256_scope": "selected expert payloads only"
+  },
+  "selection": {
+    "rule": "first non-hash routed layer after DS4_N_HASH_LAYER=3, expert 0",
+    "layer": 3,
+    "expert": 0
+  },
+  "sources": {
+    "gguf_parser": "local ds4_iq1_s_bench.cu parser pattern, reimplemented narrow in this workspace",
+    "dequant": "transcribed from local ds4.c/ds4_cuda.cu IQ2_XXS/Q2_K layouts and dot_f32 math",
+    "ds4_c": "C:\\Users\\imanu\\Documents\\Codex\\2026-07-07\\cia\\work\\ds4-win-publish-g126-20260718-v2\\ds4.c"
+  },
+  "self_test": {
+    "iq2_all_one_max_abs": 0.0,
+    "q2_all_two_max_abs": 0.0,
+    "q1_alternating_max_abs": 0.0,
+    "pass": true
+  },
+  "gguf": {
+    "data_base": 5333824,
+    "alignment": 32
+  },
+  "phase0": {
+    "status": "PASS",
+    "tensors": {
+      "gate": {
+        "name": "blk.3.ffn_gate_exps.weight",
+        "dtype": "IQ2_XXS",
+        "type_id": 16,
+        "shape": [
+          4096,
+          2048,
+          256
+        ],
+        "tensor_physical_offset": 5450459968,
+        "expert_physical_offset": 5450459968,
+        "row_bytes": 1056,
+        "expert_bytes": 2162688,
+        "payload_sha256": "b12ad7bd291c914f23a4aaea0ac99f5f549ed69d0a871604072e1cd77388cf0e"
+      },
+      "up": {
+        "name": "blk.3.ffn_up_exps.weight",
+        "dtype": "IQ2_XXS",
+        "type_id": 16,
+        "shape": [
+          4096,
+          2048,
+          256
+        ],
+        "tensor_physical_offset": 6708751168,
+        "expert_physical_offset": 6708751168,
+        "row_bytes": 1056,
+        "expert_bytes": 2162688,
+        "payload_sha256": "de07385af534f354d8041d1d5494383488027f83cbdeba56877a22767d34a26c"
+      },
+      "down": {
+        "name": "blk.3.ffn_down_exps.weight",
+        "dtype": "Q2_K",
+        "type_id": 10,
+        "shape": [
+          2048,
+          4096,
+          256
+        ],
+        "tensor_physical_offset": 6004108096,
+        "expert_physical_offset": 6004108096,
+        "row_bytes": 672,
+        "expert_bytes": 2752512,
+        "payload_sha256": "5f2195082e9783ba7610827c225b1689770daa51f750a513f8fa770c129dbb52"
+      }
+    }
+  },
+  "phase1": {
+    "status": "PASS",
+    "note": "weight-domain baseline only; no activation traces used",
+    "tensors": {
+      "gate": {
+        "name": "gate",
+        "values": 8388608,
+        "teacher_l2": 75.8893956739325,
+        "teacher_abs_max": 0.13594406843185425,
+        "curves": [
+          {
+            "target_bpw": 1.725,
+            "k_nonzero_per_g128": 76,
+            "zero_frac": 0.40625,
+            "entropy_ideal_bpw_plus_scale": 1.6932394033980525,
+            "mask_sign_bpw_plus_scale": 1.71875,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.8670209536303529,
+            "nmse": 0.24827466596602438,
+            "max_abs_error": 0.1063460260629654
+          },
+          {
+            "target_bpw": 1.5,
+            "k_nonzero_per_g128": 48,
+            "zero_frac": 0.625,
+            "entropy_ideal_bpw_plus_scale": 1.4544340029249652,
+            "mask_sign_bpw_plus_scale": 1.5,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.8897437590775551,
+            "nmse": 0.2083560431826751,
+            "max_abs_error": 0.10099558159708977
+          },
+          {
+            "target_bpw": 1.3,
+            "k_nonzero_per_g128": 22,
+            "zero_frac": 0.828125,
+            "entropy_ideal_bpw_plus_scale": 0.9588510641115653,
+            "mask_sign_bpw_plus_scale": 1.296875,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.7649314001845815,
+            "nmse": 0.41487995301176755,
+            "max_abs_error": 0.09069118648767471
+          },
+          {
+            "target_bpw": 1.15,
+            "k_nonzero_per_g128": 3,
+            "zero_frac": 0.9765625,
+            "entropy_ideal_bpw_plus_scale": 0.3087662258990285,
+            "mask_sign_bpw_plus_scale": 1.1484375,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.36151453907893955,
+            "nmse": 0.8693072380345594,
+            "max_abs_error": 0.09506422281265259
+          }
+        ]
+      },
+      "up": {
+        "name": "up",
+        "values": 8388608,
+        "teacher_l2": 76.21714560662642,
+        "teacher_abs_max": 0.1331632137298584,
+        "curves": [
+          {
+            "target_bpw": 1.725,
+            "k_nonzero_per_g128": 76,
+            "zero_frac": 0.40625,
+            "entropy_ideal_bpw_plus_scale": 1.6932394033980525,
+            "mask_sign_bpw_plus_scale": 1.71875,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.8670372284269235,
+            "nmse": 0.24824644452187042,
+            "max_abs_error": 0.10222511179745197
+          },
+          {
+            "target_bpw": 1.5,
+            "k_nonzero_per_g128": 48,
+            "zero_frac": 0.625,
+            "entropy_ideal_bpw_plus_scale": 1.4544340029249652,
+            "mask_sign_bpw_plus_scale": 1.5,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.8895885830701669,
+            "nmse": 0.20863215287134168,
+            "max_abs_error": 0.09669497236609459
+          },
+          {
+            "target_bpw": 1.3,
+            "k_nonzero_per_g128": 22,
+            "zero_frac": 0.828125,
+            "entropy_ideal_bpw_plus_scale": 0.9588510641115653,
+            "mask_sign_bpw_plus_scale": 1.296875,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.7651953250617938,
+            "nmse": 0.4144761145036834,
+            "max_abs_error": 0.08614501729607582
+          },
+          {
+            "target_bpw": 1.15,
+            "k_nonzero_per_g128": 3,
+            "zero_frac": 0.9765625,
+            "entropy_ideal_bpw_plus_scale": 0.3087662258990285,
+            "mask_sign_bpw_plus_scale": 1.1484375,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.36191892315170177,
+            "nmse": 0.8690146930647296,
+            "max_abs_error": 0.09883952140808105
+          }
+        ]
+      },
+      "down": {
+        "name": "down",
+        "values": 8388608,
+        "teacher_l2": 71.03773222429625,
+        "teacher_abs_max": 0.13378143310546875,
+        "curves": [
+          {
+            "target_bpw": 1.725,
+            "k_nonzero_per_g128": 76,
+            "zero_frac": 0.40625,
+            "entropy_ideal_bpw_plus_scale": 1.6932394033980525,
+            "mask_sign_bpw_plus_scale": 1.71875,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.9019935874592037,
+            "nmse": 0.18640756818242082,
+            "max_abs_error": 0.10332052409648895
+          },
+          {
+            "target_bpw": 1.5,
+            "k_nonzero_per_g128": 48,
+            "zero_frac": 0.625,
+            "entropy_ideal_bpw_plus_scale": 1.4544340029249652,
+            "mask_sign_bpw_plus_scale": 1.5,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.8660226979580974,
+            "nmse": 0.25000468662146863,
+            "max_abs_error": 0.09736450389027596
+          },
+          {
+            "target_bpw": 1.3,
+            "k_nonzero_per_g128": 22,
+            "zero_frac": 0.828125,
+            "entropy_ideal_bpw_plus_scale": 0.9588510641115653,
+            "mask_sign_bpw_plus_scale": 1.296875,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.742446081560813,
+            "nmse": 0.4487738159750007,
+            "max_abs_error": 0.08564602211117744
+          },
+          {
+            "target_bpw": 1.15,
+            "k_nonzero_per_g128": 3,
+            "zero_frac": 0.9765625,
+            "entropy_ideal_bpw_plus_scale": 0.3087662258990285,
+            "mask_sign_bpw_plus_scale": 1.1484375,
+            "base3_A_bpw": 1.7265625,
+            "cosine": 0.3758953940482025,
+            "nmse": 0.858702652733343,
+            "max_abs_error": 0.09411811828613281
+          }
+        ]
+      }
+    },
+    "expert": {
+      "name": "expert_gate_up_down_concat",
+      "values": 25165824,
+      "teacher_l2": 128.89768446230275,
+      "teacher_abs_max": 0.13594406843185425,
+      "curves": [
+        {
+          "target_bpw": 1.725,
+          "k_nonzero_per_g128": 76,
+          "zero_frac": 0.40625,
+          "entropy_ideal_bpw_plus_scale": 1.6932394033980525,
+          "mask_sign_bpw_plus_scale": 1.71875,
+          "base3_A_bpw": 1.7265625,
+          "cosine": 0.8777961642268829,
+          "nmse": 0.22947389406885033,
+          "max_abs_error": 0.1063460260629654
+        },
+        {
+          "target_bpw": 1.5,
+          "k_nonzero_per_g128": 48,
+          "zero_frac": 0.625,
+          "entropy_ideal_bpw_plus_scale": 1.4544340029249652,
+          "mask_sign_bpw_plus_scale": 1.5,
+          "base3_A_bpw": 1.7265625,
+          "cosine": 0.8825516807682793,
+          "nmse": 0.22110253077339673,
+          "max_abs_error": 0.10099558159708977
+        },
+        {
+          "target_bpw": 1.3,
+          "k_nonzero_per_g128": 22,
+          "zero_frac": 0.828125,
+          "entropy_ideal_bpw_plus_scale": 0.9588510641115653,
+          "mask_sign_bpw_plus_scale": 1.296875,
+          "base3_A_bpw": 1.7265625,
+          "cosine": 0.7582655564329355,
+          "nmse": 0.4250333459277121,
+          "max_abs_error": 0.09069118648767471
+        },
+        {
+          "target_bpw": 1.15,
+          "k_nonzero_per_g128": 3,
+          "zero_frac": 0.9765625,
+          "entropy_ideal_bpw_plus_scale": 0.3087662258990285,
+          "mask_sign_bpw_plus_scale": 1.1484375,
+          "base3_A_bpw": 1.7265625,
+          "cosine": 0.366081928770062,
+          "nmse": 0.8659840214280142,
+          "max_abs_error": 0.09883952140808105
+        }
+      ]
+    }
+  },
+  "elapsed_seconds": 14.524454593658447
+}

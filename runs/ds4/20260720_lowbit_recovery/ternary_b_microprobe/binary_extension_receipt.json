@@ -1,0 +1,210 @@
+{
+  "schema": "ds4_binary_extension_single_expert_v1",
+  "mode": "CPU-only read-only; no activation traces; no end-to-end claims",
+  "selection": {
+    "rule": "first non-hash routed layer after DS4_N_HASH_LAYER=3, expert 0",
+    "layer": 3,
+    "expert": 0
+  },
+  "teacher": {
+    "path": "C:\\ds4-models\\ds4-2bit.gguf",
+    "bytes": 86720111488
+  },
+  "q1_sidecar": {
+    "path": "C:\\ds4-models\\ds4-q1-layers0-42-derived.gguf",
+    "bytes": 39048344416,
+    "expected_expert_bytes": 3538944,
+    "expected_bpw": 1.125,
+    "data_base": 21344,
+    "alignment": 32
+  },
+  "decoder_self_test": {
+    "iq2_all_one_max_abs": 0.0,
+    "q2_all_two_max_abs": 0.0,
+    "q1_alternating_max_abs": 0.0,
+    "pass": true
+  },
+  "tensors": {
+    "gate": {
+      "name": "blk.3.ffn_gate_exps.weight",
+      "q1_dtype": "Q1_0",
+      "q1_type_id": 41,
+      "shape": [
+        4096,
+        2048,
+        256
+      ],
+      "q1_tensor_physical_offset": 85357408,
+      "q1_expert_physical_offset": 85357408,
+      "q1_row_bytes": 576,
+      "q1_expert_bytes": 1179648,
+      "q1_payload_sha256": "0c88b12889279390d097fc41dcfc62322cba56f7b83fb63ab37b3a578418e308",
+      "teacher_payload_sha256": "b12ad7bd291c914f23a4aaea0ac99f5f549ed69d0a871604072e1cd77388cf0e",
+      "existing_q1_vs_teacher": {
+        "cosine": 0.811746651280979,
+        "nmse": 0.3410673741342892,
+        "max_abs_error": 0.11482590436935425
+      },
+      "refit_binary_vs_teacher": {
+        "cosine": 0.8117466686560236,
+        "nmse": 0.3410673459259867,
+        "max_abs_error": 0.11482630297541618
+      },
+      "existing_vs_refit_binary": {
+        "cosine": 0.9999999785954764,
+        "nmse": 4.280913155950649e-08,
+        "max_abs_error": 7.636845111846924e-06
+      },
+      "scale_sign_delta": {
+        "scale_mean_abs_delta": 3.810524844993779e-06,
+        "scale_max_abs_delta": 7.636845111846924e-06,
+        "scale_rmse_delta": 4.400731460860553e-06,
+        "sign_mismatch_rate": 0.0
+      }
+    },
+    "up": {
+      "name": "blk.3.ffn_up_exps.weight",
+      "q1_dtype": "Q1_0",
+      "q1_type_id": 41,
+      "shape": [
+        4096,
+        2048,
+        256
+      ],
+      "q1_tensor_physical_offset": 387347296,
+      "q1_expert_physical_offset": 387347296,
+      "q1_row_bytes": 576,
+      "q1_expert_bytes": 1179648,
+      "q1_payload_sha256": "a767f714b5a7a657698755fa8e45a45c87e488e83a8951fc2e11b770a05fcc48",
+      "teacher_payload_sha256": "de07385af534f354d8041d1d5494383488027f83cbdeba56877a22767d34a26c",
+      "existing_q1_vs_teacher": {
+        "cosine": 0.8116525295045676,
+        "nmse": 0.3412201713489621,
+        "max_abs_error": 0.11052542924880981
+      },
+      "refit_binary_vs_teacher": {
+        "cosine": 0.8116525467584869,
+        "nmse": 0.3412201433405995,
+        "max_abs_error": 0.11052790470421314
+      },
+      "existing_vs_refit_binary": {
+        "cosine": 0.9999999787422338,
+        "nmse": 4.251554853825127e-08,
+        "max_abs_error": 7.640570402145386e-06
+      },
+      "scale_sign_delta": {
+        "scale_mean_abs_delta": 3.8109831450583442e-06,
+        "scale_max_abs_delta": 7.640570402145386e-06,
+        "scale_rmse_delta": 4.4040453156168135e-06,
+        "sign_mismatch_rate": 0.0
+      }
+    },
+    "down": {
+      "name": "blk.3.ffn_down_exps.weight",
+      "q1_dtype": "Q1_0",
+      "q1_type_id": 41,
+      "shape": [
+        2048,
+        4096,
+        256
+      ],
+      "q1_tensor_physical_offset": 689337184,
+      "q1_expert_physical_offset": 689337184,
+      "q1_row_bytes": 288,
+      "q1_expert_bytes": 1179648,
+      "q1_payload_sha256": "1289b5212239095337f57496e4303507216119ed411eea08009047f689f5e494",
+      "teacher_payload_sha256": "5f2195082e9783ba7610827c225b1689770daa51f750a513f8fa770c129dbb52",
+      "existing_q1_vs_teacher": {
+        "cosine": 0.8106380967945668,
+        "nmse": 0.3428658760258446,
+        "max_abs_error": 0.11313629150390625
+      },
+      "refit_binary_vs_teacher": {
+        "cosine": 0.8106381166242419,
+        "nmse": 0.3428658438760646,
+        "max_abs_error": 0.11313140392303467
+      },
+      "existing_vs_refit_binary": {
+        "cosine": 0.9999999755385348,
+        "nmse": 4.892412928750752e-08,
+        "max_abs_error": 7.62939453125e-06
+      },
+      "scale_sign_delta": {
+        "scale_mean_abs_delta": 3.8069994161560317e-06,
+        "scale_max_abs_delta": 7.62939453125e-06,
+        "scale_rmse_delta": 4.3977720203222785e-06,
+        "sign_mismatch_rate": 0.0
+      }
+    }
+  },
+  "ternary_reference": {
+    "expert_curves": [
+      {
+        "target_bpw": 1.725,
+        "k_nonzero_per_g128": 76,
+        "zero_frac": 0.40625,
+        "entropy_ideal_bpw_plus_scale": 1.6932394033980525,
+        "mask_sign_bpw_plus_scale": 1.71875,
+        "base3_A_bpw": 1.7265625,
+        "cosine": 0.8777961642268829,
+        "nmse": 0.22947389406885033,
+        "max_abs_error": 0.1063460260629654
+      },
+      {
+        "target_bpw": 1.5,
+        "k_nonzero_per_g128": 48,
+        "zero_frac": 0.625,
+        "entropy_ideal_bpw_plus_scale": 1.4544340029249652,
+        "mask_sign_bpw_plus_scale": 1.5,
+        "base3_A_bpw": 1.7265625,
+        "cosine": 0.8825516807682793,
+        "nmse": 0.22110253077339673,
+        "max_abs_error": 0.10099558159708977
+      },
+      {
+        "target_bpw": 1.3,
+        "k_nonzero_per_g128": 22,
+        "zero_frac": 0.828125,
+        "entropy_ideal_bpw_plus_scale": 0.9588510641115653,
+        "mask_sign_bpw_plus_scale": 1.296875,
+        "base3_A_bpw": 1.7265625,
+        "cosine": 0.7582655564329355,
+        "nmse": 0.4250333459277121,
+        "max_abs_error": 0.09069118648767471
+      },
+      {
+        "target_bpw": 1.15,
+        "k_nonzero_per_g128": 3,
+        "zero_frac": 0.9765625,
+        "entropy_ideal_bpw_plus_scale": 0.3087662258990285,
+        "mask_sign_bpw_plus_scale": 1.1484375,
+        "base3_A_bpw": 1.7265625,
+        "cosine": 0.366081928770062,
+        "nmse": 0.8659840214280142,
+        "max_abs_error": 0.09883952140808105
+      }
+    ],
+    "note": "copied from ternary probe receipt for same expert"
+  },
+  "expert": {
+    "q1_total_expert_bytes": 3538944,
+    "q1_expected_expert_bytes_match": true,
+    "existing_q1_vs_teacher": {
+      "cosine": 0.8113771892789736,
+      "nmse": 0.3416670567180154,
+      "max_abs_error": 0.11482590436935425
+    },
+    "refit_binary_vs_teacher": {
+      "cosine": 0.811377207356644,
+      "nmse": 0.3416670273825113,
+      "max_abs_error": 0.11482630297541618
+    },
+    "existing_vs_refit_binary": {
+      "cosine": 0.9999999777199432,
+      "nmse": 4.456034214484853e-08,
+      "max_abs_error": 7.640570402145386e-06
+    }
+  },
+  "interpretation": "If refit_binary_vs_teacher is close to existing_q1_vs_teacher, the present Q1 issue is not primarily the Q1_0 byte format; it is the lack of training/recovery or activation-aware refit. If refit is materially better, the conversion recipe/scale-sign fit is suspect before format.",
+  "elapsed_seconds": 12.114243984222412
+}

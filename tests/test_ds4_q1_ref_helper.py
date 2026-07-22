@@ -230,3 +230,13 @@ def test_converter_accepts_real_types_only_with_explicit_ref_tool(tmp_path, monk
     for suffix in ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight"):
         assert parsed.tensors[f"blk.42.{suffix}"].type_id == Q1_TYPE_ID
     validate_runtime_sidecar_manifest(source, sidecar, manifest)
+
+    monkeypatch.delenv("DS4_Q1_REF_TOOL")
+    unavailable_tool = tool.with_suffix(".unavailable")
+    tool.rename(unavailable_tool)
+    try:
+        validate_runtime_sidecar_manifest(source, sidecar, manifest)
+    except ValueError as exc:
+        assert "helper provenance path is unavailable" in str(exc)
+    else:
+        raise AssertionError("validator accepted an unavailable recorded Q1 helper")

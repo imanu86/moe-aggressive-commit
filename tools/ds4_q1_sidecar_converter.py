@@ -1,9 +1,9 @@
-"""Synthetic DS4 Q1_0 sidecar converter and validator.
+"""DS4 Q1_0 sidecar converter and validator.
 
-This tool deliberately works only on tiny synthetic fixtures. It models the
-deterministic path `IQ2/Q2 -> float -> Q1_0` for metadata, offset, provenance,
-and hash validation, but it is not quality-optimal and must not be used as an
-accuracy claim for a real DS4 model.
+Synthetic fixtures exercise metadata, offsets, provenance, and hashes. Real
+IQ2_XXS/Q2_K payload conversion is enabled only through the explicitly bound
+reference helper and remains an IQ2-derived transport experiment, not a claim
+that Q1_0 preserves full-model quality.
 """
 
 from __future__ import annotations
@@ -16,6 +16,7 @@ import mmap
 import os
 import subprocess
 import struct
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Iterable, Sequence
@@ -53,6 +54,7 @@ SYNTHETIC_IQ2_TYPE_ID = 25
 SYNTHETIC_Q2_TYPE_ID = 25
 MANIFEST_SCHEMA = "ds4_q1_0_sidecar_manifest_v1"
 RUNTIME_MANIFEST_SCHEMA = "ds4_q1_0_runtime_sidecar_manifest_v1"
+RUNTIME_EXTENSION_MANIFEST_SCHEMA = "ds4_q1_0_runtime_sidecar_extension_manifest_v1"
 REAL_DEQUANT_BLOCKED_MESSAGE = (
     "BLOCKED: real IQ2_XXS/Q2_K -> Q1_0 conversion requires provenance-verified "
     "production dequantizers and block-level golden tests; synthetic int16 fixture "
@@ -201,12 +203,30 @@ class GgufModel:
 @dataclass(frozen=True)
 class RuntimeSidecarPlan:
     layer: int
+    layers: tuple[int, ...]
     source: Path
     output: Path
     manifest: Path
     tensors_to_copy: tuple[str, ...]
     tensors_to_convert: tuple[str, ...]
     estimated_read_bytes: int
+    estimated_output_bytes: int
+    note: str = "estimate only; no model payload read"
+
+
+@dataclass(frozen=True)
+class RuntimeSidecarExtensionPlan:
+    primary: Path
+    base_sidecar: Path
+    output: Path
+    manifest: Path
+    layers: tuple[int, ...]
+    base_layers: tuple[int, ...]
+    primary_copy_tensors: tuple[str, ...]
+    primary_convert_tensors: tuple[str, ...]
+    base_reuse_tensors: tuple[str, ...]
+    estimated_primary_read_bytes: int
+    estimated_base_read_bytes: int
     estimated_output_bytes: int
     note: str = "estimate only; no model payload read"
 
@@ -691,9 +711,20 @@ def _runtime_metadata_manifest(metadata: Sequence[GgufMetadata]) -> list[dict[st
     return out
 
 
-def runtime_sidecar_tensor_names(layer: int, n_layers: int = 43) -> tuple[list[str], list[str]]:
-    if not (3 <= layer <= 42):
-        raise ValueError("runtime Q1_0 sidecar target layer must be in 3..42")
+def _runtime_layers_from_range(layer_first: int = 3, layer_last: int = 42) -> tuple[int, ...]:
+    if not (3 <= layer_first <= layer_last <= 42):
+        raise ValueError("runtime Q1_0 sidecar target layer range must be in 3..42")
+    return tuple(range(layer_first, layer_last + 1))
+
+
+def runtime_sidecar_tensor_names_for_layers(layers: Sequence[int], n_layers: int = 43) -> tuple[list[str], list[str]]:
+    layer_tuple = tuple(int(layer) for layer in layers)
+    if not layer_tuple:
+        raise ValueError("runtime Q1_0 sidecar layer list must not be empty")
+    if any(layer < 3 or layer > 42 for layer in layer_tuple):
+        raise ValueError("runtime Q1_0 sidecar target layers must be in 3..42")
+    if len(set(layer_tuple)) != len(layer_tuple):
+        raise ValueError("runtime Q1_0 sidecar target layers must be unique")
     copy_names: list[str] = []
     for il in range(n_layers):
         for suffix in RUNTIME_COPY_TENSOR_SUFFIXES:
@@ -701,10 +732,32 @@ def runtime_sidecar_tensor_names(layer: int, n_layers: int = 43) -> tuple[list[s
     for il in range(3, 43):
         copy_names.append(f"blk.{il}.{RUNTIME_COPY_ROUTED_SUFFIX}")
     # Primary router IDs address the experts stored in this sidecar.
-    copy_names.append(f"blk.{layer}.{RUNTIME_COPY_ROUTER_SUFFIX}")
-    convert_names = [
-        f"blk.{layer}.{suffix}" for suffix in RUNTIME_ROUTED_SUFFIXES.values()
-    ]
+    for layer in layer_tuple:
+        copy_names.append(f"blk.{layer}.{RUNTIME_COPY_ROUTER_SUFFIX}")
+    convert_names = []
+    for layer in layer_tuple:
+        convert_names.extend(f"blk.{layer}.{suffix}" for suffix in RUNTIME_ROUTED_SUFFIXES.values())
+    return copy_names, convert_names
+
+
+def runtime_sidecar_tensor_names(layer: int, n_layers: int = 43) -> tuple[list[str], list[str]]:
+    if not (3 <= layer <= 42):
+        raise ValueError("runtime Q1_0 sidecar target layer must be in 3..42")
+    return runtime_sidecar_tensor_names_for_layers((layer,), n_layers=n_layers)
+
+
+def _extension_layers_from_range(layer_first: int = 0, layer_last: int = 42) -> tuple[int, ...]:
+    if not (0 <= layer_first <= layer_last <= 42):
+        raise ValueError("runtime Q1_0 extension layer range must be in 0..42")
+    return tuple(range(layer_first, layer_last + 1))
+
+
+def _runtime_primary_tensors_for_layers(layers: Sequence[int]) -> tuple[list[str], list[str]]:
+    copy_names: list[str] = []
+    convert_names: list[str] = []
+    for layer in layers:
+        copy_names.append(f"blk.{layer}.{RUNTIME_COPY_ROUTER_SUFFIX}")
+        convert_names.extend(f"blk.{layer}.{suffix}" for suffix in RUNTIME_ROUTED_SUFFIXES.values())
     return copy_names, convert_names
 
 
@@ -714,7 +767,8 @@ def estimate_runtime_sidecar_plan(
     manifest: Path,
     layer: int = 3,
 ) -> RuntimeSidecarPlan:
-    copy_names, convert_names = runtime_sidecar_tensor_names(layer)
+    layers = (layer,)
+    copy_names, convert_names = runtime_sidecar_tensor_names_for_layers(layers)
     model = parse_gguf_header(source)
     missing = [name for name in copy_names + convert_names if name not in model.tensors]
     if missing:
@@ -730,6 +784,7 @@ def estimate_runtime_sidecar_plan(
     output_bytes = sum(model.tensors[name].nbytes for name in copy_names) + q1_bytes
     return RuntimeSidecarPlan(
         layer=layer,
+        layers=layers,
         source=source,
         output=output,
         manifest=manifest,
@@ -737,6 +792,103 @@ def estimate_runtime_sidecar_plan(
         tensors_to_convert=tuple(convert_names),
         estimated_read_bytes=read_bytes,
         estimated_output_bytes=output_bytes,
+    )
+
+
+def estimate_runtime_layer_range_sidecar_plan(
+    source: Path,
+    output: Path,
+    manifest: Path,
+    layer_first: int = 3,
+    layer_last: int = 42,
+) -> RuntimeSidecarPlan:
+    layers = _runtime_layers_from_range(layer_first, layer_last)
+    copy_names, convert_names = runtime_sidecar_tensor_names_for_layers(layers)
+    model = parse_gguf_header(source)
+    missing = [name for name in copy_names + convert_names if name not in model.tensors]
+    if missing:
+        raise ValueError(f"source model missing tensors required for runtime sidecar: {missing[:8]}")
+    read_bytes = sum(model.tensors[name].nbytes for name in copy_names + convert_names)
+    q1_bytes = 0
+    for name in convert_names:
+        info = model.tensors[name]
+        elems = math.prod(info.dims)
+        if elems % Q1_BLOCK_WEIGHTS:
+            raise ValueError(f"{name} is not Q1 block aligned")
+        q1_bytes += elems // Q1_BLOCK_WEIGHTS * Q1_BLOCK_BYTES
+    output_bytes = sum(model.tensors[name].nbytes for name in copy_names) + q1_bytes
+    return RuntimeSidecarPlan(
+        layer=layers[0],
+        layers=layers,
+        source=source,
+        output=output,
+        manifest=manifest,
+        tensors_to_copy=tuple(copy_names),
+        tensors_to_convert=tuple(convert_names),
+        estimated_read_bytes=read_bytes,
+        estimated_output_bytes=output_bytes,
+    )
+
+
+def estimate_runtime_extension_layer_range_plan(
+    primary: Path,
+    base_sidecar: Path,
+    output: Path,
+    manifest: Path,
+    convert_layer_first: int = 0,
+    convert_layer_last: int = 2,
+    base_layer_first: int = 3,
+    base_layer_last: int = 42,
+) -> RuntimeSidecarExtensionPlan:
+    layers = _extension_layers_from_range(convert_layer_first, convert_layer_last)
+    base_layers = _runtime_layers_from_range(base_layer_first, base_layer_last)
+    primary_model = parse_gguf_header(primary)
+    base_model = parse_gguf_header(base_sidecar)
+    primary_copy, primary_convert = _runtime_primary_tensors_for_layers(layers)
+    missing_primary = [name for name in primary_copy + primary_convert if name not in primary_model.tensors]
+    if missing_primary:
+        raise ValueError(f"primary model missing tensors required for runtime extension: {missing_primary[:8]}")
+    for name in primary_convert:
+        info = primary_model.tensors[name]
+        elems = math.prod(info.dims)
+        if elems % Q1_BLOCK_WEIGHTS:
+            raise ValueError(f"{name} is not Q1 block aligned")
+    missing_base = []
+    bad_base = []
+    for layer in base_layers:
+        for suffix in (RUNTIME_COPY_ROUTER_SUFFIX, *RUNTIME_ROUTED_SUFFIXES.values()):
+            name = f"blk.{layer}.{suffix}"
+            info = base_model.tensors.get(name)
+            if info is None:
+                missing_base.append(name)
+            elif suffix in RUNTIME_ROUTED_SUFFIXES.values() and info.type_id != Q1_TYPE_ID:
+                bad_base.append(f"{name}:type{info.type_id}")
+    if missing_base:
+        raise ValueError(f"base Q1 sidecar missing routed tensors: {missing_base[:8]}")
+    if bad_base:
+        raise ValueError(f"base sidecar routed tensors must already be Q1_0: {bad_base[:8]}")
+    collisions = [name for name in primary_copy + primary_convert if name in base_model.tensors]
+    if collisions:
+        raise ValueError(f"base sidecar already contains tensors owned by extension: {collisions[:8]}")
+    q1_bytes = 0
+    for name in primary_convert:
+        info = primary_model.tensors[name]
+        q1_bytes += math.prod(info.dims) // Q1_BLOCK_WEIGHTS * Q1_BLOCK_BYTES
+    primary_copy_bytes = sum(primary_model.tensors[name].nbytes for name in primary_copy)
+    base_bytes = sum(info.nbytes for info in base_model.tensors.values())
+    return RuntimeSidecarExtensionPlan(
+        primary=primary,
+        base_sidecar=base_sidecar,
+        output=output,
+        manifest=manifest,
+        layers=layers,
+        base_layers=base_layers,
+        primary_copy_tensors=tuple(primary_copy),
+        primary_convert_tensors=tuple(primary_convert),
+        base_reuse_tensors=tuple(base_model.tensors.keys()),
+        estimated_primary_read_bytes=sum(primary_model.tensors[name].nbytes for name in primary_copy + primary_convert),
+        estimated_base_read_bytes=base_bytes,
+        estimated_output_bytes=base_bytes + primary_copy_bytes + q1_bytes,
     )
 
 
@@ -768,65 +920,175 @@ def convert_runtime_valid_single_layer_sidecar(
     layer: int = 3,
 ) -> dict[str, object]:
     plan = estimate_runtime_sidecar_plan(source, output, manifest, layer)
+    return _convert_runtime_sidecar_from_plan(plan)
+
+
+def convert_runtime_valid_layer_range_sidecar(
+    source: Path,
+    output: Path,
+    manifest: Path,
+    layer_first: int = 3,
+    layer_last: int = 42,
+) -> dict[str, object]:
+    plan = estimate_runtime_layer_range_sidecar_plan(source, output, manifest, layer_first, layer_last)
+    return _convert_runtime_sidecar_from_plan(plan)
+
+
+def _convert_runtime_sidecar_from_plan(plan: RuntimeSidecarPlan) -> dict[str, object]:
+    source = plan.source
+    output = plan.output
+    manifest = plan.manifest
+    temporary_output = output.with_name(f"{output.name}.partial.{os.getpid()}")
+    temporary_manifest = manifest.with_name(f"{manifest.name}.partial.{os.getpid()}")
+    if output.exists() or manifest.exists():
+        raise FileExistsError("runtime Q1_0 output or manifest already exists")
     model = parse_gguf_header(source)
     _runtime_conversion_preflight(model, plan.tensors_to_convert)
     metadata = _required_runtime_metadata(model)
-    write_tensors: list[GgufWriteTensor] = []
+    tensor_names = list(plan.tensors_to_copy) + list(plan.tensors_to_convert)
+    planned: list[dict[str, object]] = []
+    output_offset = 0
+    for name in tensor_names:
+        info = model.tensors[name]
+        if name in plan.tensors_to_convert:
+            output_type = Q1_TYPE_ID
+            output_nbytes = (
+                math.prod(info.dims) // Q1_BLOCK_WEIGHTS * Q1_BLOCK_BYTES
+            )
+        else:
+            output_type = info.type_id
+            output_nbytes = info.nbytes
+        planned.append(
+            {
+                "name": name,
+                "info": info,
+                "type_id": output_type,
+                "offset": output_offset,
+                "nbytes": output_nbytes,
+            }
+        )
+        output_offset = _align(output_offset + output_nbytes)
+
+    header = bytearray()
+    header += struct.pack("<I", GGUF_MAGIC)
+    header += struct.pack("<I", GGUF_VERSION)
+    header += struct.pack("<Q", len(planned))
+    header += struct.pack("<Q", len(metadata))
+    header += _metadata_bytes(metadata)
+    for item in planned:
+        info = item["info"]
+        assert isinstance(info, GgufTensorInfo)
+        header += _gguf_string(str(item["name"]))
+        header += struct.pack("<I", len(info.dims))
+        for dim in info.dims:
+            header += struct.pack("<Q", dim)
+        header += struct.pack("<I", int(item["type_id"]))
+        header += struct.pack("<Q", int(item["offset"]))
+    data_start = _align(len(header))
+
+    output.parent.mkdir(parents=True, exist_ok=True)
     records: list[RuntimeTensorManifest] = []
-    with source.open("rb") as f:
-        with mmap.mmap(f.fileno(), 0, access=mmap.ACCESS_READ) as mm:
-            for name in list(plan.tensors_to_copy) + list(plan.tensors_to_convert):
+    by_name = {str(item["name"]): item for item in planned}
+    chunk_size = 8 * 1024 * 1024
+    workers = int(os.environ.get("DS4_Q1_CONVERTER_WORKERS", "3"))
+    if workers < 1 or workers > 3:
+        raise ValueError("DS4_Q1_CONVERTER_WORKERS must be in 1..3")
+
+    with source.open("rb") as source_file, temporary_output.open("xb") as output_file:
+        with mmap.mmap(source_file.fileno(), 0, access=mmap.ACCESS_READ) as mm:
+            output_file.write(header)
+            output_file.write(b"\0" * (data_start - len(header)))
+
+            def position_output(item: dict[str, object]) -> None:
+                target = data_start + int(item["offset"])
+                if output_file.tell() > target:
+                    raise ValueError("runtime sidecar output offset moved backwards")
+                if output_file.tell() < target:
+                    output_file.write(b"\0" * (target - output_file.tell()))
+
+            for name in plan.tensors_to_copy:
+                item = by_name[name]
                 info = model.tensors[name]
-                source_payload = _tensor_payload(mm, model, info)
-                source_sha = hashlib.sha256(source_payload).hexdigest()
-                if name in plan.tensors_to_convert:
-                    output_type = Q1_TYPE_ID
-                    output_payload = _payload_to_q1(source_payload, info)
-                    action = "convert_iq2_or_q2_to_q1_0"
-                else:
-                    output_type = info.type_id
-                    output_payload = source_payload
-                    action = "copy_byte_identical"
-                output_offset = sum(_align(len(t.payload)) for t in write_tensors)
-                write_tensors.append(GgufWriteTensor(name, info.dims, output_type, output_payload))
+                position_output(item)
+                source_hash = hashlib.sha256()
+                start = model.data_start + info.offset
+                end = start + info.nbytes
+                for cursor in range(start, end, chunk_size):
+                    payload = mm[cursor : min(cursor + chunk_size, end)]
+                    source_hash.update(payload)
+                    output_file.write(payload)
+                digest = source_hash.hexdigest()
                 records.append(
                     RuntimeTensorManifest(
                         name=name,
-                        action=action,
+                        action="copy_byte_identical",
                         source_type_id=info.type_id,
-                        output_type_id=output_type,
+                        output_type_id=int(item["type_id"]),
                         dims=info.dims,
                         source_offset=info.offset,
                         source_nbytes=info.nbytes,
-                        output_offset=output_offset,
-                        output_nbytes=len(output_payload),
-                        source_sha256=source_sha,
-                        output_sha256=hashlib.sha256(output_payload).hexdigest(),
+                        output_offset=int(item["offset"]),
+                        output_nbytes=int(item["nbytes"]),
+                        source_sha256=digest,
+                        output_sha256=digest,
                     )
                 )
-    written = write_gguf(output, metadata, write_tensors)
-    written_by_name = {t.name: t for t in written}
-    adjusted: list[RuntimeTensorManifest] = []
-    for rec in records:
-        actual = written_by_name[rec.name]
-        adjusted.append(
-            RuntimeTensorManifest(
-                name=rec.name,
-                action=rec.action,
-                source_type_id=rec.source_type_id,
-                output_type_id=rec.output_type_id,
-                dims=rec.dims,
-                source_offset=rec.source_offset,
-                source_nbytes=rec.source_nbytes,
-                output_offset=actual.offset,
-                output_nbytes=actual.nbytes,
-                source_sha256=rec.source_sha256,
-                output_sha256=rec.output_sha256,
-            )
-        )
+
+            def convert_one(name: str) -> tuple[str, str, bytes]:
+                info = model.tensors[name]
+                source_payload = _tensor_payload(mm, model, info)
+                source_sha = hashlib.sha256(source_payload).hexdigest()
+                converted = _payload_to_q1(source_payload, info)
+                if len(converted) != int(by_name[name]["nbytes"]):
+                    raise ValueError(
+                        f"Q1_0 converted size mismatch for {name}: "
+                        f"{len(converted)} != {by_name[name]['nbytes']}"
+                    )
+                return source_sha, hashlib.sha256(converted).hexdigest(), converted
+
+            with ThreadPoolExecutor(max_workers=workers) as executor:
+                convert_names = list(plan.tensors_to_convert)
+                for first in range(0, len(convert_names), 3):
+                    batch = convert_names[first : first + 3]
+                    converted_batch = list(executor.map(convert_one, batch))
+                    for name, converted_result in zip(batch, converted_batch):
+                        source_sha, output_sha, output_payload = converted_result
+                        item = by_name[name]
+                        info = model.tensors[name]
+                        position_output(item)
+                        output_file.write(output_payload)
+                        records.append(
+                            RuntimeTensorManifest(
+                                name=name,
+                                action="convert_iq2_or_q2_to_q1_0",
+                                source_type_id=info.type_id,
+                                output_type_id=int(item["type_id"]),
+                                dims=info.dims,
+                                source_offset=info.offset,
+                                source_nbytes=info.nbytes,
+                                output_offset=int(item["offset"]),
+                                output_nbytes=len(output_payload),
+                                source_sha256=source_sha,
+                                output_sha256=output_sha,
+                            )
+                        )
+                    del converted_batch
+
+            if output_file.tell() < data_start + output_offset:
+                output_file.write(
+                    b"\0" * (data_start + output_offset - output_file.tell())
+                )
+            output_file.flush()
+            os.fsync(output_file.fileno())
+
+    record_by_name = {record.name: record for record in records}
+    ordered_records = [record_by_name[name] for name in tensor_names]
     obj: dict[str, object] = {
         "schema": RUNTIME_MANIFEST_SCHEMA,
-        "layer": layer,
+        "layer": plan.layer,
+        "layers": list(plan.layers),
+        "layer_first": plan.layers[0],
+        "layer_last": plan.layers[-1],
         "derived_from_IQ2": True,
         "not_quality_optimal": True,
         "quality_note": RUNTIME_QUALITY_NOTE,
@@ -835,18 +1097,251 @@ def convert_runtime_valid_single_layer_sidecar(
         "source": {"path": str(source), "size": model.size},
         "output": {
             "path": str(output),
-            "size": output.stat().st_size,
-            "sha256": _sha256_file_streaming(output),
+            "size": temporary_output.stat().st_size,
+            "sha256": _sha256_file_streaming(temporary_output),
         },
         "estimated_read_bytes": plan.estimated_read_bytes,
         "estimated_output_bytes": plan.estimated_output_bytes,
         "metadata": _runtime_metadata_manifest(metadata),
-        "tensors": [asdict(t) for t in adjusted],
+        "converter_workers": workers,
+        "streaming_writer": True,
+        "peak_converted_tensors": min(workers, 3),
+        "tensors": [asdict(t) for t in ordered_records],
         "full_quality_path": "rebuild Q1_0 from richer checkpoint/original precision weights, not from IQ2-derived values",
     }
-    manifest.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
-    validate_runtime_sidecar_manifest(source, output, manifest)
+    temporary_manifest.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+    validate_runtime_sidecar_manifest(source, temporary_output, temporary_manifest)
+    os.replace(temporary_output, output)
+    os.replace(temporary_manifest, manifest)
     return obj
+
+
+def convert_runtime_extension_layer_range_sidecar(
+    primary: Path,
+    base_sidecar: Path,
+    output: Path,
+    manifest: Path,
+    convert_layer_first: int = 0,
+    convert_layer_last: int = 2,
+    base_layer_first: int = 3,
+    base_layer_last: int = 42,
+) -> dict[str, object]:
+    plan = estimate_runtime_extension_layer_range_plan(
+        primary,
+        base_sidecar,
+        output,
+        manifest,
+        convert_layer_first=convert_layer_first,
+        convert_layer_last=convert_layer_last,
+        base_layer_first=base_layer_first,
+        base_layer_last=base_layer_last,
+    )
+    primary_model = parse_gguf_header(primary)
+    base_model = parse_gguf_header(base_sidecar)
+    _runtime_conversion_preflight(primary_model, plan.primary_convert_tensors)
+    metadata = _required_runtime_metadata(primary_model)
+    for meta in metadata:
+        base_meta = base_model.metadata.get(meta.key)
+        if base_meta is None or base_meta.raw_value != meta.raw_value:
+            raise ValueError(f"base sidecar metadata provenance mismatch: {meta.key}")
+
+    tensor_items: list[dict[str, object]] = []
+    output_offset = 0
+    for source_role, model, names in (
+        ("base_sidecar", base_model, plan.base_reuse_tensors),
+        ("primary", primary_model, plan.primary_copy_tensors),
+    ):
+        for name in names:
+            info = model.tensors[name]
+            tensor_items.append(
+                {
+                    "name": name,
+                    "source_role": source_role,
+                    "source_action": "reuse_q1_byte_identical_from_base" if source_role == "base_sidecar" else "copy_primary_byte_identical",
+                    "info": info,
+                    "type_id": info.type_id,
+                    "offset": output_offset,
+                    "nbytes": info.nbytes,
+                }
+            )
+            output_offset = _align(output_offset + info.nbytes)
+    for name in plan.primary_convert_tensors:
+        info = primary_model.tensors[name]
+        output_nbytes = math.prod(info.dims) // Q1_BLOCK_WEIGHTS * Q1_BLOCK_BYTES
+        tensor_items.append(
+            {
+                "name": name,
+                "source_role": "primary",
+                "source_action": "convert_primary_iq2_or_q2_to_q1_0",
+                "info": info,
+                "type_id": Q1_TYPE_ID,
+                "offset": output_offset,
+                "nbytes": output_nbytes,
+            }
+        )
+        output_offset = _align(output_offset + output_nbytes)
+    names = [str(item["name"]) for item in tensor_items]
+    if len(names) != len(set(names)):
+        raise ValueError("runtime extension would create duplicate tensor names")
+
+    header = bytearray()
+    header += struct.pack("<I", GGUF_MAGIC)
+    header += struct.pack("<I", GGUF_VERSION)
+    header += struct.pack("<Q", len(tensor_items))
+    header += struct.pack("<Q", len(metadata))
+    header += _metadata_bytes(metadata)
+    for item in tensor_items:
+        info = item["info"]
+        assert isinstance(info, GgufTensorInfo)
+        header += _gguf_string(str(item["name"]))
+        header += struct.pack("<I", len(info.dims))
+        for dim in info.dims:
+            header += struct.pack("<Q", dim)
+        header += struct.pack("<I", int(item["type_id"]))
+        header += struct.pack("<Q", int(item["offset"]))
+    data_start = _align(len(header))
+
+    temporary_output = output.with_name(f"{output.name}.partial.{os.getpid()}")
+    temporary_manifest = manifest.with_name(f"{manifest.name}.partial.{os.getpid()}")
+    if output.exists() or manifest.exists():
+        raise FileExistsError("runtime Q1_0 extension output or manifest already exists")
+    output.parent.mkdir(parents=True, exist_ok=True)
+
+    records: list[dict[str, object]] = []
+    chunk_size = 8 * 1024 * 1024
+    try:
+        with (
+            primary.open("rb") as primary_file,
+            base_sidecar.open("rb") as base_file,
+            temporary_output.open("xb") as output_file,
+        ):
+            with (
+                mmap.mmap(primary_file.fileno(), 0, access=mmap.ACCESS_READ) as primary_mm,
+                mmap.mmap(base_file.fileno(), 0, access=mmap.ACCESS_READ) as base_mm,
+            ):
+                output_file.write(header)
+                output_file.write(b"\0" * (data_start - len(header)))
+
+                def position_output(item: dict[str, object]) -> None:
+                    target = data_start + int(item["offset"])
+                    if output_file.tell() > target:
+                        raise ValueError("runtime extension output offset moved backwards")
+                    if output_file.tell() < target:
+                        output_file.write(b"\0" * (target - output_file.tell()))
+
+                def copy_from_model(item: dict[str, object], model: GgufModel, mm: mmap.mmap) -> tuple[str, str]:
+                    info = item["info"]
+                    assert isinstance(info, GgufTensorInfo)
+                    position_output(item)
+                    h = hashlib.sha256()
+                    start = model.data_start + info.offset
+                    end = start + info.nbytes
+                    for cursor in range(start, end, chunk_size):
+                        payload = mm[cursor : min(cursor + chunk_size, end)]
+                        h.update(payload)
+                        output_file.write(payload)
+                    return h.hexdigest(), h.hexdigest()
+
+                for item in tensor_items:
+                    info = item["info"]
+                    assert isinstance(info, GgufTensorInfo)
+                    source_role = str(item["source_role"])
+                    action = str(item["source_action"])
+                    if action == "convert_primary_iq2_or_q2_to_q1_0":
+                        source_payload = _tensor_payload(primary_mm, primary_model, info)
+                        source_sha = hashlib.sha256(source_payload).hexdigest()
+                        converted = _payload_to_q1(source_payload, info)
+                        if len(converted) != int(item["nbytes"]):
+                            raise ValueError(f"Q1_0 converted size mismatch for {item['name']}")
+                        position_output(item)
+                        output_file.write(converted)
+                        output_sha = hashlib.sha256(converted).hexdigest()
+                    elif source_role == "base_sidecar":
+                        source_sha, output_sha = copy_from_model(item, base_model, base_mm)
+                    elif source_role == "primary":
+                        source_sha, output_sha = copy_from_model(item, primary_model, primary_mm)
+                    else:
+                        raise ValueError(f"unknown runtime extension source role: {source_role}")
+                    records.append(
+                        {
+                            "name": str(item["name"]),
+                            "action": action,
+                            "source_role": source_role,
+                            "source_type_id": info.type_id,
+                            "output_type_id": int(item["type_id"]),
+                            "dims": list(info.dims),
+                            "source_offset": info.offset,
+                            "source_nbytes": info.nbytes,
+                            "output_offset": int(item["offset"]),
+                            "output_nbytes": int(item["nbytes"]),
+                            "source_sha256": source_sha,
+                            "output_sha256": output_sha,
+                        }
+                    )
+
+                if output_file.tell() < data_start + output_offset:
+                    output_file.write(b"\0" * (data_start + output_offset - output_file.tell()))
+                output_file.flush()
+                os.fsync(output_file.fileno())
+
+        obj: dict[str, object] = {
+            "schema": RUNTIME_EXTENSION_MANIFEST_SCHEMA,
+            "derived_from_IQ2": True,
+            "not_quality_optimal": True,
+            "quality_note": RUNTIME_QUALITY_NOTE,
+            "conversion_source": REAL_DEQUANT_PRIMARY_SOURCE,
+            "layers": list(range(0, 43)),
+            "converted_layers": list(plan.layers),
+            "base_reused_layers": list(plan.base_layers),
+            "helper": _helper_manifest_record(),
+            "primary": {
+                "path": str(primary),
+                "size": primary_model.size,
+                "sha256": _sha256_file_streaming(primary),
+            },
+            "base_sidecar": {
+                "path": str(base_sidecar),
+                "size": base_model.size,
+                "sha256": _sha256_file_streaming(base_sidecar),
+            },
+            "output": {
+                "path": str(output),
+                "size": temporary_output.stat().st_size,
+                "sha256": _sha256_file_streaming(temporary_output),
+            },
+            "estimated_primary_read_bytes": plan.estimated_primary_read_bytes,
+            "estimated_base_read_bytes": plan.estimated_base_read_bytes,
+            "estimated_output_bytes": plan.estimated_output_bytes,
+            "metadata": _runtime_metadata_manifest(metadata),
+            "streaming_writer": True,
+            "extension_strategy": "reuse base Q1 tensors byte-identically; convert only missing primary layers",
+            "tensors": records,
+        }
+        temporary_manifest.write_text(json.dumps(obj, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        validate_runtime_extension_manifest(primary, base_sidecar, temporary_output, temporary_manifest)
+        os.replace(temporary_output, output)
+        os.replace(temporary_manifest, manifest)
+        return obj
+    except Exception:
+        for path in (temporary_output, temporary_manifest):
+            try:
+                path.unlink()
+            except FileNotFoundError:
+                pass
+        raise
+
+
+def _runtime_manifest_layers(obj: dict[str, object]) -> tuple[int, ...]:
+    if "layers" in obj:
+        raw_layers = obj["layers"]
+        if not isinstance(raw_layers, list):
+            raise ValueError("runtime manifest layers must be a list")
+        layers = tuple(int(layer) for layer in raw_layers)
+        expected = _runtime_layers_from_range(int(obj.get("layer_first", layers[0])), int(obj.get("layer_last", layers[-1])))
+        if layers != expected:
+            raise ValueError("runtime manifest layer range mismatch")
+        return layers
+    return (int(obj["layer"]),)
 
 
 def validate_runtime_sidecar_manifest(source: Path, output: Path, manifest: Path) -> dict[str, object]:
@@ -872,14 +1367,15 @@ def validate_runtime_sidecar_manifest(source: Path, output: Path, manifest: Path
             raise ValueError("runtime helper provenance mismatch")
     elif helper is not None:
         helper_path = Path(str(helper.get("path", "")))
-        if helper_path.exists():
-            expected = {
-                "path": str(helper_path.resolve()),
-                "size": helper_path.stat().st_size,
-                "sha256": _sha256_file_streaming(helper_path),
-            }
-            if helper != expected:
-                raise ValueError("runtime helper provenance mismatch")
+        if not helper_path.exists():
+            raise ValueError("runtime helper provenance path is unavailable")
+        expected = {
+            "path": str(helper_path.resolve()),
+            "size": helper_path.stat().st_size,
+            "sha256": _sha256_file_streaming(helper_path),
+        }
+        if helper != expected:
+            raise ValueError("runtime helper provenance mismatch")
     if "general.name" not in sidecar.metadata or sidecar.metadata["general.name"].value != model.metadata["general.name"].value:
         raise ValueError("general.name provenance mismatch")
     metadata_records = obj.get("metadata", [])
@@ -903,7 +1399,8 @@ def validate_runtime_sidecar_manifest(source: Path, output: Path, manifest: Path
     records = obj.get("tensors", [])
     if not isinstance(records, list):
         raise ValueError("runtime tensor records must be a list")
-    copy_names, convert_names = runtime_sidecar_tensor_names(int(obj["layer"]))
+    layers = _runtime_manifest_layers(obj)
+    copy_names, convert_names = runtime_sidecar_tensor_names_for_layers(layers)
     expected_names = list(copy_names) + list(convert_names)
     record_names = [rec.get("name") for rec in records]
     if len(record_names) != len(set(record_names)):
@@ -937,11 +1434,136 @@ def validate_runtime_sidecar_manifest(source: Path, output: Path, manifest: Path
     return obj
 
 
+def validate_runtime_extension_manifest(primary: Path, base_sidecar: Path, output: Path, manifest: Path) -> dict[str, object]:
+    obj = json.loads(manifest.read_text(encoding="utf-8"))
+    if obj.get("schema") != RUNTIME_EXTENSION_MANIFEST_SCHEMA:
+        raise ValueError("unexpected runtime extension manifest schema")
+    if obj.get("derived_from_IQ2") is not True or obj.get("not_quality_optimal") is not True:
+        raise ValueError("runtime extension must be marked derived and not quality-optimal")
+    if obj.get("quality_note") != RUNTIME_QUALITY_NOTE:
+        raise ValueError("runtime extension quality note/provenance mismatch")
+    if obj.get("conversion_source") != REAL_DEQUANT_PRIMARY_SOURCE:
+        raise ValueError("runtime extension conversion source provenance mismatch")
+    if obj.get("primary", {}).get("sha256") != _sha256_file_streaming(primary):
+        raise ValueError("runtime extension primary full hash mismatch")
+    if obj.get("base_sidecar", {}).get("sha256") != _sha256_file_streaming(base_sidecar):
+        raise ValueError("runtime extension base sidecar full hash mismatch")
+    if obj.get("output", {}).get("sha256") != _sha256_file_streaming(output):
+        raise ValueError("runtime extension output full hash mismatch")
+    helper = obj.get("helper")
+    current_helper = _helper_manifest_record()
+    if current_helper is not None:
+        if helper != current_helper:
+            raise ValueError("runtime extension helper provenance mismatch")
+    elif helper is not None:
+        helper_path = Path(str(helper.get("path", "")))
+        if not helper_path.exists():
+            raise ValueError("runtime extension helper provenance path is unavailable")
+        expected = {
+            "path": str(helper_path.resolve()),
+            "size": helper_path.stat().st_size,
+            "sha256": _sha256_file_streaming(helper_path),
+        }
+        if helper != expected:
+            raise ValueError("runtime extension helper provenance mismatch")
+
+    primary_model = parse_gguf_header(primary)
+    base_model = parse_gguf_header(base_sidecar)
+    out_model = parse_gguf_header(output)
+    for key, src_meta in primary_model.metadata.items():
+        out_meta = out_model.metadata.get(key)
+        base_meta = base_model.metadata.get(key)
+        if out_meta is None or base_meta is None:
+            raise ValueError(f"runtime extension missing metadata: {key}")
+        if out_meta.raw_value != src_meta.raw_value or base_meta.raw_value != src_meta.raw_value:
+            raise ValueError(f"runtime extension metadata provenance mismatch: {key}")
+
+    raw_converted_layers = obj.get("converted_layers")
+    if not isinstance(raw_converted_layers, list):
+        raise ValueError("runtime extension converted_layers must be a list")
+    converted_layers = tuple(int(layer) for layer in raw_converted_layers)
+    if converted_layers != _extension_layers_from_range(converted_layers[0], converted_layers[-1]):
+        raise ValueError("runtime extension converted layer range mismatch")
+    primary_copy, primary_convert = _runtime_primary_tensors_for_layers(converted_layers)
+    expected_names = list(base_model.tensors.keys()) + primary_copy + primary_convert
+    records = obj.get("tensors", [])
+    if not isinstance(records, list):
+        raise ValueError("runtime extension tensor records must be a list")
+    record_names = [rec.get("name") for rec in records]
+    if len(record_names) != len(set(record_names)):
+        raise ValueError("duplicate runtime extension tensor records")
+    if set(record_names) != set(expected_names):
+        raise ValueError("runtime extension tensor record set mismatch")
+    if set(out_model.tensors.keys()) != set(expected_names):
+        raise ValueError("runtime extension output tensor set mismatch")
+
+    raw_base_layers = obj.get("base_reused_layers")
+    if not isinstance(raw_base_layers, list):
+        raise ValueError("runtime extension base_reused_layers must be a list")
+    base_layers = tuple(int(layer) for layer in raw_base_layers)
+    if base_layers != _runtime_layers_from_range(base_layers[0], base_layers[-1]):
+        raise ValueError("runtime extension base layer range mismatch")
+    for layer in base_layers:
+        for suffix in RUNTIME_ROUTED_SUFFIXES.values():
+            name = f"blk.{layer}.{suffix}"
+            if base_model.tensors[name].type_id != Q1_TYPE_ID:
+                raise ValueError(f"base reused routed tensor is not Q1_0: {name}")
+    with (
+        primary.open("rb") as primary_file,
+        base_sidecar.open("rb") as base_file,
+        output.open("rb") as output_file,
+    ):
+        with (
+            mmap.mmap(primary_file.fileno(), 0, access=mmap.ACCESS_READ) as primary_mm,
+            mmap.mmap(base_file.fileno(), 0, access=mmap.ACCESS_READ) as base_mm,
+            mmap.mmap(output_file.fileno(), 0, access=mmap.ACCESS_READ) as output_mm,
+        ):
+            by_name = {rec["name"]: rec for rec in records}
+            for name in expected_names:
+                rec = by_name[name]
+                source_role = rec.get("source_role")
+                source_model = base_model if source_role == "base_sidecar" else primary_model
+                source_mm = base_mm if source_role == "base_sidecar" else primary_mm
+                if name not in source_model.tensors:
+                    raise ValueError(f"runtime extension source tensor missing: {name}")
+                src = source_model.tensors[name]
+                out = out_model.tensors[name]
+                if src.offset != rec["source_offset"] or out.offset != rec["output_offset"]:
+                    raise ValueError(f"runtime extension offset mismatch for {name}")
+                if out.type_id != rec["output_type_id"]:
+                    raise ValueError(f"runtime extension type mismatch for {name}")
+                if _sha256_payload(source_mm, source_model, src) != rec["source_sha256"]:
+                    raise ValueError(f"runtime extension source hash mismatch for {name}")
+                if _sha256_payload(output_mm, out_model, out) != rec["output_sha256"]:
+                    raise ValueError(f"runtime extension output hash mismatch for {name}")
+                action = rec.get("action")
+                if action in {"reuse_q1_byte_identical_from_base", "copy_primary_byte_identical"}:
+                    if rec["source_sha256"] != rec["output_sha256"]:
+                        raise ValueError(f"runtime extension byte-identical copy mismatch for {name}")
+                elif action == "convert_primary_iq2_or_q2_to_q1_0":
+                    if rec["output_type_id"] != Q1_TYPE_ID:
+                        raise ValueError(f"runtime extension converted tensor is not Q1_0: {name}")
+                else:
+                    raise ValueError(f"unknown runtime extension tensor action {action}")
+    return obj
+
+
 def runtime_plan_to_json(plan: RuntimeSidecarPlan) -> dict[str, object]:
     obj = asdict(plan)
     obj["source"] = str(plan.source)
     obj["output"] = str(plan.output)
     obj["manifest"] = str(plan.manifest)
+    obj["layers"] = list(plan.layers)
+    return obj
+
+
+def runtime_extension_plan_to_json(plan: RuntimeSidecarExtensionPlan) -> dict[str, object]:
+    obj = asdict(plan)
+    obj["primary"] = str(plan.primary)
+    obj["base_sidecar"] = str(plan.base_sidecar)
+    obj["output"] = str(plan.output)
+    obj["manifest"] = str(plan.manifest)
+    obj["layers"] = list(plan.layers)
     return obj
 
 
@@ -989,15 +1611,50 @@ def main() -> int:
     est.add_argument("sidecar")
     est.add_argument("manifest")
     est.add_argument("--layer", type=int, default=42)
+    est_range = sub.add_parser("estimate-runtime-layer-range")
+    est_range.add_argument("source")
+    est_range.add_argument("sidecar")
+    est_range.add_argument("manifest")
+    est_range.add_argument("--layer-first", type=int, default=3)
+    est_range.add_argument("--layer-last", type=int, default=42)
     rconv = sub.add_parser("convert-runtime-single-layer")
     rconv.add_argument("source")
     rconv.add_argument("sidecar")
     rconv.add_argument("manifest")
     rconv.add_argument("--layer", type=int, default=42)
+    rconv_range = sub.add_parser("convert-runtime-layer-range")
+    rconv_range.add_argument("source")
+    rconv_range.add_argument("sidecar")
+    rconv_range.add_argument("manifest")
+    rconv_range.add_argument("--layer-first", type=int, default=3)
+    rconv_range.add_argument("--layer-last", type=int, default=42)
+    ext_est = sub.add_parser("estimate-extend-runtime-layer-range")
+    ext_est.add_argument("primary")
+    ext_est.add_argument("base_sidecar")
+    ext_est.add_argument("sidecar")
+    ext_est.add_argument("manifest")
+    ext_est.add_argument("--convert-layer-first", type=int, default=0)
+    ext_est.add_argument("--convert-layer-last", type=int, default=2)
+    ext_est.add_argument("--base-layer-first", type=int, default=3)
+    ext_est.add_argument("--base-layer-last", type=int, default=42)
+    ext = sub.add_parser("extend-runtime-layer-range")
+    ext.add_argument("primary")
+    ext.add_argument("base_sidecar")
+    ext.add_argument("sidecar")
+    ext.add_argument("manifest")
+    ext.add_argument("--convert-layer-first", type=int, default=0)
+    ext.add_argument("--convert-layer-last", type=int, default=2)
+    ext.add_argument("--base-layer-first", type=int, default=3)
+    ext.add_argument("--base-layer-last", type=int, default=42)
     rval = sub.add_parser("validate-runtime")
     rval.add_argument("source")
     rval.add_argument("sidecar")
     rval.add_argument("manifest")
+    ext_val = sub.add_parser("validate-runtime-extension")
+    ext_val.add_argument("primary")
+    ext_val.add_argument("base_sidecar")
+    ext_val.add_argument("sidecar")
+    ext_val.add_argument("manifest")
     args = parser.parse_args()
     if args.cmd == "write-source-fixture":
         tensors = write_synthetic_iq2_fixture(Path(args.path), experts=args.experts)
@@ -1008,10 +1665,20 @@ def main() -> int:
         print(json.dumps(validate_manifest(Path(args.source), Path(args.sidecar), Path(args.manifest)), indent=2, sort_keys=True))
     elif args.cmd == "estimate-runtime":
         print(json.dumps(runtime_plan_to_json(estimate_runtime_sidecar_plan(Path(args.source), Path(args.sidecar), Path(args.manifest), layer=args.layer)), indent=2, sort_keys=True))
+    elif args.cmd == "estimate-runtime-layer-range":
+        print(json.dumps(runtime_plan_to_json(estimate_runtime_layer_range_sidecar_plan(Path(args.source), Path(args.sidecar), Path(args.manifest), layer_first=args.layer_first, layer_last=args.layer_last)), indent=2, sort_keys=True))
     elif args.cmd == "convert-runtime-single-layer":
         print(json.dumps(convert_runtime_valid_single_layer_sidecar(Path(args.source), Path(args.sidecar), Path(args.manifest), layer=args.layer), indent=2, sort_keys=True))
+    elif args.cmd == "convert-runtime-layer-range":
+        print(json.dumps(convert_runtime_valid_layer_range_sidecar(Path(args.source), Path(args.sidecar), Path(args.manifest), layer_first=args.layer_first, layer_last=args.layer_last), indent=2, sort_keys=True))
     elif args.cmd == "validate-runtime":
         print(json.dumps(validate_runtime_sidecar_manifest(Path(args.source), Path(args.sidecar), Path(args.manifest)), indent=2, sort_keys=True))
+    elif args.cmd == "estimate-extend-runtime-layer-range":
+        print(json.dumps(runtime_extension_plan_to_json(estimate_runtime_extension_layer_range_plan(Path(args.primary), Path(args.base_sidecar), Path(args.sidecar), Path(args.manifest), convert_layer_first=args.convert_layer_first, convert_layer_last=args.convert_layer_last, base_layer_first=args.base_layer_first, base_layer_last=args.base_layer_last)), indent=2, sort_keys=True))
+    elif args.cmd == "extend-runtime-layer-range":
+        print(json.dumps(convert_runtime_extension_layer_range_sidecar(Path(args.primary), Path(args.base_sidecar), Path(args.sidecar), Path(args.manifest), convert_layer_first=args.convert_layer_first, convert_layer_last=args.convert_layer_last, base_layer_first=args.base_layer_first, base_layer_last=args.base_layer_last), indent=2, sort_keys=True))
+    elif args.cmd == "validate-runtime-extension":
+        print(json.dumps(validate_runtime_extension_manifest(Path(args.primary), Path(args.base_sidecar), Path(args.sidecar), Path(args.manifest)), indent=2, sort_keys=True))
     return 0
 
 

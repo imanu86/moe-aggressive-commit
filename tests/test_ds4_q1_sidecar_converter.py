@@ -15,10 +15,15 @@ from tools.ds4_q1_sidecar_converter import (
     GgufMetadata,
     GgufWriteTensor,
     convert_synthetic_iq2_to_q1,
+    convert_runtime_extension_layer_range_sidecar,
     convert_runtime_valid_single_layer_sidecar,
+    convert_runtime_valid_layer_range_sidecar,
+    estimate_runtime_extension_layer_range_plan,
     estimate_runtime_sidecar_plan,
+    estimate_runtime_layer_range_sidecar_plan,
     parse_gguf_header,
     validate_manifest,
+    validate_runtime_extension_manifest,
     validate_runtime_sidecar_manifest,
     write_gguf,
     write_synthetic_iq2_fixture,
@@ -78,6 +83,108 @@ def _runtime_fixture(path, target_layer: int = 42) -> None:
     write_gguf(
         path,
         [GgufMetadata("general.name", GGUF_VALUE_TYPE_STRING, "ds4-mini-fixture")],
+        tensors,
+    )
+
+
+def _runtime_range_fixture(path, layer_first: int = 3, layer_last: int = 5) -> None:
+    tensors: list[GgufWriteTensor] = []
+    target_layers = tuple(range(layer_first, layer_last + 1))
+    for layer in range(43):
+        for suffix in ("attn_norm.weight", "ffn_norm.weight"):
+            tensors.append(
+                GgufWriteTensor(
+                    f"blk.{layer}.{suffix}",
+                    (8,),
+                    SYNTHETIC_IQ2_TYPE_ID,
+                    _i16_payload(8, seed=layer * 17 + len(tensors)),
+                )
+            )
+    for layer in range(3, 43):
+        tensors.append(
+            GgufWriteTensor(
+                f"blk.{layer}.exp_probs_b.bias",
+                (4,),
+                SYNTHETIC_IQ2_TYPE_ID,
+                _i16_payload(4, seed=900 + layer),
+            )
+        )
+    for layer in target_layers:
+        tensors.append(
+            GgufWriteTensor(
+                f"blk.{layer}.ffn_gate_inp.weight",
+                (8,),
+                SYNTHETIC_IQ2_TYPE_ID,
+                _i16_payload(8, seed=1000 + layer),
+            )
+        )
+        for kind, type_id in (
+            ("ffn_gate_exps.weight", SYNTHETIC_IQ2_TYPE_ID),
+            ("ffn_up_exps.weight", SYNTHETIC_IQ2_TYPE_ID),
+            ("ffn_down_exps.weight", SYNTHETIC_Q2_TYPE_ID),
+        ):
+            tensors.append(
+                GgufWriteTensor(
+                    f"blk.{layer}.{kind}",
+                    (Q1_BLOCK_WEIGHTS, 1, 2),
+                    type_id,
+                    _i16_payload(Q1_BLOCK_WEIGHTS * 2, seed=1000 + len(tensors)),
+                )
+            )
+    write_gguf(
+        path,
+        [GgufMetadata("general.name", GGUF_VALUE_TYPE_STRING, "ds4-mini-range-fixture")],
+        tensors,
+    )
+
+
+def _runtime_extension_primary_fixture(path, layer_first: int = 0, layer_last: int = 5) -> None:
+    tensors: list[GgufWriteTensor] = []
+    target_layers = tuple(range(layer_first, layer_last + 1))
+    for layer in range(43):
+        for suffix in ("attn_norm.weight", "ffn_norm.weight"):
+            tensors.append(
+                GgufWriteTensor(
+                    f"blk.{layer}.{suffix}",
+                    (8,),
+                    SYNTHETIC_IQ2_TYPE_ID,
+                    _i16_payload(8, seed=3000 + layer * 17 + len(tensors)),
+                )
+            )
+    for layer in range(3, 43):
+        tensors.append(
+            GgufWriteTensor(
+                f"blk.{layer}.exp_probs_b.bias",
+                (4,),
+                SYNTHETIC_IQ2_TYPE_ID,
+                _i16_payload(4, seed=3900 + layer),
+            )
+        )
+    for layer in target_layers:
+        tensors.append(
+            GgufWriteTensor(
+                f"blk.{layer}.ffn_gate_inp.weight",
+                (8,),
+                SYNTHETIC_IQ2_TYPE_ID,
+                _i16_payload(8, seed=4000 + layer),
+            )
+        )
+        for kind, type_id in (
+            ("ffn_gate_exps.weight", SYNTHETIC_IQ2_TYPE_ID),
+            ("ffn_up_exps.weight", SYNTHETIC_IQ2_TYPE_ID),
+            ("ffn_down_exps.weight", SYNTHETIC_Q2_TYPE_ID),
+        ):
+            tensors.append(
+                GgufWriteTensor(
+                    f"blk.{layer}.{kind}",
+                    (Q1_BLOCK_WEIGHTS, 1, 2),
+                    type_id,
+                    _i16_payload(Q1_BLOCK_WEIGHTS * 2, seed=4100 + layer * 11 + len(tensors)),
+                )
+            )
+    write_gguf(
+        path,
+        [GgufMetadata("general.name", GGUF_VALUE_TYPE_STRING, "ds4-mini-extension-fixture")],
         tensors,
     )
 
@@ -269,6 +376,129 @@ def test_runtime_valid_single_layer_sidecar_fixture(tmp_path) -> None:
     assert len(validated["tensors"]) == 43 * 2 + 40 + 1 + 3
 
 
+def test_runtime_valid_layer_range_sidecar_fixture(tmp_path) -> None:
+    source = tmp_path / "ds4-mini-primary.gguf"
+    sidecar = tmp_path / "ds4-mini-q1-range-sidecar.gguf"
+    manifest = tmp_path / "ds4-mini-q1-range-sidecar.manifest.json"
+    _runtime_range_fixture(source, layer_first=3, layer_last=5)
+
+    plan = estimate_runtime_layer_range_sidecar_plan(source, sidecar, manifest, layer_first=3, layer_last=5)
+    assert plan.layer == 3
+    assert plan.layers == (3, 4, 5)
+    assert len(plan.tensors_to_copy) == 43 * 2 + 40 + 3
+    assert len(plan.tensors_to_convert) == 3 * 3
+    assert plan.estimated_read_bytes < source.stat().st_size
+
+    obj = convert_runtime_valid_layer_range_sidecar(source, sidecar, manifest, layer_first=3, layer_last=5)
+    assert obj["schema"] == RUNTIME_MANIFEST_SCHEMA
+    assert obj["layer"] == 3
+    assert obj["layers"] == [3, 4, 5]
+    assert obj["layer_first"] == 3
+    assert obj["layer_last"] == 5
+    assert obj["output"]["sha256"] == hashlib.sha256(sidecar.read_bytes()).hexdigest()
+
+    parsed = parse_gguf_header(sidecar)
+    for layer in (3, 4, 5):
+        assert f"blk.{layer}.ffn_gate_inp.weight" in parsed.tensors
+        for suffix in ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight"):
+            assert parsed.tensors[f"blk.{layer}.{suffix}"].type_id == Q1_TYPE_ID
+
+    validated = validate_runtime_sidecar_manifest(source, sidecar, manifest)
+    assert len(validated["tensors"]) == 43 * 2 + 40 + 3 + 9
+    convert_records = [t for t in validated["tensors"] if t["action"] == "convert_iq2_or_q2_to_q1_0"]
+    assert len(convert_records) == 9
+    assert all(t["output_type_id"] == Q1_TYPE_ID for t in convert_records)
+
+
+def test_runtime_extension_reuses_base_q1_and_converts_only_prefix_layers(tmp_path) -> None:
+    primary = tmp_path / "ds4-mini-primary.gguf"
+    base = tmp_path / "ds4-mini-base-q1.gguf"
+    base_manifest = tmp_path / "ds4-mini-base-q1.manifest.json"
+    extended = tmp_path / "ds4-mini-extended-q1.gguf"
+    manifest = tmp_path / "ds4-mini-extended-q1.manifest.json"
+    _runtime_extension_primary_fixture(primary, layer_first=0, layer_last=5)
+    convert_runtime_valid_layer_range_sidecar(primary, base, base_manifest, layer_first=3, layer_last=5)
+
+    plan = estimate_runtime_extension_layer_range_plan(
+        primary,
+        base,
+        extended,
+        manifest,
+        convert_layer_first=0,
+        convert_layer_last=2,
+        base_layer_first=3,
+        base_layer_last=5,
+    )
+    assert plan.layers == (0, 1, 2)
+    assert plan.base_layers == (3, 4, 5)
+    assert len(plan.primary_copy_tensors) == 3
+    assert len(plan.primary_convert_tensors) == 9
+    assert len(plan.base_reuse_tensors) == len(parse_gguf_header(base).tensors)
+
+    obj = convert_runtime_extension_layer_range_sidecar(
+        primary,
+        base,
+        extended,
+        manifest,
+        convert_layer_first=0,
+        convert_layer_last=2,
+        base_layer_first=3,
+        base_layer_last=5,
+    )
+    assert obj["schema"] == "ds4_q1_0_runtime_sidecar_extension_manifest_v1"
+    assert obj["converted_layers"] == [0, 1, 2]
+    assert obj["base_reused_layers"] == [3, 4, 5]
+    assert obj["primary"]["sha256"] == hashlib.sha256(primary.read_bytes()).hexdigest()
+    assert obj["base_sidecar"]["sha256"] == hashlib.sha256(base.read_bytes()).hexdigest()
+    assert obj["output"]["sha256"] == hashlib.sha256(extended.read_bytes()).hexdigest()
+
+    parsed = parse_gguf_header(extended)
+    for layer in range(6):
+        assert f"blk.{layer}.ffn_gate_inp.weight" in parsed.tensors
+        for suffix in ("ffn_gate_exps.weight", "ffn_up_exps.weight", "ffn_down_exps.weight"):
+            assert parsed.tensors[f"blk.{layer}.{suffix}"].type_id == Q1_TYPE_ID
+
+    validated = validate_runtime_extension_manifest(primary, base, extended, manifest)
+    reused = [t for t in validated["tensors"] if t["action"] == "reuse_q1_byte_identical_from_base"]
+    converted = [t for t in validated["tensors"] if t["action"] == "convert_primary_iq2_or_q2_to_q1_0"]
+    copied = [t for t in validated["tensors"] if t["action"] == "copy_primary_byte_identical"]
+    assert len(reused) == len(parse_gguf_header(base).tensors)
+    assert len(converted) == 9
+    assert len(copied) == 3
+    assert all(t["source_sha256"] == t["output_sha256"] for t in reused)
+    assert not list(tmp_path.glob("*.partial.*"))
+
+
+def test_runtime_extension_rejects_stale_base_hash(tmp_path) -> None:
+    primary = tmp_path / "ds4-mini-primary.gguf"
+    base = tmp_path / "ds4-mini-base-q1.gguf"
+    base_manifest = tmp_path / "ds4-mini-base-q1.manifest.json"
+    extended = tmp_path / "ds4-mini-extended-q1.gguf"
+    manifest = tmp_path / "ds4-mini-extended-q1.manifest.json"
+    _runtime_extension_primary_fixture(primary, layer_first=0, layer_last=5)
+    convert_runtime_valid_layer_range_sidecar(primary, base, base_manifest, layer_first=3, layer_last=5)
+    convert_runtime_extension_layer_range_sidecar(
+        primary,
+        base,
+        extended,
+        manifest,
+        convert_layer_first=0,
+        convert_layer_last=2,
+        base_layer_first=3,
+        base_layer_last=5,
+    )
+
+    data = bytearray(base.read_bytes())
+    data[-1] ^= 1
+    base.write_bytes(bytes(data))
+    try:
+        validate_runtime_extension_manifest(primary, base, extended, manifest)
+    except ValueError as exc:
+        assert "base sidecar full hash mismatch" in str(exc)
+    else:
+        raise AssertionError("runtime extension validator accepted stale base sidecar")
+
+
 def test_runtime_sidecar_rejects_out_of_range_layer(tmp_path) -> None:
     source = tmp_path / "ds4-mini-primary.gguf"
     _runtime_fixture(source, target_layer=42)
@@ -278,6 +508,24 @@ def test_runtime_sidecar_rejects_out_of_range_layer(tmp_path) -> None:
         assert "3..42" in str(exc)
     else:
         raise AssertionError("layer 2 should not be accepted for Q1_0 runtime sidecar")
+
+
+def test_runtime_sidecar_rejects_out_of_range_layer_range(tmp_path) -> None:
+    source = tmp_path / "ds4-mini-primary.gguf"
+    _runtime_range_fixture(source, layer_first=3, layer_last=5)
+    try:
+        estimate_runtime_layer_range_sidecar_plan(source, tmp_path / "out.gguf", tmp_path / "out.json", layer_first=2, layer_last=5)
+    except ValueError as exc:
+        assert "3..42" in str(exc)
+    else:
+        raise AssertionError("layer range starting at 2 should not be accepted")
+
+    try:
+        estimate_runtime_layer_range_sidecar_plan(source, tmp_path / "out.gguf", tmp_path / "out.json", layer_first=6, layer_last=5)
+    except ValueError as exc:
+        assert "3..42" in str(exc)
+    else:
+        raise AssertionError("inverted layer range should not be accepted")
 
 
 def test_runtime_validator_rejects_incomplete_duplicate_or_stale_metadata(tmp_path) -> None:

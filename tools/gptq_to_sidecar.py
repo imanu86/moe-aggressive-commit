@@ -350,11 +350,26 @@ def _metadata_uint(model: GgufModel, key: str) -> int:
     return entry.value
 
 
+# Metadata che alcune versioni del modello DeepSeek4 non emettono (routing a
+# gruppi assente in ds4-2bit): il runtime carica il base senza, quindi il
+# sidecar deve solo COPIARE cio' che il base ha, non richiedere piu' del base.
+OPTIONAL_IF_ABSENT_IN_BASE = frozenset((
+    "deepseek4.expert_group_count",
+    "deepseek4.expert_group_used_count",
+))
+
+
 def _semantic_metadata(model: GgufModel) -> list[GgufMetadata]:
-    missing = [key for key in RUNTIME_REQUIRED_METADATA_KEYS if key not in model.metadata]
+    missing = [
+        key for key in RUNTIME_REQUIRED_METADATA_KEYS
+        if key not in model.metadata and key not in OPTIONAL_IF_ABSENT_IN_BASE
+    ]
     if missing:
         raise ValueError(f"base model lacks required sidecar metadata: {missing}")
-    entries = [model.metadata[key] for key in RUNTIME_REQUIRED_METADATA_KEYS]
+    entries = [
+        model.metadata[key] for key in RUNTIME_REQUIRED_METADATA_KEYS
+        if key in model.metadata
+    ]
     if "general.alignment" in model.metadata:
         entries.append(model.metadata["general.alignment"])
     return entries

@@ -729,6 +729,8 @@ def verify_sidecar(
 ) -> None:
     sidecar = parse_gguf_header(out_path)
     for key in RUNTIME_REQUIRED_METADATA_KEYS:
+        if key not in base.metadata and key in OPTIONAL_IF_ABSENT_IN_BASE:
+            continue  # non presente nel base -> non copiato, non verificato
         if key not in sidecar.metadata:
             raise AssertionError(f"written sidecar lacks metadata {key}")
         if sidecar.metadata[key].value_type != base.metadata[key].value_type:

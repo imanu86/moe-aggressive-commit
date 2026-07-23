@@ -5,10 +5,17 @@ The ds4 runtime layout was verified against ds4.c/ds4_cuda.cu:
     block_q1_0 = little-endian fp16 scale, then 16 little-bit-order sign bytes
 and the GGML/GGUF type id is 41.
 
-The current q1_0_sidecar_bind requires complete 3-D expert tensors.  Experts
-not listed in --experts are therefore dequantized from the base IQ2_XXS/Q2_K
-tensor and requantized to Q1_0.  Runtime identity/control tensors are copied
-byte-for-byte from the base model as required by the same binder.
+The current q1_0_sidecar_bind requires complete 3-D expert tensors for every
+layer in one inclusive active range.  Experts not listed in --experts are
+therefore dequantized from the base IQ2_XXS/Q2_K tensor and requantized to
+Q1_0.  In joint mode, unlisted layers between the first and last requested
+layer are filled entirely from the base by the same path.  Runtime
+identity/control tensors are copied byte-for-byte from the base model.
+
+The runtime has one DS4_Q1_0_EXPERT_SIDECAR path and cannot bind sparse layer
+sets or multiple Q1_0 sidecars at once.  Split mode emits one sidecar per
+contiguous requested run for separate process invocations; it is not a way to
+serve those files simultaneously.
 """
 
 from __future__ import annotations
@@ -22,7 +29,7 @@ import struct
 import sys
 from dataclasses import dataclass
 from pathlib import Path
-from typing import BinaryIO, Iterable, Sequence
+from typing import BinaryIO, Iterable, Mapping, Sequence
 
 import numpy as np
 
@@ -224,6 +231,21 @@ class OutputTensor:
     offset: int = 0
     base_info: GgufTensorInfo | None = None
     part: str | None = None
+    layer: int | None = None
+
+
+@dataclass(frozen=True)
+class LayerSource:
+    layer: int
+    gptq_root: Path
+
+
+@dataclass(frozen=True)
+class SidecarJob:
+    first_layer: int
+    last_layer: int
+    gptq_roots: Mapping[int, Path]
+    out_path: Path
 
 
 def _align(value: int, alignment: int) -> int:
@@ -385,6 +407,34 @@ def _parse_experts(csv: str) -> tuple[int, ...]:
     if len(set(values)) != len(values) or any(value < 0 for value in values):
         raise argparse.ArgumentTypeError("--experts must contain unique non-negative ids")
     return tuple(sorted(values))
+
+
+def _parse_layer_spec(value: str) -> tuple[LayerSource, ...]:
+    sources: list[LayerSource] = []
+    for item in value.split(","):
+        item = item.strip()
+        if not item:
+            continue
+        layer_text, separator, root_text = item.partition(":")
+        if not separator or not layer_text.strip() or not root_text.strip():
+            raise argparse.ArgumentTypeError(
+                "--layer-spec entries must have the form LAYER:GPTQ_ROOT"
+            )
+        try:
+            layer = int(layer_text.strip())
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(
+                f"--layer-spec layer is not an integer: {layer_text!r}"
+            ) from exc
+        if layer < 0:
+            raise argparse.ArgumentTypeError("--layer-spec layers must be non-negative")
+        sources.append(LayerSource(layer, Path(root_text.strip())))
+    if not sources:
+        raise argparse.ArgumentTypeError("--layer-spec must not be empty")
+    layers = [source.layer for source in sources]
+    if len(set(layers)) != len(layers):
+        raise argparse.ArgumentTypeError("--layer-spec layers must be unique")
+    return tuple(sorted(sources, key=lambda source: source.layer))
 
 
 def _expert_out_dir(root: Path, expert: int) -> Path:
@@ -553,40 +603,78 @@ def _base_expert_payload(
     return _pack_q1_values(values)
 
 
-def _control_tensor_names(base: GgufModel, layer: int) -> list[str]:
+def _normalize_layers(layers: int | Iterable[int]) -> tuple[int, ...]:
+    if isinstance(layers, int):
+        values = (layers,)
+    else:
+        values = tuple(layers)
+    if not values:
+        raise ValueError("sidecar layer range must not be empty")
+    if len(set(values)) != len(values):
+        raise ValueError("sidecar layers must be unique")
+    return tuple(sorted(values))
+
+
+def _control_tensor_names(base: GgufModel, layers: int | Iterable[int]) -> list[str]:
+    active_layers = _normalize_layers(layers)
     block_count = _metadata_uint(base, "deepseek4.block_count")
     hash_layer_count = _metadata_uint(base, "deepseek4.hash_layer_count")
-    if not 0 <= layer < block_count:
-        raise ValueError(f"--layer {layer} is outside 0..{block_count - 1}")
+    invalid = [layer for layer in active_layers if not 0 <= layer < block_count]
+    if invalid:
+        raise ValueError(
+            f"sidecar layer {invalid[0]} is outside 0..{block_count - 1}"
+        )
     names: list[str] = []
     for il in range(block_count):
         names.extend((f"blk.{il}.attn_norm.weight", f"blk.{il}.ffn_norm.weight"))
         if il >= hash_layer_count:
             names.append(f"blk.{il}.exp_probs_b.bias")
-    names.append(f"blk.{layer}.ffn_gate_inp.weight")
+    names.extend(f"blk.{layer}.ffn_gate_inp.weight" for layer in active_layers)
     missing = [name for name in names if name not in base.tensors]
     if missing:
         raise ValueError(f"base model lacks runtime identity tensors: {missing[:8]}")
     return names
 
 
-def _make_output_tensors(base: GgufModel, layer: int) -> list[OutputTensor]:
+def _make_output_tensors(
+    base: GgufModel,
+    layers: int | Iterable[int],
+) -> list[OutputTensor]:
+    active_layers = _normalize_layers(layers)
     tensors: list[OutputTensor] = []
-    for name in _control_tensor_names(base, layer):
+    for name in _control_tensor_names(base, active_layers):
         info = base.tensors[name]
         tensors.append(OutputTensor(name, info.dims, info.type_id, info.nbytes, base_info=info))
-    for part, suffix in PART_SUFFIX.items():
-        name = f"blk.{layer}.{suffix}"
-        info = base.tensors.get(name)
-        if info is None:
-            raise ValueError(f"base model lacks {name}")
-        if len(info.dims) != 3:
-            raise ValueError(f"{name}: expected dimensions [in,out,expert]")
-        in_dim, out_dim, expert_count = info.dims
-        if in_dim % Q1_BLOCK_WEIGHTS:
-            raise ValueError(f"{name}: input dimension {in_dim} is not divisible by 128")
-        nbytes = expert_count * out_dim * (in_dim // Q1_BLOCK_WEIGHTS) * Q1_BLOCK_BYTES
-        tensors.append(OutputTensor(name, info.dims, Q1_TYPE_ID, nbytes, base_info=info, part=part))
+    for layer in active_layers:
+        for part, suffix in PART_SUFFIX.items():
+            name = f"blk.{layer}.{suffix}"
+            info = base.tensors.get(name)
+            if info is None:
+                raise ValueError(f"base model lacks {name}")
+            if len(info.dims) != 3:
+                raise ValueError(f"{name}: expected dimensions [in,out,expert]")
+            in_dim, out_dim, expert_count = info.dims
+            if in_dim % Q1_BLOCK_WEIGHTS:
+                raise ValueError(
+                    f"{name}: input dimension {in_dim} is not divisible by 128"
+                )
+            nbytes = (
+                expert_count
+                * out_dim
+                * (in_dim // Q1_BLOCK_WEIGHTS)
+                * Q1_BLOCK_BYTES
+            )
+            tensors.append(
+                OutputTensor(
+                    name,
+                    info.dims,
+                    Q1_TYPE_ID,
+                    nbytes,
+                    base_info=info,
+                    part=part,
+                    layer=layer,
+                )
+            )
     return tensors
 
 
@@ -625,27 +713,39 @@ def _copy_mmap_range(dst: BinaryIO, src: mmap.mmap, start: int, size: int) -> No
 
 
 def _preflight_gptq(
-    root: Path,
+    gptq_roots: Mapping[int, Path],
     viable: set[int],
     tensors: Sequence[OutputTensor],
 ) -> None:
     for tensor in tensors:
-        if tensor.part is None:
+        if tensor.part is None or tensor.layer not in gptq_roots:
             continue
+        assert tensor.layer is not None
+        root = gptq_roots[tensor.layer]
         in_dim, out_dim, _ = tensor.dims
         for expert in sorted(viable):
             _load_gptq_npz(root, expert, tensor.part, out_dim, in_dim)
 
 
-def write_sidecar(
+def write_multi_layer_sidecar(
     base: GgufModel,
-    gptq_root: Path,
-    layer: int,
+    gptq_roots: Mapping[int, Path],
+    first_layer: int,
+    last_layer: int,
     experts: tuple[int, ...],
     out_path: Path,
 ) -> list[OutputTensor]:
+    if first_layer > last_layer:
+        raise ValueError("sidecar first layer must not exceed last layer")
+    active_layers = tuple(range(first_layer, last_layer + 1))
+    invalid_sources = sorted(set(gptq_roots).difference(active_layers))
+    if invalid_sources:
+        raise ValueError(
+            f"GPTQ layer {invalid_sources[0]} is outside active range "
+            f"{first_layer}..{last_layer}"
+        )
     metadata = _semantic_metadata(base)
-    tensors = _make_output_tensors(base, layer)
+    tensors = _make_output_tensors(base, active_layers)
     expert_tensors = [tensor for tensor in tensors if tensor.part is not None]
     assert expert_tensors
     expert_count = expert_tensors[0].dims[2]
@@ -656,7 +756,7 @@ def write_sidecar(
     if experts[-1] >= expert_count:
         raise ValueError(f"expert id {experts[-1]} is outside 0..{expert_count - 1}")
     viable = set(experts)
-    _preflight_gptq(gptq_root, viable, tensors)
+    _preflight_gptq(gptq_roots, viable, tensors)
 
     header = _build_header(metadata, tensors, base.alignment)
     out_path = out_path.resolve()
@@ -684,8 +784,10 @@ def write_sidecar(
                     else:
                         in_dim, out_dim, count = tensor.dims
                         expert_bytes = out_dim * (in_dim // Q1_BLOCK_WEIGHTS) * Q1_BLOCK_BYTES
+                        assert tensor.layer is not None
+                        gptq_root = gptq_roots.get(tensor.layer)
                         for expert in range(count):
-                            if expert in viable:
+                            if gptq_root is not None and expert in viable:
                                 signs, scales = _load_gptq_npz(
                                     gptq_root, expert, tensor.part, out_dim, in_dim
                                 )
@@ -712,6 +814,24 @@ def write_sidecar(
     return tensors
 
 
+def write_sidecar(
+    base: GgufModel,
+    gptq_root: Path,
+    layer: int,
+    experts: tuple[int, ...],
+    out_path: Path,
+) -> list[OutputTensor]:
+    """Backward-compatible single-layer programmatic entry point."""
+    return write_multi_layer_sidecar(
+        base=base,
+        gptq_roots={layer: gptq_root},
+        first_layer=layer,
+        last_layer=layer,
+        experts=experts,
+        out_path=out_path,
+    )
+
+
 def _dequant_q1_block(block: bytes) -> np.ndarray:
     if len(block) != Q1_BLOCK_BYTES:
         raise ValueError("Q1_0 block must be exactly 18 bytes")
@@ -720,13 +840,17 @@ def _dequant_q1_block(block: bytes) -> np.ndarray:
     return np.where(bits != 0, scale, -scale).astype(np.float32)
 
 
-def verify_sidecar(
+def verify_multi_layer_sidecar(
     base: GgufModel,
-    gptq_root: Path,
-    layer: int,
+    gptq_roots: Mapping[int, Path],
+    first_layer: int,
+    last_layer: int,
     experts: tuple[int, ...],
     out_path: Path,
-) -> None:
+) -> int:
+    if first_layer > last_layer:
+        raise ValueError("sidecar first layer must not exceed last layer")
+    active_layers = tuple(range(first_layer, last_layer + 1))
     sidecar = parse_gguf_header(out_path)
     for key in RUNTIME_REQUIRED_METADATA_KEYS:
         if key not in base.metadata and key in OPTIONAL_IF_ABSENT_IN_BASE:
@@ -740,7 +864,8 @@ def verify_sidecar(
     if sidecar.metadata["general.name"].value != base.metadata["general.name"].value:
         raise AssertionError("general.name differs from base model")
 
-    control_names = _control_tensor_names(base, layer)
+    control_names = _control_tensor_names(base, active_layers)
+    round_trip_blocks = 0
     with (
         base.path.open("rb") as base_file,
         out_path.open("rb") as sidecar_file,
@@ -763,40 +888,207 @@ def verify_sidecar(
             ]:
                 raise AssertionError(f"control tensor is not byte-identical: {name}")
 
-        for suffix in PART_SUFFIX.values():
-            name = f"blk.{layer}.{suffix}"
-            source = base.tensors[name]
-            written = sidecar.tensors.get(name)
-            if written is None or written.type_id != Q1_TYPE_ID or written.dims != source.dims:
-                raise AssertionError(f"invalid written Q1_0 tensor {name}")
+        for layer in active_layers:
+            for suffix in PART_SUFFIX.values():
+                name = f"blk.{layer}.{suffix}"
+                source = base.tensors[name]
+                written = sidecar.tensors.get(name)
+                if (
+                    written is None
+                    or written.type_id != Q1_TYPE_ID
+                    or written.dims != source.dims
+                ):
+                    raise AssertionError(f"invalid written Q1_0 tensor {name}")
 
         # End-to-end source-NPZ -> GGUF block -> dequantized values check.
-        sample_expert = experts[0]
+        # Two experts per supplied layer keep verification bounded for production
+        # NPZs while giving a 2x2 golden whenever the invocation supplies at
+        # least two experts on at least two layers.
         sample_part = "gate"
-        sample_name = f"blk.{layer}.{PART_SUFFIX[sample_part]}"
-        written = sidecar.tensors[sample_name]
-        in_dim, out_dim, _ = written.dims
-        expert_bytes = out_dim * (in_dim // Q1_BLOCK_WEIGHTS) * Q1_BLOCK_BYTES
-        block_start = sidecar.data_start + written.offset + sample_expert * expert_bytes
-        written_block = bytes(sidecar_map[block_start : block_start + Q1_BLOCK_BYTES])
-        signs, scales = _load_gptq_npz(
-            gptq_root, sample_expert, sample_part, out_dim, in_dim
+        for layer, gptq_root in sorted(gptq_roots.items()):
+            sample_name = f"blk.{layer}.{PART_SUFFIX[sample_part]}"
+            written = sidecar.tensors[sample_name]
+            in_dim, out_dim, _ = written.dims
+            expert_bytes = (
+                out_dim * (in_dim // Q1_BLOCK_WEIGHTS) * Q1_BLOCK_BYTES
+            )
+            for sample_expert in experts[:2]:
+                block_start = (
+                    sidecar.data_start
+                    + written.offset
+                    + sample_expert * expert_bytes
+                )
+                written_block = bytes(
+                    sidecar_map[block_start : block_start + Q1_BLOCK_BYTES]
+                )
+                signs, scales = _load_gptq_npz(
+                    gptq_root,
+                    sample_expert,
+                    sample_part,
+                    out_dim,
+                    in_dim,
+                )
+                source_scale = np.asarray(scales[0, 0], dtype="<f2").tobytes()
+                source_signs = signs[0, 0].tobytes()
+                if (
+                    written_block[:2] != source_scale
+                    or written_block[2:] != source_signs
+                ):
+                    raise AssertionError(
+                        f"written block does not match source NPZ bytes: "
+                        f"layer {layer} expert {sample_expert}"
+                    )
+                source_bits = np.unpackbits(signs[0, 0], bitorder="little")
+                expected = np.where(
+                    source_bits != 0,
+                    float(scales[0, 0]),
+                    -float(scales[0, 0]),
+                ).astype(np.float32)
+                np.testing.assert_array_equal(
+                    _dequant_q1_block(written_block),
+                    expected,
+                )
+                round_trip_blocks += 1
+    return round_trip_blocks
+
+
+def verify_sidecar(
+    base: GgufModel,
+    gptq_root: Path,
+    layer: int,
+    experts: tuple[int, ...],
+    out_path: Path,
+) -> None:
+    """Backward-compatible single-layer programmatic entry point."""
+    verify_multi_layer_sidecar(
+        base=base,
+        gptq_roots={layer: gptq_root},
+        first_layer=layer,
+        last_layer=layer,
+        experts=experts,
+        out_path=out_path,
+    )
+
+
+def _split_output_path(out_path: Path, first_layer: int, last_layer: int) -> Path:
+    if first_layer == last_layer:
+        tag = f".L{first_layer}"
+    else:
+        tag = f".L{first_layer}-L{last_layer}"
+    return out_path.with_name(f"{out_path.stem}{tag}{out_path.suffix}")
+
+
+def _sidecar_jobs(
+    sources: Sequence[LayerSource],
+    out_path: Path,
+    output_mode: str,
+) -> tuple[SidecarJob, ...]:
+    if not sources:
+        raise ValueError("at least one GPTQ layer source is required")
+    ordered_sources = tuple(sorted(sources, key=lambda source: source.layer))
+    if len({source.layer for source in ordered_sources}) != len(ordered_sources):
+        raise ValueError("GPTQ layer sources must be unique")
+    if output_mode == "joint":
+        return (
+            SidecarJob(
+                first_layer=ordered_sources[0].layer,
+                last_layer=ordered_sources[-1].layer,
+                gptq_roots={
+                    source.layer: source.gptq_root for source in ordered_sources
+                },
+                out_path=out_path,
+            ),
         )
-        source_scale = np.asarray(scales[0, 0], dtype="<f2").tobytes()
-        source_signs = signs[0, 0].tobytes()
-        if written_block[:2] != source_scale or written_block[2:] != source_signs:
-            raise AssertionError("written sample block does not match source NPZ bytes")
-        source_bits = np.unpackbits(signs[0, 0], bitorder="little")
-        expected = np.where(source_bits != 0, float(scales[0, 0]), -float(scales[0, 0])).astype(np.float32)
-        np.testing.assert_array_equal(_dequant_q1_block(written_block), expected)
+    if output_mode != "split":
+        raise ValueError(f"unknown output mode {output_mode!r}")
+
+    groups: list[list[LayerSource]] = []
+    for source in ordered_sources:
+        if not groups or source.layer != groups[-1][-1].layer + 1:
+            groups.append([source])
+        else:
+            groups[-1].append(source)
+    multiple_outputs = len(groups) > 1
+    jobs: list[SidecarJob] = []
+    for group in groups:
+        first_layer = group[0].layer
+        last_layer = group[-1].layer
+        job_out = (
+            _split_output_path(out_path, first_layer, last_layer)
+            if multiple_outputs
+            else out_path
+        )
+        jobs.append(
+            SidecarJob(
+                first_layer=first_layer,
+                last_layer=last_layer,
+                gptq_roots={
+                    source.layer: source.gptq_root for source in group
+                },
+                out_path=job_out,
+            )
+        )
+    return tuple(jobs)
+
+
+def _format_size(size: int) -> str:
+    return f"{size / 1_000_000_000:.2f} GB ({size / 2**30:.2f} GiB)"
+
+
+def _job_plan(
+    base: GgufModel,
+    job: SidecarJob,
+) -> tuple[int, int, int]:
+    tensors = _make_output_tensors(
+        base,
+        range(job.first_layer, job.last_layer + 1),
+    )
+    q1_bytes = sum(
+        tensor.nbytes for tensor in tensors if tensor.type_id == Q1_TYPE_ID
+    )
+    payload_bytes = sum(tensor.nbytes for tensor in tensors)
+    layer_count = job.last_layer - job.first_layer + 1
+    gap_count = layer_count - len(job.gptq_roots)
+    return q1_bytes, payload_bytes, gap_count
 
 
 def _parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
-        description="Convert GPTQ-Q1 expert NPZ files into a ds4 Q1_0 GGUF sidecar."
+        description="Convert GPTQ-Q1 expert NPZ files into ds4 Q1_0 GGUF sidecars.",
+        epilog=(
+            "The runtime binds one inclusive layer range from one "
+            "DS4_Q1_0_EXPERT_SIDECAR. In joint mode, gaps in --layer-spec "
+            "are filled entirely by base-model requantization. Split mode "
+            "emits one file per contiguous requested run, but those files "
+            "cannot be loaded simultaneously by the current runtime."
+        ),
     )
-    parser.add_argument("--gptq-root", required=True, type=Path)
-    parser.add_argument("--layer", required=True, type=int)
+    source = parser.add_mutually_exclusive_group(required=True)
+    source.add_argument(
+        "--layer",
+        type=int,
+        help="single layer (requires --gptq-root; legacy interface)",
+    )
+    source.add_argument(
+        "--layer-spec",
+        type=_parse_layer_spec,
+        metavar="LAYER:DIR,...",
+        help="per-layer GPTQ campaign roots, for example 3:DIR3,15:DIR15",
+    )
+    parser.add_argument(
+        "--gptq-root",
+        type=Path,
+        help="GPTQ campaign root for legacy --layer mode",
+    )
+    parser.add_argument(
+        "--output-mode",
+        choices=("joint", "split"),
+        default="joint",
+        help=(
+            "joint writes one gap-filled active range (default); split writes "
+            "one sidecar per contiguous requested run"
+        ),
+    )
     parser.add_argument("--experts", required=True, type=_parse_experts)
     parser.add_argument("--base-model", required=True, type=Path)
     parser.add_argument("--out", required=True, type=Path)
@@ -804,36 +1096,92 @@ def _parser() -> argparse.ArgumentParser:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
-    args = _parser().parse_args(argv)
-    if not args.gptq_root.is_dir():
-        raise NotADirectoryError(args.gptq_root)
+    parser = _parser()
+    args = parser.parse_args(argv)
+    if args.layer_spec is None:
+        if args.gptq_root is None:
+            parser.error("--layer requires --gptq-root")
+        if args.output_mode != "joint":
+            parser.error("--output-mode split requires --layer-spec")
+        sources = (LayerSource(args.layer, args.gptq_root.resolve()),)
+    else:
+        if args.gptq_root is not None:
+            parser.error("--gptq-root cannot be combined with --layer-spec")
+        sources = tuple(
+            LayerSource(source.layer, source.gptq_root.resolve())
+            for source in args.layer_spec
+        )
+    for source in sources:
+        if not source.gptq_root.is_dir():
+            raise NotADirectoryError(
+                f"layer {source.layer}: {source.gptq_root}"
+            )
     if not args.base_model.is_file():
         raise FileNotFoundError(args.base_model)
     base = parse_gguf_header(args.base_model)
-    written = write_sidecar(
-        base=base,
-        gptq_root=args.gptq_root.resolve(),
-        layer=args.layer,
-        experts=args.experts,
-        out_path=args.out,
-    )
-    verify_sidecar(
-        base=base,
-        gptq_root=args.gptq_root.resolve(),
-        layer=args.layer,
-        experts=args.experts,
-        out_path=args.out.resolve(),
-    )
-    q1_bytes = sum(tensor.nbytes for tensor in written if tensor.type_id == Q1_TYPE_ID)
-    print(
-        f"OK: {args.out.resolve()} ({q1_bytes} Q1_0 bytes); "
-        f"verified metadata, identity tensors, and one NPZ round-trip block."
-    )
-    print(
-        f"For this single-layer sidecar set DS4_Q1_0_LAYER_FIRST={args.layer}, "
-        f"DS4_Q1_0_LAYER_LAST={args.layer}, and "
-        f"DS4_Q1_0_EXPERT_SIDECAR={args.out.resolve()}"
-    )
+    jobs = _sidecar_jobs(sources, args.out.resolve(), args.output_mode)
+    normalized_outputs = [
+        os.path.normcase(str(job.out_path.resolve())) for job in jobs
+    ]
+    if len(set(normalized_outputs)) != len(normalized_outputs):
+        raise ValueError("generated sidecar output paths are not unique")
+    existing = [job.out_path for job in jobs if job.out_path.exists()]
+    if existing:
+        raise FileExistsError(f"refusing to overwrite {existing[0].resolve()}")
+
+    plans: list[tuple[int, int, int]] = []
+    for job in jobs:
+        q1_bytes, payload_bytes, gap_count = _job_plan(base, job)
+        plans.append((q1_bytes, payload_bytes, gap_count))
+        requested = ",".join(str(layer) for layer in sorted(job.gptq_roots))
+        print(
+            f"Plan: {job.out_path.resolve()} active={job.first_layer}.."
+            f"{job.last_layer} requested={requested} "
+            f"base-only-gap-layers={gap_count} "
+            f"Q1_0={_format_size(q1_bytes)} "
+            f"tensor-payload={_format_size(payload_bytes)}"
+        )
+
+    for job, (planned_q1_bytes, _, _) in zip(jobs, plans):
+        written = write_multi_layer_sidecar(
+            base=base,
+            gptq_roots=job.gptq_roots,
+            first_layer=job.first_layer,
+            last_layer=job.last_layer,
+            experts=args.experts,
+            out_path=job.out_path,
+        )
+        round_trip_blocks = verify_multi_layer_sidecar(
+            base=base,
+            gptq_roots=job.gptq_roots,
+            first_layer=job.first_layer,
+            last_layer=job.last_layer,
+            experts=args.experts,
+            out_path=job.out_path.resolve(),
+        )
+        q1_bytes = sum(
+            tensor.nbytes
+            for tensor in written
+            if tensor.type_id == Q1_TYPE_ID
+        )
+        if q1_bytes != planned_q1_bytes:
+            raise AssertionError("written Q1_0 footprint differs from plan")
+        print(
+            f"OK: {job.out_path.resolve()} ({q1_bytes} Q1_0 bytes); "
+            f"verified metadata, identity tensors, and "
+            f"{round_trip_blocks} NPZ round-trip blocks."
+        )
+        print(
+            f"Set DS4_Q1_0_LAYER_FIRST={job.first_layer}, "
+            f"DS4_Q1_0_LAYER_LAST={job.last_layer}, and "
+            f"DS4_Q1_0_EXPERT_SIDECAR={job.out_path.resolve()}"
+        )
+    if len(jobs) > 1:
+        print(
+            "Runtime note: DS4_Q1_0_EXPERT_SIDECAR accepts one file; "
+            "the split outputs must be tested in separate processes and "
+            "cannot be served jointly."
+        )
     return 0
 
 

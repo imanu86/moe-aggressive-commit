@@ -7,7 +7,7 @@
 #if defined(_MSC_VER)
 #define DS4_PACKED_STRUCT(definition) __pragma(pack(push, 1)) definition __pragma(pack(pop))
 #else
-#define DS4_PACKED_STRUCT(definition) definition __attribute__((packed))
+#define DS4_PACKED_STRUCT(definition) _Pragma("pack(push, 1)") definition _Pragma("pack(pop)")
 #endif
 
 DS4_PACKED_STRUCT(

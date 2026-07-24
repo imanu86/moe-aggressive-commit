@@ -1,0 +1,54 @@
+diff --git a/ds4_cuda.cu b/ds4_cuda.cu
+index 9696f6e..0000000 100644
+--- a/ds4_cuda.cu
++++ b/ds4_cuda.cu
+@@ -20439,7 +20439,48 @@ extern "C" int ds4_gpu_head_rms_norm_rope_tail_tensor(ds4_gpu_tensor *x, uint
+     return cuda_ok(cudaGetLastError(), "head_rms_norm_rope_tail launch");
+ }
+ extern "C" int ds4_gpu_dsv4_fp8_kv_quantize_tensor(ds4_gpu_tensor *x, uint32_t n_tok, uint32_t head_dim, uint32_t n_rot) {
+-    if (!x || n_rot > head_dim || x->bytes < (uint64_t)n_tok * head_dim * sizeof(float)) return 0;
++    if (!x || n_rot > head_dim || x->bytes < (uint64_t)n_tok * head_dim * sizeof(float)) return 0;
++    const uint64_t required_bytes =
++        (uint64_t)n_tok * head_dim * sizeof(float);
++    if (cuda_tensor_has_staged_host(x)) {
++        std::lock_guard<std::mutex> lock(g_kv_staged_ring_mutex);
++        cuda_kv_staged_ring &ring = g_kv_staged_ring;
++        int ok = x->ptr == NULL &&
++                 required_bytes <= DS4_CUDA_KV_STAGED_RING_BYTES &&
++                 cuda_kv_staged_ring_ensure_locked(64u) &&
++                 cuda_kv_staged_prepare_compute_slot_locked() &&
++                 cuda_kv_staged_begin_locked();
++        if (ok) {
++            ok = cuda_ok(cudaMemcpyAsync(
++                             ring.slot[0],
++                             x->host_ptr,
++                             (size_t)required_bytes,
++                             cudaMemcpyHostToDevice,
++                             ring.copy_stream),
++                         "staged KV FP8 H2D") &&
++                 cuda_ok(cudaEventRecord(
++                             ring.slot_ready[0], ring.copy_stream),
++                         "staged KV FP8 ready event record") &&
++                 cuda_ok(cudaStreamWaitEvent(
++                             0, ring.slot_ready[0], 0),
++                         "staged KV FP8 ready wait");
++        }
++        if (ok) {
++            fp8_kv_quantize_kernel<<<n_tok, 64>>>(
++                (float *)ring.slot[0], n_tok, head_dim, n_rot);
++            ok = cuda_ok(cudaGetLastError(),
++                         "staged fp8_kv_quantize launch");
++        }
++        if (ok) {
++            ok = cuda_kv_staged_append_device_locked(
++                x, 0, ring.slot[0], required_bytes);
++        }
++        if (!ok) {
++            return cuda_kv_staged_abort_locked(
++                "staged FP8 KV quantize failed");
++        }
++        return 1;
++    }
+     fp8_kv_quantize_kernel<<<n_tok, 64>>>((float *)x->ptr, n_tok, head_dim, n_rot);
+     return cuda_ok(cudaGetLastError(), "fp8_kv_quantize launch");
+ }

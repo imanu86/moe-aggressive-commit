@@ -439,6 +439,7 @@ def _parse_layer_spec(value: str) -> tuple[LayerSource, ...]:
 
 def _expert_out_dir(root: Path, expert: int) -> Path:
     candidates = (
+        root / f"e{expert:03d}" / "q1",
         root / f"e{expert}" / "out",
         root / f"gptq_e{expert}" / "out",
     )
@@ -724,6 +725,10 @@ def _preflight_gptq(
         root = gptq_roots[tensor.layer]
         in_dim, out_dim, _ = tensor.dims
         for expert in sorted(viable):
+            try:
+                _npz_path(root, expert, tensor.part)
+            except FileNotFoundError:
+                continue  # missing -> base-filled at write time
             _load_gptq_npz(root, expert, tensor.part, out_dim, in_dim)
 
 
@@ -787,12 +792,16 @@ def write_multi_layer_sidecar(
                         assert tensor.layer is not None
                         gptq_root = gptq_roots.get(tensor.layer)
                         for expert in range(count):
+                            payload = None
                             if gptq_root is not None and expert in viable:
-                                signs, scales = _load_gptq_npz(
-                                    gptq_root, expert, tensor.part, out_dim, in_dim
-                                )
-                                payload = _pack_gptq_expert(signs, scales)
-                            else:
+                                try:
+                                    signs, scales = _load_gptq_npz(
+                                        gptq_root, expert, tensor.part, out_dim, in_dim
+                                    )
+                                    payload = _pack_gptq_expert(signs, scales)
+                                except FileNotFoundError:
+                                    payload = None
+                            if payload is None:
                                 payload = _base_expert_payload(
                                     base_map, base, tensor.base_info, expert
                                 )
@@ -912,7 +921,16 @@ def verify_multi_layer_sidecar(
             expert_bytes = (
                 out_dim * (in_dim // Q1_BLOCK_WEIGHTS) * Q1_BLOCK_BYTES
             )
-            for sample_expert in experts[:2]:
+            present_experts = []
+            for _e in experts:
+                try:
+                    _npz_path(gptq_root, _e, sample_part)
+                except FileNotFoundError:
+                    continue
+                present_experts.append(_e)
+                if len(present_experts) >= 2:
+                    break
+            for sample_expert in present_experts:
                 block_start = (
                     sidecar.data_start
                     + written.offset

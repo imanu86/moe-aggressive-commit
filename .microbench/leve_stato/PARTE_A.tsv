@@ -1,0 +1,80 @@
+leva	stato	valore_attivo	numero	run_prova	data	prova	nota
+DS4_CUDA_ARENA_WRAP_SCHEDULE	ATTIVA	source-parts		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:1	Prerequisito di trust checksum e unlock; il valore attivo e' source-parts.
+DS4_CUDA_ARENA_WRAP_TRUST_WORKER_CHECKSUM	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:2	Valida solo con schedule source-parts, condizione soddisfatta.
+DS4_CUDA_ARENA_WRAP_UNLOCK_SOURCE_RANGES	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:3	Richiede source-parts ed e' incompatibile con trim/file sources.
+DS4_CUDA_ARENA_WRAP_UNLOCK_WAVE_GIB	ATTIVA	4		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:4	Dimensiona le ondate di unlock; dipende da UNLOCK_SOURCE_RANGES=1.
+DS4_CUDA_DYNAMIC_ARENA_GB	ATTIVA	30		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:5	Disabilita la finestra host-register intera del modello.
+DS4_CUDA_EMBED_ROW_STAGING	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:6	Stagia solo le righe di token_embd.weight.
+DS4_CUDA_KV_STAGED_RING	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:7	Vince su KV_MANAGED e rende vivo il timeout transiente.
+DS4_CUDA_MOE_CACHE_POLICY	INERTE	lru		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:32678	Il parser riconosce solo layer-top1; lru equivale al default ed e' ignorato.
+DS4_CUDA_MOE_GPU_RESIDENT_ROUTES	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:9	Prerequisito del resolver residente, tiering e split-fused.
+DS4_CUDA_MOE_ROUTE_NO_DEFAULT_SYNC	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:10	Evita il cudaStreamSynchronize(0) per layer.
+DS4_CUDA_MOE_SPLIT_FUSED	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:11	Mutuamente esclusiva con SPLIT_HIT_MISS; qui il gemello e' 0.
+DS4_CUDA_MOE_SPLIT_HIT_MISS	ATTIVA	0		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:12	Lo zero esplicito lascia in vigore SPLIT_FUSED=1.
+DS4_CUDA_NO_Q8_F16_CACHE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:13	Spegne la cache attention Q8/F16 e rende inerti i suoi reserve.
+DS4_CUDA_PREFILL_MASS_OBSERVE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:14	Observer di massa del prefill; non e' la famiglia REAP_MASS esclusa.
+DS4_CUDA_PREFILL_MASS_WRAP	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:15	Compone il set residente dal profilo di massa del prefill.
+DS4_CUDA_PREFILL_TIER_COMPOSE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:16	Richiede tiering enforce e router coerente, entrambi presenti.
+DS4_CUDA_PREFILL_TIER_RESERVE_SLOTS	ATTIVA	128		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:17	Riserva il pool open-router; interagisce con il selettore RAM.
+DS4_CUDA_PREFILL_TIER_ROUTER	ATTIVA	open		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:18	Il router open di compose non implica DS4_G73_OPEN=1.
+DS4_CUDA_RELEASE_PREFILL_SCRATCH	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:19	Libera g_cuda_tmp, non i buffer batch_* dimensionati dal chunk.
+DS4_CUDA_SCOPED_INVALIDATE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:20	Invalidazione mirata armata nel dispatch; evita di buttare tutta la cache.
+DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB	ATTIVA	2		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:21	Tetto cumulativo per host-register range; non confonderlo col budget arena.
+DS4_CUDA_STREAM_RESERVE_MB	ATTIVA	1024		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:23	Soglia di sfratto del backbone; mai A/B a 150k col contatore byte.
+DS4_CUDA_STREAMING_EXPERT_CACHE_N	ATTIVA	140		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:24	A 150k 140 e' il tetto operativo; salire innesca sfratti del backbone.
+DS4_CUDA_STREAMING_EXPERT_CACHE_RESERVE_GB	ATTIVA	0.125		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:25	Concorre con STREAM_RESERVE_MB nel sizing fisico della cache.
+DS4_CUDA_TRANSIENT_TIMEOUT_RECOVERABLE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:26	Trasforma il timeout transiente in rilettura sincrona bounded.
+DS4_CUDA_TRANSPORT_LEDGER_EVERY_TOKENS	ATTIVA	64		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:27	Cadenza valida solo per TRANSPORT_LEDGER=1, condizione soddisfatta.
+DS4_CUDA_TRANSPORT_LEDGER	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:28	Telemetria di byte, chiamate e ricompre del trasporto.
+DS4_CUDA_WEIGHT_CACHE_VERBOSE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:29	Non e' telemetria pura: cambia anche un ritorno nel percorso cache.
+DS4_CUDA_WORKER_PROFILE_EVERY_TOKENS	ATTIVA	64		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:30	Cadenza valida solo per WORKER_PROFILE=1, condizione soddisfatta.
+DS4_CUDA_WORKER_PROFILE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:31	Attribuisce queue, service, ready, read e drain del route worker.
+DS4_EXPERT_TIER_CLOCK_CALLS	ATTIVA	430		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:32	Letta e usata dal ramo mass-lfru; il vecchio verdetto di inerzia e' stantio.
+DS4_EXPERT_TIER_HYSTERESIS	ATTIVA	1.25		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:33	Il codice la usa nel confronto candidato/vittima mass-lfru.
+DS4_EXPERT_TIER_MIN_FREQUENCY	ATTIVA	3		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:34	Il codice la cabla anche come default di admit_knocks_vram.
+DS4_EXPERT_TIER_POLICY	ATTIVA	mass-lfru		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:35	Richiesta da G133_TIER=1; second-touch cambierebbe i default delle altre leve.
+DS4_EXPERT_TIER_REPLACEMENT_BUDGET	ATTIVA	32		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:36	Budget mass-lfru; non e' il G133_PROMOTE_BUDGET.
+DS4_EXPERT_TIERING	ATTIVA	enforce		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:37	Prerequisito esplicito di G133_TIER=1 e PREFILL_TIER_COMPOSE=1.
+DS4_G130_U1_ATTRIBUTION	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:38	Emette attribuzione per token; gli span mixed-Q1 possono restare a zero.
+DS4_G133_DECAY	ATTIVA	0.98		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:39	Decay mass-lfru letto solo quando G133_TIER=1, condizione soddisfatta.
+DS4_G133_KNOCK_X	ATTIVA	3		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:40	Con KNOCK_Y deve restare entro lo streak a 8 bit.
+DS4_G133_KNOCK_Y	ATTIVA	5		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:41	Con KNOCK_X deve restare entro lo streak a 8 bit.
+DS4_G133_PROMOTE_BUDGET	ATTIVA	8		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:42	Budget G133 distinto dal replacement budget del tiering.
+DS4_G133_ROTATOR_IO_TIMEOUT_S	ATTIVA	0.05		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:43	Timeout del rotatore, non quello del servizio transiente.
+DS4_G133_SEED_DYNAMIC	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:44	Abilita il seed dinamico nel ramo G133.
+DS4_G133_TIER	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:45	Richiede enforce+mass-lfru e contesto entro 20 bit.
+DS4_G133_TRANSIENT_IO_TIMEOUT_S	ATTIVA	0.25		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:46	Fail-fast attivo col ring staged; puo' essere il guardiano di una leva lenta.
+DS4_G73_OPEN	ATTIVA	0		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:47	Lo zero e' un kill-switch in vigore e blocca il pageable G73.
+DS4_G73_PAGEABLE_OVERFLOW_GB	MORTA-COSTR	14		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:2785	Il valore e' letto solo se G73_OPEN=1; il manifest fissa G73_OPEN=0.
+DS4_METAL_GRAPH_TOKEN_PROFILE	ATTIVA	1		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:49	Profilo encode/execute/read attivo; perturba e non va usato come baseline t/s.
+DS4_METAL_PREFILL_CHUNK	ATTIVA	250		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:50	Leva di VRAM per cache e backbone, non solo di prefill.
+DS4_MODEL_BYTES	MORTA-COSTR	86720111488		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:3138	Viene letto solo dal recovery trace; DS4_EXPERT_RECOVERY_TRACE non e' nel preset.
+DS4_MODEL_SHA256	ATTIVA	efc7ed607ff27076e3e501fc3fefefa33c0ed8cf1eff483a2b7fdc0c2e616668		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:37604	Solo provenance: il codice stampa la stringa, non calcola l'hash del modello.
+DS4_REAP_PREFETCH_THREADS	ATTIVA	8		G_base	2026-07-30	D:\ds4_work\gate\runs\G_base\manifest.txt:53	Queue depth effettiva del prefetch benedetto; non e' la famiglia REAP_MASS.
+DS4_N_INDEXER_TOP_K	ATTIVA	512	pos >= 2051	G_base	2026-07-30	ds4-p4a/ds4.c:14005	Hardcoded a ds4.c:124, non e' una env; il gate da 4000 token lo rende vivo.
+DS4_METAL_INDEXER_STAGE_PROFILE	MAI	-					Mai accesa; ora e' rilevante perche' la campagna supera pos 2051.
+DS4_METAL_DECODE_STAGE_PROFILE	MAI	-					Separerebbe gli stadi decode ma sincronizza ai boundary; usarla solo per attribuire.
+DS4_CUDA_KV_MANAGED	MORTA-COSTR	-		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:9727	KV_STAGED_RING=1 ritorna prima del ramo managed; su WDDM l'advise falliva comunque.
+DS4_METAL_GRAPH_TOKEN_SPLIT_LAYERS	FALS	-	0/4: 0,55/0,55 t/s	Add.43b	2026-07-24	reap-loop-ledger-main/docs/EXPERIMENTS_LEDGER.md:5213	A/B identico a 4 posizioni; non riproporre come cura del regime.
+DS4_CUDA_EXPERT_CACHE_GROW	MAI	-					Mai provata; se sceglie piu' di 140 slot a ctx150k va abortita.
+DS4_METAL_GRAPH_RAW_CAP	MAI	-					Mai usata; sotto window+ubatch degrada il prefill in silenzio.
+DS4_CUDA_MOE_DIRECT_CACHE_HITS	INERTE	-	all_hit=0	campagna-1	2026-07-27	reap-loop-ledger-main/docs/EXPERIMENTS_LEDGER.md:17161	Richiede layer 6/6 residenti; il contatore misurato e' zero.
+DS4_CUDA_MOE_IO_QD	FALS	-	1,45 vs 1,38 GB/s	Add.43b	2026-07-24	reap-loop-ledger-main/docs/EXPERIMENTS_LEDGER.md:5197	Quattro stream non scalano il disco; inoltre e' il vecchio percorso I/O.
+think:false	ATTIVA	false		G_base	2026-07-30	D:\ds4_work\gate\turno.py:27	La richiesta corrente spegne thinking e usa temperature=0.
+--mtp-draft	MORTA-COSTR	1		G_base	2026-07-30	ds4-p4a/ds4_server.c:7485	Il ramo speculativo richiede draft>1 e un modello --mtp; il runner passa solo draft 1.
+ds4_default_prefill_cap_for_prompt:2048	INERTE	250		G_base	2026-07-30	ds4-p4a/ds4.c:8011	Hardcoded a ds4.c:8011, non e' una env; PREFILL_CHUNK=250 lo neutralizza.
+cudaMallocManaged	ATTIVA	managed		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:9699	Hardcoded come default a ds4_cuda.cu:9699; GRAPH_TENSOR_DEVICE non e' nel preset.
+ds4_gpu_tensor_contents:cudaDeviceSynchronize	MORTA-COSTR	-		audit-30	2026-07-30	ds4-p4a/ds4_cuda.cu:9799	L'atlante e' stantio: la funzione non esiste piu'; il read corrente usa cudaMemcpy.
+split_after_layers	FALS	4	0/4: 0,55/0,55 t/s	Add.43b	2026-07-24	reap-loop-ledger-main/docs/EXPERIMENTS_LEDGER.md:5213	Hardcoded a ds4.c:15554, non e' una env; il relativo override e' falsificato.
+resolver:cudaStreamSynchronize(0)	INERTE	off		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:48745	Hardcoded a ds4_cuda.cu:48765, non e' una env; NO_DEFAULT_SYNC=1 salta il ramo.
+moe_resolve_resident_routes_kernel<<<1,1>>>	ATTIVA	1x1		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:48664	Hardcoded a ds4_cuda.cu:48664, non e' una env; un lancio di controllo per layer.
+arena_slot_checksum:FNV-1a	ATTIVA	byte-per-byte		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:12894	Hardcoded a ds4_cuda.cu:12894, non e' una env; il worker calcola il checksum di ogni slot.
+arena_slot_replace:memcpy_x2	ATTIVA	6,75 MiB x2		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:36295	Hardcoded a ds4_cuda.cu:36295/37010, non e' una env; doppio traffico host per sostituzione.
+cuda_moe_tiering_pick_ram_slot	ATTIVA	scansione lineare		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:34790	Hardcoded a ds4_cuda.cu:34790, non e' una env; nessuna free-list.
+cuda_moe_expert_cache_find	ATTIVA	O(capacity)		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:40672	Hardcoded a ds4_cuda.cu:40672, non e' una env; scansione lineare per route.
+os_pread_cancellable_timeout:chunk_bytes	ATTIVA	1 MiB		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:31845	Hardcoded a ds4_cuda.cu:31845, non e' una env; ROUTE_READ_WHOLE non e' nel preset.
+os_pread:CreateEventW	ATTIVA	1 evento/chiamata		G_base	2026-07-30	ds4-p4a/src/platform/os_file.c:613	Hardcoded a os_file.c:613, non e' una env; crea e chiude un evento per os_pread.
+CUDA_Q1_0_SSD_WRAP_SSD_RING_SLOTS	MORTA-COSTR	2		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:2712	Hardcoded a ds4_cuda.cu:2705, non e' una env; G73=0 e PROMOTION_SSD_WRAP assente spengono il path.
+CUDA_Q1_0_SSD_WRAP_H2D_RING_SLOTS	MORTA-COSTR	2		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:2712	Hardcoded a ds4_cuda.cu:2706, non e' una env; G73=0 e PROMOTION_SSD_WRAP assente spengono il path.
+slot_map_upload_bytes	MORTA-COSTR	44.032 B/layer		G_base	2026-07-30	ds4-p4a/ds4_cuda.cu:49453	Hardcoded a ds4_cuda.cu:47076, non e' una env; GPU_RESIDENT_ROUTES devia prima del selected-load.
+completion==64	INERTE	64		G_base	2026-07-30	ds4-p4a/ds4_server.c:7808	Hardcoded a ds4_server.c:7808, non e' una env; il gate corrente chiede 4000 token.

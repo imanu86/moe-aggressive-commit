@@ -1,0 +1,155 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -22479,6 +22479,15 @@
+ #include <sys/mman.h>
+ #endif
+ 
++/* PINBUDGETFIX2: il lock OS di NextN nasce in questo TU, prima dell'init CUDA.
++ * Il ledger CUDA lo legge a request-end tramite questo hook; un solo owner
++ * dello stato, nessuna sincronizzazione e nessun lavoro sul percorso token. */
++static uint64_t g_ds4_nextn_os_locked_bytes = 0;
++
++uint64_t ds4_nextn_os_locked_bytes(void) {
++    return g_ds4_nextn_os_locked_bytes;
++}
++
+ static uint64_t ds4_nextn_touch_region(const uint8_t *base, uint64_t bytes) {
+     uint64_t sum = 0;
+     for (uint64_t off = 0; off < bytes; off += 4096u) {
+@@ -22520,6 +22529,7 @@ static void ds4_nextn_engine_warmup(ds4_engine *e) {
+     const bool do_prewarm = !(pw_env && strcmp(pw_env, "0") == 0);
+     long pin_mode = 1;
+     if (pin_env && pin_env[0]) pin_mode = strtol(pin_env, NULL, 10);
++    g_ds4_nextn_os_locked_bytes = 0;
+ 
+     const uint8_t *mod_base = (const uint8_t *)e->mtp_model.map +
+                               e->mtp_model.tensor_data_pos;
+@@ -22599,6 +22609,9 @@ static void ds4_nextn_engine_warmup(ds4_engine *e) {
+             }
+         }
+     }
++    /* Conta soltanto i payload dei VirtualLock/mlock riusciti, la stessa
++     * quantita' gia' dichiarata dalla riga [nextn-cpu] sottostante. */
++    g_ds4_nextn_os_locked_bytes = locked;
+     fprintf(stderr,
+             "ds4: [nextn-cpu] pin mode=%ld locked=%.1f MB failed=%.1f MB "
+             "(1=dense+head, 2=+experts, 0=off)\n",
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -637,11 +637,13 @@ enum {
+     DS4_HOSTPIN_KIND_KV_ARENA,    /* arena KV staged (cudaHostAlloc) */
+     DS4_HOSTPIN_KIND_MODEL_STAGE, /* 4 buffer staging modello (cudaMallocHost) */
+     DS4_HOSTPIN_KIND_ROUTE_STAGE, /* staging host route worker (cudaHostAlloc) */
++    DS4_HOSTPIN_KIND_DYNAMIC_ARENA, /* arena esperti host (cudaHostAlloc) */
++    DS4_HOSTPIN_KIND_MTP_WINDOW,   /* finestra MTP secondaria (cudaHostRegister) */
+     DS4_HOSTPIN_KIND_COUNT
+ };
+ static const char *const g_hostpin_kind_name[DS4_HOSTPIN_KIND_COUNT] = {
+     "other", "window", "range", "indexer_zc", "kv_arena", "model_stage",
+-    "route_stage"
++    "route_stage", "dynamic_arena", "mtp_window"
+ };
+ struct ds4_hostpin_rec {
+     uint64_t bytes;
+@@ -661,6 +663,7 @@ static void ds4_hostpin_log_alloc(int kind, uint64_t bytes,
+                                   uint64_t kind_live, uint64_t total_live,
+                                   uint64_t total_peak);
+ static uint64_t cuda_host_pin_total_budget_bytes(void);
++extern "C" uint64_t ds4_nextn_os_locked_bytes(void);
+ 
+ /* Tag del kind per la PROSSIMA allocazione host-pinned (stesso pattern di
+  * ds4_gpu_alloc_site_label): chiamare immediatamente prima della cuda call. */
+@@ -3987,6 +3990,46 @@ static void ds4_hostpin_log_alloc(int kind, uint64_t bytes,
+             (double)cuda_host_register_budget_bytes() / 1048576.0,
+             total_budget ? (double)total_budget / 1048576.0 : 0.0);
+ }
++
++/* PINBUDGETFIX2: inventario unico delle due famiglie che rendono RAM non
++ * reclamabile. Una sola presa del mutex a request-end; nessun costo per-token. */
++static void ds4_hostpin_summary(const char *phase) {
++    uint64_t live[DS4_HOSTPIN_KIND_COUNT] = {};
++    uint64_t cuda_total = 0;
++    {
++        std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++        for (int kind = 0; kind < DS4_HOSTPIN_KIND_COUNT; kind++) {
++            live[kind] = g_hostpin_kind_live[kind];
++        }
++        cuda_total = g_hostpin_total_live;
++    }
++    const uint64_t os_locked = ds4_nextn_os_locked_bytes();
++    const uint64_t combined =
++        cuda_total > UINT64_MAX - os_locked ? UINT64_MAX
++                                             : cuda_total + os_locked;
++    fprintf(stderr,
++            "ds4: [host-pin-summary] phase=%s other_mib=%.1f "
++            "window_mib=%.1f range_mib=%.1f indexer_zc_mib=%.1f "
++            "kv_arena_mib=%.1f model_stage_mib=%.1f route_stage_mib=%.1f "
++            "dynamic_arena_mib=%.1f mtp_window_mib=%.1f "
++            "cuda_pinned_total_mib=%.1f "
++            "nextn_os_lock_mib=%.1f os_locked_total_mib=%.1f "
++            "combined_mib=%.1f\n",
++            phase ? phase : "?",
++            (double)live[DS4_HOSTPIN_KIND_OTHER] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_WINDOW] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_RANGE] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_INDEXER_ZC] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_KV_ARENA] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_MODEL_STAGE] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_ROUTE_STAGE] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_DYNAMIC_ARENA] / 1048576.0,
++            (double)live[DS4_HOSTPIN_KIND_MTP_WINDOW] / 1048576.0,
++            (double)cuda_total / 1048576.0,
++            (double)os_locked / 1048576.0,
++            (double)os_locked / 1048576.0,
++            (double)combined / 1048576.0);
++}
+ 
+ static void cuda_mtp_model_map_release(void) {
+     if (g_mtp_model_registered_base) {
+@@ -10670,11 +10713,13 @@ static int cuda_q1_0_resident_arena_prepare(
+     }
+     /* P.5a symmetry with the primary arena: request the mapped contract, fall
+      * back to the plain flag rather than failing the arena. */
++    ds4_hostpin_tag(DS4_HOSTPIN_KIND_DYNAMIC_ARENA);
+     if (cudaHostAlloc((void **)&host, (size_t)pinned_bytes,
+                       cudaHostAllocDefault | cudaHostAllocMapped) !=
+             cudaSuccess) {
+         (void)cudaGetLastError();
+         host = NULL;
++        ds4_hostpin_tag(DS4_HOSTPIN_KIND_DYNAMIC_ARENA);
+         if (cudaHostAlloc((void **)&host, (size_t)pinned_bytes,
+                           cudaHostAllocDefault) != cudaSuccess) {
+             (void)cudaGetLastError();
+@@ -11049,5 +11094,6 @@ static int cuda_dynamic_arena_prepare(
+      * plain flag is retried and zero-copy is left to fail its capability
+      * check rather than taking the arena down with it. */
++    ds4_hostpin_tag(DS4_HOSTPIN_KIND_DYNAMIC_ARENA);
+     cudaError_t err = cudaHostAlloc(
+         (void **)&host, (size_t)bytes,
+         cudaHostAllocDefault | cudaHostAllocMapped);
+@@ -11058,6 +11104,7 @@ static int cuda_dynamic_arena_prepare(
+                 "(%s); retrying unmapped\n",
+                 (double)bytes / 1073741824.0, cudaGetErrorString(err));
+         host = NULL;
++        ds4_hostpin_tag(DS4_HOSTPIN_KIND_DYNAMIC_ARENA);
+         err = cudaHostAlloc((void **)&host, (size_t)bytes, cudaHostAllocDefault);
+     }
+     if (err != cudaSuccess || !host) {
+@@ -17829,6 +17876,7 @@ extern "C" int ds4_gpu_set_mtp_model_map_range(
+     const uint64_t registered_bytes =
+         (uint64_t)(registered_end - registered_begin);
+ 
++    ds4_hostpin_tag(DS4_HOSTPIN_KIND_MTP_WINDOW);
+     cudaError_t err = cudaHostRegister(
+         (void *)registered_begin,
+         (size_t)registered_bytes,
+@@ -31637,6 +31685,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+         g_vram_pin_rebuild_slots = 0;
+     }
+     ds4_transport_request_end();
++    ds4_hostpin_summary("request-end");
+ }
+ 
+ template <bool G73, bool G132 = false, bool SCOPED = false, bool DOV = false>

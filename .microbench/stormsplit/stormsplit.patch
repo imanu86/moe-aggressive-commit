@@ -1,0 +1,36 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -8990,6 +8990,19 @@ static int cuda_model_stream_admit_unified_enabled(void) {
+     return enabled;
+ }
+ 
++/* Keep the broader hot-reserve policy independently measurable and opt-in.
++ * Exact "1" avoids accidentally enabling the experiment with VAR=0. */
++static int cuda_model_stream_hot_reserve_all_enabled(void) {
++    static int initialized = 0;
++    static int enabled = 0;
++    if (!initialized) {
++        const char *e = getenv("DS4_CUDA_STREAM_HOT_RESERVE_ALL");
++        enabled = e && strcmp(e, "1") == 0;
++        initialized = 1;
++    }
++    return enabled;
++}
++
+ /* Allocate `bytes` of VRAM for a streamed range, reusing a recycled buffer or
+  * evicting LRU cold ranges as needed. allow_evict=0 during pre-cache (NULL ->
+  * caller defers). No per-eviction device sync: safety is via the pool's events. */
+@@ -9135,10 +9148,10 @@ static const char *cuda_model_range_ptr_from_fd(
+     /* Dedicated VRAM buffer for this streamed range; evict LRU cold ranges under
+      * pressure (inference only; pre-cache defers). No host-pointer fallback: a host
+      * pointer is not device-accessible on Windows (no HMM) and would crash a kernel. */
+     const int is_hot = (what == NULL) || (strncmp(what, "moe_", 4) != 0);
+-    const int unified_admission = cuda_model_stream_admit_unified_enabled();
++    const int hot_reserve_all = cuda_model_stream_hot_reserve_all_enabled();
+     const int use_hot_reserve =
+-        unified_admission ? is_hot : (what != NULL && strcmp(what, "indexer_f16") == 0);
++        hot_reserve_all ? is_hot : (what != NULL && strcmp(what, "indexer_f16") == 0);
+     /* Nome del range in trasporto: rende leggibile what_at_min del probe del
+      * picco ("moe_gate_exp" invece della sola riga sorgente).  Le stringhe `what`
+      * sono letterali o nomi di tensore di lunga vita, quindi il puntatore

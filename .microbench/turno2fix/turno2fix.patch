@@ -1,0 +1,169 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -23796,12 +23796,31 @@ int ds4_session_sync(ds4_session *s, const ds4_tokens *prompt, char *err, size_t
+     ds4_engine *e = s->engine;
+     const char *backend_name = ds4_backend_name(e->backend);
+     ds4_reap_mask_poll(&e->model, &e->weights, e->backend == DS4_BACKEND_CUDA);
++    bool request_snapshot_preserved = false;
+     if (e->backend == DS4_BACKEND_CUDA) {
+         if (!ds4_gpu_dynamic_arena_request_begin()) {
+             snprintf(err, errlen,
+                      "CUDA request boundary failed to quiesce prior route work");
+             return 1;
+         }
++        const char *preserve_env =
++            getenv("DS4_CUDA_PRESERVE_ACROSS_REQUESTS");
++        if (preserve_env && strcmp(preserve_env, "1") == 0) {
++            /* Run before any resumed token or cold prefill work.  A return
++             * value of one means that this is the priming request (or that
++             * there is no composed snapshot to carry); two means that the
++             * prior snapshot was validated and rebound to this request. */
++            const int preserve_result =
++                ds4_gpu_dynamic_arena_observer_preserve_short_suffix(0u);
++            if (!preserve_result) {
++                snprintf(err, errlen,
++                         "CUDA failed to preserve the published expert "
++                         "snapshot at the request boundary");
++                s->checkpoint_valid = false;
++                return 1;
++            }
++            request_snapshot_preserved = preserve_result > 1;
++        }
+     }
+ 
+     if (s->checkpoint_valid &&
+@@ -23838,7 +23857,9 @@ int ds4_session_sync(ds4_session *s, const ds4_tokens *prompt, char *err, size_t
+             }
+             ds4_tokens_copy(&s->checkpoint, prompt);
+             s->checkpoint_valid = true;
+-            ds4_gpu_dynamic_arena_observer_reset();
++            if (!request_snapshot_preserved) {
++                ds4_gpu_dynamic_arena_observer_reset();
++            }
+             return 0;
+         }
+ 
+@@ -23855,18 +23876,20 @@ int ds4_session_sync(ds4_session *s, const ds4_tokens *prompt, char *err, size_t
+             }
+             token_vec_push(&s->checkpoint, prompt->v[i]);
+         }
+-        if (e->backend == DS4_BACKEND_CUDA &&
+-            (uint32_t)suffix < resume_min) {
+-            if (!ds4_gpu_dynamic_arena_observer_preserve_short_suffix(
+-                    (uint32_t)suffix)) {
+-                snprintf(err, errlen,
+-                         "CUDA failed to preserve the published expert "
+-                         "snapshot after a short checkpoint suffix");
+-                s->checkpoint_valid = false;
+-                return 1;
++        if (!request_snapshot_preserved) {
++            if (e->backend == DS4_BACKEND_CUDA &&
++                (uint32_t)suffix < resume_min) {
++                if (!ds4_gpu_dynamic_arena_observer_preserve_short_suffix(
++                        (uint32_t)suffix)) {
++                    snprintf(err, errlen,
++                             "CUDA failed to preserve the published expert "
++                             "snapshot after a short checkpoint suffix");
++                    s->checkpoint_valid = false;
++                    return 1;
++                }
++            } else {
++                ds4_gpu_dynamic_arena_observer_reset();
+             }
+-        } else {
+-            ds4_gpu_dynamic_arena_observer_reset();
+         }
+         return 0;
+     }
+@@ -23897,7 +23920,9 @@ int ds4_session_sync(ds4_session *s, const ds4_tokens *prompt, char *err, size_t
+     s->checkpoint_valid = true;
+     s->mtp_draft_valid = false;
+     s->graph.mtp_n_raw = 0;
+-    ds4_gpu_dynamic_arena_observer_reset();
++    if (!request_snapshot_preserved) {
++        ds4_gpu_dynamic_arena_observer_reset();
++    }
+     return 0;
+ #endif
+ }
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -16599,6 +16599,11 @@ static void cuda_reap_mass_observe_selected(
+     observer.last_layer = layer_index;
+ }
+ 
++static int cuda_moe_preserve_across_requests_requested(void) {
++    const char *value = getenv("DS4_CUDA_PRESERVE_ACROSS_REQUESTS");
++    return value && strcmp(value, "1") == 0;
++}
++
+ static int cuda_dynamic_arena_carry_mode(void) {
+     if (cuda_q1_0_exclusive_arena_active()) {
+         return 1;
+@@ -16639,9 +16644,13 @@ extern "C" int ds4_gpu_dynamic_arena_request_begin(void) {
+      * disarmed through prefill and is re-cleared/armed at decode-start. */
+     ds4_transport_request_reset();
+     const int shared_policy_active = cuda_g133_shared_policy_active();
++    const int preserve_tiering =
++        cuda_moe_preserve_across_requests_requested() &&
++        g_moe_tiering.mode != CUDA_MOE_TIER_OFF &&
++        g_moe_tiering.compose_prefill_mass_tiering;
+     /* Strict boundary ordering for the active shared G133 policy: prior route
+      * work is quiescent before SSD-wrap commits and before epoch advance. */
+-    if (shared_policy_active &&
++    if ((shared_policy_active || preserve_tiering) &&
+         !cuda_moe_route_worker_drain_completed("request-boundary")) {
+         return 0;
+     }
+@@ -16701,11 +16710,20 @@ extern "C" int ds4_gpu_dynamic_arena_observer_preserve_short_suffix(
+     cuda_prefill_mass_observer &observer = g_prefill_mass_observer;
+     const int compose_requested =
+         cuda_moe_prefill_tier_compose_requested();
++    const int preserve_across_requests =
++        cuda_moe_preserve_across_requests_requested();
+ 
++    /* The pre-token request-boundary call must leave the priming observer
++     * armed: there is no authoritative snapshot to preserve yet. */
++    if (preserve_across_requests &&
++        g_dynamic_arena.snapshot_generation == 0u) {
++        return 1;
++    }
+     if (cuda_q1_0_exclusive_arena_active() ||
+         !observer.enabled || !observer.wrap_requested ||
+         compose_requested <= 0 ||
+         g_dynamic_arena.snapshot_generation == 0u) {
++        if (preserve_across_requests) return 1;
+         ds4_gpu_dynamic_arena_observer_reset();
+         return !g_dynamic_arena.submissions_blocked;
+     }
+@@ -16795,7 +16813,8 @@ extern "C" int ds4_gpu_dynamic_arena_observer_preserve_short_suffix(
+             (unsigned long long)observer.observer_generation,
+             (unsigned long long)observer.published_snapshot_generation);
+     cuda_request_phase_trace("prefill-preserve-short-suffix");
+-    return valid;
++    /* Preserve the existing boolean ABI; two identifies an early carry. */
++    return valid && preserve_across_requests ? 2 : valid;
+ }
+ 
+ extern "C" void ds4_gpu_dynamic_arena_observer_reset(void) {
+@@ -33641,9 +33660,16 @@ static void cuda_moe_tiering_report_and_reset(int flush_ssd_wrap) {
+ 
+ static void cuda_moe_tiering_request_boundary_reset(void) {
+     if (g_moe_tiering.mode != CUDA_MOE_TIER_OFF &&
+         g_moe_tiering.compose_prefill_mass_tiering) {
+-        cuda_moe_tiering_report_and_reset(
+-            cuda_g133_shared_policy_active() ? 0 : 1);
++        if (cuda_moe_preserve_across_requests_requested()) {
++            /* request_used is a true request-local throttle.  Tier entries,
++             * their residency generations, LF/RU evidence and G133 advisory
++             * heat/streak remain authoritative after the boundary drain. */
++            g_iq1_promotion.request_used = 0u;
++        } else {
++            cuda_moe_tiering_report_and_reset(
++                cuda_g133_shared_policy_active() ? 0 : 1);
++        }
+     }
+ }
+ 

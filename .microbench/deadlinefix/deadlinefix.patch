@@ -1,0 +1,930 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 53668b7..d23a4bb 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -4966,6 +4966,50 @@ static std::atomic<uint32_t> g_workerprof_inflight_max(0u);
+ static uint64_t g_workerprof_prev[WP_COUNT];
+ static uint64_t g_workerprof_next_token_log;
+ 
++/* DEADLINE-ADAPTIVE: diagnosi causale e passi della gerarchia di recovery.
++ * Globali separati, non campi della cache condivisa: nessun layout cambia. */
++static std::atomic<uint64_t> g_transient_deadline_slow_io(0);
++static std::atomic<uint64_t> g_transient_deadline_cpu_contention(0);
++static std::atomic<uint64_t> g_transient_deadline_eviction_storm(0);
++static std::atomic<uint64_t> g_transient_deadline_read_retries(0);
++static std::atomic<uint64_t> g_transient_deadline_no_deadline_fallbacks(0);
++static std::atomic<uint64_t> g_transient_deadline_final_read_cancels(0);
++static std::atomic<uint32_t>
++    g_transient_deadline_last_classified_sequence(0u);
++
++static int cuda_transient_deadline_adaptive_requested(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *env = getenv("DS4_CUDA_TRANSIENT_DEADLINE_ADAPTIVE");
++        cached = env && strcmp(env, "1") == 0 ? 1 : 0;
++    }
++    return cached;
++}
++
++static void cuda_moe_transient_deadline_report(const char *tag) {
++    if (!cuda_transient_deadline_adaptive_requested()) return;
++    fprintf(stderr,
++            "ds4: [transient-deadline] %s slow_io=%llu cpu_contention=%llu "
++            "eviction_storm=%llu read_retries=%llu "
++            "no_deadline_fallbacks=%llu final_read_cancels=%llu "
++            "worker_kills_for_slow_read=0\n",
++            tag ? tag : "periodic",
++            (unsigned long long)g_transient_deadline_slow_io.load(
++                std::memory_order_relaxed),
++            (unsigned long long)g_transient_deadline_cpu_contention.load(
++                std::memory_order_relaxed),
++            (unsigned long long)g_transient_deadline_eviction_storm.load(
++                std::memory_order_relaxed),
++            (unsigned long long)g_transient_deadline_read_retries.load(
++                std::memory_order_relaxed),
++            (unsigned long long)
++                g_transient_deadline_no_deadline_fallbacks.load(
++                    std::memory_order_relaxed),
++            (unsigned long long)
++                g_transient_deadline_final_read_cancels.load(
++                    std::memory_order_relaxed));
++}
++
+ /* Rendezvous fra thread di decode e route worker.  Ogni coppia (sequence,
+  * istante) e' pubblicata scrivendo prima l'istante e poi la sequence con una
+  * release; il lettore fa acquire sulla sequence e accetta l'istante solo se
+@@ -5284,7 +5328,10 @@ static void ds4_workerprof_note_wait(
+ }
+ 
+ static void ds4_workerprof_report(const char *tag) {
+-    if (!cuda_worker_profile_enabled()) return;
++    if (!cuda_worker_profile_enabled()) {
++        cuda_moe_transient_deadline_report(tag);
++        return;
++    }
+     uint64_t cur[WP_COUNT];
+     uint64_t win[WP_COUNT];
+     for (int i = 0; i < WP_COUNT; i++) {
+@@ -5394,6 +5441,7 @@ static void ds4_workerprof_report(const char *tag) {
+             (unsigned long long)v[WP_CACHE_FULL_VALID_DROPPED]);
+ 
+     for (int i = 0; i < WP_COUNT; i++) g_workerprof_prev[i] = cur[i];
++    cuda_moe_transient_deadline_report(tag);
+ }
+ 
+ /* Marcatori di token, chiamati dal thread di decode dentro
+@@ -31701,6 +31749,145 @@ static double cuda_g133_transient_io_timeout_seconds(void) {
+     return timeout_seconds;
+ }
+ 
++struct cuda_moe_transient_deadline_policy {
++    double base_seconds;
++    double seconds_per_mib;
++    double floor_seconds;
++    double cap_seconds;
++    double retry_backoff_seconds;
++    double fallback_backoff_seconds;
++    uint64_t eviction_storm_threshold;
++};
++
++static double cuda_moe_transient_deadline_env_seconds(
++        const char *name, double fallback) {
++    const char *value = getenv(name);
++    if (!value || !value[0]) return fallback;
++    char *end = NULL;
++    errno = 0;
++    const double parsed = strtod(value, &end);
++    if (errno == 0 && end != value && end && *end == '\0' &&
++        isfinite(parsed) && parsed >= 0.0 && parsed <= 3600.0) {
++        return parsed;
++    }
++    fprintf(stderr, "ds4: invalid %s=%s; using %.3f\n",
++            name, value, fallback);
++    return fallback;
++}
++
++static const cuda_moe_transient_deadline_policy &
++cuda_moe_transient_deadline_policy_get(void) {
++    static int initialized = 0;
++    static cuda_moe_transient_deadline_policy policy = {};
++    if (initialized) return policy;
++    initialized = 1;
++    policy.base_seconds = cuda_g133_transient_io_timeout_seconds();
++    policy.seconds_per_mib = cuda_moe_transient_deadline_env_seconds(
++        "DS4_CUDA_TRANSIENT_DEADLINE_PER_MB_S", 0.050);
++    policy.floor_seconds = cuda_moe_transient_deadline_env_seconds(
++        "DS4_CUDA_TRANSIENT_DEADLINE_FLOOR_S", policy.base_seconds);
++    const double default_cap = std::max(5.0, policy.floor_seconds);
++    policy.cap_seconds = cuda_moe_transient_deadline_env_seconds(
++        "DS4_CUDA_TRANSIENT_DEADLINE_CAP_S", default_cap);
++    if (policy.cap_seconds < policy.floor_seconds) {
++        fprintf(stderr,
++                "ds4: DS4_CUDA_TRANSIENT_DEADLINE_CAP_S below floor; "
++                "raising cap from %.3f to %.3f\n",
++                policy.cap_seconds, policy.floor_seconds);
++        policy.cap_seconds = policy.floor_seconds;
++    }
++    policy.retry_backoff_seconds = 0.010;
++    policy.fallback_backoff_seconds = 0.025;
++    policy.eviction_storm_threshold = 4u;
++    fprintf(stderr,
++            "ds4: [transient-deadline] adaptive=1 base_s=%.3f "
++            "per_mb_s=%.3f floor_s=%.3f cap_s=%.3f "
++            "retry_backoff_ms=%.1f fallback_backoff_ms=%.1f "
++            "eviction_storm_threshold=%llu\n",
++            policy.base_seconds, policy.seconds_per_mib,
++            policy.floor_seconds, policy.cap_seconds,
++            policy.retry_backoff_seconds * 1000.0,
++            policy.fallback_backoff_seconds * 1000.0,
++            (unsigned long long)policy.eviction_storm_threshold);
++    return policy;
++}
++
++static double cuda_moe_transient_deadline_budget_seconds(uint64_t bytes) {
++    const cuda_moe_transient_deadline_policy &policy =
++        cuda_moe_transient_deadline_policy_get();
++    const double requested_mib = (double)bytes / 1048576.0;
++    const double proportional =
++        policy.base_seconds + policy.seconds_per_mib * requested_mib;
++    return std::min(
++        policy.cap_seconds, std::max(policy.floor_seconds, proportional));
++}
++
++static double cuda_moe_transient_deadline_from_now(uint64_t bytes) {
++    return cuda_wall_sec() +
++        cuda_moe_transient_deadline_budget_seconds(bytes);
++}
++
++static void cuda_moe_transient_deadline_backoff(unsigned int step) {
++    const cuda_moe_transient_deadline_policy &policy =
++        cuda_moe_transient_deadline_policy_get();
++    const double seconds = step == 0u
++        ? policy.retry_backoff_seconds : policy.fallback_backoff_seconds;
++#ifdef _WIN32
++    DWORD millis = (DWORD)ceil(seconds * 1000.0);
++    if (millis == 0u) millis = 1u;
++    Sleep(millis);
++#else
++    useconds_t micros = (useconds_t)ceil(seconds * 1000000.0);
++    if (micros == 0u) micros = 1u;
++    usleep(micros);
++#endif
++}
++
++enum cuda_moe_transient_deadline_cause {
++    CUDA_MOE_TRANSIENT_DEADLINE_SLOW_IO = 0,
++    CUDA_MOE_TRANSIENT_DEADLINE_CPU_CONTENTION = 1
++};
++
++static thread_local uint64_t g_transient_deadline_last_worker_evict_count;
++static thread_local uint64_t g_transient_deadline_worker_recent_evictions;
++
++static void cuda_moe_transient_deadline_worker_request_begin(void) {
++    if (!cuda_transient_deadline_adaptive_requested()) return;
++    const uint64_t current = g_model_evict_count;
++    g_transient_deadline_worker_recent_evictions =
++        current >= g_transient_deadline_last_worker_evict_count
++        ? current - g_transient_deadline_last_worker_evict_count : current;
++    g_transient_deadline_last_worker_evict_count = current;
++}
++
++static void cuda_moe_transient_deadline_note(
++        cuda_moe_transient_deadline_cause cause,
++        uint64_t recent_evictions, uint32_t sequence) {
++    if (!cuda_transient_deadline_adaptive_requested()) return;
++    uint32_t classified =
++        g_transient_deadline_last_classified_sequence.load(
++            std::memory_order_relaxed);
++    while (classified != sequence) {
++        if (g_transient_deadline_last_classified_sequence
++                .compare_exchange_weak(
++                    classified, sequence, std::memory_order_relaxed,
++                    std::memory_order_relaxed)) break;
++    }
++    if (classified == sequence) return;
++    const cuda_moe_transient_deadline_policy &policy =
++        cuda_moe_transient_deadline_policy_get();
++    if (recent_evictions >= policy.eviction_storm_threshold) {
++        g_transient_deadline_eviction_storm.fetch_add(
++            1u, std::memory_order_relaxed);
++    } else if (cause == CUDA_MOE_TRANSIENT_DEADLINE_SLOW_IO) {
++        g_transient_deadline_slow_io.fetch_add(
++            1u, std::memory_order_relaxed);
++    } else {
++        g_transient_deadline_cpu_contention.fetch_add(
++            1u, std::memory_order_relaxed);
++    }
++}
++
+ static int cuda_moe_route_read_whole_requested(void) {
+     static int cached = -1;
+     if (cached < 0) {
+@@ -31846,6 +32033,16 @@ static int cuda_moe_transient_pread_chunked(
+     const int read_whole = cuda_moe_route_read_whole_requested();
+     const int staged_kv_io_tracking =
+         ds4_gpu_staged_kv_gate_requested();
++    const int adaptive = cuda_transient_deadline_adaptive_requested();
++    const int publish_io_sequence = staged_kv_io_tracking || adaptive;
++    /* absolute_deadline < 0 e' il ripiego esplicitamente senza deadline.
++     * Zero resta il valore storico e, in adaptive, chiede una lease per-read. */
++    double read_deadline = absolute_deadline;
++    if (adaptive && absolute_deadline >= 0.0) {
++        read_deadline = cuda_moe_transient_deadline_from_now(bytes);
++        cache->route_transient_read_deadline.store(
++            read_deadline, std::memory_order_release);
++    }
+     /* WORKER-PROF: il flag e' issato fuori dal ciclo, cosi' a flag spento il
+      * corpo del ciclo paga un solo ramo prevedibile per chunk. */
+     const int wprof = cuda_worker_profile_enabled();
+@@ -31857,14 +32054,19 @@ static int cuda_moe_transient_pread_chunked(
+          * classificazione del cancel del consumer), non piu' solo il budget
+          * gia' esaurito al primo ingresso transiente della richiesta. */
+         const int deadline_expired_before_chunk =
+-            absolute_deadline > 0.0 &&
+-            cuda_wall_sec() >= absolute_deadline;
++            read_deadline > 0.0 &&
++            cuda_wall_sec() >= read_deadline;
+         if (deadline_expired_before_chunk ||
+             cache->route_transient_cancel_sequence.load(
+                 std::memory_order_acquire) == sequence) {
+             if (wprof && deadline_expired_before_chunk) {
+                 ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
+             }
++            if (adaptive && deadline_expired_before_chunk) {
++                cuda_moe_transient_deadline_note(
++                    CUDA_MOE_TRANSIENT_DEADLINE_CPU_CONTENTION,
++                    g_transient_deadline_worker_recent_evictions, sequence);
++            }
+             ds4_transport_mark_incomplete();
+             return -1;
+         }
+@@ -31872,7 +32074,7 @@ static int cuda_moe_transient_pread_chunked(
+         const uint64_t request_bytes = read_whole
+             ? remaining
+             : (remaining < chunk_bytes ? remaining : chunk_bytes);
+-        if (staged_kv_io_tracking) {
++        if (publish_io_sequence) {
+             cache->route_transient_io_sequence.store(
+                 sequence, std::memory_order_release);
+         }
+@@ -31914,7 +32116,7 @@ static int cuda_moe_transient_pread_chunked(
+             ds4_transport_record_file_bytes(
+                 transport_repeat, (uint64_t)got);
+         }
+-        if (staged_kv_io_tracking) {
++        if (publish_io_sequence) {
+             cache->route_transient_io_sequence.store(
+                 0u, std::memory_order_release);
+         }
+@@ -31940,8 +32142,21 @@ static int cuda_moe_transient_pread_chunked(
+         completed += request_bytes;
+         cache->route_transient_read_bytes.fetch_add(
+             request_bytes, std::memory_order_release);
+-        if (absolute_deadline > 0.0 &&
+-            cuda_wall_sec() >= absolute_deadline) {
++        if (adaptive && read_deadline > 0.0) {
++            if (completed < bytes) {
++                /* Riuso del protocollo progress-aware del consumer: prima si
++                 * pubblicano i byte, poi una lease nuova proporzionale ai byte
++                 * ancora richiesti. */
++                read_deadline = cuda_moe_transient_deadline_from_now(
++                    bytes - completed);
++                cache->route_transient_read_deadline.store(
++                    read_deadline, std::memory_order_release);
++            } else {
++                cache->route_transient_read_deadline.store(
++                    0.0, std::memory_order_release);
++            }
++        } else if (read_deadline > 0.0 &&
++                   cuda_wall_sec() >= read_deadline) {
+             /* TIMEOUTFIX B4: scadenza maturata durante il chunk appena
+              * completato. */
+             if (wprof) ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
+@@ -31971,7 +32186,9 @@ static const char *cuda_moe_route_mailbox_state_name(uint32_t state) {
+  * marker is the proof that this cancellation came from that exact deadline. */
+ static int cuda_moe_transient_timeout_cancel_for_fallback(
+         cuda_moe_expert_cache *cache, uint32_t sequence) {
+-    if (!cache || !cuda_transient_timeout_recoverable_requested() ||
++    if (!cache ||
++        (!cuda_transient_timeout_recoverable_requested() &&
++         !cuda_transient_deadline_adaptive_requested()) ||
+         cache->route_worker_safe_leaked.load(std::memory_order_acquire) ||
+         cache->route_stop.load(std::memory_order_acquire) ||
+         cache->route_transient_dead_sequence.load(
+@@ -31986,15 +32203,61 @@ static int cuda_moe_transient_timeout_cancel_for_fallback(
+     return 1;
+ }
+ 
++/* Prima di riemettere la stessa lettura, prova che il kernel non possieda piu'
++ * OVERLAPPED/buffer. Il reset avviene soltanto dopo pending()==0. */
++static int cuda_moe_transient_prepare_retry_slot(
++        cuda_moe_expert_cache *cache, uint32_t sequence,
++        const char **skipped_reason) {
++    const int cancelled =
++        cache->route_transient_cancel_sequence.load(
++            std::memory_order_acquire) == sequence;
++    const int deadline_cancelled =
++        cache->route_transient_timeout_cancel_sequence.load(
++            std::memory_order_acquire) == sequence;
++    if (cancelled && !deadline_cancelled) {
++        if (skipped_reason) *skipped_reason = "cancel-sequence";
++        return 0;
++    }
++    const double cancel_ack_deadline = cuda_wall_sec() + 1.0;
++    while (os_pread_cancellable_pending(&cache->route_transient_pread)) {
++        if (cache->route_worker_safe_leaked.load(
++                std::memory_order_acquire)) {
++            if (skipped_reason) *skipped_reason = "safe-leaked";
++            return 0;
++        }
++        if (cache->route_stop.load(std::memory_order_acquire)) {
++            if (skipped_reason) *skipped_reason = "route-stop";
++            return 0;
++        }
++        if (cuda_wall_sec() >= cancel_ack_deadline) {
++            if (skipped_reason) *skipped_reason = "cancel-ack-timeout";
++            return 0;
++        }
++#ifdef _WIN32
++        (void)SwitchToThread();
++#else
++        usleep(0);
++#endif
++    }
++    os_pread_cancellable_reset(&cache->route_transient_pread);
++    if (deadline_cancelled) {
++        cache->route_transient_cancel_sequence.store(
++            0u, std::memory_order_release);
++        cache->route_transient_timeout_cancel_sequence.store(
++            0u, std::memory_order_release);
++    }
++    return 1;
++}
++
+ /* FIX-B intervento 1 - ripiego recuperabile allo scadere del timeout
+  * transiente (DS4_CUDA_TRANSIENT_TIMEOUT_RECOVERABLE=1).
+  *
+  * Non e' un percorso nuovo: e' la STESSA rilettura sincrona che il percorso
+- * normale usa, cuda_moe_transient_pread_chunked, rieseguita con la deadline
+- * disattivata (absolute_deadline = 0.0) sui soli tensori non ancora
+- * completati.  I byte serviti sono percio' identici byte-per-byte a quelli
+- * che la richiesta avrebbe ottenuto senza timeout: il token completa con lo
+- * stesso risultato numerico.
++ * normale usa, cuda_moe_transient_pread_chunked: adaptive la esegue prima con
++ * una lease nuova e poi, solo se serve, con la deadline disattivata
++ * (absolute_deadline < 0); il ramo storico continua a usare zero. I soli
++ * tensori non ancora completi vengono riletti, quindi i byte pubblicati sono
++ * identici a quelli della richiesta senza timeout.
+  *
+  * stage_done = quanti dei tre tensori (gate, up, down) erano gia' completi
+  * quando il timeout e' scaduto: 0 nessuno, 1 gate, 2 gate+up.
+@@ -32005,9 +32268,10 @@ static int cuda_moe_transient_timeout_cancel_for_fallback(
+ static int cuda_moe_transient_timeout_fallback_serve(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+-        int transport_repeat, uint32_t stage_done,
++        int transport_repeat, uint32_t *stage_done_io,
+         char *host_gate, char *host_up, char *host_down,
+         uint64_t gate_src, uint64_t up_src, uint64_t down_src,
++        double retry_deadline,
+         const char **skipped_reason) {
+     if (skipped_reason) *skipped_reason = "unknown";
+     if (!cache || !g_model_file_valid || !host_gate || !host_up || !host_down) {
+@@ -32027,56 +32291,10 @@ static int cuda_moe_transient_timeout_fallback_serve(
+         if (skipped_reason) *skipped_reason = "dead-sequence";
+         return 0;
+     }
+-    const int cancelled =
+-        cache->route_transient_cancel_sequence.load(
+-            std::memory_order_acquire) == request.sequence;
+-    const int deadline_cancelled =
+-        cache->route_transient_timeout_cancel_sequence.load(
+-            std::memory_order_acquire) == request.sequence;
+-    if (cancelled && !deadline_cancelled) {
+-        if (skipped_reason) *skipped_reason = "cancel-sequence";
+-        return 0;
+-    }
+-    if (deadline_cancelled) {
+-        /* TIMEOUTFIX B1: che la chiamata cancellabile sia gia' rientrata NON
+-         * implica che lo slot sia libero.  Su Windows un cancel il cui
+-         * completamento supera l'attesa bounded di 50 ms rientra con -1
+-         * lasciando active=1 e l'OVERLAPPED pending (os_file.c, rami
+-         * WAIT_TIMEOUT/WAIT_FAILED); su POSIX aio_cancel puo' restare
+-         * EINPROGRESS.  Il reset azzera solo cancel_sequence, quindi riusare
+-         * lo slot faceva fallire EBUSY la prima rilettura e trasformava il
+-         * ripiego dichiarato recuperabile in fallback-unavailable.
+-         * Precondizione del ripiego: ack del cancel (pending()==0) con
+-         * attesa bounded aggiuntiva; uno slot ancora pending non viene MAI
+-         * riusato: si abortisce e il successivo cancel_and_join lo mette in
+-         * quarantena col ramo pending() che gia' possiede. */
+-        const double cancel_ack_deadline = cuda_wall_sec() + 1.0;
+-        while (os_pread_cancellable_pending(&cache->route_transient_pread)) {
+-            if (cache->route_worker_safe_leaked.load(
+-                    std::memory_order_acquire)) {
+-                if (skipped_reason) *skipped_reason = "safe-leaked";
+-                return 0;
+-            }
+-            if (cache->route_stop.load(std::memory_order_acquire)) {
+-                if (skipped_reason) *skipped_reason = "route-stop";
+-                return 0;
+-            }
+-            if (cuda_wall_sec() >= cancel_ack_deadline) {
+-                if (skipped_reason) *skipped_reason = "cancel-ack-timeout";
+-                return 0;
+-            }
+-#ifdef _WIN32
+-            (void)SwitchToThread();
+-#else
+-            usleep(0);
+-#endif
+-        }
+-        os_pread_cancellable_reset(&cache->route_transient_pread);
+-        cache->route_transient_cancel_sequence.store(
+-            0u, std::memory_order_release);
+-        cache->route_transient_timeout_cancel_sequence.store(
+-            0u, std::memory_order_release);
+-    }
++    if (!stage_done_io ||
++        !cuda_moe_transient_prepare_retry_slot(
++            cache, request.sequence, skipped_reason)) return 0;
++    uint32_t stage_done = *stage_done_io;
+     /* Il watchdog del thread di decode (in cuda_moe_gpu_resident_routes_submit)
+      * uccide la richiesta alla STESSA deadline che il worker ha pubblicato in
+      * route_transient_read_deadline.  Va disarmata prima di rileggere, altrimenti
+@@ -32089,7 +32307,8 @@ static int cuda_moe_transient_timeout_fallback_serve(
+      * double ordinario era una data race: il consumer poteva restare sulla
+      * deadline scaduta e cancellare un ripiego in avanzamento. */
+     cache->route_transient_read_deadline.store(
+-        0.0, std::memory_order_release);
++        retry_deadline > 0.0 ? retry_deadline : 0.0,
++        std::memory_order_release);
+     cache->route_transient_read_sequence.store(
+         request.sequence, std::memory_order_release);
+     /* WORKER-PROF: il ripiego rilegge gli STESSI tensori del percorso normale,
+@@ -32102,24 +32321,33 @@ static int cuda_moe_transient_timeout_fallback_serve(
+         result = cuda_moe_transient_pread_chunked(
+             cache, request.sequence, request.trace_sample_id,
+             request.layer_index, transport_repeat, &g_model_file, host_gate,
+-            cache->gate_expert_bytes, gate_src, 0.0);
++            cache->gate_expert_bytes, gate_src, retry_deadline);
+         ds4_workerprof_stop(wprof, WP_READ_GATE_NS, wprof_gate);
++        if (result == 1) {
++            stage_done = 1u;
++            *stage_done_io = stage_done;
++        }
+     }
+     if (result == 1 && stage_done < 2u) {
+         const uint64_t wprof_up = ds4_workerprof_start(wprof);
+         result = cuda_moe_transient_pread_chunked(
+             cache, request.sequence, request.trace_sample_id,
+             request.layer_index, transport_repeat, &g_model_file, host_up,
+-            cache->gate_expert_bytes, up_src, 0.0);
++            cache->gate_expert_bytes, up_src, retry_deadline);
+         ds4_workerprof_stop(wprof, WP_READ_UP_NS, wprof_up);
++        if (result == 1) {
++            stage_done = 2u;
++            *stage_done_io = stage_done;
++        }
+     }
+     if (result == 1) {
+         const uint64_t wprof_down = ds4_workerprof_start(wprof);
+         result = cuda_moe_transient_pread_chunked(
+             cache, request.sequence, request.trace_sample_id,
+             request.layer_index, transport_repeat, &g_model_file, host_down,
+-            cache->down_expert_bytes, down_src, 0.0);
++            cache->down_expert_bytes, down_src, retry_deadline);
+         ds4_workerprof_stop(wprof, WP_READ_DOWN_NS, wprof_down);
++        if (result == 1) *stage_done_io = 3u;
+     }
+     if (result == 1) return 1;
+     if (cache->route_worker_safe_leaked.load(std::memory_order_acquire)) {
+@@ -32132,10 +32360,12 @@ static int cuda_moe_transient_timeout_fallback_serve(
+     } else if (cache->route_transient_cancel_sequence.load(
+                    std::memory_order_acquire) == request.sequence) {
+         if (skipped_reason) *skipped_reason = "cancel-sequence-during-fallback";
++    } else if (result < 0) {
++        if (skipped_reason) *skipped_reason = "retry-deadline";
+     } else {
+         if (skipped_reason) *skipped_reason = "fallback-pread-failed";
+     }
+-    return 0;
++    return result < 0 ? -1 : 0;
+ }
+ 
+ static int cuda_moe_route_mailbox_fail_closed(
+@@ -37117,6 +37347,34 @@ static int cuda_moe_tiering_admission_pread(
+          * fallimento di ammissione: qui si ripiega una volta sulla lettura
+          * piena, esattamente come fa il percorso transiente col guardiano
+          * recuperabile. */
++        if (rc == -1 && cuda_transient_deadline_adaptive_requested()) {
++            const char *retry_reason = "admission-retry";
++            cuda_moe_transient_deadline_backoff(0u);
++            if (!cuda_moe_transient_prepare_retry_slot(
++                    transient_cache, request.sequence, &retry_reason)) {
++                return 0;
++            }
++            g_transient_deadline_read_retries.fetch_add(
++                1u, std::memory_order_relaxed);
++            int retry = cuda_moe_transient_pread_chunked(
++                transient_cache, request.sequence, request.trace_sample_id,
++                layer, transport_repeat, &g_model_file, buf, bytes,
++                offset, cuda_moe_transient_deadline_from_now(bytes));
++            if (retry == -1) {
++                cuda_moe_transient_deadline_backoff(1u);
++                if (!cuda_moe_transient_prepare_retry_slot(
++                        transient_cache, request.sequence, &retry_reason)) {
++                    return 0;
++                }
++                g_transient_deadline_no_deadline_fallbacks.fetch_add(
++                    1u, std::memory_order_relaxed);
++                retry = cuda_moe_transient_pread_chunked(
++                    transient_cache, request.sequence,
++                    request.trace_sample_id, layer, transport_repeat,
++                    &g_model_file, buf, bytes, offset, -1.0);
++            }
++            return retry == 1;
++        }
+         if (rc == -1 && cuda_transient_timeout_recoverable_requested()) {
+             if (!cuda_pread_full(&g_model_file, buf, bytes, offset)) return 0;
+             ds4_transport_record_file_bytes(transport_repeat, bytes);
+@@ -41806,7 +42064,25 @@ static int cuda_moe_route_io_qd_read(
+     cache->route_io_qd_calls++;
+     cache->route_io_qd_routes += route_count;
+     cache->route_io_qd_spans += span_count;
++    const int adaptive = cuda_transient_deadline_adaptive_requested();
+     int result = 1;
++    uint64_t remaining_bytes = 0u;
++    if (adaptive) {
++        for (uint32_t i = 0; i < span_count; i++) {
++            if (UINT64_MAX - remaining_bytes < spans[i].bytes) {
++                result = 0;
++                break;
++            }
++            remaining_bytes += spans[i].bytes;
++        }
++    }
++    double read_deadline = absolute_deadline;
++    if (result == 1 && adaptive && absolute_deadline >= 0.0) {
++        read_deadline =
++            cuda_moe_transient_deadline_from_now(remaining_bytes);
++        cache->route_transient_read_deadline.store(
++            read_deadline, std::memory_order_release);
++    }
+     uint32_t base = 0u;
+     const uint64_t max_submit_bytes =
+         cuda_route_io_qd_span_bytes_requested();
+@@ -41891,10 +42167,20 @@ static int cuda_moe_route_io_qd_read(
+                     break;
+                 }
+                 DWORD wait_ms = 5u;
+-                if (absolute_deadline > 0.0) {
++                if (read_deadline > 0.0) {
+                     const double remaining =
+-                        absolute_deadline - cuda_wall_sec();
++                        read_deadline - cuda_wall_sec();
+                     if (remaining <= 0.0) {
++                        if (adaptive) {
++                            cuda_moe_transient_deadline_note(
++                                CUDA_MOE_TRANSIENT_DEADLINE_SLOW_IO,
++                                g_transient_deadline_worker_recent_evictions,
++                                request.sequence);
++                            if (wprof) {
++                                ds4_workerprof_add(
++                                    WP_DEADLINE_EXHAUSTED, 1u);
++                            }
++                        }
+                         result = -1;
+                         break;
+                     }
+@@ -41940,6 +42226,20 @@ static int cuda_moe_route_io_qd_read(
+                     cache->route_io_qd_bytes += (uint64_t)got;
+                     cache->route_transient_read_bytes.fetch_add(
+                         (uint64_t)got, std::memory_order_release);
++                    if (adaptive && read_deadline > 0.0) {
++                        remaining_bytes = remaining_bytes >= (uint64_t)got
++                            ? remaining_bytes - (uint64_t)got : 0u;
++                        if (remaining_bytes != 0u) {
++                            read_deadline =
++                                cuda_moe_transient_deadline_from_now(
++                                    remaining_bytes);
++                            cache->route_transient_read_deadline.store(
++                                read_deadline, std::memory_order_release);
++                        } else {
++                            cache->route_transient_read_deadline.store(
++                                0.0, std::memory_order_release);
++                        }
++                    }
+                     if (wprof && wprof_outstanding != 0u) {
+                         ds4_workerprof_inflight_advance(
+                             ds4_workerprof_now_ns(), -1);
+@@ -41969,6 +42269,10 @@ static int cuda_moe_route_io_qd_read(
+     }
+     cache->route_transient_io_sequence.store(
+         0u, std::memory_order_release);
++    if (adaptive && result == 1) {
++        cache->route_transient_read_deadline.store(
++            0.0, std::memory_order_release);
++    }
+     ds4_workerprof_stop(wprof, WP_READ_QD_NS, wprof_started);
+ 
+     cache->route_io_qd_seconds += cuda_wall_sec() - started_at;
+@@ -42184,14 +42488,23 @@ static int cuda_moe_tiering_enforce_request(
+     const char *failure_reason = "none";
+     /* WORKER-PROF: issato una volta per richiesta di rotta. */
+     const int wprof = cuda_worker_profile_enabled();
++    const int adaptive_deadline =
++        cuda_transient_deadline_adaptive_requested();
++    cuda_moe_transient_deadline_worker_request_begin();
+     const int staged_kv_service_deadline =
+         G73 && request.absolute_deadline <= 0.0 &&
+         ds4_gpu_should_use_staged_kv_cache();
+-    const double transient_request_deadline = request.absolute_deadline > 0.0
++    const double legacy_transient_request_deadline =
++        request.absolute_deadline > 0.0
+         ? cuda_g73_io_deadline(request.absolute_deadline)
+         : (staged_kv_service_deadline
+             ? 0.0
+             : cuda_wall_sec() + cuda_g133_transient_io_timeout_seconds());
++    const uint64_t transient_expert_bytes =
++        request.gate_expert_bytes * 2ull + request.down_expert_bytes;
++    const double transient_request_deadline = adaptive_deadline
++        ? cuda_moe_transient_deadline_from_now(transient_expert_bytes)
++        : legacy_transient_request_deadline;
+     int transient_read_published = 0;
+     /* FIX-B: ripieghi consumati da QUESTA richiesta di rotta. Se la richiesta
+      * chiude senza averne avuto bisogno, la serie consecutiva riparte da zero. */
+@@ -42321,6 +42634,14 @@ static int cuda_moe_tiering_enforce_request(
+                     for (uint32_t i = 0; i < qd_miss_count; i++) {
+                         route_io_qd_ready[qd_misses[i]] = 1u;
+                     }
++                } else if (qd_result < 0 && adaptive_deadline) {
++                    /* Il batch QD ha gia' drenato ogni OVERLAPPED: il retry
++                     * sincrono per-expert puo' sovrascrivere staging non ancora
++                     * pubblicato senza lettori concorrenti. */
++                    cuda_moe_transient_deadline_backoff(0u);
++                    g_transient_deadline_read_retries.fetch_add(
++                        1u, std::memory_order_relaxed);
++                    cache->route_io_qd_fallbacks++;
+                 } else if (qd_result < 0) {
+                     g_moe_tiering.failures++;
+                     failure_reason = "route-io-qd-timeout";
+@@ -42625,7 +42946,8 @@ static int cuda_moe_tiering_enforce_request(
+             /* FIX-B intervento 1. Con il flag spento questo blocco non esiste
+              * (una sola getenv cachata) e il timeout resta terminale come oggi. */
+             if (read_result < 0 &&
+-                cuda_transient_timeout_recoverable_requested()) {
++                (cuda_transient_timeout_recoverable_requested() ||
++                 adaptive_deadline)) {
+                 const char *fallback_skipped_reason = "not-attempted";
+                 const uint64_t streak =
+                     g_transient_timeout_fallback_streak.load(
+@@ -42644,28 +42966,68 @@ static int cuda_moe_tiering_enforce_request(
+                             request.layer_index, request.sequence, expert,
+                             (unsigned long long)streak,
+                             (unsigned long long)max_fallbacks);
+-                } else if (cuda_moe_transient_timeout_fallback_serve(
+-                               cache, request, transport_repeat,
+-                               transient_stage_done,
+-                               host_gate, host_up, host_down,
+-                               gate_src, up_src, down_src,
+-                               &fallback_skipped_reason)) {
+-                    transient_fallbacks_used++;
+-                    g_transient_timeout_fallback_streak.fetch_add(
+-                        1u, std::memory_order_relaxed);
+-                    g_transient_timeout_fallbacks.fetch_add(
+-                        1u, std::memory_order_relaxed);
+-                    read_result = 1;
+                 } else {
+-                    g_transient_timeout_aborts.fetch_add(
+-                        1u, std::memory_order_relaxed);
+-                    fprintf(stderr,
+-                            "ds4: [transient-timeout] result=abort layer=%u "
+-                            "sequence=%u expert=%u "
+-                            "reason=fallback-unavailable "
+-                            "fallback_skipped_reason=%s\n",
+-                            request.layer_index, request.sequence, expert,
+-                            fallback_skipped_reason);
++                    uint32_t recovery_stage = transient_stage_done;
++                    int recovery_result = 0;
++                    if (adaptive_deadline) {
++                        const uint64_t retry_bytes =
++                            (recovery_stage < 1u
++                                 ? cache->gate_expert_bytes : 0u) +
++                            (recovery_stage < 2u
++                                 ? cache->gate_expert_bytes : 0u) +
++                            (recovery_stage < 3u
++                                 ? cache->down_expert_bytes : 0u);
++                        cuda_moe_transient_deadline_backoff(0u);
++                        g_transient_deadline_read_retries.fetch_add(
++                            1u, std::memory_order_relaxed);
++                        recovery_result =
++                            cuda_moe_transient_timeout_fallback_serve(
++                                cache, request, transport_repeat,
++                                &recovery_stage,
++                                host_gate, host_up, host_down,
++                                gate_src, up_src, down_src,
++                                cuda_moe_transient_deadline_from_now(
++                                    retry_bytes),
++                                &fallback_skipped_reason);
++                        if (recovery_result < 0) {
++                            cuda_moe_transient_deadline_backoff(1u);
++                            g_transient_deadline_no_deadline_fallbacks.fetch_add(
++                                1u, std::memory_order_relaxed);
++                            recovery_result =
++                                cuda_moe_transient_timeout_fallback_serve(
++                                    cache, request, transport_repeat,
++                                    &recovery_stage,
++                                    host_gate, host_up, host_down,
++                                    gate_src, up_src, down_src, -1.0,
++                                    &fallback_skipped_reason);
++                        }
++                    } else {
++                        recovery_result =
++                            cuda_moe_transient_timeout_fallback_serve(
++                                cache, request, transport_repeat,
++                                &recovery_stage,
++                                host_gate, host_up, host_down,
++                                gate_src, up_src, down_src, 0.0,
++                                &fallback_skipped_reason);
++                    }
++                    if (recovery_result == 1) {
++                        transient_fallbacks_used++;
++                        g_transient_timeout_fallback_streak.fetch_add(
++                            1u, std::memory_order_relaxed);
++                        g_transient_timeout_fallbacks.fetch_add(
++                            1u, std::memory_order_relaxed);
++                        read_result = 1;
++                    } else {
++                        g_transient_timeout_aborts.fetch_add(
++                            1u, std::memory_order_relaxed);
++                        fprintf(stderr,
++                                "ds4: [transient-timeout] result=abort layer=%u "
++                                "sequence=%u expert=%u "
++                                "reason=fallback-unavailable "
++                                "fallback_skipped_reason=%s\n",
++                                request.layer_index, request.sequence, expert,
++                                fallback_skipped_reason);
++                    }
+                 }
+             }
+             if (read_result != 1) {
+@@ -48805,6 +49167,18 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+     const int staged_kv_service_deadline =
+         G73 && absolute_deadline <= 0.0 &&
+         ds4_gpu_should_use_staged_kv_cache();
++    const int adaptive_deadline =
++        cuda_transient_deadline_adaptive_requested();
++    static thread_local uint64_t adaptive_last_evict_count;
++    uint64_t adaptive_recent_evictions = 0u;
++    if (adaptive_deadline) {
++        const uint64_t current_evict_count = g_model_evict_count;
++        adaptive_recent_evictions =
++            current_evict_count >= adaptive_last_evict_count
++            ? current_evict_count - adaptive_last_evict_count
++            : current_evict_count;
++        adaptive_last_evict_count = current_evict_count;
++    }
+     const double transient_stall_seconds = staged_kv_service_deadline
+         ? cuda_g133_transient_io_timeout_seconds() : 5.0;
+     double wait_deadline = staged_kv_service_deadline
+@@ -48813,6 +49187,8 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+     int transient_read_observed = 0;
+     uint32_t transient_timeout_recovery_sequence = 0u;
+     double transient_timeout_recovery_deadline = 0.0;
++    int transient_timeout_recovery_stage = 0;
++    int adaptive_cpu_contention_counted = 0;
+     while (*(volatile uint32_t *)cache->route_ready_host != sequence) {
+         if (trace_sample_id) trace_ready_polls++;
+         if (cache->route_stop.load(std::memory_order_acquire) ||
+@@ -48861,7 +49237,73 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+             wait_deadline > transient_absolute_deadline) {
+             wait_deadline = transient_absolute_deadline;
+         }
+-        if (transient_active_now && transient_absolute_deadline > 0.0 &&
++        if (adaptive_deadline && transient_active_now &&
++            transient_absolute_deadline > 0.0 &&
++            now >= transient_absolute_deadline) {
++            const uint64_t progress =
++                cache->route_transient_read_bytes.load(
++                    std::memory_order_acquire);
++            if (progress > last_read_progress) {
++                /* Ramo progress-aware storico: il worker ha gia' pubblicato
++                 * anche la lease rinnovata; riallinea soltanto il watchdog
++                 * locale, senza introdurre un secondo protocollo. */
++                last_read_progress = progress;
++                transient_timeout_recovery_sequence = 0u;
++                transient_timeout_recovery_stage = 0;
++                wait_deadline = now + transient_stall_seconds;
++                continue;
++            }
++            if (transient_timeout_recovery_sequence != sequence) {
++                const int io_in_flight =
++                    cache->route_transient_io_sequence.load(
++                        std::memory_order_acquire) == sequence;
++                cuda_moe_transient_deadline_note(
++                    io_in_flight
++                        ? CUDA_MOE_TRANSIENT_DEADLINE_SLOW_IO
++                        : CUDA_MOE_TRANSIENT_DEADLINE_CPU_CONTENTION,
++                    adaptive_recent_evictions, sequence);
++                fprintf(stderr,
++                        "ds4: CUDA transient route read reached adaptive "
++                        "deadline seq=%u bytes=%llu action=retry-read\n",
++                        sequence, (unsigned long long)progress);
++                transient_timeout_recovery_sequence = sequence;
++                transient_timeout_recovery_stage = 1;
++                transient_timeout_recovery_deadline = now +
++                    cuda_moe_transient_deadline_budget_seconds(1u << 20);
++                wait_deadline = transient_timeout_recovery_deadline;
++                continue;
++            }
++            if (transient_timeout_recovery_stage == 1) {
++                if (now < transient_timeout_recovery_deadline) continue;
++                if (cuda_moe_transient_timeout_cancel_for_fallback(
++                        cache, sequence)) {
++                    transient_timeout_recovery_stage = 2;
++                    transient_timeout_recovery_deadline =
++                        now + transient_stall_seconds;
++                    wait_deadline = transient_timeout_recovery_deadline;
++                }
++                continue;
++            }
++            if (transient_timeout_recovery_stage == 2) {
++                if (now < transient_timeout_recovery_deadline) continue;
++                /* Ultima istanza: cancella la sola pread. Non route_stop,
++                 * non join, non invalidate. Il consumer resta sullo stesso
++                 * sequence finche' il worker pubblica ready/failed. */
++                cache->route_transient_cancel_sequence.store(
++                    sequence, std::memory_order_release);
++                (void)os_pread_cancel(
++                    &cache->route_transient_pread, sequence);
++                g_transient_deadline_final_read_cancels.fetch_add(
++                    1u, std::memory_order_relaxed);
++                transient_timeout_recovery_stage = 3;
++                wait_deadline = 0.0;
++                continue;
++            }
++            /* stage 3: attesa della pubblicazione terminale del worker. */
++            continue;
++        }
++        if (!adaptive_deadline && transient_active_now &&
++            transient_absolute_deadline > 0.0 &&
+             now >= transient_absolute_deadline) {
+             if (transient_timeout_recovery_sequence == sequence) {
+                 if (now < transient_timeout_recovery_deadline) {
+@@ -48907,6 +49349,11 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                      now < transient_absolute_deadline) &&
+                     progress > last_read_progress) {
+                     last_read_progress = progress;
++                    if (adaptive_deadline &&
++                        transient_timeout_recovery_stage < 3) {
++                        transient_timeout_recovery_sequence = 0u;
++                        transient_timeout_recovery_stage = 0;
++                    }
+                     wait_deadline = now + transient_stall_seconds;
+                     if (transient_absolute_deadline > 0.0 &&
+                         wait_deadline > transient_absolute_deadline) {
+@@ -48914,6 +49361,22 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                     }
+                     continue;
+                 }
++                if (adaptive_deadline) {
++                    if (transient_timeout_recovery_stage < 3) {
++                        cache->route_transient_cancel_sequence.store(
++                            sequence, std::memory_order_release);
++                        (void)os_pread_cancel(
++                            &cache->route_transient_pread, sequence);
++                        g_transient_deadline_final_read_cancels.fetch_add(
++                            1u, std::memory_order_relaxed);
++                        transient_timeout_recovery_stage = 3;
++                    }
++                    /* La failure viene pubblicata dal worker sul sequence
++                     * corrente; uscire ora permetterebbe il riuso prematuro
++                     * degli staging buffer. */
++                    wait_deadline = 0.0;
++                    continue;
++                }
+                 fprintf(stderr,
+                         "ds4: CUDA transient route read timed out seq=%u "
+                         "bytes=%llu absolute_deadline=%.3f\n",
+@@ -48928,6 +49391,21 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                 }
+                 return NULL;
+             }
++            if (adaptive_deadline) {
++                if (!adaptive_cpu_contention_counted &&
++                    transient_timeout_recovery_stage == 0) {
++                    adaptive_cpu_contention_counted = 1;
++                    cuda_moe_transient_deadline_note(
++                        CUDA_MOE_TRANSIENT_DEADLINE_CPU_CONTENTION,
++                        adaptive_recent_evictions, sequence);
++                    fprintf(stderr,
++                            "ds4: CUDA GPU-resident route worker delayed "
++                            "seq=%u; adaptive watchdog keeps worker alive\n",
++                            sequence);
++                }
++                wait_deadline = now + 5.0;
++                continue;
++            }
+             fprintf(stderr,
+                     "ds4: CUDA GPU-resident route worker starved seq=%u; "
+                     "falling through to the exact terminal\n",

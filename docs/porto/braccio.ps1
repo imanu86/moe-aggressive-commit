@@ -119,8 +119,20 @@ $load = ((Get-Date) - $t0).TotalSeconds
 "    caricato in {0:N1}s" -f $load
 
 # --- la richiesta, una sola, sempre la stessa ---
+# IL PROMPT DELLA CAMPAGNA, non uno a caso. E' il carico su cui sono misurati TUTTI
+# i riferimenti (X_CTL8K, X_P8K_comb): pagina intera, ~4900 token, quindi il 58%
+# della generazione cade OLTRE il ginocchio dell'indexer a 2048.
+# L'1/8 ho usato un prompt generico su una funzione Python: si e' esaurito a 909
+# token, tutti PRIMA del ginocchio, e ho annunciato un SOTA che non era confrontabile.
+# Lo script della campagna verifica lo SHA256 del prompt e abortisce se cambia:
+# stesso presidio qui sotto.
+$prompt = 'Create a complete single-file HTML landing page for a cyberpunk AI programming shop. Include CSS, navigation, hero, request form, and a JavaScript confirmation popup. Return only the HTML document.'
+$promptSha = [BitConverter]::ToString(
+    [System.Security.Cryptography.SHA256]::Create().ComputeHash(
+        [Text.Encoding]::UTF8.GetBytes($prompt))).Replace('-','').ToLower()
+"    PROMPT   pagina HTML della campagna   sha256 $($promptSha.Substring(0,16))..."
 $body = @{ model='ds4'; max_tokens=$Tokens; temperature=0
-           messages=@(@{role='user'; content='Write a Python function that merges two sorted lists into one sorted list, then explain how it works.'}) } | ConvertTo-Json -Depth 5
+           messages=@(@{role='user'; content=$prompt}) } | ConvertTo-Json -Depth 5
 $t1 = Get-Date
 $resp = Invoke-RestMethod "http://127.0.0.1:$Port/v1/chat/completions" -Method Post `
           -ContentType 'application/json' -Body $body -TimeoutSec 7200

@@ -164,10 +164,14 @@ repo e prendere la prima e' come non guardare.
 ## Avanzamento misurato
 
 ```
-blocchi chiusi        7 / 14        0, 1, 1b, 2, 2b, 3, 4
-giornate stimate    6-8 / 19-27      ->  ~30% del core single-GPU
-                    6-8 / 26-36      ->  ~23% della parita' piena
-righe di politica  1445 / ~27700     ->  ~5%   (adattatore 190 + arena 1255)
+TRONCO         port/upstream-substrate @ 9f79272
+               44 file, 10.209 inserzioni sopra upstream/main
+               build exit 0, fixture arena PASS, ds4-server.exe gira
+
+blocchi chiusi        8 / 14      0, 1, 1b, 2, 2b, 3, 4, 10  (+ merge-1)
+giornate stimate    9-13 / 26-36  ->  ~35% della parita' piena
+                     6-8 / 19-27  ->  ~28% del core single-GPU
+righe di politica   2860 / ~27700 ->  ~10%  (adattatore 190, arena 1255, IQ1 1415)
 ```
 
 **Le tre scale non concordano, e la ragione e' il punto.** Per blocchi siamo a meta'; per

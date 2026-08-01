@@ -97,7 +97,7 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | **FATTO** eab720a, 190 righe, build OK |
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | **FATTO** 2b4c934, 1255 righe, fixture PASS verificata a mano |
 | 5 | Async readback/SPEX, observer prefill/REAP | parziale | **FATTO** 485e268, 395 righe, fixture PASS, nel tronco |
-| 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **in corso** worktree `ds4-port-blk6` (sopra l'adattatore) |
+| 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **FATTO** 6cedf76, 772 righe; merge nel tronco in corso (14 conflitti) |
 | 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **piano in corso** (nucleo 6-7-8) |
 | 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **piano in corso** — poi primo end-to-end |
 | 9 | Guardiani G73: deadline, cancel, retry, respawn | no | da fare |

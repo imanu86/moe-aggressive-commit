@@ -96,12 +96,12 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 2b | **`ds4-server` su Windows** — e' il binario di OGNI misura, oggi e' uno stub | si | **FATTO** b46b391, thread scheduler su os_thread |
 | 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | **FATTO** eab720a, 190 righe, build OK |
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | **FATTO** 2b4c934, 1255 righe, fixture PASS verificata a mano |
-| 5 | Async readback/SPEX, observer prefill/REAP | parziale | da fare |
+| 5 | Async readback/SPEX, observer prefill/REAP | parziale | **in corso** worktree `ds4-port-obs` |
 | 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **in corso** worktree `ds4-port-blk6` (sopra l'adattatore) |
 | 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **piano in corso** (nucleo 6-7-8) |
 | 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **piano in corso** — poi primo end-to-end |
 | 9 | Guardiani G73: deadline, cancel, retry, respawn | no | da fare |
-| 10 | IQ1/Q1/nested residual/SSD rotator | no | **in corso** worktree `ds4-port-blk10` |
+| 10 | IQ1/Q1/nested residual/SSD rotator | no | **FATTO** 7e19dd4, 888+527 righe, hash 8211d0dfbf647850 verificato |
 | 11 | KV staged e G132 CPU lane | no | fuori dal primo traguardo |
 
 ## I fronti, aggiornati (1/8, 13:20)

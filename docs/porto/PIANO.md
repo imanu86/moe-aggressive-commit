@@ -1,6 +1,6 @@
 # PORTO SU UPSTREAM — piano operativo
 
-**Stato al 2026-08-01 12:17.** Aggiornare questo file a ogni blocco chiuso.
+**Stato al 2026-08-01 12:40.** Aggiornare questo file a ogni blocco chiuso.
 
 ## Obiettivo e ritorno
 
@@ -49,17 +49,47 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 0 | Contratto upstream + POSIX + guard `g_n_gpus==1` | si | **FATTO** — build exit 0, `ds4.exe` 6,9 MB gira |
 | 1 | `os_file`, pread cancellabile, mmap, thread | **si** | **FATTO** f878e71, 11 file, compila |
 | 1b | CMake MSVC/nvcc esteso alle unita' nuove upstream | si | **FATTO** configura e genera, 10/36 unita' compilano |
-| 2 | Telemetria passiva: alloc, hostpin, worker-prof, transport ledger | si | **in corso** (D1) |
-| 2b | **`ds4-server` su Windows** — e' il binario di OGNI misura, oggi e' uno stub | si | **in corso** (E1) |
-| 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | da fare |
-| 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | da fare |
+| 2 | Telemetria passiva: alloc, hostpin, worker-prof, transport ledger | si | **FATTO** 2952760, 1419 righe, compila |
+| 2b | **`ds4-server` su Windows** — e' il binario di OGNI misura, oggi e' uno stub | si | **FATTO** b46b391, thread scheduler su os_thread |
+| 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | **in corso** worktree `ds4-port-blk3` |
+| 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | **in corso** worktree `ds4-port-blk4` |
 | 5 | Async readback/SPEX, observer prefill/REAP | parziale | da fare |
-| 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | da fare |
-| 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | da fare |
-| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **primo end-to-end** |
+| 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **piano in corso** (nucleo 6-7-8) |
+| 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **piano in corso** (nucleo 6-7-8) |
+| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **piano in corso** — poi primo end-to-end |
 | 9 | Guardiani G73: deadline, cancel, retry, respawn | no | da fare |
-| 10 | IQ1/Q1/nested residual/SSD rotator | no | da fare |
+| 10 | IQ1/Q1/nested residual/SSD rotator | no | **in corso** worktree `ds4-port-blk10` |
 | 11 | KV staged e G132 CPU lane | no | fuori dal primo traguardo |
+
+## Quattro fronti aperti adesso (1/8, 12:40)
+
+Un **worktree git per agente**: la regola "un agente per file disgiunti" era prudenza, non una
+legge, e i blocchi 4-9 stanno quasi tutti nello stesso `ds4_cuda.cu`.
+
+```
+ds4-port-blk4    port/blk4-arena       arena core                    codice
+ds4-port-blk3    port/blk3-cache-api   adattatore dietro l'API       codice
+ds4-port-blk10   port/blk10-iq1        formato IQ1_S / Q1_0          codice
+ds4-port-blk5    port/blk5-spex        PIANO del nucleo 6-7-8        solo documento
+```
+
+Il quarto non scrive sorgenti: prepara il trapianto del nucleo accoppiato, che non puo'
+partire finche' 3 e 4 non atterrano. Quando atterrano, il piano c'e' gia'.
+
+**Poi serve un agente di MERGE** che riconcilia i tre rami di codice su
+`port/upstream-substrate`. Vede tutti i diff insieme, quindi trova le incoerenze fra blocchi
+meglio di chi legge tre rapporti in fila.
+
+### Come si lanciano (il companion perde i job)
+
+```powershell
+Get-Content -Raw mandato.txt | & codex exec -C "<worktree>" -s workspace-write - *> "log.txt"
+```
+
+Il prompt **da stdin**: come argomento PowerShell lo spezza in un argomento per riga. Il
+`NativeCommandError` nel log e' solo stderr avvolto, non un errore. **Si verifica coi file
+(`git log`, `git status`), non col registro del companion**: c'e' una cartella di registro per
+repo e prendere la prima e' come non guardare.
 
 **Non separabili**: `route_worker + expert_cache + tiering_enforce_request`;
 `deadline + I/O cancellabile + teardown`; `Q1 mixed + nested residual + SSD rotator`;

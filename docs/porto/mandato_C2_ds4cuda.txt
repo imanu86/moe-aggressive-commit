@@ -1,0 +1,74 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e solo li'.
+
+  ALBERO DI LAVORO:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port
+                     branch port/upstream-substrate
+  RIFERIMENTO:       C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **SOLO LETTURA, mai scrivere qui.**
+
+OBIETTIVO: due cose su **`ds4-port/ds4_cuda.cu`**, che e' il file di upstream e va tenuto come substrato.
+
+  (A) farlo compilare su Windows/MSVC+nvcc, sostituendo le API POSIX
+  (B) aggiungere il guard `g_n_gpus == 1` che limita il primo porto al single-GPU
+
+## LO STATO ESATTO
+
+Il build arriva a 10 unita' su 36 e si ferma qui:
+
+```
+ds4_cuda.cu(17): fatal error C1083: cannot open 'unistd.h'
+```
+
+Comando per riprodurre (da PowerShell):
+
+```
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" ^
+  --build "C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port\build-verify" --parallel 6
+```
+
+`build-verify` e' gia' configurata (MSVC 14.44, CUDA 12.6, sm_86, Ninja).
+
+## (A) IL PERIMETRO POSIX, misurato
+
+In `ds4-port/ds4_cuda.cu`:
+
+```
+unistd.h        1        mmap            3
+pread           1        clock_gettime   1
+sys/            1        O_RDONLY        1
+```
+
+**E' piccolo.** Lo strato e' gia' in `ds4-port/src/platform/`: `os_file.h`, `os_mmap.h`, `os_clock.h`, `os_thread.h`, `os_path.h`. Il nostro fork ha gia' fatto la stessa sostituzione in `ds4-p4a/ds4_cuda.cu` (dove `unistd.h` e' rimpiazzato e c'e' `os_thread.h`): **usalo come riferimento, non reinventare.**
+
+## (B) IL GUARD SINGLE-GPU
+
+Il primo porto deve essere esplicitamente limitato a **`g_n_gpus == 1`** e al ramo DSV4 non-TP/non-EP. La ragione: upstream ha tutto il plumbing multi-device (`device_id` nella struttura `ds4_gpu_tensor`, TP, EP) e noi non lo abbiamo mai esercitato. **Non va rimosso: va disattivato con un rifiuto rumoroso.**
+
+Cosa serve:
+
+- un punto di ingresso che, se `g_n_gpus != 1`, **fallisce con un messaggio chiaro** invece di procedere su un percorso non validato;
+- lo stesso per il ramo TP/EP se e' attivabile indipendentemente;
+- il guard deve essere **una riga di codice sola e ben visibile**, non sparso: chi togliera' il limite deve trovarlo subito.
+
+Nota: la cache esperti upstream **e' gia' single-GPU** e lo dichiara a `ds4_cuda.cu:22963` circa. Guarda come lo fa lei e usa lo stesso stile.
+
+## COSA DEVI FARE
+
+**(1) Sostituisci le API POSIX** usando il fork come riferimento.
+
+**(2) Aggiungi il guard**, con un commento che spiega perche' e cosa serve per toglierlo.
+
+**(3) NON toccare `ds4.c`**: un altro agente ci sta lavorando in parallelo sulla stessa famiglia di sostituzioni. Non toccare `src/platform/*` ne' `CMakeLists.txt`.
+
+**(4) Il criterio di fine e' il compilatore**: `ds4_cuda.cu.obj` deve compilare. E' un file da 27.666 righe di CUDA, quindi ogni compilazione e' lenta: **mettila in conto e non lanciarne una a ogni riga cambiata.**
+
+**(5) Lascia un rapporto** in `ds4-port/PORT_BLOCK0_CUDA.md`: le sostituzioni fatte, dove hai messo il guard, e cosa resta aperto.
+
+## VINCOLI
+
+- Solo `ds4-port/ds4_cuda.cu`. **Mai `ds4-p4a`.**
+- **Additivo**: `#ifdef _WIN32` che affianca, non cancella. Upstream deve restare compilabile su Linux.
+- **NON portare la nostra politica di cache/arena/tiering**: quella e' il blocco 4 e successivi, e va dietro l'API upstream `ds4_gpu_stream_expert_cache_*`. Qui si fa solo compilare e mettere il guard.
+- Committa su `port/upstream-substrate`.
+
+Rispondi in italiano. Se qualcosa non e' portabile senza toccare file altrui, **fermati e dillo**.

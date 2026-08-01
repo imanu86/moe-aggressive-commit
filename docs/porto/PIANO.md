@@ -46,9 +46,9 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 
 | # | Blocco | Isolabile | Stato |
 |---|---|---|---|
-| 0 | Contratto upstream: `device_id`, resolver, firme, guard `g_n_gpus==1` | si | da fare |
-| 1 | `os_file`, pread cancellabile, mmap, thread | **si** | **in corso** (B1) |
-| 1b | CMake MSVC/nvcc esteso alle unita' nuove upstream | si | **in corso** (B2) |
+| 0 | Contratto upstream + POSIX in ds4.c/ds4_cuda.cu + guard `g_n_gpus==1` | si | **in corso** (C1, C2) |
+| 1 | `os_file`, pread cancellabile, mmap, thread | **si** | **FATTO** f878e71, 11 file, compila |
+| 1b | CMake MSVC/nvcc esteso alle unita' nuove upstream | si | **FATTO** configura e genera, 10/36 unita' compilano |
 | 2 | Telemetria passiva: alloc, hostpin, worker-prof, transport ledger | si | da fare |
 | 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | da fare |
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | da fare |

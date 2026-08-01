@@ -1,0 +1,76 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e solo li'.
+
+  ALBERO DI LAVORO:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port
+                     branch port/upstream-substrate
+  RIFERIMENTO:       C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **SOLO LETTURA, mai scrivere qui.**
+
+OBIETTIVO: far compilare **`ds4-port/ds4.c` su Windows/MSVC**, sostituendo le API POSIX con lo strato di piattaforma che e' gia' presente in `ds4-port/src/platform/`.
+
+## LO STATO ESATTO
+
+Il build attuale arriva a 10 unita' su 36 e si ferma qui:
+
+```
+ds4.c(24): fatal error C1083: cannot open 'pthread.h'
+```
+
+Comando per riprodurre (da PowerShell):
+
+```
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" ^
+  --build "C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port\build-verify" --parallel 6
+```
+
+La directory `build-verify` e' gia' configurata (MSVC 14.44, CUDA 12.6, sm_86, Ninja).
+
+## IL PERIMETRO, misurato
+
+In `ds4-port/ds4.c`:
+
+```
+pthread_          90 occorrenze
+mmap               9
+pread              3
+clock_gettime      1
+sys/               4
+O_RDONLY           1
+unistd.h / pthread.h   1 ciascuno
+```
+
+## LA RISPOSTA E' GIA' SCRITTA
+
+**Il nostro fork ha gia' fatto esattamente questa sostituzione.** In `ds4-p4a/ds4.c`: `pthread_` compare **zero** volte, e c'e' `#include "os_thread.h"`.
+
+Quindi per ogni sito il fork ti mostra la sostituzione corretta e collaudata. **Copiala, non reinventarla.** Lo strato disponibile in `ds4-port/src/platform/`:
+
+```
+os_thread.h    thread, mutex, condvar, once, CPU count   -> sostituisce pthread_*
+os_file.h      apertura, I/O posizionato, cancellabile   -> sostituisce open/pread
+os_mmap.h      mapping                                    -> sostituisce mmap/munmap
+os_clock.h     tempo monotono                             -> sostituisce clock_gettime
+os_path.h      path UTF-8/UTF-16, lunghi                  -> sostituisce i path POSIX
+os_random.h    entropia                                   -> sostituisce /dev/urandom
+```
+
+## COSA DEVI FARE
+
+**(1) Porta la sostituzione POSIX in `ds4-port/ds4.c`**, usando il fork come riferimento riga per riga.
+
+**(2) ATTENZIONE alla differenza fra i due alberi.** `ds4-p4a/ds4.c` ha 25.043 righe, `ds4-port/ds4.c` ne ha 64.891: upstream ha aggiunto ~40.000 righe (DSpark, distributed, TP, GLM). **Molti siti POSIX saranno in codice che il nostro fork non ha mai visto.** Per quelli applica lo stesso schema, e se uno schema non c'e', **fermati e segnalalo invece di inventare.**
+
+**(3) NON toccare `ds4_cuda.cu`**: un altro agente ci sta lavorando in parallelo, sugli stessi tipi di sostituzione. Non toccare nemmeno `src/platform/*` (gia' portato e funzionante) ne' `CMakeLists.txt` (gia' completo).
+
+**(4) Il criterio di fine e' il compilatore**, non la tua impressione: `ds4.c.obj` deve compilare. Rilancia il build finche' non passa. Se resta bloccato su qualcosa fuori dal tuo perimetro, **dillo con la riga esatta**.
+
+**(5) Lascia un rapporto** in `ds4-port/PORT_BLOCK0_DS4C.md`: quante sostituzioni per famiglia, quali siti erano nuovi rispetto al fork, cosa hai dovuto decidere da solo, e cosa resta aperto.
+
+## VINCOLI
+
+- Solo `ds4-port/ds4.c` e, se strettamente necessario, gli header che esso include e che nessun altro sta toccando. **Mai `ds4-p4a`.**
+- **Additivo dove possibile**: preferisci `#ifdef _WIN32` che affianca al posto di cancellare il ramo POSIX. Upstream deve restare compilabile su Linux.
+- Non "migliorare" il codice: sostituisci e basta.
+- Committa su `port/upstream-substrate`, un commit per famiglia di sostituzione.
+
+Rispondi in italiano. Se un pezzo non e' portabile senza toccare file altrui, **fermati e dillo**.

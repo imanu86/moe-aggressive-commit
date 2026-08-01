@@ -100,3 +100,65 @@ i 518 MB/s di paging del tronco, e il fatto che aggiungere RAM non aiuterebbe.
   tracciate ha dimezzato la velocita' per sei minuti.
 - Lo spegnimento senza token esiste: `CTRL_BREAK_EVENT` chiama la stessa
   `server_request_stop()` dell'endpoint (`ds4_server.c:167-176`).
+
+---
+
+# PORTO v2 — le variabili della politica su 0731 (notte 2/8)
+
+Quattro Codex in parallelo, un worktree ciascuno, rami `port/v2-*`.
+`DS4_SPEX_*` escluso per decisione dell'utente.
+
+| worktree | ramo | ambito |
+|---|---|---|
+| `ds4-0731-vittima` | `port/v2-vittima` | politica vittima, cache VRAM esperti, telemetria `[vram-prio]`/`[iq2-expert-cache-size]` |
+| `ds4-0731-tiering` | `port/v2-tiering` | `EXPERT_TIER_*`, `EXPERT_TIERING`, `G133_*` |
+| `ds4-0731-moeio` | `port/v2-moeio` | coda I/O, `MOE_CACHE_POLICY`, route worker |
+| `ds4-0731-prefill` | `port/v2-prefill` | `PREFILL_TIER_*`, `REAP_MASS_*`, riserve di stream, arena |
+
+## Fatti stabiliti dagli agenti, che valgono a prescindere dal codice
+
+**La catena della vittima su 0731 non esiste.** Nel fork la policy opera su
+`g_model_ranges`, pool MISTO dove gli esperti sono sfrattabili e il backbone e'
+`pinned`. Su 0731 `mass_lfru_policy::choose_victim` riceve **solo slot esperto
+validi**: backbone, KV e range modello non entrano nella lista candidati. Le
+stringhe `reason=no-expert-victim` e `victim_category=backbone` non esistono in
+tutto l'albero. Meta' del mandato "vittima" e' **non portabile perche' il guasto
+non c'e'**.
+
+**`[iq2-expert-cache-size]` mancava solo la stampa.** Il dimensionamento esiste
+a `ds4_cuda.cu:26817` (`cuda_stream_resident_cache_prepare_locked`), al primo
+selected-load dopo l'allocazione dell'attenzione. **La cache si attivava solo con
+budget non nullo E la cache VRAM opt-in**, e `DS4_CUDA_STREAMING_EXPERT_CACHE_N`
+non era letto da NESSUN file di 0731. Ora una richiesta positiva abilita da sola
+lo slab, senza il vecchio `DS4_CUDA_VRAM_EXPERT_CACHE`.
+
+**L'ipotesi "lettura senza buffering" e' FALSA su Windows.**
+`src/platform/os_file.c:100`: `CreateFileW` con `FILE_ATTRIBUTE_NORMAL |
+FILE_FLAG_RANDOM_ACCESS | FILE_FLAG_OVERLAPPED`, **niente `FILE_FLAG_NO_BUFFERING`**.
+Lo stesso handle alimenta `CreateFileMappingW`/`MapViewOfFile`
+(`os_mmap.c:44-49`). Su Linux invece CUDA tenta `O_DIRECT` a
+`ds4_cuda.cu:5855`, disattivabile con `DS4_CUDA_NO_DIRECT_IO`.
+**Correzione di metodo**: leggevo `SystemCacheResidentBytes`, che NON conta le
+pagine di file mappati. I "3,6 GB di page cache" non misuravano quel che credevo.
+
+**`DS4_EXPERT_TIER_ADMIT_KNOCKS_SSD` non e' portabile**: su 0731 il seed RAM e'
+ranking upstream (`dynamic_arena.cu:1168`), non una transizione governata dalla
+policy. Era la leva promossa a +4,0%: qui non ha dove attaccarsi.
+
+**Il route worker di 0731 e' diverso per scelta**: rendezvous generation-aware
+che promuove dal working set gia' verificato, con reserve/drain/publish/refund
+come transazione unica. `MOE_DEMAND_PIPELINE` e `G73` non appartengono a questa
+infrastruttura e non sono stati innestati. La route Q4_K resta intatta.
+
+## Riconciliazione
+
+`docs/porto/riconcilia.ps1`. I Codex non possono committare: `workspace-write`
+li limita alla radice `-C`, ma i metadati del worktree stanno in
+`ds4-p4a/.git/worktrees/<nome>`. Committa il coordinatore.
+
+Merge sequenziale su `port/v2-merge` per superficie crescente sul file conteso
+(`ds4_cuda.cu`, toccato da tutti e quattro): **prefill -> moeio -> vittima ->
+tiering**, con build vera a ogni passo.
+
+Nota di build: nvcc non trova `cl.exe` senza `vcvars64.bat`. Non e' un errore di
+codice; ha fatto perdere tempo a due agenti. `build.bat` scritto nei worktree.

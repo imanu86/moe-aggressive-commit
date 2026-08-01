@@ -1,0 +1,113 @@
+# Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
+param(
+    [Parameter(Mandatory)][ValidateSet('A','B','C')][string]$Arm,
+    [int]$Tokens = 150,
+    [int]$Ctx    = 8192,
+    [int]$Port   = 8080,
+    # C: e' l'NVMe (Lexar EQ790), D: e' il SATA (EMTEC X160): ~7000 contro ~550 MB/s.
+    # Il riferimento gira da C:. Su un runtime che fa streaming dal disco, sbagliare
+    # unita' significa misurare il disco invece del codice.
+    [string]$Model = 'C:\ds4-models\ds4-2bit.gguf',
+    [string]$OutDir = 'D:\ds4_work\porto_run'
+)
+$ErrorActionPreference = 'Stop'
+$R = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
+New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
+$tag = "{0}_{1}" -f $Arm, (Get-Date -Format 'HHmmss')
+$srvLog = Join-Path $OutDir "$tag.server.log"
+
+# --- igiene: nessuna DS4_* ereditata, mai ---
+Get-ChildItem Env: | Where-Object Name -Like 'DS4_*' |
+    ForEach-Object { Remove-Item -LiteralPath ("Env:{0}" -f $_.Name) -EA SilentlyContinue }
+
+# token di spegnimento pulito, 64 hex
+$tok = -join ((1..64) | ForEach-Object { '0123456789abcdef'[(Get-Random -Max 16)] })
+$env:DS4_G130_U1_SHUTDOWN_TOKEN = $tok
+
+switch ($Arm) {
+  'A' {  # il FORK, binario bin_codex4 = ds4_server.exe (il .pre_codex4 e' quello PRIMA)
+    $exe = "$R\ds4-p4a\build-native\ds4_server.exe"
+    . "$R\docs\porto\preset_A.ps1"                   # la fonte, non un env trovato col grep
+    $env:DS4_G130_U1_SHUTDOWN_TOKEN = $tok
+  }
+  'B' {  # il TRONCO NUDO: tutti i nostri opt-in ASSENTI, non a zero
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+  }
+  'C' {  # il TRONCO con la nostra politica accesa
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_DYNAMIC_ARENA_GB     = '30'
+    $env:DS4_CUDA_PREFILL_MASS_OBSERVE = '1'
+    $env:DS4_CUDA_VRAM_EXPERT_CACHE    = '1'
+  }
+}
+if (-not (Test-Path $exe)) { throw "binario assente: $exe" }
+
+# Il FORK non ha --ssd-streaming: da noi lo streaming lo guida l'ambiente (l'arena).
+# E' un flag di upstream, quindi va solo ai bracci B e C.
+$args = @('-m', $Model, '--cuda', '-c', "$Ctx", '-n', "$Tokens",
+          '--host','127.0.0.1','--port',"$Port")
+if ($Arm -ne 'A') { $args += '--ssd-streaming' }
+
+"=== BRACCIO $Arm  |  $Tokens token, ctx $Ctx ==="
+"    binario  $exe"
+"    modello  $Model"
+
+# --- PREFLIGHT: le cose che se sbagliate falsano tutto, guardate PRIMA di lanciare.
+#     L'1/8 ho misurato per mezz'ora un disco SATA credendo di misurare il porto.
+$ml = (Split-Path $Model -Qualifier).TrimEnd(':')
+$mp = Get-Partition -DriveLetter $ml -EA SilentlyContinue
+if ($mp) {
+    $md = Get-Disk -Number $mp.DiskNumber
+    $pd = Get-PhysicalDisk | Where-Object DeviceId -eq $mp.DiskNumber
+    $bus = $md.BusType
+    "    DISCO    ${ml}: $($md.FriendlyName) [$bus $($pd.MediaType)]" + $(if ($bus -eq 'NVMe') { '  ok' } else { "  *** ATTENZIONE: non e' NVMe ***" })
+}
+$vram = (& nvidia-smi --query-gpu=memory.used --format=csv,noheader)
+$freeRam = (Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory/1MB
+$up = ((Get-Date) - (Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalMinutes
+$dirt = @(Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Where-Object { $_.CommandLine -match 'codex' }).Count
+"    VRAM     $vram all'avvio" + $(if ([int]($vram -replace '\D','') -gt 1500) { "  *** ATTENZIONE: non e' pulita ***" } else { "  ok" })
+"    RAM      {0:N1} GB libera    uptime {1:N0} min    daemon codex {2}" -f $freeRam, $up, $dirt
+if ($dirt -gt 0) { "    *** ATTENZIONE: daemon vivi, sfrattano le pagine del modello dalla page cache ***" }
+$applied = @(Get-ChildItem Env: | Where-Object Name -Like 'DS4_*' | Sort-Object Name)
+"    PRESET   $($applied.Count) variabili DS4_*"
+foreach ($v in $applied) { if ($v.Name -notmatch 'SHUTDOWN_TOKEN') { "               $($v.Name)=$($v.Value)" } }
+""
+$t0 = Get-Date
+$p = Start-Process -FilePath $exe -ArgumentList $args -PassThru -NoNewWindow `
+        -RedirectStandardError $srvLog -RedirectStandardOutput "$srvLog.out"
+
+# attesa del caricamento: 81 GB dal disco, puo' volerci
+$ready = $false
+for ($i = 0; $i -lt 900; $i++) {
+    Start-Sleep -Seconds 2
+    if ($p.HasExited) { throw "il server e' uscito da solo (exit $($p.ExitCode)) - vedi $srvLog" }
+    try { Invoke-RestMethod "http://127.0.0.1:$Port/v1/models" -TimeoutSec 3 | Out-Null; $ready = $true; break } catch {}
+}
+if (-not $ready) { throw "server non pronto dopo 30 minuti" }
+$load = ((Get-Date) - $t0).TotalSeconds
+"    caricato in {0:N1}s" -f $load
+
+# --- la richiesta, una sola, sempre la stessa ---
+$body = @{ model='ds4'; max_tokens=$Tokens; temperature=0
+           messages=@(@{role='user'; content='Write a Python function that merges two sorted lists into one sorted list, then explain how it works.'}) } | ConvertTo-Json -Depth 5
+$t1 = Get-Date
+$resp = Invoke-RestMethod "http://127.0.0.1:$Port/v1/chat/completions" -Method Post `
+          -ContentType 'application/json' -Body $body -TimeoutSec 7200
+$gen = ((Get-Date) - $t1).TotalSeconds
+$out = $resp.usage.completion_tokens
+if (-not $out) { $out = $Tokens }
+"    generati {0} token in {1:N1}s  ->  END2END {2:N3} t/s" -f $out, $gen, ($out/$gen)
+
+# --- spegnimento PULITO: e' il punto, mai Stop-Process -Force ---
+try {
+    Invoke-RestMethod "http://127.0.0.1:$Port/__g130_u1_shutdown" -Method Post `
+        -ContentType 'application/json' -Body ('{"token":"' + $tok + '"}') -TimeoutSec 20 | Out-Null
+    "    spegnimento: endpoint accettato"
+} catch { "    spegnimento: ENDPOINT FALLITO -> $($_.Exception.Message)" }
+if (-not $p.WaitForExit(120000)) { "    ATTENZIONE: non e' uscito in 120s, resta vivo (NON lo forzo)" }
+else { "    uscito pulito in {0:N1}s" -f ((Get-Date) - $t1).TotalSeconds }
+
+Start-Sleep -Seconds 3
+"    VRAM dopo: $((& nvidia-smi --query-gpu=memory.used --format=csv,noheader))"
+"    log: $srvLog"

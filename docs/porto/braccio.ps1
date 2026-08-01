@@ -141,6 +141,62 @@ $out = $resp.usage.completion_tokens
 if (-not $out) { $out = $Tokens }
 "    generati {0} token in {1:N1}s  ->  END2END {2:N3} t/s" -f $out, $gen, ($out/$gen)
 
+# --- CATALOGAZIONE: l'output NON si perde mai. Regola utente 1/8. ---
+# Ogni artefatto di un braccio porta lo STESSO identificativo, che e' $tag:
+#     <tag>.server.log     il log del binario
+#     <tag>.output.html    quello che il modello ha scritto   <-- mancava, e ho buttato 8 ore di testo
+#     <tag>.meta.json      metriche + preset + sha, per ricostruire il run senza la chat
+#     LEDGER_RUN.tsv       una riga per braccio, appesa, con lo stesso identificativo
+# Il transcript delle chat non e' recuperabile: se non e' su disco non e' successo.
+$content = [string]$resp.choices[0].message.content
+if (-not $content) { $content = '' }
+$htmlPath = Join-Path $OutDir "$tag.output.html"
+[IO.File]::WriteAllText($htmlPath, $content, [Text.UTF8Encoding]::new($false))
+$contentSha = [BitConverter]::ToString(
+    [Security.Cryptography.SHA256]::Create().ComputeHash(
+        [Text.Encoding]::UTF8.GetBytes($content))).Replace('-','').ToLower()
+"    output   {0:N0} caratteri  sha256 {1}  ->  {2}" -f $content.Length, $contentSha.Substring(0,16), (Split-Path $htmlPath -Leaf)
+if ($content.Length -eq 0) { "    *** ATTENZIONE: output VUOTO, il braccio non ha prodotto testo ***" }
+
+# il REGIME si legge dal log: mediana dei chunk oltre il token 300
+$chunks = @(Select-String -LiteralPath $srvLog -Pattern 'gen=(\d+) decoding chunk=([0-9.]+)' -AllMatches |
+    ForEach-Object { $_.Matches } |
+    Where-Object { [int]$_.Groups[1].Value -gt 300 } |
+    ForEach-Object { [double]$_.Groups[2].Value } | Sort-Object)
+$regime = if ($chunks.Count) { $chunks[[int]($chunks.Count/2)] } else { $null }
+$evict  = @(Select-String -LiteralPath $srvLog -Pattern 'evict_backbone=(\d+)' -AllMatches |
+    ForEach-Object { $_.Matches } | ForEach-Object { [int]$_.Groups[1].Value } |
+    Measure-Object -Maximum).Maximum
+$capacity = (Select-String -LiteralPath $srvLog -Pattern 'result=sized requested=\d+ capacity=(\d+)' |
+    Select-Object -Last 1).Matches.Groups[1].Value
+
+$meta = [ordered]@{
+    id = $tag; arm = $Arm; timestamp = (Get-Date -Format 'o')
+    exe = $exe; model = $Model; ctx = $Ctx; tokens_requested = $Tokens
+    prompt_sha256 = $promptSha; output_sha256 = $contentSha; output_chars = $content.Length
+    tokens_generated = $out; seconds = [math]::Round($gen,1); load_seconds = [math]::Round($load,1)
+    end2end_tps = [math]::Round($out/$gen,3); regime_tps = $regime; regime_n = $chunks.Count
+    evict_backbone = $evict; expert_cache_capacity = $capacity
+    no_expert_victim = @(Select-String -LiteralPath $srvLog -Pattern 'no-expert-victim').Count
+    override = $Override
+    preset = ([ordered]@{} + (@{} ; foreach ($v in $applied) { if ($v.Name -notmatch 'SHUTDOWN_TOKEN') { @{ $v.Name = $v.Value } } }))
+    env = @($applied | Where-Object Name -notmatch 'SHUTDOWN_TOKEN' | ForEach-Object { "$($_.Name)=$($_.Value)" })
+}
+$metaPath = Join-Path $OutDir "$tag.meta.json"
+$meta | ConvertTo-Json -Depth 6 | Set-Content -LiteralPath $metaPath -Encoding UTF8
+
+$ledger = Join-Path $OutDir 'LEDGER_RUN.tsv'
+if (-not (Test-Path $ledger)) {
+    "id`tdata`tbraccio`tmodello`tctx`ttoken`tEND2END`tREGIME`tn`tcapacity`tevict_bb`tno_victim`toutput_sha256`toverride" |
+        Set-Content -LiteralPath $ledger -Encoding UTF8
+}
+"{0}`t{1}`t{2}`t{3}`t{4}`t{5}`t{6:N3}`t{7}`t{8}`t{9}`t{10}`t{11}`t{12}`t{13}" -f `
+    $tag, (Get-Date -Format 'yyyy-MM-dd HH:mm'), $Arm, (Split-Path $Model -Leaf), $Ctx, $out,
+    ($out/$gen), $regime, $chunks.Count, $capacity, $evict, $meta.no_expert_victim,
+    $contentSha.Substring(0,16), (($Override.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" }) -join ',') |
+    Add-Content -LiteralPath $ledger -Encoding UTF8
+"    ledger   riga appesa a $ledger"
+
 # --- spegnimento PULITO: e' il punto, mai Stop-Process -Force ---
 try {
     Invoke-RestMethod "http://127.0.0.1:$Port/__g130_u1_shutdown" -Method Post `

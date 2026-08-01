@@ -1,0 +1,307 @@
+Ecco una pagina HTML completa per la startup AI NeuraForge in stile cyberpunk neon, con tutti gli elementi richiesti e commenti dettagliati.
+
+```html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <!-- Meta tag per codifica e viewport -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuraForge · AI Startup Cyberpunk</title>
+    
+    <!-- CSS interno: stile cyberpunk neon -->
+    <style>
+        /* RESET e base */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Segoe UI', 'Roboto', system-ui, sans-serif;
+        }
+
+        body {
+            background: #0a0c0f; /* sfondo scuro cyberpunk */
+            color: #e0e0e0;
+            line-height: 1.6;
+            scroll-behavior: smooth;
+        }
+
+        /* tipografia cyberpunk */
+        h1, h2, h3, h4 {
+            font-weight: 700;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            font-size: 3.2rem;
+            background: linear-gradient(90deg, #00f0ff, #ff00c8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        h2 {
+            font-size: 2.2rem;
+            color: #00f0ff;
+            text-shadow: 0 0 8px #00f0ff66;
+            border-bottom: 2px solid #ff00c8;
+            padding-bottom: 0.3rem;
+            margin-bottom: 1.5rem;
+        }
+
+        /* link e interazioni */
+        a {
+            color: #ff00c8;
+            text-decoration: none;
+            transition: 0.2s;
+        }
+        a:hover {
+            color: #00f0ff;
+            text-shadow: 0 0 6px #00f0ff;
+        }
+
+        /* layout container */
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 20px;
+        }
+
+        /* ===== HEADER ===== */
+        header {
+            background: #12151a;
+            border-bottom: 3px solid #ff00c8;
+            box-shadow: 0 4px 20px rgba(255, 0, 200, 0.3);
+            padding: 1rem 0;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        header .container {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+        }
+
+        .logo {
+            font-size: 2rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #00f0ff, #ff00c8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            text-shadow: 0 0 12px #00f0ffaa;
+        }
+
+        nav {
+            display: flex;
+            gap: 2rem;
+        }
+
+        nav a {
+            font-weight: 600;
+            font-size: 1.1rem;
+            padding: 0.5rem 0.2rem;
+            border-bottom: 2px solid transparent;
+            transition: 0.3s;
+        }
+        nav a:hover {
+            border-bottom-color: #ff00c8;
+            transform: translateY(-2px);
+        }
+
+        /* ===== HERO ===== */
+        .hero {
+            padding: 4rem 0;
+            text-align: center;
+            background: radial-gradient(circle at 20% 30%, #1f1a2e, #0a0c0f 80%);
+            border-bottom: 1px dashed #ff00c866;
+        }
+
+        .hero h1 {
+            margin-bottom: 1rem;
+            font-size: 3.5rem;
+        }
+
+        .hero p {
+            font-size: 1.3rem;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            color: #b0b8c0;
+            text-shadow: 0 0 4px #000;
+        }
+
+        .hero .cta-button {
+            background: transparent;
+            border: 2px solid #ff00c8;
+            color: #ff00c8;
+            padding: 0.9rem 2.5rem;
+            font-size: 1.3rem;
+            font-weight: bold;
+            text-transform: uppercase;
+            border-radius: 0;
+            transition: 0.3s;
+            cursor: pointer;
+            box-shadow: 0 0 15px #ff00c866;
+        }
+        .hero .cta-button:hover {
+            background: #ff00c8;
+            color: #0a0c0f;
+            box-shadow: 0 0 30px #ff00c8;
+            border-color: #ff00c8;
+        }
+
+        /* ===== FEATURE CARDS ===== */
+        .features {
+            padding: 3rem 0;
+        }
+
+        .feature-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: #1a1d24;
+            border: 1px solid #2f3540;
+            padding: 2rem 1.5rem;
+            transition: 0.3s;
+            box-shadow: 0 0 10px rgba(0, 240, 255, 0.1);
+            position: relative;
+        }
+        .feature-card:hover {
+            border-color: #00f0ff;
+            box-shadow: 0 0 25px #00f0ff4d;
+            transform: scale(1.02);
+        }
+
+        .feature-card h3 {
+            font-size: 1.6rem;
+            color: #ff00c8;
+            margin-bottom: 0.8rem;
+        }
+
+        .feature-card p {
+            color: #bcc0c8;
+        }
+
+        /* ===== TABELLA PREZZI (3 TIER) ===== */
+        .pricing {
+            padding: 3rem 0;
+            background: #0e1116;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-top: 1rem;
+        }
+
+        .pricing-tier {
+            background: #1a1d24;
+            border: 1px solid #2f3540;
+            padding: 2rem 1.2rem;
+            text-align: center;
+            transition: 0.3s;
+        }
+        .pricing-tier:hover {
+            border-color: #ff00c8;
+            box-shadow: 0 0 20px #ff00c866;
+        }
+
+        .pricing-tier h3 {
+            font-size: 1.8rem;
+            color: #00f0ff;
+            margin-bottom: 0.5rem;
+        }
+
+        .pricing-tier .price {
+            font-size: 2.5rem;
+            font-weight: 800;
+            background: linear-gradient(135deg, #00f0ff, #ff00c8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            margin: 0.5rem 0;
+        }
+
+        .pricing-tier ul {
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+        }
+        .pricing-tier ul li {
+            padding: 0.4rem 0;
+            border-bottom: 1px dashed #2f3540;
+        }
+
+        .pricing-tier .btn-tier {
+            background: transparent;
+            border: 1px solid #00f0ff;
+            color: #00f0ff;
+            padding: 0.6rem 2rem;
+            font-weight: bold;
+            transition: 0.3s;
+            cursor: pointer;
+        }
+        .pricing-tier .btn-tier:hover {
+            background: #00f0ff;
+            color: #0a0c0f;
+            box-shadow: 0 0 20px #00f0ff;
+        }
+
+        /* ===== FORM CONTATTI ===== */
+        .contact {
+            padding: 3rem 0;
+        }
+
+        .contact form {
+            max-width: 700px;
+            margin: 0 auto;
+            background: #1a1d24;
+            padding: 2rem;
+            border: 1px solid #2f3540;
+            box-shadow: 0 0 15px rgba(255, 0, 200, 0.2);
+        }
+
+        .contact label {
+            display: block;
+            margin: 1rem 0 0.3rem;
+            color: #00f0ff;
+            font-weight: 600;
+        }
+
+        .contact input, .contact textarea {
+            width: 100%;
+            padding: 0.8rem;
+            background: #0e1116;
+            border: 1px solid #2f3540;
+            color: #e0e0e0;
+            font-size: 1rem;
+            transition: 0.2s;
+        }
+        .contact input:focus, .contact textarea:focus {
+            border-color: #ff00c8;
+            outline: none;
+            box-shadow: 0 0 8px #ff00c8;
+        }
+
+        .contact textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+
+        .contact .error-message {
+            color: #ff4d6d;
+            font-size: 0.9rem;
+            margin-top: 0.2rem;
+            min-height: 1.2rem;
+        }
+
+        .contact button[type="submit"] {
+            background: transparent;

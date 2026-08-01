@@ -1,0 +1,617 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuraForge · AI Startup Cyberpunk</title>
+    <!-- CSS interno: tutto il design cyberpunk neon è qui dentro -->
+    <style>
+        /* === RESET & GLOBAL === */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            /* transizioni globali per micro-interazioni */
+            transition: background-color 0.2s, color 0.2s, border-color 0.2s, box-shadow 0.2s;
+        }
+
+        body {
+            background: #0a0c0f; /* base scura cyberpunk */
+            color: #e0e4f0;
+            font-family: 'Segoe UI', 'Roboto', system-ui, -apple-system, sans-serif;
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            /* sfondo con griglia sottile (effetto cyberpunk) */
+            background-image: 
+                linear-gradient(rgba(0, 255, 255, 0.02) 1px, transparent 1px),
+                linear-gradient(90deg, rgba(0, 255, 255, 0.02) 1px, transparent 1px);
+            background-size: 40px 40px;
+            scroll-behavior: smooth;
+        }
+
+        /* === TIPOGRAFIA NEON === */
+        h1, h2, h3, h4 {
+            font-weight: 300;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+        }
+
+        h1 {
+            font-size: 3.2rem;
+            background: linear-gradient(135deg, #f0f, #0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 20px rgba(0, 255, 255, 0.6));
+        }
+
+        h2 {
+            font-size: 2.2rem;
+            border-bottom: 2px solid #0ff;
+            padding-bottom: 0.3rem;
+            margin-bottom: 1.5rem;
+            color: #f0f;
+            text-shadow: 0 0 8px #f0f, 0 0 20px #0ff;
+        }
+
+        /* === LINK & BUTTON STYLE === */
+        a {
+            color: #0ff;
+            text-decoration: none;
+            border-bottom: 1px dashed #0ff88;
+        }
+        a:hover {
+            color: #f0f;
+            border-bottom: 1px solid #f0f;
+            text-shadow: 0 0 6px #f0f;
+        }
+
+        .btn-neon {
+            display: inline-block;
+            background: transparent;
+            border: 2px solid #0ff;
+            color: #0ff;
+            padding: 0.6rem 1.8rem;
+            font-weight: 600;
+            letter-spacing: 2px;
+            text-transform: uppercase;
+            cursor: pointer;
+            border-radius: 0;
+            transition: 0.2s;
+            box-shadow: 0 0 8px rgba(0, 255, 255, 0.3);
+        }
+        .btn-neon:hover {
+            background: #0ff;
+            color: #0a0c0f;
+            box-shadow: 0 0 20px #0ff, 0 0 40px #0ff;
+            border-color: #0ff;
+        }
+
+        /* === HEADER (NAV) === */
+        header {
+            background: #0e1116;
+            border-bottom: 2px solid #0ff;
+            padding: 0.8rem 2rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            box-shadow: 0 4px 20px rgba(0, 255, 255, 0.2);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            backdrop-filter: blur(4px);
+        }
+
+        header .logo {
+            font-size: 1.8rem;
+            font-weight: 700;
+            background: linear-gradient(135deg, #f0f, #0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 12px #0ff);
+            letter-spacing: 3px;
+        }
+
+        nav {
+            display: flex;
+            gap: 2rem;
+            align-items: center;
+        }
+
+        nav a {
+            font-size: 1rem;
+            padding: 0.3rem 0.6rem;
+            border-bottom: 1px solid transparent;
+            transition: 0.2s;
+        }
+        nav a:hover {
+            border-bottom: 2px solid #f0f;
+            transform: translateY(-2px);
+        }
+
+        /* === HERO === */
+        .hero {
+            padding: 4rem 2rem;
+            text-align: center;
+            background: radial-gradient(circle at 20% 30%, #1a1e28, #0a0c0f 80%);
+            border-bottom: 1px solid #0ff33;
+            position: relative;
+        }
+        .hero::after {
+            content: '';
+            position: absolute;
+            bottom: 0;
+            left: 0;
+            width: 100%;
+            height: 4px;
+            background: linear-gradient(90deg, #f0f, #0ff, #f0f);
+            filter: blur(8px);
+        }
+        .hero p {
+            font-size: 1.3rem;
+            max-width: 700px;
+            margin: 1.5rem auto;
+            color: #b0c0d0;
+            text-shadow: 0 0 4px #0ff88;
+        }
+        .hero .btn-neon {
+            margin-top: 1rem;
+            font-size: 1.2rem;
+            padding: 0.8rem 2.5rem;
+        }
+
+        /* === FEATURE CARDS (3) === */
+        .features {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2rem;
+            padding: 3rem 2rem;
+            background: #0e1116;
+        }
+
+        .card {
+            background: #151a22;
+            border: 1px solid #0ff44;
+            padding: 2rem 1.5rem;
+            flex: 1 1 260px;
+            max-width: 320px;
+            border-radius: 0;
+            box-shadow: 0 0 15px rgba(0, 255, 255, 0.1);
+            transition: 0.3s;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+        }
+        .card:hover {
+            border-color: #f0f;
+            box-shadow: 0 0 30px #0ff, 0 0 10px #f0f;
+            transform: translateY(-6px);
+        }
+        .card .icon {
+            font-size: 3rem;
+            margin-bottom: 0.8rem;
+            filter: drop-shadow(0 0 10px #0ff);
+        }
+        .card h3 {
+            font-size: 1.6rem;
+            color: #f0f;
+            margin-bottom: 0.8rem;
+        }
+        .card p {
+            color: #b0c4d8;
+            font-size: 0.95rem;
+        }
+
+        /* === TABELLA PREZZI (3 TIER) === */
+        .pricing {
+            padding: 3rem 2rem;
+            background: #0c0f14;
+            border-top: 2px solid #f0f;
+            border-bottom: 2px solid #0ff;
+        }
+        .pricing h2 {
+            text-align: center;
+        }
+        .pricing-grid {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 2rem;
+            margin-top: 1.5rem;
+        }
+        .tier {
+            background: #131821;
+            border: 1px solid #0ff;
+            padding: 2rem 1.5rem;
+            flex: 1 1 240px;
+            max-width: 300px;
+            text-align: center;
+            box-shadow: 0 0 12px rgba(255, 0, 255, 0.2);
+            transition: 0.3s;
+        }
+        .tier:hover {
+            border-color: #f0f;
+            box-shadow: 0 0 30px #f0f, 0 0 20px #0ff;
+        }
+        .tier .tier-name {
+            font-size: 1.8rem;
+            font-weight: 600;
+            color: #0ff;
+            margin-bottom: 0.5rem;
+        }
+        .tier .price {
+            font-size: 2.5rem;
+            background: linear-gradient(135deg, #f0f, #0ff);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            filter: drop-shadow(0 0 16px #0ff);
+        }
+        .tier ul {
+            list-style: none;
+            margin: 1.2rem 0;
+            padding: 0;
+        }
+        .tier ul li {
+            padding: 0.3rem 0;
+            border-bottom: 1px solid #0ff33;
+        }
+        .tier .btn-neon {
+            margin-top: 0.8rem;
+        }
+
+        /* === FORM CONTATTI (con validazione JS) === */
+        .contact {
+            padding: 3rem 2rem;
+            background: #0e1116;
+            border-top: 2px solid #0ff;
+        }
+        .contact h2 {
+            text-align: center;
+        }
+        .contact-form {
+            max-width: 600px;
+            margin: 2rem auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            padding: 2rem;
+            border: 1px solid #0ff44;
+            box-shadow: 0 0 20px rgba(0, 255, 255, 0.1);
+        }
+        .contact-form label {
+            font-size: 1rem;
+            letter-spacing: 1px;
+            color: #f0f;
+        }
+        .contact-form input, 
+        .contact-form textarea {
+            background: #1a1f28;
+            border: 1px solid #0ff66;
+            padding: 0.8rem 1rem;
+            font-size: 1rem;
+            color: #e0e4f0;
+            outline: none;
+            transition: 0.2s;
+            width: 100%;
+        }
+        .contact-form input:focus,
+        .contact-form textarea:focus {
+            border-color: #f0f;
+            box-shadow: 0 0 16px #0ff, 0 0 8px #f0f;
+        }
+        .contact-form textarea {
+            min-height: 120px;
+            resize: vertical;
+        }
+        .contact-form .error-msg {
+            color: #ff40a0;
+            font-size: 0.9rem;
+            min-height: 1.2rem;
+            filter: drop-shadow(0 0 6px #ff40a0);
+        }
+        .contact-form .btn-neon {
+            align-self: center;
+            width: fit-content;
+        }
+        .success-msg {
+            color: #0ff;
+            text-align: center;
+            margin-top: 0.5rem;
+            filter: drop-shadow(0 0 8px #0ff);
+        }
+
+        /* === FOOTER === */
+        footer {
+            background: #080b10;
+            border-top: 2px solid #f0f;
+            padding: 1.5rem 2rem;
+            text-align: center;
+            color: #8090a0;
+            margin-top: auto;
+            box-shadow: 0 -4px 20px rgba(255, 0, 255, 0.2);
+        }
+        footer .footer-links {
+            display: flex;
+            justify-content: center;
+            gap: 2rem;
+            margin-bottom: 0.5rem;
+        }
+        footer a {
+            color: #0ff;
+            border-bottom: none;
+        }
+        footer a:hover {
+            color: #f0f;
+        }
+
+        /* === RESPONSIVE === */
+        @media (max-width: 700px) {
+            header {
+                flex-direction: column;
+                gap: 0.8rem;
+            }
+            nav {
+                flex-wrap: wrap;
+                justify-content: center;
+                gap: 1rem;
+            }
+            h1 { font-size: 2.2rem; }
+            .hero p { font-size: 1rem; }
+        }
+    </style>
+    <!-- JavaScript interno per validazione form (molto commentato) -->
+    <script>
+        // Attesa DOMContentLoaded per sicurezza
+        document.addEventListener('DOMContentLoaded', function() {
+            const form = document.getElementById('contactForm');
+            const nomeInput = document.getElementById('nome');
+            const emailInput = document.getElementById('email');
+            const messaggioInput = document.getElementById('messaggio');
+            const errorNome = document.getElementById('errorNome');
+            const errorEmail = document.getElementById('errorEmail');
+            const errorMessaggio = document.getElementById('errorMessaggio');
+            const successMsg = document.getElementById('successMsg');
+
+            // oggetto per validazione
+            const validators = {
+                nome: false,
+                email: false,
+                messaggio: false
+            };
+
+            // VALIDAZIONE NOME (almeno 2 caratteri)
+            nomeInput.addEventListener('input', function() {
+                const val = nomeInput.value.trim();
+                if (val.length < 2) {
+                    errorNome.textContent = '❌ minimo 2 caratteri';
+                    validators.nome = false;
+                } else {
+                    errorNome.textContent = '✅';
+                    validators.nome = true;
+                }
+                toggleSubmit();
+            });
+
+            // VALIDAZIONE EMAIL (formato semplice con regex)
+            emailInput.addEventListener('input', function() {
+                const val = emailInput.value.trim();
+                // regex base: contiene @ e almeno un punto dopo
+                const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+                if (!emailRegex.test(val)) {
+                    errorEmail.textContent = '❌ email non valida (es. nome@dominio.com)';
+                    validators.email = false;
+                } else {
+                    errorEmail.textContent = '✅';
+                    validators.email = true;
+                }
+                toggleSubmit();
+            });
+
+            // VALIDAZIONE MESSAGGIO (almeno 10 caratteri)
+            messaggioInput.addEventListener('input', function() {
+                const val = messaggioInput.value.trim();
+                if (val.length < 10) {
+                    errorMessaggio.textContent = '❌ minimo 10 caratteri';
+                    validators.messaggio = false;
+                } else {
+                    errorMessaggio.textContent = '✅';
+                    validators.messaggio = true;
+                }
+                toggleSubmit();
+            });
+
+            // funzione per abilitare/disabilitare submit
+            function toggleSubmit() {
+                const btn = form.querySelector('.btn-neon');
+                const tuttiOk = validators.nome && validators.email && validators.messaggio;
+                btn.disabled = !tuttiOk;
+                // feedback visivo: se disabilitato, opacità
+                btn.style.opacity = tuttiOk ? '1' : '0.5';
+                btn.style.pointerEvents = tuttiOk ? 'auto' : 'none';
+            }
+
+            // GESTIONE SUBMIT (simula invio)
+            form.addEventListener('submit', function(e) {
+                e.preventDefault(); // evitiamo invio reale
+
+                // controlli finali (sicurezza)
+                if (!validators.nome || !validators.email || !validators.messaggio) {
+                    alert('Compila correttamente tutti i campi.');
+                    return;
+                }
+
+                // raccolta dati (simulazione)
+                const dati = {
+                    nome: nomeInput.value.trim(),
+                    email: emailInput.value.trim(),
+                    messaggio: messaggioInput.value.trim()
+                };
+
+                // mostriamo messaggio di successo
+                successMsg.textContent = '✨ Messaggio inviato! (simulazione)';
+                successMsg.style.display = 'block';
+                // resettiamo form dopo 2 secondi
+                setTimeout(() => {
+                    form.reset();
+                    successMsg.textContent = '';
+                    // resetta validatori
+                    validators.nome = false;
+                    validators.email = false;
+                    validators.messaggio = false;
+                    toggleSubmit();
+                    errorNome.textContent = '';
+                    errorEmail.textContent = '';
+                    errorMessaggio.textContent = '';
+                }, 2000);
+            });
+
+            // stato iniziale: submit disabilitato
+            toggleSubmit();
+        });
+    </script>
+</head>
+<body>
+
+    <!-- HEADER con navigazione -->
+    <header>
+        <div class="logo">⚡ NeuraForge</div>
+        <nav>
+            <a href="#hero">Vision</a>
+            <a href="#features">Tech</a>
+            <a href="#pricing">Pricing</a>
+            <a href="#contact">Contact</a>
+        </nav>
+    </header>
+
+    <!-- HERO sezione -->
+    <section id="hero" class="hero">
+        <h1>NeuraForge</h1>
+        <p>AI che scolpisce il futuro. <br> Reti neurali ipo-cyber, sintesi cognitiva e potenza adattiva.</p>
+        <a href="#pricing" class="btn-neon">Accendi il sistema</a>
+    </section>
+
+    <!-- FEATURE CARDS (3) -->
+    <section id="features" class="features">
+        <div class="card">
+            <div class="icon">🧠</div>
+            <h3>Deep Forge</h3>
+            <p>Architettura neurale proprietaria con apprendimento continuo e memoria persistente.</p>
+        </div>
+        <div class="card">
+            <div class="icon">⚡</div>
+            <h3>Cyber Sync</h3>
+            <p>Integrazione con flussi dati in tempo reale, latenza sub-millimetrica e crittografia quantica.</p>
+        </div>
+        <div class="card">
+            <div class="icon">🌐</div>
+            <h3>Nexus API</h3>
+            <p>Connetti qualsiasi sistema. API reattive, SDK multi-linguaggio e documentazione neurale.</p>
+        </div>
+    </section>
+
+    <!-- TABELLA PREZZI (3 TIER) -->
+    <section id="pricing" class="pricing">
+        <h2>▸ Tier di potenza</h2>
+        <div class="pricing-grid">
+            <!-- TIER 1: STELLAR -->
+            <div class="tier">
+                <div class="tier-name">🌠 Stellar</div>
+                <div class="price">0.4 ETH</div>
+                <ul>
+                    <li>🔹 10k richieste/giorno</li>
+                    <li>🔹 Modello base</li>
+                    <li>🔹 Supporto community</li>
+                    <li>🔹 Latenza standard</li>
+                </ul>
+                <a href="#" class="btn-neon">Attiva</a>
+            </div>
+            <!-- TIER 2: CYBER -->
+            <div class="tier">
+                <div class="tier-name">💻 Cyber</div>
+                <div class="price">1.2 ETH</div>
+                <ul>
+                    <li>🔹 100k richieste/giorno</li>
+                    <li>🔹 Modello avanzato</li>
+                    <li>🔹 Supporto priority</li>
+                    <li>🔹 Latenza bassa</li>
+                    <li>🔹 API estese</li>
+                </ul>
+                <a href="#" class="btn-neon">Attiva</a>
+            </div>
+            <!-- TIER 3: NEXUS -->
+            <div class="tier">
+                <div class="tier-name">🌀 Nexus</div>
+                <div class="price">3.8 ETH</div>
+                <ul>
+                    <li>🔹 ∞ richieste</li>
+                    <li>🔹 Modello full-custom</li>
+                    <li>🔹 Supporto dedicato</li>
+                    <li>🔹 Latenza ultra</li>
+                    <li>🔹 On-premise option</li>
+                    <li>🔹 Cyber-security audit</li>
+                </ul>
+                <a href="#" class="btn-neon">Attiva</a>
+            </div>
+        </div>
+    </section>
+
+    <!-- FORM CONTATTI con validazione JS -->
+    <section id="contact" class="contact">
+        <h2>▸ Collegamento</h2>
+        <form id="contactForm" class="contact-form">
+            <!-- Campo NOME -->
+            <label for="nome">✧ Designazione</label>
+            <input type="text" id="nome" placeholder="Il tuo nome (min 2 caratteri)" required>
+            <div id="errorNome" class="error-msg"></div>
+
+            <!-- Campo EMAIL -->
+            <label for="email">✧ @ protocollo</label>
+            <input type="email" id="email" placeholder="nome@dominio.com" required>
+            <div id="errorEmail" class="error-msg"></div>
+
+            <!-- Campo MESSAGGIO -->
+            <label for="messaggio">✧ Trasmissione</label>
+            <textarea id="messaggio" placeholder="Messaggio (min 10 caratteri)" required></textarea>
+            <div id="errorMessaggio" class="error-msg"></div>
+
+            <!-- Bottone submit (viene disabilitato finché non valido) -->
+            <button type="submit" class="btn-neon">Invia richiesta</button>
+            <div id="successMsg" class="success-msg" style="display: none;"></div>
+        </form>
+    </section>
+
+    <!-- FOOTER cyberpunk -->
+    <footer>
+        <div class="footer-links">
+            <a href="#">Documentazione</a>
+            <a href="#">GitHub</a>
+            <a href="#">Discord</a>
+            <a href="#">Termini</a>
+        </div>
+        <p>© 2025 NeuraForge · built with ⚡ cyber-stack</p>
+        <p style="font-size: 0.8rem; opacity: 0.6;">🔮 AI oltre il confine · zero latency, infinite forge</p>
+    </footer>
+
+    <!-- (Opzionale) piccolo script per scroll smooth e debug -->
+    <script>
+        // piccola aggiunta: scroll smooth per nav (non essenziale ma utile)
+        document.querySelectorAll('nav a').forEach(anchor => {
+            anchor.addEventListener('click', function(e) {
+                const href = this.getAttribute('href');
+                if (href && href.startsWith('#')) {
+                    e.preventDefault();
+                    const target = document.querySelector(href);
+                    if (target) target.scrollIntoView({ behavior: 'smooth', block: 'start' });
+                }
+            });
+        });
+    </script>
+</body>
+</html>

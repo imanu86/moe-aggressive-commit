@@ -1,0 +1,275 @@
+Ecco una pagina HTML completa per NeuraForge, una startup AI con estetica cyberpunk neon.
+
+```html
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <!-- ============================================================
+         HEAD: METADATA, SEO, FONTS, CSS INTERNO
+         ============================================================ -->
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NeuraForge · AI Startup Cyberpunk</title>
+    <meta name="description" content="NeuraForge – plasmare l'intelligenza artificiale del futuro. Soluzioni AI avanzate con estetica cyberpunk.">
+    <!-- Google Fonts: due font cyberpunk-friendly -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700;900&family=Inter:opsz,wght@14..32,300;14..32,400;14..32,600&display=swap" rel="stylesheet">
+    <!-- Font Awesome 6 (free) per icone -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0-beta3/css/all.min.css">
+    <!-- ========== CSS INTERNO COMPLETO ========== -->
+    <style>
+        /* ---------------------------------------------
+            RESET & GLOBALS
+        --------------------------------------------- */
+        *, *::before, *::after {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        :root {
+            --bg-dark: #0a0c0f;
+            --bg-card: #13161c;
+            --primary-neon: #00f0ff;      /* ciano elettrico */
+            --secondary-neon: #f92f8f;    /* magenta/pink */
+            --accent-green: #39ffb0;      /* verde neon */
+            --text-light: #e8e8f0;
+            --text-muted: #9aa0b0;
+            --border-glow: #2a2e38;
+            --glow-soft: rgba(0, 240, 255, 0.2);
+            --glow-hard: rgba(249, 47, 143, 0.3);
+            --font-display: 'Orbitron', sans-serif;
+            --font-body: 'Inter', sans-serif;
+        }
+
+        html {
+            scroll-behavior: smooth;
+        }
+
+        body {
+            background: var(--bg-dark);
+            color: var(--text-light);
+            font-family: var(--font-body);
+            font-weight: 300;
+            line-height: 1.6;
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            background-image: radial-gradient(circle at 20% 30%, rgba(0, 240, 255, 0.03) 0%, transparent 60%),
+                              repeating-linear-gradient(45deg, transparent, transparent 2px, rgba(255, 255, 255, 0.01) 2px, transparent 3px);
+        }
+
+        /* ---------------------------------------------
+            TIPOGRAFIA NEON
+        --------------------------------------------- */
+        h1, h2, h3, h4, .neon-title {
+            font-family: var(--font-display);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            font-weight: 700;
+        }
+
+        h1 {
+            font-size: clamp(2.2rem, 8vw, 4.5rem);
+            line-height: 1.1;
+        }
+
+        h2 {
+            font-size: 2rem;
+            margin-bottom: 1.5rem;
+            position: relative;
+            display: inline-block;
+        }
+
+        .neon-glow {
+            text-shadow: 0 0 5px var(--primary-neon), 0 0 15px var(--primary-neon), 0 0 30px rgba(0, 240, 255, 0.3);
+        }
+
+        .neon-pink {
+            color: var(--secondary-neon);
+            text-shadow: 0 0 5px var(--secondary-neon), 0 0 15px rgba(249, 47, 143, 0.4);
+        }
+
+        .neon-green {
+            color: var(--accent-green);
+            text-shadow: 0 0 5px var(--accent-green), 0 0 10px rgba(57, 255, 176, 0.3);
+        }
+
+        /* ---------------------------------------------
+            LAYOUT & COMPONENTI
+        --------------------------------------------- */
+        a {
+            color: var(--primary-neon);
+            text-decoration: none;
+            transition: color 0.2s;
+        }
+
+        a:hover {
+            color: var(--secondary-neon);
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 0 1.5rem;
+        }
+
+        /* ----- HEADER / NAV ----- */
+        header {
+            padding: 1.2rem 0;
+            border-bottom: 1px solid var(--border-glow);
+            background: rgba(10, 12, 15, 0.85);
+            backdrop-filter: blur(8px);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        .nav-wrapper {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .logo {
+            font-family: var(--font-display);
+            font-size: 1.8rem;
+            font-weight: 900;
+            color: var(--primary-neon);
+            text-shadow: 0 0 10px rgba(0, 240, 255, 0.6);
+            letter-spacing: 0.1em;
+        }
+
+        .logo span {
+            color: var(--secondary-neon);
+        }
+
+        .nav-links {
+            display: flex;
+            gap: 2rem;
+            list-style: none;
+            font-size: 0.95rem;
+            font-weight: 500;
+        }
+
+        .nav-links a {
+            padding: 0.3rem 0.5rem;
+            border-bottom: 1px solid transparent;
+            transition: 0.2s;
+        }
+
+        .nav-links a:hover {
+            border-bottom-color: var(--secondary-neon);
+            color: var(--secondary-neon);
+        }
+
+        /* ----- HERO ----- */
+        .hero {
+            padding: 4rem 0 3rem;
+            text-align: center;
+            position: relative;
+        }
+
+        .hero h1 {
+            margin-bottom: 1rem;
+        }
+
+        .hero p {
+            font-size: 1.2rem;
+            max-width: 700px;
+            margin: 0 auto 2rem;
+            color: var(--text-muted);
+        }
+
+        .hero-cta {
+            display: inline-block;
+            background: linear-gradient(135deg, var(--primary-neon), var(--secondary-neon));
+            color: #0a0c0f;
+            font-weight: 700;
+            font-family: var(--font-display);
+            padding: 0.9rem 2.5rem;
+            border-radius: 40px;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            border: none;
+            cursor: pointer;
+            transition: 0.3s;
+            box-shadow: 0 0 20px rgba(0, 240, 255, 0.3);
+        }
+
+        .hero-cta:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 40px rgba(249, 47, 143, 0.4);
+        }
+
+        /* ----- FEATURE CARDS (3) ----- */
+        .features {
+            padding: 3rem 0;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: 2rem;
+        }
+
+        .feature-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 20px;
+            padding: 2rem 1.5rem;
+            transition: 0.3s ease;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.5);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .feature-card::before {
+            content: '';
+            position: absolute;
+            top: -2px; left: -2px;
+            width: calc(100% + 4px); height: calc(100% + 4px);
+            background: linear-gradient(45deg, transparent, var(--primary-neon), transparent, var(--secondary-neon));
+            opacity: 0;
+            transition: opacity 0.4s;
+            border-radius: 20px;
+            z-index: -1;
+            filter: blur(3px);
+        }
+
+        .feature-card:hover::before {
+            opacity: 0.6;
+        }
+
+        .feature-card i {
+            font-size: 2.5rem;
+            color: var(--primary-neon);
+            margin-bottom: 1rem;
+        }
+
+        .feature-card h3 {
+            font-size: 1.4rem;
+            margin-bottom: 0.8rem;
+        }
+
+        .feature-card p {
+            color: var(--text-muted);
+            font-size: 0.95rem;
+        }
+
+        /* ----- TABELLA PREZZI (3 TIER) ----- */
+        .pricing {
+            padding: 3rem 0;
+        }
+
+        .pricing-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+            margin-top: 2rem;
+        }
+
+        .pricing-tier {
+            background: var(--bg-card);
+            border: 1px solid var(--border-glow);
+            border-radius: 24px;
+            padding: 2rem 1.5rem;
+            text-align: center;

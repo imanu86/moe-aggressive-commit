@@ -208,8 +208,22 @@ il sorgente ha     cuda_wall_sec() >= read_deadline         ds4_cuda.cu:32437
 **E' stata la nostra stessa leva `DS4_CUDA_TRANSIENT_DEADLINE_ADAPTIVE`** — promossa il 31/7 —
 a introdurre la variabile locale. Il contratto e' rispettato, il test cerca il nome vecchio.
 
-**Gli altri tre non sono stati verificati**: vanno letti allo stesso modo prima di
-concludere qualcosa.
+### Gli altri tre, verificati contro il sorgente
+
+| test | cosa pretende | cosa c'e' | lettura |
+|---|---|---|---|
+| demand pipeline | 3 stringhe dentro la fetta `flush` | tutte e 3 presenti nel file (1 volta ciascuna) | **probabile fetta spostata**: il test taglia fra due marcatori e il taglio non prende piu' |
+| g133 M1 | `route_consumed_sequence = sequence;` | **0 occorrenze in tutto il file** | rinominato o rimosso: va guardato |
+| g73 OPEN | `: cudaStreamSynchronize(0);` (dentro un ternario) | solo `(void)cudaStreamSynchronize(0);` e un assegnamento a `sync_err` | **forma cambiata** |
+
+**Il g73 potrebbe non essere stantio.** C'e' un task aperto da giorni — *"Resolver own-wait:
+RIFIUTATA in misura, corsa sulla generazione da riparare"* — e questo test asserisce proprio
+che il resolver OFF usi la sua sincronizzazione originale. Il fallimento potrebbe essere il
+sintomo di quella corsa, non un falso positivo.
+
+**Nota di metodo**: i primi due li ho controllati con un `grep` sull'INTERO file, ma il test
+cerca dentro una *fetta* di sorgente. Presenza nel file non implica presenza nella fetta: per
+g133 il verdetto (0 occorrenze) e' solido, per la demand pipeline no.
 
 ### Perche' conta per il PORTO, non solo per il fork
 

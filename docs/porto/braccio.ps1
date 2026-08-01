@@ -46,10 +46,19 @@ switch ($Arm) {
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
   }
   'C' {  # il TRONCO con la nostra politica accesa
+    # CORRETTO l'1/8 dopo la lettura del codice. Il primo tentativo aveva tre
+    # variabili di cui una sabotava l'altra, e girava come upstream nudo:
+    #   ds4_cuda.cu:26520  con VRAM_EXPERT_CACHE=1 il budget entra nel ramo VRAM
+    #                      e NON raggiunge mai dynamic_arena::enabled()
+    #   ds4_cuda.cu:26521  quel ramo torna ZERO senza requested_slots/expert_bytes
+    #   ds4.c:53898        fuori da --ssd-streaming il core non li valorizza mai
+    #   prefill_observer.cu:376  OBSERVE arma solo l'osservatore: per pubblicare
+    #                      nell'arena serve _WRAP, che mancava
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
     $env:DS4_CUDA_DYNAMIC_ARENA_GB     = '30'
     $env:DS4_CUDA_PREFILL_MASS_OBSERVE = '1'
-    $env:DS4_CUDA_VRAM_EXPERT_CACHE    = '1'
+    $env:DS4_CUDA_PREFILL_MASS_WRAP    = '1'   # mancava: senza, non pubblica
+    # DS4_CUDA_VRAM_EXPERT_CACHE NON va acceso insieme all'arena: si escludono.
   }
 }
 foreach ($k in $Override.Keys) {

@@ -24,6 +24,15 @@ Get-ChildItem Env: | Where-Object Name -Like 'DS4_*' |
 $tok = -join ((1..64) | ForEach-Object { '0123456789abcdef'[(Get-Random -Max 16)] })
 $env:DS4_G130_U1_SHUTDOWN_TOKEN = $tok
 
+# --- COMUNE A TUTTI E TRE I BRACCI, e non e' un nostro opt-in ---
+# E' un parametro di regolazione del runtime come ctx, e il binario PORTATO legge
+# la stessa variabile (ds4.c:12414) col medesimo default 2048 (ds4.c:12398).
+# A 2048 i buffer di prefill tengono occupata la VRAM proprio quando la cache
+# esperti viene dimensionata: capacity 135 invece di 306, e da li' 70877 sfratti
+# del backbone in 64 token. Misurato l'1/8: 256 porta free_at_size da 1045 a 2199 MiB.
+# Se i tre bracci non hanno lo STESSO valore, non stiamo confrontando il porto.
+$env:DS4_METAL_PREFILL_CHUNK = '256'
+
 switch ($Arm) {
   'A' {  # il FORK, binario bin_codex4 = ds4_server.exe (il .pre_codex4 e' quello PRIMA)
     $exe = "$R\ds4-p4a\build-native\ds4_server.exe"

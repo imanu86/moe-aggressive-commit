@@ -100,7 +100,7 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **FATTO** e nel tronco, 833ac41, 772 righe, fixture PASS |
 | 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **FATTO** 7f99c9f, 858 righe, nel tronco; gate a false apposta |
 | 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **FATTO** 3c225d2 — **il nucleo si accende**, 5 fixture PASS |
-| 9 | Guardiani G73: deadline, cancel, retry, respawn | no | **in corso** worktree `ds4-port-guard` — ULTIMO |
+| 9 | Guardiani G73: deadline, cancel, retry, respawn | no | **FATTO** fb57329, 630 righe, nessun fallback `scope=FULL` |
 | 10 | IQ1/Q1/nested residual/SSD rotator | no | **FATTO** 7e19dd4, 888+527 righe, hash 8211d0dfbf647850 verificato |
 | 11 | KV staged (SENZA corsia CPU G132, falsificata) | no | **FATTO** d4a5550, 1521 righe, nel tronco |
 
@@ -163,33 +163,49 @@ repo e prendere la prima e' come non guardare.
 
 ## Avanzamento misurato
 
-```
-TRONCO         port/upstream-substrate @ a6e10a1
-               63 file, 17.095 inserzioni sopra upstream/main
+
+    *** PORTO STRUTTURALMENTE COMPLETO -- 14 blocchi su 14, 1/8 ***
+
+TRONCO         port/upstream-substrate @ fb57329
+               base: upstream/main 54b36ed (28 luglio, ULTIMO: 0 commit persi, 0 tag)
+               65 file, 18.041 inserzioni sopra upstream/main
                build exit 0
-               CINQUE fixture PASS con i flag spenti E accesi
-               ds4-server.exe gira
+               SEI fixture PASS con tutto SPENTO e con tutto ACCESO
+               ds4.exe 7,0 MB   ds4-server.exe 7,1 MB   ds4-bench 6,8   ds4-eval 6,9
 
-blocchi chiusi      13 / 14     manca solo il 9 (guardiani), in corso
-giornate stimate  22-30 / 26-36  ->  ~80% della parita' piena
-
-QUATTRO OPT-IN, indipendenti e tutti spenti
+QUATTRO OPT-IN, indipendenti, tutti spenti di default
   DS4_CUDA_DYNAMIC_ARENA_GB       arena host pinnata
-  DS4_CUDA_PREFILL_MASS_OBSERVE   observer del prefill
-  DS4_CUDA_VRAM_EXPERT_CACHE      nucleo: cache VRAM + tiering + route worker
+  DS4_CUDA_PREFILL_MASS_OBSERVE   observer del prefill (+ _WRAP per pubblicare)
+  DS4_CUDA_VRAM_EXPERT_CACHE      nucleo: cache VRAM + tiering + route worker + guardiani
   DS4_CUDA_KV_STAGED_RING         KV staged
 
-CINQUE FIXTURE, tutte in add_test
-  ds4_dynamic_arena_fixture      ds4_prefill_observer_fixture
-  ds4_vram_expert_cache_fixture  ds4_route_worker_fixture
-  ds4_kv_staged_fixture
+SEI FIXTURE, tutte in add_test, tutte senza il modello da 81 GB
+  ds4_dynamic_arena_fixture       ds4_prefill_observer_fixture
+  ds4_vram_expert_cache_fixture   ds4_route_worker_fixture
+  ds4_kv_staged_fixture           ds4_guardian_fixture
 
 NON PORTATI, e ognuno con la sua ragione
   G132 corsia CPU     falsificata in misura: +47 ms/token
   demand pipeline     gia' respinta: violava il vincolo su promozione e pruning
-  DOV, nested residual, G73 rotatore, reserve_open_router_slots
+  DOV, nested residual, rotatore G73, reserve_open_router_slots
                       decorazioni, fuori dal percorso critico per decisione del piano
 ```
+
+## Cosa vuol dire "completo", e cosa NON vuol dire
+
+**Vuol dire**: tutti i blocchi del piano sono trapiantati, il tronco compila, e le sei fixture
+dimostrano che i pezzi funzionano isolatamente e che **con tutto spento il decode e' identico a
+upstream**.
+
+**NON vuol dire che e' veloce, ne' che e' corretto sul modello vero.** Nessuna misura e' stata
+fatta: le fixture girano in secondi e non toccano gli 81 GB. Il prossimo passo obbligato e'
+`PRIMO_RUN.md`, e il suo braccio B -- **substrato nudo, tutti i flag assenti** -- e' quello che
+separa "il substrato costa" da "abbiamo portato male".
+
+**E manca ancora la ragione originale del porto**: la route Q4_K e' *nel substrato* ma il nostro
+percorso MTP non la usa ancora. Il drafter rientra nel grafo solo quando quel collegamento e'
+fatto e misurato.
+
 
 **Le tre scale non concordano, e la ragione e' il punto.** Per blocchi siamo a meta'; per
 giornate a un terzo; per righe di politica al 5%. Non e' una contraddizione: **i blocchi

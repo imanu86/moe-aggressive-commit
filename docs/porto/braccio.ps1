@@ -141,13 +141,49 @@ $promptSha = [BitConverter]::ToString(
     [System.Security.Cryptography.SHA256]::Create().ComputeHash(
         [Text.Encoding]::UTF8.GetBytes($prompt))).Replace('-','').ToLower()
 "    PROMPT   pagina HTML della campagna   sha256 $($promptSha.Substring(0,16))..."
-$body = @{ model='ds4'; max_tokens=$Tokens; temperature=0
+# RICHIESTA IN STREAMING, e non per gusto: con Invoke-RestMethod il testo resta in una
+# variabile PowerShell finche' la risposta non e' completa, e se il processo muore prima
+# (successo l'1/8 a gen=600) l'output e' perso per sempre. In streaming curl scrive i
+# byte su disco mentre arrivano: un run interrotto lascia comunque il testo prodotto.
+$body = @{ model='ds4'; max_tokens=$Tokens; temperature=0; stream=$true
            messages=@(@{role='user'; content=$prompt}) } | ConvertTo-Json -Depth 5
+$reqPath    = Join-Path $OutDir "$tag.request.json"
+$streamPath = Join-Path $OutDir "$tag.stream.ndjson"
+[IO.File]::WriteAllText($reqPath, $body, [Text.UTF8Encoding]::new($false))
 $t1 = Get-Date
-$resp = Invoke-RestMethod "http://127.0.0.1:$Port/v1/chat/completions" -Method Post `
-          -ContentType 'application/json' -Body $body -TimeoutSec 7200
+& curl.exe -sS --no-buffer --max-time 7200 -X POST "http://127.0.0.1:$Port/v1/chat/completions" `
+    -H 'Content-Type: application/json' --data-binary "@$reqPath" -o $streamPath
 $gen = ((Get-Date) - $t1).TotalSeconds
-$out = $resp.usage.completion_tokens
+
+# ricostruzione del testo dai delta
+$content = ''
+$out = 0
+if (Test-Path $streamPath) {
+    foreach ($line in [IO.File]::ReadLines($streamPath)) {
+        if (-not $line.StartsWith('data: ')) { continue }
+        $payload = $line.Substring(6)
+        if ($payload -eq '[DONE]') { continue }
+        try { $o = $payload | ConvertFrom-Json } catch { continue }
+        $d = $o.choices[0].delta.content
+        if ($d) { $content += [string]$d }
+        if ($o.usage.completion_tokens) { $out = [int]$o.usage.completion_tokens }
+    }
+}
+# ripiego: se lo streaming non ha prodotto delta, il server non lo supporta -> richiesta normale
+if ($content.Length -eq 0) {
+    "    streaming senza delta: ripiego su richiesta non-streaming"
+    $body2 = @{ model='ds4'; max_tokens=$Tokens; temperature=0
+                messages=@(@{role='user'; content=$prompt}) } | ConvertTo-Json -Depth 5
+    $t1 = Get-Date
+    $resp = Invoke-RestMethod "http://127.0.0.1:$Port/v1/chat/completions" -Method Post `
+              -ContentType 'application/json' -Body $body2 -TimeoutSec 7200
+    $gen = ((Get-Date) - $t1).TotalSeconds
+    $content = [string]$resp.choices[0].message.content
+    $out = $resp.usage.completion_tokens
+}
+# il conteggio autorevole e' quello del server nel log, se c'e'
+$fromLog = (Select-String -LiteralPath $srvLog -Pattern 'gen=(\d+) .*chunk=' | Select-Object -Last 1)
+if ($fromLog) { $out = [int]$fromLog.Matches[0].Groups[1].Value }
 if (-not $out) { $out = $Tokens }
 "    generati {0} token in {1:N1}s  ->  END2END {2:N3} t/s" -f $out, $gen, ($out/$gen)
 
@@ -158,7 +194,6 @@ if (-not $out) { $out = $Tokens }
 #     <tag>.meta.json      metriche + preset + sha, per ricostruire il run senza la chat
 #     LEDGER_RUN.tsv       una riga per braccio, appesa, con lo stesso identificativo
 # Il transcript delle chat non e' recuperabile: se non e' su disco non e' successo.
-$content = [string]$resp.choices[0].message.content
 if (-not $content) { $content = '' }
 $htmlPath = Join-Path $OutDir "$tag.output.html"
 [IO.File]::WriteAllText($htmlPath, $content, [Text.UTF8Encoding]::new($false))

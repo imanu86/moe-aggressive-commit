@@ -11,7 +11,8 @@ param(
     [string]$OutDir = 'D:\ds4_work\porto_run',
     # Prova a variabile singola: -Override @{ 'DS4_G73_OPEN' = '1' }
     # Applicato DOPO il preset, cosi' la sovrascrittura e' esplicita e finisce nel tag.
-    [hashtable]$Override = @{}
+    [hashtable]$Override = @{},
+    [switch]$NoStreaming
 )
 $ErrorActionPreference = 'Stop'
 $R = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
@@ -72,7 +73,10 @@ if (-not (Test-Path $exe)) { throw "binario assente: $exe" }
 # E' un flag di upstream, quindi va solo ai bracci B e C.
 $args = @('-m', $Model, '--cuda', '-c', "$Ctx", '-n', "$Tokens",
           '--host','127.0.0.1','--port',"$Port")
-if ($Arm -ne 'A') { $args += '--ssd-streaming' }
+# -NoStreaming: prova la doppia residenza. Il tronco con --ssd-streaming ha il
+# meccanismo di streaming di UPSTREAM piu' la NOSTRA arena, e nessuno dei due sa
+# dell'altro: processo a 47,4 GB contro i 32-33 del fork con la stessa arena.
+if ($Arm -ne 'A' -and -not $NoStreaming) { $args += '--ssd-streaming' }
 
 "=== BRACCIO $Arm  |  $Tokens token, ctx $Ctx ==="
 "    binario  $exe"

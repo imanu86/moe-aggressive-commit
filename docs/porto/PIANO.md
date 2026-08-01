@@ -98,11 +98,11 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | **FATTO** 2b4c934, 1255 righe, fixture PASS verificata a mano |
 | 5 | Async readback/SPEX, observer prefill/REAP | parziale | **FATTO** 485e268, 395 righe, fixture PASS, nel tronco |
 | 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **FATTO** e nel tronco, 833ac41, 772 righe, fixture PASS |
-| 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **in corso** worktree `ds4-port-nucleo`, ~4000 righe |
-| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | dopo il 7, **stesso ramo** — poi primo end-to-end |
+| 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **FATTO** 7f99c9f, 858 righe, nel tronco; gate a false apposta |
+| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **in corso** — e' il passo che ACCENDE |
 | 9 | Guardiani G73: deadline, cancel, retry, respawn | no | da fare |
 | 10 | IQ1/Q1/nested residual/SSD rotator | no | **FATTO** 7e19dd4, 888+527 righe, hash 8211d0dfbf647850 verificato |
-| 11 | KV staged e G132 CPU lane | no | fuori dal primo traguardo |
+| 11 | KV staged (SENZA corsia CPU G132, falsificata) | no | **in corso** worktree `ds4-port-kv` |
 
 ## I fronti, aggiornati (1/8, 13:20)
 

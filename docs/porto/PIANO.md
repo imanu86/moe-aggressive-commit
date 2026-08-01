@@ -1,6 +1,6 @@
 # PORTO SU UPSTREAM — piano operativo
 
-**Stato al 2026-08-01 11:45.** Aggiornare questo file a ogni blocco chiuso.
+**Stato al 2026-08-01 11:55.** Aggiornare questo file a ogni blocco chiuso.
 
 ## Obiettivo e ritorno
 
@@ -67,7 +67,7 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 ## Avanzamento misurato
 
 ```
-oggetti di build      22 / 36
+oggetti di build      25 / 36
 blocchi del piano     1,5 / 12
 giornate stimate     ~2,5 / 19-27      ->  ~10% del core single-GPU
 ```

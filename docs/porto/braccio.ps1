@@ -7,12 +7,17 @@ param(
     # C: e' l'NVMe (Lexar EQ790), D: e' il SATA (EMTEC X160): ~7000 contro ~550 MB/s.
     # Il riferimento gira da C:. Su un runtime che fa streaming dal disco, sbagliare
     # unita' significa misurare il disco invece del codice.
-    [string]$Model = 'C:\ds4-models\ds4-2bit.gguf',
+    #
+    # PESI NUOVI dall'1/8: decisione utente, i vecchi (ds4-2bit.gguf) sono accantonati
+    # insieme al binario del fork. Non tornarci senza che l'utente lo chieda.
+    [string]$Model = 'C:\ds4-models\DS4-0731-IQ2XXS.gguf',
     [string]$OutDir = 'D:\ds4_work\porto_run',
     # Prova a variabile singola: -Override @{ 'DS4_G73_OPEN' = '1' }
     # Applicato DOPO il preset, cosi' la sovrascrittura e' esplicita e finisce nel tag.
     [hashtable]$Override = @{},
-    [switch]$NoStreaming
+    [switch]$NoStreaming,
+    # sblocca il braccio A, che dall'1/8 e' accantonato insieme ai pesi vecchi
+    [switch]$Comunque
 )
 $ErrorActionPreference = 'Stop'
 $R = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
@@ -38,10 +43,15 @@ $env:DS4_G130_U1_SHUTDOWN_TOKEN = $tok
 $env:DS4_METAL_PREFILL_CHUNK = '256'
 
 switch ($Arm) {
-  'A' {  # il FORK, binario bin_codex4 = ds4_server.exe (il .pre_codex4 e' quello PRIMA)
+  'A' {  # ACCANTONATO l'1/8 per decisione utente: il fork non e' piu' il banco.
+         # Resta lanciabile solo con -Comunque, e il tag lo dichiara.
+    if (-not $Comunque) {
+        throw "braccio A ACCANTONATO (fork + pesi vecchi). Il banco e' il tronco: usa -Arm B o C. Per forzare: -Comunque"
+    }
     $exe = "$R\ds4-p4a\build-native\ds4_server.exe"
     . "$R\docs\porto\preset_A.ps1"                   # la fonte, non un env trovato col grep
     $env:DS4_G130_U1_SHUTDOWN_TOKEN = $tok
+    $tag = "$tag`_ACCANTONATO"
   }
   'B' {  # il TRONCO NUDO: tutti i nostri opt-in ASSENTI, non a zero
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
@@ -178,8 +188,7 @@ $meta = [ordered]@{
     end2end_tps = [math]::Round($out/$gen,3); regime_tps = $regime; regime_n = $chunks.Count
     evict_backbone = $evict; expert_cache_capacity = $capacity
     no_expert_victim = @(Select-String -LiteralPath $srvLog -Pattern 'no-expert-victim').Count
-    override = $Override
-    preset = ([ordered]@{} + (@{} ; foreach ($v in $applied) { if ($v.Name -notmatch 'SHUTDOWN_TOKEN') { @{ $v.Name = $v.Value } } }))
+    override = @($Override.GetEnumerator() | ForEach-Object { "$($_.Key)=$($_.Value)" })
     env = @($applied | Where-Object Name -notmatch 'SHUTDOWN_TOKEN' | ForEach-Object { "$($_.Name)=$($_.Value)" })
 }
 $metaPath = Join-Path $OutDir "$tag.meta.json"

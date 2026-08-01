@@ -96,7 +96,7 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 2b | **`ds4-server` su Windows** — e' il binario di OGNI misura, oggi e' uno stub | si | **FATTO** b46b391, thread scheduler su os_thread |
 | 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | **FATTO** eab720a, 190 righe, build OK |
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | **FATTO** 2b4c934, 1255 righe, fixture PASS verificata a mano |
-| 5 | Async readback/SPEX, observer prefill/REAP | parziale | **in corso** worktree `ds4-port-obs` |
+| 5 | Async readback/SPEX, observer prefill/REAP | parziale | **FATTO** 485e268, 395 righe, fixture PASS, nel tronco |
 | 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **in corso** worktree `ds4-port-blk6` (sopra l'adattatore) |
 | 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **piano in corso** (nucleo 6-7-8) |
 | 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **piano in corso** — poi primo end-to-end |
@@ -164,14 +164,19 @@ repo e prendere la prima e' come non guardare.
 ## Avanzamento misurato
 
 ```
-TRONCO         port/upstream-substrate @ 9f79272
-               44 file, 10.209 inserzioni sopra upstream/main
-               build exit 0, fixture arena PASS, ds4-server.exe gira
+TRONCO         port/upstream-substrate @ 31dcbae
+               48 file, 11.565 inserzioni sopra upstream/main
+               build exit 0 (16 target), fixture arena PASS, fixture observer PASS,
+               ds4-server.exe gira
 
-blocchi chiusi        8 / 14      0, 1, 1b, 2, 2b, 3, 4, 10  (+ merge-1)
-giornate stimate    9-13 / 26-36  ->  ~35% della parita' piena
-                     6-8 / 19-27  ->  ~28% del core single-GPU
-righe di politica   2860 / ~27700 ->  ~10%  (adattatore 190, arena 1255, IQ1 1415)
+blocchi chiusi       9 / 14      0, 1, 1b, 2, 2b, 3, 4, 5, 10
+giornate stimate  10-14 / 26-36  ->  ~38% della parita' piena
+                    7-9 / 19-27  ->  ~32% del core single-GPU
+righe di politica  3255 / ~27700 ->  ~12%  (adattatore 190, arena 1255, IQ1 1415, observer 395)
+
+RESTANO   6 cache VRAM (in corso)  ->  7 tiering  ->  8 route worker
+          tutti e tre sullo stesso ramo, poi UN passo che accende
+          9 guardiani, 11 KV staged
 ```
 
 **Le tre scale non concordano, e la ragione e' il punto.** Per blocchi siamo a meta'; per

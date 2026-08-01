@@ -114,10 +114,17 @@ repo e prendere la prima e' come non guardare.
 ## Avanzamento misurato
 
 ```
-oggetti di build      25 / 36
-blocchi del piano     1,5 / 12
-giornate stimate     ~2,5 / 19-27      ->  ~10% del core single-GPU
+blocchi chiusi        7 / 14        0, 1, 1b, 2, 2b, 3, 4
+giornate stimate    6-8 / 19-27      ->  ~30% del core single-GPU
+                    6-8 / 26-36      ->  ~23% della parita' piena
+righe di politica  1445 / ~27700     ->  ~5%   (adattatore 190 + arena 1255)
 ```
+
+**Le tre scale non concordano, e la ragione e' il punto.** Per blocchi siamo a meta'; per
+giornate a un terzo; per righe di politica al 5%. Non e' una contraddizione: **i blocchi
+chiusi sono quelli che avevano la risposta gia' scritta nel fork**, e i blocchi 6-7-8-9
+contengono quasi tutte le 27.700 righe. La scala per righe e' quella onesta sul lavoro che
+resta; quella per giornate tiene conto che le righe rimaste sono anche piu' difficili.
 
 Le prime due scale ingannano: un'unita' piccola conta quanto `ds4_cuda.cu`, e i blocchi 4-9
 (arena, cache VRAM, tiering, route worker, guardiani) contengono **quasi tutte** le nostre

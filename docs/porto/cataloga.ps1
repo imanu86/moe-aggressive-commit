@@ -27,8 +27,35 @@ $wall   = Ultimo 'avg=[0-9.]+ t/s ([0-9.]+)s'
 $evict  = @([regex]::Matches($txt,'evict_backbone=(\d+)') | ForEach-Object { [int]$_.Groups[1].Value } |
             Measure-Object -Maximum).Maximum
 
-# l'output: se l'harness l'ha salvato lo si ritrova, altrimenti si dichiara perso
-$htmlPath = Join-Path $dir "$tag.output.html"
+# l'output. Se l'harness non e' arrivato a scriverlo ma lo stream e' su disco,
+# lo si ricostruisce dai delta: e' il motivo per cui la richiesta va in streaming.
+$htmlPath   = Join-Path $dir "$tag.output.html"
+$streamPath = Join-Path $dir "$tag.stream.ndjson"
+if ((-not (Test-Path $htmlPath)) -and (Test-Path $streamPath)) {
+    # Il modello emette DUE flussi: reasoning_content (la fase THINKING) e content
+    # (la risposta). Vanno tenuti separati: il cancello di neutralita' si verifica
+    # sulla risposta, ma il ragionamento e' quello che consuma i token e va contato.
+    $sbR = [Text.StringBuilder]::new(); $sbC = [Text.StringBuilder]::new()
+    foreach ($line in [IO.File]::ReadLines($streamPath)) {
+        if (-not $line.StartsWith('data: ')) { continue }
+        $payload = $line.Substring(6)
+        if ($payload -eq '[DONE]') { continue }
+        try { $o = $payload | ConvertFrom-Json } catch { continue }
+        $d = $o.choices[0].delta
+        if ($d.reasoning_content) { [void]$sbR.Append([string]$d.reasoning_content) }
+        if ($d.content)           { [void]$sbC.Append([string]$d.content) }
+    }
+    if ($sbR.Length -gt 0) {
+        [IO.File]::WriteAllText((Join-Path $dir "$tag.thinking.txt"), $sbR.ToString(), [Text.UTF8Encoding]::new($false))
+        "  ragionamento ricostruito: {0:N0} caratteri" -f $sbR.Length
+    }
+    if ($sbC.Length -gt 0) {
+        [IO.File]::WriteAllText($htmlPath, $sbC.ToString(), [Text.UTF8Encoding]::new($false))
+        "  output RICOSTRUITO dallo stream: {0:N0} caratteri" -f $sbC.Length
+    } else {
+        "  nessun 'content': il run si e' fermato in fase THINKING, pagina mai iniziata"
+    }
+}
 $hasHtml  = (Test-Path $htmlPath) -and ((Get-Item $htmlPath).Length -gt 0)
 $sha = if ($hasHtml) {
     [BitConverter]::ToString([Security.Cryptography.SHA256]::Create().ComputeHash(

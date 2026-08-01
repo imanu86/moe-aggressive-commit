@@ -1,0 +1,45 @@
+Due alberi sulla stessa macchina, stesso repo git, base comune 8809b90 (12 maggio):
+
+  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a      il NOSTRO fork, HEAD 646f3be
+  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port     upstream/main PULITO, 54b36ed
+
+OBIETTIVO: risolvere **la radice singola che genera 56 errori su 68**. Diagnosi e proposta, nessuna modifica ai file.
+
+## IL FATTO, misurato ieri
+
+Trapiantando il nostro `ds4_cuda.cu` nell'albero upstream, `nvcc` produce 68 errori. **Cinquantasei hanno una sola causa**: il layout della struttura `ds4_gpu_tensor`.
+
+```
+upstream   { ptr, bytes, owner, device_id }
+nostro     { ptr, host_ptr, bytes, owner }
+```
+
+Noi abbiamo aggiunto `host_ptr`, loro hanno aggiunto `device_id`. **1 errore radice + 55 dipendenti.**
+
+Piu' **12 cambi di firma**: `set_model_map_range`, cinque funzioni di attention, i due router, i due routed-MoE, e altre.
+
+## COSA DEVI PRODURRE
+
+**(1) Il contratto vero delle due strutture.** Trova la definizione in tutti e due gli alberi. Per ogni campo: chi lo scrive, chi lo legge, e cosa succede se manca. In particolare: **a cosa serve `host_ptr` da noi** (sospetto: lo zero-copy e il percorso streaming), e **a cosa serve `device_id` da loro** (sospetto: multi-device e TP).
+
+**(2) Sono conciliabili?** Le opzioni che vedo, ma decidi tu:
+   (a) aggiungere `host_ptr` alla struttura upstream, tenendo `device_id` -- e dirmi cosa si rompe (dimensione della struttura, allocazioni, serializzazione, kernel che la leggono per valore);
+   (b) tenere `host_ptr` in una tabella laterale indicizzata dal tensore, senza toccare la struttura;
+   (c) scoprire che upstream ha gia' un meccanismo equivalente a `host_ptr` con un altro nome, e allora il nostro campo si abbandona.
+   **La (c) sarebbe la migliore: cercala per prima.**
+
+**(3) I 12 cambi di firma, uno per uno.** Per ciascuno: firma nostra, firma loro, cosa e' cambiato e perche', e se la nostra chiamata si adatta o serve un adattatore. Voglio sapere quali sono meccanici e quali nascondono un cambio di semantica.
+
+**(4) L'ordine.** Cosa va fatto prima perche' sblocca gli altri 55 errori.
+
+## VINCOLI
+
+- **Nessuna modifica ai file. Nessuna compilazione.** Solo lettura, diagnosi e proposta.
+- Ricorda la strategia decisa: **upstream e' il substrato**, incluso il suo `ds4_cuda.cu`. Non si sostituisce il loro file col nostro. Quindi la domanda giusta e' "come adattiamo le NOSTRE estensioni al LORO contratto", non il contrario.
+- Se la conciliazione richiede di rinunciare a qualcosa di nostro, **dimmi cosa e quanto costa**: preferisco perdere una funzionalita' sapendolo che scoprirlo dopo.
+
+## CONTESTO
+
+Il nostro `host_ptr` serve al percorso di streaming degli esperti, che e' il cuore delle nostre 29.000 righe di CUDA in piu': arena pinnata da 30 GiB, promozione SSD->RAM->VRAM, letture transienti. Se `host_ptr` non e' portabile nel contratto upstream, e' un problema strutturale e va saputo subito.
+
+Rispondi in italiano con righe esatte. Distingui cio' che verifichi da cio' che stimi.

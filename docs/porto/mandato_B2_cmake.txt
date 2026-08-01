@@ -1,0 +1,45 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e solo li'.
+
+  ALBERO DI LAVORO:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port
+                     branch port/upstream-substrate, base upstream/main 54b36ed
+  SORGENTE DA CUI PRENDERE:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **NON MODIFICARLO MAI.**
+
+OBIETTIVO: portare **il sistema di build CMake per Windows/MSVC/nvcc** in `ds4-port`, estendendolo alle unita' che upstream ha aggiunto e che il nostro CMake non conosce.
+
+## LA SITUAZIONE
+
+```
+il nostro fork    CMake che costruisce su Windows con MSVC + nvcc, in build-native/
+                  Sa costruire il nostro albero, che e' fermo alla base del 12 maggio
+                  piu' le nostre estensioni
+
+upstream          Makefile POSIX con target `cuda-spark` e `cuda-generic`.
+                  NIENTE CMake. E ha aggiunto unita' nuove che il nostro CMake ignora:
+                  distributed, tp, ssd, web, agent, eval, layer_pack e altre
+```
+
+## COSA DEVI FARE
+
+**(1) Inventaria le unita' di compilazione di upstream.** Leggi il loro `Makefile` e la struttura dei sorgenti: quali file entrano nel binario, con quali flag, quali sono condizionali. Voglio la lista completa prima di scrivere una riga di CMake.
+
+**(2) Porta il nostro CMake** in `ds4-port` e **estendilo** a coprire quelle unita'. Dove un modulo e' POSIX-only e non compilabile su Windows senza lavoro (probabile per `distributed` e `tp`, che usano RDMA/Thunderbolt), **escludilo dal build Windows dietro una option CMake esplicita, con un commento che dice cosa manca**. Un modulo escluso e dichiarato e' un risultato accettabile; un modulo che rompe il build non lo e'.
+
+**(3) Confronta i flag.** Il loro Makefile per GB10 omette deliberatamente `-arch` perche' e' piu' veloce su quella scheda; noi siamo **sm_86** (RTX 3060) e il nostro CMake usa `CUDA_ARCH`. Assicurati che il default per noi resti sm_86 o `native`, e che i flag di ottimizzazione loro (se ce ne sono di significativi) siano riportati.
+
+**(4) NON toccare i sorgenti.** Ne' `ds4.c`, ne' `ds4_cuda.cu`, ne' `src/platform/*`: un altro agente sta portando lo strato di piattaforma proprio adesso. Il tuo CMake deve **aspettarsi** che `src/platform/*.c` e `src/win32/*` esistano e vadano compilati, anche se in questo momento non ci sono ancora.
+
+**(5) Lascia un rapporto** in `ds4-port/PORT_BLOCK1_BUILD.md`: le unita' trovate, quelle incluse, quelle escluse col motivo, e i flag che hai dovuto cambiare.
+
+## VINCOLI
+
+- **Solo `ds4-port`.** Il fork e' sorgente di lettura.
+- **Solo file di build**: `CMakeLists.txt`, `cmake/*`, eventuali `*.cmake`, e i file di configurazione. Nessun sorgente C/C++/CUDA.
+- Non serve che il build riesca alla fine del tuo lavoro: l'altro agente sta ancora portando i file che ti servono. **Serve che il CMake sia corretto e completo per quando ci saranno.**
+- Committa su `port/upstream-substrate` con messaggi chiari.
+
+## CONTESTO
+
+Prima milestone del porto: "compila e linka su Windows", stimata 3-4 giornate in tutto, e tu ne fai la meta'. Il porto completo del core single-GPU e' stimato 19-27 giornate.
+
+Rispondi in italiano. Se scopri che il Makefile upstream fa cose che CMake non puo' replicare facilmente, **dillo invece di inventare una soluzione fragile.**

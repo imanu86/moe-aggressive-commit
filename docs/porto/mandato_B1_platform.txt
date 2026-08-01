@@ -1,0 +1,51 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e solo li'.
+
+  ALBERO DI LAVORO:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port
+                     branch port/upstream-substrate, base upstream/main 54b36ed
+  SORGENTE DA CUI PRENDERE:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **NON MODIFICARLO MAI.**
+
+OBIETTIVO: portare in `ds4-port` **lo strato di piattaforma Windows**, che a monte non esiste. E' il blocco 1 dell'ordine di trapianto, dichiarato completamente isolabile: non ha dipendenze CUDA e serve a tutti i loader.
+
+## PERCHE' e' tutto nostro
+
+Verificato: **upstream e' POSIX-only.** Niente `src/platform`, niente CMake nativo, e l'unico `_WIN32` a monte e' un `#error` che dichiara POSIX-only nel quantizzatore (`gguf-tools/deepseek4-quantize.c:40`).
+
+## COSA PORTARE, dal nostro fork
+
+```
+src/platform/os_file.c/.h     os_file_t = HANDLE; I/O posizionato cancellabile con OVERLAPPED,
+                              timeout, cancellazione. Include os_pread_cancellable_max_chunk
+                              (una lettura kernel piu' grande quando len <= max_chunk,
+                              mantenendo il contratto di cancellazione)
+src/platform/os_mmap.c/.h     CreateFileMappingW / MapViewOfFile / UnmapViewOfFile
+src/platform/os_thread.c/.h   SRWLOCK, CONDITION_VARIABLE, INIT_ONCE, _beginthreadex, CPU count
+src/platform/os_clock.h       QueryPerformanceCounter al posto di clock_gettime
+src/platform/os_console.h     console UTF-8, output non bufferizzato
+src/platform/os_path.h        UTF-8 <-> UTF-16, slash, path lunghi drive e UNC
+src/platform/os_random.h      BCryptGenRandom al posto di /dev/urandom
+src/win32/win_dirent.h        FindFirstFileW / FindNextFileW / FindClose
+```
+
+## COSA DEVI FARE
+
+**(1) Trapianta i file** in `ds4-port` mantenendo la stessa struttura di directory. **Copia, non reinventa**: sono maturi e provati in produzione.
+
+**(2) Trova e adatta i punti di uso POSIX nei moduli NUOVI di upstream.** Upstream ha aggiunto dal 12 maggio: `distributed`, `tp`, `ssd`, `web`, `agent`, `eval`, `layer_pack` e altro. Quei moduli useranno `pread`, `mmap`, `pthread_*`, `usleep`, `clock_gettime`, `/dev/urandom`, `dirent.h`, percorsi con `/`. **Per ognuno: sostituisci con la nostra astrazione**, oppure -- se l'adattamento e' invasivo -- **isola il modulo dietro un `#ifdef` e lascialo fuori dal build Windows con un commento che spiega perche'.** Un modulo escluso e dichiarato vale piu' di un adattamento affrettato.
+
+**(3) NON toccare `ds4_cuda.cu`.** Un altro agente lavora in parallelo sul build system e un terzo lavorera' sul contratto CUDA. Se ti serve una modifica in `ds4_cuda.cu`, **scrivila come nota nel rapporto finale invece di applicarla.**
+
+**(4) Lascia un rapporto** in `ds4-port/PORT_BLOCK1_PLATFORM.md`: cosa hai portato, cosa hai adattato, cosa hai escluso e perche', e l'elenco delle modifiche che servono in file non tuoi.
+
+## VINCOLI
+
+- **Solo `ds4-port`.** Il fork `ds4-p4a` e' la sorgente e va letto, mai scritto.
+- Non toccare `ds4_cuda.cu`, `ds4.c`, `CMakeLists.txt` (altri agenti).
+- Non "migliorare" il codice portato: se una funzione ti sembra brutta ma funziona, portala com'e' e annotalo.
+- Committa il tuo lavoro su `port/upstream-substrate` con messaggi chiari, un commit per unita' logica.
+
+## CONTESTO
+
+Il porto complessivo e' stimato 19-27 giornate per il core single-GPU. La prima milestone e' "compila e linka su Windows", stimata 3-4 giornate, e tu ne fai la meta'. **Non deve girare: deve compilare.** La correttezza a runtime arriva dopo, con i blocchi CUDA.
+
+Rispondi in italiano. Se un pezzo non e' portabile senza toccare file altrui, **fermati e dillo**: preferisco un blocco dichiarato a una modifica che collide.

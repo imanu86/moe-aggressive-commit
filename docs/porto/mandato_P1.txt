@@ -1,0 +1,66 @@
+Due alberi sulla stessa macchina, stesso repo git, base comune 8809b90 (12 maggio):
+
+  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a      il NOSTRO fork, HEAD 646f3be
+  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port     upstream/main PULITO, 54b36ed
+
+OBIETTIVO: produrre **l'inventario del trapianto**. Non scrivere codice, non modificare niente. Voglio la mappa che rende pianificabile il porto.
+
+## LA STRATEGIA, gia' decisa e non in discussione
+
+**Upstream e' il substrato**, incluso il suo `ds4_cuda.cu`. **NON** si sostituisce il file con il nostro. Si trapiantano SELETTIVAMENTE le nostre estensioni.
+
+La ragione e' misurata: upstream ha implementazioni per **147 su 147** delle funzioni GPU attive che a noi mancherebbero, piu' il layout `device_id` e tutto il plumbing multi-device. Sostituendo il file le perderemmo.
+
+## I NUMERI DELLA DIVERGENZA
+
+```
+                  upstream/main   nostro fork
+ds4.c               64.891 righe    25.043      loro 2,6x  (DSpark, distributed, TP, GLM)
+ds4_cuda.cu         27.666          56.765      noi  2,1x  (streaming, arena, guardiani)
+commit dalla base       314            344
+```
+
+**Il nostro lavoro sta quasi tutto in `ds4_cuda.cu`, il loro in `ds4.c`.** Sono due estensioni quasi ortogonali dello stesso tronco.
+
+## COSA DEVI PRODURRE
+
+**(1) L'elenco dei simboli nostri che a monte NON esistono**, raggruppati per sottosistema. I sottosistemi che mi aspetto, ma decidi tu leggendo il codice:
+
+```
+streaming esperti      route worker, mailbox, letture transienti, pread/OVERLAPPED
+arena dinamica         slot, wrap, checksum, snapshot prefill-ranked
+tiering e promozione   cancelli di ammissione, knocks, mass-lfru, vittime
+cache VRAM esperti     capacita', sfratti, publish
+guardiani              deadline transiente, timeout, teardown, anti-tempesta
+telemetria             worker-prof, transport ledger, g130-attrib, zc
+piattaforma Windows    tutto cio' che non e' POSIX
+```
+
+Per ciascun simbolo voglio: **nome, file:riga da noi, righe di codice, da chi e' chiamato, e se e' un punto di ingresso invocato da `ds4.c`** (quelli sono i veri confini del trapianto).
+
+**(2) Il grafo delle dipendenze fra sottosistemi.** Quale si puo' trapiantare per primo senza trascinare gli altri. Voglio un ordine, non un elenco.
+
+**(3) Le COLLISIONI.** Dove upstream ha riscritto la stessa zona che tocchiamo noi. In particolare mi aspetto attriti su: il dispatcher routed-MoE, la struttura `ds4_gpu_tensor`, le firme delle attention e dei router. Per ciascuna collisione: cosa fa la loro versione, cosa fa la nostra, e se sono conciliabili o alternative.
+
+**(4) Cosa possiamo BUTTARE.** Delle nostre estensioni, quali sono gia' risolte a monte in altro modo e non vanno portate. Esempio noto: **noi abbiamo ZERO occorrenze di `Q4_K` in `ds4_cuda.cu`, upstream ne ha 7 con kernel dedicati** (`upstream:ds4_cuda.cu:20838`, `moe_gate_up_mid_decode_q4K_qwarp32`, `moe_down_q4K_sum6_qwarp32`). Quel buco non va portato, va abbandonato. Cercane altri.
+
+## VINCOLI
+
+- **Nessuna modifica ai file. Nessuna compilazione. Solo lettura e mappa.**
+- Se un sottosistema e' talmente intrecciato da non essere separabile, **dillo**: e' un'informazione che vale quanto una separazione riuscita.
+- Il formato che mi serve e' una tabella per sottosistema piu' un ordine di trapianto motivato, non prosa.
+
+## CONTESTO CHE RESTRINGE
+
+Misura di ieri, trapiantando il nostro `ds4_cuda.cu` INTERO nel loro albero (approccio poi scartato):
+
+```
+68  errori nvcc,  di cui 56 da UNA radice: il layout di ds4_gpu_tensor
+    upstream {ptr, bytes, owner, device_id}   nostro {ptr, host_ptr, bytes, owner}
+12  cambi di firma (set_model_map_range, cinque attention, i due router, i due routed-MoE)
+153 simboli irrisolti al link (147 funzioni GPU che upstream HA + 6 dal nostro vecchio core)
+```
+
+Stima di ieri per il porto completo: 18-25 giornate per "compila e gira single-GPU con controllo numerico". **Il tuo inventario serve a rendere quella stima un piano.**
+
+Rispondi in italiano, con righe esatte e tabelle. Distingui cio' che verifichi da cio' che stimi. Se la premessa strategica non ti convince -- per esempio se leggendo il codice concludi che il trapianto selettivo e' piu' costoso di una riscrittura -- **dillo e fermati**.

@@ -1,0 +1,42 @@
+Due alberi sulla stessa macchina, stesso repo git, base comune 8809b90 (12 maggio):
+
+  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a      il NOSTRO fork, HEAD 646f3be, gira su WINDOWS NATIVO
+  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port     upstream/main PULITO, 54b36ed
+
+OBIETTIVO: mappare **il supporto Windows**. Senza questo il porto non compila nemmeno, quindi e' il primo pezzo in ordine di tempo. Solo lettura e mappa, nessuna modifica.
+
+## LA DOMANDA
+
+Upstream e' sviluppato su Mac (Metal) e Linux (CUDA/ROCm). Noi giriamo su **Windows nativo, non WSL**, con MSVC/nvcc e CMake. Il nostro albero ha uno strato di piattaforma che upstream potrebbe non avere, o avere diverso.
+
+## COSA DEVI PRODURRE
+
+**(1) L'inventario del nostro strato di piattaforma.** So che esiste almeno `src/platform/os_file.c` (nel nostro albero) con l'I/O overlapped di Windows: `CreateFile` con `FILE_FLAG_OVERLAPPED` (~riga 100), `WaitForSingleObject` (~riga 417), il controllo `pending -> EBUSY` (~riga 363). **Verifica che queste righe esistano ancora e trova tutto il resto**: ogni file, ogni `#ifdef _WIN32`, ogni sostituto di API POSIX.
+
+**(2) Cosa ha upstream.** Ha uno strato di piattaforma? Ha `#ifdef _WIN32`? Come apre e legge il modello? Usa `mmap`, `pread`, o altro? **Se upstream e' POSIX-only, dimmelo chiaramente**: significa che lo strato Windows e' interamente nostro e va portato per intero.
+
+**(3) Il sistema di build.** Noi usiamo CMake (`build-native/`). Upstream ha un `Makefile` con target `cuda-spark` e `cuda-generic`. Serve sapere: cosa costruisce il nostro CMake che il loro Makefile non costruisce, e viceversa. E se il loro Makefile e' usabile su Windows o va sostituito.
+
+**(4) Le trappole note, da verificare nel loro codice.** Cerca in upstream cose che su Windows non funzionano e che dovremo adattare:
+   - `pread`/`pwrite` (non esistono su Windows)
+   - `mmap`/`munmap`/`madvise`
+   - `open`/`O_DIRECT`
+   - `pthread_*` diretti invece di astrazioni
+   - `usleep`, `nanosleep`, `clock_gettime`
+   - percorsi con `/` hardcoded
+   - `dlopen`
+   Per ciascuna occorrenza trovata: file:riga e quanto e' invasiva.
+
+**(5) L'ordine di lavoro.** Cosa va portato per primo perche' tutto il resto ne dipende.
+
+## VINCOLI
+
+- **Nessuna modifica, nessuna compilazione. Solo lettura.**
+- Non proporre di passare a WSL: e' gia' stato deciso di stare su Windows nativo, e il ledger documenta che il porto su Windows nativo fu una scelta motivata da una misura.
+- Se scopri che upstream ha GIA' un supporto Windows decente, e' un'ottima notizia: dimmelo subito e quantifica quanto ci risparmia.
+
+## CONTESTO
+
+Il porto complessivo e' stimato 18-25 giornate per "compila e gira single-GPU". La prima tranche stimata e' **7-10 giornate per "compila e linka su Windows"**, ed e' esattamente quello che il tuo inventario deve rendere pianificabile o correggere.
+
+Rispondi in italiano con righe esatte. Distingui cio' che verifichi da cio' che stimi.

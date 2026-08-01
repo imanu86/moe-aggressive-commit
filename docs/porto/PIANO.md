@@ -99,10 +99,10 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 5 | Async readback/SPEX, observer prefill/REAP | parziale | **FATTO** 485e268, 395 righe, fixture PASS, nel tronco |
 | 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **FATTO** e nel tronco, 833ac41, 772 righe, fixture PASS |
 | 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **FATTO** 7f99c9f, 858 righe, nel tronco; gate a false apposta |
-| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **in corso** — e' il passo che ACCENDE |
-| 9 | Guardiani G73: deadline, cancel, retry, respawn | no | da fare |
+| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **FATTO** 3c225d2 — **il nucleo si accende**, 5 fixture PASS |
+| 9 | Guardiani G73: deadline, cancel, retry, respawn | no | **in corso** worktree `ds4-port-guard` — ULTIMO |
 | 10 | IQ1/Q1/nested residual/SSD rotator | no | **FATTO** 7e19dd4, 888+527 righe, hash 8211d0dfbf647850 verificato |
-| 11 | KV staged (SENZA corsia CPU G132, falsificata) | no | **in corso** worktree `ds4-port-kv` |
+| 11 | KV staged (SENZA corsia CPU G132, falsificata) | no | **FATTO** d4a5550, 1521 righe, nel tronco |
 
 ## I fronti, aggiornati (1/8, 13:20)
 
@@ -164,23 +164,31 @@ repo e prendere la prima e' come non guardare.
 ## Avanzamento misurato
 
 ```
-TRONCO         port/upstream-substrate @ 833ac41
-               54 file, 13.627 inserzioni sopra upstream/main
-               build exit 0, TRE fixture PASS (arena, observer, cache VRAM)
+TRONCO         port/upstream-substrate @ a6e10a1
+               63 file, 17.095 inserzioni sopra upstream/main
+               build exit 0
+               CINQUE fixture PASS con i flag spenti E accesi
                ds4-server.exe gira
 
-blocchi chiusi      10 / 14     0, 1, 1b, 2, 2b, 3, 4, 5, 6, 10
-giornate stimate  12-17 / 26-36  ->  ~45% della parita' piena
-                    9-12 / 19-27  ->  ~42% del core single-GPU
-righe di politica  4027 / ~27700 ->  ~15%
+blocchi chiusi      13 / 14     manca solo il 9 (guardiani), in corso
+giornate stimate  22-30 / 26-36  ->  ~80% della parita' piena
 
-TRE OPT-IN, indipendenti e tutti spenti
+QUATTRO OPT-IN, indipendenti e tutti spenti
   DS4_CUDA_DYNAMIC_ARENA_GB       arena host pinnata
   DS4_CUDA_PREFILL_MASS_OBSERVE   observer del prefill
-  DS4_CUDA_VRAM_EXPERT_CACHE      cache residente VRAM
+  DS4_CUDA_VRAM_EXPERT_CACHE      nucleo: cache VRAM + tiering + route worker
+  DS4_CUDA_KV_STAGED_RING         KV staged
 
-RESTANO   7 tiering (in corso)  ->  8 route worker   stesso ramo, poi UN passo che accende
-          9 guardiani, 11 KV staged
+CINQUE FIXTURE, tutte in add_test
+  ds4_dynamic_arena_fixture      ds4_prefill_observer_fixture
+  ds4_vram_expert_cache_fixture  ds4_route_worker_fixture
+  ds4_kv_staged_fixture
+
+NON PORTATI, e ognuno con la sua ragione
+  G132 corsia CPU     falsificata in misura: +47 ms/token
+  demand pipeline     gia' respinta: violava il vincolo su promozione e pruning
+  DOV, nested residual, G73 rotatore, reserve_open_router_slots
+                      decorazioni, fuori dal percorso critico per decisione del piano
 ```
 
 **Le tre scale non concordano, e la ragione e' il punto.** Per blocchi siamo a meta'; per

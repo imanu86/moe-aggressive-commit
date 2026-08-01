@@ -16,6 +16,8 @@ param(
     # Applicato DOPO il preset, cosi' la sovrascrittura e' esplicita e finisce nel tag.
     [hashtable]$Override = @{},
     [switch]$NoStreaming,
+    # ragionamento: SPENTO per default. -Think:$true per misurarlo di proposito.
+    [bool]$Think = $false,
     # sblocca il braccio A, che dall'1/8 e' accantonato insieme ai pesi vecchi
     [switch]$Comunque
 )
@@ -23,6 +25,7 @@ $ErrorActionPreference = 'Stop'
 $R = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
 $tag = "{0}_{1}" -f $Arm, (Get-Date -Format 'HHmmss')
+if ($Think) { $tag = "$tag`_THINK" }
 $srvLog = Join-Path $OutDir "$tag.server.log"
 
 # --- igiene: nessuna DS4_* ereditata, mai ---
@@ -145,7 +148,12 @@ $promptSha = [BitConverter]::ToString(
 # variabile PowerShell finche' la risposta non e' completa, e se il processo muore prima
 # (successo l'1/8 a gen=600) l'output e' perso per sempre. In streaming curl scrive i
 # byte su disco mentre arrivano: un run interrotto lascia comunque il testo prodotto.
-$body = @{ model='ds4'; max_tokens=$Tokens; temperature=0; stream=$true
+# think=false: SENZA questo il modello entra in fase di ragionamento e brucia
+# centinaia di token prima di scrivere la pagina — sul tronco, l'1/8, non ne e'
+# uscito nemmeno dopo 1340. Le pagine di riferimento della campagna sono HTML puro:
+# misurare col ragionamento acceso significa misurare un altro carico.
+# ds4_server.c:3292 legge "think" come booleano.
+$body = @{ model='ds4'; max_tokens=$Tokens; temperature=0; stream=$true; think=$Think
            messages=@(@{role='user'; content=$prompt}) } | ConvertTo-Json -Depth 5
 $reqPath    = Join-Path $OutDir "$tag.request.json"
 $streamPath = Join-Path $OutDir "$tag.stream.ndjson"
@@ -172,7 +180,7 @@ if (Test-Path $streamPath) {
 # ripiego: se lo streaming non ha prodotto delta, il server non lo supporta -> richiesta normale
 if ($content.Length -eq 0) {
     "    streaming senza delta: ripiego su richiesta non-streaming"
-    $body2 = @{ model='ds4'; max_tokens=$Tokens; temperature=0
+    $body2 = @{ model='ds4'; max_tokens=$Tokens; temperature=0; think=$Think
                 messages=@(@{role='user'; content=$prompt}) } | ConvertTo-Json -Depth 5
     $t1 = Get-Date
     $resp = Invoke-RestMethod "http://127.0.0.1:$Port/v1/chat/completions" -Method Post `
@@ -218,6 +226,7 @@ $capacity = (Select-String -LiteralPath $srvLog -Pattern 'result=sized requested
 $meta = [ordered]@{
     id = $tag; arm = $Arm; timestamp = (Get-Date -Format 'o')
     exe = $exe; model = $Model; ctx = $Ctx; tokens_requested = $Tokens
+    think = $Think
     prompt_sha256 = $promptSha; output_sha256 = $contentSha; output_chars = $content.Length
     tokens_generated = $out; seconds = [math]::Round($gen,1); load_seconds = [math]::Round($load,1)
     end2end_tps = [math]::Round($out/$gen,3); regime_tps = $regime; regime_n = $chunks.Count

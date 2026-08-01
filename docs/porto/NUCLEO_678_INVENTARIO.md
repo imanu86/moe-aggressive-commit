@@ -213,7 +213,7 @@ a introdurre la variabile locale. Il contratto e' rispettato, il test cerca il n
 | test | cosa pretende | cosa c'e' | lettura |
 |---|---|---|---|
 | demand pipeline | 3 stringhe dentro la fetta `flush` | tutte e 3 presenti nel file (1 volta ciascuna) | **probabile fetta spostata**: il test taglia fra due marcatori e il taglio non prende piu' |
-| g133 M1 | `route_consumed_sequence = sequence;` | **0 occorrenze in tutto il file** | rinominato o rimosso: va guardato |
+| g133 M1 | `route_consumed_sequence = sequence;` | e' diventato `std::atomic<uint32_t>` scritto con `.store(...)` (`:29829`, `:32852`, `:39616`, `:41285`, `:49628`) | **stantio**: il campo e' stato reso atomico, l'assegnamento semplice non esiste piu' |
 | g73 OPEN | `: cudaStreamSynchronize(0);` (dentro un ternario) | solo `(void)cudaStreamSynchronize(0);` e un assegnamento a `sync_err` | **forma cambiata** |
 
 **Il g73 potrebbe non essere stantio.** C'e' un task aperto da giorni — *"Resolver own-wait:
@@ -233,3 +233,22 @@ flush della pipeline, deadline della lettura. Erano il cancello naturale del tra
 
 **Un cancello che fallisce sempre non e' un cancello.** Vanno riparati *prima* che il nucleo
 arrivi, altrimenti nel porto non avremo modo di distinguere un trapianto corretto da uno rotto.
+
+
+## VERDETTO sui quattro cancelli
+
+```
+deadline          STANTIO   verificato: read_deadline al posto di absolute_deadline
+g133 M1           STANTIO   verificato: il campo e' diventato std::atomic, si scrive con .store()
+demand pipeline   probabile STANTIO   le 3 stringhe ci sono nel file, e' la fetta che non taglia piu'
+g73 OPEN          DA GUARDARE   forma cambiata E c'e' un task aperto sul resolver own-wait
+```
+
+**Tre su quattro sono spiegati da rinomine e cambi di forma nostri** — nessun invariante e'
+caduto. Il quarto resta sospetto perche' coincide con un problema gia' noto e non ancora
+chiuso.
+
+**Cosa farne, per il porto**: questi test vanno riparati *prima* che il nucleo (blocchi 7-8-9)
+arrivi sul substrato. Riparati significa **che tornino a fallire quando devono**: un test
+aggiornato a specchiare il codice attuale senza capire cosa asseriva non e' un cancello, e'
+un'eco.

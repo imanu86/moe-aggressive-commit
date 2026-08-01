@@ -91,3 +91,35 @@ Dichiararlo prima e' l'unico modo perche' la misura possa smentirci:
 `markov_rank = 256`, `target_layer_ids = [40,41,42]` dentro i nostri 43 layer. **Non entra in
 questo run**: prima si stabilisce che il tronco regge a pari politica, poi si aggiunge una
 variabile per volta.
+
+---
+
+## APERTO: il disco C: legge a 59 MB/s e non e' normale
+
+Misurato l'1/8 durante il wrap dell'arena, con CIM (i contatori PowerShell a campione
+singolo davano zero: i rate ne vogliono due):
+
+```
+C: Lexar EQ790 1TB NVMe    58,9 MB/s   971 letture/s   100% attivo
+                            coda 8      lettura media 62,1 KB
+                            latenza ~8,2 ms  (coda / IOPS, legge di Little)
+```
+
+**8,2 ms per lettura su un NVMe** che dovrebbe stare fra 0,05 e 0,2. E 62 KB non e' una
+lettura minuscola: anche sparse, un NVMe a coda 8 dovrebbe fare piu' di 1 GB/s.
+
+L'utente conferma che quel disco **ha sempre letto cosi'**, quindi non e' una degradazione
+recente e non spiega la differenza col riferimento. **Ma non e' nemmeno normale**, ed e' a
+monte di tutto: se il trasporto dal disco rende l'1% del nominale, ogni misura di velocita'
+che facciamo sta misurando quello.
+
+**Da separare con un test solo**, fuori dal runtime, a macchina libera: lettura sequenziale
+di un blocco grosso dallo stesso disco.
+
+```
+3-6 GB/s   il disco sta bene, il collo e' il NOSTRO pattern di accesso
+~60 MB/s   e' il supporto o il percorso di I/O, e va guardato prima di ottimizzare altro
+```
+
+Il disco e' pieno all'**89%** (99,5 GB liberi su 930,7), che e' un candidato noto per il
+collasso di un SSD, ma resta un'ipotesi finche' il test sequenziale non la conferma.

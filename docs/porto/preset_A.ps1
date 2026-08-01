@@ -73,3 +73,15 @@ $env:DS4_CUDA_TRANSIENT_DEADLINE_ADAPTIVE = '1'   # 12 esaurimenti -> 0, costo z
 # Il riferimento ne aveva ~1,7 -> 253 slot. Questa variabile maschera 2 GiB di pesi
 # perche' arrivino dalla RAM invece che stare in VRAM: e' esattamente il buco.
 $env:DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB = '2'
+
+# --- PASSO 3 (1/8 18:45): il prefill chunk, unica variabile aggiunta ---
+# Trovato leggendo il codice, non a tentativi. Il nostro log dice:
+#   context buffers 329.92 MiB (ctx=8000, backend=cuda, prefill_chunk=2048, ...)
+# Il default a ctx 8000 e' 2048; lo script di campagna che ha prodotto il
+# riferimento da 253 slot usa 256. I buffer di attenzione batch costano
+# 944,5 MiB a chunk 2048 contro 118,06 a chunk 256: 826,4 MiB di differenza,
+# contro i 790,55 che mancano per arrivare a capacity 253.
+# RITIRATA la mia ipotesi precedente su EXPERT_CACHE_GROW: il commento a
+# ds4_cuda.cu:40814 e' reale ma spiega il MOMENTO della misura, non la
+# GRANDEZZA del buco.
+$env:DS4_METAL_PREFILL_CHUNK = '256'

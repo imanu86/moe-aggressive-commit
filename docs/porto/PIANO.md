@@ -50,10 +50,37 @@ ds4_cuda.cu        loro 27.666         noi 56.765
 ha implementazioni per **147 su 147** delle funzioni GPU che ci mancherebbero, piu' `device_id` e
 il plumbing multi-device.
 
-**E upstream ha lasciato la sede.** `cuda_stream_selected_cache_begin_load`
-(`UCU:22953-23087`) gia' deduplica gli ID, alloca buffer compatti, fa le copie selettive e
-costruisce la remap degli slot. **Ma budget, hotness e seed sono stub e no-op a
-`UCU:27260-27431`.** Loro il trasporto, noi le decisioni.
+**E upstream ha lasciato la sede.** `cuda_stream_selected_cache_begin_load` gia' deduplica gli
+ID, alloca buffer compatti, fa le copie selettive e costruisce la remap degli slot. **Ma
+budget, hotness e seed sono stub e no-op** (`UCU:28684-28690`, `:28804-28834`, `:28849-28855`;
+superficie pubblica `UH:166-229`). Loro il trasporto, noi le decisioni.
+
+> **Righe corrette l'1/8**: avevo scritto `UCU:27260-27431` e `UH:146-205`. Erano giuste prima
+> che la telemetria (blocco 2) aggiungesse 1419 righe a `ds4_cuda.cu` e 20 a `ds4_gpu.h`.
+> **Ogni riferimento di riga in questo documento invecchia a ogni blocco che atterra.**
+
+### E la politica vuota NON basta riempirla
+
+Dal piano del nucleo: il substrato ha il trasporto ma **non ha l'autorita' persistente**.
+Manca, con la riga:
+
+```
+mappa persistente (layer,expert) -> slot   upstream ha solo i metadati dell'ultimo batch  UCU:1377-1401
+stato slot EMPTY / LOADING / VALID         l'invalidate upstream abbassa solo `valid`     UCU:1403-1406
+scelta della vittima + reservation         gli stub non contengono nessuna decisione      UCU:28684-28690
+publish atomico di mappa e route pointer   il consumer ricava gli indirizzi da 3 buffer   UCU:22287-22301
+refund di una vittima sovrascritta a meta  nessuno stato corrispondente                   UCU:1377-1401
+route worker e mailbox di ownership        l'assenza e' DICHIARATA da upstream            UCU:619-625
+```
+
+**Conseguenza vincolante**: i blocchi 6, 7 e 8 devono atterrare come **sottosistema interno
+disattivato** e diventare raggiungibili **in un solo passo finale**. Non e' sicuro accendere
+prima la cache e aggiungere dopo politica o worker: `reservation`, `victim`, `publish` e
+`refund` o ci sono tutti e quattro, o non si attiva niente.
+
+**Stima del nucleo**: 10-12 giornate dopo l'atterraggio di 3 e 4. Le decorazioni del fork
+(DOV, rotatore G73, corsia G132) valgono altre 4-7 giornate e **non devono stare sul percorso
+critico**.
 
 **Granularita'**: si trapiantano blocchi che possiedono uno stato, non funzioni. Primo porto
 limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.

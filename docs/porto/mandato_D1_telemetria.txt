@@ -1,0 +1,81 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e solo li'.
+
+  ALBERO DI LAVORO:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port
+                     branch port/upstream-substrate
+  RIFERIMENTO:       C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **SOLO LETTURA, mai scrivere qui.**
+
+OBIETTIVO: trapiantare **la telemetria passiva** (blocco 2 del piano). E' il primo blocco delle nostre estensioni vere, ed e' stato messo qui per una ragione precisa: **serve a misurare tutti i blocchi successivi.** Senza, il trapianto di arena, cache e tiering procede alla cieca.
+
+## PERCHE' QUESTO BLOCCO PER PRIMO
+
+Ogni misura della nostra campagna viene da questi contatori. Il modello di costo del decode
+(202,2 ms di attesa del worker su 226 di token, 43 rendezvous, 107,6 ms di letture fredde) e'
+stato ricavato da `worker-prof` e dal `transport ledger`. **Senza questa telemetria non possiamo
+dire se i blocchi 4-9 funzionano.**
+
+## COSA TRAPIANTARE, dal nostro fork
+
+```
+worker-prof        read_calls, read_bytes, inflight_max/avg, wait_ms, pickup_lag_ms, job_ms,
+                   read_gate/up/down_ms, load_ram_ms, drain_ms, deliver_ms, job_faults,
+                   read_mb_s, deadline_slack, cache_invalidates
+                   flag: DS4_CUDA_WORKER_PROFILE, DS4_CUDA_WORKER_PROFILE_EVERY_TOKENS
+transport ledger   unique_pairs_touched, first_touch_bytes, repeat_h2d_bytes, repeat_file_bytes,
+                   repeat_ratio, h2d_bytes_total, h2d_active_ms, pcie_busy_pct
+                   flag: DS4_CUDA_TRANSPORT_LEDGER, ..._EVERY_TOKENS
+host-pin           inventario della memoria pinnata per tipo (kind=model_stage, kv_arena,
+                   route_stage), live/peak/budget
+alloc tracer       DS4_CUDA_ALLOC_TRACE
+token watcher      ds4_gpu_token_watch_begin/end, dietro DS4_CUDA_SLOW_TOKEN_LOG e
+                   DS4_CUDA_VRAM_PRIO_LOG_EVERY_TOKENS
+vram ledger        ds4_gpu_vram_ledger_decode_start / _request_end
+```
+
+## VINCOLI SPECIFICI DI QUESTO BLOCCO
+
+**(1) A flag spento il costo deve essere nullo.** Il nostro `ds4_gpu.h` documenta gia' il
+contratto per il token watcher: *"With both unset each call is two cached int reads."* Mantieni
+quella proprieta' ovunque: niente allocazioni, niente `getenv` nel percorso caldo, niente
+`fprintf` condizionali dentro i loop.
+
+**(2) Attenzione alle unita' dei contatori.** Nella nostra campagna tre errori su tre sono nati
+da contatori letti con l'unita' sbagliata: un cumulativo letto come per-token, una finestra letta
+come cumulativa, e `ram_admit_skips` per ciclo confuso con per token. **Per ogni contatore che
+porti, la riga di stampa deve dire se e' cumulativo, per token o per finestra.** Se il nome e'
+ambiguo, cambialo o documentalo nel commento accanto alla definizione.
+
+**(3) Contatori che NON vanno portati come sono.** `copy_ms` misura solo il rimbalzo CPU verso
+lo staging pinned nel percorso SSD-wrap, ed e' correttamente zero senza wrap: **non e' una misura
+del trasporto**, e per settimane l'abbiamo letto come tale. Se lo porti, il commento deve dirlo.
+Stessa cosa per `pcie_busy_pct`, che **non e' un contatore hardware del PCIe** ma un rapporto
+derivato da `h2d_active_ms / decode_ms`.
+
+**(4) Solo `ds4-port/ds4_cuda.cu` e gli header che servono.** NON toccare `ds4.c`: un altro
+agente ci sta lavorando adesso. Se ti serve un hook in `ds4.c`, **scrivilo nel rapporto invece
+di applicarlo.**
+
+**(5) Il criterio di fine e' il compilatore.** `ds4_cuda.cu.obj` compila gia' oggi: **deve
+continuare a compilare.** Comando:
+
+```
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" ^
+  --build "C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port\build-verify" --parallel 6
+```
+
+E' un file da 27.666 righe di CUDA: ogni compilazione e' lenta, **non lanciarne una per riga
+cambiata.**
+
+**(6) Rapporto** in `ds4-port/PORT_BLOCK2_TELEMETRIA.md`: contatori portati con la loro unita',
+quelli lasciati indietro col motivo, gli hook che servono in file altrui, e come si verifica che
+a flag spento il costo sia nullo.
+
+## CONTESTO
+
+Upstream ha lasciato **budget, hotness e seed come stub e no-op** a `ds4_cuda.cu:27260-27431`:
+e' li' che andra' la nostra politica nei blocchi 4-7. La telemetria che porti adesso servira' a
+dimostrare che quella politica fa quello che dice.
+
+Rispondi in italiano. Se un contatore non e' portabile senza toccare file altrui, **fermati e
+dillo.**

@@ -8,7 +8,10 @@ param(
     # Il riferimento gira da C:. Su un runtime che fa streaming dal disco, sbagliare
     # unita' significa misurare il disco invece del codice.
     [string]$Model = 'C:\ds4-models\ds4-2bit.gguf',
-    [string]$OutDir = 'D:\ds4_work\porto_run'
+    [string]$OutDir = 'D:\ds4_work\porto_run',
+    # Prova a variabile singola: -Override @{ 'DS4_G73_OPEN' = '1' }
+    # Applicato DOPO il preset, cosi' la sovrascrittura e' esplicita e finisce nel tag.
+    [hashtable]$Override = @{}
 )
 $ErrorActionPreference = 'Stop'
 $R = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
@@ -49,6 +52,11 @@ switch ($Arm) {
     $env:DS4_CUDA_VRAM_EXPERT_CACHE    = '1'
   }
 }
+foreach ($k in $Override.Keys) {
+    Set-Item -Path ("Env:{0}" -f $k) -Value $Override[$k]
+    $tag = "$tag`_$k=$($Override[$k])"
+}
+if ($Override.Count) { $srvLog = Join-Path $OutDir "$tag.server.log" }
 if (-not (Test-Path $exe)) { throw "binario assente: $exe" }
 
 # Il FORK non ha --ssd-streaming: da noi lo streaming lo guida l'ambiente (l'arena).

@@ -119,6 +119,22 @@ APERTI    ds4-port-blk6    port/blk6-vramcache   cache VRAM      parte DALL'adat
           ds4-port-merge   port/merge-1          MERGE dei tre rami sul tronco
 ```
 
+### E i blocchi 7 e 8 NON avranno un ramo proprio
+
+Il vincolo tutto-o-niente ha una conseguenza sulla regia che vale la pena scrivere prima di
+sbagliarla: **7 e 8 devono continuare sullo STESSO ramo del 6**, non su worktree paralleli.
+
+```
+6 cache VRAM  ->  7 tiering  ->  8 route worker      tutti su port/blk6-vramcache
+                                                      poi UN passo che accende
+```
+
+Il parallelismo per worktree funziona quando i blocchi possiedono stati diversi. Qui i tre
+condividono `reservation`, `victim`, `publish` e `refund`: tre agenti in parallelo
+scriverebbero tre transazioni diverse, e il merge non sarebbe una riconciliazione ma una
+riscrittura. **Questo e' il caso in cui la serializzazione e' una dipendenza vera, non
+prudenza.**
+
 **I rami nuovi partono dal ramo che gli serve, non dal substrato nudo.** La cache VRAM eredita
 il contratto dell'adattatore; l'observer eredita l'arena che deve riempire. Costa un merge in
 piu' e risparmia di far inventare a un agente un contratto che esiste gia'.

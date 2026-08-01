@@ -46,10 +46,11 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 
 | # | Blocco | Isolabile | Stato |
 |---|---|---|---|
-| 0 | Contratto upstream + POSIX + guard `g_n_gpus==1` | si | **ds4_cuda.cu FATTO** (compila, guard a `:2071`); **ds4.c in corso** (C1) |
+| 0 | Contratto upstream + POSIX + guard `g_n_gpus==1` | si | **FATTO** — build exit 0, `ds4.exe` 6,9 MB gira |
 | 1 | `os_file`, pread cancellabile, mmap, thread | **si** | **FATTO** f878e71, 11 file, compila |
 | 1b | CMake MSVC/nvcc esteso alle unita' nuove upstream | si | **FATTO** configura e genera, 10/36 unita' compilano |
-| 2 | Telemetria passiva: alloc, hostpin, worker-prof, transport ledger | si | da fare |
+| 2 | Telemetria passiva: alloc, hostpin, worker-prof, transport ledger | si | **in corso** (D1) |
+| 2b | **`ds4-server` su Windows** — e' il binario di OGNI misura, oggi e' uno stub | si | **in corso** (E1) |
 | 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | da fare |
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | da fare |
 | 5 | Async readback/SPEX, observer prefill/REAP | parziale | da fare |

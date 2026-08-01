@@ -1,0 +1,71 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e solo li'.
+
+  ALBERO DI LAVORO:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port
+                     branch port/upstream-substrate
+  RIFERIMENTO:       C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **SOLO LETTURA, mai scrivere qui.**
+
+OBIETTIVO: far compilare e girare **`ds4-server` su Windows**. Oggi e' escluso dal build con uno stub che stampa *"ds4-server is not available in the Windows build"*.
+
+## PERCHE' E' LA PRIORITA'
+
+**`ds4-server` e' il binario su cui gira ogni misura della nostra campagna.** Il decode a 4,42 t/s, i contatori worker-prof, il transport ledger, i cancelli di neutralita': tutto passa dal server HTTP. Senza di lui il porto compila ma non e' misurabile, e quindi non e' verificabile.
+
+Il resto del build **passa gia'**: `ds4.exe`, `ds4-bench.exe`, `ds4-eval.exe` sono prodotti e girano. Lo strato di piattaforma (`src/platform/*`), `ds4.c` e `ds4_cuda.cu` sono gia' portati e compilano.
+
+## IL PERIMETRO, misurato
+
+In `ds4-port/ds4_server.c`:
+
+```
+pthread_        244        sys/socket     1
+socket            5        netinet        1
+poll.h            1        arpa/inet      1
+unistd.h          1
+```
+
+## LA RISPOSTA E' GIA' SCRITTA
+
+**Il nostro fork fa girare questo server su Windows.** In `ds4-p4a/ds4_server.c`:
+
+```
+winsock2.h      presente          WSAStartup    2 occorrenze
+ws2tcpip.h      presente
+```
+
+Quindi per i socket il fork ti mostra la conversione Winsock gia' fatta e collaudata, e per i thread hai lo stesso `os_thread.h` che e' appena stato usato con successo per le 90 `pthread_` di `ds4.c`.
+
+Strato disponibile in `ds4-port/src/platform/`: `os_thread.h`, `os_file.h`, `os_mmap.h`, `os_clock.h`, `os_path.h`, `os_console.h`, `os_random.h`, e `src/win32/win_dirent.h`.
+
+## COSA DEVI FARE
+
+**(1) Togli lo stub** (`ds4_server.c:9-14`) e porta il server vero sotto `_WIN32`.
+
+**(2) Socket: Winsock.** `WSAStartup`/`WSACleanup`, `SOCKET` invece di `int`, `closesocket`, `WSAPoll` al posto di `poll`, e attenzione a `EWOULDBLOCK`/`WSAEWOULDBLOCK`. **Copia dal fork, non reinventare.**
+
+**(3) Thread: 244 siti.** Stesso schema di `ds4.c`, che e' appena stato fatto e funziona.
+
+**(4) ATTENZIONE alla differenza fra gli alberi.** `ds4-p4a/ds4_server.c` e il `ds4-port/ds4_server.c` non sono lo stesso file: upstream ha aggiunto molto (batching, sessioni, DSpark). **Molti siti saranno in codice che il nostro fork non ha mai visto.** Applica lo stesso schema; se uno schema non c'e', **fermati e segnalalo invece di inventare.**
+
+**(5) Aggiorna il CMake** se serve: `ds4-server` deve tornare fra i target costruiti su Windows. Il CMake e' in `ds4-port/CMakeLists.txt` e in questo momento **nessun altro lo sta toccando**.
+
+**(6) NON toccare `ds4_cuda.cu`**: un altro agente ci sta lavorando adesso sulla telemetria. Non toccare `ds4.c` (gia' portato, compila) ne' `src/platform/*`.
+
+**(7) Il criterio di fine e' duplice**: `ds4-server.exe` deve **compilare** e deve **partire**, cioe' rispondere a `--help` o equivalente senza lo stub. Comando di build:
+
+```
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" ^
+  --build "C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port\build-verify" --parallel 6
+```
+
+**(8) Rapporto** in `ds4-port/PORT_BLOCK0_SERVER.md`: conversioni per famiglia, siti nuovi rispetto al fork, decisioni prese da solo, cosa resta aperto.
+
+## VINCOLI
+
+- Solo `ds4-port/ds4_server.c`, `CMakeLists.txt` e gli header che servono. **Mai `ds4-p4a`.**
+- **Additivo**: `#ifdef _WIN32` che affianca, il ramo POSIX resta intatto. Upstream deve continuare a compilare su Linux.
+- Se un sottosistema del server dipende da `distributed` o `tp` — che su Windows sono stub dichiarati — **lascialo escluso e dillo**, non tirare dentro il trasporto distribuito.
+- Committa su `port/upstream-substrate`, un commit per famiglia.
+
+Rispondi in italiano. Se qualcosa non e' portabile senza toccare file altrui, **fermati e dillo.**

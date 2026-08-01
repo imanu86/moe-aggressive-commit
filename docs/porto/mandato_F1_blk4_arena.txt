@@ -1,0 +1,98 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e SOLO li'.
+
+  IL TUO WORKTREE:   C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port-blk4
+                     branch port/blk4-arena, partito da port/upstream-substrate @ ae21ee4
+  RIFERIMENTO:       C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **SOLO LETTURA.**
+
+**Hai un worktree tuo apposta**: un altro agente sta lavorando allo stesso `ds4_cuda.cu` nel
+worktree `ds4-port-blk3`, e un agente di merge riconciliera' i due rami dopo. **Non ti
+preoccupare dei conflitti: preoccupati di essere coerente e di dichiarare le tue assunzioni.**
+
+OBIETTIVO: portare **l'arena dinamica** (blocco 4 del piano): slot, transaction, wrap, checksum,
+snapshot. E' il primo blocco della nostra POLITICA, ed e' marcato isolabile perche' dipende solo
+dal layout del file e del modello, non dalla cache ne' dal tiering.
+
+## COS'E' L'ARENA, e perche' e' nostra
+
+Upstream **non ha niente di equivalente**. La sua cache esperti e' single-GPU e vive dentro
+`cuda_stream_selected_cache_begin_load` (`ds4_cuda.cu:22953-23087`): deduplica gli ID, alloca
+buffer compatti gate/up/down, fa le copie e costruisce la remap. **Ma non ha residenza
+persistente**: ogni chiamata riparte.
+
+La nostra arena e' la memoria host pinnata che rende persistente quella residenza:
+
+```
+30 GiB pinnati, 4.551 slot da 6,75 MiB      cudaHostAlloc mapped
+slot: layer, expert, state, content_generation, checksum, cpu_lane_slot_refs
+transaction: writer_try_acquire / release, per non pubblicare slot a meta'
+wrap: caricamento a ondate dal GGUF con schedule source-parts
+checksum: FNV-1a per slot, calcolato dal worker
+snapshot: la graduatoria prefill-ranked che riempie l'arena a inizio richiesta
+```
+
+Nel nostro fork: `cuda_dynamic_arena_*`, `dynamic_arena_slot`, `dynamic_arena_load`,
+`DS4_CUDA_DYNAMIC_ARENA_GB` (valore attivo 30), `DS4_CUDA_ARENA_WRAP_SCHEDULE=source-parts`,
+`DS4_CUDA_ARENA_WRAP_TRUST_WORKER_CHECKSUM=1`, `DS4_CUDA_ARENA_WRAP_UNLOCK_SOURCE_RANGES=1`,
+`DS4_CUDA_ARENA_WRAP_UNLOCK_WAVE_GIB=4`.
+
+## VINCOLI DI PROGETTO, non negoziabili
+
+**(1) `ds4_gpu_tensor` resta INVARIATA**: `{ptr, bytes, owner, device_id}`. Il nostro vecchio
+campo `host_ptr` **non va aggiunto**: serviva al KV staged, non all'arena. L'arena ha i suoi
+record e li porta con se'.
+
+**(2) Non creare una seconda API pubblica.** Il nostro backend va **dietro** la superficie
+upstream `ds4_gpu_stream_expert_cache_*` (`ds4_gpu.h:146-205`), che `ds4.c` chiama gia' in
+decine di punti. L'arena e' interna: non deve comparire nell'header pubblico.
+
+**(3) Solo il ramo single-GPU.** Esiste gia' un guard a `ds4_cuda.cu:2071` che rifiuta
+`g_n_gpus != 1`. L'arena assume quel mondo: **non gestire il multi-device**, e se un percorso
+dovesse toccarlo, fallisci rumorosamente.
+
+**(4) Additivo.** `#ifdef` che affianca dove serve; upstream deve restare compilabile su Linux.
+
+## COSA DEVI FARE
+
+**(1) Porta l'arena core** dal fork, adattandola al contratto upstream. Il fork ha ~29.000
+righe di estensioni CUDA: **l'arena e' solo una parte, non portare il resto.** Cache VRAM,
+tiering, promozione, route worker e guardiani sono blocchi successivi e li fara' qualcun altro.
+
+**(2) Il confine con upstream.** L'arena deve poter essere riempita e interrogata, ma **in
+questo blocco non deve essere ancora collegata al percorso caldo**. Il criterio: dopo il tuo
+lavoro l'arena si alloca, si riempie e si verifica, e il decode continua a funzionare esattamente
+come adesso senza usarla. **Un flag spento di default** e' la forma giusta.
+
+**(3) Fixture di verifica.** P1 ha scritto che questo blocco e' isolabile "con fixture": scrivi
+un test che alloca l'arena, ci carica degli slot, verifica i checksum e la rilascia, **senza
+bisogno del modello da 81 GB**. Deve girare in secondi.
+
+**(4) Il criterio di fine e' il compilatore piu' la fixture.** Comando di build nel TUO
+worktree (configura prima una tua `build-blk4`, non usare quella dell'altro):
+
+```
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" ^
+  -S . -B build-blk4 -G Ninja -DCMAKE_MAKE_PROGRAM="C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" ^
+  -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_CUDA_COMPILER="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin\nvcc.exe" ^
+  -DCMAKE_CUDA_ARCHITECTURES=86 && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build-blk4 --parallel 6
+```
+
+**Nota**: senza `-DCMAKE_C_COMPILER=cl` espliciti CMake non trova il compilatore nemmeno sotto
+vcvars. `ds4_cuda.cu` e' 29.000 righe: ogni compilazione e' lenta.
+
+**(5) Rapporto** in `PORT_BLOCK4_ARENA.md` nel tuo worktree: cosa hai portato, quali assunzioni
+hai preso sul contratto upstream, cosa hai lasciato ai blocchi successivi, e **soprattutto ogni
+punto in cui hai dovuto decidere qualcosa che il blocco 6 o 7 potrebbe decidere diversamente**.
+Quel elenco e' cio' che l'agente di merge leggera' per primo.
+
+## CONTESTO SUL PERCHE'
+
+Upstream ha lasciato **`budget`, `hotness` e `seed` come stub e no-op** a `ds4_cuda.cu:27260-27431`.
+E' li' che andranno cache e tiering nei blocchi 6 e 7. **L'arena e' il magazzino che quelli
+useranno**: se il magazzino e' sbagliato, i due blocchi successivi sono sbagliati per costruzione.
+
+Rispondi in italiano, con righe esatte. Se un pezzo dell'arena non e' separabile dalla cache o
+dal tiering, **dillo invece di tirarti dietro anche quelli.**

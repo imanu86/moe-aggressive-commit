@@ -1,0 +1,91 @@
+LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e SOLO li'.
+
+  IL TUO WORKTREE:   C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port-blk3
+                     branch port/blk3-cache-api, partito da port/upstream-substrate @ ae21ee4
+  RIFERIMENTO:       C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+                     il nostro fork, HEAD af84c42. **SOLO LETTURA.**
+
+**Hai un worktree tuo apposta**: un altro agente lavora allo stesso `ds4_cuda.cu` nel worktree
+`ds4-port-blk4` sull'arena, e un agente di merge riconciliera'. **Non preoccuparti dei conflitti:
+preoccupati di essere coerente e di dichiarare le tue assunzioni.**
+
+OBIETTIVO: costruire **l'adattatore dietro l'API cache esperti di upstream** (blocco 3 del
+piano). E' la **cucitura** su cui si innestera' tutto il resto della nostra politica: se e'
+sbagliata, i blocchi 4, 6 e 7 vanno rifatti.
+
+## LA SEDE, gia' individuata
+
+Upstream espone `ds4_gpu_stream_expert_cache_*` in `ds4_gpu.h:146-205`, e **`ds4.c` la chiama
+gia' in decine di punti**. L'implementazione CUDA:
+
+```
+cuda_stream_selected_cache_begin_load   ds4_cuda.cu:22953-23087
+    deduplica gli ID selezionati, alloca buffer compatti gate/up/down,
+    fa le copie selettive, costruisce la remap degli slot, conserva device_id,
+    e RIFIUTA esplicitamente il multi-GPU
+budget / hotness / seed                 ds4_cuda.cu:27260-27431
+    STUB E NO-OP: restituiscono 0 o non fanno niente
+```
+
+> **Upstream ha costruito il trasporto e ha lasciato vuota la politica.** Quei tre stub sono la
+> sede naturale per arena, cache e tiering del fork. Questo blocco prepara la cucitura; i
+> blocchi 4, 6 e 7 ci innestano dentro.
+
+## COSA DEVI FARE
+
+**(1) Leggi e documenta il contratto vero** dell'API upstream: ogni funzione di
+`ds4_gpu.h:146-205`, chi la chiama da `ds4.c`, cosa si aspetta, e quali invarianti assume. **Non
+inventare: questo e' il contratto a cui dobbiamo obbedire.**
+
+**(2) Progetta e implementa l'adattatore**: uno strato dietro quella superficie che oggi si
+comporta **esattamente come upstream** (quindi nessuna regressione), ma che espone all'interno i
+punti di innesto per:
+
+```
+budget    quanti slot, quanta VRAM, quanto host  ->  ci andra' la nostra politica di capienza
+hotness   quale esperto merita di restare        ->  ci andra' mass-LFRU e i cancelli knocks
+seed      cosa precaricare a inizio richiesta    ->  ci andra' lo snapshot prefill-ranked
+```
+
+**(3) Il criterio di correttezza di QUESTO blocco e' che non cambi niente.** Dopo il tuo lavoro
+il decode deve comportarsi **identico** a upstream: stessa scelta di esperti, stesse copie,
+stesso output. Sei una cucitura, non una politica. **Se il tuo adattatore cambia un
+comportamento, hai sbagliato.**
+
+**(4) NON portare arena, cache VRAM, tiering, promozione, route worker o guardiani.** Sono i
+blocchi 4, 6, 7, 8, 9 e li fanno altri. Tu prepari il posto dove andranno.
+
+## VINCOLI DI PROGETTO, non negoziabili
+
+- **`ds4_gpu_tensor` resta INVARIATA** (`{ptr, bytes, owner, device_id}`). Niente `host_ptr`.
+- **Non creare una seconda API pubblica.** Il nostro backend va dietro quella upstream, non
+  accanto. `ds4.c` non deve accorgersi di niente.
+- **Solo single-GPU**: c'e' gia' un guard a `ds4_cuda.cu:2071` che rifiuta `g_n_gpus != 1`.
+- **Additivo**: upstream deve restare compilabile su Linux.
+
+## VERIFICA
+
+Compila nel TUO worktree, con una tua `build-blk3`:
+
+```
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat" && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" ^
+  -S . -B build-blk3 -G Ninja -DCMAKE_MAKE_PROGRAM="C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\Ninja\ninja.exe" ^
+  -DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl -DCMAKE_BUILD_TYPE=Release ^
+  -DCMAKE_CUDA_COMPILER="C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin\nvcc.exe" ^
+  -DCMAKE_CUDA_ARCHITECTURES=86 && ^
+"C:\Program Files\Microsoft Visual Studio\2022\Community\Common7\IDE\CommonExtensions\Microsoft\CMake\CMake\bin\cmake.exe" --build build-blk3 --parallel 6
+```
+
+**Nota**: senza `-DCMAKE_C_COMPILER=cl` espliciti CMake non trova il compilatore nemmeno sotto
+vcvars.
+
+**Rapporto** in `PORT_BLOCK3_ADAPTER.md`: il contratto documentato funzione per funzione, la
+forma dell'adattatore, i tre punti di innesto con la loro firma, e **ogni assunzione che i
+blocchi 4/6/7 dovranno rispettare**. Quell'elenco e' il contratto che gli altri agenti
+useranno: scrivilo come se lo dovesse leggere qualcuno che non ha visto il tuo codice.
+
+Rispondi in italiano, con righe esatte. Se scopri che la superficie upstream **non basta** per
+ospitare la nostra politica -- per esempio se manca un punto dove decidere la vittima -- **dillo
+subito**: e' l'informazione piu' importante che puoi darmi, perche' cambierebbe il piano dei
+blocchi successivi.

@@ -241,7 +241,7 @@ arrivi, altrimenti nel porto non avremo modo di distinguere un trapianto corrett
 deadline          STANTIO   verificato: read_deadline al posto di absolute_deadline
 g133 M1           STANTIO   verificato: il campo e' diventato std::atomic, si scrive con .store()
 demand pipeline   probabile STANTIO   le 3 stringhe ci sono nel file, e' la fetta che non taglia piu'
-g73 OPEN          DA GUARDARE   forma cambiata E c'e' un task aperto sul resolver own-wait
+g73 OPEN          STANTIO   verificato: il resolver usa uno STREAM PRIORITARIO, non piu' stream 0
 ```
 
 **Tre su quattro sono spiegati da rinomine e cambi di forma nostri** — nessun invariante e'
@@ -252,3 +252,39 @@ chiuso.
 arrivi sul substrato. Riparati significa **che tornino a fallire quando devono**: un test
 aggiornato a specchiare il codice attuale senza capire cosa asseriva non e' un cancello, e'
 un'eco.
+
+
+## Chiusura del quarto cancello: il g73 e' stantio, ma non e' tutta la storia
+
+Il test pretende `: cudaStreamSynchronize(0);` dentro un ternario
+(`tests/test_g73_open_static.ps1:167`). Nel sorgente quella forma **non esiste piu'**: le
+quattro occorrenze rimaste di `cudaStreamSynchronize(0)` sono altro (teardown di
+`ds4_gpu_async_read_free` a `:17179`, due ripieghi di errore a `:17319` e `:17361`, il drain
+una-tantum prima dei `cudaFree` dello slab a `:38779`).
+
+**Il resolver ha preso uno stream prioritario suo:**
+
+```
+route_resolver_priority_stream              ds4_cuda.cu:29815
+route_resolver_priority_sync_generation     ds4_cuda.cu:29823
+resolver_stream_wait_ticks                  ds4_cuda.cu:29974   (telemetria)
+cuda_moe_resolver_priority_stream_requested ds4_cuda.cu:33139
+resolver_stream_quiescent                   ds4_cuda.cu:39249
+```
+
+Quindi **tutti e quattro i cancelli sono stantii**: nessun invariante e' caduto.
+
+### Ma la cosa che resta aperta e' un'altra
+
+Il cambiamento che ha reso stantio questo test e' **l'own-wait del resolver**, che nella nostra
+cronologia risulta **RIFIUTATO in misura** e con **una corsa sulla generazione da riparare**.
+Sono due fatti distinti e vanno tenuti distinti:
+
+```
+il test        e' stantio            asserisce un meccanismo sostituito
+il meccanismo  ha una corsa aperta   sul contatore di generazione
+```
+
+**Riparare il test facendogli asserire lo stream prioritario congelerebbe come contratto una
+cosa che non abbiamo ancora validato.** Prima si chiude la corsa, poi si scrive cosa il test
+deve pretendere. Nell'ordine inverso si ottiene un cancello che protegge un bug.

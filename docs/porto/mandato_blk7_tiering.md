@@ -1,12 +1,12 @@
 # MANDATO PRONTO — blocco 7, tiering e promozione
 
 **Da lanciare quando il blocco 6 atterra**, sullo **stesso worktree e stesso ramo**
-(`ds4-port-blk6`, `port/blk6-vramcache`): 6, 7 e 8 condividono la transazione e non possono
+(`ds4-port-nucleo`, `port/nucleo-78`): 6, 7 e 8 condividono la transazione e non possono
 stare su rami diversi.
 
 ```powershell
 Get-Content -Raw docs\porto\mandato_blk7_tiering.md | & codex exec `
-  -C "C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port-blk6" -s workspace-write - `
+  -C "C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port-nucleo" -s workspace-write - `
   *> "blk7_tiering.log"
 ```
 
@@ -14,9 +14,9 @@ Get-Content -Raw docs\porto\mandato_blk7_tiering.md | & codex exec `
 
 LAVORO DI IMPLEMENTAZIONE. Scrivi codice, nel worktree indicato e SOLO li'.
 
-  IL TUO WORKTREE:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port-blk6
-                    branch port/blk6-vramcache. **Contiene gia' l'adattatore (blocco 3) e la
-                    cache VRAM (blocco 6)**: leggi `PORT_BLOCK3_ADAPTER.md` e
+  IL TUO WORKTREE:  C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-port-nucleo
+                    branch port/nucleo-78. **Parte dal TRONCO, che contiene gia' adattatore, arena, observer e la
+                    cache VRAM (blocchi 3, 4, 5, 6)**: leggi `PORT_BLOCK3_ADAPTER.md` e
                     `PORT_BLOCK6_VRAMCACHE.md` PRIMA di scrivere una riga.
   RIFERIMENTO:      C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
                     il nostro fork, HEAD af84c42. **SOLO LETTURA.**

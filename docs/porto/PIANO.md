@@ -97,9 +97,9 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 3 | Adattatore dietro `ds4_gpu_stream_expert_cache_*` upstream | si | **FATTO** eab720a, 190 righe, build OK |
 | 4 | Arena core: slot, transaction, wrap, checksum, snapshot | **si** | **FATTO** 2b4c934, 1255 righe, fixture PASS verificata a mano |
 | 5 | Async readback/SPEX, observer prefill/REAP | parziale | **FATTO** 485e268, 395 righe, fixture PASS, nel tronco |
-| 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **FATTO** 6cedf76, 772 righe; merge nel tronco in corso (14 conflitti) |
-| 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **piano in corso** (nucleo 6-7-8) |
-| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | **piano in corso** — poi primo end-to-end |
+| 6 | Cache VRAM esperti: capacity, eviction, publish | parziale | **FATTO** e nel tronco, 833ac41, 772 righe, fixture PASS |
+| 7 | Tiering/promozione/G133, admission, knocks, mass-LFRU | no | **in corso** worktree `ds4-port-nucleo`, ~4000 righe |
+| 8 | Route worker, mailbox, selected-load, seam routed-MoE | no | dopo il 7, **stesso ramo** — poi primo end-to-end |
 | 9 | Guardiani G73: deadline, cancel, retry, respawn | no | da fare |
 | 10 | IQ1/Q1/nested residual/SSD rotator | no | **FATTO** 7e19dd4, 888+527 righe, hash 8211d0dfbf647850 verificato |
 | 11 | KV staged e G132 CPU lane | no | fuori dal primo traguardo |
@@ -164,18 +164,22 @@ repo e prendere la prima e' come non guardare.
 ## Avanzamento misurato
 
 ```
-TRONCO         port/upstream-substrate @ 31dcbae
-               48 file, 11.565 inserzioni sopra upstream/main
-               build exit 0 (16 target), fixture arena PASS, fixture observer PASS,
+TRONCO         port/upstream-substrate @ 833ac41
+               54 file, 13.627 inserzioni sopra upstream/main
+               build exit 0, TRE fixture PASS (arena, observer, cache VRAM)
                ds4-server.exe gira
 
-blocchi chiusi       9 / 14      0, 1, 1b, 2, 2b, 3, 4, 5, 10
-giornate stimate  10-14 / 26-36  ->  ~38% della parita' piena
-                    7-9 / 19-27  ->  ~32% del core single-GPU
-righe di politica  3255 / ~27700 ->  ~12%  (adattatore 190, arena 1255, IQ1 1415, observer 395)
+blocchi chiusi      10 / 14     0, 1, 1b, 2, 2b, 3, 4, 5, 6, 10
+giornate stimate  12-17 / 26-36  ->  ~45% della parita' piena
+                    9-12 / 19-27  ->  ~42% del core single-GPU
+righe di politica  4027 / ~27700 ->  ~15%
 
-RESTANO   6 cache VRAM (in corso)  ->  7 tiering  ->  8 route worker
-          tutti e tre sullo stesso ramo, poi UN passo che accende
+TRE OPT-IN, indipendenti e tutti spenti
+  DS4_CUDA_DYNAMIC_ARENA_GB       arena host pinnata
+  DS4_CUDA_PREFILL_MASS_OBSERVE   observer del prefill
+  DS4_CUDA_VRAM_EXPERT_CACHE      cache residente VRAM
+
+RESTANO   7 tiering (in corso)  ->  8 route worker   stesso ramo, poi UN passo che accende
           9 guardiani, 11 KV staged
 ```
 

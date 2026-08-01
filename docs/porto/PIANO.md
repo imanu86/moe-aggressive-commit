@@ -9,10 +9,26 @@ Portare le nostre estensioni su `upstream/main`, che ha **DSpark** e la **route 
 `moe_down_q4K_sum6_qwarp32`). Da noi `Q4_K` in `ds4_cuda.cu` compare **zero** volte: e' la
 ragione per cui la testa MTP fallisce in silenzio e il drafter scivola sulla CPU fuori dal grafo.
 
-**Il ritorno**: drafter dentro il grafo, piu' DSpark con accettazione **0,82 alla quinta
-posizione su codice** — sopra la soglia **0,72** oltre la quale l'issue upstream #636 misura
-perdita netta, e sotto il tetto **1,83x** che la stessa issue calcola per la speculazione con
-esperti in streaming.
+**Il ritorno, in due pezzi che NON arrivano insieme** (verificato l'1/8, correzione a una mia
+affermazione precedente):
+
+```
+route Q4_K       la da' il PORTO     la testa MTP smette di fallire in silenzio,
+                                      il drafter rientra nel grafo (48% del tempo)
+DSpark, 5 bozze  la danno i PESI     accettazione 0,82 alla quinta posizione su codice,
+                                      sopra la soglia 0,72 dell'issue #636, sotto il tetto 1,83x
+```
+
+**DSpark non ha un interruttore: ha dei tensori.** In `ds4.c` le env `DS4_DSPARK_*` sono quasi
+tutte di *spegnimento* (`NO_MARKOV`, `NO_GPU_MARKOV`, `DISABLE_*`) e non esiste nessun
+`use_dspark`. Il cancello e' il file dei pesi: `ds4.c:2700` cerca
+`main_proj / main_norm / markov / confidence / final_head`, e
+`dspark_weights_validate_metadata` (`ds4.c:5247`) rifiuta senza block size, rango di Markov,
+token di rumore e lista dei layer bersaglio.
+
+**Nessuno dei nostri tre GGUF li ha** (`ds4-2bit` 1328 tensori, `IQ2XXS-imatrix` 1328,
+`IQ1_S-XL` 1066): l'unico nome speculativo e' la chiave `deepseek4.nextn_predict_layers`, cioe'
+la testa NextN che abbiamo gia'. **A pesi invariati il porto non accende DSpark.**
 
 **Cosa il porto NON risolve**: i 107,6 ms/token di letture fredde. Quello e' capienza (30 GiB di
 arena contro un working set di 66-73 GB) e si compra con la RAM. Sono due conti separati.

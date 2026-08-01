@@ -1,6 +1,6 @@
 # PORTO SU UPSTREAM — piano operativo
 
-**Stato al 2026-08-01 10:35.** Aggiornare questo file a ogni blocco chiuso.
+**Stato al 2026-08-01 11:45.** Aggiornare questo file a ogni blocco chiuso.
 
 ## Obiettivo e ritorno
 
@@ -46,7 +46,7 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 
 | # | Blocco | Isolabile | Stato |
 |---|---|---|---|
-| 0 | Contratto upstream + POSIX in ds4.c/ds4_cuda.cu + guard `g_n_gpus==1` | si | **in corso** (C1, C2) |
+| 0 | Contratto upstream + POSIX + guard `g_n_gpus==1` | si | **ds4_cuda.cu FATTO** (compila, guard a `:2071`); **ds4.c in corso** (C1) |
 | 1 | `os_file`, pread cancellabile, mmap, thread | **si** | **FATTO** f878e71, 11 file, compila |
 | 1b | CMake MSVC/nvcc esteso alle unita' nuove upstream | si | **FATTO** configura e genera, 10/36 unita' compilano |
 | 2 | Telemetria passiva: alloc, hostpin, worker-prof, transport ledger | si | da fare |
@@ -63,6 +63,28 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 **Non separabili**: `route_worker + expert_cache + tiering_enforce_request`;
 `deadline + I/O cancellabile + teardown`; `Q1 mixed + nested residual + SSD rotator`;
 `G132 + reservation + dispatcher`; `observer + ranked prefill + REAP`.
+
+## Avanzamento misurato
+
+```
+oggetti di build      22 / 36
+blocchi del piano     1,5 / 12
+giornate stimate     ~2,5 / 19-27      ->  ~10% del core single-GPU
+```
+
+Le prime due scale ingannano: un'unita' piccola conta quanto `ds4_cuda.cu`, e i blocchi 4-9
+(arena, cache VRAM, tiering, route worker, guardiani) contengono **quasi tutte** le nostre
+29.000 righe. Finora abbiamo fatto la parte meccanica, quella con la risposta gia' scritta nel
+fork; **quello che resta e' il trapianto della politica, dove non c'e' niente da copiare.**
+
+### Come riprendere il build
+
+Directory gia' configurata: `ds4-port/build-verify` (MSVC 14.44, CUDA 12.6, sm_86, Ninja).
+Da PowerShell, dentro `cmd /c`, con `vcvars64.bat` chiamato prima di cmake.
+
+**Nota che costa tempo se dimenticata**: in fase di *configure* servono
+`-DCMAKE_C_COMPILER=cl -DCMAKE_CXX_COMPILER=cl` espliciti. Anche sotto `vcvars64` CMake trova
+il compilatore CUDA ma non quello C/C++, e fallisce con `No CMAKE_C_COMPILER could be found`.
 
 ## Decisioni gia' prese
 

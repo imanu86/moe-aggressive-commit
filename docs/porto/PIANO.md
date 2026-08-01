@@ -77,17 +77,24 @@ limitato a `g_n_gpus == 1` e al ramo DSV4 non-TP/non-EP.
 | 10 | IQ1/Q1/nested residual/SSD rotator | no | **in corso** worktree `ds4-port-blk10` |
 | 11 | KV staged e G132 CPU lane | no | fuori dal primo traguardo |
 
-## Quattro fronti aperti adesso (1/8, 12:40)
+## I fronti, aggiornati (1/8, 13:20)
 
 Un **worktree git per agente**: la regola "un agente per file disgiunti" era prudenza, non una
 legge, e i blocchi 4-9 stanno quasi tutti nello stesso `ds4_cuda.cu`.
 
 ```
-ds4-port-blk4    port/blk4-arena       arena core                    codice
-ds4-port-blk3    port/blk3-cache-api   adattatore dietro l'API       codice
-ds4-port-blk10   port/blk10-iq1        formato IQ1_S / Q1_0          codice
-ds4-port-blk5    port/blk5-spex        PIANO del nucleo 6-7-8        solo documento
+FATTI     ds4-port-blk3    port/blk3-cache-api   adattatore      eab720a
+          ds4-port-blk4    port/blk4-arena       arena core      2b4c934
+
+APERTI    ds4-port-blk6    port/blk6-vramcache   cache VRAM      parte DALL'adattatore
+          ds4-port-obs     port/blk5-observer    observer        parte DALL'arena
+          ds4-port-blk10   port/blk10-iq1        IQ1_S / Q1_0
+          ds4-port-merge   port/merge-1          MERGE dei tre rami sul tronco
 ```
+
+**I rami nuovi partono dal ramo che gli serve, non dal substrato nudo.** La cache VRAM eredita
+il contratto dell'adattatore; l'observer eredita l'arena che deve riempire. Costa un merge in
+piu' e risparmia di far inventare a un agente un contratto che esiste gia'.
 
 Il quarto non scrive sorgenti: prepara il trapianto del nucleo accoppiato, che non puo'
 partire finche' 3 e 4 non atterrano. Quando atterrano, il piano c'e' gia'.

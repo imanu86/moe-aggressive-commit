@@ -19,7 +19,15 @@ param(
     # argomenti extra, per provare la speculativa senza toccare il resto:
     #   -Extra @('--spec-type','draft-dspark','-md','D:\ds4-models\DSpark-support-Q2K-w2Q4K.gguf')
     [string[]]$Extra = @(),
-    [string]$Etichetta = ''
+    [string]$Etichetta = '',
+    # RAGIONAMENTO. braccio.ps1:291 passa think=false esplicito perche' "SENZA
+    # questo il modello entra in fase di ragionamento e brucia [token]". Questo
+    # banco non passava niente, e llama.cpp lo tiene ACCESO di default: il run
+    # sota8k del 2/8 ha restituito 634 caratteri di `reasoning_content`.
+    # Quindi tutti i confronti llama-contro-DwarfStar fatti finora hanno
+    # paragonato un motore che pensava contro uno che non pensava.
+    # --reasoning-budget 0 = "immediate end" (common/arg.cpp:3565).
+    [bool]$Think = $false
 )
 $ErrorActionPreference = 'Continue'
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
@@ -43,7 +51,10 @@ Write-Host "  motore  llama.cpp b10227    ngl=$Ngl  ctx=$Ctx  token=$Tokens"
 Write-Host "  prompt  sha $($sha.Substring(0,16))   modello $(Split-Path $Model -Leaf)"
 
 $args = @('-m', $Model, '-c', "$Ctx", '-ngl', "$Ngl", '--port', "$Port",
-          '--host', '127.0.0.1', '--no-warmup') + $Extra
+          '--host', '127.0.0.1', '--no-warmup')
+if (-not $Think) { $args += @('--reasoning-budget', '0') }
+$args += $Extra
+Write-Host "  pensiero $(if($Think){'ACCESO'}else{'spento (--reasoning-budget 0)'})"
 if ($Extra.Count) { Write-Host "  extra:  $($Extra -join ' ')" }
 $srv = Start-Process -FilePath $Exe -ArgumentList $args -PassThru `
         -RedirectStandardError $log -RedirectStandardOutput "$log.out" -NoNewWindow

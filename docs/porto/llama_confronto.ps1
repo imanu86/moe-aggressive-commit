@@ -77,7 +77,45 @@ try {
 }
 finally {
     if (-not $srv.HasExited) {
-        Write-Host "  spengo il server"
-        Stop-Process -Id $srv.Id -EA SilentlyContinue    # llama.cpp non ha endpoint di shutdown
+        # SPEGNIMENTO GRAZIOSO. Il 2/8 ho ucciso llama con Stop-Process e ha
+        # lasciato ~2,2 GB di VRAM non rilasciata, che ho poi inseguito per ore
+        # nel nostro bilancio credendola nostra. llama-server non ha endpoint di
+        # shutdown (/metrics, /slots, /v1/* e basta): la via giusta su Windows e'
+        # CTRL_BREAK_EVENT, la stessa che l'igiene di campagna prescrive per il
+        # nostro server quando manca il token.
+        Write-Host "  spengo il server con CTRL_BREAK"
+        if (-not ([Management.Automation.PSTypeName]'Ctrl').Type) {
+            Add-Type -Namespace '' -Name Ctrl -MemberDefinition @'
+[DllImport("kernel32.dll", SetLastError=true)]
+public static extern bool GenerateConsoleCtrlEvent(uint dwCtrlEvent, uint dwProcessGroupId);
+[DllImport("kernel32.dll", SetLastError=true)]
+public static extern bool AttachConsole(uint dwProcessId);
+[DllImport("kernel32.dll", SetLastError=true)]
+public static extern bool FreeConsole();
+[DllImport("kernel32.dll")]
+public static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
+'@
+        }
+        $inviato = $false
+        try {
+            [void][Ctrl]::FreeConsole()
+            if ([Ctrl]::AttachConsole([uint32]$srv.Id)) {
+                [void][Ctrl]::SetConsoleCtrlHandler([IntPtr]::Zero, $true)
+                $inviato = [Ctrl]::GenerateConsoleCtrlEvent(1, 0)   # 1 = CTRL_BREAK_EVENT
+                Start-Sleep -Seconds 8
+                [void][Ctrl]::FreeConsole()
+                [void][Ctrl]::SetConsoleCtrlHandler([IntPtr]::Zero, $false)
+            }
+        } catch { }
+        if (-not $srv.HasExited) {
+            Write-Host ("  CTRL_BREAK {0}; attendo l'uscita" -f $(if($inviato){'inviato'}else{'non riuscito'}))
+            if (-not $srv.WaitForExit(30000)) {
+                Write-Host "  non e' uscito in 30s: Stop-Process (la VRAM potrebbe restare sporca)"
+                Stop-Process -Id $srv.Id -EA SilentlyContinue
+            }
+        }
+        Start-Sleep -Seconds 5
+        $v = (nvidia-smi --query-gpu=memory.used --format=csv,noheader) 2>$null
+        Write-Host "  VRAM dopo lo spegnimento: $v   (base pulita ~750 MiB)"
     }
 }

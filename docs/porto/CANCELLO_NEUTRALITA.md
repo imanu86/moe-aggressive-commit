@@ -1,4 +1,56 @@
-# Il cancello di neutralità — NON passato (2 agosto 2026, sera)
+# Il cancello di neutralità (2 agosto 2026, sera)
+
+> **AGGIORNAMENTO, stessa sera.** Il verdetto qui sotto è RIBALTATO. La pagina
+> rotta era la **modalità di ragionamento**, non il motore. Vedi §0.
+
+---
+
+## 0. Il ribaltamento: era il pensiero, non llama.cpp
+
+L'utente ha dubitato che i pesi fossero gli stessi. Non lo erano? Lo erano — ma
+il controllo ha fatto emergere l'asimmetria vera: `braccio.ps1:291` passa
+`think=false` esplicito, il banco llama non passava niente, e llama.cpp tiene il
+ragionamento **acceso** di default. Provato: la risposta del run `sota8k` aveva
+un campo `reasoning_content` da 634 caratteri.
+
+Rifatto con `--reasoning-budget 0`:
+
+```
+                     token   byte    CSS  ancore rotte   forma
+llama pensiero ON     6535  25244   103    #services     hero vuoto a tutta altezza,
+                                                         servizi promessi e mai scritti
+llama no-think 8k     4184  14072    63    nessuna
+llama no-think 20k    4527  15022    70    nessuna       hero a due colonne con mockup
+                                                         di terminale, servizi presenti
+DwarfStar B           4500  15293    67    nessuna       3 schede con icone
+```
+
+**2000 token in meno, stessa velocità** (7,15 contro 7,12 t/s), e la pagina
+diventa migliore: due colonne invece di un hero vuoto, un mockup di terminale
+che scrive `$ ./deploy_ai --model=neural-v2 ... ✓ ready. 99.9% accuracy`, i
+servizi presenti come elenco, e **nessuna ancora rotta**.
+
+Contro DwarfStar il confronto è ora quasi pari: 4527/4500 token, 15022/15293
+byte, 70/67 regole CSS. La differenza residua è di forma — DwarfStar mette tre
+schede con icone, llama un elenco.
+
+**Quindi llama.cpp non produce documenti peggiori.** Il difetto era nostro, per
+la seconda volta in una sera: prima il mojibake nel salvataggio, poi il
+confronto fra un motore che pensava e uno che non pensava.
+
+### Nota sui riferimenti "NeuraForge"
+
+L'utente ricordava pagine migliori intitolate *NeuraForge*. Esistono
+(`D:\ds4_work\lane_ab\runs\X_GSPEC\pagina_turno*.html`, 20.701 byte, 4 sezioni,
+3 schede, nessuna ancora rotta) ma vengono da un **prompt diverso** — "AI
+Startup" invece di "AI programming shop" — e sono precedenti al 1° agosto,
+quando il prompt di campagna è stato fissato con `dcc645d`. Non sono
+confrontabili con i run attuali. Avevo risposto che "il prompt non è mai
+cambiato": era vero solo per i banchi creati il 1-2 agosto.
+
+---
+
+## Il verdetto originale, superato da §0
 
 Il confronto fra motori si è sempre giocato sui t/s. Guardando le pagine, non è
 alla pari.

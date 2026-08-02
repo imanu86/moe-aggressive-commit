@@ -48,6 +48,29 @@ if ($Extra.Count) { Write-Host "  extra:  $($Extra -join ' ')" }
 $srv = Start-Process -FilePath $Exe -ArgumentList $args -PassThru `
         -RedirectStandardError $log -RedirectStandardOutput "$log.out" -NoNewWindow
 
+# GUARDIANO DELLA PRIORITA'. Il 2/8 sera ho lanciato la scala via Task Scheduler
+# per farla sopravvivere alla caduta della sessione: New-ScheduledTaskSettingsSet
+# mette Priority=7 per default, che mappa su BELOW_NORMAL_PRIORITY_CLASS, e
+# llama-server l'ha ereditata. Risultato: 3,99 t/s contro i 5,67 dello stesso
+# identico binario lanciato dalla sessione. Un -30% che non era ne' la build ne'
+# la macchina, ma il modo di lanciare.
+#
+# Da una sessione interattiva la priorita' e' Normal (base 8). Se non lo e', il
+# run NON e' confrontabile con l'archivio e va fermato subito, non catalogato.
+Start-Sleep -Milliseconds 500
+try {
+    $prio = $srv.PriorityClass
+    if ($prio -ne 'Normal') {
+        Write-Host ""
+        Write-Host "  FERMO: llama-server gira a priorita' $prio, non Normal."
+        Write-Host "  Un run a priorita' diversa non e' confrontabile con l'archivio."
+        Write-Host "  (Task Scheduler? imposta -Priority 4, o lancia dalla sessione.)"
+        $srv | Stop-Process -Force -ErrorAction SilentlyContinue
+        return
+    }
+    Write-Host "  priorita' $prio (base $($srv.BasePriority))"
+} catch { Write-Host "  priorita' non leggibile: $($_.Exception.Message)" }
+
 try {
     # attesa del caricamento: il modello e' 80,76 GiB, puo' volerci molto
     $pronto = $false

@@ -213,6 +213,50 @@ class Mappa:
             for s in siti[:2]:
                 print(f"      {s['file']}:{s['riga']}  {s['prova'] or ''}")
 
+    def doppioni(self):
+        """Chi fa la STESSA COSA di qualcun altro.
+
+        Esiste perche' costruire guardando l'intorno minimo porta a duplicare
+        cio' che c'e' gia' altrove: la nostra arena duplicava lo streaming SSD
+        di upstream (-38%), il nostro route worker duplica il loro caricamento
+        asincrono, la nostra cattura router rifa' un readback gia' fatto.
+
+        Raggruppa per (categoria, frequenza, fase, effetto su VRAM) e mostra i
+        gruppi con piu' occupanti: dentro quei gruppi si guarda se due
+        meccanismi si contendono la stessa risorsa.
+
+        Richiede che le schede siano state fuse (ricongiungi.py).
+        """
+        annotate = [f for f in self.m['funzioni'] if f.get('categoria')]
+        if not annotate:
+            print("  nessuna scheda fusa: esegui prima ricongiungi.py")
+            return
+        gruppi = defaultdict(list)
+        for f in annotate:
+            if f['frequenza'] in ('mai', 'avvio', 'ignoto'):
+                continue          # i doppioni che contano sono sul cammino caldo
+            if f['categoria'] in ('altro', 'parsing', 'test'):
+                continue          # 'altro' e' un raccoglitore: un gruppo li' dentro
+                                  # mette insieme cose che non c'entrano fra loro
+            chiave = (f['categoria'], f['frequenza'], f['fase'], f['vram'])
+            gruppi[chiave].append(f)
+
+        print(f"\n  {len(annotate)} funzioni schedate, "
+              f"{sum(len(v) for v in gruppi.values())} sul cammino caldo\n")
+        print("  GRUPPI CHE FANNO LA STESSA COSA ALLA STESSA FREQUENZA")
+        print("  (dentro un gruppo, due meccanismi possono contendersi la stessa risorsa)\n")
+        for k, v in sorted(gruppi.items(), key=lambda x: -len(x[1])):
+            if len(v) < 2:
+                continue
+            cat, fre, fas, vr = k
+            print(f"  [{cat} / {fre} / {fas} / vram:{vr}]  {len(v)} funzioni")
+            for f in sorted(v, key=lambda x: x['file'])[:8]:
+                print(f"      {f['nome']:<46} {f['file']}:{f['riga']}")
+                print(f"          {f.get('ruolo', '')[:96]}")
+            if len(v) > 8:
+                print(f"      (+{len(v) - 8} altre)")
+            print()
+
     def orfane(self):
         morte = []
         for v, siti in self.env_per_var.items():
@@ -236,6 +280,8 @@ def main():
     q = sys.argv[1]
     if q == '--trappole':
         m.trappole()
+    elif q == '--doppioni':
+        m.doppioni()
     elif q == '--orfane':
         m.orfane()
     elif q.startswith('DS4_'):

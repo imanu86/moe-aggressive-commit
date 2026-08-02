@@ -43,6 +43,51 @@ allo stato in cui il banco riproduceva il proprio riferimento.
 
 ---
 
+## 0-bis. DECISIONE: il reap-loop si tiene e si accende
+
+Presa dall'utente il 2/8 sera, **dopo** aver visto il conto di capienza che
+falsifica la fase 2. La falsificazione riguarda la **politica** (a capienza RAM
+la LRU sta a 2,2 punti dall'ottimo, l'insieme caldo ne guadagna 0,3): non
+riguarda l'osservatore, che l'utente vuole acceso.
+
+Quindi: **non rimuovere il modulo reap.** Se un domani sembra codice morto, la
+ragione per cui e' li' e' questa riga.
+
+Stato reale al momento della decisione:
+
+```
+D:/llama-b10227          reap NON compilato   <- il binario di TUTTE le misure di stasera
+D:/llama-vanilla/build   reap compilato       <- la nostra build, mai lanciata in misura
+LLAMA_REAP               mai impostata
+```
+
+**L'osservatore riscritto senza lock non e' MAI STATO ESEGUITO.** Riscritto,
+compilato, verificato dentro `llama-common.dll`, e mai lanciato una volta. Il
+primo passo per "accenderlo" non e' una misura di velocita': e' un run di prova
+che dimostri che gira.
+
+```powershell
+$env:LLAMA_REAP='1'; $env:LLAMA_REAP_PROF='1'
+$env:LLAMA_REAP_DUMP='D:\ds4_work\llama_run\reap_calore.tsv'
+& docs\porto\llama_confronto.ps1 -Ngl 99 -Tokens 1500 -Ctx 10000 `
+    -Exe 'D:\llama-vanilla\build\bin\llama-server.exe' -Extra @('-ncmoe','42') `
+    -Etichetta 'reap_prova'
+```
+
+Cosa deve uscire, allo spegnimento del server:
+
+```
+reap: osservatore installato (anello 65536 record, 5.0 MiB), cronometro ACCESO
+reap: N chiamate, M record prodotti, M letti, 0 persi, ~11000 esperti distinti
+reap: sezione critica X ns/chiamata
+```
+
+I **ns/chiamata** sono il numero che il 2/8 abbiamo dedotto invece di misurare,
+e che ha fatto accusare l'osservatore di un -32% che era della macchina. Se
+"persi" non e' zero, l'anello e' troppo piccolo o il consumatore troppo lento.
+
+---
+
 ## 1. IL RISULTATO DELLA SERATA: l'osservatore reap e' innocente
 
 Il handoff attribuiva all'osservatore un -32% (6,86 -> 4,66) causato dal lookup

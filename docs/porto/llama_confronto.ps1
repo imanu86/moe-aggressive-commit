@@ -31,7 +31,12 @@ param(
     # 'campagna' (default), 'neuraforge', o il testo completo di un prompt.
     # Qualunque cosa non sia il prompt di campagna viene DICHIARATA a schermo
     # col suo sha, perche' un prompt cambiato in silenzio invalida l'archivio.
-    [string]$Prompt = 'campagna'
+    [string]$Prompt = 'campagna',
+    # Temperatura. 0 = deterministico: lo stesso prompt da' SEMPRE lo stesso
+    # output, quindi ripetere un run non aggiunge informazione ma i confronti
+    # sono a variabile singola. Sopra zero si esplora, ma due run della stessa
+    # configurazione non sono piu' confrontabili fra loro.
+    [double]$Temp = 0
 )
 $ErrorActionPreference = 'Continue'
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
@@ -116,7 +121,11 @@ try {
     if (-not $pronto) { Write-Host "  server non pronto dopo 20 minuti"; return }
     Write-Host "  server pronto dopo $($i*5)s, invio la richiesta"
 
-    $body = @{ model = 'ds4'; max_tokens = $Tokens; temperature = 0; stream = $false
+    if ($Temp -ne 0) {
+        Write-Host "  ATTENZIONE: temperatura $Temp, non 0. Questo run NON e' riproducibile"
+        Write-Host "  e due esecuzioni della stessa configurazione daranno output diversi."
+    }
+    $body = @{ model = 'ds4'; max_tokens = $Tokens; temperature = $Temp; stream = $false
                messages = @(@{ role = 'user'; content = $prompt }) } | ConvertTo-Json -Depth 5
     $req = Join-Path $OutDir "$tag.request.json"
     [IO.File]::WriteAllText($req, $body, [Text.UTF8Encoding]::new($false))

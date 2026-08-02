@@ -1,6 +1,6 @@
 ﻿# Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
 param(
-    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E','F','G')][string]$Arm,
+    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E','F','G','H')][string]$Arm,
     [int]$Tokens = 150,
     [int]$Ctx    = 8192,
     [int]$Port   = 8080,
@@ -169,6 +169,34 @@ switch ($Arm) {
     # Il baratto: 1996 MiB di q8/f16 contro ~270 slot esperti. Sul fork 274 slot
     # davano 474.937 vram_hits e 4,49 t/s. Se il baratto vale, si vede qui.
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_Q8_F16_CACHE_MB       = '0'
+    $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
+    $env:DS4_EXPERT_TIERING             = 'enforce'
+    $env:DS4_EXPERT_TIER_POLICY         = 'mass-lfru'
+    $env:DS4_EXPERT_TIER_CLOCK_CALLS    = '430'
+    $env:DS4_EXPERT_TIER_MIN_FREQUENCY  = '3'
+    $env:DS4_EXPERT_TIER_HYSTERESIS     = '1.25'
+    $env:DS4_EXPERT_TIER_REPLACEMENT_BUDGET = '16'
+    $env:DS4_CUDA_MOE_IO_QD             = '4'
+    $env:DS4_CUDA_MOE_CACHE_POLICY      = 'lru'
+    $env:DS4_CUDA_MOE_CACHE_STATS       = '1'
+  }
+  'H' {  # G + il suggerimento di prefetch al kernel Windows. Trovato dalla mappa il 2/8.
+    # `cuda_stream_selected_prefetch_hint` (ds4_cuda.cu:3767) prende gli intervalli
+    # di file dei sei esperti selezionati e chiama in UNA volta
+    #     PrefetchVirtualMemory(GetCurrentProcess(), n, entries, 0)
+    # invece di lasciarli arrivare per soft fault uno alla volta. Oggi ne
+    # misuriamo 1,2 milioni al secondo.
+    #
+    # Il ramo a 3767 e' quello Windows, che e' quello che compiliamo; a 4018 c'e'
+    # lo stub vuoto dell'#else. Nello stesso blocco Windows vive
+    # DS4_CUDA_MOE_IO_QD, che rende il 14,8%: stessa famiglia, e questa non era
+    # mai stata provata.
+    #
+    # Guardata: se PrefetchVirtualMemory manca o fallisce, logga UNA volta e
+    # prosegue. Rischio zero.
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_ROUTE_PREFETCH_HINT   = '1'
     $env:DS4_CUDA_Q8_F16_CACHE_MB       = '0'
     $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
     $env:DS4_EXPERT_TIERING             = 'enforce'

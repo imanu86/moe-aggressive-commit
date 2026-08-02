@@ -1,0 +1,17 @@
+﻿diff --git a/tools/server/server.cpp b/tools/server/server.cpp
+index c7a01b6..789caa6 100644
+--- a/tools/server/server.cpp
++++ b/tools/server/server.cpp
+@@ -395,6 +395,12 @@ int llama_server(common_params & params, int argc, char ** argv) {
+ 
+         clean_up = [&models_routes, &mcp_mgr]() {
+             SRV_INF("%s: cleaning up before exit...\n", __func__);
++            // reap-loop: la mappa del calore va scritta PRIMA di liberare il
++            // backend. Ci sono DUE clean_up, uno per ramo, e la patch aveva
++            // messo la chiamata solo nell'altro: il 2/8 il primo run di prova
++            // ha osservato 1500 token e poi ha buttato via tutto allo
++            // spegnimento, senza nemmeno un messaggio d'errore.
++            reap_dump();
+             // stop the session GC first, it finalizes live sessions and wakes pending readers
+             server_stream_session_manager_stop();
+             if (models_routes.has_value()) {

@@ -108,6 +108,66 @@ def main(cartella, mappa_path=None):
         for s in sorted(trap, key=lambda x: x['certezza'])[:15]:
             print(f"    [{s['certezza']}] {s['nome']}: {s['trappola'][:88]}")
 
+        scrivi_sintesi(m, schede, caldo, trap, problemi)
+
+
+def scrivi_sintesi(m, schede, caldo, trap, problemi):
+    """Il documento che resta. La stampa a schermo si perde, questo no."""
+    per_nome = {f['nome']: f for f in m['funzioni']}
+    R = []
+    R.append("# Sintesi della mappa\n")
+    R.append("Generato da `ricongiungi.py`. **Non modificare a mano**: si rifa'.\n")
+    R.append(f"Copertura: **{len(schede)} funzioni schedate su {len(m['funzioni'])}** "
+             f"({100.0 * len(schede) / len(m['funzioni']):.1f}%).\n")
+
+    inc = [s for s in schede.values() if s['certezza'] != 'alta']
+    if inc:
+        R.append(f"Di queste, {len(inc)} con certezza non alta: "
+                 + ', '.join(f"{s['nome']} ({s['certezza']})" for s in inc[:10])
+                 + ('...' if len(inc) > 10 else '') + '\n')
+    if problemi:
+        R.append("## Cosa gli agenti hanno sbagliato\n")
+        for k, v in sorted(problemi.items(), key=lambda x: -len(x[1])):
+            R.append(f"- **{k}**: {len(v)}" + (f" — es. {v[0]}" if v else ''))
+        R.append('')
+
+    R.append("## Il cammino caldo\n")
+    R.append(f"{len(caldo)} funzioni girano per token, per strato o per esperto.\n")
+    cv = [s for s in caldo if s['vram'] in ('alloca', 'libera')]
+    if cv:
+        R.append("### Allocano o liberano VRAM sul cammino caldo\n")
+        R.append("Su una scheda dove il gigabyte e' la partita, questa e' la lista "
+                 "che conta.\n")
+        R.append("| funzione | vram | frequenza | dove | cosa fa |")
+        R.append("|---|---|---|---|---|")
+        for s in sorted(cv, key=lambda x: (x['frequenza'], x['nome'])):
+            f = per_nome.get(s['nome'], {})
+            R.append(f"| `{s['nome']}` | {s['vram']} | {s['frequenza']} | "
+                     f"`{f.get('file', '?')}:{f.get('riga', '?')}` | {s['ruolo']} |")
+        R.append('')
+
+    if trap:
+        R.append("## Trappole\n")
+        R.append("Comportamenti che sorprenderebbero chi usa la funzione. "
+                 "Ordinate per certezza dichiarata dall'agente.\n")
+        for cert in ('alta', 'media', 'bassa'):
+            gruppo = [s for s in trap if s['certezza'] == cert]
+            if not gruppo:
+                continue
+            R.append(f"### Certezza {cert} ({len(gruppo)})\n")
+            for s in sorted(gruppo, key=lambda x: x['nome']):
+                f = per_nome.get(s['nome'], {})
+                R.append(f"- **`{s['nome']}`** `{f.get('file', '?')}:{f.get('riga', '?')}`  \n"
+                         f"  {s['trappola']}")
+            R.append('')
+
+    R.append("## Come rifare questo documento\n")
+    R.append("```bash\npython ricongiungi.py ../../../ds4-port/lotti\n```\n")
+
+    out = QUI / 'MAPPA_SINTESI.md'
+    out.write_text('\n'.join(R), encoding='utf-8')
+    print(f"\n  scritto {out.name}  ({len(R)} righe)")
+
 
 if __name__ == '__main__':
     main(sys.argv[1], sys.argv[2] if len(sys.argv) > 2 else None)

@@ -1,6 +1,6 @@
 # Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
 param(
-    [Parameter(Mandatory)][ValidateSet('A','B','C')][string]$Arm,
+    [Parameter(Mandatory)][ValidateSet('A','B','C','D')][string]$Arm,
     [int]$Tokens = 150,
     [int]$Ctx    = 8192,
     [int]$Port   = 8080,
@@ -59,20 +59,50 @@ switch ($Arm) {
   'B' {  # il TRONCO NUDO: tutti i nostri opt-in ASSENTI, non a zero
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
   }
-  'C' {  # il TRONCO con la nostra politica accesa
-    # CORRETTO l'1/8 dopo la lettura del codice. Il primo tentativo aveva tre
-    # variabili di cui una sabotava l'altra, e girava come upstream nudo:
-    #   ds4_cuda.cu:26520  con VRAM_EXPERT_CACHE=1 il budget entra nel ramo VRAM
-    #                      e NON raggiunge mai dynamic_arena::enabled()
-    #   ds4_cuda.cu:26521  quel ramo torna ZERO senza requested_slots/expert_bytes
-    #   ds4.c:53898        fuori da --ssd-streaming il core non li valorizza mai
-    #   prefill_observer.cu:376  OBSERVE arma solo l'osservatore: per pubblicare
-    #                      nell'arena serve _WRAP, che mancava
+  'C' {  # 0731 con la nostra politica accesa — RIFATTO col porto v2 (2/8)
+    # Storia, perche' non si ripeta: fino al 2/8 questo braccio aveva TRE
+    # variabili e girava di fatto come upstream nudo. Il motivo vero l'ha
+    # trovato Codex: `DS4_CUDA_STREAMING_EXPERT_CACHE_N` non era letto da
+    # NESSUN file di 0731, e la cache esperti si accendeva solo col vecchio
+    # flag interno, che io avevo escluso. Risultato: arena orfana, zero righe
+    # [iq2-expert-cache-size], e un 1,70 t/s attribuito alla "nostra politica".
+    #
+    # Col porto v2 la cache si accende per quattro vie indipendenti
+    # (vram_expert_cache.cpp, enabled()): il flag interno, TIERING=enforce,
+    # MOE_GPU_RESIDENT_ROUTES, o semplicemente chiedere N slot. Qui usiamo le
+    # ultime due, che sono le nostre.
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
-    $env:DS4_CUDA_DYNAMIC_ARENA_GB     = '30'
-    $env:DS4_CUDA_PREFILL_MASS_OBSERVE = '1'
-    $env:DS4_CUDA_PREFILL_MASS_WRAP    = '1'   # mancava: senza, non pubblica
-    # DS4_CUDA_VRAM_EXPERT_CACHE NON va acceso insieme all'arena: si escludono.
+
+    # --- residenza host: l'arena ---
+    $env:DS4_CUDA_DYNAMIC_ARENA_GB      = '30'
+    $env:DS4_CUDA_PREFILL_MASS_OBSERVE  = '1'
+    $env:DS4_CUDA_PREFILL_MASS_WRAP     = '1'   # senza questo non pubblica
+
+    # --- cache esperti in VRAM: ora qualcuno la legge ---
+    $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
+    $env:DS4_CUDA_VRAM_INVERTED_PRIORITY   = '1'    # arma il sizing preventivo
+    $env:DS4_CUDA_VRAM_BACKBONE_RESERVE_MB = '1536'
+    $env:DS4_CUDA_VRAM_HYSTERESIS_MB       = '256'
+    $env:DS4_CUDA_VRAM_MIN_EXPERT_SLOTS    = '32'   # pavimento se le riserve azzerano
+
+    # --- tiering e ammissione ---
+    $env:DS4_EXPERT_TIERING             = 'enforce'
+    $env:DS4_EXPERT_TIER_POLICY         = 'mass-lfru'
+    $env:DS4_EXPERT_TIER_CLOCK_CALLS    = '430'
+    $env:DS4_EXPERT_TIER_MIN_FREQUENCY  = '3'
+    $env:DS4_EXPERT_TIER_HYSTERESIS     = '1.25'
+    $env:DS4_EXPERT_TIER_REPLACEMENT_BUDGET = '16'
+    # ADMIT_KNOCKS_SSD non c'e': su 0731 il seed RAM e' ranking upstream, non
+    # una transizione governata dalla policy. Dichiarato non portabile.
+
+    # --- la coda di I/O: 229 IOPS a coda 2 su un NVMe, con file_qd=1 ---
+    $env:DS4_CUDA_MOE_IO_QD             = '4'
+    $env:DS4_CUDA_MOE_CACHE_POLICY      = 'lru'
+    $env:DS4_CUDA_MOE_CACHE_STATS       = '1'
+  }
+  'D' {  # 0731 NUDO ma con la sola coda I/O: isola la leva che i numeri indicano
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_MOE_IO_QD = '4'
   }
 }
 foreach ($k in $Override.Keys) {

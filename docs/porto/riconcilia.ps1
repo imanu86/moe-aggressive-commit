@@ -18,7 +18,10 @@ param(
     [switch]$SaltaBuild,           # merge senza compilare (sconsigliato)
     [string]$RamoMerge = 'port/v2-merge'
 )
-$ErrorActionPreference = 'Stop'
+# PowerShell 5.1 trasforma i warning di git su stderr in errori terminanti: con
+# 'Stop' il primo "LF will be replaced by CRLF" ferma tutto. Controllo
+# $LASTEXITCODE a mano dove conta.
+$ErrorActionPreference = 'Continue'
 $R    = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
 $Base = 'port/upstream-substrate'
 $Ordine = @('prefill','moeio','vittima','tiering')
@@ -31,7 +34,7 @@ function Costruisci([string]$dir, [string]$etichetta) {
 @echo off
 call "$vcvars" >nul 2>&1
 cd /d "$dir"
-if not exist build-verify cmake -S . -B build-verify -DCMAKE_BUILD_TYPE=Release
+if not exist build-verify cmake -S . -B build-verify -G Ninja -DCMAKE_BUILD_TYPE=Release
 cmake --build build-verify --parallel 6
 exit /b %ERRORLEVEL%
 "@ | Set-Content -LiteralPath $bat -Encoding ASCII

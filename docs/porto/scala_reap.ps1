@@ -34,7 +34,11 @@ $env:LLAMA_ARG_CPU_MOE = '1'
 
 $banco   = Join-Path $PSScriptRoot 'llama_confronto.ps1'
 $b10227  = 'D:\llama-b10227\llama-server.exe'
-$reapexe = 'D:\llama-dspark\build\bin\llama-server.exe'
+# Era D:\llama-dspark\build\bin\llama-server.exe, cioe' il ramo dspark-dsv4 di
+# YanissAmz: un fork, mentre il riferimento era il binario ufficiale. DSpark era
+# gia' accantonato come funzione; la base era rimasta per inerzia, e valeva ~-21%.
+# Ora e' un worktree su b10227 (f5919bf) con le sole patch del reap.
+$reapexe = 'D:\llama-vanilla\build\bin\llama-server.exe'
 $comuni  = @{ Ngl = 99; Tokens = $Tokens; Ctx = 10000; Extra = @('-ncmoe','42') }
 
 function Spegni-Reap {
@@ -108,10 +112,10 @@ function Piolo($n, $titolo, $exe, $etichetta, $reapOn) {
     }
 }
 
-Piolo 1 'b10227, il binario del riferimento (CANCELLO)' $b10227  'scala1_b10227'   $false
-Piolo 2 'build reap, osservatore SPENTO'                $reapexe 'scala2_reapoff'  $false
-Piolo 3 'build reap, osservatore ACCESO + cronometro'   $reapexe 'scala3_reapon'   $true
-Piolo 4 'b10227 di nuovo, per la deriva'                $b10227  'scala4_b10227'   $false
+Piolo 1 'b10227 ufficiale, il riferimento (CANCELLO)'   $b10227  'van1_b10227'  $false
+Piolo 2 'vanilla nostro, osservatore SPENTO'            $reapexe 'van2_reapoff' $false
+Piolo 3 'vanilla nostro, osservatore ACCESO + cronometro' $reapexe 'van3_reapon' $true
+Piolo 4 'b10227 ufficiale di nuovo, per la deriva'      $b10227  'van4_b10227'  $false
 
 Spegni-Reap
 Write-Host ""

@@ -12,7 +12,7 @@ param(
     [int]$Tokens = 800,
     [int]$Ctx    = 10000,
     [int]$Port   = 8096,
-    [ValidateSet('cpu','gpu','moecpu','fit')][string]$Dove = 'fit',
+    [ValidateSet('cpu','gpu','moecpu','fit','draftcpu')][string]$Dove = 'draftcpu',
     [int]$NMax   = 5,            # block size del draft: 5, clampato dal modello
     [string]$Exe   = 'D:\llama-dspark\build\bin\llama-server.exe',
     [string]$Model = 'C:\ds4-models\DS4-0731-IQ2XXS.gguf',
@@ -39,6 +39,10 @@ switch ($Dove) {
     # disponibile. Forzare -ngl 99 lo ABORTISCE ("n_gpu_layers already set by
     # user to 99, abort") ed e' l'errore che ha fatto fallire i primi due
     # tentativi del 2/8. Con due modelli che si dividono 12 GB serve lui.
+    # draftcpu: target come nel banco (-ngl 99, esperti su CPU), draft INTERO su
+    # CPU con -ngld 0. E' la combinazione mai provata: da solo con ngl 0 il draft
+    # SI CARICA, quindi il subscript esplode nello split GPU del draft MoE.
+    'draftcpu' { $a += @('-ngl','99','-ngld','0') }
     'fit'    { $a += @('--fit','on') }
     'cpu'    { $a += @('-ngl','99','-devd','none') }   # FALLISCE: output.weight resta su CUDA0
     'moecpu' { $a += @('-ngl','99','-cmoed') }         # FALLISCE: invalid vector subscript

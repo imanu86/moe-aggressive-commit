@@ -152,3 +152,23 @@ Strix Halo: 0,72-1,00 a contesto corto (+19-25%), 0,54 a 176k (perdita netta).
 
 E il draft e' un MoE da 19,85B: le sue letture di esperti si sommano a quelle
 della verifica, quindi il tetto reale e' piu' basso di 1,83x.
+
+### ESITO FINALE 2/8 sera: DSpark su llama.cpp GIRA, e PERDE
+
+La coppia carica con `-ngl 99` (target, esperti su CPU) + `-ngld 0` (draft tutto
+su CPU). La mia diagnosi "manca lo strato 43" era SBAGLIATA: unsloth UD-IQ2_XXS
+ha la stessa struttura del nostro file (43 strati, 1328 tensori) e l'indice 43
+e' lo stato nascosto finale. Il crash era lo split GPU del draft MoE.
+
+Misurato sul banco (prompt 43 tok, 800 generati, ctx 10000):
+
+    accettazione   0,707  (blocchi medi 4,42)   <- sulla soglia 0,72 di #636
+    decode         3,19 t/s   contro 6,61 senza speculazione   = -52%
+
+Causa strutturale: il draft e' un MoE da 19,85B che gira sulla stessa CPU che
+serve gli esperti del target. Competono per la stessa risorsa satura. A ctx
+corto -- il regime MIGLIORE -- gia' si perde meta' della velocita': la curva
+dell'incrocio non esiste su questo hardware.
+
+Riaprire solo se: (a) esce un draft V4 PICCOLO E DENSO, o (b) si cambia hardware
+verso memoria unificata (Strix Halo-like), dove YanissAmz misura +19-25%.

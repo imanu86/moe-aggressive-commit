@@ -80,7 +80,15 @@
    "riga": 163,
    "riga_fine": 165,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Registra mapping supporto",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Il mapping resta vivo e il bias crea uno spazio di offset disgiunto senza overflow.",
+   "trappola": "Il resolver somma il bias all'offset senza controllare l'overflow.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_device_cache_support_tensors",
@@ -96,7 +104,15 @@
    "riga": 174,
    "riga_fine": 176,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Misura la VRAM libera del tier e ripristina il device CUDA precedente.",
+   "vram": "misura",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Il tier appartiene alla configurazione GPU inizializzata.",
+   "trappola": "Tier invalido o errore CUDA restituiscono 0, indistinguibile da VRAM esaurita.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_device_cache_tensors",
@@ -112,7 +128,15 @@
    "riga": 182,
    "riga_fine": 182,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Inizializza contesto, stream, eventi e cuBLAS CUDA; attualmente accetta una sola GPU.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "cfg valido con esattamente una GPU e un indice dispositivo non negativo.",
+   "trappola": "Rifiuta n_gpus diverso da 1, rendendo irraggiungibile la validazione peer multi-GPU.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_tensor_alloc_on",
@@ -224,7 +248,15 @@
    "riga": 259,
    "riga_fine": 259,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta attenzione veloce",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_set_decode_score_vec4",
@@ -232,7 +264,15 @@
    "riga": 260,
    "riga_fine": 260,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta score vec4",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_indexer_top2_value_tensor",
@@ -4008,7 +4048,15 @@
    "riga": 15771,
    "riga_fine": 15774,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta attenzione veloce",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_set_decode_score_vec4",
@@ -4016,7 +4064,15 @@
    "riga": 15775,
    "riga_fine": 15778,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta score vec4",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_dsv4_qkv_rms_norm_rows_kv_rope_tensor",
@@ -15976,7 +16032,15 @@
    "riga": 82,
    "riga_fine": 85,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Legge una variabile d'ambiente come flag booleano.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "name punta a una stringa valida.",
+   "trappola": "Qualunque valore non vuoto diverso da 0 abilita, inclusi false e stringhe arbitrarie.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_cuda_env_u64",
@@ -15984,7 +16048,15 @@
    "riga": 87,
    "riga_fine": 101,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Legge un intero uint64 da ambiente, validandone limite e ammissibilit\u00e0 dello zero.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "name punta a una stringa valida e maximum esprime il limite atteso.",
+   "trappola": "Accetta spazi iniziali e il segno + perch\u00e9 usa strtoull.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_cuda_env_double",
@@ -15992,7 +16064,15 @@
    "riga": 103,
    "riga_fine": 116,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Legge da ambiente un double finito non negativo oppure usa il fallback.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "name punta a una stringa valida.",
+   "trappola": "Zero \u00e8 valido; negativi, NaN e infiniti producono un warning e il fallback.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_cuda_telemetry_env_refresh",
@@ -16000,7 +16080,15 @@
    "riga": 118,
    "riga_fine": 165,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Risolve una sola volta le variabili d'ambiente nella configurazione CUDA globale.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Deve precedere qualsiasi hook che usa g_cuda_telemetry.",
+   "trappola": "Dopo il primo richiamo ignora ogni modifica alle variabili d'ambiente.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_query_free",
@@ -16008,7 +16096,15 @@
    "riga": 205,
    "riga_fine": 221,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Interroga CUDA sulla VRAM libera e accumula costo e conteggio della query.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Un contesto CUDA deve essere corrente.",
+   "trappola": "Un errore viene cancellato e restituito come 0, indistinguibile da nessuna VRAM libera.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_update_min",
@@ -16016,7 +16112,15 @@
    "riga": 223,
    "riga_fine": 240,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Aggiorna atomicamente un minimo di VRAM libera e i metadati dell'evento associato.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "La stringa event resta valida fino alla lettura del riepilogo.",
+   "trappola": "Minimo e metadati sono store separati e possono non corrispondere in caso di gara.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_device_event",
@@ -16024,7 +16128,15 @@
    "riga": 242,
    "riga_fine": 278,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Conta allocazioni o free CUDA e campiona il minimo di VRAM libera del token e della richiesta.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "vram_peak_query_every deve essere maggiore di zero.",
+   "trappola": "L'evento cudaFree viene campionato prima della liberazione effettiva.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_run_reset",
@@ -16032,7 +16144,15 @@
    "riga": 280,
    "riga_fine": 303,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Disarma e azzera i contatori del probe VRAM per una nuova decode.",
+   "vram": "misura",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "-",
+   "trappola": "Il reset lascia il probe disarmato; sar\u00e0 token_begin ad armarlo.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_token_begin",
@@ -16040,7 +16160,15 @@
    "riga": 305,
    "riga_fine": 318,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Campiona la VRAM libera iniziale, azzera lo stato del token e arma il probe.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Un solo token alla volta usa lo stato globale del probe.",
+   "trappola": "Anche una query fallita arma il probe con baseline pari a zero.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_token_end",
@@ -16048,7 +16176,15 @@
    "riga": 320,
    "riga_fine": 381,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Disarma il probe, consolida il minimo del token e stampa il campione alla cadenza configurata.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Deve corrispondere a un precedente token_begin sullo stesso token.",
+   "trappola": "Senza eventi di allocazione usa la VRAM iniziale come minimo sintetico.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_vram_peak_summary",
@@ -16056,7 +16192,15 @@
    "riga": 383,
    "riga_fine": 428,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Disarma il probe e stampa il picco VRAM aggregato della richiesta di decode.",
+   "vram": "misura",
+   "frequenza": "per-richiesta",
+   "fase": "chiusura",
+   "invariante": "Il run deve essere stato inizializzato prima della raccolta.",
+   "trappola": "Il riepilogo disarma il probe e non lo riattiva.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_alloc_basename",
@@ -16064,7 +16208,15 @@
    "riga": 475,
    "riga_fine": 482,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Restituisce la parte finale di un percorso dopo l'ultimo separatore Unix o Windows.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "La memoria di path resta valida mentre si usa il risultato.",
+   "trappola": "Restituisce un puntatore dentro path, non una copia; per NULL restituisce ?.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_alloc_site_tag",
@@ -16072,7 +16224,15 @@
    "riga": 484,
    "riga_fine": 493,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Formatta il tag di un sito usando tipo e label oppure funzione e riga.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "site.kind \u00e8 un indice valido e out dispone della capacit\u00e0 dichiarata.",
+   "trappola": "Per le label conserva solo il basename e perde il percorso originale.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_alloc_note",
@@ -16080,7 +16240,15 @@
    "riga": 495,
    "riga_fine": 570,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Registra tentativi, fallimenti, byte vivi e picchi per sito e tipo di allocazione.",
+   "vram": "misura",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "kind \u00e8 valido e ogni ptr riuscito identifica una sola allocazione viva.",
+   "trappola": "La label pendente si applica solo alle allocazioni managed e viene comunque cancellata.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_alloc_release",
@@ -16088,7 +16256,15 @@
    "riga": 572,
    "riga_fine": 588,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Rimuove un puntatore dal registro e riduce i byte vivi del sito e del tipo.",
+   "vram": "misura",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "Il record del puntatore riferisce un indice di sito ancora valido.",
+   "trappola": "Un puntatore sconosciuto non genera errore: incrementa solo un contatore.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_hostpin_tag",
@@ -16096,7 +16272,15 @@
    "riga": 617,
    "riga_fine": 621,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Etichetta pinning successivo",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "-",
+   "trappola": "Un kind fuori intervallo viene convertito silenziosamente in other.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_hostpin_note_alloc",
@@ -16104,7 +16288,15 @@
    "riga": 623,
    "riga_fine": 656,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Registra byte host-pinned vivi e picchi per tipo, poi emette una riga diagnostica.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr non \u00e8 gi\u00e0 registrato e il kind pendente \u00e8 valido.",
+   "trappola": "Il budget \u00e8 solo stampato: non limita n\u00e9 rifiuta allocazioni.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_hostpin_note_failed",
@@ -16112,7 +16304,15 @@
    "riga": 658,
    "riga_fine": 662,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Ripristina il tag host-pinned dopo un'allocazione fallita.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "-",
+   "trappola": "Con diagnostica disabilitata lascia invariato il tag pendente.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_hostpin_note_free",
@@ -16120,7 +16320,15 @@
    "riga": 664,
    "riga_fine": 678,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Rimuove un blocco host-pinned dal registro e decrementa i byte vivi.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "Il record trovato contiene un kind valido.",
+   "trappola": "Un puntatore non registrato viene ignorato senza contatore n\u00e9 avviso.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_hostpin_summary",
@@ -16128,7 +16336,15 @@
    "riga": 680,
    "riga_fine": 695,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa inventario vivo, picchi e budget host-pinned per ciascun tipo.",
+   "vram": "no",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "I contatori per tipo e totali devono descrivere lo stesso registro.",
+   "trappola": "kv_arena resta uno zero strutturale e il budget stampato non \u00e8 applicato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_malloc",
@@ -16136,7 +16352,15 @@
    "riga": 697,
    "riga_fine": 708,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Esegue cudaMalloc e registra esito, sito e possibile campione di picco VRAM.",
+   "vram": "alloca",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr \u00e8 scrivibile e bytes \u00e8 accettabile per CUDA.",
+   "trappola": "Il campione del picco avviene solo se cudaMalloc riesce.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_malloc_managed",
@@ -16144,7 +16368,15 @@
    "riga": 710,
    "riga_fine": 723,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Alloca memoria CUDA managed globale e registra esito, sito e picco VRAM.",
+   "vram": "alloca",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr \u00e8 scrivibile e bytes \u00e8 accettabile per CUDA.",
+   "trappola": "Forza sempre cudaMemAttachGlobal, senza esporre la scelta al chiamante.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_malloc_host",
@@ -16152,7 +16384,15 @@
    "riga": 725,
    "riga_fine": 738,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Alloca memoria host-pinned con cudaMallocHost e aggiorna i registri diagnostici.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr \u00e8 scrivibile e bytes \u00e8 accettabile per CUDA.",
+   "trappola": "Alloca RAM host-pinned, non VRAM, pur passando dal tracer CUDA.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_host_alloc",
@@ -16160,7 +16400,15 @@
    "riga": 740,
    "riga_fine": 754,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Alloca memoria host-pinned con i flag richiesti e aggiorna i registri diagnostici.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr \u00e8 scrivibile e flags \u00e8 valido per cudaHostAlloc.",
+   "trappola": "Il tag host-pinned viene consumato anche quando l'allocazione fallisce.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_host_register",
@@ -16168,7 +16416,15 @@
    "riga": 756,
    "riga_fine": 768,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Registra come host-pinned un intervallo esistente e lo contabilizza nei tracer.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr e bytes descrivono un intervallo valido registrabile da CUDA.",
+   "trappola": "Conta come allocazione diagnostica anche se la memoria esisteva gi\u00e0.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_free",
@@ -16176,7 +16432,15 @@
    "riga": 770,
    "riga_fine": 775,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Campiona il probe, esegue cudaFree e rilascia il record solo in caso di successo.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr \u00e8 NULL oppure proviene da un'allocazione liberabile con cudaFree.",
+   "trappola": "Conta e campiona il free prima dell'esito CUDA, anche se cudaFree poi fallisce.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_free_host",
@@ -16184,7 +16448,15 @@
    "riga": 777,
    "riga_fine": 784,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Esegue cudaFreeHost e aggiorna i due registri host solo se riesce.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr \u00e8 NULL oppure proviene da un'allocazione compatibile con cudaFreeHost.",
+   "trappola": "Un errore CUDA lascia entrambi i registri invariati.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_trace_cuda_host_unregister",
@@ -16192,7 +16464,15 @@
    "riga": 786,
    "riga_fine": 793,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Esegue cudaHostUnregister e aggiorna i registri host solo se riesce.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "ptr identifica un intervallo precedentemente registrato con CUDA.",
+   "trappola": "Un errore CUDA lascia l'intervallo contabilizzato come ancora registrato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_alloc_site_live_greater",
@@ -16200,7 +16480,15 @@
    "riga": 795,
    "riga_fine": 799,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Ordina siti allocazione",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "-",
+   "trappola": "A parit\u00e0 di byte vivi usa il picco, non i byte cumulativi.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_alloc_site_label",
@@ -16208,7 +16496,15 @@
    "riga": 801,
    "riga_fine": 803,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Etichetta allocazione successiva",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "site resta valido fino al prossimo evento di allocazione nel thread.",
+   "trappola": "Una allocazione non-managed cancella la label senza usarla.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_alloc_trace_mark",
@@ -16216,7 +16512,15 @@
    "riga": 805,
    "riga_fine": 827,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa una fotografia della VRAM CUDA usata, libera, tracciata e residua.",
+   "vram": "misura",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Un contesto CUDA deve essere corrente e i contatori tracciati coerenti.",
+   "trappola": "Se cudaMemGetInfo fallisce stampa comunque valori iniziali pari a zero.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_alloc_trace_summary",
@@ -16224,7 +16528,15 @@
    "riga": 829,
    "riga_fine": 902,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa riepiloghi cumulativi per sito e tipo e il bilancio istantaneo della VRAM.",
+   "vram": "misura",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "Gli indici kind salvati nei siti sono validi per gli array globali.",
+   "trappola": "Ordina i siti per byte vivi e poi picco, non per consumo cumulativo.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_set_plane",
@@ -16232,7 +16544,15 @@
    "riga": 959,
    "riga_fine": 961,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta piano profiling",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "plane usa i valori previsti dall'enum WP_PLANE.",
+   "trappola": "Senza profiling lascia invariato il valore thread-local precedente.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_telemetry_now_ns",
@@ -16240,7 +16560,15 @@
    "riga": 963,
    "riga_fine": 966,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Converte l'orologio monotono di processo in nanosecondi uint64.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Il valore in secondi deve rientrare in uint64 dopo la conversione.",
+   "trappola": "Un tempo nullo o negativo diventa 0, usato altrove come sentinella disabilitata.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_faults_now",
@@ -16248,7 +16576,15 @@
    "riga": 968,
    "riga_fine": 979,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Su Windows legge i page fault del processo; sulle altre piattaforme restituisce sempre zero.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Su Windows le API di processo devono essere disponibili.",
+   "trappola": "Fuori da Windows restituisce uno zero strutturale, non una misura reale.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_inflight_guard_lock",
@@ -16256,7 +16592,15 @@
    "riga": 981,
    "riga_fine": 985,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "controllo",
+   "ruolo": "Acquisisce con busy-wait lo spinlock che protegge lo stato inflight del profiler.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Il detentore del lock deve infine rilasciarlo.",
+   "trappola": "Attende in ciclo stretto senza yield n\u00e9 backoff.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_inflight_guard_unlock",
@@ -16264,7 +16608,15 @@
    "riga": 987,
    "riga_fine": 989,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Rilascia lock inflight",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Il chiamante ha gi\u00e0 acquisito il lock.",
+   "trappola": "Non verifica propriet\u00e0 o corretta associazione lock-unlock.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_inflight_advance",
@@ -16272,7 +16624,15 @@
    "riga": 991,
    "riga_fine": 1014,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Integra nel tempo le letture inflight, ne varia il conteggio e aggiorna il massimo.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Tutte le variazioni inflight passano da questa funzione con timestamp monotoni.",
+   "trappola": "Un decremento eccessivo satura silenziosamente il conteggio a zero.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_read_begin",
@@ -16280,7 +16640,15 @@
    "riga": 1016,
    "riga_fine": 1021,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Avvia il timing di una lettura profilata e incrementa il numero inflight.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Il job del profiler \u00e8 attivo nel thread corrente.",
+   "trappola": "Se profiling o job sono inattivi restituisce 0, che rende read_end un no-op.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_slow_token_note_read",
@@ -16288,7 +16656,15 @@
    "riga": 1023,
    "riga_fine": 1030,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Conta chiamate e byte letti per il log dei token lenti.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "got segue la convenzione: positivo per byte letti, zero o negativo altrimenti.",
+   "trappola": "Anche EOF e letture fallite incrementano il numero di chiamate.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_read_end",
@@ -16296,7 +16672,15 @@
    "riga": 1032,
    "riga_fine": 1048,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Chiude una lettura profilata e accumula chiamate, byte, tempo e inflight per piano MoE.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "started_ns proviene dal begin abbinato della stessa lettura.",
+   "trappola": "Una lettura fallita conta come chiamata e tempo, ma non come byte.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_span_begin",
@@ -16304,7 +16688,15 @@
    "riga": 1050,
    "riga_fine": 1053,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Avvia il cronometro di uno span solo durante un job con worker profiling attivo.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Restituisce zero se il profiler \u00e8 spento o non \u00e8 attivo alcun job.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_span_end",
@@ -16312,7 +16704,15 @@
    "riga": 1055,
    "riga_fine": 1061,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Chiude uno span e ne somma la durata nel contatore worker indicato.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "index \u00e8 un indice valido di g_workerprof.",
+   "trappola": "Non valida index: un valore errato accede fuori dai contatori.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_job_begin",
@@ -16320,7 +16720,15 @@
    "riga": 1063,
    "riga_fine": 1072,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Avvia il profilo del caricamento selected sincrono e campiona i page fault iniziali.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "I job non sono annidati sullo stesso thread.",
+   "trappola": "slow_token_log da solo attiva il job, ma non campiona i page fault.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_job_end",
@@ -16328,7 +16736,15 @@
    "riga": 1074,
    "riga_fine": 1091,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Chiude il job selected, accumula durata e fault e ripristina piano e stato thread-local.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "started_ns e faults_at_start appartengono al job corrente.",
+   "trappola": "Con started_ns zero non ripristina job_active n\u00e9 il piano.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_cache_invalidate",
@@ -16336,7 +16752,15 @@
    "riga": 1093,
    "riga_fine": 1098,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Incrementa il contatore delle invalidazioni della cache selected quando il profiler \u00e8 attivo.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Conta l'evento ma non invalida n\u00e9 libera alcuna cache.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_reset",
@@ -16344,7 +16768,15 @@
    "riga": 1100,
    "riga_fine": 1112,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Azzera contatori, baseline e inflight del worker profiler all'inizio del decode.",
+   "vram": "no",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "Non ci sono letture profilate in corso durante il reset.",
+   "trappola": "Con il worker profiler disattivato non azzera nemmeno i contatori usati dallo slow-token log.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_report",
@@ -16352,7 +16784,15 @@
    "riga": 1114,
    "riga_fine": 1175,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa metriche worker cumulative o di finestra e aggiorna la baseline del report.",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "I contatori correnti non sono inferiori alla baseline precedente.",
+   "trappola": "Anche il report cumulativo aggiorna la baseline delle finestre successive.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_workerprof_token_end",
@@ -16360,7 +16800,15 @@
    "riga": 1177,
    "riga_fine": 1185,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Somma i token conclusi e genera il report worker quando raggiunge la soglia periodica.",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "g_workerprof_next_log \u00e8 stato inizializzato dal reset.",
+   "trappola": "worker_every_tokens uguale a zero fa scattare un report a ogni chiamata.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_lock",
@@ -16368,7 +16816,15 @@
    "riga": 1231,
    "riga_fine": 1234,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Acquisisce lock trasporto",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "decode",
+   "invariante": "Chi detiene il lock finisce per rilasciarlo.",
+   "trappola": "Attende con spin puro, senza yield n\u00e9 backoff.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_unlock",
@@ -16376,7 +16832,15 @@
    "riga": 1236,
    "riga_fine": 1238,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Rilascia lock trasporto",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "decode",
+   "invariante": "Il lock \u00e8 detenuto dal chiamante.",
+   "trappola": "Non verifica propriet\u00e0 o doppio rilascio.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_pair_index",
@@ -16384,7 +16848,15 @@
    "riga": 1240,
    "riga_fine": 1248,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola indice coppia",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "Le costanti del ledger coprono tutti i layer e gli esperti validi.",
+   "trappola": "Su input invalido restituisce zero e non scrive index.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_mark_incomplete",
@@ -16392,7 +16864,15 @@
    "riga": 1250,
    "riga_fine": 1256,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Marca incompleto il ledger di trasporto attivo per la richiesta corrente.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "-",
+   "trappola": "Non fa nulla se il ledger \u00e8 disabilitato o non ancora armato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_load_begin",
@@ -16400,7 +16880,15 @@
    "riga": 1258,
    "riga_fine": 1284,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Apre il contesto thread-local e classifica l'eventuale rilettura file di un esperto.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "Un solo load \u00e8 attivo per thread.",
+   "trappola": "Incrementa file_loads prima di sapere se il caricamento riuscir\u00e0.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_record_file_bytes",
@@ -16408,7 +16896,15 @@
    "riga": 1286,
    "riga_fine": 1297,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Somma i byte riletti da file per una coppia layer-esperto gi\u00e0 caricata.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "Il begin del load corrente ha impostato active e file_repeat.",
+   "trappola": "Ignora deliberatamente i byte della prima lettura da file.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_h2d_active_begin",
@@ -16416,7 +16912,15 @@
    "riga": 1299,
    "riga_fine": 1310,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Apre una finestra di attivit\u00e0 H2D e restituisce se il cronometraggio \u00e8 attivo.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "Ogni valore uno restituito viene chiuso una sola volta.",
+   "trappola": "Operazioni sovrapposte condividono una sola finestra temporale.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_h2d_active_end",
@@ -16424,7 +16928,15 @@
    "riga": 1312,
    "riga_fine": 1328,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Chiude una finestra H2D e accumula il tempo in cui almeno un trasferimento era attivo.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "active proviene dal begin abbinato e viene chiuso una volta.",
+   "trappola": "Un end senza operazioni attive rende incompleto l'intero ledger.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_record_h2d_bytes",
@@ -16432,7 +16944,15 @@
    "riga": 1330,
    "riga_fine": 1338,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Accumula nel load corrente i byte H2D riusciti, marcando incompleto in overflow.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "Il load corrispondente \u00e8 attivo sullo stesso thread.",
+   "trappola": "I byte zero sono ignorati e l'overflow non satura il contatore.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_load_end",
@@ -16440,7 +16960,15 @@
    "riga": 1340,
    "riga_fine": 1372,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Conclude un load e classifica i byte H2D riusciti come primo accesso o ripetizione.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "decode",
+   "invariante": "Esiste un begin abbinato sullo stesso thread.",
+   "trappola": "Un fallimento invalida la completezza della richiesta e non accredita i byte H2D.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_decode_begin",
@@ -16448,7 +16976,15 @@
    "riga": 1374,
    "riga_fine": 1392,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Azzera e arma il ledger di trasporto per il decode della nuova richiesta.",
+   "vram": "no",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "Nessun caricamento del ledger \u00e8 in corso durante il reset.",
+   "trappola": "Se la telemetria \u00e8 spenta lascia intatto lo stato precedente.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_report",
@@ -16456,7 +16992,15 @@
    "riga": 1394,
    "riga_fine": 1447,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa il riepilogo cumulativo di letture e trasferimenti della richiesta decode.",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il clock monotono non regredisce durante la richiesta.",
+   "trappola": "pcie_busy_pct_derived \u00e8 un rapporto di tempi host, non un contatore hardware PCIe.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_token_end",
@@ -16464,7 +17008,15 @@
    "riga": 1449,
    "riga_fine": 1470,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Aggiorna i token del ledger e produce il riepilogo periodico alla soglia configurata.",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "g_transport.next_log \u00e8 stato inizializzato a decode-start.",
+   "trappola": "transport_every_tokens uguale a zero genera un report a ogni chiamata.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_transport_request_end",
@@ -16472,7 +17024,15 @@
    "riga": 1472,
    "riga_fine": 1477,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Emette il riepilogo finale del trasporto e disarma il ledger della richiesta.",
+   "vram": "no",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "Non restano load concorrenti quando termina la richiesta.",
+   "trappola": "Disarma il ledger solo dopo aver stampato il report finale.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_token_watch_begin",
@@ -16480,7 +17040,15 @@
    "riga": 1507,
    "riga_fine": 1522,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Avvia il picco VRAM del token e, se richiesto, fotografa i contatori per rilevare token lenti.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Sar\u00e0 chiamato il corrispondente token_watch_end.",
+   "trappola": "Con slow_token_log spento avvia comunque la misura del picco VRAM.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_token_watch_end",
@@ -16488,7 +17056,15 @@
    "riga": 1524,
    "riga_fine": 1577,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Chiude le misure del token, aggiorna i ledger e stampa log slow-token o VRAM periodici.",
+   "vram": "misura",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il begin corrispondente precede la chiusura della finestra.",
+   "trappola": "token_count pu\u00f2 superare uno pur usando una sola finestra temporale.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_page_size",
@@ -16496,7 +17072,15 @@
    "riga": 1580,
    "riga_fine": 1589,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Restituisce la dimensione pagina del sistema operativo, con fallback a 4096 byte.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "Un valore nullo o errore della query ricade silenziosamente su 4096 byte.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_iq1_s_sidecar_clear",
@@ -16504,7 +17088,15 @@
    "riga": 1737,
    "riga_fine": 1746,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Chiude il file sidecar IQ1_S e azzera dimensione e riferimento host globali.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "Il file \u00e8 valido quando g_iq1_s_sidecar_file_valid \u00e8 impostato.",
+   "trappola": "Non smappa host_base: azzera il riferimento e chiude solo il file.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q1_0_sidecar_clear",
@@ -16512,7 +17104,15 @@
    "riga": 1748,
    "riga_fine": 1757,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Chiude il file sidecar Q1_0 e azzera dimensione e riferimento host globali.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "ignoto",
+   "invariante": "Il file \u00e8 valido quando g_q1_0_sidecar_file_valid \u00e8 impostato.",
+   "trappola": "Non smappa host_base: azzera il riferimento e chiude solo il file.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_saturating_add_u64",
@@ -16520,7 +17120,15 @@
    "riga": 1857,
    "riga_fine": 1859,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Somma interi saturando",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "In overflow restituisce UINT64_MAX invece di segnalare errore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_saturating_mul_u64",
@@ -16528,7 +17136,15 @@
    "riga": 1861,
    "riga_fine": 1864,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Moltiplica interi saturando",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "In overflow restituisce UINT64_MAX invece di segnalare errore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_prefill_union_stats_report_and_reset",
@@ -16536,7 +17152,15 @@
    "riga": 1866,
    "riga_fine": 1893,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa le statistiche finali dell'unione esperti di prefill e poi le azzera.",
+   "vram": "no",
+   "frequenza": "per-richiesta",
+   "fase": "prefill",
+   "invariante": "Se calls \u00e8 diverso da zero, unique_experts \u00e8 diverso da zero.",
+   "trappola": "Azzera sempre le statistiche, anche quando non stampa alcun report.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_cache_invalidate",
@@ -16544,7 +17168,15 @@
    "riga": 1897,
    "riga_fine": 1900,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "controllo",
+   "ruolo": "Marca non valida la cache selected e registra l'evento nel worker profiler.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Non libera puntatori o capacit\u00e0 VRAM della cache selected.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_capacity_bytes",
@@ -16552,7 +17184,15 @@
    "riga": 1902,
    "riga_fine": 1910,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Somma capacit\u00e0 cache",
+   "vram": "misura",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "I campi capacity rispecchiano le allocazioni selected correnti.",
+   "trappola": "Satura a UINT64_MAX, mascherando un eventuale overflow della somma.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_weight_storage_release",
@@ -16560,7 +17200,15 @@
    "riga": 1912,
    "riga_fine": 1934,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera lo storage VRAM dei pesi selected e ne azzera puntatori e capacit\u00e0.",
+   "vram": "libera",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Con packed_ptr valorizzato, gate_ptr, up_ptr e down_ptr sono alias interni.",
+   "trappola": "Non libera slot_selected_ptr; il remap resta allocato.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_cache_transport_release",
@@ -16568,7 +17216,15 @@
    "riga": 1936,
    "riga_fine": 1947,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera pesi e remap VRAM della cache selected, quindi ne azzera tutto lo stato.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "I puntatori appartengono al tier registrato o al device CUDA corrente.",
+   "trappola": "Ignora errori di set-device e cudaFree, poi cancella comunque lo stato.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q4_mma_ok",
@@ -16576,7 +17232,15 @@
    "riga": 1983,
    "riga_fine": 1998,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Determina e memorizza se la GPU supporta i kernel MMA quantizzati Q4.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Tutti i tier CUDA sul sistema hanno la stessa compute capability.",
+   "trappola": "La presenza di DS4_CUDA_MOE_NO_Q4_MMA disabilita; l'ambiente \u00e8 letto una sola volta.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_cache_release_at_decode_start",
@@ -16584,7 +17248,15 @@
    "riga": 2046,
    "riga_fine": 2089,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Sincronizza il device e libera il compact selected di prefill all'inizio del decode.",
+   "vram": "libera",
+   "frequenza": "per-richiesta",
+   "fase": "decode",
+   "invariante": "Il compact di prefill non \u00e8 pi\u00f9 usato dopo il confine con il decode.",
+   "trappola": "DS4_CUDA_RELEASE_PREFILL_COMPACT=0 disabilita; assente o vuota lascia attivo il rilascio.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_router_capture_release",
@@ -16592,7 +17264,15 @@
    "riga": 2091,
    "riga_fine": 2094,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "routing",
+   "ruolo": "Svuota sotto mutex la coda host delle catture di ID e pesi del router.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "chiusura",
+   "invariante": "Nessun consumer conserva riferimenti agli elementi rimossi.",
+   "trappola": "Libera memoria host, non la VRAM dei tensori catturati.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_router_capture_output",
@@ -16600,7 +17280,15 @@
    "riga": 2096,
    "riga_fine": 2158,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "routing",
+   "ruolo": "Copia su host ID e pesi del router e accoda una cattura per la policy cache.",
+   "vram": "legge",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "I tensori CUDA contengono count int32_t e count float entro i byte dichiarati.",
+   "trappola": "Fa due copie D2H sincrone; oltre 64 record espelle in silenzio il pi\u00f9 vecchio.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_tensor_device_idx",
@@ -16608,7 +17296,15 @@
    "riga": 2169,
    "riga_fine": 2174,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Ricava device tensor",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Un tensore nullo o con device_id negativo viene attribuito al device zero.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_xdev_env_refresh",
@@ -16616,7 +17312,15 @@
    "riga": 2178,
    "riga_fine": 2182,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Acquisisce a ogni init i flag ambientali per le copie tra GPU.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "Conta la sola presenza: anche un valore 0 abilita ciascun flag.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_decode_dispatch_env_refresh",
@@ -16624,7 +17328,15 @@
    "riga": 2184,
    "riga_fine": 2208,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Acquisisce a ogni init i flag che selezionano i percorsi CUDA di decode.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "Quasi tutti i flag usano la sola presenza; NO_EXACT_SCORE_SPLIT_DIM2 prevale sul flag positivo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_tmp_alloc",
@@ -16632,7 +17344,15 @@
    "riga": 2364,
    "riga_fine": 2383,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Alloca o amplia lo scratch CUDA globale riusabile.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il device CUDA corrente \u00e8 quello che user\u00e0 lo scratch e non vi sono usi concorrenti.",
+   "trappola": "Prima del grow libera il vecchio buffer: se cudaMalloc fallisce, lo scratch \u00e8 perso.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_embed_row_stage_release",
@@ -16640,7 +17360,15 @@
    "riga": 2385,
    "riga_fine": 2396,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera lo staging embedding sia device sia host pinned e ne azzera lo stato.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Nessuna copia asincrona usa ancora i due buffer.",
+   "trappola": "Gli errori di free sono ignorati e il bookkeeping viene comunque azzerato.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_embed_row_stage_alloc",
@@ -16648,7 +17376,15 @@
    "riga": 2398,
    "riga_fine": 2445,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Crea o amplia lo staging pinned-host pi\u00f9 device per copiare righe embedding.",
+   "vram": "alloca",
+   "frequenza": "per-token",
+   "fase": "entrambe",
+   "invariante": "Il device corrente \u00e8 quello di destinazione e lo staging non \u00e8 usato concorrentemente.",
+   "trappola": "Ogni resize sincronizza il device e scarta lo staging precedente prima del nuovo malloc.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_tmp_alloc_on",
@@ -16656,7 +17392,15 @@
    "riga": 2463,
    "riga_fine": 2514,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Fornisce scratch riusabile globale su una GPU o separato per tier in multi-GPU.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il tier \u00e8 valido e il suo scratch non \u00e8 ancora in uso da operazioni concorrenti.",
+   "trappola": "Un grow fallito perde il vecchio scratch; in single-GPU usa un buffer globale distinto.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_attention_score_buffer_fits",
@@ -16664,7 +17408,15 @@
    "riga": 2516,
    "riga_fine": 2518,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Verifica capienza punteggi",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "decode",
+   "invariante": "La capacit\u00e0 totale non \u00e8 minore della quota riservata ai punteggi raw.",
+   "trappola": "La sottrazione unsigned va in underflow se le due capacit\u00e0 vengono definite al contrario.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_ptr",
@@ -16672,7 +17424,15 @@
    "riga": 2520,
    "riga_fine": 2527,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Seleziona puntatore modello",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "model_map e offset appartengono al backing del modello attivo.",
+   "trappola": "In sola modalit\u00e0 finestra, un offset al bordo ricade sul mapping host.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_ptr",
@@ -16680,7 +17440,15 @@
    "riga": 2529,
    "riga_fine": 2668,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Rende un range di pesi accessibile alla GPU tramite cache, mapping host o copia.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "model_map e intervallo sono validi; il device corrente \u00e8 quello destinatario.",
+   "trappola": "Se mapping host e cache FD falliscono, alloca e copia silenziosamente il range in VRAM.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_cublas_for_tier",
@@ -16688,7 +17456,15 @@
    "riga": 2676,
    "riga_fine": 2696,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Seleziona handle cuBLAS",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Gli handle sono inizializzati e il device corrente identifica il tier in esecuzione.",
+   "trappola": "Un tier invalido ricade silenziosamente sull'handle del tier 0.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_tier_free_vram",
@@ -16696,7 +17472,15 @@
    "riga": 2730,
    "riga_fine": 2740,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Misura la VRAM libera del tier e ripristina il device CUDA precedente.",
+   "vram": "misura",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Il tier appartiene alla configurazione GPU inizializzata.",
+   "trappola": "Tier invalido o errore CUDA restituiscono 0, indistinguibile da VRAM esaurita.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_register_support_map",
@@ -16704,7 +17488,15 @@
    "riga": 2742,
    "riga_fine": 2748,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Registra mapping supporto",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Il mapping resta vivo e il bias crea uno spazio di offset disgiunto senza overflow.",
+   "trappola": "Il resolver somma il bias all'offset senza controllare l'overflow.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_resolve_weight_ptr",
@@ -16712,7 +17504,15 @@
    "riga": 2750,
    "riga_fine": 2791,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Risolve il puntatore device di un peso sul tier richiesto o sul device CUDA corrente.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "In multi-GPU il peso \u00e8 preinstallato nella cache del device che esegue il layer.",
+   "trappola": "In multi-GPU non fa fallback host; prova per\u00f2 il device corrente prima di restituire NULL.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_is_cached",
@@ -16720,7 +17520,15 @@
    "riga": 2793,
    "riga_fine": 2817,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "controllo",
+   "ruolo": "Verifica se un intervallo del modello \u00e8 gi\u00e0 interamente accessibile dalla GPU.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Le strutture globali della cache non cambiano durante la scansione.",
+   "trappola": "Un modello globalmente owned o registered fa restituire vero senza verificare mappa e range.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_release_all",
@@ -16728,7 +17536,15 @@
    "riga": 2819,
    "riga_fine": 2826,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera tutte le copie dequantizzate fp16 e azzera indici e contatore.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Ogni puntatore cached \u00e8 liberabile dal contesto CUDA corrente.",
+   "trappola": "Ignora gli errori di cudaFree ma elimina i riferimenti, rendendo invisibili eventuali leak.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_parse_mib_env",
@@ -16736,7 +17552,15 @@
    "riga": 2828,
    "riga_fine": 2838,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Legge un intero decimale in MiB da una variabile e lo converte in byte.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "name \u00e8 valido e present, se fornito, punta a memoria scrivibile.",
+   "trappola": "Valori negativi o enormi saturano a UINT64_MAX; sintassi invalida equivale ad assenza.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_parse_u32_env_clamped",
@@ -16744,7 +17568,15 @@
    "riga": 2840,
    "riga_fine": 2854,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Legge un uint32 ambientale, usa il fallback se invalido e limita il valore all'intervallo.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "decode",
+   "invariante": "min_value non supera max_value e present, se fornito, \u00e8 scrivibile.",
+   "trappola": "Un numero valido fuori intervallo viene clampato, non sostituito dal fallback.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_env_flag_enabled",
@@ -16752,7 +17584,15 @@
    "riga": 2856,
    "riga_fine": 2860,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "parsing",
+   "ruolo": "Interpreta una variabile ambientale non vuota come flag booleano.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "decode",
+   "invariante": "name identifica una variabile ambientale valida.",
+   "trappola": "Solo la stringa esatta 0 disabilita; valori come false abilitano.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_set_decode_fast_attention",
@@ -16760,7 +17600,15 @@
    "riga": 2862,
    "riga_fine": 2866,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta attenzione veloce",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_set_decode_score_vec4",
@@ -16768,7 +17616,15 @@
    "riga": 2868,
    "riga_fine": 2872,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta score vec4",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_splitkv_decode_requested",
@@ -16776,7 +17632,15 @@
    "riga": 2874,
    "riga_fine": 2878,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "attenzione",
+   "ruolo": "Decide se usare split-KV nel decode in base a override globale e ambiente.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "decode",
+   "invariante": "I flag globali sono coerenti con la richiesta di decode corrente.",
+   "trappola": "NO_SPLITKV prevale sia sul fast mode sia su SPLITKV_DECODE.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_limit_bytes",
@@ -16784,7 +17648,15 @@
    "riga": 2880,
    "riga_fine": 2884,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola limite fp16",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Variabile assente o invalida significa nessun limite; il valore esplicito 0 disabilita la cache.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_reserve_bytes",
@@ -16792,7 +17664,15 @@
    "riga": 2886,
    "riga_fine": 2924,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "controllo",
+   "ruolo": "Calcola la VRAM da lasciare libera prima di ampliare la cache q8-fp16.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "total_bytes \u00e8 la capacit\u00e0 reale del device valutato.",
+   "trappola": "Sotto 40 GiB riserva almeno 4 GiB; un override esplicito pu\u00f2 invece impostare anche zero.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_budget_notice",
@@ -16800,7 +17680,15 @@
    "riga": 2926,
    "riga_fine": 2965,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Segnala il rifiuto di una crescita della cache fp16 con limite e memoria disponibili.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "reason non \u00e8 NULL e i valori descrivono lo stesso device e la stessa richiesta.",
+   "trappola": "Senza verbose stampa una sola volta globale; con verbose stampa ogni rifiuto.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_has_budget",
@@ -16808,7 +17696,15 @@
    "riga": 2967,
    "riga_fine": 2997,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Verifica limite, VRAM libera e riserva prima di allocare una copia fp16.",
+   "vram": "misura",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il device CUDA corrente \u00e8 quello sul quale avverr\u00e0 l'allocazione.",
+   "trappola": "Il limite cached \u00e8 globale tra GPU, ma la VRAM libera \u00e8 misurata solo sul device corrente.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_disable_after_failure",
@@ -16816,7 +17712,15 @@
    "riga": 2999,
    "riga_fine": 3014,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Disabilita la cache fp16 dopo un errore e ne libera tutte le copie.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Non restano kernel che usano le copie cached quando termina la sincronizzazione.",
+   "trappola": "Un solo errore di allocazione o launch disabilita definitivamente la cache fino al reset globale.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_allowed",
@@ -16824,7 +17728,15 @@
    "riga": 3016,
    "riga_fine": 3044,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Applica modalit\u00e0, override, label e dimensioni per decidere la cache q8-fp16.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Le label seguono le convenzioni attn e ffn e le dimensioni descrivono davvero il peso.",
+   "trappola": "Quality mode e soppressione prevalgono anche sull'override Q8_F16_ALL.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_label_is_attention_output",
@@ -16832,7 +17744,15 @@
    "riga": 3046,
    "riga_fine": 3052,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Riconosce output attenzione",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Le label usano le convenzioni nominali previste.",
+   "trappola": "Usa sottostringhe, quindi pu\u00f2 classificare anche label pi\u00f9 lunghe non canoniche.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_use_dp4a",
@@ -16840,7 +17760,15 @@
    "riga": 3054,
    "riga_fine": 3056,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Abilita kernel DP4A",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il device e il kernel scelto supportano DP4A.",
+   "trappola": "La sola presenza di DS4_CUDA_NO_Q8_DP4A, anche con valore 0, lo disabilita.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_exact_threads",
@@ -16848,7 +17776,15 @@
    "riga": 3058,
    "riga_fine": 3062,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Sceglie thread esatti",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Anche zero blocchi produce 64 thread; ogni valore oltre 128 ne produce 256.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_preload_allowed",
@@ -16856,7 +17792,15 @@
    "riga": 3064,
    "riga_fine": 3071,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Decide se una copia q8-fp16 pu\u00f2 essere creata durante il preload.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Le label e le dimensioni corrispondono al tensore da precaricare.",
+   "trappola": "Gli output attenzione richiedono opt-in al preload anche quando la cache lazy sarebbe ammessa.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f32_cache_allowed",
@@ -16864,7 +17808,15 @@
    "riga": 3073,
    "riga_fine": 3082,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Decide tramite override, label e dimensioni quali pesi q8 conservare dequantizzati fp32.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Le label seguono le convenzioni previste e le dimensioni sono attendibili.",
+   "trappola": "A differenza della fp16 non applica quality mode n\u00e9 limite o budget di VRAM.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_ptr",
@@ -16872,7 +17824,15 @@
    "riga": 3097,
    "riga_fine": 3209,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Restituisce o crea sul device una copia fp16 dequantizzata di un peso q8.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Dimensioni e range sono validi; in multi-GPU la sorgente \u00e8 cached sul device fisico atteso.",
+   "trappola": "Un errore di malloc o launch elimina tutta la cache fp16 e forza i kernel q8 successivi.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f32_ptr",
@@ -16880,7 +17840,15 @@
    "riga": 3212,
    "riga_fine": 3315,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Restituisce o crea sul device una copia fp32 dequantizzata di un peso q8.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il prodotto in_dim*out_dim*4 non trabocca e la sorgente \u00e8 sul device fisico atteso.",
+   "trappola": "A differenza della fp16, un fallimento non disabilita n\u00e9 svuota globalmente la cache fp32.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_ok",
@@ -16888,7 +17856,15 @@
    "riga": 3317,
    "riga_fine": 3321,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Controlla errore CUDA",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "what \u00e8 una stringa valida.",
+   "trappola": "Stampa e restituisce 0, ma non interrompe l'esecuzione n\u00e9 pulisce lo stato CUDA.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_wall_sec",
@@ -16896,7 +17872,15 @@
    "riga": 3323,
    "riga_fine": 3325,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Legge tempo monotono",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "La sorgente monotona del sistema \u00e8 disponibile.",
+   "trappola": "Nonostante il nome wall, restituisce tempo monotono e non l'ora civile.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_load_progress_enabled",
@@ -16904,7 +17888,15 @@
    "riga": 3327,
    "riga_fine": 3330,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Decide telemetria caricamento",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "La presenza di WEIGHT_CACHE_VERBOSE, anche con valore 0, disabilita questa telemetria.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stderr_is_tty",
@@ -16912,7 +17904,15 @@
    "riga": 3332,
    "riga_fine": 3339,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Rileva se stderr \u00e8 un TTY usando CRT su Windows e isatty su POSIX.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "stderr dispone di un descrittore interrogabile.",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_load_progress_reset",
@@ -16920,7 +17920,15 @@
    "riga": 3341,
    "riga_fine": 3346,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Azzera soglie, timestamp e stato TTY della telemetria di caricamento.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Nessun thread aggiorna contemporaneamente lo stato globale di progresso.",
+   "trappola": "Il prossimo aggiornamento ricalcola il TTY e ristampa il messaggio iniziale.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_load_progress_note",
@@ -16928,7 +17936,15 @@
    "riga": 3348,
    "riga_fine": 3384,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa avanzamento del caricamento con soglie temporali e di byte diverse per TTY.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "cached_bytes \u00e8 monotono e gli aggiornamenti allo stato globale sono serializzati.",
+   "trappola": "Su TTY aggiorna ogni 2 GiB o 2 s; senza TTY ogni 16 GiB o 10 s.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_prefetch_range",
@@ -16936,7 +17952,15 @@
    "riga": 3386,
    "riga_fine": 3475,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows non prefetch; altrove porta pagine mappate del modello verso la GPU via ATS/HMM.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Range valido nel mapping; su POSIX la GPU supporta accesso a memoria pageable.",
+   "trappola": "Su Windows restituisce sempre 0; altrove variabili presenti lo disabilitano senza errore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_copy_chunk_bytes",
@@ -16944,7 +17968,15 @@
    "riga": 3477,
    "riga_fine": 3488,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola blocco copia",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Valore assente o non valido usa 64 MiB; il risultato \u00e8 limitato a 16-4096 MiB.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_discard_source_pages",
@@ -16952,7 +17984,15 @@
    "riga": 3490,
    "riga_fine": 3506,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows \u00e8 un no-op; su POSIX scarta dalla RAM le pagine sorgente gi\u00e0 copiate.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Mapping e intervallo devono riferirsi all'immagine modello.",
+   "trappola": "DS4_CUDA_KEEP_MODEL_PAGES presente disabilita lo scarto, qualunque sia il valore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_drop_file_pages",
@@ -16960,7 +18000,15 @@
    "riga": 3508,
    "riga_fine": 3516,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows \u00e8 un no-op; su POSIX chiede al kernel di espellere dalla cache le pagine file copiate.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Offset e dimensione devono appartenere al file modello aperto.",
+   "trappola": "DS4_CUDA_KEEP_MODEL_PAGES presente disabilita lo scarto, qualunque sia il valore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_round_down",
@@ -16968,7 +18016,15 @@
    "riga": 3518,
    "riga_fine": 3521,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Arrotonda valore gi\u00f9",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_round_up",
@@ -16976,7 +18032,15 @@
    "riga": 3523,
    "riga_fine": 3527,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Arrotonda valore su",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "La somma v + align - rem non deve traboccare.",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_align_ptr",
@@ -16984,7 +18048,15 @@
    "riga": 3529,
    "riga_fine": 3534,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Allinea puntatore avanti",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "La somma del puntatore con align - 1 non deve traboccare.",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_stage_pool_alloc",
@@ -16992,7 +18064,15 @@
    "riga": 3536,
    "riga_fine": 3576,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Crea quattro buffer host pinned, eventi e stream per leggere e caricare blocchi del modello.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "bytes include lo spazio extra richiesto dall'allineamento O_DIRECT.",
+   "trappola": "Un errore parziale lascia risorse allocate fino alla chiamata o al rilascio successivo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_pread_full",
@@ -17000,7 +18080,15 @@
    "riga": 3578,
    "riga_fine": 3611,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Legge esattamente un intervallo del file nel buffer host e registra tempi e byte.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "fd valido, buffer capiente e intervallo rappresentabile dall'API del sistema.",
+   "trappola": "Su Windows una lettura corta fallisce subito; su POSIX EINTR viene ritentato.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_stage_read",
@@ -17008,7 +18096,15 @@
    "riga": 3613,
    "riga_fine": 3648,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Legge un blocco nello staging; su Linux tenta O_DIRECT allineato, poi usa il file normale.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "payload non nullo e stage capiente anche per letture O_DIRECT arrotondate.",
+   "trappola": "Solo alcuni errori O_DIRECT disattivano definitivamente il fd diretto e attivano il fallback.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_stage_release",
@@ -17016,7 +18112,15 @@
    "riga": 3650,
    "riga_fine": 3676,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Distrugge buffer pinned, eventi I/O e stream del pool per pesi selezionati.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "chiusura",
+   "invariante": "Nessun upload o I/O deve usare ancora il pool.",
+   "trappola": "Non sincronizza stream o I/O prima di distruggere le risorse.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_stage_pool_alloc",
@@ -17024,7 +18128,15 @@
    "riga": 3678,
    "riga_fine": 3716,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Ricrea quattro buffer host pinned, eventi e stream per caricare gli esperti selezionati.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "bytes include lo spazio extra richiesto dall'allineamento del buffer.",
+   "trappola": "Una richiesta pi\u00f9 grande distrugge l'intero pool prima di tentare quello nuovo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_moe_route_packed_copy_requested",
@@ -17032,7 +18144,15 @@
    "riga": 3726,
    "riga_fine": 3732,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Legge flag packed",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "L'ambiente \u00e8 letto una sola volta e solo il valore esatto 1 abilita.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_moe_route_prefetch_hint_requested",
@@ -17040,7 +18160,15 @@
    "riga": 3734,
    "riga_fine": 3740,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Legge flag prefetch",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "L'ambiente \u00e8 letto una sola volta e solo il valore esatto 1 abilita.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_moe_io_queue_depth",
@@ -17048,7 +18176,15 @@
    "riga": 3743,
    "riga_fine": 3752,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola QD Windows",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Rilegge l'ambiente a ogni chiamata; valori oltre 4 vengono troncati a 4.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_prefetch_hint",
@@ -17056,7 +18192,15 @@
    "riga": 3767,
    "riga_fine": 3821,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows suggerisce al kernel il prefetch RAM delle range file degli esperti selezionati.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Mapping e ogni span devono essere validi e contenuti in model_size.",
+   "trappola": "API risolta una volta; assenza o errore vengono ignorati e registrati una sola volta.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_io_events_ensure",
@@ -17064,7 +18208,15 @@
    "riga": 3823,
    "riga_fine": 3836,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Su Windows crea fino a quattro eventi persistenti per I/O overlapped degli esperti.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Gli array globali hanno quattro slot.",
+   "trappola": "Un errore dopo creazioni parziali lascia nel pool gli eventi gi\u00e0 creati.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_io_cancel_pending",
@@ -17072,7 +18224,15 @@
    "riga": 3838,
    "riga_fine": 3860,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows cancella e drena le letture overlapped pendenti, chiudendone la telemetria.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "count non supera quattro e gli array pending e profile corrispondono agli slot I/O.",
+   "trappola": "Aspetta ogni richiesta annullata con GetOverlappedResult bloccante.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_fill_spans_overlapped",
@@ -17080,7 +18240,15 @@
    "riga": 3865,
    "riga_fine": 4012,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows legge span di esperti in parallelo e li copia in VRAM tramite quattro buffer pinned.",
+   "vram": "scrive",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "QD tra 2 e 4, fd valido e tutti gli span entro il file e i buffer.",
+   "trappola": "Sincronizza prima del ritorno; al fallimento il chiamante ripete tutto in seriale.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_moe_io_queue_depth",
@@ -17088,7 +18256,15 @@
    "riga": 4014,
    "riga_fine": 4016,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola QD Windows",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Rilegge l'ambiente a ogni chiamata; valori oltre 4 vengono troncati a 4.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_prefetch_hint",
@@ -17096,7 +18272,15 @@
    "riga": 4018,
    "riga_fine": 4021,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows suggerisce al kernel il prefetch RAM delle range file degli esperti selezionati.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Mapping e ogni span devono essere validi e contenuti in model_size.",
+   "trappola": "API risolta una volta; assenza o errore vengono ignorati e registrati una sola volta.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_copy_to_device_streamed",
@@ -17104,7 +18288,15 @@
    "riga": 4024,
    "riga_fine": 4137,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Copia pesi selezionati dal file o mapping alla VRAM usando quattro buffer pinned.",
+   "vram": "scrive",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Destinazione VRAM capiente; mapping, offset e dimensione coerenti con il file.",
+   "trappola": "Se fd o mapping non coincidono, usa cudaMemcpy sincrona dal mapping anzich\u00e9 il file.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_cache_limit_bytes",
@@ -17112,7 +18304,15 @@
    "riga": 4139,
    "riga_fine": 4149,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola limite cache",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Zero, assente o non numerico significa nessun limite; l'ambiente \u00e8 riletto ogni volta.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_arena_chunk_bytes",
@@ -17120,7 +18320,15 @@
    "riga": 4151,
    "riga_fine": 4167,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola blocco arena",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "need deve poter essere arrotondato senza overflow.",
+   "trappola": "Il limite 8192 MiB non vale se need \u00e8 maggiore: il blocco cresce fino a coprirlo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_arena_alloc",
@@ -17128,7 +18336,15 @@
    "riga": 4169,
    "riga_fine": 4208,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Serve una slice allineata da un'arena VRAM esistente o alloca un nuovo blocco.",
+   "vram": "alloca",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Contatori delle arene coerenti e somme di dimensioni senza overflow.",
+   "trappola": "Il primo cudaMalloc fallito imposta un blocco sticky che impedisce i tentativi successivi.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_ptr_from_fd",
@@ -17136,7 +18352,15 @@
    "riga": 4210,
    "riga_fine": 4304,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Alloca e carica dal file una range di pesi nella cache VRAM, poi la indicizza.",
+   "vram": "alloca",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "g_model_fd e mapping descrivono lo stesso file; offset e bytes sono validi.",
+   "trappola": "A budget esaurito cade sul puntatore host anche con DS4_CUDA_STRICT_WEIGHT_CACHE presente.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_copy_chunked",
@@ -17144,7 +18368,15 @@
    "riga": 4306,
    "riga_fine": 4392,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Alloca l'immagine modello intera e copia header e range richiesta in VRAM a blocchi.",
+   "vram": "alloca",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Range valida e VRAM sufficiente per model_size, non solo per map_size.",
+   "trappola": "Alloca model_size intero anche quando map_size \u00e8 solo un sottointervallo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_release_all",
@@ -17152,7 +18384,15 @@
    "riga": 4394,
    "riga_fine": 4413,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera range e arene della cache modello e annulla le registrazioni host.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "chiusura",
+   "invariante": "Nessun consumer deve usare ancora puntatori alle range registrate.",
+   "trappola": "Le slice arena_allocated si liberano solo insieme al blocco arena condiviso.",
+   "certezza": "alta"
   },
   {
    "nome": "cublas_ok",
@@ -17160,7 +18400,15 @@
    "riga": 4415,
    "riga_fine": 4419,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Controlla esito cuBLAS",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Restituisce solo 0 o 1 e stampa lo status numerico, senza tradurlo.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_init_multi",
@@ -17168,7 +18416,15 @@
    "riga": 4421,
    "riga_fine": 4615,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Inizializza contesto, stream, eventi e cuBLAS CUDA; attualmente accetta una sola GPU.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "cfg valido con esattamente una GPU e un indice dispositivo non negativo.",
+   "trappola": "Rifiuta n_gpus diverso da 1, rendendo irraggiungibile la validazione peer multi-GPU.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_init",
@@ -17176,7 +18432,15 @@
    "riga": 4617,
    "riga_fine": 4623,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Avvia GPU zero",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "Configura sempre una sola GPU con indice 0.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_cleanup",
@@ -17184,7 +18448,15 @@
    "riga": 4625,
    "riga_fine": 4758,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Sincronizza la GPU e libera cache, buffer, grafi, stream, eventi e handle CUDA globali.",
+   "vram": "libera",
+   "frequenza": "per-richiesta",
+   "fase": "chiusura",
+   "invariante": "Nessun thread deve avviare nuovo lavoro durante la pulizia protetta dal lifecycle lock.",
+   "trappola": "Ignora tutti gli errori di sincronizzazione, distruzione e rilascio.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_staged_kv_gate_requested",
@@ -17192,7 +18464,15 @@
    "riga": 4769,
    "riga_fine": 4776,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Legge gate KV",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "DS4_CUDA_KV_STAGED_RING \u00e8 letto una volta sola e solo 1 abilita.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_should_use_staged_kv_cache",
@@ -17200,7 +18480,15 @@
    "riga": 4778,
    "riga_fine": 4781,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Valuta KV staged",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Anche col flag attivo richiede una GPU e sticky_off falso.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_kv_staged_align_bytes",
@@ -17208,7 +18496,15 @@
    "riga": 4783,
    "riga_fine": 4786,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Allinea bytes staged",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "avvio",
+   "invariante": "DS4_CUDA_KV_STAGED_ARENA_ALIGN \u00e8 potenza di due e la somma non trabocca.",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_kv_staged_find_root_locked",
@@ -17216,7 +18512,15 @@
    "riga": 4788,
    "riga_fine": 4794,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "kv",
+   "ruolo": "Trova radice KV",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il mutex del registro staged \u00e8 gi\u00e0 acquisito.",
+   "trappola": "La ricerca \u00e8 lineare nel numero di root.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_kv_staged_host_locked",
@@ -17224,7 +18528,15 @@
    "riga": 4796,
    "riga_fine": 4817,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "kv",
+   "ruolo": "Risolve una view KV nel relativo intervallo dell'arena host staged, con lock gi\u00e0 preso.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Mutex acquisito e binding, root e arena del registro coerenti.",
+   "trappola": "bytes uguale a 0 pu\u00f2 riuscire ed \u00e8 usato come test di presenza.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_kv_staged_host",
@@ -17232,7 +18544,15 @@
    "riga": 4819,
    "riga_fine": 4826,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Restituisce host staged",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Controlla solo il gate statico, non sticky_off, prima dei binding gi\u00e0 esistenti.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_tensor_has_staged_host",
@@ -17240,7 +18560,15 @@
    "riga": 4828,
    "riga_fine": 4830,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Verifica host staged",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Usa una lookup di zero byte: verifica il binding, non l'estensione del tensore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_kv_staged_register_tensor",
@@ -17248,7 +18576,15 @@
    "riga": 4832,
    "riga_fine": 4852,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "kv",
+   "ruolo": "Registra un tensore KV come root e binding per la successiva migrazione nell'arena host staged.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "avvio",
+   "invariante": "tensor resta valido e la sua dimensione non cambia finch\u00e9 \u00e8 registrato.",
+   "trappola": "Restituisce successo senza registrare se staging \u00e8 disattivato, sticky-off o tensor \u00e8 nullo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_kv_staged_bind_view",
@@ -26328,7 +27664,15 @@
    "riga": 19,
    "riga_fine": 27,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "piattaforma",
+   "ruolo": "Inizializza contesto, stream, eventi e cuBLAS CUDA; attualmente accetta una sola GPU.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "cfg valido con esattamente una GPU e un indice dispositivo non negativo.",
+   "trappola": "Rifiuta n_gpus diverso da 1, rendendo irraggiungibile la validazione peer multi-GPU.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_set_current_device",
@@ -26456,7 +27800,15 @@
    "riga": 126,
    "riga_fine": 134,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Misura la VRAM libera del tier e ripristina il device CUDA precedente.",
+   "vram": "misura",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Il tier appartiene alla configurazione GPU inizializzata.",
+   "trappola": "Tier invalido o errore CUDA restituiscono 0, indistinguibile da VRAM esaurita.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_args_probe_auto_cuda",
@@ -26496,7 +27848,15 @@
    "riga": 200,
    "riga_fine": 203,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta attenzione veloce",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_set_decode_score_vec4",
@@ -26504,7 +27864,15 @@
    "riga": 205,
    "riga_fine": 208,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Imposta score vec4",
+   "vram": "no",
+   "frequenza": "per-token",
+   "fase": "decode",
+   "invariante": "Il chiamante ripristina lo stato se l'override deve essere temporaneo.",
+   "trappola": "Restituisce il valore precedente, non quello appena impostato.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_matmul_q8_0_decode_rows_exact_tensor",
@@ -38472,7 +39840,15 @@
    "riga": 567,
    "riga_fine": 586,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Alloca o amplia lo scratch CUDA globale riusabile.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il device CUDA corrente \u00e8 quello che user\u00e0 lo scratch e non vi sono usi concorrenti.",
+   "trappola": "Prima del grow libera il vecchio buffer: se cudaMalloc fallisce, lo scratch \u00e8 perso.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_attention_score_buffer_fits",
@@ -38480,7 +39856,15 @@
    "riga": 588,
    "riga_fine": 590,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Verifica capienza punteggi",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "decode",
+   "invariante": "La capacit\u00e0 totale non \u00e8 minore della quota riservata ai punteggi raw.",
+   "trappola": "La sottrazione unsigned va in underflow se le due capacit\u00e0 vengono definite al contrario.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_image_find",
@@ -38704,7 +40088,15 @@
    "riga": 1020,
    "riga_fine": 1033,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Distrugge buffer pinned, eventi I/O e stream del pool per pesi selezionati.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "chiusura",
+   "invariante": "Nessun upload o I/O deve usare ancora il pool.",
+   "trappola": "Non sincronizza stream o I/O prima di distruggere le risorse.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_selected_ensure_buffers",
@@ -39152,7 +40544,15 @@
    "riga": 4555,
    "riga_fine": 4560,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Seleziona puntatore modello",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "model_map e offset appartengono al backing del modello attivo.",
+   "trappola": "In sola modalit\u00e0 finestra, un offset al bordo ricade sul mapping host.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_copy_uncached",
@@ -39168,7 +40568,15 @@
    "riga": 4589,
    "riga_fine": 4688,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Rende un range di pesi accessibile alla GPU tramite cache, mapping host o copia.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "model_map e intervallo sono validi; il device corrente \u00e8 quello destinatario.",
+   "trappola": "Se mapping host e cache FD falliscono, alloca e copia silenziosamente il range in VRAM.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_is_cached",
@@ -39176,7 +40584,15 @@
    "riga": 4690,
    "riga_fine": 4714,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "controllo",
+   "ruolo": "Verifica se un intervallo del modello \u00e8 gi\u00e0 interamente accessibile dalla GPU.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Le strutture globali della cache non cambiano durante la scansione.",
+   "trappola": "Un modello globalmente owned o registered fa restituire vero senza verificare mappa e range.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_release_all",
@@ -39184,7 +40600,15 @@
    "riga": 4716,
    "riga_fine": 4728,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera tutte le copie dequantizzate fp16 e azzera indici e contatore.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Ogni puntatore cached \u00e8 liberabile dal contesto CUDA corrente.",
+   "trappola": "Ignora gli errori di cudaFree ma elimina i riferimenti, rendendo invisibili eventuali leak.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_env_present",
@@ -39224,7 +40648,15 @@
    "riga": 4833,
    "riga_fine": 4863,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola limite fp16",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Variabile assente o invalida significa nessun limite; il valore esplicito 0 disabilita la cache.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_reserve_bytes",
@@ -39232,7 +40664,15 @@
    "riga": 4865,
    "riga_fine": 4880,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "controllo",
+   "ruolo": "Calcola la VRAM da lasciare libera prima di ampliare la cache q8-fp16.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "total_bytes \u00e8 la capacit\u00e0 reale del device valutato.",
+   "trappola": "Sotto 40 GiB riserva almeno 4 GiB; un override esplicito pu\u00f2 invece impostare anche zero.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_budget_notice",
@@ -39240,7 +40680,15 @@
    "riga": 4882,
    "riga_fine": 4921,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Segnala il rifiuto di una crescita della cache fp16 con limite e memoria disponibili.",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "reason non \u00e8 NULL e i valori descrivono lo stesso device e la stessa richiesta.",
+   "trappola": "Senza verbose stampa una sola volta globale; con verbose stampa ogni rifiuto.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_has_budget",
@@ -39248,7 +40696,15 @@
    "riga": 4923,
    "riga_fine": 4953,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Verifica limite, VRAM libera e riserva prima di allocare una copia fp16.",
+   "vram": "misura",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Il device CUDA corrente \u00e8 quello sul quale avverr\u00e0 l'allocazione.",
+   "trappola": "Il limite cached \u00e8 globale tra GPU, ma la VRAM libera \u00e8 misurata solo sul device corrente.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_disable_after_failure",
@@ -39256,7 +40712,15 @@
    "riga": 4955,
    "riga_fine": 4970,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Disabilita la cache fp16 dopo un errore e ne libera tutte le copie.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "Non restano kernel che usano le copie cached quando termina la sincronizzazione.",
+   "trappola": "Un solo errore di allocazione o launch disabilita definitivamente la cache fino al reset globale.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_cache_allowed",
@@ -39264,7 +40728,15 @@
    "riga": 4972,
    "riga_fine": 4997,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Applica modalit\u00e0, override, label e dimensioni per decidere la cache q8-fp16.",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Le label seguono le convenzioni attn e ffn e le dimensioni descrivono davvero il peso.",
+   "trappola": "Quality mode e soppressione prevalgono anche sull'override Q8_F16_ALL.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_label_is_attention_output",
@@ -39272,7 +40744,15 @@
    "riga": 4999,
    "riga_fine": 5005,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Riconosce output attenzione",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Le label usano le convenzioni nominali previste.",
+   "trappola": "Usa sottostringhe, quindi pu\u00f2 classificare anche label pi\u00f9 lunghe non canoniche.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_preload_allowed",
@@ -39280,7 +40760,15 @@
    "riga": 5007,
    "riga_fine": 5013,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Decide se una copia q8-fp16 pu\u00f2 essere creata durante il preload.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Le label e le dimensioni corrispondono al tensore da precaricare.",
+   "trappola": "Gli output attenzione richiedono opt-in al preload anche quando la cache lazy sarebbe ammessa.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_ptr",
@@ -39288,7 +40776,15 @@
    "riga": 5015,
    "riga_fine": 5071,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "quantizzazione",
+   "ruolo": "Restituisce o crea sul device una copia fp16 dequantizzata di un peso q8.",
+   "vram": "alloca",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "Dimensioni e range sono validi; in multi-GPU la sorgente \u00e8 cached sul device fisico atteso.",
+   "trappola": "Un errore di malloc o launch elimina tutta la cache fp16 e forza i kernel q8 successivi.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_q8_f16_transpose_ptr",
@@ -39328,7 +40824,15 @@
    "riga": 5229,
    "riga_fine": 5233,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Controlla errore CUDA",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "what \u00e8 una stringa valida.",
+   "trappola": "Stampa e restituisce 0, ma non interrompe l'esecuzione n\u00e9 pulisce lo stato CUDA.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_wall_sec",
@@ -39336,7 +40840,15 @@
    "riga": 5235,
    "riga_fine": 5239,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Legge tempo monotono",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "La sorgente monotona del sistema \u00e8 disponibile.",
+   "trappola": "Nonostante il nome wall, restituisce tempo monotono e non l'ora civile.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_load_progress_enabled",
@@ -39344,7 +40856,15 @@
    "riga": 5241,
    "riga_fine": 5243,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Decide telemetria caricamento",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "La presenza di WEIGHT_CACHE_VERBOSE, anche con valore 0, disabilita questa telemetria.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_load_progress_reset",
@@ -39352,7 +40872,15 @@
    "riga": 5245,
    "riga_fine": 5250,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Azzera soglie, timestamp e stato TTY della telemetria di caricamento.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Nessun thread aggiorna contemporaneamente lo stato globale di progresso.",
+   "trappola": "Il prossimo aggiornamento ricalcola il TTY e ristampa il messaggio iniziale.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_load_progress_note",
@@ -39360,7 +40888,15 @@
    "riga": 5252,
    "riga_fine": 5288,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "telemetria",
+   "ruolo": "Stampa avanzamento del caricamento con soglie temporali e di byte diverse per TTY.",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "cached_bytes \u00e8 monotono e gli aggiornamenti allo stato globale sono serializzati.",
+   "trappola": "Su TTY aggiorna ogni 2 GiB o 2 s; senza TTY ogni 16 GiB o 10 s.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_copy_chunk_bytes",
@@ -39368,7 +40904,15 @@
    "riga": 5290,
    "riga_fine": 5292,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola blocco copia",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Valore assente o non valido usa 64 MiB; il risultato \u00e8 limitato a 16-4096 MiB.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_discard_source_pages",
@@ -39376,7 +40920,15 @@
    "riga": 5294,
    "riga_fine": 5311,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows \u00e8 un no-op; su POSIX scarta dalla RAM le pagine sorgente gi\u00e0 copiate.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Mapping e intervallo devono riferirsi all'immagine modello.",
+   "trappola": "DS4_CUDA_KEEP_MODEL_PAGES presente disabilita lo scarto, qualunque sia il valore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_drop_file_pages",
@@ -39384,7 +40936,15 @@
    "riga": 5313,
    "riga_fine": 5321,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Su Windows \u00e8 un no-op; su POSIX chiede al kernel di espellere dalla cache le pagine file copiate.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Offset e dimensione devono appartenere al file modello aperto.",
+   "trappola": "DS4_CUDA_KEEP_MODEL_PAGES presente disabilita lo scarto, qualunque sia il valore.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_round_down",
@@ -39392,7 +40952,15 @@
    "riga": 5323,
    "riga_fine": 5326,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Arrotonda valore gi\u00f9",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_round_up",
@@ -39400,7 +40968,15 @@
    "riga": 5328,
    "riga_fine": 5332,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Arrotonda valore su",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "La somma v + align - rem non deve traboccare.",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_align_ptr",
@@ -39408,7 +40984,15 @@
    "riga": 5334,
    "riga_fine": 5339,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Allinea puntatore avanti",
+   "vram": "no",
+   "frequenza": "ignoto",
+   "fase": "entrambe",
+   "invariante": "La somma del puntatore con align - 1 non deve traboccare.",
+   "trappola": "-",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_stage_pool_alloc",
@@ -39416,7 +41000,15 @@
    "riga": 5341,
    "riga_fine": 5387,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Crea quattro buffer host pinned, eventi e stream per leggere e caricare blocchi del modello.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "bytes include lo spazio extra richiesto dall'allineamento O_DIRECT.",
+   "trappola": "Un errore parziale lascia risorse allocate fino alla chiamata o al rilascio successivo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_pread_full",
@@ -39424,7 +41016,15 @@
    "riga": 5389,
    "riga_fine": 5402,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Legge esattamente un intervallo del file nel buffer host e registra tempi e byte.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "fd valido, buffer capiente e intervallo rappresentabile dall'API del sistema.",
+   "trappola": "Su Windows una lettura corta fallisce subito; su POSIX EINTR viene ritentato.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_stage_read",
@@ -39432,7 +41032,15 @@
    "riga": 5404,
    "riga_fine": 5436,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Legge un blocco nello staging; su Linux tenta O_DIRECT allineato, poi usa il file normale.",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "payload non nullo e stage capiente anche per letture O_DIRECT arrotondate.",
+   "trappola": "Solo alcuni errori O_DIRECT disattivano definitivamente il fd diretto e attivano il fallback.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_cache_limit_bytes",
@@ -39440,7 +41048,15 @@
    "riga": 5438,
    "riga_fine": 5469,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola limite cache",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Zero, assente o non numerico significa nessun limite; l'ambiente \u00e8 riletto ogni volta.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_stream_model_cache_prepare_memory",
@@ -39456,7 +41072,15 @@
    "riga": 5508,
    "riga_fine": 5515,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Calcola blocco arena",
+   "vram": "no",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "need deve poter essere arrotondato senza overflow.",
+   "trappola": "Il limite 8192 MiB non vale se need \u00e8 maggiore: il blocco cresce fino a coprirlo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_arena_alloc",
@@ -39464,7 +41088,15 @@
    "riga": 5517,
    "riga_fine": 5567,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Serve una slice allineata da un'arena VRAM esistente o alloca un nuovo blocco.",
+   "vram": "alloca",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "Contatori delle arene coerenti e somme di dimensioni senza overflow.",
+   "trappola": "Il primo cudaMalloc fallito imposta un blocco sticky che impedisce i tentativi successivi.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_ptr_from_fd",
@@ -39472,7 +41104,15 @@
    "riga": 5569,
    "riga_fine": 5667,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Alloca e carica dal file una range di pesi nella cache VRAM, poi la indicizza.",
+   "vram": "alloca",
+   "frequenza": "per-esperto",
+   "fase": "entrambe",
+   "invariante": "g_model_fd e mapping descrivono lo stesso file; offset e bytes sono validi.",
+   "trappola": "A budget esaurito cade sul puntatore host anche con DS4_CUDA_STRICT_WEIGHT_CACHE presente.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_copy_chunked",
@@ -39480,7 +41120,15 @@
    "riga": 5669,
    "riga_fine": 5759,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "trasporto",
+   "ruolo": "Alloca l'immagine modello intera e copia header e range richiesta in VRAM a blocchi.",
+   "vram": "alloca",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "Range valida e VRAM sufficiente per model_size, non solo per map_size.",
+   "trappola": "Alloca model_size intero anche quando map_size \u00e8 solo un sottointervallo.",
+   "certezza": "alta"
   },
   {
    "nome": "cuda_model_range_release_ranges_only",
@@ -39496,7 +41144,15 @@
    "riga": 5779,
    "riga_fine": 5784,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Libera range e arene della cache modello e annulla le registrazioni host.",
+   "vram": "libera",
+   "frequenza": "ignoto",
+   "fase": "chiusura",
+   "invariante": "Nessun consumer deve usare ancora puntatori alle range registrate.",
+   "trappola": "Le slice arena_allocated si liberano solo insieme al blocco arena condiviso.",
+   "certezza": "alta"
   },
   {
    "nome": "cublas_ok",
@@ -39504,7 +41160,15 @@
    "riga": 5786,
    "riga_fine": 5790,
    "statica": true,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Controlla esito cuBLAS",
+   "vram": "no",
+   "frequenza": "per-layer",
+   "fase": "entrambe",
+   "invariante": "-",
+   "trappola": "Restituisce solo 0 o 1 e stampa lo status numerico, senza tradurlo.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_init",
@@ -39512,7 +41176,15 @@
    "riga": 5793,
    "riga_fine": 5815,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "altro",
+   "ruolo": "Avvia GPU zero",
+   "vram": "no",
+   "frequenza": "avvio",
+   "fase": "avvio",
+   "invariante": "-",
+   "trappola": "Configura sempre una sola GPU con indice 0.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_cleanup",
@@ -39520,7 +41192,15 @@
    "riga": 5817,
    "riga_fine": 5890,
    "statica": false,
-   "kernel": false
+   "kernel": false,
+   "categoria": "allocazione",
+   "ruolo": "Sincronizza la GPU e libera cache, buffer, grafi, stream, eventi e handle CUDA globali.",
+   "vram": "libera",
+   "frequenza": "per-richiesta",
+   "fase": "chiusura",
+   "invariante": "Nessun thread deve avviare nuovo lavoro durante la pulizia protetta dal lifecycle lock.",
+   "trappola": "Ignora tutti gli errori di sincronizzazione, distruzione e rilascio.",
+   "certezza": "alta"
   },
   {
    "nome": "ds4_gpu_tensor_alloc",
@@ -116608,5 +118288,6 @@
   "os_cond_signal": 2,
   "os_cond_broadcast": 2,
   "os_cond_destroy": 2
- }
+ },
+ "schede_fuse": 158
 }

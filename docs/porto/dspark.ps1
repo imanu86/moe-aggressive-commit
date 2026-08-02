@@ -86,7 +86,8 @@ try {
         -H 'Content-Type: application/json' --data-binary "@$req" `
         -o (Join-Path $OutDir "$tag.response.json")
     $sec = ((Get-Date)-$t0).TotalSeconds
-    $r = Get-Content (Join-Path $OutDir "$tag.response.json") -Raw | ConvertFrom-Json
+    # -Encoding UTF8: senza, PS 5.1 legge in ANSI e storpia i multibyte (2/8)
+    $r = Get-Content (Join-Path $OutDir "$tag.response.json") -Raw -Encoding UTF8 | ConvertFrom-Json
     Write-Host ""
     Write-Host "  END2END  $([math]::Round($r.usage.completion_tokens/$sec,3)) t/s   ($($r.usage.completion_tokens) token)"
     # IL numero: accettazione e statistiche della speculativa

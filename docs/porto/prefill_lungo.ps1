@@ -63,7 +63,8 @@ function Prova($nome, $porta, $exe, $argomenti) {
             -H 'Content-Type: application/json' --data-binary "@$req" `
             -o (Join-Path $OutDir "$tag.response.json")
         $sec = ((Get-Date) - $t0).TotalSeconds
-        $r = Get-Content (Join-Path $OutDir "$tag.response.json") -Raw | ConvertFrom-Json
+        # -Encoding UTF8: senza, PS 5.1 legge in ANSI e storpia i multibyte (2/8)
+        $r = Get-Content (Join-Path $OutDir "$tag.response.json") -Raw -Encoding UTF8 | ConvertFrom-Json
         $pt = $r.usage.prompt_tokens; $ct = $r.usage.completion_tokens
         Write-Host "  prompt $pt token, generati $ct, totale $([math]::Round($sec,1))s"
         # il prefill si ricava per differenza usando il decode misurato dal log

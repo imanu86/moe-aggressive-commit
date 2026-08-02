@@ -97,7 +97,14 @@ try {
     $secondi = ((Get-Date) - $t0).TotalSeconds
 
     # llama.cpp riporta i tempi da solo, e sono piu' precisi dei nostri
-    $r = Get-Content $out -Raw | ConvertFrom-Json
+    # -Encoding UTF8 OBBLIGATORIO. In Windows PowerShell 5.1 Get-Content senza
+    # encoding legge con la codepage ANSI: la risposta di curl e' UTF-8, quindi
+    # ogni carattere multibyte veniva letto come windows-1252 e riscritto come
+    # UTF-8, cioe' storpiato. Provato il 2/8 confrontando col JSON grezzo:
+    #   JSON  U+2014 (trattino lungo)  ->  file  U+00E2 U+20AC U+201D
+    # Riguardava OGNI documento della campagna: trattini, frecce, emoji. Il
+    # modello scriveva giusto, lo rovinavamo noi nel salvataggio.
+    $r = Get-Content $out -Raw -Encoding UTF8 | ConvertFrom-Json
     $testo = $r.choices[0].message.content
     [IO.File]::WriteAllText((Join-Path $OutDir "$tag.output.html"), $testo,
         [Text.UTF8Encoding]::new($false))

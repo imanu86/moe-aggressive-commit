@@ -39,8 +39,16 @@ function Prova($nome, $porta, $exe, $argomenti) {
         for ($i = 0; $i -lt 300; $i++) {
             Start-Sleep -Seconds 5
             if ($srv.HasExited) { Write-Host "  uscito, exit $($srv.ExitCode)"; return }
-            try { Invoke-RestMethod "http://127.0.0.1:$porta/health" -TimeoutSec 3 -EA Stop | Out-Null
-                  $pronto = $true; break } catch { }
+            # NON usare /health: ce l'ha llama.cpp ma il nostro server NO, e il
+            # 2/8 ha atteso 25 minuti invano mentre il server era gia' in ascolto
+            # ("listening on http://127.0.0.1:8097"). /v1/models lo servono
+            # entrambi; se anche quello mancasse, basta che la porta risponda.
+            try { Invoke-RestMethod "http://127.0.0.1:$porta/v1/models" -TimeoutSec 3 -EA Stop | Out-Null
+                  $pronto = $true; break }
+            catch {
+                try { (New-Object Net.Sockets.TcpClient).Connect('127.0.0.1', $porta)
+                      $pronto = $true; break } catch { }
+            }
         }
         if (-not $pronto) { Write-Host "  non pronto dopo 25 min"; return }
         Write-Host "  pronto dopo $($i*5)s"

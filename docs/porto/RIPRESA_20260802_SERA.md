@@ -1,5 +1,43 @@
 # Ripresa — 2 agosto 2026, sera (dopo il riavvio)
 
+---
+
+## 0. DECISIONE: si abbandona il tronco DwarfStar
+
+Presa dall'utente il 2/8 sera. Il motore di lavoro e' **llama.cpp**, non piu' il
+fork ds4.
+
+Cosa vuol dire, in pratica:
+
+```
+ABBANDONATO   il tronco DwarfStar e i 14 blocchi del porto (fb57329, 16.354
+              righe). Non si cancella niente: resta in git come archivio, e il
+              piano resta in docs/porto/PIANO.md. Non ci si lavora piu'.
+              Con lui va via anche il KV staged ring (blocco 11, d4a5550,
+              dietro DS4_CUDA_KV_STAGED_RING): non e' mai stato portato su
+              llama.cpp e non lo sara'.
+
+RESTA VIVO    D:\llama-vanilla, worktree su b10227 (f5919bf) + le patch reap.
+              docs/porto/curva_run.py, scala_reap.ps1, llama_confronto.ps1,
+              mappa/capienza.py -- gli strumenti di misura, che sono agnostici.
+
+RESTA VALIDO  il tracciato [route-ids] prodotto da DwarfStar. La scelta degli
+              esperti e' una proprieta' del MODELLO, non del motore: stesso
+              modello e stesso prompt a temperatura 0 danno la stessa routing.
+              E' il dato su cui gira capienza.py.
+
+DECADE        docs/porto/mappa/catena.py e MAPPA_SINTESI.md interrogano il
+              codice DwarfStar. Restano leggibili come archivio, ma non
+              descrivono piu' il motore in uso.
+```
+
+Perche' ha senso: llama.cpp fa 6,79 t/s medi in decode contro i 4,37 di
+DwarfStar sullo stesso banco, e lo fa senza avere un trasporto -- calcola dove
+sta il dato. Le nostre leve migliori su llama.cpp (`-ncmoe`, `-ot`) sono di
+collocazione statica, e non richiedono niente del tronco vecchio.
+
+---
+
 Scritto **prima** di riavviare il PC. Il riavvio serve a riportare la macchina
 allo stato in cui il banco riproduceva il proprio riferimento.
 

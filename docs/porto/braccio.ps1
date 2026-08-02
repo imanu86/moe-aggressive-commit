@@ -1,6 +1,6 @@
 ﻿# Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
 param(
-    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E','F')][string]$Arm,
+    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E','F','G')][string]$Arm,
     [int]$Tokens = 150,
     [int]$Ctx    = 8192,
     [int]$Port   = 8080,

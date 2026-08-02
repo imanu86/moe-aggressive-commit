@@ -1,6 +1,6 @@
-# Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
+﻿# Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
 param(
-    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E')][string]$Arm,
+    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E','F')][string]$Arm,
     [int]$Tokens = 150,
     [int]$Ctx    = 8192,
     [int]$Port   = 8080,
@@ -59,7 +59,7 @@ switch ($Arm) {
   'B' {  # il TRONCO NUDO: tutti i nostri opt-in ASSENTI, non a zero
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
   }
-  'C' {  # 0731 con la nostra politica accesa — RIFATTO col porto v2 (2/8)
+  'C' {  # 0731 con la nostra politica accesa â€” RIFATTO col porto v2 (2/8)
     # Storia, perche' non si ripeta: fino al 2/8 questo braccio aveva TRE
     # variabili e girava di fatto come upstream nudo. Il motivo vero l'ha
     # trovato Codex: `DS4_CUDA_STREAMING_EXPERT_CACHE_N` non era letto da
@@ -111,7 +111,7 @@ switch ($Arm) {
     # Sul FORK, stesso ctx e stessa arena, free_at_size era 1977 MiB.
     # Ipotesi: su WDDM i 30 GiB host mapped-pinned costano VRAM in tabelle di
     # pagina e indirizzamento. Qui la tolgo e lascio che sia la cache VRAM a
-    # tenere gli esperti — che e' anche il verso in cui 0731 e' progettato.
+    # tenere gli esperti â€” che e' anche il verso in cui 0731 e' progettato.
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
     $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
     $env:DS4_EXPERT_TIERING             = 'enforce'
@@ -125,6 +125,61 @@ switch ($Arm) {
     $env:DS4_CUDA_MOE_CACHE_STATS       = '1'
     # NIENTE arena, NIENTE INVERTED_PRIORITY: il sizing preventivo con 2304 MiB
     # di riserva su zero libero e' cio' che ha spento la cache nel braccio C.
+  }
+  'F' {  # L'INTUIZIONE DELL'UTENTE: il backbone non lascia spazio in VRAM perche'
+         # sul fork una parte la tenevamo in RAM pinnata.
+    # Sul fork DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB=2 mascherava 2 GiB di
+    # pesi perche' arrivassero dalla RAM invece di occupare VRAM: la capacity
+    # della cache esperti passo' da 135 a 253. E' l'unica leva che agisce sul
+    # numeratore del problema di stanotte (backbone 8394 MiB su 12287, free=0).
+    #
+    # Arena a 24 GiB e non 30: quella da 30 azzerava free_at_size. Non e' provato
+    # che la colpa fosse sua â€” il braccio E senza arena aveva free=0 lo stesso â€”
+    # ma 24 lascia 6 GiB di margine in piu' sulla RAM.
+    #
+    # NIENTE INVERTED_PRIORITY: nel braccio C armava il sizing preventivo con
+    # 2304 MiB di riserva su zero libero, ed e' cio' che ha dato capacity=0.
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB = '2'
+    $env:DS4_CUDA_DYNAMIC_ARENA_GB      = '24'
+    $env:DS4_CUDA_PREFILL_MASS_OBSERVE  = '1'
+    $env:DS4_CUDA_PREFILL_MASS_WRAP     = '1'
+    $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
+    $env:DS4_EXPERT_TIERING             = 'enforce'
+    $env:DS4_EXPERT_TIER_POLICY         = 'mass-lfru'
+    $env:DS4_CUDA_MOE_IO_QD             = '4'
+    $env:DS4_CUDA_MOE_CACHE_POLICY      = 'lru'
+  }
+  'G' {  # E + la cache q8/f16 spenta. Il braccio che nasce dalla misura del 2/8.
+    # Il run con DS4_CUDA_GRAPH_TENSOR_MANAGED=1 ha spostato 311 allocazioni di
+    # tensori del grafo da cudaMalloc a cudaMallocManaged: 441 MiB, e capacity
+    # e' rimasta 0. Quindi eb3c0b8 NON era la causa: valeva 441 MiB, non 2 GiB.
+    # Il bilancio vero al decode-start di quel run:
+    #     totale 12287   model_range_live 8394   q8/f16 1996   free 0
+    # Il backbone e' legittimo, serve a ogni token. La q8/f16 no: e' un percorso
+    # di accelerazione che dequantizza Q8->F16 per usare i tensor core invece del
+    # kernel scalare DP4A. Su 2 bit la nostra memoria dice che non tocca la
+    # qualita' (crepa di precisione = ramo q8/f16, NO_Q8_F16_CACHE = sicura).
+    #
+    # Perche' cresce a 1996 MiB con una riserva di 4096: si alloca in PREFILL,
+    # quando il backbone non e' ancora tutto residente e free e' alto. Quando il
+    # backbone arriva, la q8/f16 ha gia' preso il posto. Prima serva, prima servita.
+    # cuda_q8_f16_cache_has_budget: `if (limit == 0) return 0` (ds4_cuda.cu:2970).
+    #
+    # Il baratto: 1996 MiB di q8/f16 contro ~270 slot esperti. Sul fork 274 slot
+    # davano 474.937 vram_hits e 4,49 t/s. Se il baratto vale, si vede qui.
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_Q8_F16_CACHE_MB       = '0'
+    $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
+    $env:DS4_EXPERT_TIERING             = 'enforce'
+    $env:DS4_EXPERT_TIER_POLICY         = 'mass-lfru'
+    $env:DS4_EXPERT_TIER_CLOCK_CALLS    = '430'
+    $env:DS4_EXPERT_TIER_MIN_FREQUENCY  = '3'
+    $env:DS4_EXPERT_TIER_HYSTERESIS     = '1.25'
+    $env:DS4_EXPERT_TIER_REPLACEMENT_BUDGET = '16'
+    $env:DS4_CUDA_MOE_IO_QD             = '4'
+    $env:DS4_CUDA_MOE_CACHE_POLICY      = 'lru'
+    $env:DS4_CUDA_MOE_CACHE_STATS       = '1'
   }
 }
 foreach ($k in $Override.Keys) {
@@ -201,7 +256,7 @@ $promptSha = [BitConverter]::ToString(
 # (successo l'1/8 a gen=600) l'output e' perso per sempre. In streaming curl scrive i
 # byte su disco mentre arrivano: un run interrotto lascia comunque il testo prodotto.
 # think=false: SENZA questo il modello entra in fase di ragionamento e brucia
-# centinaia di token prima di scrivere la pagina — sul tronco, l'1/8, non ne e'
+# centinaia di token prima di scrivere la pagina â€” sul tronco, l'1/8, non ne e'
 # uscito nemmeno dopo 1340. Le pagine di riferimento della campagna sono HTML puro:
 # misurare col ragionamento acceso significa misurare un altro carico.
 # ds4_server.c:3292 legge "think" come booleano.
@@ -273,7 +328,7 @@ $evict  = @(Select-String -LiteralPath $srvLog -Pattern 'evict_backbone=(\d+)' -
     ForEach-Object { $_.Matches } | ForEach-Object { [int]$_.Groups[1].Value } |
     Measure-Object -Maximum).Maximum
 # Il braccio nudo NON stampa result=sized: senza guardia .Matches e' null e
-# indicizzarlo fa esplodere l'harness DOPO aver gia' salvato l'output — cioe'
+# indicizzarlo fa esplodere l'harness DOPO aver gia' salvato l'output â€” cioe'
 # nel punto peggiore, perche' il run e' riuscito ma sembra fallito.
 $capMatch = Select-String -LiteralPath $srvLog -Pattern 'result=sized requested=\d+ capacity=(\d+)' |
     Select-Object -Last 1
@@ -318,3 +373,4 @@ else { "    uscito pulito in {0:N1}s" -f ((Get-Date) - $t1).TotalSeconds }
 Start-Sleep -Seconds 3
 "    VRAM dopo: $((& nvidia-smi --query-gpu=memory.used --format=csv,noheader))"
 "    log: $srvLog"
+

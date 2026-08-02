@@ -60,13 +60,26 @@ def insieme_caldo(accessi, capienza):
     """Insieme caldo STATICO: i `capienza` piu' frequenti, deciso in anticipo.
 
     E' il tetto di qualunque politica per calore che non si adatti nel tempo,
-    e sul gradino VRAM faceva 28,2% contro lo 0% della LRU. Vede il futuro
-    quanto Belady (sceglie coi conteggi finali), quindi e' un TETTO, non una
-    politica realizzabile: serve per sapere se vale la pena inseguirlo.
+    e sul gradino VRAM faceva 28,2% contro lo 0% della LRU. Sceglie coi
+    conteggi finali, quindi vede il futuro quanto Belady: e' un TETTO, non una
+    politica realizzabile.
+
+    ATTENZIONE al primo tocco. La prima versione contava semplicemente quanti
+    accessi cadevano sui piu' frequenti, e dava 98,5% -- cioe' PIU' di Belady,
+    che e' impossibile perche' Belady e' ottimo. Il difetto era che un esperto
+    caldo veniva contato come colpo anche al suo PRIMO accesso, quando la cache
+    e' ancora vuota. I miss obbligatori sono 8101 su 155058 = 5,2%, ed e'
+    esattamente il complemento del 94,8% di Belady.
     """
     from collections import Counter
     caldi = {k for k, _ in Counter(accessi).most_common(capienza)}
-    colpi = sum(1 for k in accessi if k in caldi)
+    visti = set()
+    colpi = 0
+    for k in accessi:
+        if k in caldi and k in visti:
+            colpi += 1
+        elif k in caldi:
+            visti.add(k)          # primo tocco: entra in cache, ma e' un miss
     return colpi, len(accessi) - colpi
 
 

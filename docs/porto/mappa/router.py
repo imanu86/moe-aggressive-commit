@@ -142,6 +142,57 @@ def casuale(accessi, capienza, seme=12345):
     return colpi, mancati
 
 
+def bussate(accessi, capienza, soglia=3, decadimento=0, isteresi=1.25):
+    """Mask APERTA con costo d'ingresso: entri dopo `soglia` bussate.
+
+    Non e' una potatura: nessuno e' escluso per sempre. Chi non e' residente
+    accumula bussate a ogni richiesta, e alla soglia entra sfrattando il
+    residente meno caldo. Il costo d'ingresso governa le RILETTURE -- che sul
+    nostro tracciato sono il 90,3% degli accessi.
+
+    `decadimento`: ogni quanti accessi dimezzare i contatori delle bussate, per
+    non far entrare chi ha bussato tanto ma molto tempo fa. 0 = mai.
+    """
+    from collections import OrderedDict
+    residenti = OrderedDict()          # chiave -> punteggio da residente
+    knock = Counter()
+    colpi = mancati = ammessi = 0
+    for i, k in enumerate(accessi):
+        # L'OROLOGIO (DS4_EXPERT_TIER_CLOCK_CALLS): invecchia i punteggi dei
+        # residenti. Senza, il vantaggio di chi e' entrato per primo cresce
+        # all'infinito e la cache si congela dopo il primo riempimento.
+        if decadimento and i and i % decadimento == 0:
+            for x in list(residenti):
+                residenti[x] = residenti[x] * 3 // 4
+            for x in list(knock):
+                knock[x] = knock[x] * 3 // 4
+                if not knock[x]:
+                    del knock[x]
+        if k in residenti:
+            colpi += 1
+            residenti[k] += 1
+            continue
+        mancati += 1
+        knock[k] += 1
+        if knock[k] < soglia:
+            continue                   # ha bussato, ma non abbastanza
+        # Il candidato entra col credito delle bussate che si e' guadagnato:
+        # senza questo un nuovo ammesso vale 1 ed e' la prima vittima della
+        # ammissione successiva -- muore prima di poter dimostrare qualcosa.
+        credito = knock[k]
+        if len(residenti) >= capienza:
+            vittima = min(residenti, key=lambda x: residenti[x])
+            # ISTERESI: il candidato deve battere la vittima di un margine,
+            # altrimenti non vale la pena scambiare. Senza, la cache oscilla.
+            if residenti[vittima] * isteresi > credito:
+                continue               # respinto, ma TIENE le bussate e insiste
+            del residenti[vittima]
+        residenti[k] = credito
+        ammessi += 1
+        del knock[k]
+    return colpi, mancati, ammessi
+
+
 def lfu_oracolo(accessi, capienza):
     """Tiene fissi i `capienza` esperti piu' frequenti dell'INTERO tracciato.
 

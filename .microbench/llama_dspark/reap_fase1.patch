@@ -1,0 +1,132 @@
+diff --git a/common/CMakeLists.txt b/common/CMakeLists.txt
+index 4cf580a..60ae6ac 100644
+--- a/common/CMakeLists.txt
++++ b/common/CMakeLists.txt
+@@ -67,6 +67,8 @@ add_library(${TARGET}
+     chat.h
+     common.cpp
+     common.h
++    reap.cpp
++    reap.h
+     console.cpp
+     console.h
+     debug.cpp
+diff --git a/common/arg.cpp b/common/arg.cpp
+index f6b8d28..be03636 100644
+--- a/common/arg.cpp
++++ b/common/arg.cpp
+@@ -256,6 +256,12 @@ static void parse_tensor_buffer_overrides(const std::string & value, std::vector
+         if (buft) {
+             buft_list[ggml_backend_buft_name(buft)] = buft;
+         }
++        // pinned-host buffer types (e.g. CUDA_Host) are addressable by the GPU
++        // over the bus: without them -ot/-otd cannot express zero-copy placement
++        auto * buft_host = ggml_backend_dev_host_buffer_type(dev);
++        if (buft_host) {
++            buft_list[ggml_backend_buft_name(buft_host)] = buft_host;
++        }
+     }
+ 
+     for (const auto & override : string_split<std::string>(value, ',')) {
+diff --git a/common/common.cpp b/common/common.cpp
+index 8f13217..f8f42f3 100644
+--- a/common/common.cpp
++++ b/common/common.cpp
+@@ -3,6 +3,7 @@
+ 
+ #include "build-info.h"
+ #include "common.h"
++#include "reap.h"
+ #include "fit.h"
+ #include "log.h"
+ #include "llama.h"
+@@ -1613,6 +1614,11 @@ struct llama_context_params common_context_params_to_llama(const common_params &
+     cparams.flash_attn_type   = params.flash_attn_type;
+     cparams.cb_eval           = params.cb_eval;
+     cparams.cb_eval_user_data = params.cb_eval_user_data;
++
++    // REAP-LOOP: osserva gli esperti scelti dal percorso CPU di mul_mat_id,
++    // dove gli id sono gia' in memoria host. Senza LLAMA_REAP=1 non si installa
++    // niente e il costo e' zero.
++    reap_install();
+     cparams.offload_kqv       = !params.no_kv_offload;
+     cparams.no_perf           = params.no_perf;
+     cparams.op_offload        = !params.no_op_offload;
+diff --git a/ggml/include/ggml-cpu.h b/ggml/include/ggml-cpu.h
+index e3e067c..4454c3a 100644
+--- a/ggml/include/ggml-cpu.h
++++ b/ggml/include/ggml-cpu.h
+@@ -137,6 +137,22 @@ extern "C" {
+ 
+     GGML_BACKEND_API void ggml_backend_cpu_set_use_ref(ggml_backend_t backend_cpu, bool use_ref);
+ 
++
++    // MoE expert-selection observer.
++    //
++    // Called once per mul_mat_id node, from the single thread that already walks
++    // the ids buffer to group rows (ggml-cpu.c, `if (ith == 0)`). The ids live in
++    // host memory there because the CPU op needs them: reading them costs nothing
++    // and forces no device synchronisation.
++    //
++    // Reading the same ids through the eval callback instead costs a synchronous
++    // device->host read per layer (43 per token) and splits the graph: measured
++    // 2026-08-02, prefill 1,12 -> 0,92 t/s.
++    typedef void (*ggml_moe_ids_observer_t)(
++            const char * name, const int32_t * ids,
++            int64_t n_used, int64_t n_tokens, size_t nb0, size_t nb1);
++    GGML_BACKEND_API void ggml_cpu_set_moe_ids_observer(ggml_moe_ids_observer_t obs);
++
+     GGML_BACKEND_API ggml_backend_reg_t ggml_backend_cpu_reg(void);
+ 
+     GGML_BACKEND_API void ggml_cpu_fp32_to_fp32(const float *,       float *, int64_t);
+diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
+index a82842f..37baa6e 100644
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -1531,6 +1531,12 @@ static void * incr_ptr_aligned(void ** p, size_t size, size_t align) {
+     return ptr;
+ }
+ 
++static ggml_moe_ids_observer_t g_moe_ids_observer = NULL;
++
++void ggml_cpu_set_moe_ids_observer(ggml_moe_ids_observer_t obs) {
++    g_moe_ids_observer = obs;
++}
++
+ static void ggml_compute_forward_mul_mat_id(
+         const struct ggml_compute_params * params,
+               struct ggml_tensor * dst) {
+@@ -1634,6 +1640,13 @@ static void ggml_compute_forward_mul_mat_id(
+                 matrix_row_counts[i02] += 1;
+             }
+         }
++
++        // reap-loop: gli id sono gia' qui, in memoria host, letti da questo
++        // stesso thread. Osservarli non costa ne' trasferimenti ne' barriere.
++        if (g_moe_ids_observer) {
++            g_moe_ids_observer(ids->name, (const int32_t *) ids->data,
++                               n_ids, ids->ne[1], ids->nb[0], ids->nb[1]);
++        }
+     }
+ 
+     // reset current_chunk
+diff --git a/tools/server/server.cpp b/tools/server/server.cpp
+index c2b2112..3539549 100644
+--- a/tools/server/server.cpp
++++ b/tools/server/server.cpp
+@@ -1,4 +1,5 @@
+ #include "server-context.h"
++#include "reap.h"
+ #include "server-http.h"
+ #include "server-models.h"
+ #include "server-cors-proxy.h"
+@@ -391,6 +392,9 @@ int llama_server(common_params & params, int argc, char ** argv) {
+         // setup clean up function, to be called before exit
+         clean_up = [&ctx_http, &ctx_server]() {
+             SRV_INF("%s: cleaning up before exit...\n", __func__);
++            // reap-loop: la mappa del calore va scritta PRIMA di liberare il
++            // backend, altrimenti si perde a ogni spegnimento
++            reap_dump();
+             // stop the session GC first, it finalizes live sessions and wakes pending readers
+             server_stream_session_manager_stop();
+             ctx_http.stop();

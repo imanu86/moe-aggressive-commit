@@ -1,6 +1,6 @@
 # Un braccio del primo run del porto. Uso: .\braccio.ps1 -Arm A|B|C [-Tokens 150]
 param(
-    [Parameter(Mandatory)][ValidateSet('A','B','C','D')][string]$Arm,
+    [Parameter(Mandatory)][ValidateSet('A','B','C','D','E')][string]$Arm,
     [int]$Tokens = 150,
     [int]$Ctx    = 8192,
     [int]$Port   = 8080,
@@ -103,6 +103,28 @@ switch ($Arm) {
   'D' {  # 0731 NUDO ma con la sola coda I/O: isola la leva che i numeri indicano
     $exe = "$R\ds4-port\build-verify\ds4-server.exe"
     $env:DS4_CUDA_MOE_IO_QD = '4'
+  }
+  'E' {  # 0731 SENZA arena, ma con cache esperti e coda. Nasce dal fallimento di C.
+    # C con l'arena da 30 GiB ha dato free_at_size_mib=0.0 e capacity=0: la cache
+    # non si e' potuta dimensionare perche' CUDA riportava ZERO VRAM libera, pur
+    # con il backbone a 8393 MiB su 12287 totali. 3888 MiB non tracciati da noi.
+    # Sul FORK, stesso ctx e stessa arena, free_at_size era 1977 MiB.
+    # Ipotesi: su WDDM i 30 GiB host mapped-pinned costano VRAM in tabelle di
+    # pagina e indirizzamento. Qui la tolgo e lascio che sia la cache VRAM a
+    # tenere gli esperti — che e' anche il verso in cui 0731 e' progettato.
+    $exe = "$R\ds4-port\build-verify\ds4-server.exe"
+    $env:DS4_CUDA_STREAMING_EXPERT_CACHE_N = '320'
+    $env:DS4_EXPERT_TIERING             = 'enforce'
+    $env:DS4_EXPERT_TIER_POLICY         = 'mass-lfru'
+    $env:DS4_EXPERT_TIER_CLOCK_CALLS    = '430'
+    $env:DS4_EXPERT_TIER_MIN_FREQUENCY  = '3'
+    $env:DS4_EXPERT_TIER_HYSTERESIS     = '1.25'
+    $env:DS4_EXPERT_TIER_REPLACEMENT_BUDGET = '16'
+    $env:DS4_CUDA_MOE_IO_QD             = '4'
+    $env:DS4_CUDA_MOE_CACHE_POLICY      = 'lru'
+    $env:DS4_CUDA_MOE_CACHE_STATS       = '1'
+    # NIENTE arena, NIENTE INVERTED_PRIORITY: il sizing preventivo con 2304 MiB
+    # di riserva su zero libero e' cio' che ha spento la cache nel braccio C.
   }
 }
 foreach ($k in $Override.Keys) {
@@ -250,8 +272,12 @@ $regime = if ($chunks.Count) { $chunks[[int]($chunks.Count/2)] } else { $null }
 $evict  = @(Select-String -LiteralPath $srvLog -Pattern 'evict_backbone=(\d+)' -AllMatches |
     ForEach-Object { $_.Matches } | ForEach-Object { [int]$_.Groups[1].Value } |
     Measure-Object -Maximum).Maximum
-$capacity = (Select-String -LiteralPath $srvLog -Pattern 'result=sized requested=\d+ capacity=(\d+)' |
-    Select-Object -Last 1).Matches.Groups[1].Value
+# Il braccio nudo NON stampa result=sized: senza guardia .Matches e' null e
+# indicizzarlo fa esplodere l'harness DOPO aver gia' salvato l'output — cioe'
+# nel punto peggiore, perche' il run e' riuscito ma sembra fallito.
+$capMatch = Select-String -LiteralPath $srvLog -Pattern 'result=sized requested=\d+ capacity=(\d+)' |
+    Select-Object -Last 1
+$capacity = if ($capMatch) { $capMatch.Matches[0].Groups[1].Value } else { $null }
 
 $meta = [ordered]@{
     id = $tag; arm = $Arm; timestamp = (Get-Date -Format 'o')

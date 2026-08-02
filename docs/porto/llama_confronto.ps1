@@ -31,8 +31,13 @@ $log = Join-Path $OutDir "$tag.server.log"
 $prompt = 'Create a complete single-file HTML landing page for a cyberpunk AI programming shop. Include CSS, navigation, hero, request form, and a JavaScript confirmation popup. Return only the HTML document.'
 $sha = [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash(
     [Text.Encoding]::UTF8.GetBytes($prompt))).Replace('-','').ToLower()
-if ($sha.Substring(0,16) -ne '38f6ec5e5f9d3d8f') {
-    Write-Host "  ATTENZIONE: sha del prompt $($sha.Substring(0,16)), atteso 38f6ec5e5f9d3d8f"
+# La costante era 38f6ec5e5f9d3d8f, che non e' lo sha del prompt qui sotto: il
+# guardiano ha suonato a ogni run del 2/8 e ci siamo abituati a ignorarlo, che e'
+# il modo in cui un controllo muore. Il valore vero, verificato il 2/8 sera, e'
+# lo stesso che il prompt ha in braccio.ps1:277 e dspark.ps1:31 -- le tre stringhe
+# sono identiche byte per byte, quindi il confronto fra motori regge.
+if ($sha.Substring(0,16) -ne '38f6ec5ee5403f59') {
+    Write-Host "  ATTENZIONE: sha del prompt $($sha.Substring(0,16)), atteso 38f6ec5ee5403f59"
 }
 Write-Host "  motore  llama.cpp b10227    ngl=$Ngl  ctx=$Ctx  token=$Tokens"
 Write-Host "  prompt  sha $($sha.Substring(0,16))   modello $(Split-Path $Model -Leaf)"

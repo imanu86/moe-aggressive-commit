@@ -23,7 +23,10 @@
 
 param(
     [int]$Tokens = 1500,
-    [int]$Quiete = 120
+    [int]$Quiete = 120,
+    # Quali pioli fare. Serve a riprendere una scala interrotta senza rifare
+    # quelli gia' a terra: -Pioli 2,3,4
+    [int[]]$Pioli = @(1,2,3,4)
 )
 
 $ErrorActionPreference = 'Continue'
@@ -51,7 +54,38 @@ function Stato-Macchina($quando) {
         $quando, ($m.AvailableMBytes/1024), $standby, $v
 }
 
+# Campionatore di memoria: gira DURANTE il run e scrive una riga ogni 10 s.
+#
+# Serve a rispondere con una misura, non con un'opinione, alla domanda "il
+# modello da 80,76 GiB su 64 GB di RAM sta strangolando il sistema?". Il numero
+# che conta per l'esaurimento e' il COMMIT, non il working set: con mmap le
+# pagine del modello sono file-backed e pulite, finiscono in standby e non
+# consumano commit. Se il commit resta lontano dal limite, l'ipotesi cade.
+function Avvia-Campionatore($percorso) {
+    $codice = {
+        param($out)
+        "ora`tdisponibile_GB`tstandby_GB`tcommit_GB`tlimite_GB`tllama_WS_GB" |
+            Out-File $out -Encoding utf8
+        while ($true) {
+            $m  = Get-CimInstance Win32_PerfRawData_PerfOS_Memory
+            $os = Get-CimInstance Win32_OperatingSystem
+            $p  = Get-Process llama-server -ErrorAction SilentlyContinue |
+                    Select-Object -First 1
+            '{0}`t{1:N1}`t{2:N1}`t{3:N1}`t{4:N1}`t{5:N1}' -f (Get-Date -Format 'HH:mm:ss'),
+                ($m.AvailableMBytes/1024),
+                (($m.StandbyCacheNormalPriorityBytes+$m.StandbyCacheCoreBytes+
+                  $m.StandbyCacheReserveBytes)/1GB),
+                (($os.TotalVirtualMemorySize-$os.FreeVirtualMemory)/1MB),
+                ($os.TotalVirtualMemorySize/1MB),
+                $(if($p){$p.WorkingSet64/1GB}else{0}) | Out-File $out -Append -Encoding utf8
+            Start-Sleep -Seconds 10
+        }
+    }
+    Start-Job -ScriptBlock $codice -ArgumentList $percorso
+}
+
 function Piolo($n, $titolo, $exe, $etichetta, $reapOn) {
+    if ($Pioli -notcontains $n) { return }
     Write-Host ""
     Write-Host "=============== PIOLO $n  $titolo ==============="
     Spegni-Reap
@@ -61,9 +95,14 @@ function Piolo($n, $titolo, $exe, $etichetta, $reapOn) {
         $env:LLAMA_REAP_DUMP = "D:\ds4_work\llama_run\reap_calore_$etichetta.tsv"
     }
     Write-Host (Stato-Macchina 'prima')
-    & $banco @comuni -Exe $exe -Etichetta $etichetta
+    $campionatore = Avvia-Campionatore "D:\ds4_work\llama_run\memoria_$etichetta.tsv"
+    try   { & $banco @comuni -Exe $exe -Etichetta $etichetta }
+    finally {
+        Stop-Job $campionatore -ErrorAction SilentlyContinue
+        Remove-Job $campionatore -Force -ErrorAction SilentlyContinue
+    }
     Write-Host (Stato-Macchina 'dopo ')
-    if ($n -lt 4) {
+    if ($n -lt ($Pioli | Measure-Object -Maximum).Maximum) {
         Write-Host "  --- quiete $Quiete s ---"
         Start-Sleep -Seconds $Quiete
     }

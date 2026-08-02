@@ -78,3 +78,77 @@ token, 90,3% degli accessi sono riletture, la LRU pura prenderebbe zero colpi, i
 percorso di lettura anti-scala col parallelismo, ogni punto di hit rate vale lo
 0,7% di velocita'. E REAP Stage A, che e' una modifica al GGUF e gira su
 entrambi i motori.
+
+## DSpark su llama.cpp — 2026-08-02 pomeriggio: DIAGNOSI PRECISA, non funziona ANCORA
+
+### Fatto
+
+- **Compilato** `YanissAmz/llama.cpp -b dspark-dsv4` con CUDA in `D:\llama-dspark`
+  (`build_cuda.bat`, arch 86, Ninja+Release, `BUILD_EXIT=0`). La punta del ramo e'
+  `c2e5186 "dflash: use the DeepSeek-V4 rotary pairing for a DeepSeek-V4 backbone"`.
+- **Scaricato** `C:\ds4-models\DSV4-Flash-DSpark-draft-bf16.gguf`, 10,15 GiB.
+
+### Il draft, geometria vera (il nome MENTE)
+
+```
+arch dflash    81 tensori    19,85 MILIARDI di parametri    4,39 bit per peso
+tipi: tipo39 (MXFP4) = 19,33B,  Q8_0 = 0,45B,  BF16 = 0,07B
+dflash.block_count = 3     dflash.block_size = 5
+dflash.expert_count = 256  dflash.expert_used_count = 6    <- il draft e' a sua volta un MoE
+dflash.target_layers = [41, 42, 43]
+```
+
+Non e' BF16: e' **MXFP4, gia' a 4 bit**. E non e' un modellino denso: e' un MoE con
+256 esperti, quindi **draftare costa letture di esperti anche al draft** — un pezzo
+di costo che non era nel conto del tetto 1,83x.
+
+### Perche' fallisce
+
+```
+il nostro target    blk.0 .. blk.42        43 strati
+il draft vuole      target_layers = [41, 42, 43]
+                    -> l'indice 43 NON ESISTE -> "invalid vector subscript"
+```
+
+Il nostro GGUF dichiara `nextn_predict_layers = 1` ma **non contiene i tensori**:
+sono stati estratti nei file MTP separati alla quantizzazione. Il target di
+YanissAmz (`DeepSeek-V4-Flash-UD-IQ3_XXS` di unsloth) ha quasi certamente 44
+strati, col nextn incluso.
+
+Il backbone invece **e' supportato**: `dflash.cpp:34` rileva il DSv4 dalla presenza
+di `attn_q_a`.
+
+### Tre configurazioni provate, tutte fallite, con la loro causa
+
+```
+-ngl 99 -cmoed        invalid vector subscript   (il draft, indice 43)
+-ngl 99 -devd none    output.weight pre-allocato su CUDA0 senza device per eseguirlo
+--fit on              abortito da tensor_buft_overrides (li mette -cmoe sul target),
+                      poi stesso invalid vector subscript
+```
+
+Nota: `--fit` e' l'adattatore automatico che colloca target e draft nella memoria
+disponibile. **Forzare `-ngl` o usare `-cmoe` lo abortisce.** I miei primi due
+tentativi lo avevano disattivato senza che me ne accorgessi.
+
+### Cosa serve per farlo funzionare
+
+1. **Un target con 44 strati** (nextn incluso). Da verificare se unsloth
+   `UD-IQ3_XXS` ce l'ha: la lettura remota dell'header e' fallita perche' i
+   metadati eccedono i 12 MB che avevo chiesto. E' ~103 GB.
+2. **Oppure innestare il nostro MTP** (`DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf`,
+   32 tensori `mtp.0.*`) come `blk.43` del target. **Ma la convenzione non
+   coincide**: llama.cpp vuole `blk.%d.nextn.{eh_proj,embed_tokens,enorm,hnorm,
+   shared_head_head,shared_head_norm}` (convenzione DeepSeek-V3) mentre il nostro
+   ha `mtp.0.{main_proj,main_norm,attn_*,ffn_*,hc_*}`. Non e' un rinominare.
+3. E comunque **il caricatore deepseek4 di llama.cpp non carica nessuno strato
+   nextn**: zero occorrenze di `nextn` nel suo blocco di `create_tensor`.
+
+### Il conto economico, aggiornato
+
+Tetto della speculazione su questo modello (issue upstream #636): **1,83x** con
+accettazione perfetta, **perdita netta sotto 0,72**. Misurato da YanissAmz su
+Strix Halo: 0,72-1,00 a contesto corto (+19-25%), 0,54 a 176k (perdita netta).
+
+E il draft e' un MoE da 19,85B: le sue letture di esperti si sommano a quelle
+della verifica, quindi il tetto reale e' piu' basso di 1,83x.

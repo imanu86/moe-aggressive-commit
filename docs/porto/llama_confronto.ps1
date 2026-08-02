@@ -160,10 +160,13 @@ finally {
         # SPEGNIMENTO GRAZIOSO. Il 2/8 ho ucciso llama con Stop-Process e ha
         # lasciato ~2,2 GB di VRAM non rilasciata, che ho poi inseguito per ore
         # nel nostro bilancio credendola nostra. llama-server non ha endpoint di
-        # shutdown (/metrics, /slots, /v1/* e basta): la via giusta su Windows e'
-        # CTRL_BREAK_EVENT, la stessa che l'igiene di campagna prescrive per il
-        # nostro server quando manca il token.
-        Write-Host "  spengo il server con CTRL_BREAK"
+        # shutdown (/metrics, /slots, /v1/* e basta), quindi si passa da un
+        # segnale di console.
+        #
+        # CORRETTO il 2/8 sera: era CTRL_BREAK, che llama-server RIFIUTA (vedi
+        # sotto). Per tutta la campagna lo spegnimento "grazioso" e' fallito in
+        # silenzio e ogni run e' finito ucciso dallo Stop-Process di riserva.
+        Write-Host "  spengo il server con CTRL_C"
         if (-not ([Management.Automation.PSTypeName]'Ctrl').Type) {
             Add-Type -Namespace '' -Name Ctrl -MemberDefinition @'
 [DllImport("kernel32.dll", SetLastError=true)]
@@ -181,14 +184,32 @@ public static extern bool SetConsoleCtrlHandler(IntPtr handler, bool add);
             [void][Ctrl]::FreeConsole()
             if ([Ctrl]::AttachConsole([uint32]$srv.Id)) {
                 [void][Ctrl]::SetConsoleCtrlHandler([IntPtr]::Zero, $true)
-                $inviato = [Ctrl]::GenerateConsoleCtrlEvent(1, 0)   # 1 = CTRL_BREAK_EVENT
+                # 0 = CTRL_C_EVENT, NON 1 = CTRL_BREAK_EVENT.
+                #
+                # llama-server accetta SOLO il primo (tools/server/server.cpp:490):
+                #     return (ctrl_type == CTRL_C_EVENT) ? (signal_handler(SIGINT), true) : false;
+                # Per tutto il resto ritorna false e il gestore predefinito di
+                # Windows termina il processo di brutto: niente clean_up, niente
+                # rilascio ordinato.
+                #
+                # Con CTRL_BREAK la riga "cleaning up before exit" compare in UN
+                # SOLO log di tutta la campagna del 2/8 -- quello del run morto
+                # da solo per errore di caricamento. Tutti gli altri sono stati
+                # uccisi dallo Stop-Process di riserva dopo i 30 s di attesa, ed
+                # e' esattamente il modo in cui il 2/8 pomeriggio abbiamo perso
+                # 2,2 GB di VRAM che poi ho inseguito per ore.
+                #
+                # Mandare CTRL_C e' sicuro qui perche' due righe sopra abbiamo
+                # gia' chiamato SetConsoleCtrlHandler(NULL, true), che disattiva
+                # Ctrl+C in QUESTO processo; viene riattivato nel finally.
+                $inviato = [Ctrl]::GenerateConsoleCtrlEvent(0, 0)   # 0 = CTRL_C_EVENT
                 Start-Sleep -Seconds 8
                 [void][Ctrl]::FreeConsole()
                 [void][Ctrl]::SetConsoleCtrlHandler([IntPtr]::Zero, $false)
             }
         } catch { }
         if (-not $srv.HasExited) {
-            Write-Host ("  CTRL_BREAK {0}; attendo l'uscita" -f $(if($inviato){'inviato'}else{'non riuscito'}))
+            Write-Host ("  CTRL_C {0}; attendo l'uscita" -f $(if($inviato){'inviato'}else{'non riuscito'}))
             if (-not $srv.WaitForExit(30000)) {
                 Write-Host "  non e' uscito in 30s: Stop-Process (la VRAM potrebbe restare sporca)"
                 Stop-Process -Id $srv.Id -EA SilentlyContinue

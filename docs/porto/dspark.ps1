@@ -12,7 +12,7 @@ param(
     [int]$Tokens = 800,
     [int]$Ctx    = 10000,
     [int]$Port   = 8096,
-    [ValidateSet('cpu','gpu','moecpu','fit','draftcpu')][string]$Dove = 'draftcpu',
+    [ValidateSet('cpu','gpu','moecpu','fit','draftcpu','zerocopy')][string]$Dove = 'zerocopy',
     [int]$NMax   = 5,            # block size del draft: 5, clampato dal modello
     [string]$Exe   = 'D:\llama-dspark\build\bin\llama-server.exe',
     [string]$Model = 'C:\ds4-models\DS4-0731-IQ2XXS.gguf',
@@ -43,6 +43,17 @@ switch ($Dove) {
     # CPU con -ngld 0. E' la combinazione mai provata: da solo con ngl 0 il draft
     # SI CARICA, quindi il subscript esplode nello split GPU del draft MoE.
     'draftcpu' { $a += @('-ngl','99','-ngld','0') }
+    # zerocopy (proposta utente): il draft resta in RAM ma lo LEGGE LA GPU.
+    # -otd manda gli esperti del draft in CUDA_Host = memoria pinnata mappata,
+    # i kernel girano su GPU leggendo via PCIe -- che in llama.cpp e' FERMO.
+    # Cosi' il draft smette di contendere la CPU al target (la causa del 3,19).
+    # E il percorso dello split GPU che crashava non si tocca proprio.
+    # Costo: ~10 GB pinnati non paginabili col draft MXFP4 com'e'.
+    # -ngld 99 + qualunque opzione crasha (subscript: sospetto target_layers[41..43]
+    # usati per indicizzare un vettore da 3 nel percorso GPU del draft). Con -ngld 0
+    # il caricamento PASSA: gli strati restano alla CPU ma gli esperti vanno in
+    # CUDA_Host, che il backend CUDA sa leggere -> zerocopy senza il percorso rotto.
+    'zerocopy' { $a += @('-ngl','99','-ngld','0','-otd','.ffn_.*_exps.=CUDA_Host') }
     'fit'    { $a += @('--fit','on') }
     'cpu'    { $a += @('-ngl','99','-devd','none') }   # FALLISCE: output.weight resta su CUDA0
     'moecpu' { $a += @('-ngl','99','-cmoed') }         # FALLISCE: invalid vector subscript

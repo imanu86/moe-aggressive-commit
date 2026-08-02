@@ -15,11 +15,15 @@ param(
     [int]$Ngl    = 0,          # strati su GPU. 0 = solo CPU+mmap, il caso base
     [string]$Exe = 'D:\llama-b10227\llama-server.exe',
     [string]$Model = 'C:\ds4-models\DS4-0731-IQ2XXS.gguf',
-    [string]$OutDir = 'D:\ds4_work\llama_run'
+    [string]$OutDir = 'D:\ds4_work\llama_run',
+    # argomenti extra, per provare la speculativa senza toccare il resto:
+    #   -Extra @('--spec-type','draft-dspark','-md','D:\ds4-models\DSpark-support-Q2K-w2Q4K.gguf')
+    [string[]]$Extra = @(),
+    [string]$Etichetta = ''
 )
 $ErrorActionPreference = 'Continue'
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
-$tag = "LLAMA_ngl{0}_{1}" -f $Ngl, (Get-Date -Format 'HHmmss')
+$tag = "LLAMA_ngl{0}{1}_{2}" -f $Ngl, $(if($Etichetta){"_$Etichetta"}else{''}), (Get-Date -Format 'HHmmss')
 $log = Join-Path $OutDir "$tag.server.log"
 
 # IL PROMPT DELLA CAMPAGNA, identico a braccio.ps1:277. Se cambia, il confronto
@@ -34,7 +38,8 @@ Write-Host "  motore  llama.cpp b10227    ngl=$Ngl  ctx=$Ctx  token=$Tokens"
 Write-Host "  prompt  sha $($sha.Substring(0,16))   modello $(Split-Path $Model -Leaf)"
 
 $args = @('-m', $Model, '-c', "$Ctx", '-ngl', "$Ngl", '--port', "$Port",
-          '--host', '127.0.0.1', '--no-warmup')
+          '--host', '127.0.0.1', '--no-warmup') + $Extra
+if ($Extra.Count) { Write-Host "  extra:  $($Extra -join ' ')" }
 $srv = Start-Process -FilePath $Exe -ArgumentList $args -PassThru `
         -RedirectStandardError $log -RedirectStandardOutput "$log.out" -NoNewWindow
 

@@ -162,3 +162,70 @@ tiering**, con build vera a ogni passo.
 
 Nota di build: nvcc non trova `cl.exe` senza `vcvars64.bat`. Non e' un errore di
 codice; ha fatto perdere tempo a due agenti. `build.bat` scritto nei worktree.
+
+---
+
+# ESITO — il porto v2 misurato (2/8, notte)
+
+## Il risultato
+
+| braccio | configurazione | token | REGIME | pagina |
+|---|---|---|---|---|
+| rif. 31/7 | fork, 33 variabili | 5812 | 2,60 | completa |
+| **B** | 0731 nudo, porto v2 | 4500 | **2,70** | completa 15.504 car. |
+| **D** | 0731 + `DS4_CUDA_MOE_IO_QD=4` | 3859 | **3,09** | completa 13.379 car. |
+| C | 0731 + politica intera + arena 30 GiB | 65 | 0,14 | cache DISABLED |
+| E | 0731 + cache + tiering + coda, senza arena | 92 | 0,20 | cache DISABLED |
+
+**`DS4_CUDA_MOE_IO_QD=4` vale +14,4% a variabile singola** (2,70 -> 3,09) e porta
+0731 a **+19% sul riferimento del 31/7**. E' la leva indicata da giorni dai 229
+IOPS a coda 2 su un NVMe, e su 0731 non esisteva: portata stanotte.
+
+Da ripetere prima di promuoverla: un run per configurazione.
+
+## Perche' la cache esperti non si accende — e non e' una taratura
+
+```
+[iq2-expert-cache-size] result=disabled requested=320 capacity=0
+                        free_at_size_mib=0.0
+```
+
+```
+totale VRAM      12287 MiB
+backbone          8394
+cache q8/f16      1980
+                ──────
+resterebbero      1913 MiB, ma free al dimensionamento = 0
+```
+
+Il resto lo prende lo spazio di lavoro dell'attenzione a ctx 10000. E qui c'e'
+la differenza **strutturale** che l'agente `vittima` aveva gia' scritto nel suo
+rapporto: **su 0731 il dimensionamento della cache avviene DOPO l'allocazione
+dell'attenzione**, sul fork avveniva prima. Stessa VRAM, momento diverso: vede
+zero invece di 1977 MiB.
+
+Upstream stesso avverte che 320 slot sono sotto la soglia:
+```
+WARNING: SSD streaming expert cache (320 experts) is under twice the per-token
+         routed working set (43 layers x 6 experts = 258); expect heavy thrashing
+```
+
+**Ipotesi falsificata**: non e' l'arena. Il braccio E la toglie e la cache resta
+`disabled` lo stesso. L'idea che i 30 GiB mapped-pinned costassero VRAM in
+tabelle di pagina WDDM e' morta al primo test.
+
+## Cosa ha reso possibile diagnosticarlo in un secondo
+
+La riga `[iq2-expert-cache-size]` con `result=disabled`. Prima del porto v2 quel
+caso era **silenzio**, ed e' cosi' che il braccio C dell'1/8 ha girato per ore
+con un'arena orfana. Il costo di portare la telemetria si e' ripagato al primo run.
+
+## Prossimi passi, in ordine
+
+1. **Ripetere D** (in corso). Un run non e' un verdetto.
+2. **Liberare VRAM prima del dimensionamento**: `DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB`
+   e' la leva che sul fork porto' la capacity da 135 a 253 mascherando 2 GiB di
+   pesi perche' arrivassero dalla RAM. E' stata portata dal braccio prefill.
+3. **Oppure spostare il dimensionamento** prima dello spazio attenzione, che e'
+   la differenza vera col fork. E' un cambio di codice, non di configurazione.
+4. `DS4_CUDA_MOE_IO_QD` oltre 4: il fork lo limitava a 4, verificare su 0731.

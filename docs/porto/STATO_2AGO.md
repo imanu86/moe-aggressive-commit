@@ -229,3 +229,80 @@ con un'arena orfana. Il costo di portare la telemetria si e' ripagato al primo r
 3. **Oppure spostare il dimensionamento** prima dello spazio attenzione, che e'
    la differenza vera col fork. E' un cambio di codice, non di configurazione.
 4. `DS4_CUDA_MOE_IO_QD` oltre 4: il fork lo limitava a 4, verificare su 0731.
+
+---
+
+# CORREZIONI al riepilogo, dopo la ripetizione (2/8 mattina)
+
+## Il metro giusto e' 4,49, non 2,60
+
+Avevo confrontato 0731 con `X_GSPEC` (31/7, REGIME 2,60) chiamandolo "il
+riferimento". Ma `A_212319` — fork con gli STESSI pesi 0731, 6358 token — fa
+**4,49**, ed e' altrettanto reale. Usare il 2,60 significa dare a 0731 come
+avversario una versione del fork gia' superata.
+
+```
+                                token   REGIME   capacity cache
+fork + pesi 0731  A_212319       6358    4,49       274
+fork + pesi vecchi A_221606      7285    3,85       274
+X_GSPEC 31/7                     5812    2,60        40
+0731 nudo         B_031840       4500    2,70         0
+0731 + MOE_IO_QD  D_035809       3859    3,10         0
+0731 + MOE_IO_QD  D_042931       3445    2,90         0
+```
+
+**Il fork resta il migliore a 4,49; 0731 col porto sta il 31% sotto.**
+
+La colonna a destra spiega perche', ed e' incoraggiante: il fork ha 274 slot di
+cache esperti, 0731 ne ha **zero**. La progressione del fork stesso lo mostra —
+`X_GSPEC` con 40 slot fa 2,60, `A_212319` con 274 fa 4,49. Lo spazio sopra il
+3,0 di 0731 e' esattamente quello che sul fork vale la cache.
+
+## Il guadagno di MOE_IO_QD e' fra +7,4% e +14,4%, non 14,4% secco
+
+```
+D primo giro    REGIME 3,10 (n=73)
+D secondo giro  REGIME 2,90 (n=63)
+scarto fra due run della stessa configurazione: 6,6%
+```
+
+Con quella varianza solo il giro migliore supera la soglia del 10%. **Servono
+tre run** prima di promuoverla. Cio' che invece e' solido, perche' misurato per
+un minuto e non da due campioni, e' la forma dell'I/O:
+
+```
+              nudo      MOE_IO_QD=4
+IOPS           229         7.400      x32
+coda             2           3-8
+MB/s            48            93      x1,9
+byte/lettura  ~211 KB      12,6 KB
+```
+
+## La GPU NON e' al 99%
+
+Task Manager mostra 99% sul motore "3D": e' **tempo attivo**, non occupazione.
+`nvidia-smi` sugli stessi secondi dice **35-61%**, clock fisso a 1942 MHz,
+**68 W su 170**. La scheda aspetta. Stesso errore del disco "al 100%" che
+muoveva 51 MB/s: due volte in una notte ho preso un contatore di attivita' per
+un contatore di lavoro.
+
+## La diagnosi vera, dell'utente
+
+```
+RAM in uso     15,2 GB su 63,9      -> 48 GB fermi, per un minuto intero
+page cache      3,8 GB               -> per un modello da 80,76 GB
+VRAM           11,7 / 12,0 GB        -> piena di backbone, cache esperti capacity 0
+disco          7.400 IOPS, 93 MB/s   -> letture da 12,6 KB, tutte fisiche
+```
+
+Non e' calcolo e non e' quantita' di I/O: **48 GB di RAM non partecipano** e la
+VRAM non lascia spazio alla cache. Insieme, costringono ogni esperto a passare
+dal disco.
+
+## Le due prove che ne discendono
+
+1. **Arena da 12-16 GiB** invece di 30: usa la RAM libera senza affamare la VRAM.
+   Quella da 30 portava `free_at_size` a 0; una piccola potrebbe non farlo.
+2. **Togliere `FILE_FLAG_RANDOM_ACCESS`** da `src/platform/os_file.c:105`: dice
+   al gestore della cache di non trattenere le pagine. E' il motivo piu' semplice
+   per cui la page cache resta a 3,8 GB con 48 liberi. Una riga.

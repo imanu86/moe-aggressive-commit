@@ -27,7 +27,11 @@ param(
     # Quindi tutti i confronti llama-contro-DwarfStar fatti finora hanno
     # paragonato un motore che pensava contro uno che non pensava.
     # --reasoning-budget 0 = "immediate end" (common/arg.cpp:3565).
-    [bool]$Think = $false
+    [bool]$Think = $false,
+    # 'campagna' (default), 'neuraforge', o il testo completo di un prompt.
+    # Qualunque cosa non sia il prompt di campagna viene DICHIARATA a schermo
+    # col suo sha, perche' un prompt cambiato in silenzio invalida l'archivio.
+    [string]$Prompt = 'campagna'
 )
 $ErrorActionPreference = 'Continue'
 New-Item -ItemType Directory -Path $OutDir -Force | Out-Null
@@ -36,7 +40,17 @@ $log = Join-Path $OutDir "$tag.server.log"
 
 # IL PROMPT DELLA CAMPAGNA, identico a braccio.ps1:277. Se cambia, il confronto
 # con i nostri numeri non vale piu'.
-$prompt = 'Create a complete single-file HTML landing page for a cyberpunk AI programming shop. Include CSS, navigation, hero, request form, and a JavaScript confirmation popup. Return only the HTML document.'
+# Prompt alternativi noti, per -Prompt neuraforge:
+#   neuraforge = il brief del 25/7, MOLTO piu' ricco del nostro (3 feature card
+#   + 3 tier di prezzo = 6 schede, e chiede "CSS interno" e "single-file"
+#   esplicitamente). Ha prodotto la pagina migliore mai vista, 6529 token e
+#   24 KB: C:\Users\imanu\Documents\Codex\2026-07-25\legg\outputs\
+#   NeuraForge_initial_6529_keepkv.html
+$prompti = @{
+    campagna = 'Create a complete single-file HTML landing page for a cyberpunk AI programming shop. Include CSS, navigation, hero, request form, and a JavaScript confirmation popup. Return only the HTML document.'
+    neuraforge = 'Genera una pagina HTML completa single-file per una startup AI NeuraForge, stile cyberpunk neon: head con CSS interno, header con nav, hero, 3 feature card, tabella prezzi 3 tier, form contatti con validazione JS, footer. Codice completo e commentato, molto dettagliato.'
+}
+$prompt = if ($prompti.ContainsKey($Prompt)) { $prompti[$Prompt] } else { $Prompt }
 $sha = [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().ComputeHash(
     [Text.Encoding]::UTF8.GetBytes($prompt))).Replace('-','').ToLower()
 # La costante era 38f6ec5e5f9d3d8f, che non e' lo sha del prompt qui sotto: il
@@ -44,8 +58,14 @@ $sha = [BitConverter]::ToString([System.Security.Cryptography.SHA256]::Create().
 # il modo in cui un controllo muore. Il valore vero, verificato il 2/8 sera, e'
 # lo stesso che il prompt ha in braccio.ps1:277 e dspark.ps1:31 -- le tre stringhe
 # sono identiche byte per byte, quindi il confronto fra motori regge.
-if ($sha.Substring(0,16) -ne '38f6ec5ee5403f59') {
-    Write-Host "  ATTENZIONE: sha del prompt $($sha.Substring(0,16)), atteso 38f6ec5ee5403f59"
+if ($sha.Substring(0,16) -eq '38f6ec5ee5403f59') {
+    Write-Host "  prompt   DI CAMPAGNA, sha $($sha.Substring(0,16))"
+} else {
+    Write-Host ""
+    Write-Host "  ATTENZIONE: prompt NON di campagna."
+    Write-Host "  sha $($sha.Substring(0,16))  ($($prompt.Length) caratteri)"
+    Write-Host "  I numeri di questo run NON sono confrontabili con l'archivio."
+    Write-Host ""
 }
 Write-Host "  motore  llama.cpp b10227    ngl=$Ngl  ctx=$Ctx  token=$Tokens"
 Write-Host "  prompt  sha $($sha.Substring(0,16))   modello $(Split-Path $Model -Leaf)"

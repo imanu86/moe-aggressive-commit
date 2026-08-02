@@ -6,11 +6,10 @@ $R = 'C:\Users\imanu\source\repos\moe-aggressive-commit'
 
 # Ogni voce e' UNA variabile cambiata rispetto al braccio G.
 $prove = @(
-  @{ nome = 'clock1000';  ov = @{ 'DS4_EXPERT_TIER_CLOCK_CALLS' = '1000' } },
-  @{ nome = 'clock2000';  ov = @{ 'DS4_EXPERT_TIER_CLOCK_CALLS' = '2000' } },
-  @{ nome = 'gate2';      ov = @{ 'DS4_EXPERT_TIER_MIN_FREQUENCY' = '2'
-                                  'DS4_EXPERT_TIER_CLOCK_CALLS'   = '1000' } },
-  @{ nome = 'packedcopy'; ov = @{ 'DS4_CUDA_MOE_ROUTE_PACKED_COPY' = '1' } }
+  @{ nome = 'budget6';       ov = @{ 'DS4_EXPERT_TIER_REPLACEMENT_BUDGET' = '6' } },
+  @{ nome = 'budget2';       ov = @{ 'DS4_EXPERT_TIER_REPLACEMENT_BUDGET' = '2' } },
+  @{ nome = 'clock1000_b6';  ov = @{ 'DS4_EXPERT_TIER_CLOCK_CALLS'        = '1000'
+                                     'DS4_EXPERT_TIER_REPLACEMENT_BUDGET' = '6' } }
 )
 
 foreach ($p in $prove) {

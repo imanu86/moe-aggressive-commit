@@ -20,11 +20,18 @@ import sys
 from collections import Counter, defaultdict, deque
 from pathlib import Path
 
-RIGA = re.compile(r'\[route-ids\] token=(\d+) layer=(\d+) ids=([\d,\-]+)')
+RIGA = re.compile(r'\[route-ids\] token=(\d+) layer=(\d+) ids=([\d,\-]+)'
+                  r'(?: w=([\d,.eE+\-]+))?')
 
 
-def leggi(percorso):
-    """Restituisce [(token, layer, (id, ...)), ...] nell'ordine di esecuzione."""
+def leggi(percorso, con_pesi=False):
+    """Restituisce [(token, layer, (id, ...)), ...] nell'ordine di esecuzione.
+
+    Con `con_pesi=True` restituisce [(token, layer, ids, pesi), ...]. I pesi
+    esistono solo nei tracciati fatti dopo il 2/8 (`dc884d2`): prima la riga
+    stampava i soli ID, e la massa -- che e' il fattore primario di `score()` --
+    si poteva solo approssimare col conteggio.
+    """
     eventi = []
     with open(percorso, encoding='utf-8', errors='replace') as fh:
         for riga in fh:
@@ -33,7 +40,13 @@ def leggi(percorso):
                 continue
             tok, lay = int(m.group(1)), int(m.group(2))
             ids = tuple(int(x) for x in m.group(3).split(',') if x != '')
-            eventi.append((tok, lay, ids))
+            if not con_pesi:
+                eventi.append((tok, lay, ids))
+                continue
+            grezzi = m.group(4)
+            pesi = tuple(float(x) for x in grezzi.split(',')) if grezzi \
+                else tuple(1.0 for _ in ids)
+            eventi.append((tok, lay, ids, pesi))
     return eventi
 
 
@@ -190,6 +203,81 @@ def bussate(accessi, capienza, soglia=3, decadimento=0, isteresi=1.25):
         residenti[k] = credito
         ammessi += 1
         del knock[k]
+    return colpi, mancati, ammessi
+
+
+def massa_lfru(accessi_pesati, capienza, soglia=3, clock=430, isteresi=1.25):
+    """La politica VERA, ricalcata su `vram_expert_cache.cpp`.
+
+    `accessi_pesati` e' una lista di GRUPPI: un gruppo per strato,
+    [[(chiave, peso), ...], ...]. Il tick avanza per gruppo.
+
+        score = mass * (1 + log1p(frequency)) * recency        (:406-412)
+        recency = 1 / (1 + eta_in_chiamate / clock_calls)
+        ogni clock_calls chiamate:  admission_knocks >>= 1      (:416-426)
+
+    `accessi_pesati`: [(chiave, peso_del_gate), ...] nell'ordine di esecuzione.
+    La massa e' la somma dei pesi del gate, non il conteggio: e' la differenza
+    fra questa e `bussate()`, e fra 20,2%% misurati e 29,7%% simulati il 2/8.
+
+    Una chiamata = uno strato, come nel runtime: il tick avanza per gruppo di
+    `n_selected`, non per singolo esperto.
+    """
+    import math
+
+    class voce:
+        __slots__ = ('mass', 'freq', 'last')
+        def __init__(self, mass, tick):
+            self.mass, self.freq, self.last = mass, 1, tick
+
+    residenti = {}
+    knock = {}                 # chiave -> [bussate, massa accumulata]
+    tick = 0
+    epoca = 0
+    colpi = mancati = ammessi = 0
+
+    def punteggio(v):
+        eta = tick - v.last
+        recency = 1.0 / (1.0 + eta / clock)
+        return v.mass * (1.0 + math.log1p(v.freq)) * recency
+
+    # Il tick avanza una volta per CHIAMATA (= uno strato), non per esperto:
+    # `note()` fa `call_tick++` una volta e poi cicla sui selezionati
+    # (vram_expert_cache.cpp:490). Avanzarlo per esperto lo rende 6 volte piu'
+    # veloce e falsa ogni confronto su clock_calls.
+    for gruppo in accessi_pesati:
+        tick += 1
+        e = tick // clock
+        if e != epoca:                     # l'epoca dell'orologio
+            salti = min(e - epoca, 16)
+            epoca = e
+            for x in list(knock):
+                knock[x][0] >>= salti
+                if knock[x][0] == 0:
+                    del knock[x]
+        for k, peso in gruppo:            # i selezionati di QUESTO strato
+          if k in residenti:
+              colpi += 1
+              v = residenti[k]
+              v.mass += peso
+              v.freq += 1
+              v.last = tick
+              continue
+          mancati += 1
+          st = knock.setdefault(k, [0, 0.0])
+          st[0] += 1
+          st[1] += peso
+          if st[0] < soglia:
+              continue
+          candidato = st[1] * (1.0 + math.log1p(st[0]))
+          if len(residenti) >= capienza:
+              vittima = min(residenti, key=lambda x: punteggio(residenti[x]))
+              if punteggio(residenti[vittima]) * isteresi > candidato:
+                  continue                   # respinto: tiene bussate e massa
+              del residenti[vittima]
+          residenti[k] = voce(st[1], tick)
+          ammessi += 1
+          del knock[k]
     return colpi, mancati, ammessi
 
 

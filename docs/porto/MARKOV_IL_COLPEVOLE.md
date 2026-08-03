@@ -1,5 +1,13 @@
 # La testa di Markov: 538 ms per fare 0,02 ms di conti
 
+> **RIBALTATO il 3/8 pomeriggio — vedi [MARKOV_ASSOLTA](MARKOV_ASSOLTA.md).**
+> I 538 ms erano dedotti, non misurati: la misura diretta per fase
+> (DSPARK_PROF) dà testa ~2 ms e verifica MoE-CPU 954–1.203 ms per 6
+> posizioni. La ripartizione 78/22 usata qui sotto non vale nel regime di
+> verifica, e il conteggio dei cicli del braccio spento divideva per le
+> chiamate draft (251) invece che per le verifiche vere (~164). Le sezioni
+> «quanto varrebbe ripararla» e «cosa resta da fare» sono cestinate.
+
 3 agosto 2026, mattina. Chiude la caccia aperta da «un modello da 6,8 GB su
 una 3060 non può costare un secondo — sistema la configurazione».
 

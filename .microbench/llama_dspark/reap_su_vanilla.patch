@@ -1,5 +1,5 @@
-diff --git a/common/CMakeLists.txt b/common/CMakeLists.txt
-index 4cf580a..60ae6ac 100644
+﻿diff --git a/common/CMakeLists.txt b/common/CMakeLists.txt
+index 799d227..0e604fb 100644
 --- a/common/CMakeLists.txt
 +++ b/common/CMakeLists.txt
 @@ -67,6 +67,8 @@ add_library(${TARGET}
@@ -12,10 +12,10 @@ index 4cf580a..60ae6ac 100644
      console.h
      debug.cpp
 diff --git a/common/arg.cpp b/common/arg.cpp
-index f6b8d28..be03636 100644
+index 79480e0..d2f9a44 100644
 --- a/common/arg.cpp
 +++ b/common/arg.cpp
-@@ -256,6 +256,12 @@ static void parse_tensor_buffer_overrides(const std::string & value, std::vector
+@@ -257,6 +257,12 @@ static void parse_tensor_buffer_overrides(const std::string & value, std::vector
          if (buft) {
              buft_list[ggml_backend_buft_name(buft)] = buft;
          }
@@ -29,7 +29,7 @@ index f6b8d28..be03636 100644
  
      for (const auto & override : string_split<std::string>(value, ',')) {
 diff --git a/common/common.cpp b/common/common.cpp
-index 8f13217..f8f42f3 100644
+index ff27d39..02786b8 100644
 --- a/common/common.cpp
 +++ b/common/common.cpp
 @@ -3,6 +3,7 @@
@@ -40,7 +40,7 @@ index 8f13217..f8f42f3 100644
  #include "fit.h"
  #include "log.h"
  #include "llama.h"
-@@ -1613,6 +1614,11 @@ struct llama_context_params common_context_params_to_llama(const common_params &
+@@ -1651,6 +1652,11 @@ struct llama_context_params common_context_params_to_llama(const common_params &
      cparams.flash_attn_type   = params.flash_attn_type;
      cparams.cb_eval           = params.cb_eval;
      cparams.cb_eval_user_data = params.cb_eval_user_data;
@@ -53,10 +53,10 @@ index 8f13217..f8f42f3 100644
      cparams.no_perf           = params.no_perf;
      cparams.op_offload        = !params.no_op_offload;
 diff --git a/ggml/include/ggml-cpu.h b/ggml/include/ggml-cpu.h
-index e3e067c..4454c3a 100644
+index dc6453c..a77c0bf 100644
 --- a/ggml/include/ggml-cpu.h
 +++ b/ggml/include/ggml-cpu.h
-@@ -137,6 +137,22 @@ extern "C" {
+@@ -138,6 +138,22 @@ extern "C" {
  
      GGML_BACKEND_API void ggml_backend_cpu_set_use_ref(ggml_backend_t backend_cpu, bool use_ref);
  
@@ -80,7 +80,7 @@ index e3e067c..4454c3a 100644
  
      GGML_BACKEND_API void ggml_cpu_fp32_to_fp32(const float *,       float *, int64_t);
 diff --git a/ggml/src/ggml-cpu/ggml-cpu.c b/ggml/src/ggml-cpu/ggml-cpu.c
-index a82842f..37baa6e 100644
+index 491316f..a7cc4e8 100644
 --- a/ggml/src/ggml-cpu/ggml-cpu.c
 +++ b/ggml/src/ggml-cpu/ggml-cpu.c
 @@ -1531,6 +1531,12 @@ static void * incr_ptr_aligned(void ** p, size_t size, size_t align) {
@@ -111,7 +111,7 @@ index a82842f..37baa6e 100644
  
      // reset current_chunk
 diff --git a/tools/server/server.cpp b/tools/server/server.cpp
-index c2b2112..3539549 100644
+index a3b2a8b..789caa6 100644
 --- a/tools/server/server.cpp
 +++ b/tools/server/server.cpp
 @@ -1,4 +1,5 @@
@@ -120,9 +120,22 @@ index c2b2112..3539549 100644
  #include "server-http.h"
  #include "server-models.h"
  #include "server-cors-proxy.h"
-@@ -391,6 +392,9 @@ int llama_server(common_params & params, int argc, char ** argv) {
+@@ -394,6 +395,12 @@ int llama_server(common_params & params, int argc, char ** argv) {
+ 
+         clean_up = [&models_routes, &mcp_mgr]() {
+             SRV_INF("%s: cleaning up before exit...\n", __func__);
++            // reap-loop: la mappa del calore va scritta PRIMA di liberare il
++            // backend. Ci sono DUE clean_up, uno per ramo, e la patch aveva
++            // messo la chiamata solo nell'altro: il 2/8 il primo run di prova
++            // ha osservato 1500 token e poi ha buttato via tutto allo
++            // spegnimento, senza nemmeno un messaggio d'errore.
++            reap_dump();
+             // stop the session GC first, it finalizes live sessions and wakes pending readers
+             server_stream_session_manager_stop();
+             if (models_routes.has_value()) {
+@@ -424,6 +431,9 @@ int llama_server(common_params & params, int argc, char ** argv) {
          // setup clean up function, to be called before exit
-         clean_up = [&ctx_http, &ctx_server]() {
+         clean_up = [&ctx_http, &ctx_server, &mcp_mgr]() {
              SRV_INF("%s: cleaning up before exit...\n", __func__);
 +            // reap-loop: la mappa del calore va scritta PRIMA di liberare il
 +            // backend, altrimenti si perde a ogni spegnimento

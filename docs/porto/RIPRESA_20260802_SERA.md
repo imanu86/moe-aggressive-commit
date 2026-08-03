@@ -43,6 +43,67 @@ allo stato in cui il banco riproduceva il proprio riferimento.
 
 ---
 
+## 0-ter. NOTTE: la fase 1 FUNZIONA, e sette difetti di misura
+
+Aggiornato alle 03:00 del 3/8. **Il reap-loop fase 1 gira e produce dati.**
+
+```
+77529 chiamate / 600 token = 129 per token = 42 strati x 3 piani
+468270 selezioni / 600 / 3 = 260 esperti per token  (DwarfStar: 258)
+0 record persi, 8234 esperti distinti su 11008
+sezione critica 119,9 ns/chiamata -> 9,3 ms su 106,7 s = 0,0087%
+```
+
+Mappa in `.microbench/llama_dspark/reap_calore_llamacpp.tsv`.
+
+**Distribuzione del calore**: il 5% piu' caldo prende il 41% delle selezioni,
+il 25% ne prende il 75%, massimo 1623 colpi contro una mediana di 24. Lo
+sbilanciamento e' reale e marcato. Ma cade dove non serve: a capienza RAM
+(~65%) il 96% e' gia' coperto, la LRU di Windows prende 92,3% e il tetto
+assoluto e' 94,5%.
+
+E i 411 esperti piu' caldi occupano ~2,8 GiB, contro i 2,68 GiB liberi in VRAM
+-- cifre quasi uguali, ma i 256 esperti di uno strato sono UN TENSORE SOLO,
+quindi in llama.cpp non si possono pinnare i singoli esperti senza costruire il
+gather compatto che il motore non ha. Quella strada resta chiusa.
+
+### SMENTITO: "il MoE non gira sulla CPU"
+
+Il commit `cf70c8a` conclude che nella configurazione promossa `mul_mat_id` non
+passa dal backend CPU. **E' FALSO.** `GGML_SCHED_DEBUG=2` mostra 300 nodi
+MUL_MAT_ID su CPU contro 129 su CUDA0. Lo zero veniva dal mio parser:
+
+```
+ggml-backend.cpp:1348   rinomina i tensori di scambio quando divide il grafo
+                        "%s#%s#%d" -> "CPU#ffn_moe_topk-0#0"
+strato_dal_nome()       pretendeva cifre fino a FINE STRINGA -> rifiutava tutto
+s.chiamate.fetch_add()  stava DOPO l'uscita anticipata -> contatore a zero
+```
+
+Con `-ngl 0` non c'e' divisione del grafo, i nomi restano puliti, e funzionava:
+per questo il confronto fra le due configurazioni sembrava dire qualcosa sul
+motore mentre parlava del mio codice.
+
+### I SETTE difetti di misura della sessione
+
+Nessuno dava errore. Tutti restituivano un valore plausibile senza misurare.
+
+```
+1  sha del prompt        costante sbagliata, l'avviso suonava a OGNI run
+2  priorita'             Task Scheduler a BelowNormal        -30%
+3  lunghezza corsa       media cumulativa su run di 800 vs 1500 token
+4  mojibake              Get-Content senza -Encoding UTF8, OGNI output storpiato
+5  ragionamento          acceso su llama, spento su DwarfStar
+6  CTRL_BREAK            llama accetta solo CTRL_C: OGNI server ucciso
+7  parser del nome       rifiutava tutto e lo diceva con uno zero
+```
+
+Il banco ora si difende: dichiara prompt, priorita', pensiero e temperatura a
+ogni run, si ferma se la priorita' non e' Normal, e l'osservatore sa dire
+PERCHE' non ha misurato (`scartate_nome`, `scartate_forma`).
+
+---
+
 ## 0-bis. DECISIONE: il reap-loop si tiene e si accende
 
 Presa dall'utente il 2/8 sera, **dopo** aver visto il conto di capienza che

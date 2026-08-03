@@ -1,0 +1,48 @@
+diff --git a/src/models/dflash.cpp b/src/models/dflash.cpp
+index 3778e33..ea2e23e 100644
+--- a/src/models/dflash.cpp
++++ b/src/models/dflash.cpp
+@@ -3,6 +3,25 @@
+ #include "llama-kv-cache.h"
+ #include "llama-kv-cache-iswa.h"
+ 
++// DIAGNOSTICA (locale, non da portare a monte): DSPARK_NO_MARKOV=1 salta la
++// testa di Markov, il cui ciclo e' l'unica parte del grafo del draft che gira
++// una volta PER POSIZIONE del blocco. Misurato: draft(n) = 128 ms fissi + 158
++// per posizione. Serve a stabilire se quei 158 ms sono questo ciclo oppure il
++// campionamento lato host, che scala allo stesso modo.
++// Senza la testa i draft restano validi ma non polarizzati (DFlash puro),
++// quindi l'accettazione cala: si confronta il COSTO per ciclo, non i t/s.
++static bool dspark_markov_disabled() {
++    static const bool disabilitata = [] {
++        const char * s = getenv("DSPARK_NO_MARKOV");
++        const bool v = s && atoi(s) != 0;
++        if (v) {
++            LLAMA_LOG_WARN("%s: DSPARK_NO_MARKOV=1 -- testa di Markov SALTATA (misura)\n", __func__);
++        }
++        return v;
++    }();
++    return disabilitata;
++}
++
+ void llama_model_dflash::load_arch_hparams(llama_model_loader & ml) {
+ 
+     ml.get_key(LLM_KV_ATTENTION_LAYERNORM_RMS_EPS, hparams.f_norm_rms_eps);
+@@ -423,7 +442,7 @@ void llama_model_dflash::graph<false>::build_dsv4(const llama_model & model, ggm
+     ggml_build_forward_expand(gf, cur);
+ 
+     // DSpark: bias the draft logits with the Markov head
+-    if (model.dspark_markov_w1) {
++    if (model.dspark_markov_w1 && !dspark_markov_disabled()) {
+         build_dspark_markov_head(*this, model, inp_tokens);
+     }
+ }
+@@ -635,7 +654,7 @@ llama_model_dflash::graph<false>::graph(const llama_model & model, const llm_gra
+     ggml_build_forward_expand(gf, cur);
+ 
+     // DSpark: bias the draft logits with the Markov head
+-    if (model.dspark_markov_w1) {
++    if (model.dspark_markov_w1 && !dspark_markov_disabled()) {
+         build_dspark_markov_head(*this, model, inp_tokens);
+     }
+ }

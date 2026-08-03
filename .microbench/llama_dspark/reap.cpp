@@ -75,6 +75,8 @@ struct stato_reap {
     std::atomic<uint64_t> scritti{0};      // record prodotti in totale
     std::atomic<uint64_t> chiamate{0};     // chiamate a osserva()
     std::atomic<uint64_t> troncati{0};     // n_used > REAP_IDS_MAX
+    std::atomic<uint64_t> scartate_nome{0};  // strato non ricavabile dal nome
+    std::atomic<uint64_t> scartate_forma{0}; // ids nullo o dimensioni assurde
     std::atomic<uint64_t> ns_critica{0};   // solo con LLAMA_REAP_PROF=1
 
     // --- del consumatore soltanto ---
@@ -93,30 +95,58 @@ stato_reap & stato() {
     return s;
 }
 
-// Dal nome del nodo ricava lo strato: llama.cpp formatta "ffn_moe_topk-23".
-// Resta nella sezione critica perche' costa decine di ns (strrchr su ~16 byte)
-// e portarlo fuori vorrebbe dire copiare il nome o fidarsi di un puntatore che
-// vive quanto il grafo.
+// Dal nome del nodo ricava lo strato. llama.cpp formatta "ffn_moe_topk-23",
+// MA quando il pianificatore divide il grafo fra backend rinomina i tensori di
+// scambio (ggml-backend.cpp:1348):
+//
+//     ggml_format_name(copia, "%s#%s#%d", nome_backend, src->name, c);
+//
+// cioe' "CPU#ffn_moe_topk-23#0". La prima versione pretendeva cifre fino a FINE
+// STRINGA e rifiutava tutto: con -ngl 0 (un backend solo, nessuna divisione)
+// funzionava, con -ngl 99 rifiutava ogni chiamata. Il 2/8 sera questo ha
+// prodotto un contatore a zero che sembrava "callback mai chiamata", e ci sono
+// voluti quattro run e una stampa dentro ggml per capire che era "chiamata e
+// sempre rifiutata".
+//
+// Ora: cifre dopo l'ultimo trattino, e si smette al primo carattere non-cifra.
 int strato_dal_nome(const char * nome) {
     if (!nome) return -1;
     const char * p = strrchr(nome, '-');
-    if (!p || !p[1]) return -1;
-    char * fine = nullptr;
-    const long v = strtol(p + 1, &fine, 10);
-    if (fine == p + 1 || *fine != '\0') return -1;
-    return (int) v;
+    if (!p) return -1;
+    const char * c = p + 1;
+    if (*c < '0' || *c > '9') return -1;
+    int v = 0;
+    while (*c >= '0' && *c <= '9') {
+        v = v * 10 + (*c - '0');
+        if (v > 100000) return -1;      // non e' un numero di strato
+        c++;
+    }
+    return v;
 }
 
 // -------------------------------------------------------------- il produttore
 
 void osserva(const char * nome, const int32_t * ids,
              int64_t n_used, int64_t n_tokens, size_t nb0, size_t nb1) {
-    if (!ids || n_used <= 0 || n_tokens <= 0) return;
+    auto & s = stato();
+
+    // IL CONTATORE VA PRIMA DELLE USCITE ANTICIPATE. Nella prima versione stava
+    // dopo, e "callback mai chiamata" e "callback chiamata e sempre rifiutata"
+    // davano lo stesso identico zero. Sono costati quattro run e una fprintf
+    // dentro ggml per essere distinti. Uno strumento che non sa dire PERCHE'
+    // non ha misurato niente non e' uno strumento.
+    s.chiamate.fetch_add(1, std::memory_order_relaxed);
+
+    if (!ids || n_used <= 0 || n_tokens <= 0) {
+        s.scartate_forma.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
 
     const int strato = strato_dal_nome(nome);
-    if (strato < 0) return;
-
-    auto & s = stato();
+    if (strato < 0) {
+        s.scartate_nome.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
 
     const bool prof = reap_prof();
     const auto t0 = prof ? std::chrono::steady_clock::now()
@@ -151,8 +181,6 @@ void osserva(const char * nome, const int32_t * ids,
         // release: chi legge `seq` col giusto valore vede anche il payload.
         r.seq.store((uint32_t) (pos / REAP_CAP) + 1, std::memory_order_release);
     }
-
-    s.chiamate.fetch_add(1, std::memory_order_relaxed);
 
     if (prof) {
         const auto dt = std::chrono::steady_clock::now() - t0;
@@ -261,6 +289,13 @@ void reap_dump(void) {
             (unsigned long long) s.scritti.load(std::memory_order_relaxed),
             (unsigned long long) s.letti, (unsigned long long) s.persi,
             s.mappa.size(), (unsigned long long) s.selezioni);
+    const uint64_t sn = s.scartate_nome.load(std::memory_order_relaxed);
+    const uint64_t sf = s.scartate_forma.load(std::memory_order_relaxed);
+    if (sn || sf) {
+        fprintf(stderr,
+                "reap: SCARTATE %llu per nome non interpretabile, %llu per forma\n",
+                (unsigned long long) sn, (unsigned long long) sf);
+    }
     if (s.troncati.load(std::memory_order_relaxed)) {
         fprintf(stderr, "reap: ATTENZIONE %llu chiamate con n_used > %d, troncate\n",
                 (unsigned long long) s.troncati.load(std::memory_order_relaxed),

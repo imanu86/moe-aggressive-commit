@@ -151,3 +151,27 @@ for slot in (400, 900, 1400, 2400):
         banda = copie * MIB * 8 / 1024
         segno = 'OK ' if banda <= 12 else 'NO '
         print(f'{slot:6d} {W:3d} {h:6.1f}% {copie:11.0f} {banda:12.1f} GiB/s  {segno}')
+
+# ------------------------------------------------------------------------
+# CORREZIONE 5/8 sera: il PCIe di questa macchina e' 4.0 x16, non 3.0.
+# Verificato con nvidia-smi: pcie.link.gen.max=4, width=16 (il gen.current=1 e'
+# solo il risparmio a riposo). Sono ~25 GiB/s pratici invece di ~12.
+#
+# E si aggiunge la colonna che conta davvero. La banda totale dice se il bus
+# regge; i MILLISECONDI ESPOSTI dicono quanto si aspetta -- perche' il prefetch
+# viaggia in parallelo al calcolo, ma un miss a domanda no: quello ferma tutto.
+BUS = 25.0     # GiB/s pratici, PCIe 4.0 x16
+print()
+print(f"{'slot':>6} {'GiB':>6} {'W':>3} {'hit':>7} {'miss/tok':>9} {'ms ESPOSTI':>11} {'banda':>10} {'verdetto':>9}")
+for slot in (350, 400, 600, 900, 1400, 2400):
+    for W in (0, 1, 2, 4):
+        P = previsioni(W) if W else None
+        h, m, pf = simula(slot, W, P)
+        miss_tok = m / T
+        esposti  = miss_tok * MIB / 1024 / BUS * 1000        # ms/token bloccanti
+        banda    = (m + pf) / T * MIB * 8 / 1024             # GiB/s a 8 t/s
+        ok = 'OK' if banda <= BUS else 'satura'
+        print(f'{slot:6d} {slot*MIB/1024:6.2f} {W:3d} {h:6.1f}% {miss_tok:8.0f} {esposti:10.1f} {banda:9.1f} {ok:>9}')
+print()
+print(f'  metro: oggi il token costa 128 ms con gli esperti calcolati su CPU.')
+print(f'  di quei 128, ~65 sono calcolo CPU che sparirebbe portandoli in VRAM.')

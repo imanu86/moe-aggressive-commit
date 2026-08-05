@@ -160,20 +160,25 @@ foreach ($b in $bracci) {
         $cc | Out-File "D:\ds4_work\llama_run\mx_$($b.n).output.html" -Encoding utf8
     }
 
-    # spegnimento grazioso PRIMA di leggere il log: reap_dump stampa la copertura
-    # all'uscita, e un Kill la butterebbe via
-    if (-not $srv.HasExited) {
-        try { Invoke-RestMethod "http://127.0.0.1:$porta/health" -TimeoutSec 2 -EA Stop | Out-Null } catch {}
-        $srv.CloseMainWindow() | Out-Null
-        for ($i = 0; $i -lt 20; $i++) { if ($srv.HasExited) { break }; Start-Sleep -Seconds 3 }
-        if (-not $srv.HasExited) { $srv.Kill() }
-    }
+    # llama-server e' un processo CONSOLE: CloseMainWindow non lo chiude (provato
+    # nel collaudo del 5/8, il dump non girava mai). Quindi la copertura si
+    # stampa a ogni passata e qui si puo' uccidere senza perdere niente.
+    if (-not $srv.HasExited) { $srv.Kill() }
     Start-Sleep -Seconds 10
 
     # L'ESITO DEL GATE, non l'intenzione
     "  --- il gate ---" | Out-File $out -Append -Encoding utf8
-    Select-String -Path $log -Pattern 'COPERTURA|reap: bloccati|reap: politica|quota|VirtualLock|esperti distinti' |
-        Select-Object -Last 8 | ForEach-Object { "  " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } |
+    # la PRIMA passata (il costo del page-in a freddo, dove si vede il WRAP) e le
+    # ULTIME tre (dove la copertura e' a regime)
+    $pass = Select-String -Path $log -Pattern 'reap: passata'
+    if ($pass) {
+        ($pass | Select-Object -First 1) + ($pass | Select-Object -Last 3) |
+            ForEach-Object { "  " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } |
+            Out-File $out -Append -Encoding utf8
+        "  ({0} passate in totale)" -f $pass.Count | Out-File $out -Append -Encoding utf8
+    }
+    Select-String -Path $log -Pattern 'quota|VirtualLock|esperti distinti|COPERTURA non' |
+        Select-Object -Last 4 | ForEach-Object { "  " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } |
         Out-File $out -Append -Encoding utf8
 
     Get-Process llama-server -EA SilentlyContinue | ForEach-Object { $_.Kill() }

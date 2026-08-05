@@ -119,6 +119,17 @@ legge dal GGUF. Dimezza l'I/O per costruzione.
 `VirtualLock` funziona lo stesso su una vista mappata — e' esattamente quello che
 fa `--mlock` di llama.cpp.
 
+**Il numero che chiude la questione:** il pagefile e' **21,5 GB su C:**, cioe'
+sullo *stesso disco del modello*. Con `--no-mmap` i 16,2 GiB di troppo ci
+finirebbero dentro (a filo) e il traffico di scrittura andrebbe sulla stessa
+coda delle letture — non solo il doppio dell'I/O, ma sullo stesso disco.
+
+llama.cpp stampa l'avviso opposto: *"tensor overrides to CPU are used with mmap
+enabled — consider using --no-mmap for better performance"*. E' il consiglio
+giusto per un modello che ENTRA (una lettura sequenziale grande batte migliaia
+di fault). Qui il regime e' rovesciato e l'avviso va contro. Vale la pena
+dirlo perche' e' l'unico punto del piano dove ignoro deliberatamente il motore.
+
 Nota: `--no-mmap` resta obbligatorio nel regime *precedente* (modello che entra +
 pinning), dove serve a evitare la doppia residenza. E' regime-dipendente, come il
 resto.

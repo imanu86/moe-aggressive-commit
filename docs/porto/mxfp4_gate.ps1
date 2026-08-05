@@ -69,11 +69,22 @@ $EXE     = 'D:\llama-dspark\build\bin\llama-server.exe'
 $req     = 'D:\ds4_work\llama_run\neuraforge1200.req.json'
 $esp     = 'ffn_(gate|up|down)_exps' + [char]92 + '.weight'
 
+# IL METRO ERA ROTTO (corretto dall'utente, 5/8). La prima versione confrontava
+# i bracci del misto (mmap + -ot=CPU) con un braccio del vecchio in IBRIDO e
+# --no-mmap: DUE variabili in piu' oltre al formato dei pesi. Se il misto avesse
+# vinto non si sarebbe saputo perche'.
+#
+# Ora ci sono DUE metri:
+#   M0  il vecchio nella configurazione IDENTICA ai nuovi -> l'unica cosa che
+#       cambia fra M0 e M1 e' il formato dei pesi. E' il confronto che vale.
+#   M4  il vecchio in ibrido --no-mmap -> l'aggancio al 7,45 t/s storico, per
+#       sapere quanto costa la configurazione stessa.
 $bracci = @(
-    @{ n='M3_topk7500'; m=$NUOVO;   gate=$true;  topk=7500; mmap=$true;  ot=($esp + '=CPU') }
-    @{ n='M2_topk1200'; m=$NUOVO;   gate=$true;  topk=1200; mmap=$true;  ot=($esp + '=CPU') }
-    @{ n='M1_senzagate'; m=$NUOVO;  gate=$false; topk=0;    mmap=$true;  ot=($esp + '=CPU') }
-    @{ n='M4_metro_iq2'; m=$VECCHIO; gate=$false; topk=0;   mmap=$false; ot=($esp + '=CUDA0_Mapped') }
+    @{ n='M3_topk7500';   m=$NUOVO;   gate=$true;  topk=7500; mmap=$true;  ib=$false; ot=($esp + '=CPU') }
+    @{ n='M2_topk1200';   m=$NUOVO;   gate=$true;  topk=1200; mmap=$true;  ib=$false; ot=($esp + '=CPU') }
+    @{ n='M1_senzagate';  m=$NUOVO;   gate=$false; topk=0;    mmap=$true;  ib=$false; ot=($esp + '=CPU') }
+    @{ n='M0_metro_stessaconf'; m=$VECCHIO; gate=$false; topk=0; mmap=$true; ib=$false; ot=($esp + '=CPU') }
+    @{ n='M4_metro_ibrido'; m=$VECCHIO; gate=$false; topk=0;  mmap=$false; ib=$true;  ot=($esp + '=CUDA0_Mapped') }
 )
 
 $porta = 8341
@@ -81,7 +92,11 @@ foreach ($b in $bracci) {
     "=============== $($b.n) ===============" | Out-File $out -Append -Encoding utf8
     $log = "D:\ds4_work\llama_run\LLAMA_$($b.n).server.log"
 
-    $env:LLAMA_MAPPED_IBRIDO = '1'
+    # l'ibrido SOLO dove c'e' qualcosa da mappare. Sui bracci -ot=CPU il flag e'
+    # inerte (non esistono buffer CUDA0_Mapped su cui agire) ma lasciarlo acceso
+    # rende il manifesto bugiardo, e un manifesto bugiardo e' come si perdono le
+    # attribuzioni.
+    $env:LLAMA_MAPPED_IBRIDO = $(if ($b.ib) { '1' } else { '0' })
     if ($b.gate) {
         $env:LLAMA_REAP      = '1'
         $env:LLAMA_REAP_PROF = '1'

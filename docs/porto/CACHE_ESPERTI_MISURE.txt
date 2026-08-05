@@ -1,0 +1,119 @@
+CACHE ESPERTI IN VRAM -- MISURE DEL 5/8/2026 (sera)
+====================================================
+Repo: D:\llama-dspark, ramo dspark-dsv4.
+Commit: 18fc454 (registro basi) + a305dfb (aggancio mul_mat_id) + d83bdb5
+(predittore) + 07d430f (battito dump 60s) + eb3efe4 (fix contatore) +
+42c10d2 (copia multi-blocco).
+Modello: C:\ds4-models\DS4-0731-IQ2XXS.gguf. Macchina: RTX 3060 12GB (28 SM,
+PCIe 4.0 x16), 96GB RAM. RAM libera 87,9 GB a inizio sessione, VRAM 468 MiB a
+vuoto. Slot da 6,75 MiB (gate 2,06 + up 2,06 + down 2,62, iq2_xxs).
+
+CONFIGURAZIONE DI TUTTE LE CORSE (dal mandato, sezione collaudo):
+  llama-server.exe -m C:/ds4-models/DS4-0731-IQ2XXS.gguf -c 10000 -np 1 -ngl 99
+    -ot "ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped" -ub 64 -b 64 -t 8
+    --port 8451 --host 127.0.0.1 --no-warmup --no-mmap --reasoning-budget 0
+  LLAMA_MAPPED_IBRIDO=1 salvo dove detto. Richiesta identica ovunque:
+  temperature 0, n_predict 300, cache_prompt true, prompt 62 token (saggio
+  sulla navigazione fenicia). R1 = cache fredda, R2 = seconda identica.
+  NOTA metro: il coordinatore citava 7,99 t/s a ctx 102400 / ub 128; il
+  collaudo del mandato originale e queste corse sono a c 10000 / ub 64, e il
+  metro e' stato RIMISURATO qui nella stessa identica configurazione dei
+  bracci cache. Log dei server in D:\ds4_work\llama_run\CE_*.log, risposte
+  complete nei CE_*.json, testi generati nei CE_*.json.txt.
+
+TABELLA FINALE (decode t/s su 300 token; ms/token fra parentesi)
+----------------------------------------------------------------
+  metro ibrido, senza cache (CPU esperti+graph) R1 8,04 (124,4) R2 8,00 (124,9)
+    seconda serie (dopo fix contatore)          R1 7,93 (126,1) R2 8,05 (124,1)
+  metro ibrido + GGML_CUDA_DISABLE_GRAPHS=1     R1 3,99 (250,4)
+  zero-copy GPU (no ibrido, no cache)           R1 6,35 (157,4)
+  cache 220 W2  [kernel a 1 blocco]             R1 1,93 (517,7) R2 1,93 (518,2)
+  cache 380 W1  [kernel a 1 blocco]             R1 3,10 (322,1) R2 3,11 (321,4)
+  cache 380 W0  [kernel a 1 blocco]             R1 4,12 (242,8) R2 4,12 (242,7)
+  cache 380 W0  [multi-blocco]                  R1 9,12 (109,6) R2 9,26 (108,0)   <-- VINCE
+  cache 380 W0  [multi-blocco] + graphs OFF     R1 5,03 (198,9)
+  cache 380 W1  [multi-blocco]                  R1 7,83 (127,8) R2 7,90 (126,6)
+  cache 380 W2  [multi-blocco]                  R1 6,82 (146,6) R2 6,89 (145,2)
+
+IL CANCELLO: cache 380/W0 multi-blocco 9,26 contro metro 8,04 = +15%.
+Sotto l'atteso +42% della simulazione, sopra l'aspettativa rivista (~8,8) del
+coordinatore. La configurazione vincente e' SENZA predittore (W=0).
+
+BIT-ESATTEZZA (vizio 3, chiuso)
+  SHA256 del testo generato, identico su TUTTI i bracci GPU:
+    c1c7c5c3bae4f880abe5c6fd614842c89640885afde691b407c7937990607423
+  = zero-copy R1 = cache W0 R1 = cache W0 R2 = cache W1 R2 = cache W2 R2.
+  Il metro ibrido DIVERGE dal carattere 83: atteso e legittimo, li' gli
+  esperti li calcola la CPU con un'altra catena di accumulazione; il
+  confronto giusto e' GPU-con-cache contro GPU-zero-copy, stesso kernel
+  mmvq, sorgente diversa. Identico byte per byte: la vista ombra e la
+  rimappatura degli id sono corrette.
+
+DUMP FINALI (cumulativi a 598 token: R1+R2+ping; per-token = /598)
+  W0: domanda 154284 (colpi 44,0%, buchi 86475 = 144,6/tok), prefetch 0
+      copiati a domanda 570,32 GiB totali = 0,953 GiB/token
+  W1: domanda 154284 (colpi 75,1%, buchi 38465 = 64,3/tok),
+      prefetch 143520 = 240/tok (utili 60,0% = 144,1/tok, sprecati 40%)
+      copiati: domanda 253,68 + prefetch 568,14 GiB = 1,406 GiB/token
+  W2: domanda 154284 (colpi 77,9%, buchi 34153 = 57,1/tok),
+      prefetch 287040 = 480/tok (utili 45,2% = 216,8/tok, sprecati 54,8%)
+      copiati: domanda 225,25 + prefetch 855,24 GiB = 1,849 GiB/token
+  I conteggi di domanda sono IDENTICI fra le corse (154284) perche' il testo
+  e' identico (greedy): controllo interno gratuito che conferma il percorso.
+
+LA BANDA, MISURATA IN MODO NON CIRCOLARE (bersaglio del mandato)
+  Tre punti multi-blocco, stessa base, masse di copia diverse:
+    W1-W0: (1,406-0,953) GiB / (126,6-108,0) ms = 24,4 GiB/s
+    W2-W0: (1,849-0,953) GiB / (145,2-108,0) ms = 24,1 GiB/s
+  = il motore di copia del microbench (24,35). Bersaglio raggiunto.
+  Il modello {pavimento 68,9 ms/token + copie a 24,4 GiB/s} prevede
+  W0=108,0 W1=127,5 W2=144,7 contro misurati 108,0 / 126,6 / 145,2:
+  errore massimo 0,7%. Da qui il kernel a 1 blocco risulta a ~5,5 GiB/s
+  (242,7 ms con la stessa massa di W0), coerente con la stima di ieri.
+
+I CUDA GRAPH (domanda del coordinatore, chiusa coi due controlli)
+  - metro ibrido:    graphs ON 8,04  vs OFF 3,99  -> valgono ~126 ms/token
+  - cache 380/W0 mb: graphs ON 9,26  vs OFF 5,03  -> valgono ~91 ms/token
+  I graph RESTANO ATTIVI col percorso cache: il tensore ombra e' una struct
+  locale con data fisso (slab+offset) e id rimappati che viaggiano come
+  VALORI in un buffer a indirizzo fisso; la cattura vede indirizzi stabili e
+  i replay rileggono valori freschi. Il terzo costo piatto ipotizzato NON
+  c'e': i tre punti chiudono su pavimento+banda con errore <1%.
+
+IL PREDITTORE: funziona come predittore, perde come prefetch
+  Alza i colpi di domanda dal 44,0% (W0) al 75,1% (W1) e 77,9% (W2): il 71%
+  di recall misurato offline si conferma in vivo. MA ogni copia di prefetch
+  costa quanto una copia a domanda (stesso stream, stesso bus) e il 40-55%
+  dei prefetch utili e' churn che la domanda non riscatta: netto -18,6
+  ms/token (W1) e -37,2 (W2) rispetto a W0. Il vecchio avvertimento del
+  .cuh ("a W=2 il 94% del bus, che e' troppo") era giusto.
+
+VIZI DELLO STRUMENTO TROVATI E CHIUSI IN GIORNATA
+  1. Contatore di domanda: contavo la chiamata "up" credendola prima della
+     terna, ma l'ordine di esecuzione e' la visita depth-first (gate prima
+     di up): colpi 100% e buchi 0 su cache VUOTA. Smascherato da un numero
+     impossibile, non da un sospetto. Fix: conta al cambio di strato
+     (eb3efe4). Velocita' di ieri valide, contatori di domanda no.
+  2. Banda: il kernel decisione+copia a UN blocco fa ~5,5 GiB/s (4 KiB in
+     volo su ~1 us di latenza PCIe); i 24,35 del microbench erano
+     cudaMemcpyAsync (motore di copia), numero non trasferibile a un kernel.
+     Fix: kern_decidi (1 thread) + kern_copia (112 blocchi) sullo stesso
+     stream (42c10d2). [Il coordinatore ha riconosciuto suo l'errore di
+     provenienza del numero.]
+  3. Qualita' dell'uscita: chiusa con lo SHA256 unico di cui sopra.
+
+COSA RESTA APERTO (non fatto: il mandato ferma qui)
+  - Il prefetch pagherebbe solo se le copie viaggiassero SOVRAPPOSTE al
+    calcolo (stream/motore di copia separato + doppio buffer o dipendenze
+    per-slot): oggi prefetch e domanda condividono lo stream e ogni byte
+    previsto e' un byte tolto al token corrente. E' la strada per superare
+    il +15%, ha i suoi rischi (corse sulle tabelle di residenza).
+  - Piu' slot: a c 10000 / ub 64 ci stanno 380; a ub 16 il mandato stimava
+    ~400; il colpo a domanda cresce con gli slot e i 24 GiB/s rendono ogni
+    punto di colpo ~2,4 ms. Non provato oltre 380.
+  - Il difetto di LLAMA_CACHE_ESPERTI_W resta 2 (come da specifica origina-
+    ria) ma la configurazione vincente misurata e' W=0: decida il
+    coordinatore se cambiare il difetto.
+  - ctx 102400 / ub 128 (la configurazione del metro citato dal
+    coordinatore) non e' stata misurata: qui restano ~1.778 MiB liberi =
+    ~220 slot, dove il colpo a domanda sara' piu' basso di 44%.

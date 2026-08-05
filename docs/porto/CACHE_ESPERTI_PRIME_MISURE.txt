@@ -1,0 +1,96 @@
+CACHE ESPERTI IN VRAM -- MISURE DEL 5/8/2026 (sera)
+====================================================
+Rami: llama-dspark dspark-dsv4, commit 18fc454 (registro) + a305dfb (aggancio)
+      + d83bdb5 (predittore) + 07d430f (battito).
+Modello: C:\ds4-models\DS4-0731-IQ2XXS.gguf. Macchina: RTX 3060 12GB, 96GB RAM,
+RAM libera 87,9 GB a inizio sessione, VRAM 468 MiB prima del primo server.
+
+CONFIGURAZIONE DI TUTTE LE CORSE (dal mandato, sezione collaudo):
+  llama-server.exe -m C:/ds4-models/DS4-0731-IQ2XXS.gguf -c 10000 -np 1 -ngl 99
+    -ot "ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped" -ub 64 -b 64 -t 8
+    --port 8451 --host 127.0.0.1 --no-warmup --no-mmap --reasoning-budget 0
+  con LLAMA_MAPPED_IBRIDO=1 sempre.
+  NOTA: il mandato di collaudo dava QUESTA configurazione (c 10000, ub 64) e un
+  metro atteso di 7,9-8,0 t/s; il coordinatore cita un metro 7,99 a ctx 102400 /
+  ub 128. Le corse qui sotto sono TUTTE a c 10000 / ub 64, metro rimisurato
+  nella stessa identica configurazione: 8,04 / 8,00. Confronto interno coerente.
+
+  Richiesta (identica in ogni corsa, temperature 0, n_predict 300,
+  cache_prompt true, prompt 62 token):
+  "Scrivi un saggio dettagliato sulla storia della navigazione a vela nel
+   Mediterraneo antico, ..." (62 tok)
+
+CORSA A -- METRO, senza cache (LLAMA_CACHE_ESPERTI_SLOT assente)
+  R1: prefill 19,27 t/s (62 tok) | decode 8,04 t/s (300 tok, 124,4 ms/tok)
+  R2: decode 8,00 t/s (124,9 ms/tok)
+  (log a video, non salvato: la regola del 2> arriva dal coordinatore dopo
+   queste corse; da qui in poi ogni server scrive CE_<nome>.log)
+
+CORSA B -- LLAMA_CACHE_ESPERTI_SLOT=220, LLAMA_CACHE_ESPERTI_W=2
+  init: cache-esperti: 220 slot da 6.75 MiB = 1486 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62)
+  R1: decode 1,93 t/s (517,7 ms/tok)
+  R2: decode 1,93 t/s (518,2 ms/tok)
+  dump (battito 60s, cumulativi):
+    cache-esperti: domanda 19308 (colpi 19308 = 100.0%, buchi 0), prefetch 35934 (utili 22914 = 63.8%, sprecati 13020)
+    cache-esperti: byte copiati a domanda 0.00 GiB, in prefetch 151.12 GiB
+    cache-esperti: domanda 49314 (colpi 49314 = 100.0%, buchi 0), prefetch 91734 (utili 58600 = 63.9%, sprecati 33134)
+    cache-esperti: byte copiati a domanda 0.00 GiB, in prefetch 386.48 GiB
+  Normalizzato: ~480 prefetch/token (80 previsioni x 6), ~64% assenti -> ~2,0
+  GiB/token copiati SOLO di prefetch. VRAM col server su: 10014 MiB.
+
+CORSA C -- LLAMA_CACHE_ESPERTI_SLOT=380, LLAMA_CACHE_ESPERTI_W=1
+  init: cache-esperti: 380 slot da 6.75 MiB = 2566 MiB in VRAM
+  R1: decode 3,10 t/s (322,1 ms/tok)
+  R2: decode 3,11 t/s (321,4 ms/tok)
+  dump:
+    cache-esperti: domanda 80712 (colpi 80712 = 100.0%, buchi 0), prefetch 75084 (utili 44938 = 59.9%, sprecati 30146)
+    cache-esperti: byte copiati a domanda 0.00 GiB, in prefetch 296.37 GiB
+    cache-esperti: domanda 128700 (colpi 128700 = 100.0%, buchi 0), prefetch 119724 (utili 71795 = 60.0%, sprecati 47929)
+    cache-esperti: byte copiati a domanda 0.00 GiB, in prefetch 473.50 GiB
+  Normalizzato: 240 prefetch/token (40 strati router x 6), 60% assenti = ~144
+  copie/token = ~0,97 GiB/token. Delta sul metro: 322-124,6 = ~197 ms/token ->
+  banda effettiva di copia ~4,9 GiB/s (vedi VIZIO 2 sotto).
+
+CORSA D -- LLAMA_CACHE_ESPERTI_SLOT=380, LLAMA_CACHE_ESPERTI_W=0 (predittore spento)
+  R1: decode 4,08 t/s (245,1 ms/tok)
+  R2: decode 4,10 t/s (244,0 ms/tok)
+  dump:
+    cache-esperti: domanda 48108 (colpi 48108 = 100.0%, buchi 0), prefetch 0
+    cache-esperti: byte copiati a domanda 0.00 GiB, in prefetch 0.00 GiB
+    cache-esperti: domanda 110028 (colpi 110028 = 100.0%, buchi 0), prefetch 0
+  QUESTO DUMP E' IMPOSSIBILE e ha smascherato il contatore: colpi 100% e buchi
+  0 con la cache partita VUOTA e zero prefetch non possono essere veri.
+
+VIZI DELLO STRUMENTO SCOPERTI (da correggere prima di ogni altra misura)
+  1. CONTATORE DI DOMANDA ROTTO: contavo colpi/buchi sulla chiamata "up"
+     credendola la prima della terna (ordine di CREAZIONE dei nodi in
+     build_moe_ffn). Ma l'ordine di ESECUZIONE e' quello della visita
+     depth-first dell'espansione: swiglu(src0=gate, src1=up) fa visitare GATE
+     per primo. Quindi: gate fa il buco e la COPIA senza contare, up trova
+     tutto residente e conta un colpo. Colpi 100%, buchi 0 e "byte a domanda
+     0.00" sono FALSI in tutte le corse B/C/D. Le VELOCITA' e i contatori di
+     PREFETCH restano validi (il prefetch conta nel suo ramo, onesto).
+     Fix: conta la prima chiamata di ogni strato (cambio di strato fra
+     chiamate assicura), non un nome di tensore.
+  2. BANDA DI COPIA ~4,9 GiB/s, non i ~24 del microbench: kern_assicura copia
+     con UN blocco da 256 thread (4 KiB in volo su ~1 us di latenza PCIe).
+     L'intestazione del .cuh cita 24,35 GiB/s per 400 copie separate, ma qui
+     il collo e' il parallelismo del kernel, non il numero di copie.
+  3. QUALITA' DELL'USCITA NON ANCORA VERIFICATA: ho guardato solo i timings,
+     mai il testo generato. A temperatura 0 il testo del braccio cache deve
+     essere identico a quello del metro. Da verificare alla prossima corsa.
+
+IL CANCELLO, ALLO STATO ATTUALE (numeri veri, contatore di domanda a parte)
+  metro 8,04-8,00 t/s | cache: 1,93 (220/W2), 3,10 (380/W1), 4,08 (380/W0)
+  TUTTI i bracci cache PERDONO contro il metro. La scomposizione dice che il
+  costo dominante NON e' la contabilita' (i lanci in piu' sono ~130-300 kernel
+  piccoli/token) ma la MASSA DI COPIE del prefetch (0,97-2 GiB/token) servita
+  a ~4,9 GiB/s da un kernel a un blocco. Il "tutto residente" richiesto dal
+  cancello non e' raggiungibile con 380 slot: il working set per token e' 258
+  coppie (strato,esperto) e il ricambio fra token tiene il churn alto.
+
+PROSSIMI PASSI (in corso in questa sessione)
+  - fix del contatore (conta al cambio di strato) + verifica testo identico
+    al metro; ri-misura W0/W1/W2 con log su file. POI STOP come da mandato:
+    niente ottimizzazioni (kernel di copia multi-blocco, stream separato)
+    senza decisione del coordinatore.

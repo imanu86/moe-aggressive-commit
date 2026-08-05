@@ -175,3 +175,51 @@ for slot in (350, 400, 600, 900, 1400, 2400):
 print()
 print(f'  metro: oggi il token costa 128 ms con gli esperti calcolati su CPU.')
 print(f'  di quei 128, ~65 sono calcolo CPU che sparirebbe portandoli in VRAM.')
+
+# ------------------------------------------------------------------------
+# RIDURRE IL COSTO DEL PREDITTORE. Il calcolo e' l'1,4% e non e' il problema:
+# il problema e' la BANDA sprecata, perche' si prefetchano 6 esperti per
+# previsione per averne ~4 giusti. Ma le previsioni in cima alla classifica
+# valgono molto piu' di quelle in fondo -- quindi si taglia la coda.
+def simula_topn(slot, W, N):
+    from collections import OrderedDict
+    P = {}
+    for L in H:
+        for k in range(1, W+1):
+            Tg = L + k
+            if Tg in V and Tg in gate:
+                s = H[L] @ gate[Tg].T + bias.get(Tg, 0.0)
+                ordine = np.argsort(-s, axis=1)[:, :N]      # ORDINATI, non solo i primi N a caso
+                P[(L, Tg)] = ordine
+    cache = OrderedDict(); miss = dom = pf = 0
+    for t in range(T):
+        for L in range(NL):
+            if L not in V: continue
+            if W and L in H:
+                for k in range(1, W+1):
+                    key = (L, L+k)
+                    if key not in P: continue
+                    for e in P[key][t]:
+                        c = (L+k, int(e))
+                        if c not in cache:
+                            cache[c] = True; pf += 1
+                            if len(cache) > slot: cache.popitem(last=False)
+                        else: cache.move_to_end(c)
+            for e in V[L][t]:
+                c = (L, int(e)); dom += 1
+                if c in cache: cache.move_to_end(c)
+                else:
+                    miss += 1; cache[c] = True
+                    if len(cache) > slot: cache.popitem(last=False)
+    return (dom-miss)/dom*100, miss/T, (miss+pf)/T
+
+BUS = 24.35   # misurato, non di targa
+print()
+print(f"{'slot':>5} {'W':>2} {'topN':>5} {'hit':>7} {'miss/tok':>9} {'ms esposti':>11} {'banda':>10} {'% del bus':>10}")
+for slot in (350, 600):
+    for W in (1, 2, 3):
+        for N in (2, 3, 4, 6):
+            h, m, tot = simula_topn(slot, W, N)
+            esp = m * MIB / 1024 / BUS * 1000
+            bw  = tot * MIB * 8 / 1024
+            print(f'{slot:5d} {W:2d} {N:5d} {h:6.1f}% {m:8.0f} {esp:10.1f} {bw:9.1f} {bw/BUS*100:9.0f}%')

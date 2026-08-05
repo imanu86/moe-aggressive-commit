@@ -8,14 +8,25 @@ REM ===========================================================================
 
 REM --- LE MANOPOLE ------------------------------------------------------------
 
-REM Contesto. 102400 e' il massimo che entra con UBATCH=16.
-REM Se lo alzi devi abbassare UBATCH, e viceversa: il buffer di calcolo in VRAM
-REM cresce con CONTESTO x UBATCH, e la scheda ha 12 GB.
-REM   102400 x 16  ->  2.532 MiB di buffer   OK
-REM   102400 x 32  ->  5.062 MiB             NON CI STA
-REM    24576 x 32  ->  1.809 MiB             OK
+REM Contesto e ubatch. Il buffer di calcolo in VRAM cresce con CONTESTO x UBATCH
+REM x NUMERO DI SLOT, e la scheda ha 12 GB.
+REM
+REM CORREZIONE DEL 5/8 SERA -- il vincolo che avevo scritto qui era sbagliato di
+REM un fattore quattro. Il server allocava QUATTRO slot paralleli di default,
+REM ognuno col suo buffer, su una macchina che serve una richiesta alla volta:
+REM
+REM   ctx 102400, ub  16, np 4 (com'era)   VRAM 11.920 MiB   liberi   368
+REM   ctx 102400, ub  16, np 1             VRAM  9.062 MiB   liberi 3.226
+REM   ctx 102400, ub 128, np 1             VRAM 10.510 MiB   liberi 1.778
+REM
+REM Con np 1 l'ubatch puo' salire da 16 a 128 A CONTESTO PIENO, e il prefill
+REM passa a 19,21 t/s (il decode resta 7,99: non dipende dall'ubatch).
+REM
+REM E il contesto lungo NON costa VRAM: la KV di DSV4 e' compressa, a 102.400
+REM occupa 10,75 MiB perche' la finestra e' 256 celle. Costavano solo i buffer.
 set CONTESTO=102400
-set UBATCH=16
+set UBATCH=128
+set SLOT=1
 
 REM Porta e indirizzo. 0.0.0.0 = raggiungibile dalla rete locale.
 REM Per limitarlo a questo PC soltanto: 127.0.0.1
@@ -62,7 +73,7 @@ if "%MAPPA_TUTTI%"=="1" (
 
 echo.
 echo   modello    %MODELLO%
-echo   contesto   %CONTESTO%   ubatch %UBATCH%
+echo   contesto   %CONTESTO%   ubatch %UBATCH%   slot %SLOT%
 echo   indirizzo  http://%INDIRIZZO%:%PORTA%
 echo   strumenti  %STRUMENTI%
 echo   ibrido     acceso (soglia %LLAMA_MAPPED_IBRIDO_SOGLIA%)
@@ -76,6 +87,7 @@ REM due volte in RAM (pagine del file + buffer pinnato) e la macchina annaspa.
 "%ESEGUIBILE%" ^
   -m "%MODELLO%" ^
   -c %CONTESTO% ^
+  -np %SLOT% ^
   -ngl 99 ^
   -ot "%OT%" ^
   -ub %UBATCH% -b %UBATCH% ^

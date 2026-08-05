@@ -223,3 +223,18 @@ for slot in (350, 600):
             esp = m * MIB / 1024 / BUS * 1000
             bw  = tot * MIB * 8 / 1024
             print(f'{slot:5d} {W:2d} {N:5d} {h:6.1f}% {m:8.0f} {esp:10.1f} {bw:9.1f} {bw/BUS*100:9.0f}%')
+
+# ------------------------------------------------------------------------
+# LA DIMENSIONE VERA A CTX 100k. Il vincolo dell'utente e' ctx >= 100.000, e a
+# quel contesto l'ubatch e' forzato a 16 (102400x16 = 2.532 MiB di buffer di
+# calcolo, 102400x32 non entra). Quei 2,5 GiB escono dalla stessa VRAM della
+# cache: 12.288 - 8.200 di pesi fissi - 2.532 di buffer = ~1.400 MiB = ~190 slot.
+# Simulare 350 slot era ottimista.
+print()
+print('  --- a ctx 100k restano ~190 slot, non 350 ---')
+print(f"{'slot':>5} {'W':>2} {'topN':>5} {'hit':>7} {'miss/tok':>9} {'ms esposti':>11} {'banda':>9} {'% bus':>7}")
+for slot in (190, 250, 350):
+    for W in (1, 2):
+        for N in (4, 6):
+            h, m, tot = simula_topn(slot, W, N)
+            print(f'{slot:5d} {W:2d} {N:5d} {h:6.1f}% {m:8.0f} {m*MIB/1024/BUS*1000:10.1f} {tot*MIB*8/1024:8.1f} {tot*MIB*8/1024/BUS*100:6.0f}%')

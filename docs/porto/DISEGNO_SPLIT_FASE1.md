@@ -143,13 +143,23 @@ la revisione ha regalato:
 
 ## I cancelli (dal mandato, con la meccanica di misura)
 
-- **A — bit-esattezza**: SHA identico al braccio cache W=0 su 300 token
-  temp 0, stessa config (`-c 10000 -np 1 -ub 64 -b 64`, mappati, SLOT=380).
-  Con `LLAMA_OVERLAP_K=0` — che significa **op NON INSERITA al build del
-  grafo** (il grafo spento è STRUTTURALMENTE quello di oggi), non "forme a
-  zero" — il binario deve riprodurre il braccio W=0 anche come tempo,
-  **entro il rumore misurato 0,4-1,4%** (R0/R0b del 5/8): la soglia è
-  dichiarata, non a occhio.
+- **A — bit-esattezza (EMENDATO 7/8 ai cancelli: la forma originale era
+  INSODDISFACIBILE col pin, e nessuno di noi l'ha visto — pricing, disegno,
+  tre revisioni):** la decisione 4 garantisce l'ORDINE di accumulazione, ma
+  il pin fa calcolare k esperti/strato ai KERNEL CPU, i cui valori
+  divergono legittimamente da quelli GPU — la stessa classe che la
+  decisione 5 cita per metro-contro-cache, applicata un livello più in
+  dentro. Il join preserva l'ordine, non può rendere uguali valori di
+  device diversi. Misurato: 1.521/2.333 byte di prefisso comune, poi
+  parafrasi coerente = numerica lecita da manuale, con id PERFETTI (100
+  passaggi di VERIFICA a zero). **La forma soddisfacibile: braccio
+  K2-nopin (`LLAMA_OVERLAP_PIN=0`, entrambi i rami su CUDA = 3a puro) →
+  SHA IDENTICO a K0 obbligatorio**, perché lì partizione+viste+riordino
+  sono l'unica variabile. La correttezza del ramo PINNATO poggia su:
+  id perfetti (V) + numerica per-device lecita (dottrina di decisione 5).
+  Con `LLAMA_OVERLAP_K=0` — op NON INSERITA al build (grafo strutturalmente
+  quello di oggi) — il binario riproduce il braccio W=0 anche come tempo,
+  entro il rumore 0,4-1,4% (R0/R0b del 5/8): VERIFICATO 7/8 (9,0 = metro).
 - **B — il contatore prima della velocità**: domanda **~171/token** sul
   ramo GPU (4/6 × 257 = 171,4 a k=2; il "157" del mandato era un errore di
   conto, corretto in ce08ba5), non ~17. Battito a 5 s.

@@ -21,32 +21,44 @@ trasporto 39 + calcolo GPU esperti ~16 ≈ **55 ms dei 108**. Il pavimento
 restante (~53: attenzione, dense, orchestrazione) resta seriale e NON è
 promesso dal disegno.
 
-## Il conto, con le costanti del ledger
+## Il conto, con lo SPLIT COME PARAMETRO (rivisto su nota DS4 L3)
 
-Per token, 43 strati, 258 attivazioni, 44% residenti (misurato):
-- ramo GPU (residenti, ~113 att.): calcolo ~7 ms/token, trasporto 0
-- ramo CPU (non residenti, ~145 att.): 145 × 0,242 ms = **35 ms/token**
-- oggi la stessa quota costa: 39 (trasporto) + ~9 (calcolo GPU) = 48 ms
+Costanti (ledger): 258 attivazioni/token, 113 residenti (44%), 145 no;
+per esperto: CPU 0,242 ms, GPU 0,063 ms (16,3/258), trasporto mappato
+0,271 ms. Oggi la parte esperti costa 39 (trasporto) + 16,3 (calcolo GPU)
+= **55,3 ms/token**. Sia x = non-residenti affidati alla CPU:
 
-Per strato: max(0,81 ms CPU, 0,16 GPU) ≈ 0,81 + costo_confine, contro 1,11
-di oggi. **Guadagno lordo ≈ 13 ms/token** (108 → ~95, ~10,5 t/s, +13%)…
-che è MENO del +27% stimato a monte, perché lo split 20/80 ottimo di quella
-stima presuppone di scegliere CHI va alla CPU per bilanciare i rami, mentre
-il criterio "non residenti alla CPU" fissa lo split a ~56/44. I due criteri
-divergono: **bilanciare i rami** (ottimo ~20% CPU) vs **cancellare il
-trasporto** (56% CPU). Il punto di lavoro vero sta in mezzo e va scelto:
-- 56% CPU (zero trasporto): 108 → ~95 ms (+13%)
-- 20% CPU (rami pari, l'80% GPU ripaga trasporto sui non-residenti che
-  restano): il trasporto NON sparisce per quella quota → guadagno ~9-17 ms
-  secondo il colpo cache → simile.
-- CON PIÙ CACHE (la curva K3/K4 dice che i colpi salgono a 48% coi 550
-  slot ma la VRAM strozza): il criterio migliore è "alla CPU solo ciò che
-  la cache non tiene", e il guadagno cresce col tasso di colpi.
+    ramo CPU:  0,242·x
+    ramo GPU:  7,1 + (145−x)·(0,271+0,063)   ← i non-residenti lasciati
+                                                alla GPU RIPAGANO il bus
+    t_esperti = max(rami) + sync
 
-**Forbice onesta: +9-17 ms/token → 9,9-10,9 t/s (+8-19%) sul 9,26.**
-Il +27% richiede ANCHE più residenza (cioè la scheda da 24 GB, di nuovo).
+I due criteri "puri" sono entrambi sub-ottimi, il massimo sta in mezzo:
 
-## Il costo dei confini (la variabile assassina, dal sorgente)
+| x (CPU) | ramo CPU | ramo GPU | t_esperti (sync 9,3) | token | t/s | Δ |
+|---|---|---|---|---|---|---|
+| 52 (20%) | 12,6 | 38,2 | 47,5 | 100,2 | 10,0 | +8% |
+| **96 (ottimo)** | **23,3** | **23,4** | **32,6** | **85,3** | **11,7** | **+27%** |
+| 145 (tutti) | 35,1 | 7,1 | 44,4 | 97,1 | 10,3 | +11% |
+
+L'equazione di bilancio: 0,242x = 7,1 + (145−x)·0,334 → **x* ≈ 96** (66%
+dei non-residenti alla CPU). Il "+44%" della stima a monte presupponeva il
+ramo GPU tutto-residente (12,3 ms): vero solo con molta più cache — è il
+regime da 24 GB travestito. x* si sposta col tasso di colpi: più residenza
+→ più capienza GPU libera → più quota CPU trasferibile → il guadagno
+CRESCE con la cache (le due leve si compongono, non competono).
+
+**Forbice onesta: 10,0-13,1 t/s (+8-41%), centrata a 11,7 (+27%) col
+confine a 108 µs; l'estremo alto richiede confine ≤ 30 µs (polling).**
+
+## Il costo dei confini (la variabile assassina)
+
+**~108 µs/confine, GIÀ NEI DATI** (derivazione DS4 L3): il "resto" della
+configurazione ibrida (86 confini/token) è 62,0 ms, quello della cache W=0
+(zero confini) è 52,7 → 9,3 ms / 86 = 108 µs. È un residuo di sottrazione
+fra configurazioni diverse, non una misura pulita: il microbench (sotto)
+serve a FALSIFICARLO, non a scoprirlo. Come ordine di grandezza colloca il
+sistema attuale nello scenario intermedio dei tre:
 
 86 confini CPU-GPU/token (2 per strato). Tre scenari:
 - threadpool persistente CON polling (esiste già:
@@ -82,12 +94,15 @@ Il costo REALE del confine oggi: un grafo giocattolo con N split alternati
 CPU/GPU, cronometrato a N crescente → ms/confine. Se esce >50 µs con
 polling attivo, il conto sopra si aggiorna prima di scrivere codice.
 
-## Verdetto preliminare (da confermare col microbench)
+## Verdetto preliminare (da confermare col microbench di falsificazione)
 
-La leva è VIVA e prezzabile a +8-19% — più piccola del +27% sperato, sopra
-la soglia del rumore (0,4-1,4%), e **ortogonale alla cache** (si compone:
-più colpi → più quota GPU senza trasporto). Non è ricerca: sono due pezzi
+La leva è VIVA: **+8-41% secondo split e confine, +27% (11,7 t/s) al punto
+di lavoro ottimo x*≈96 col confine a 108 µs** — sopra la soglia del rumore
+(0,4-1,4%) di un ordine di grandezza, e **si COMPONE con la cache** (più
+colpi → x* più alto → guadagno maggiore). Non è ricerca: due pezzi
 delimitati. Il rischio tecnico è tutto nel pezzo 2 (split del grafo per
-residenza). Il pezzo 1 da solo non compra niente per il regime attuale
-(senza split, la CPU non ha rami MoE da sovrapporre a batch 1 con l'ibrido
-attivo: oggi TUTTO il MoE di decode sta o di qua o di là).
+residenza: bit-esattezza dell'ordine di accumulazione al join, e lo
+scheduler non deve farsi dettare l'assegnazione dalla collocazione dei
+pesi). Il pezzo 1 da solo non compra niente per il regime attuale: senza
+split, a batch 1 con l'ibrido il MoE di decode sta TUTTO da una parte —
+non c'è niente da sovrapporre finché il grafo non ha due rami.

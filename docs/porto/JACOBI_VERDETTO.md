@@ -214,6 +214,24 @@ la catena a profondità 1 paga già con gli n-grammi; crollo ⇒ serve un
 drafter con p1>0,50. (2) SECONDARIO: union(2) reale (343 è un tetto) e
 accettazione per posizione, per mappare gli assi.
 
+**ADDENDUM 6/8 notte (curva del batch a cache viva, dati DS4 L3): il
+"343 su 380" era l'oggetto sbagliato per le catene.** La chiusura degli
+assi dice che solo la profondità produce token — e una catena di
+profondità 1 occupa DUE POSIZIONI CONSECUTIVE (t, t+1): la sua unione è
+per costruzione quella dei consecutivi, **~446 > 380**, non il 343 dei
+rami stessa-posizione (che appartiene alla larghezza, sterile). L'ancora
+empirica: a np=2 con richieste IDENTICHE i colpi crollano da 43,1% a
+**17,3%** — anche quando l'unione "entrerebbe", il regime a due token
+non tiene (sfasamento degli slot; e per la catena, che è un grafo solo,
+il working set 446-ciclante su 380 slot è il regime-K1 marginale). A
+17,3% di colpi il pareggio della catena sale a ~1,54 token/passo →
+**p1 > ~0,54**: gli n-grammi (0,26-0,29 misurati) sono FUORI anche a
+K=2. Il corridoio residuo su questa scheda è UNO: **drafter addestrato
+con p1 > ~0,5 nel dominio d'uso** — il primo-posizione DSpark (0,767 su
+traduzione) lo supererebbe, ma va misurato qui. La "misura da 5 minuti"
+cambia oggetto: non più i colpi a 343, ma l'accettazione per posizione
+del drafter sul nostro carico.
+
 ## Artefatti
 
 - Branch `jacobi` su `D:\llama-dspark` (base 394a797, commit b2b432b): catch +

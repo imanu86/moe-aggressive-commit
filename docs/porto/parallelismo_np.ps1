@@ -43,11 +43,38 @@ $R   = 'D:\ds4_work\llama_run'
 $b   = [char]92
 $ESP = 'ffn_(gate|up|down)_exps' + $b + '.weight=CUDA0_Mapped'
 
+# SECONDA PASSATA (6/8 sera), con la cache VIVA anche a batch > 1.
+#
+# La prima passata confrontava B1-con-cache contro B2/B4-SENZA, perche' il
+# percorso veloce aveva un cancello a batch 1 cablato: due variabili invece di
+# una, e il risultato (aggregato piatto) non distingueva "il batching non paga"
+# da "il batching paga ma la cache non ci puo' venire". Tolto il cancello
+# (commit 355c257), i bracci diventano confrontabili.
+#
+# E i tre bracci a batch>1 fanno da STAFFA alla soglia della cache, che e' la
+# misura che serviva alla sessione parallela e che qui viene gratis:
+#
+#     braccio   unione attesa    contro 380 slot
+#     B2u            258         ENTRA comodamente   (richieste identiche:
+#                                                     stessa route, temp 0)
+#     B2d           ~446         sborda di poco
+#     B4d           ~751         sborda del doppio
+#
+# Il regime da capire e' 343/380 -- vicino alla capienza, mai campionato: K1 era
+# sotto (220 slot contro 258) e K3 largo (380 contro 258). I contatori dei tre
+# bracci ne disegnano la forma senza una run dedicata.
+#
+# E B1p accende la sonda dei confini (GGML_SCHED_PROFILO=1, gia' nel binario e
+# inerte a env spento): porta a casa CONTEGGIO DEGLI SPLIT e scomposizione del
+# costo, cioe' la coppia che separa "conteggio diverso, innocuo" da "la
+# sottrazione ibrido-cache era sbagliata". Il suo t/s NON va usato come metro:
+# i timer per split lo perturbano, per la velocita' vale B1.
 $bracci = @(
-    @{ n='B1';   np=1; req=@('par_p1');                             d='una richiesta -- IL METRO' },
-    @{ n='B2u';  np=2; req=@('par_p1','par_p1');                    d='DUE UGUALI -- condivisione massima delle route' },
-    @{ n='B2d';  np=2; req=@('par_p1','par_p3');                    d='DUE DIVERSE (codice + prosa) -- il caso realistico' },
-    @{ n='B4d';  np=4; req=@('par_p1','par_p2','par_p3','par_p4');  d='QUATTRO DIVERSE -- la curva sale ancora?' }
+    @{ n='B1';   np=1; req=@('par_p1');                             prof=$false; d='una richiesta -- IL METRO' },
+    @{ n='B1p';  np=1; req=@('par_p1');                             prof=$true;  d='una richiesta CON SONDA CONFINI -- per gli split, non per il t/s' },
+    @{ n='B2u';  np=2; req=@('par_p1','par_p1');                    prof=$false; d='DUE UGUALI -- unione 258, ENTRA nei 380 slot' },
+    @{ n='B2d';  np=2; req=@('par_p1','par_p3');                    prof=$false; d='DUE DIVERSE (codice + prosa) -- unione ~446, sborda' },
+    @{ n='B4d';  np=4; req=@('par_p1','par_p2','par_p3','par_p4');  prof=$false; d='QUATTRO DIVERSE -- unione ~751, sborda del doppio' }
 )
 $porta = 8501
 foreach ($x in $bracci) {
@@ -62,6 +89,10 @@ foreach ($x in $bracci) {
     $env:LLAMA_REAP               = '0'
     $env:LLAMA_CACHE_ESPERTI_SLOT = '380'
     $env:LLAMA_CACHE_ESPERTI_W    = '0'
+    # la sonda e' inerte a env spento: va TOLTA, non messa a 0, perche' il
+    # processo precedente la lascerebbe accesa nell'ambiente ereditato
+    if ($x.prof) { $env:GGML_SCHED_PROFILO = '1' }
+    else         { Remove-Item Env:GGML_SCHED_PROFILO -EA SilentlyContinue }
 
     $a = @('-m',$MOD,'-c','10000','-np',"$($x.np)",'-ngl','99','-ot',$ESP,
            '-ub','64','-b','64','-t','8','--port',"$porta",'--host','127.0.0.1',
@@ -115,8 +146,16 @@ foreach ($x in $bracci) {
     "  --> {0} token in {1:N1} s di orologio = {2:N2} t/s AGGREGATO  ({3:N2} per richiesta)" -f `
         $tokens, $muro, ($tokens/$muro), ($tokens/$muro/$x.req.Count) | Out-File $out -Append -Encoding utf8
 
-    Select-String -Path $log -Pattern 'cache-esperti: domanda' | Select-Object -Last 1 |
-        ForEach-Object { "  " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } | Out-File $out -Append -Encoding utf8
+    # I CONTATORI DELLA CACHE sono la misura vera di questo giro: con la cache
+    # viva a batch>1, il tasso di colpi dei tre bracci disegna la soglia di
+    # capienza (unione 258 / ~446 / ~751 contro 380 slot).
+    Select-String -Path $log -Pattern 'cache-esperti: domanda' | Select-Object -Last 2 |
+        ForEach-Object { "  [cache] " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } | Out-File $out -Append -Encoding utf8
+    # LA SONDA DEI CONFINI: split per grafo + scomposizione. Il conteggio conta
+    # quanto il costo -- separa "conteggio diverso, innocuo" da "la sottrazione
+    # ibrido-cache era sbagliata".
+    Select-String -Path $log -Pattern 'sched-profilo' | Select-Object -Last 2 |
+        ForEach-Object { "  [sonda] " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } | Out-File $out -Append -Encoding utf8
     # prova che il server ha davvero FUSO le richieste in un solo passaggio
     Select-String -Path $log -Pattern 'n_tokens|batch|slot .* release' | Select-Object -Last 3 |
         ForEach-Object { "  [log] " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } | Out-File $out -Append -Encoding utf8

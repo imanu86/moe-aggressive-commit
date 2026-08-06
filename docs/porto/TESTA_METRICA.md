@@ -38,9 +38,17 @@ qualità da misurare — ma il MECCANISMO può essere rotto e veloce insieme
 (KV corrotta, stati iniettati male, cache invalidata storta). Il cancello di
 validità di ogni run che produce un p1:
 
-1. **SHA-256 del testo generato == SHA della greedy pura** nella stessa
-   config (stesso prompt, stesso seed, stessa quantizzazione). Divergenza =
-   run invalida, qualunque p1 dica.
+1. **SHA-256 del testo generato == SHA di una run con lo STESSO pattern di
+   calcolo** (stesso prompt, config, binario, e stesso meccanismo di
+   verifica). *Emendato il 6/8 sera, braccio A*: la verifica speculativa
+   processa le posizioni in batch e il decode normale una alla volta —
+   l'ordine diverso delle riduzioni CUDA produce flussi greedy LEGITTIMAMENTE
+   divergenti (misurato: A e fitoff identici per 150+ token, poi parafrasi
+   coerente; anche greedy600 vs fitoff divergevano, binari diversi). Il
+   cancello quindi è: due run IDENTICHE devono dare lo stesso SHA
+   (determinismo), e il confronto spec-vs-nonspec vale solo sul prefisso
+   comune e come giudizio di coerenza — una KV corrotta produce spazzatura
+   presto, non una parafrasi che regge 1.200 token.
 2. **Contatore cache attivo** se la run passa dalla cache esperti (~257
    domande/token = lavora; ~17 = scavalcata; assente = NON DECIDIBILE).
 3. **Cancelli macchina** del protocollo: RAM ≥ 10 GiB all'avvio, VRAM ≥ 400

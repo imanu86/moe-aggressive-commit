@@ -39,9 +39,15 @@
 import os, re, sys
 import numpy as np
 
-D   = r'D:\ds4_work\dump_prosa'
-LOG = r'D:\ds4_work\llama_run\evalcb_prosa_log.txt'
-DOMINIO = 'prosa'
+# default: prosa; per il codice: testa_sonda_token.py codice
+if len(sys.argv) > 1 and sys.argv[1] == 'codice':
+    D   = r'D:\ds4_work\dump_codice2'
+    LOG = r'D:\ds4_work\llama_run\testa_ridump_log.txt'
+    DOMINIO = 'codice'
+else:
+    D   = r'D:\ds4_work\dump_prosa'
+    LOG = r'D:\ds4_work\llama_run\evalcb_prosa_log.txt'
+    DOMINIO = 'prosa'
 
 # ---- id dal log dell'eval-callback (ground truth) ----
 ids, on = [], False

@@ -165,6 +165,33 @@ addestrato DSpark.
   passaggi da un token col dump delle route, unione vera. Cinque minuti di
   macchina, accodata alla sessione della sonda confini.
 
+**Forma finale della conclusione (6/8 sera, seconda passata — il caveat
+sulla quota-cache portato ai due estremi È il risultato):**
+
+| K | unione | contro 380 slot | pareggio (44%) | pareggio (0%) |
+|---|---|---|---|---|
+| 2 | 343 | **ENTRA** | 1,12 | 1,50 |
+| 4 | 495 | 1,3× troppo grande | 1,33 | 1,88 |
+| 8 | 771 | 2,0× | 1,72 | 2,57 |
+| 16 | 1.191 | 3,1× | 2,31 | 3,62 |
+
+Da K=4 in su l'unione NON ENTRA nella cache: è la condizione di K1 (220
+slot contro 258/token → **0,0% colpi su 272.922 domande**), quindi la
+colonna onesta è quella a 0% e la porta si richiude. A K=2, dove entra, il
+pareggio 1,12-1,50 sta DENTRO l'accettazione misurata 1,43-1,60.
+
+> **La larghezza dell'albero è limitata dalla CAPACITÀ DELLA CACHE, non
+> dal metodo. Su questa scheda il tetto è K=2** (343 ≤ 380 slot; 495 no).
+
+E "si riapre con la residenza" smette d'essere una frase: **la scheda da
+24 GB compra la LARGHEZZA** (~2.000 slot: union(16)=1.191 entra comoda),
+che è la variabile da cui dipende il resto. Avvertenza sull'ancora
+drafter: l'1,71 di DSpark è un numero di PROFONDITÀ (catena a 5 posizioni,
+0,767·0,488·…), non di larghezza — gli assi si compongono ma non sono
+intercambiabili; la misura da 5 minuti dovrebbe registrare anche
+l'accettazione per posizione per mappare l'uno sull'altro. E il criterio
+della misura vera è ora uno solo: **union(2) reale sotto i 380 slot?**
+
 ## Artefatti
 
 - Branch `jacobi` su `D:\llama-dspark` (base 394a797, commit b2b432b): catch +

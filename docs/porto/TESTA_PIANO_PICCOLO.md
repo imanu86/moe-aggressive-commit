@@ -4,6 +4,28 @@
 5,4 contro 2,3 t/s) e PRIMA del braccio A2 (p1 per posizione). Il piano ha
 trigger espliciti perché il braccio A ha cambiato la domanda.*
 
+> **AGGIORNAMENTO 7/8 01:07 — IL BIVIO È DECISO DALLA MISURA, e questo piano è
+> la via principale, non il piano B.** Il braccio della retta (n_max 1/2/3
+> nella stessa config, ledger `TESTA_RETTA_TRE_PUNTI`) ha mostrato che il
+> costo dominante del DSpark è la fase di **iniezione** (`process()`: due
+> forward CPU della bozza per sincronizzare la sua KV, mai cronometrata —
+> +104,8 ms per POSIZIONE contro i 4,65 del pezzo strumentato). Con il DSpark
+> la profondità PEGGIORA (7,50 → 5,82 → 5,00 t/s); rifacendo il conto con un
+> proponente **senza stato** e gli stessi colpi e mlen misurati la profondità
+> **cambia segno** (11,13 → 11,78 → **12,20 t/s**, +32% sulla SOTA).
+>
+> **Conseguenza di disegno, vincolante per tutto ciò che segue: la testa deve
+> restare SENZA STATO.** Niente KV propria, niente iniezione, niente encode:
+> legge uno stato che il bersaglio ha già calcolato e produce una
+> distribuzione. Non è un dettaglio implementativo — è *il* vantaggio
+> strutturale, ed è ciò che sblocca la profondità. Qualunque variante che
+> introduca una seconda macchina da sincronizzare rientra nel costo appena
+> falsificato.
+>
+> Il bersaglio diventa **fino a 12,2 t/s a n_max=3**, non 10,6 a profondità 1.
+> Taglia da confermare (il controfattuale usa il per_pos del DSpark come
+> sostituto di quello ignoto della testa); direzione robusta.
+
 ## Il bivio, e chi lo decide
 
 Il braccio A2 (server, `n_accepted_per_pos`) consegna due numeri: **p1 del

@@ -116,9 +116,14 @@ ripieghi sul sync bloccante fra i due rami.
 - `--no-mmap` obbligatorio col mappato; `LLAMA_MAPPED_IBRIDO=1` per l'ibrido.
 - La cache: `LLAMA_CACHE_ESPERTI_SLOT=380`, `LLAMA_CACHE_ESPERTI_BATCH`
   (tetto token/passaggio, difetto 8), `LLAMA_CACHE_ESPERTI_BATTITO=5` nelle
-  run corte. (`LLAMA_CACHE_ESPERTI_W` NON esiste più: era la finestra del
-  predittore, morta con le misure del 5-6/8 — trovato dalla revisione del
-  cantiere overlap il 6/8 sera, zero occorrenze nell'albero.)
+  run corte, **e `LLAMA_CACHE_ESPERTI_W=0` OBBLIGATORIO**.
+  (SMENTITA 7/8 notte della nota precedente «W non esiste più»: l'env **vive
+  in `src/models/deepseek4.cpp` con DIFETTO 2** — prefetch ACCESO. Il grep
+  che l'aveva dichiarato fossile copriva `ggml/src/` e `common/`, non
+  `src/models/`: due sessioni l'hanno verificato male nello stesso modo. Il
+  primo K0 senza W=0 è finito nel regime avvelenato: colpi 4,9%, 580 GiB
+  sullo stream DMA, 58,7% dei prenotati in ritardo. Il flag che i vecchi
+  script settavano «per inerzia» era PORTANTE.)
 - La sonda: `GGML_SCHED_PROFILO=1`, stampa ogni 50 grafi su stderr con
   `di cui sync`. Le stampe sono CUMULATIVE: usare la **finestra marginale**
   fra due stampe lontane dal transitorio (i primi grafi portano ~11 s di

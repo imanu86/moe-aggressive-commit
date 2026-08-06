@@ -38,28 +38,29 @@ qualità da misurare — ma il MECCANISMO può essere rotto e veloce insieme
 (KV corrotta, stati iniettati male, cache invalidata storta). Il cancello di
 validità di ogni run che produce un p1:
 
-1. **SHA-256 del testo generato == SHA di una run con lo STESSO pattern di
-   calcolo** (stesso prompt, config, binario, e stesso meccanismo di
-   verifica). *Emendato il 6/8 sera, braccio A*: la verifica speculativa
-   processa le posizioni in batch e il decode normale una alla volta —
-   l'ordine diverso delle riduzioni CUDA produce flussi greedy LEGITTIMAMENTE
-   divergenti (misurato: A e fitoff identici per 150+ token, poi parafrasi
-   coerente; anche greedy600 vs fitoff divergevano, binari diversi). Il
-   cancello quindi è: due run IDENTICHE devono dare lo stesso SHA
-   (determinismo), e il confronto spec-vs-nonspec vale solo sul prefisso
-   comune e come giudizio di coerenza — una KV corrotta produce spazzatura
-   presto, non una parafrasi che regge 1.200 token.
-   *Secondo emendamento (6/8 notte, A2 vs A2bis)*: su questa macchina
-   nemmeno il determinismo cross-run esiste — due run IDENTICHE (stesso
-   binario, prompt, temp 0, stesso pattern) divergono al carattere 27
-   (non-determinismo CUDA sul percorso mappato). Il cancello di meccanismo
-   residuo è: (a) coerenza semantica del flusso per tutta la corsa; (b) il
-   per_pos della verifica del bersaglio come misura primaria — ogni token
-   emesso è per costruzione l'argmax del bersaglio NEL SUO passaggio; (c) lo
-   SHA resta valido solo DENTRO una run (replay dello stesso log). Corollario
-   di misura: p1 e accettazione VARIANO col flusso (misurato: aggregata
-   0,599 contro 0,822 fra due run identiche) — il che rende la regola n≥3 +
-   mediana non un lusso ma il minimo sindacale.
+1. **Il cancello SHA dipende dal PERCORSO DI CALCOLO** (forma finale del
+   6/8 notte, tre passate — la storia è nei commit; il ritaglio decisivo è
+   della coordinatrice, la verifica empirica nostra):
+   - **Percorso batch-1 (decode normale): il determinismo cross-run ESISTE
+     ed è PROVATO** — C1/C8/C1b, tre processi separati, SHA identico
+     `7694E3A6`; le coppie R1/R2 della campagna cache. Qui il cancello è
+     SHA pieno: due run identiche → stesso testo, sempre. (Questo è anche
+     il cancello notarile del cantiere overlap: RESTA IN PIEDI.)
+   - **Percorso speculativo (batch di verifica): NON deterministico
+     cross-run, ANCHE ad accettazione ~0** — misurato: A2 vs A2bis
+     divergono al carattere 27 (accettazione 0,6-0,8); fitoff vs fitoff2
+     al 1357 (accettazione 0,0017 — il batch di verifica gira comunque,
+     anche quando rifiuta tutto). Sorgente candidata: ordine delle
+     riduzioni/atomiche float nel batch sui kernel mappati. Qui il
+     cancello si riduce a: (a) coerenza semantica dell'intero flusso (una
+     KV corrotta produce spazzatura presto, non una parafrasi che regge
+     1.200 token); (b) il per_pos della verifica del bersaglio come misura
+     primaria — ogni token emesso è per costruzione l'argmax del bersaglio
+     nel suo passaggio; (c) SHA valido solo intra-run.
+   - Corollario di misura: sul percorso spec p1 e accettazione VARIANO col
+     flusso (aggregata 0,599↔0,822 fra run identiche; astensioni 194↔84):
+     **n≥3 + mediana è il minimo sindacale, e la forbice si riporta per
+     intero** — la sua larghezza decide il margine necessario sul budget.
 2. **Contatore cache attivo** se la run passa dalla cache esperti (~257
    domande/token = lavora; ~17 = scavalcata; assente = NON DECIDIBILE).
 3. **Cancelli macchina** del protocollo: RAM ≥ 10 GiB all'avvio, VRAM ≥ 400

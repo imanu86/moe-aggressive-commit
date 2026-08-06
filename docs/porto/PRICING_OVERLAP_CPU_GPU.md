@@ -51,14 +51,21 @@ CRESCE con la cache (le due leve si compongono, non competono).
 **Forbice onesta: 10,0-13,1 t/s (+8-41%), centrata a 11,7 (+27%) col
 confine a 108 µs; l'estremo alto richiede confine ≤ 30 µs (polling).**
 
-## Il costo dei confini (la variabile assassina)
+## Il costo dei confini — MISURATO il 6/8 sera (LLAMA_SONDA_CONFINI)
 
-**~108 µs/confine, GIÀ NEI DATI** (derivazione DS4 L3): il "resto" della
-configurazione ibrida (86 confini/token) è 62,0 ms, quello della cache W=0
-(zero confini) è 52,7 → 9,3 ms / 86 = 108 µs. È un residuo di sottrazione
-fra configurazioni diverse, non una misura pulita: il microbench (sotto)
-serve a FALSIFICARLO, non a scoprirlo. Come ordine di grandezza colloca il
-sistema attuale nello scenario intermedio dei tre:
+**Pedaggio totale ≈ 3,15 ms/token = 72 µs/confine** (sonda nel grafo vero,
+braccio F3 ibrido, finestra marginale 550→600 grafi): conteggio 86,9-87,0
+split/grafo (l'86 assunto regge); calc CPU marginale 65,55 contro 62,4 da
+FLOP → wake+plan 3,15 ms (PAVIMENTO del pedaggio). Il vincolo vero che
+regge: somma marginale 122,3 ≤ token 126,3 (poteva sforare, non sfora).
+CORREZIONE DS4 L3 accolta: "attesa-GPU dal bilancio 47,9 = ingressi
+47,86" è un'IDENTITÀ (il fuori-loop era definito come residuo), non una
+verifica — un pedaggio dentro "ingressi" non è escluso, è solo NON
+misurato. La sottrazione da ledger (11,0 ms → 128 µs) resta il TETTO.
+Etichetta: UNA run, UNA finestra da 50 grafi.
+**Numero di lavoro: tassa in banda [3,5, 9,3] → 11,5-12,6 t/s =
++27-36%; l'estremo alto da confermare con un timer sync-vs-copia
+non identitario.** Storia della stima (per il registro del metodo):
 
 86 confini CPU-GPU/token (2 per strato). Tre scenari:
 - threadpool persistente CON polling (esiste già:

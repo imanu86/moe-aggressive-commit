@@ -90,6 +90,15 @@ liberata, il coordinatore può verificare i processi e riprendersela.
       con la certificazione. Ricevuta che combacia = ciclo chiuso = silenzio
       dovuto. Il punto fisso non si dichiara: si verifica con una diff vuota.
 
+## Le revoche di finestra
+
+Una revoca si esegue **al confine di braccio**, mai a metà run — salvo ordine
+esplicito «immediato» dell'utente. Il 7/8 notte un kill a metà uscita ha perso
+le statistiche di accettazione di una run **completata**: lo stderr era nel
+buffer CRT, il processo è morto durante il flush, e il numero per cui la run
+esisteva è svanito a run finita. Una run deterministica si rifà, ma il tempo
+no: la revoca al confine costa minuti, quella a metà costa la run intera.
+
 ## I report
 
 Report **continui** alla sessione coordinatrice: a ogni risultato, correzione o

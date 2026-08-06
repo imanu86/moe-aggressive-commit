@@ -117,3 +117,68 @@ COSA RESTA APERTO (non fatto: il mandato ferma qui)
   - ctx 102400 / ub 128 (la configurazione del metro citato dal
     coordinatore) non e' stata misurata: qui restano ~1.778 MiB liberi =
     ~220 slot, dove il colpo a domanda sara' piu' basso di 44%.
+
+============================================================
+AGGIUNTA DEL 6/8 -- PREFETCH ASINCRONO SUI MOTORI DMA
+============================================================
+Commit: 153080f (anello + kern_prenota + thread di servizio + transito
+consultivo) + 375f10c (promozione anche in kern_decidi). Stessa macchina,
+stessa configurazione, stessa richiesta dei bracci del 5/8.
+
+NOTA CONTAMINAZIONE E CANCELLO RAM (dal coordinatore, 6/8 mattina):
+  dalle ~05:55 alle ~06:40 un secondo processo (llama-eval-callback, stesso
+  modello da 80 GiB) ha strozzato la macchina: RAM libera a 0,9 GiB. I bracci
+  misurati in quella finestra sono stati RIFATTI. Da qui in poi ogni braccio
+  campiona la RAM libera all'avvio (file CE_*.ram.txt accanto ai log) e vale
+  solo se >= 10 GiB. I tre bracci sotto sono partiti con 89,4-89,6 GiB liberi
+  e VRAM a vuoto (576-610 MiB).
+  (Per la cronaca: il W0 misurato nella finestra sospetta dava 9,16/9,25 con
+  contatori bit-identici al rifacimento pulito -- non era contaminato, ma ora
+  e' certificato invece che fortunato.)
+
+TABELLA (decode t/s su 300 token, R1/R2; 380 slot sempre)
+  W0 (controllo, prefetch spento)      9,02 / 9,16   SHA c1c7c5c3 OK
+  W1 asincrono                         5,70 / 5,72   SHA c1c7c5c3 OK
+  W2 asincrono                         5,42 / 5,42   SHA c1c7c5c3 OK
+  (riferimenti del 5/8: metro ibrido 8,04; W1 in-stream 7,90; W2 in-stream 6,89)
+
+DUMP NORMALIZZATI (598 token cumulativi)
+  W0: colpi 44,0%, buchi 144,6/tok; stream calcolo 0,953 GiB/tok; DMA 0
+  W1: colpi 0,4%, buchi 257/tok, prenotati 232/tok, saltati ~0,
+      IN RITARDO 73,4% dei prenotati; calcolo 1,69 GiB/tok; DMA 1,53 GiB/tok
+  W2: colpi 3,8%, buchi 248/tok, prenotati 295/tok, saltati 155/tok (dedup
+      fra le due finestre), scartati 30/tok (tetto transiti),
+      IN RITARDO 59,6%; calcolo 1,64 GiB/tok; DMA 1,94 GiB/tok
+  guasti 0 ovunque; SHA identico ovunque: il transito consultivo ha pagato
+  copie doppie senza mai sbagliare un byte, anche nel regime patologico.
+
+IL CANCELLO SHA: MAI SCATTATO. Il disegno anti-corse regge.
+
+PERCHE' PERDE, IN TRE PEZZI (tutti misurati)
+  1. L'ANTICIPO NON BASTA: a W=1 il 73,4% delle prenotazioni e' ancora in
+     volo quando arriva la sua domanda (distanza ~2,5 ms); a W=2 (5 ms)
+     scende solo al 59,6%, perche' il collo non e' la distanza ma la CODA:
+     lo stream DMA deve muovere 1,5-1,9 GiB/token e ogni batch aspetta
+     dietro i precedenti.
+  2. IL RITARDO AVVELENA LA RESIDENZA: la domanda che trova IN TRANSITO
+     ricopia in stream (giusto), ma alla promozione tardiva dove[] viene
+     ribaltato sulla copia DMA e la copia a domanda diventa orfana: DUE slot
+     consumati per esperto, ~490 inserzioni/token su 380 slot, l'orologio fa
+     il giro completo ogni token e la recency muore (44% -> 0,4%). Il crollo
+     dei colpi tiene massime le prenotazioni: il circolo si chiude da solo.
+  3. IL BUS E' UNO: i motori DMA liberano gli SM, non il PCIe. Nel regime
+     avvelenato i byte di prefetch (~equivalenti a quelli di domanda)
+     RADDOPPIANO il traffico sullo stesso x16, e il gather in stream che da
+     solo andava a 24 GiB/s se lo spartisce. 8,7-10,5 GiB/s di DMA sostenuto
+     non sono anticipo: sono contesa.
+  Il fix intermedio (promozione anche in kern_decidi, 375f10c) era corretto
+  e necessario -- prima il prenota di L+1 stava DOPO la sua domanda e colpi
+  era 17 su 154.284 -- ma non sufficiente: ha spostato colpi da 0,0% a 0,4%.
+
+VERDETTO
+  La configurazione vincente resta W=0: 9,02-9,26 t/s, +14% sul metro 8,04,
+  bit-esatta. Il prefetch asincrono cosi' com'e' perde contro il suo stesso
+  controllo. Perche' pagasse servirebbe uscire dal circolo vizioso: prenotare
+  SOLO cio' che la recency non copre (a regime ~60 esperti/token, non 232) e
+  con coda DMA corta (1 batch in volo), cosi' l'atterraggio sta nei 2,5 ms.
+  NON fatto: fuori mandato.

@@ -129,6 +129,42 @@ tetto ≥2,9 a N=3 (il nostro HTML "ripetitivo" fa 1,43 — la ripetitività
 percepita non è ripetitività di n-grammi a granularità token); (c) una banda
 verso gli esperti ≥5× (non esiste su PCIe 4 x16).
 
+## CORREZIONE 6/8 sera — l'ingrediente principale era misurato sull'oggetto sbagliato
+
+*Da `LLAMA_ALBERO_UNIONE` (a387d32, sessione DS4 L3, su provocazione
+dell'utente), aritmetica verificata qui compresa l'assunzione implicita
+(trasporto addebitato su unione × 56%, cioè col tasso di colpi applicato).*
+
+La curva batch→esperti-distinti usata sopra è misurata su token
+**consecutivi** (posizioni diverse, prefissi diversi). I rami di un albero
+stanno nella **stessa posizione dopo lo stesso prefisso**: la loro unione è
+il 27-41% più piccola (K=8: 771 contro 1.249, raggruppamento onesto di
+posizioni vere). Pareggi corretti: K=2 **1,12**, K=4 **1,33**, K=8 **1,72**
+— contro il tetto di accettazione misurato 1,43-1,60 e l'1,71 del drafter
+addestrato DSpark.
+
+**Cosa cambia e cosa no:**
+- La config del mandato (W15N5G15, batch 92) resta **impossibile**: anche
+  con l'unione ad albero il pareggio sta a 7-9 su un massimo fisico di 5.
+- Il metodo a POOL N-GRAMMI resta sotto o al pari del pareggio corretto
+  (il tetto 1,43-1,60 è un limite superiore ideale; il pool vero fa meno).
+- Ma a K stretto **il muro dei byte non è più ciò che decide: decide
+  l'accettazione**. "Quinta leva sullo stesso muro" era la diagnosi
+  sbagliata per QUESTA leva a QUESTA larghezza.
+- La riga finale va riscritta: si riapre **con un drafter la cui
+  accettazione superi ~1,3-1,7 accettati/passo** (il DSpark addestrato è
+  già lì, 1,71, SU QUESTA SCHEDA) — oppure con la residenza, che abbassa
+  il pareggio comunque. Nota il rovescio: il lookahead qui resta comunque
+  bloccato dai tre muri KV (sezione 1), che tornano rilevanti SOLO se un
+  drafter buono esiste.
+- Caveat onesti della correzione: vicini-coerenti è un tetto (i rami veri
+  condividono TUTTO il prefisso: plausibilmente unione ancora più piccola,
+  non misurato); il termine di calcolo resta fisso → pareggi ad alto K
+  sottostimati; la quota-cache sul batch è generosa (K1 insegna).
+- **La misura che chiude**: top-K candidati a una posizione vera, K
+  passaggi da un token col dump delle route, unione vera. Cinque minuti di
+  macchina, accodata alla sessione della sonda confini.
+
 ## Artefatti
 
 - Branch `jacobi` su `D:\llama-dspark` (base 394a797, commit b2b432b): catch +

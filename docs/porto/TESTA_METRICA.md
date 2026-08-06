@@ -49,6 +49,17 @@ validità di ogni run che produce un p1:
    (determinismo), e il confronto spec-vs-nonspec vale solo sul prefisso
    comune e come giudizio di coerenza — una KV corrotta produce spazzatura
    presto, non una parafrasi che regge 1.200 token.
+   *Secondo emendamento (6/8 notte, A2 vs A2bis)*: su questa macchina
+   nemmeno il determinismo cross-run esiste — due run IDENTICHE (stesso
+   binario, prompt, temp 0, stesso pattern) divergono al carattere 27
+   (non-determinismo CUDA sul percorso mappato). Il cancello di meccanismo
+   residuo è: (a) coerenza semantica del flusso per tutta la corsa; (b) il
+   per_pos della verifica del bersaglio come misura primaria — ogni token
+   emesso è per costruzione l'argmax del bersaglio NEL SUO passaggio; (c) lo
+   SHA resta valido solo DENTRO una run (replay dello stesso log). Corollario
+   di misura: p1 e accettazione VARIANO col flusso (misurato: aggregata
+   0,599 contro 0,822 fra due run identiche) — il che rende la regola n≥3 +
+   mediana non un lusso ma il minimo sindacale.
 2. **Contatore cache attivo** se la run passa dalla cache esperti (~257
    domande/token = lavora; ~17 = scavalcata; assente = NON DECIDIBILE).
 3. **Cancelli macchina** del protocollo: RAM ≥ 10 GiB all'avvio, VRAM ≥ 400

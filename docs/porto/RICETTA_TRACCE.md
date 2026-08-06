@@ -70,11 +70,14 @@ D:\llama-dspark\build\bin\llama-eval-callback.exe -m C:/ds4-models/DS4-0731-IQ2X
   gruppi). Validare il ricostruttore prima di usarlo.
 - **I TOKEN ID della traccia si leggono dal LOG dell'eval-callback** (li
   stampa uno per riga dopo `number of input tokens = N`), MAI ritokenizzando
-  il testo salvato: i `.txt` su disco non sono byte-identici all'input
-  (misurato 7/8: prosa 2.155 contro 1.996, codice 1.890 contro 1.678 — 
-  whitespace). Corollario: **il log va SEMPRE catturato** (stderr compreso,
-  `2>&1`); la traccia codice del 5/8 non ce l'ha e oggi i suoi token sono
-  irrecuperabili senza ridump.
+  il testo salvato. Causa PRECISA, chiusa col ridump del 6/8 notte:
+  **eval-callback normalizza i CRLF, `llama-tokenize` legge raw** — e ogni
+  coppia `\r\n` costa DUE token extra nel raw (il `\r` vale un token E
+  spezza la fusione dei newline adiacenti). Verificato al pezzo:
+  `prompt_lungo.txt` ha 106 CRLF → 1.890 raw contro 1.678 del log
+  (Δ = 212 = 2×106); stessa firma sulla prosa. Corollario: **il log va
+  SEMPRE catturato** (stderr compreso); la traccia codice del 5/8 non lo
+  aveva ed è servito un ridump per riavere gli id.
 
 ## Le tracce esistenti
 

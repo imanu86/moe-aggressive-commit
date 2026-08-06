@@ -122,10 +122,14 @@ prova la terza via; il fallback resta scritto.
 
 - **A — bit-esattezza**: SHA identico al braccio cache W=0 su 300 token
   temp 0, stessa config (`-c 10000 -np 1 -ub 64 -b 64`, mappati, SLOT=380).
-  Con `LLAMA_OVERLAP_K=0` il binario DEVE riprodurre il braccio W=0 anche
-  come tempo (il controllo che lo split "spento" è davvero spento).
-- **B — il contatore prima della velocità**: domanda ~157/token sul ramo GPU
-  (4/6 della domanda piena a k=2), non ~17. Battito a 5 s.
+  Con `LLAMA_OVERLAP_K=0` — che significa **op NON INSERITA al build del
+  grafo** (il grafo spento è STRUTTURALMENTE quello di oggi), non "forme a
+  zero" — il binario deve riprodurre il braccio W=0 anche come tempo,
+  **entro il rumore misurato 0,4-1,4%** (R0/R0b del 5/8): la soglia è
+  dichiarata, non a occhio.
+- **B — il contatore prima della velocità**: domanda **~171/token** sul
+  ramo GPU (4/6 × 257 = 171,4 a k=2; il "157" del mandato era un errore di
+  conto, corretto in ce08ba5), non ~17. Battito a 5 s.
 - **C — i byte**: copie della sonda e tempo del ramo trasporto giù di ~26
   MiB/token equivalenti (a k=2: ~2/6 dei non-residenti × 6,6 MiB). Il t/s
   può NON migliorare: i rami sono in fila — è il cancello di Fase 2, non

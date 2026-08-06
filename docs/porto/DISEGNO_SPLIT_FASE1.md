@@ -153,6 +153,13 @@ la revisione ha regalato:
 - **B — il contatore prima della velocità**: domanda **~171/token** sul
   ramo GPU (4/6 × 257 = 171,4 a k=2; il "157" del mandato era un errore di
   conto, corretto in ce08ba5), non ~17. Battito a 5 s.
+- **REGOLA COMPOSTA A+B (chiude il passaggio-a-vuoto):** se K venisse letto
+  male e il grafo cadesse nel fall-through classico, A passerebbe con SHA
+  identico VERIFICANDO NIENTE — il gemello verde del cancello-che-mente.
+  Il contatore distingue i tre stati: **~171 = split ingaggiato (A vale);
+  ~257 = fall-through (A verde ma VUOTO: nulla verificato); ~86 = split
+  CPU-prima (ordine sbagliato, escluso dalla scelta dichiarata).**
+  **A vale SOLO se B legge ~171 nello stesso run.**
 - **C — i byte**: copie della sonda e tempo del ramo trasporto giù di ~26
   MiB/token equivalenti (a k=2: ~2/6 dei non-residenti × 6,6 MiB). Il t/s
   può NON migliorare: i rami sono in fila — è il cancello di Fase 2, non

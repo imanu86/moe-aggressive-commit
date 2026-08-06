@@ -118,7 +118,7 @@ LLAMA_WARM_START_STRATI, LLAMA_CURVA_BATCH_VERA).
 (analisi sulle tracce, disegno, script) è libero; **qualunque cosa tocchi GPU
 o RAM in grande — build, serving, finetune anche piccolo — passa dal
 coordinatore**: `[RICHIESTA MACCHINA]` a
-`local_1c34df6e-b359-4454-9f30-2ea9f48b0bb4`, si parte dopo `[MACCHINA A TE]`.
+titolo "DS4 L3", da risolvere con list_sessions, si parte dopo `[MACCHINA A TE]`.
 Report continui con i numeri. Il dubbio si passa all'altra sessione. Se serve
 un worktree per compilare, chiederlo al coordinatore (`D:\llama-testa`, non
 ancora creato).

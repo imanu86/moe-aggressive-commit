@@ -122,7 +122,7 @@ ripieghi sul sync bloccante fra i due rami.
 
 **`docs/porto/PROTOCOLLO_MACCHINA.md`, vincolante.** In sintesi: nessuna build
 o run senza `[RICHIESTA MACCHINA]` alla sessione coordinatrice
-(`local_1c34df6e-b359-4454-9f30-2ea9f48b0bb4`) e relativo `[MACCHINA A TE]`;
+(titolo "DS4 L3", da risolvere con list_sessions) e relativo `[MACCHINA A TE]`;
 compilare È usare la macchina; report continui con i numeri; ledger per ogni
 run; il dubbio si passa all'altra sessione.
 

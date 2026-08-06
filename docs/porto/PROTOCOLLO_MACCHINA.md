@@ -7,7 +7,7 @@ occupa 74 quando gira.*
 ## La regola unica
 
 **Nessuna build e nessuna run senza autorizzazione della sessione
-coordinatrice** (`local_1c34df6e-b359-4454-9f30-2ea9f48b0bb4`; se l'ID non
+coordinatrice** (titolo "DS4 L3", da risolvere con list_sessions; se l'ID non
 risolve, cercarla con `list_sessions`). Compilare **è** usare la macchina: il
 6/8 un build atterrato durante i bracci altrui ha invalidato una passata
 intera, e ci è costato un'ora capirlo.

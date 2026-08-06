@@ -74,8 +74,11 @@ primi bracci.
 4. **Testa su stati nascosti (stile EAGLE/Medusa)**: il modello ha già dato
    il segnale (retta al 59,4% sulla route). Validare la pipeline di
    addestramento su un MoE piccolo PRIMA di toccare il grande:
-   `reap-loop/configs/models/` ha granite_1b_a400m e olmoe_1b_7b, e
-   `llama-finetune` è nel build. Dataset dal carico d'uso: i prompt e le
+   `reap-loop/configs/models/` ha granite_1b_a400m e olmoe_1b_7b.
+   (CORRETTO 7/8, trovato dal cantiere: `llama-finetune` è il finetune del
+   modello INTERO — AdamW su testo — NON addestra una testa su modello
+   congelato. L'attrezzo per il punto 4 è PyTorch: esporta stati → testa →
+   converti GGUF. Il puntatore originale del mandato era sbagliato.) Dataset dal carico d'uso: i prompt e le
    uscite esistono (`D:\ds4_work\llama_run\par_*.req.json`, output catalogati,
    traccia da 1.678 token con stati nascosti di 43 strati in
    `D:\ds4_work\dump`).

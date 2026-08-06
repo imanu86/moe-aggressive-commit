@@ -75,6 +75,15 @@ liberata, il coordinatore può verificare i processi e riprendersela.
       movimenti in una notte — con diff finale vuota due volte — perché
       ciascun lato si allineava all'ultimo messaggio VISTO dell'altro mentre
       il successivo viaggiava.
+    - **La regola del RICEVENTE, che rende stabile tutto il resto: ancora ≠
+      HEAD corrente → il messaggio è NULLO ALL'ARRIVO.** Non si esegue, non
+      si fa il revert di conformità: si segnala e basta. Senza questa metà,
+      il mittente ratifica sempre un albero che non esiste più e il ricevente
+      conforma sempre a una direttiva già stantia: tredici movimenti l'hanno
+      dimostrato — il livelock è sopravvissuto anche alle ratifiche, perché
+      ogni ratifica nasceva ancorata e arrivava stantia. Una direttiva che
+      comanda movimento è eseguibile SOLO se la sua ancora è l'HEAD del
+      momento in cui viene letta.
 
 ## I report
 

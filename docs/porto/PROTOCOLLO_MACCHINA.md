@@ -84,6 +84,11 @@ liberata, il coordinatore può verificare i processi e riprendersela.
       ogni ratifica nasceva ancorata e arrivava stantia. Una direttiva che
       comanda movimento è eseguibile SOLO se la sua ancora è l'HEAD del
       momento in cui viene letta.
+    - **La RICEVUTA ancorata chiude il ciclo** (clausola del cantiere overlap,
+      14° movimento): l'esecutore conferma lo stato certificato con l'ancora,
+      e l'arbitro emette qualcosa SOLO se l'ancora della ricevuta non combacia
+      con la certificazione. Ricevuta che combacia = ciclo chiuso = silenzio
+      dovuto. Il punto fisso non si dichiara: si verifica con una diff vuota.
 
 ## I report
 

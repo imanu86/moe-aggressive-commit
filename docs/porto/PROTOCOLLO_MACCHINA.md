@@ -90,6 +90,18 @@ liberata, il coordinatore può verificare i processi e riprendersela.
       con la certificazione. Ricevuta che combacia = ciclo chiuso = silenzio
       dovuto. Il punto fisso non si dichiara: si verifica con una diff vuota.
 
+## La config canonica
+
+Ogni braccio eredita la **config canonica di produzione PER INTERO** —
+`--reasoning-budget 0` (nothink) incluso — e ogni deviazione è una variabile
+**dichiarata** del braccio, mai un'eredità di clonazione. Il 7/8 l'intera
+stirpe degli spec-arm (clonata da un bat senza il flag) ha misurato per una
+notte in modalità thinking, che in produzione non esiste: ogni clonazione era
+"a una variabile" rispetto alla precedente, e la stirpe intera divergeva
+dalla produzione su una variabile che non stava nella lista. Il p1 0,891 e la
+"bimodalità del carico" portano il pedice THINKING; i verdetti di meccanismo
+(SHA, ingaggio, id) sono config-indipendenti e reggono.
+
 ## Le revoche di finestra
 
 Una revoca si esegue **al confine di braccio**, mai a metà run — salvo ordine

@@ -1,0 +1,35 @@
+﻿=============== K0_metro -- metro senza cache, ctx pieno ===============
+  [condizione] RAM libera all'avvio: 89,5 GiB
+  VRAM 10.636 MiB, liberi 1.652
+  prefill  19,72 t/s   decode   7,83 t/s   127,72 ms/tok   (1200 tok)
+  sha256 D5576A8746661852
+  tg_3s 46 campioni -- mediane per terzo: 8,02 / 8,08 / 7,85
+
+=============== K1_cache220 -- cache quel che entra ===============
+  [condizione] RAM libera all'avvio: 89,4 GiB
+  VRAM 11.972 MiB, liberi 316
+  cache-esperti: 220 slot da 6.75 MiB = 1486 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62)
+  prefill  18,85 t/s   decode   6,31 t/s   158,47 ms/tok   (1200 tok)
+  sha256 9492DE087DFCAF5D
+  tg_3s 56 campioni -- mediane per terzo: 6,37 / 6,43 / 6,41
+  cache-esperti: domanda 272922 (colpi 0 = 0.0%, buchi 272922, in ritardo 0 = 0.0% dei prenotati)
+
+=============== K2_cache380 -- cache come a ctx 10k -- entra o no? ===============
+  [condizione] RAM libera all'avvio: 89,5 GiB
+  VRAM 11.915 MiB, liberi 373
+  cache-esperti: 380 slot da 6.75 MiB = 2566 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62)
+  prefill  19,40 t/s   decode   5,33 t/s   187,63 ms/tok   (1200 tok)
+  sha256 9492DE087DFCAF5D
+  tg_3s 67 campioni -- mediane per terzo: 5,59 / 5,30 / 5,20
+  cache-esperti: domanda 231546 (colpi 91216 = 39.4%, buchi 140330, in ritardo 0 = 0.0% dei prenotati)
+
+=============== K3_cache380u16 -- ub 16 libera buffer: 380 slot ci stanno ===============
+  [condizione] RAM libera all'avvio: 89,8 GiB
+  VRAM 11.670 MiB, liberi 618
+  cache-esperti: 380 slot da 6.75 MiB = 2566 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62)
+  prefill   9,54 t/s   decode   8,76 t/s   114,17 ms/tok   (1200 tok)
+  sha256 939F91B412F904DD
+  tg_3s 41 campioni -- mediane per terzo: 9,21 / 8,66 / 8,63
+  cache-esperti: domanda 229104 (colpi 84752 = 37.0%, buchi 144352, in ritardo 0 = 0.0% dei prenotati)
+
+FINE

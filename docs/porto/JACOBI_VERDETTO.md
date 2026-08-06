@@ -86,7 +86,10 @@ La configurazione del mandato è **matematicamente impossibile**: servono 10,48
 token/passo e il massimo fisico è N=5. La fisica è quella catalogata: una
 posizione marginale costa o 62,4 ms di FLOP CPU o byte di esperti su PCIe, e
 Jacobi **moltiplica i byte** (curva del working set: 92 posizioni ≈ 4.680
-esperti distinti ≈ 30 GiB/passo). Il "GPU al 6%" parlava dei FLOP; il decode è
+esperti distinti ≈ 30 GiB/passo). Il "GPU al 6%" parlava dei FLOP — e la
+misura del 6/8 notte (LLAMA_GPU_DURANTE_DECODE) chiude la cornice: la GPU è
+occupata il 96% del TEMPO a bassa intensità, quindi non ci sono vuoti da
+riempire, solo intensità da alzare. Il decode è
 byte-bound sugli esperti. Stesso muro della speculazione a batch 8.
 
 **Tetto di accettazione** (simulatore `sim_lookahead_pool.py`: pool IDEALE di

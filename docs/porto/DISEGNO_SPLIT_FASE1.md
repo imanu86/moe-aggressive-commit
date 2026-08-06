@@ -89,8 +89,18 @@ ns). NON tocca kern_decidi né le tabelle: LEGGE dove[] e basta. Contratto:
     ingresso:  selected_experts [6, n] (I32, vista con stride — lettura col
                passo di riga, lezione 3fb92b9), strato
     uscita:    ids_cpu [k, n], ids_gpu [6−k, n], perm_inv [6, n] (I32, densi)
-    regola:    stabile e deterministica (a parità di residenza, ordine di
-               slot originale) — stessa entrata, stessa uscita, sempre
+    regola:    stabile e deterministica (non-residenti in ordine di slot;
+               riempimento residenti con usato==0 prima, poi ordine di
+               slot) — stessa entrata, stessa uscita, sempre
+    confine:   ids_cpu attraversa il confine COME INPUT DI SPLIT — la sua
+               visibilità alla CPU è garantita dal sync di confine dello
+               scheduler, NON dal kernel. In Fase 1 è il meccanismo
+               esistente; in Fase 2 quel punto diventa LA coordinazione.
+    vincoli:   (a) tutto sullo STREAM PRINCIPALE — vale oggi perché il
+               prefetch DMA è morto; chi lo rianima rivede PRIMA questo
+               disegno; (b) l'op deve essere CATTURABILE dai CUDA graph:
+               niente lavoro host, niente allocazioni fuori dal pattern
+               di pool già catturato (i graph valgono 2×: 3,99 vs 8,04)
 
 Fallback documentato se l'op-nel-grafo si rivelasse più costosa del previsto
 in integrazione: la partizione host-stantia (opzione a del coordinatore),
@@ -135,8 +145,12 @@ prova la terza via; il fallback resta scritto.
   calcolo su CPU è lo spreco atteso minimo). Costo locale ~0,18-0,36
   ms/strato colpito → **~0,05-0,1 ms/token attesi**: quantificato e
   accettato in v1; il k adattivo per strato è l'ottimizzazione dopo.
-- Regola scritta nel contratto del kernel: prima i non-residenti per
-  recency inversa, poi i residenti per recency inversa, MAI duplicati.
+- Regola scritta nel contratto del kernel (CORRETTA in revisione: la
+  "recency dei non-residenti" NON ESISTE — dove[] per loro dice solo −1):
+  **non-residenti in ORDINE DI SLOT ORIGINALE; riempimento fra i residenti
+  con `usato==0` prima** (la seconda chance a 1 bit: usato==0 = più vicino
+  allo sfratto = spreco atteso minimo), poi ordine di slot. Deterministico
+  e implementabile con le tabelle che esistono. MAI duplicati.
 
 **2. Allineamento dei pesi di gating (correttezza): i pesi NON viaggiano
 attraverso la permutazione.** `weights` [1,6,n] è raccolto dai

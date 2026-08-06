@@ -70,7 +70,19 @@ distinzione che il pricing adotta (proposta DS4 L3, giusta): le COPIE
 sono costo STRUTTURALE del disegno (le attivazioni attraversano comunque,
 e il join per-esperto ne aggiunge 0,16), non pedaggio recuperabile; il
 PEDAGGIO vero è il risveglio+piano: **3,4 ms/token = 79 µs/confine**,
-fascia condvar, che il polling può limare. La sottrazione storica (11,0)
+fascia condvar, che il polling può limare.
+
+**Le due voci scalano con GRANDEZZE DIVERSE (gemello H2, 6/8 notte): le
+copie coi BYTE, il risveglio col CONTEGGIO.** H1 ibrido: 87 attraversa-
+menti, copie 3,29 (37,8 µs l'uno); H2 cache: 5 attraversamenti, copie
+1,63 (326 µs l'uno) — stessa struttura, byte diversi. Il 37,8 è una
+MEDIA su attraversamenti di taglia diversa, NON una costante: chi domani
+lo moltiplicasse per un conteggio diverso sbaglierebbe. Nel pricing si
+addebita il TOTALE (~3,3 ms/token, stessa struttura fork/join per
+strato), mai l'unitario. Nota di contorno per pricing FUTURI sulla
+config cache: lì il residuo fuori-loop è 21 ms (~19% del token, replay
+del grafo CUDA presumibilmente), non i 4 dell'ibrido — da capire prima
+di prezzare qualsiasi cosa su quella configurazione. La sottrazione storica (11,0)
 conflazionava ~7,6 ms di dispatch. Unica stima residua nella catena: il
 62,4 da FLOP — un suo errore del 20% muove il finale dell'1%.
 **Numero di lavoro CHIUSO: tassa 3,4 → all'ottimo x*≈91-96 con -t 7:

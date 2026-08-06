@@ -33,20 +33,35 @@ Gli ingressi del ramo CPU dipendono da attenzione+partizione, **NON dal ramo
 GPU**: i rami si toccano solo al join (CUDA-3). Oggi la serializzazione nasce
 dal fatto che la copia-ingressi di CPU-2 fa `ggml_backend_synchronize(CUDA)`
 = DRENA TUTTA LA CODA, ramo GPU incluso. La cura non è un'interfaccia eventi
-per la CPU (la CPU qui è il *waiter*, non l'emettitore):
+per la CPU (la CPU qui è il *waiter*, non l'emettitore) — **nella forma
+1a/1b della revisione, che dissolve il rischio-cattura PER COSTRUZIONE**:
 
-1. **Evento CUDA dopo i produttori** (`cudaEventRecord` sullo stream subito
-   dopo partizione — o meglio: le copie-ingressi D2H accodate sullo stream
-   PRIMA del ramo GPU, chiuse da un evento). API esistente, zero interfacce
-   nuove.
-2. **`cudaEventSynchronize` sull'host** al posto del drain: il thread che
-   serve CPU-2 aspetta L'EVENTO (attenzione+partizione fatti), non la coda
-   (ramo GPU incluso). Il ramo GPU continua a girare MENTRE la CPU calcola.
-3. **CPU-2 su un worker** (il pezzo async vero): il thread dello sched lancia
-   CUDA-1, stacca CPU-2 sul worker gated dall'evento, e prosegue... fino alla
-   copia-ingressi di CUDA-3, che fa JOIN sul worker (attesa host del ramo CPU
-   — a quel punto il ramo GPU è tipicamente già finito, o finisce lui per
-   ultimo e il join è gratis).
+```
+  CUDA-1a:  attenzione → partizione        (grafo catturato A)
+  [host: cudaEventRecord sullo stream — FRA i due lanci, FUORI da ogni cattura]
+  CUDA-1b:  ramo GPU                        (grafo catturato B)
+  [host: dispatch del worker CPU, gated sull'evento]
+  CPU-2:    ramo CPU sul worker
+  CUDA-3:   join                            (grafo catturato C)
+```
+
+1. **Split same-backend al confine partizione|ramo-GPU**: l'evento si
+   registra lato HOST fra i due lanci — niente record dentro la cattura,
+   niente questioni di legalità, e l'evento marca ESATTAMENTE "produttori
+   finiti" (a quel punto lo stream contiene solo 1a). Costo del confine in
+   più: un lancio di grafo extra per strato, ~5-10 µs × 43 ≈ **0,3-0,4
+   ms/token** — NON il pedaggio condvar: al confine 1a|1b non attraversa
+   dati e non si sveglia nessuno, sono due lanci invece di uno.
+2. **`cudaEventSynchronize` sull'host** al posto del drain: il worker che
+   serve CPU-2 aspetta L'EVENTO (produttori fatti), non la coda (ramo GPU
+   incluso). Il ramo GPU gira MENTRE la CPU calcola.
+3. **CPU-2 su un WORKER A CODA CON SPIN LIMITATO** (il rischio mancante
+   trovato in revisione: un risveglio condvar PER STRATO costerebbe ~79 µs
+   × 43 ≈ 3,4 ms/token — il pedaggio di oggi, solo spostato). Il worker si
+   sveglia UNA volta a inizio token, processa i 43 lavori CPU-2 in coda
+   spinnando fra uno e l'altro (attese inter-strato ~1-2 ms; lo spin costa
+   il core che il -t 7 ha già pagato), si parcheggia a fine token: da 43
+   risvegli a 1. Il join di CUDA-3 fa l'attesa host sul lavoro completato.
 
 L'interfaccia eventi-CPU del mandato resta la generalizzazione PULITA (e la
 via se lo sched dovesse servire più casi): questa è la v1 minima che compra
@@ -106,10 +121,18 @@ raffina verso gli 80 col pedaggio e il bilancio**.
    un blocco del thread sched — legale e voluto, ma va misurato (la sonda
    lo vedrà come ingressi di CUDA-3).
 
-## Ordine di costruzione
+## Ordine di costruzione (emendato in revisione)
 
-1. Sciogliere il rischio 2 a tavolino (lettura: sched × cattura).
-2. Worker CPU + evento (sched), dietro `LLAMA_OVERLAP_ASYNC=1`.
-3. Bracci: K2-async contro K2-sequenziale (una variabile), coppia -t 7/8.
-4. Raffinazione: pedaggio (polling), bilancio K, join per-parziale (la
+1. **Verifiche di sorgente, PRIMA del codice** (lezione della notte:
+   "indiretta" non è una prova):
+   - V1: lo sched può FORZARE uno split same-backend dopo il nodo di
+     partizione? (Oggi spezza al cambio backend: serve l'hint nel loop di
+     costruzione degli split.)
+   - V2: la cattura CUDA è PER-SPLIT in questo fork? (Un grafo catturato
+     per chiamata di graph_compute — l'evidenza indiretta è forte, il
+     regime a 87 split aveva i graph attivi, ma va letta nel sorgente.)
+2. Split 1a/1b + evento-fra-lanci (sched), dietro `LLAMA_OVERLAP_ASYNC=1`.
+3. Worker A CODA con spin limitato (43 risvegli → 1).
+4. Bracci: K2-async contro K2-sequenziale (una variabile), coppia -t 7/8.
+5. Raffinazione: pedaggio (polling), bilancio K, join per-parziale (la
    decisione 4 la permette DOPO, con la bit-esattezza del nopin in tasca).

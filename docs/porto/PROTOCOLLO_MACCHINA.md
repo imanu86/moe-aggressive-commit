@@ -54,6 +54,14 @@ liberata, il coordinatore può verificare i processi e riprendersela.
    passato in no-op silenzioso (quoting: `\l` letto come `l`, pattern mai
    combaciato) e ha consegnato un build script «adattato» che compilava
    l'albero SBAGLIATO — fermato dal cantiere ricevente al pre-lancio.
+10. **Le decisioni di disegno incrociate viaggiano ancorate e si eseguono solo
+    dopo ack.** Ogni messaggio che decide un bivio di disegno dichiara il
+    commit di base a cui risponde, e NESSUNA esecuzione parte finché l'altro
+    non conferma l'allineamento con un ack esplicito. Un giro in più solo sui
+    bivi; i report di stato restano liberi — non hanno mai fatto danni, le
+    decisioni incrociate sì (6/8 notte: sei commit e zero codice netto per un
+    bivio deciso tre volte su messaggi che si accavallavano; la storia resta
+    nel log del ramo overlap perché È la lezione).
 
 ## I report
 

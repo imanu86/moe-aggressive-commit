@@ -105,9 +105,11 @@ ripieghi sul sync bloccante fra i due rami.
   `D:\llama-dspark`.
 - Dopo OGNI link: `editbin /STACK:67108864` (previo `vcvars64.bat`).
 - `--no-mmap` obbligatorio col mappato; `LLAMA_MAPPED_IBRIDO=1` per l'ibrido.
-- La cache: `LLAMA_CACHE_ESPERTI_SLOT=380`, `LLAMA_CACHE_ESPERTI_W=0`,
-  `LLAMA_CACHE_ESPERTI_BATCH` (tetto token/passaggio, difetto 8),
-  `LLAMA_CACHE_ESPERTI_BATTITO=5` nelle run corte.
+- La cache: `LLAMA_CACHE_ESPERTI_SLOT=380`, `LLAMA_CACHE_ESPERTI_BATCH`
+  (tetto token/passaggio, difetto 8), `LLAMA_CACHE_ESPERTI_BATTITO=5` nelle
+  run corte. (`LLAMA_CACHE_ESPERTI_W` NON esiste più: era la finestra del
+  predittore, morta con le misure del 5-6/8 — trovato dalla revisione del
+  cantiere overlap il 6/8 sera, zero occorrenze nell'albero.)
 - La sonda: `GGML_SCHED_PROFILO=1`, stampa ogni 50 grafi su stderr con
   `di cui sync`. Le stampe sono CUMULATIVE: usare la **finestra marginale**
   fra due stampe lontane dal transitorio (i primi grafi portano ~11 s di

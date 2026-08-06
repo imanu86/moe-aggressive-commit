@@ -67,6 +67,12 @@ foreach ($x in $bracci) {
     $env:LLAMA_CACHE_ESPERTI_W     = '0'
     $env:LLAMA_CACHE_ESPERTI_BATCH = '8'
     $env:GGML_SCHED_PROFILO        = '1'
+    # IL BATTITO A 5 SECONDI, non 60. Col difetto, una richiesta da 41 s non
+    # faceva MAI stampare il contatore, e il mio cancello leggeva la differenza
+    # fra due zeri dichiarando NULLO un braccio che funzionava (G1, 8,90 t/s).
+    # "contatore mai stampato" non e' "contatore a zero": il cancello deve
+    # poter distinguere i due casi, e con 5 s stampa dentro qualunque braccio.
+    $env:LLAMA_CACHE_ESPERTI_BATTITO = '5'
 
     $a = @('-m',$MOD,'-c','10000','-np',"$($x.np)",'-ngl','99','-ot',$ESP,
            '-ub','64','-b','64','-t','8','--port',"$porta",'--host','127.0.0.1',
@@ -127,9 +133,14 @@ foreach ($x in $bracci) {
     $dpt = if ($tok -gt 0) { ($c1 - $c0) / $tok } else { 0 }
     "  --> {0} token in {1:N1} s = {2:N2} t/s AGGREGATO" -f $tok, $muro, ($tok/$muro) |
         Out-File $out -Append -Encoding utf8
+    # IL CANCELLO DICHIARA LE SUE CONDIZIONI. Se il contatore non ha mai
+    # stampato, il verdetto e' NON DECIDIBILE -- non "scavalcata": e' l'errore
+    # che ha bocciato G1, un braccio sano, sul giro precedente.
+    $verdetto = if ($c1 -eq 0) { 'NON DECIDIBILE: il contatore non ha mai stampato' }
+                elseif ($dpt -gt 150) { 'CACHE VIVA' }
+                else { 'CACHE SCAVALCATA -- braccio NULLO' }
     "  --> CANCELLO: {0:N0} domande su {1} token = {2:N1} per token   [{3}]" -f `
-        ($c1-$c0), $tok, $dpt, $(if ($dpt -gt 150) { 'CACHE VIVA' } else { 'CACHE SCAVALCATA -- braccio NULLO' }) |
-        Out-File $out -Append -Encoding utf8
+        ($c1-$c0), $tok, $dpt, $verdetto | Out-File $out -Append -Encoding utf8
     Select-String -Path $log -Pattern 'cache-esperti: domanda|sched-profilo' | Select-Object -Last 2 |
         ForEach-Object { "  " + ($_.Line -replace '^[0-9.]+ +[A-Z] +','') } | Out-File $out -Append -Encoding utf8
 

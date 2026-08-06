@@ -108,6 +108,29 @@ aggiornata ogni N token dal contatore della cache. Si perde precisione di
 residenza (~60 esperti/token cambiano su 380), si guadagna semplicità. La v1
 prova la terza via; il fallback resta scritto.
 
+**Il bivio implementativo (a) op-fusa / (b) composizione-di-op, CHIUSO in
+revisione (6/8 notte, un commit di deviazione poi rivertito — 4cf5efd/5ac0237):**
+la (b) aveva tre buchi — dove[]/usato[] non sono tensori ggml (la facciata è
+un corpo estraneo per lo scheduler, e l'init pigro della cache rompe l'ordine
+al primo build); usato è uint8 che get_rows non mangia; l'argsort CUDA è
+bitonico non stabile — e il suo vantaggio dichiarato (catturabilità) NON
+discriminava: i kernel della cache girano già sotto i graph catturati col
+pattern g_cache-per-valore. In più il costo di BUILD del grafo (~430 nodi
+piccoli, per-token su CPU: llama.cpp ricostruisce il grafo a ogni ubatch)
+non era coperto dalla stima a replay. Quindi (a), con tre raffinamenti che
+la revisione ha regalato:
+- **un solo output** [12, n] I32 (ggml è mono-output) + tre VISTE gratuite:
+  righe 0..k−1 = ids_cpu, k..5 = ids_gpu, 6..11 = perm_inv → ~4 nodi/strato;
+- **kernel sequenziale a un blocco** come kern_decidi: la politica si applica
+  camminando gli slot in ordine — NIENTE argsort, e il buco 3 (stabilità)
+  muore per costruzione;
+- **g_cache passata per valore** al lancio, come kern_decidi: eredita la
+  catturabilità misurata (9,26 coi graph contro 5,03 senza), legge dove[]/
+  chi[]/usato[] direttamente (la validazione su chi[] uccide i dove stantii
+  e gli IN TRANSITO), e l'argomento-snapshot resta il motivo per cui la
+  lettura viva è sicura: le righe di L le muta solo kern_decidi(L) del token
+  precedente.
+
 ## Cosa NON cambia (perimetro)
 
 - La cache: zero modifiche. L'ammissione vede forme diverse, già supportate.

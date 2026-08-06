@@ -47,6 +47,13 @@ liberata, il coordinatore può verificare i processi e riprendersela.
    (5/8).
 8. **Dopo ogni link**: `editbin /STACK:67108864` sul binario, previo
    `vcvars64.bat`. Senza, exit muto `0xC00000FD` sui grafi frammentati.
+   (Nel worktree overlap l'editbin è DENTRO `build_cuda.bat`: strutturale,
+   non affidato alla memoria di chi lancia.)
+9. **Chi prepara un artefatto per un altro cantiere lo VERIFICA leggendo il
+   risultato**, non il comando che l'ha prodotto. Il 6/8 sera un `sed` è
+   passato in no-op silenzioso (quoting: `\l` letto come `l`, pattern mai
+   combaciato) e ha consegnato un build script «adattato» che compilava
+   l'albero SBAGLIATO — fermato dal cantiere ricevente al pre-lancio.
 
 ## I report
 

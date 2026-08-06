@@ -62,6 +62,19 @@ liberata, il coordinatore può verificare i processi e riprendersela.
     decisioni incrociate sì (6/8 notte: sei commit e zero codice netto per un
     bivio deciso tre volte su messaggi che si accavallavano; la storia resta
     nel log del ramo overlap perché È la lezione).
+    Tre corollari, ognuno pagato la stessa notte:
+    - **Una regola scavalcata si revoca PER NOME**, non si lascia in vita
+      accanto al suo contrario (due direttive contraddittorie entrambe vive
+      hanno causato un'esecuzione legittima nella direzione sbagliata).
+    - **Una contraddizione fra direttive non si risolve eseguendo: si
+      rimanda** con un giro di ack (clausola del cantiere overlap).
+    - **Alla collisione vince l'ALBERO, non l'ultimo messaggio.** Se due
+      direttive si incrociano in volo, lo stato dei commit al momento della
+      collisione è la verità; nessun movimento di forma senza una ratifica
+      emessa DOPO la collisione. I messaggi hanno latenza, l'albero no: dieci
+      movimenti in una notte — con diff finale vuota due volte — perché
+      ciascun lato si allineava all'ultimo messaggio VISTO dell'altro mentre
+      il successivo viaggiava.
 
 ## I report
 

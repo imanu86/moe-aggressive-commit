@@ -185,12 +185,34 @@ pareggio 1,12-1,50 sta DENTRO l'accettazione misurata 1,43-1,60.
 
 E "si riapre con la residenza" smette d'essere una frase: **la scheda da
 24 GB compra la LARGHEZZA** (~2.000 slot: union(16)=1.191 entra comoda),
-che è la variabile da cui dipende il resto. Avvertenza sull'ancora
-drafter: l'1,71 di DSpark è un numero di PROFONDITÀ (catena a 5 posizioni,
-0,767·0,488·…), non di larghezza — gli assi si compongono ma non sono
-intercambiabili; la misura da 5 minuti dovrebbe registrare anche
-l'accettazione per posizione per mappare l'uno sull'altro. E il criterio
-della misura vera è ora uno solo: **union(2) reale sotto i 380 slot?**
+che è la variabile da cui dipende il resto.
+
+**Chiusura degli assi (6/8 notte, terza passata):** la larghezza pura NON
+produce token — dieci candidati nella stessa posizione danno dieci ipotesi
+per UNA posizione: se ne tiene una, il testo avanza di uno, e il pareggio
+minimo è 1,12. Morta per aritmetica pura, prima ancora dei byte. **La
+larghezza compra il tasso per posizione (p1 sale con K); solo la
+profondità produce token** (attesi = 1 + Σ prodotti-prefissi dei tassi).
+Assi con unità diverse: non si sommano, si compongono.
+
+Su questa scheda quindi: cache ⇒ K=2 ⇒ **catena di profondità 1**, e
+tutto si riduce a UN numero, p1 (indovinare il token successivo):
+
+    p1 > 0,12   se la cache regge a union 343 su 380 slot
+    p1 > 0,50   se i colpi crollano (regime K1)
+    p1 ≈ 0,26   n-grammi MISURATI (P(≥1) = 192/733 dal simulatore) ← IN MEZZO
+
+La forbice non è sul metodo: **è sul comportamento della cache a 343/380
+slot — vicino alla capienza, non oltre — il regime mai campionato** (K1
+era sopra: 258 su 220; K3 era largo: 258 su 380). Coerenza verificata: il
+batch K=2 (corrente+bozza) supera esattamente la soglia batch≥2
+dell'ibrido, quindi il percorso GPU/cache si innesca.
+
+**La misura da 5 minuti, criterio finale:** (1) PRIMARIO: tasso di colpi
+a K=2 con union ~343 su 380 — l'unica variabile libera rimasta; ~44% ⇒
+la catena a profondità 1 paga già con gli n-grammi; crollo ⇒ serve un
+drafter con p1>0,50. (2) SECONDARIO: union(2) reale (343 è un tetto) e
+accettazione per posizione, per mappare gli assi.
 
 ## Artefatti
 

@@ -56,16 +56,25 @@ confine a 108 µs; l'estremo alto richiede confine ≤ 30 µs (polling).**
 **Pedaggio totale ≈ 3,15 ms/token = 72 µs/confine** (sonda nel grafo vero,
 braccio F3 ibrido, finestra marginale 550→600 grafi): conteggio 86,9-87,0
 split/grafo (l'86 assunto regge); calc CPU marginale 65,55 contro 62,4 da
-FLOP → wake+plan 3,15 ms (PAVIMENTO del pedaggio). Il vincolo vero che
-regge: somma marginale 122,3 ≤ token 126,3 (poteva sforare, non sfora).
-CORREZIONE DS4 L3 accolta: "attesa-GPU dal bilancio 47,9 = ingressi
-47,86" è un'IDENTITÀ (il fuori-loop era definito come residuo), non una
-verifica — un pedaggio dentro "ingressi" non è escluso, è solo NON
-misurato. La sottrazione da ledger (11,0 ms → 128 µs) resta il TETTO.
-Etichetta: UNA run, UNA finestra da 50 grafi.
-**Numero di lavoro: tassa in banda [3,5, 9,3] → 11,5-12,6 t/s =
-+27-36%; l'estremo alto da confermare con un timer sync-vs-copia
-non identitario.** Storia della stima (per il registro del metodo):
+FLOP → wake+plan. **CHIUSO 6/8 notte col timer sync-vs-copia** (quattro
+finestre marginali indipendenti sulla stessa run ibrida, copie stabili
+all'1%):
+
+    copie degli ingressi   3,29 ms/token = 37,8 µs/confine
+    risveglio+piano CPU    3,43 ms/token = 78,9 µs/confine
+    sync                  44,53 ms/token = attesa di calcolo GPU vero
+
+La conferma NON identitaria che mancava: il timer separa sync e copie
+DENTRO ingressi — 93% attesa, 7% copie, nessun residuo inspiegato. La
+distinzione che il pricing adotta (proposta DS4 L3, giusta): le COPIE
+sono costo STRUTTURALE del disegno (le attivazioni attraversano comunque,
+e il join per-esperto ne aggiunge 0,16), non pedaggio recuperabile; il
+PEDAGGIO vero è il risveglio+piano: **3,4 ms/token = 79 µs/confine**,
+fascia condvar, che il polling può limare. La sottrazione storica (11,0)
+conflazionava ~7,6 ms di dispatch. Unica stima residua nella catena: il
+62,4 da FLOP — un suo errore del 20% muove il finale dell'1%.
+**Numero di lavoro CHIUSO: tassa 3,4 → all'ottimo x*≈91-96 con -t 7:
+12,3-12,6 t/s = +33-36%.** Storia della stima (per il registro del metodo):
 
 86 confini CPU-GPU/token (2 per strato). Tre scenari:
 - threadpool persistente CON polling (esiste già:

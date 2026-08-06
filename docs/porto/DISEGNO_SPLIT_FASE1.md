@@ -121,6 +121,37 @@ prova la terza via; il fallback resta scritto.
   può NON migliorare: i rami sono in fila — è il cancello di Fase 2, non
   di Fase 1.
 
+## Le due domande del revisore (6/8 notte), con le risposte nel disegno
+
+**1. Politica di riempimento quando non-residenti ≠ k (scelta di POLICY):**
+- Caso comune (≥k non-residenti; a 44% di colpi i non-residenti per strato
+  sono ~Binomiale(6; 0,56), media 3,4): la CPU prende i k meno-residenti,
+  e i non-residenti AVANZATI restano alla GPU col loro trasporto. Questo
+  sbilancio è VOLUTO: x*≈96 < 144 significa che l'ottimo LASCIA ~1/3 dei
+  non-residenti sul bus — il k fisso implementa x* in media naturale.
+- Caso raro (<k non-residenti, ~6% degli strati a 44% di colpi): la CPU
+  riceve residenti di riempimento, scelti per **recency inversa** (i
+  residenti usati meno di recente: i più prossimi allo sfratto, il cui
+  calcolo su CPU è lo spreco atteso minimo). Costo locale ~0,18-0,36
+  ms/strato colpito → **~0,05-0,1 ms/token attesi**: quantificato e
+  accettato in v1; il k adattivo per strato è l'ottimizzazione dopo.
+- Regola scritta nel contratto del kernel: prima i non-residenti per
+  recency inversa, poi i residenti per recency inversa, MAI duplicati.
+
+**2. Allineamento dei pesi di gating (correttezza): i pesi NON viaggiano
+attraverso la permutazione.** `weights` [1,6,n] è raccolto dai
+`selected_experts` ORIGINALI (riga 1963) e resta in ordine di slot 0..5;
+il riordino get_rows(perm_inv) riporta gli output-esperti allo stesso
+ordine PRIMA della moltiplicazione (riga 2145) → i due lati della ×
+arrivano entrambi in ordine originale, allineati per costruzione. L'unico
+punto da non sbagliare è perm_inv stessa, e ha un invariante verificabile
+a livello di ID, prima che tocchi un float: **perm_inv ∘ concat(ids_cpu,
+ids_gpu) == selected_experts, per ogni token e strato.** Env di verifica
+`LLAMA_OVERLAP_VERIFICA=1`: un kernel debug confronta gli id riordinati
+con gli originali e conta i disallineamenti — il "veloce e corrotto"
+diventa un contatore che urla al PRIMO token, non uno SHA divergente a
+valle. Nei bracci dei cancelli si tiene acceso; in produzione spento.
+
 ## Rischi dichiarati e mitigazioni
 
 1. **La partizione legge dove[] mentre kern_decidi la muta** (stesso stream,

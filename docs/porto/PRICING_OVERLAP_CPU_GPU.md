@@ -88,11 +88,50 @@ n_token = 16 KB/strato → 0,7 MB/token su PCIe ≈ **0,03 ms/token**: niente.
    collocazione dei pesi lo costringa (è il problema inverso del
    supports_op dell'ibrido).
 
-## La misura che manca (5 min di macchina, da coordinare)
+## Decisioni di disegno FISSATE (concordate con DS4 L3, 6/8 pomeriggio)
 
-Il costo REALE del confine oggi: un grafo giocattolo con N split alternati
-CPU/GPU, cronometrato a N crescente → ms/confine. Se esce >50 µs con
-polling attivo, il conto sopra si aggiorna prima di scrivere codice.
+1. **Bit-esattezza comprata, non sperata**: i due rami restituiscono i 6
+   risultati per-esperto SEPARATI e il join accumula nell'ORDINE D'INDICE
+   originale → ordine identico a oggi per costruzione. Costo: 6×4096 f32 ×
+   43 strati = 4,0 MiB/token = 0,16 ms (0,2%). Il join per-parziale è
+   un'ottimizzazione successiva, con la proprietà già in tasca.
+2. **Il cancello SHA giusto**: stabile fra ripetizioni della stessa config,
+   e uguale al braccio CACHE W=0 (il vero predecessore) — NON al metro, che
+   ha gli esperti su CPU e un altro ordine di accumulazione (riga 98:
+   c1c7c5c3 vs metro divergente "legittimamente"). "SHA = metro" come
+   cancello ucciderebbe un'implementazione corretta.
+3. **-t 7, non 8, nel regime di sovrapposizione**: un core nutre la GPU.
+   A 7/8 di resa CPU: x* = 90,8, rami 25,1/25,1, totale 87,1 ms =
+   **11,48 t/s (+25%) — numero di lavoro**. (La tariffa confini 9,3 ms è
+   PESSIMISTICA: è il percorso bloccante che il pezzo async toglie; con
+   eventi il residuo è il risveglio del pool → 11,5 è pavimento, 13,1 non
+   richiede niente di esotico.)
+4. **Il ramo CPU legge dalla RAM, mai far leggere la GPU dal bus**: il
+   punto zero-copy (riga 98: 6,35 t/s = 157,5 ms, ZERO confini, 33 ms PIÙ
+   LENTO dell'ibrido a 86) dimostra che il pedaggio PCIe a batch 1
+   seppellisce qualunque risparmio di confini. Dare alla CPU i non
+   residenti non è bilanciamento: è toglierli dal bus.
+5. **Ordine di costruzione**: split del grafo PRIMA, sequenziale, bit-
+   esattezza verificabile subito e senza eventi; l'async DOPO. Bonus dello
+   split sequenziale da misurare da solo: −26 MiB/token dal bus (96
+   esperti che smettono di attraversare).
+
+## La misura del confine (due strumenti complementari)
+
+- **Sonda nel grafo vero** (branch jacobi afa62f0, GGML_SCHED_PROFILO=1):
+  ingressi (sync+copie), calcolo CPU bloccante, lanci — per grafo, nel
+  regime ibrido reale a 86 confini + controllo cache-W0 a zero. Misura il
+  costo del confine DI OGGI (percorso bloccante) senza sottrazioni fra
+  configurazioni diverse. Due run da 5 min.
+- **Retta sintetica** (disegno DS4 L3, se serve il coefficiente puro): un
+  grafo che alterna N op banali GPU/CPU su tensori minuscoli, pendenza del
+  tempo contro N = costo/confine; scheduler, threadpool e synchronize
+  veri, il calcolo tende a zero, l'intercetta assorbe il resto. La scala
+  della residenza (4/8 strati) è RITIRATA: non entra nella VRAM (1.727
+  MiB/strato sopra 8,6 GiB fissi; R2 già strozzato a 305 MiB liberi).
+- Prior da falsificare: **255 µs** (eccesso R1, segnale=rumore) contro
+  tetto **≤128 µs** (sottrazione ibrido−cache). Se la sonda esce sopra i
+  255, una delle due letture ha un difetto da trovare.
 
 ## Verdetto preliminare (da confermare col microbench di falsificazione)
 

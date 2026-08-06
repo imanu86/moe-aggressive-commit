@@ -52,6 +52,14 @@ misurato col timer che separa sync da copie dentro gli ingressi.
 3. **`-t 7`, non 8**: un core resta a nutrire la GPU. Con 8 si misura peggio
    del vero (x\* scende a ~91, 11,5 t/s: due punti, ma il braccio va fatto
    giusto).
+   **EMENDATA 6/8 notte (concordata fra cantiere e coordinatore): il -t 7 è
+   un parametro del REGIME CONCORRENTE — serve quando un core nutre la GPU
+   MENTRE gli altri calcolano il ramo CPU, cioè in FASE 2.** Nello split
+   sequenziale di Fase 1 la GPU aspetta al sync mentre la CPU lavora: non
+   c'è niente da nutrire in concorrenza, e i bracci di Fase 1 girano a
+   **-t 8** — anche per la variabile singola: il metro storico (8,94-8,99)
+   e il braccio K0 sono sempre stati -t 8, e un K2 a -t 7 differirebbe dal
+   suo gemello in due variabili.
 4. **Bit-esattezza comprata, non sperata**: i due rami restituiscono i **6
    risultati per-esperto** e il join li accumula **nell'ordine di indice
    originale** — identico a oggi per costruzione. Costo 0,16 ms/token (4,0

@@ -1,0 +1,144 @@
+# VERDETTO JACOBI — il crash ha un nome, e la leva non paga su questa scheda
+
+*Chat parallela Jacobi, 6/8/2026. Risponde a `MANDATO_JACOBI.md`. Niente worktree
+(ordine dell'utente a mandato superato): branch `jacobi` su `D:\llama-dspark`,
+commit `b2b432b`.*
+
+---
+
+## La risposta in tre righe
+
+1. **Il crash muto è un'eccezione C++**: `DSV4 coupled raw writes require equal
+   sequence lengths` (`llama-kv-cache-dsv4.cpp:90`), **identica nel vanilla
+   upstream f5919bf**. Il lookahead su DeepSeek-V4 non è mai partito per nessuno.
+2. **Anche riparandolo non pagherebbe**: con le costanti già misurate, il passo
+   Jacobi costa 255-1.300 ms e il pareggio col metro (8,04 t/s) richiede
+   2,05-10,48 token/passo; il tetto di accettazione simulato sul nostro flusso
+   reale è **1,43-1,60**. Deficit 1,4-6,6× **nell'angolo più favorevole**.
+3. La leva **si compone con la residenza esperti** (scheda 24 GB), non la
+   sostituisce: su esperti residenti la posizione marginale è quasi gratis ed è
+   lì che la letteratura e la PR upstream misurano i guadagni.
+
+## 1. La diagnosi del crash (mandato, parte "farlo funzionare")
+
+**Sintomo**: carica, stampa il prompt, un token, exit muto. Nessun log, nessun
+dump, nessuna statistica.
+
+**Catena vera**: eccezione C++ non gestita → in release MSVC `terminate()` è
+completamente muto → fast-fail `0xC0000409` (niente WER, niente dump).
+Falsificati per strada: stack overflow (`0xC00000FD` — l'`editbin /STACK`
+inseguiva un fantasma: WER attivo e zero dump lo escludevano già), DLL
+disallineate (albero pulito, build coerente), interazione col buffer mappato
+(l'eccezione scatta anche prima di arrivarci), scala del grafo.
+
+**Strumentazione che resta** (branch `jacobi`, commit `b2b432b`,
+`examples/lookahead/lookahead.cpp`):
+- catch che **nomina l'eccezione** su stderr (exit 250/251) — senza, ogni
+  eccezione del fork è un exit muto; candidata all'upstream;
+- `W/N/G` da `LOOKAHEAD_W/N/G` — bisezione della scala senza ricompilare.
+
+**Il vincolo violato**: il percorso raw-write della KV DSV4 espande i token
+multi-sequenza in un reticolo denso `[sequenza × token]` e pretende lunghezze
+uguali per sequenza. Il batch Jacobi (31 sequenze: 1 token per la corrente,
+finestre scalate per le W, n-grammi per le G) è sbilenco per costruzione. Il
+prompt passa (una sequenza), il primo batch Jacobi no.
+
+**Dietro il primo muro, altri due** (letti in `llama-kv-cache-dsv4.cpp`):
+- con `kv_unified` (stream unico) la parte compressa rifiuta ubatch con >1
+  sequenza unica (riga 379-381 e 573-575) — e il lookahead forza `kv_unified`;
+- la cache è **append-only**: `seq_rm` di coda rifiutata (1153-1176; il
+  lookahead ne ignora il ritorno → celle fantasma), `seq_cp`/`seq_keep`
+  chiamano `clear_compressed(true)` **globale** (1178-1186). Il rollback
+  sanzionato è il checkpoint (è così che il server fa speculazione).
+
+**Il disegno che funzionerebbe** (documentato per quando ci sarà la residenza):
+token duplicati in copie singleton per stream (`has_coupled`=false → percorso
+standard collaudato) + `kv_unified=false` (31 stream, regime del server np>1) +
+modalità "scratch speculativo" nel compressore (niente persist dell'anello,
+niente commit per posizioni sopra la punta committata — il meccanismo scratch
+esiste già a metà: "a non-boundary decode step can target a masked scratch
+row") + re-decode dei token accettati in modalità normale. Passo a due fasi,
+append-only rispettato. Stimate: ~20-40 righe nella cache (gated da env,
+inerte per la produzione) + ristrutturazione del batch in lookahead.cpp.
+
+**Nota di igiene emersa**: i log di stamattina catturavano solo stdout —
+l'eventuale stderr era perso a console. E il "modello piccolo" del mandato
+(DSpark-draft) è arch `dflash`: pretende `ctx_other` (è una testa MTP), non può
+fare da banco di prova standalone. Bonus: il suo percorso d'errore muore in
+access violation invece di uscire pulito.
+
+## 2. La misura (mandato, parte "misurarlo contro il metro") — per aritmetica
+
+Non serviva costruire il pezzo KV per rispondere: bastavano le costanti già
+misurate del ledger e una simulazione offline.
+
+**Costo del passo** (tutte le ipotesi A FAVORE di Jacobi: FLOP GPU gratis,
+dedup perfetta, banda piena 24,35 GiB/s, taglia batch della forma accoppiata,
+64 ms fissi non-esperti):
+
+| config | batch | esperti distinti | passo | pareggio richiesto (8,04) | max fisico |
+|---|---|---|---|---|---|
+| W15 N5 G15 | 92 | ~4.680 | 1.303 ms (870 con cache 35%) | **10,48** (6,99) | 5 |
+| W4 N3 G4 | 12 | ~1.680 | 509 ms (353) | **4,09** (2,84) | 3 |
+| W2 N3 G2 | 6 | ~1.100 | 357 ms (255) | **2,87** (**2,05**) | 3 |
+
+La configurazione del mandato è **matematicamente impossibile**: servono 10,48
+token/passo e il massimo fisico è N=5. La fisica è quella catalogata: una
+posizione marginale costa o 62,4 ms di FLOP CPU o byte di esperti su PCIe, e
+Jacobi **moltiplica i byte** (curva del working set: 92 posizioni ≈ 4.680
+esperti distinti ≈ 30 GiB/passo). Il "GPU al 6%" parlava dei FLOP; il decode è
+byte-bound sugli esperti. Stesso muro della speculazione a batch 8.
+
+**Tetto di accettazione** (simulatore `sim_lookahead_pool.py`: pool IDEALE di
+Fu et al. — limite superiore, il pool vero fa peggio — su 1.046 token greedy
+veri del nostro carico HTML; metro riconfermato 8,1 t/s nella stessa sessione):
+
+| config | tetto token/passo | passi ad accettazione zero |
+|---|---|---|
+| W15 N5 G15 | **1,598** | 76% |
+| W4 N3 G4 | **1,445** | 73% |
+| W2 N3 G2 | **1,426** | 74% |
+
+**Ancora esterna indipendente** (PR upstream #25784, unita il 2/8, da ricerca
+della sessione DS4 L3): il drafter DSpark *addestrato* misura su traduzione
+0,767·0,488·0,264·0,137·0,051 ≈ **1,71 accettati/passo** — sopra il nostro
+tetto a pool (com'è giusto: drafter addestrato > n-grammi), e comunque **sotto
+ogni asticella di pareggio su questa scheda**, anche con `--fit off` e la
+configurazione giusta. L'autore stesso: *"performance regression with heavy MoE
+layer offloading to CPU"*, *"beneficial primarily when model and drafter are
+both on the GPU"*. Sul suo DGX (esperti residenti): baseline 16,4 → 19,8-39,3.
+
+## 3. Il verdetto
+
+**Su questa macchina (3060 12 GB, esperti su RAM host) la decodifica Jacobi/
+lookahead è falsificata per aritmetica**: il tetto di accettazione (1,4-1,6)
+sta sotto il pareggio (2,05 nel migliore dei casi con cache, 10,5 nella
+configurazione del mandato) di un fattore 1,4-6,6. Nessuna implementazione,
+per quanto perfetta, può colmarlo: è il muro dei byte-esperti, il medesimo di
+speculazione batch-8, drafter CPU, lane G132 e DSpark (quarta e quinta leva
+indipendente sullo stesso muro).
+
+**La leva resta giusta nel dominio giusto**: con esperti residenti (24 GB) la
+posizione marginale crolla a ~millisecondi e il pareggio scende sotto il tetto
+misurato. Jacobi/DSpark si COMPONGONO con la residenza — vanno in coda alla
+decisione hardware, non davanti. Coerente con `hw-verdicts` e con la curva del
+working set: prima i GiB, poi il parallelismo.
+
+**Cosa cambierebbe il verdetto**: (a) esperti residenti; (b) un carico con
+tetto ≥2,9 a N=3 (il nostro HTML "ripetitivo" fa 1,43 — la ripetitività
+percepita non è ripetitività di n-grammi a granularità token); (c) una banda
+verso gli esperti ≥5× (non esiste su PCIe 4 x16).
+
+## Artefatti
+
+- Branch `jacobi` su `D:\llama-dspark` (base 394a797, commit b2b432b): catch +
+  W/N/G da env. NON unito a `dspark-dsv4`: strumentazione diagnostica, si
+  unisce se/quando servirà il pezzo KV.
+- Log: `D:\ds4_work\llama_run\jacobi5..8*.log` (la catena exit 127 → 0xC0000409
+  → eccezione nominata), `greedy600_*.txt` (flusso di riferimento + ids).
+- Simulatori: `sim_lookahead_pool.py`, `costo_passo_jacobi.py` (in questa
+  cartella, vedi sotto).
+- Il difetto upstream (lookahead × DeepSeek-V4 rotto ovunque, muto in release)
+  è materiale da issue su ggml-org/llama.cpp: la riproduzione è banale e il
+  catch è il fix minimo di cortesia. Da fare coi tre controlli della regola
+  "post esterni".

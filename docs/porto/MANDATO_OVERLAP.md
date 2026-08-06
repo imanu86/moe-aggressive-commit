@@ -86,8 +86,9 @@ misurato col timer che separa sync da copie dentro gli ingressi.
 (residenti → GPU/cache, non-residenti scelti → CPU sui mappati), eseguiti in
 fila, join per-esperto in ordine d'indice.
 - Cancello A: SHA identico al braccio cache W=0 su 300 token, temperatura 0.
-- Cancello B: contatore cache ~157/token sul ramo GPU (la parte residente
-  della domanda), non ~17 (scavalcata).
+- Cancello B: contatore cache **~171/token** sul ramo GPU — 4/6 della domanda
+  piena a k=2 (4/6 × 257 = 171; il «157» della prima stesura era un mio errore
+  di conto, trovato in revisione del disegno), non ~17 (scavalcata).
 - Misura attesa: il t/s può anche NON migliorare (i rami sono in fila), ma i
   byte sul bus devono scendere di ~26 MiB/token — si vede dalla sonda
   (`GGML_SCHED_PROFILO=1`, voce copie) e dal tempo del ramo trasporto.

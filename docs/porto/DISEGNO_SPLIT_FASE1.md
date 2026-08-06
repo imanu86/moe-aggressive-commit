@@ -160,6 +160,19 @@ la revisione ha regalato:
   Con `LLAMA_OVERLAP_K=0` — op NON INSERITA al build (grafo strutturalmente
   quello di oggi) — il binario riproduce il braccio W=0 anche come tempo,
   entro il rumore 0,4-1,4% (R0/R0b del 5/8): VERIFICATO 7/8 (9,0 = metro).
+
+  **CHIUSO NOTARILMENTE 7/8 notte, verde tre volte** (K0c = nopin = perfino
+  K0b cross-build: 85df65e3), con DUE lezioni pagate una per parte:
+  (1) l'ordine di esecuzione è del GRAFO, non del sorgente — concat(cpu,gpu)
+  faceva visitare il ramo CPU per primo; fix 64745ac (expand esplicito del
+  ramo GPU), la lezione swiglu-visita-gate del 5/8 alla seconda occorrenza;
+  (2) **LO SHA DI MECCANISMO SI CALCOLA SUL TESTO GENERATO SPOGLIATO di
+  banner e footer**: il footer timing diverge per costruzione fra qualunque
+  coppia di run — il file intero è un oracolo rotto, e i C1/C8/C1b
+  "identici" del 6/8 lo erano per fortuna di arrotondamento (6,48×3). La
+  "instabilità SHA cross-build" del primo verdetto è RITRATTATA: era il
+  footer. Il K2-pinnato resta correttamente classificato (divergenza a metà
+  testo, 1.521/2.333: cross-device lecita, non footer).
 - **B — il contatore prima della velocità**: domanda **~171/token** sul
   ramo GPU (4/6 × 257 = 171,4 a k=2; il "157" del mandato era un errore di
   conto, corretto in ce08ba5), non ~17. Battito a 5 s.

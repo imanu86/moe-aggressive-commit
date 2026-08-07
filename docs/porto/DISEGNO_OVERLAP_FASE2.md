@@ -148,16 +148,39 @@ coincide con la lunghezza del ramo GPU. Allargarla richiede lavoro che non
 stia dietro a quei 45 ms (esperto condiviso, trasporto anticipato, token
 diverso): non misurato, sono ipotesi.
 
-**IL DIFETTO APERTO: il replay del grafo CUDA a taglia che cambia.** Quattro
-celle: batch 1 puro SANO; batch 2 puro (due sequenze indipendenti) SANO e
-+10,5%; catena speculativa (taglie che ALTERNANO 1↔2) DEGENERA sia con
-async acceso sia spento; con `GGML_CUDA_DISABLE_GRAPHS=1` SANA. Non è il
-numero di posizioni: è il **cambio**. Il lancio di `kern_partiziona` porta
-`n_tok` nella configurazione e nei parametri, e al replay restano quelli
-catturati; il corto circuito upstream su `cgraph->uid` esce senza
-confrontare nulla e l'unica guardia è il numero di nodi, identico fra 1 e 2
-token. **Colpirebbe qualunque op che ricava la griglia da una dimensione:
-da segnalare upstream.**
+**IL DIFETTO APERTO: qualcosa nei CUDA graph, ma NON i parametri stantii.**
+Quattro celle: batch 1 puro SANO; batch 2 puro (due sequenze indipendenti)
+SANO e +10,5%; catena speculativa (taglie che ALTERNANO 1↔2) DEGENERA sia
+con async acceso sia spento; con `GGML_CUDA_DISABLE_GRAPHS=1` SANA. Non è
+il numero di posizioni: è il **cambio**.
+
+**L'IPOTESI DEL REPLAY STANTIO È FALSIFICATA (7/8 mattina).** Avevo sostenuto
+che `kern_partiziona` si portasse dietro dalla cattura il `n_tok` dell'altra
+taglia, passando dal corto circuito su `cgraph->uid`. Rilevatore costruito
+sul **device** — l'unico posto dove il replay passa per forza — per strato,
+che si dichiara **sempre**, anche a zero:
+
+```
+attivo=1   pubblicazioni=27.122   lanci visti dal device=27.122   (copertura 100%)
+divergenze:   taglia=0    ids=0    out=0
+```
+
+E il sorgente lo conferma a monte: `llm_graph_params::allow_reuse()`
+(`llama-graph.h:762`) confronta **esplicitamente `ubatch.n_tokens`** — un
+grafo a 1 token e uno a 2 non possono condividere il riuso — e quando non lo
+condividono, il confronto nodo-per-nodo (`ggml-cuda.cu:2867`) fa `memcpy`
+dell'intero `ggml_tensor` più puntatori e forme dei sorgenti. **Nessun
+rapporto upstream: non c'è un caso.**
+
+**La contraddizione che resta APERTA**: spegnere i grafi *guarisce il testo*,
+eppure i parametri catturati non sono **mai** stantii. I grafi c'entrano, ma
+non attraverso parametri obsoleti — e la causa va cercata senza costruire
+sulla vecchia ipotesi.
+
+**La lezione, che vale più del meccanismo**: una lettura di sorgente coerente
+non è una misura. Il corto circuito sull'`uid` esiste davvero e il
+ragionamento su cosa comporterebbe era corretto; la conclusione era comunque
+falsa, perché mancava una guardia a monte che non avevo cercato.
 
 **Fatto**: guardia a batch 1 (`02881a5`) — lo split resta nel regime
 dimostrato senza spegnere i CUDA graph; `LLAMA_OVERLAP_BATCH_MAX` per i
@@ -171,6 +194,25 @@ disallineamenti su 100 passaggi mentre il testo collassa. Non è rotta —
 è **cieca per costruzione**: vive nel dispatch host, e il replay salta
 l'host. Una sonda nel percorso host non può sorvegliare un percorso che
 salta l'host.
+
+E la sua sostituta, al primo giro, era **muta**: stampava solo a valore
+positivo, quindi «nessuna riga nel log» e «non è mai partita» davano lo
+stesso silenzio. Terza occorrenza in campagna della stessa legge — *se uno
+strumento non sa dire PERCHÉ non ha misurato, non è uno strumento*. Ora
+pubblica sempre `attivo`, `pubblicazioni` e `lanci visti dal device`, e sono
+quei tre numeri (non lo zero delle divergenze) a rendere leggibile lo zero.
+
+**IL PEDICE CHE VALE PER TUTTA LA CAMPAGNA — il paging.** Il 7/8 mattina,
+segnalato dall'utente («C: al 100%») e poi misurato: durante il decode
+`PagesInput/s` 7.100-8.300, disco C: 28-32 MB/s con coda satura, disco D: a
+zero, RAM libera inchiodata a 6,25 GB, memoria privata del processo **93,9
+GB** contro **79,2 GB** di buffer host dichiarati. 7.200 pagine × 4 KiB = 28
+MB/s: coincide al byte con la lettura di C:. **Non è streaming del GGUF** —
+le letture *del processo* erano 0 MB in 10 s: è **pagefile**. I bracci con
+`-md` sommano 79,2 GB di buffer host (72,6 modello + 6,7 drafter), quelli
+senza si fermano a 72,6. Quale gruppo paghi davvero, e se il divario spieghi
+il verdetto della catena, è **da misurare**: vedi
+`memory/paging-contamina-i-bracci-col-drafter.md`.
 
 ## Ordine di costruzione (emendato in revisione)
 

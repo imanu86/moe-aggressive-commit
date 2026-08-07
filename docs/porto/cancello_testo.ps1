@@ -26,7 +26,19 @@ if (-not (Test-Path $Path)) { "CANCELLO TESTO: FILE ASSENTE ($Path) -> NUMERO NO
 if ($Path -like "*.json") {
   $txt = (Get-Content $Path -Raw -Encoding UTF8 | ConvertFrom-Json).content
 } else {
+  # I _text.txt di llama-cli contengono il BANNER ascii e l'eco del prompt.
+  # Senza toglierli la misura li conta e restituisce lo STESSO valore per ogni
+  # file (misurato: 5-gramma = 3 su 28 file diversi) -- cioe' non misura piu'
+  # il testo generato. Trovato calibrando, prima di riportare i numeri.
   $txt = Get-Content $Path -Raw -Encoding UTF8
+  $pf = Join-Path (Split-Path $Path -Parent) "jprompt.txt"
+  if (Test-Path $pf) {
+    $pr = (Get-Content $pf -Raw -Encoding UTF8).Trim()
+    $coda = $pr.Substring([Math]::Max(0, $pr.Length - 40))
+    $i = $txt.IndexOf($coda)
+    if ($i -ge 0) { $txt = $txt.Substring($i + $coda.Length) }
+  }
+  $txt = ($txt -split "\[ Prompt:")[0]   # via il footer dei tempi
 }
 if ([string]::IsNullOrEmpty($txt)) { "CANCELLO TESTO: TESTO VUOTO -> NUMERO NON ADOTTABILE"; exit 2 }
 

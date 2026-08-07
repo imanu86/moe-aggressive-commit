@@ -121,6 +121,57 @@ raffina verso gli 80 col pedaggio e il bilancio**.
    un blocco del thread sched — legale e voluto, ma va misurato (la sonda
    lo vedrà come ingressi di CUDA-3).
 
+## ESITO 7/8 — costruita, misurata, e il difetto che resta
+
+**Fase 2 COSTRUITA E VINCENTE nel suo regime: 9,9 t/s a K=2 `-t 7`** contro
+una base ripetuta cinque volte fra 8,9 e 9,0, e contro la SOTA cache 9,26
+(stesso pedice thinking, verificato). Il meccanismo è provato a una
+variabile: `ASYNC=1` 9,9 contro `ASYNC=0` 8,7 — **+14 ms/token** — con
+doppio controllo d'ingaggio (calc CPU nel loop dello sched 0,010 contro
+25,5 ms; split/grafo 130,6 contro 87,7).
+
+**IL LIMITE STRUTTURALE, misurato sulla spazzata K** (finestra marginale):
+
+| K | t/s | CPU occupata | attesa GPU (evento) |
+|---|---|---|---|
+| 1 | 9,3 | 16% | 45,3 ms |
+| 2 | 9,9 | **30%** | 45,9 ms |
+| 3 | 9,8 | 38% | 46,3 ms |
+| 4 | 8,6 | 44% | 47,8 ms |
+
+**L'attesa GPU è PIATTA su tutta la spazzata**: spostare esperti sulla CPU
+non accorcia mai il ramo GPU, perché quei ~45 ms sono attenzione + grafo di
+join e non dipendono da K. Sono il 45% del token in cui la CPU non può
+lavorare **per dipendenza**. Conseguenza da tenere: **la Fase 2 ha riempito
+la finestra disponibile, non l'ha allargata** — il guadagno misurato (14 ms)
+coincide con la lunghezza del ramo GPU. Allargarla richiede lavoro che non
+stia dietro a quei 45 ms (esperto condiviso, trasporto anticipato, token
+diverso): non misurato, sono ipotesi.
+
+**IL DIFETTO APERTO: il replay del grafo CUDA a taglia che cambia.** Quattro
+celle: batch 1 puro SANO; batch 2 puro (due sequenze indipendenti) SANO e
++10,5%; catena speculativa (taglie che ALTERNANO 1↔2) DEGENERA sia con
+async acceso sia spento; con `GGML_CUDA_DISABLE_GRAPHS=1` SANA. Non è il
+numero di posizioni: è il **cambio**. Il lancio di `kern_partiziona` porta
+`n_tok` nella configurazione e nei parametri, e al replay restano quelli
+catturati; il corto circuito upstream su `cgraph->uid` esce senza
+confrontare nulla e l'unica guardia è il numero di nodi, identico fra 1 e 2
+token. **Colpirebbe qualunque op che ricava la griglia da una dimensione:
+da segnalare upstream.**
+
+**Fatto**: guardia a batch 1 (`02881a5`) — lo split resta nel regime
+dimostrato senza spegnere i CUDA graph; `LLAMA_OVERLAP_BATCH_MAX` per i
+bracci di prova. **Da fare**: la cura vera — il kernel deve leggere il
+conteggio dei token da memoria **device aggiornata fuori cattura** (pattern
+di `kern_pubblica`, già in albero), verificata con un braccio a grafi
+ACCESI a batch 2 prima di dichiararla.
+
+**E la lezione di strumento**: `LLAMA_OVERLAP_VERIFICA` legge 0
+disallineamenti su 100 passaggi mentre il testo collassa. Non è rotta —
+è **cieca per costruzione**: vive nel dispatch host, e il replay salta
+l'host. Una sonda nel percorso host non può sorvegliare un percorso che
+salta l'host.
+
 ## Ordine di costruzione (emendato in revisione)
 
 1. **Verifiche di sorgente, PRIMA del codice** (lezione della notte:

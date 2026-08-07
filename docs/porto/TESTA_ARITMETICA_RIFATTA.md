@@ -107,7 +107,46 @@ misura disponibile lì è **17,3%** su due slot separati. Il vero h della catena
 è fra i due e **non è mai stato misurato**: è il braccio che fissa la soglia, e
 finché non c'è il numero prudente resta il 17,3%.
 
-## Il numero onesto, misurato nello stesso run
+## ⚠ RIBALTATO DAL CRONOMETRO: IL PROPONENTE NON È IL PROBLEMA
+
+*7/8/2026, ore 10:30. Aggiunto `common_time_meas` su `process()`
+(`speculative.cpp:2564` era l'unica delle quattro fasi senza cronometro) e la
+ripartizione **per ciclo**, non per chiamata. Braccio `ovl_k2_CRONO`, stessa
+config di `ovl_k2_DIO`.*
+
+```
+  ms per passo (misurato)        243,0
+    proponente TOTALE            21,8   <- i QUATTRO cronometri, non una sottrazione
+       gen                       18,2
+       process                    3,6   (646 chiamate / 602 cicli = 1,07)
+    passo del BERSAGLIO         221,2
+    modello passo(h=39,7%)      141,8
+    NON ATTRIBUITO               79,5   <- lato BERSAGLIO
+```
+
+**Il drafter costa 21,8 ms contro un budget di 47,1: è DENTRO, di 2,2×.**
+
+Quindi va ritirato quanto scritto sopra («DSpark 2,4× fuori budget»): quel
+numero nasceva dall'attribuire al proponente i 113,4 ms ottenuti **per
+sottrazione** dal modello. I cronometri dicono che il proponente ne usa 21,8, e
+che gli altri ~92 stanno **altrove**. Attribuire per differenza è la stessa
+famiglia di errore che questa campagna paga da due giorni.
+
+**Conseguenza sulla decisione**: costruire una testa per abbattere il costo del
+proponente **risolverebbe un problema che non esiste**. L'accuratezza era già
+sopra soglia (p1 0,87 contro 0,35) e ora anche il costo è dentro budget. Il
+collo sta nel **passo del bersaglio**, che a `h=39,7%` costa 221,2 ms contro i
+141,8 del modello.
+
+**Sospetto immediato, non misurato**: i bracci catena girano con **`ASYNC=0`**,
+cioè con l'overlap **spento**, mentre la SOTA 9,9 lo ha acceso. La
+composizione catena+overlap non è mai stata misurata. È **un braccio**.
+
+**E `process` non è chiamata due volte per ciclo**: 646/602 = **1,07** a
+`n_max=1`. Il rapporto 1,74-1,85 osservato sui bracci `n_max=3` è una proprietà
+del regime a più posizioni, non una struttura del meccanismo.
+
+## Il numero (superato) ottenuto per sottrazione
 
 Al tasso di colpi reale del braccio catena (**h = 39,7%**, non un'ipotesi):
 

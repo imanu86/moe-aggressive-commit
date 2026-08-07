@@ -36,10 +36,46 @@ Modello invariato (da `TESTA_METRICA.md`), sbarra aggiornata alla SOTA di oggi:
 | 44% | 136,6 ms | 12,48 | **13,69** | 35,6 ms | **52,3 ms** | 0,352 |
 | 56,5% (misurato a np=1) | 121,5 ms | 14,03 | **15,39** | 50,7 ms | **67,4 ms** | 0,203 |
 
-**Controprova del modello sulla misura**: col DSpark reale (`c_testa` ≈ 105 ms
-per posizione, h=17,3%, p1=0,87) il modello prevede **6,83 t/s** contro i
-**5,00-7,53** misurati, mediana ~7. Il modello riproduce il fallimento: non è
-un conto ottimistico costruito a posteriori.
+## ATTENZIONE A COME SI LEGGE QUESTA TABELLA
+
+**La colonna «testa gratis» non è una previsione: è un limite superiore.**
+Assume `c_testa = 0`, cioè un proponente a costo nullo. **Non esiste, e non è
+mai stato agganciato niente del genere**: l'unico proponente mai girato è il
+**drafter DSpark**, un modello *separato* di 3 strati e 6.831 MiB su CPU
+(`general.name = "Dspark Flash Drafter"`). Il modello DS4 dichiara
+`deepseek4.nextn_predict_layers = 1` nei metadati ma carica `n_layer = 43` e
+`n_layer_all = 43`: **nessuno strato di testa in più**. La testa dentro il
+grafo è il pezzo da costruire, e nel cantiere non ne esiste una riga.
+
+I 15,39 della riga h=56,5% sono **doppiamente ipotetici**: proponente gratis
+*e* un tasso di colpi misurato a **una** posizione, che `TESTA_METRICA.md`
+dichiara non tenibile a due (unione delle route consecutive ~446 contro 380
+slot). Quella riga è un tetto irraggiungibile, non un bersaglio.
+
+## Il modello è validato DUE volte — e il contatore del drafter è una trappola
+
+**Primo punto** (regime del cantiere testa): `c_testa` ≈ 105 ms/posizione,
+h=17,3%, p1=0,87 → previsti **6,83 t/s** contro **5,00-7,53** misurati.
+
+**Secondo punto** (braccio catena `ovl_k2_DIO`, regime diverso), che è anche il
+più stringente perché tutti i termini sono misurati nello stesso run:
+
+```
+  misurato:   255,2 ms/passo   (152,9 s / 599 passi)   colpi h = 39,7%
+  modello:    passo(0,397) = 69 + 120,7·0,603 = 141,8 ms
+  differenza: 113,4 ms  ->  e' il costo VERO del drafter
+  141,8 + 113,4 = 255,2   contro   255,2 misurati     (0,2% di scarto)
+```
+
+**Ma il log dice 18,7 ms.** `dur(b,g,a)` di `common_specu` riporta
+11.209 ms su 599 chiamate = 18,7 ms/chiamata, cioè **il 7,3% del tempo di
+generazione** — e sembra dire che il drafter sia quasi gratis. Non lo è:
+`dur(g)` cronometra solo la *generazione* della bozza, non `process()`, che
+inietta i token accettati nella KV della bozza con due forward CPU e **non ha
+cronometro**. **Il contatore vede il 16% del costo reale.**
+
+Chiunque prezzi un proponente guardando `dur(g)` sbaglia di **sei volte**. È
+il ventiseiesimo strumento assente della campagna, ed è ancora aperto.
 
 ## Cosa cambia e cosa NO
 
@@ -70,6 +106,19 @@ a due posizioni l'unione delle route consecutive è ~446 contro 380 slot, e la
 misura disponibile lì è **17,3%** su due slot separati. Il vero h della catena
 è fra i due e **non è mai stato misurato**: è il braccio che fissa la soglia, e
 finché non c'è il numero prudente resta il 17,3%.
+
+## Il numero onesto, misurato nello stesso run
+
+Al tasso di colpi reale del braccio catena (**h = 39,7%**, non un'ipotesi):
+
+```
+  budget per c_testa   =  101 × 1,87  −  141,8  =  47,1 ms
+  DSpark reale         =  113,4 ms                 ->  2,4× FUORI budget
+```
+
+Non c'è margine di interpretazione: **il DSpark è fuori di 2,4 volte al suo
+stesso tasso di colpi**, e la parte che lo affonda (i 95 ms di `process()`) è
+proprio quella che nessun contatore misura.
 
 ## Il seguito, in ordine
 

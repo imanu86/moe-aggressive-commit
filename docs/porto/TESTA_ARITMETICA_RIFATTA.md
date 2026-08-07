@@ -107,7 +107,44 @@ misura disponibile lì è **17,3%** su due slot separati. Il vero h della catena
 è fra i due e **non è mai stato misurato**: è il braccio che fissa la soglia, e
 finché non c'è il numero prudente resta il 17,3%.
 
-## ⚠ RIBALTATO DAL CRONOMETRO: IL PROPONENTE NON È IL PROBLEMA
+## ⛔ LA SEZIONE QUI SOTTO È RITIRATA — IL BRACCIO ERA DEGENERATO
+
+*7/8/2026, ore 10:45. Il controllo del testo, chiesto dall'arbitro e costato
+zero, ha invalidato il braccio `ovl_k2_CRONO` su cui poggia tutto il paragrafo
+successivo.*
+
+```
+  OVERLAP (CRONO)   accettazione 0,950   testo: 36 righe /  6 UNICHE   <- DEGENERATO
+  DSPARK  (BINDSP)  accettazione 0,738   testo: 52 righe / 52 uniche   <- sano
+```
+
+Il testo di `CRONO` ripete la stessa riga fino alla fine. **Accettazione
+altissima su testo degenerato è la firma già a registro**: un flusso in loop è
+banale da indovinare. Quindi cadono, tutti:
+
+- i **21,8 ms** del proponente (misurati su un run corrotto);
+- «**dentro budget di 2,2×**» e la conclusione «**costruire la testa
+  risolve un problema che non esiste**»;
+- l'**11× su `process()`**, perché il confronto metteva un run **degenerato**
+  contro uno **sano**: la differenza non è attribuibile al binario.
+
+**E il difetto SI RIPRODUCE**: `OVL_T1_GRIGLIA_NON_RIPRODUCE` poggiava su *un*
+braccio sano. I punti ora sono tre — DIO sano, GRIGLIA sano, **CRONO
+degenerato** — cioè **uno su tre**. L'intermittenza è confermata, e la guardia
+a batch 1 come *scelta di progetto* si rafforza.
+
+**L'errore di metodo, mio**: ho applicato il cancello del testo al braccio dove
+**cercavo** il difetto e non a quello dove **misuravo altro**. Un cancello di
+validità non è condizionato allo scopo del braccio.
+
+**Regola operativa**: nessun numero da un braccio catena a batch 2 è adottabile
+senza il conteggio **righe/uniche nello stesso messaggio** in cui il numero
+viene riportato. Riferimenti: sano 43/43 e 43/49; degenere 41/11, 5 righe con
+coda `'code','code'`, e ora **36/6**.
+
+Resta valido solo ciò che viene dal braccio `DIO`, il cui testo era sano.
+
+## ⚠ [RITIRATO] RIBALTATO DAL CRONOMETRO: IL PROPONENTE NON È IL PROBLEMA
 
 *7/8/2026, ore 10:30. Aggiunto `common_time_meas` su `process()`
 (`speculative.cpp:2564` era l'unica delle quattro fasi senza cronometro) e la

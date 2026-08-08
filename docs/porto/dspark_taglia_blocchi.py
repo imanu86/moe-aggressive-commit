@@ -16,7 +16,8 @@ import gguf
 import numpy as np
 
 SRC = r'D:\ds4-models\DSpark-draft-Q2K.gguf'
-DST = r'D:\ds4-models\DSpark-draft-Q2K-blk1.gguf'
+DST = r'D:\ds4-models\DSpark-draft-Q2K-L1.gguf'   # L1 = UNO strato di bozza, tap intatti
+                                                  # (il vecchio -blk1 aveva anche i tap tagliati: due variabili)
 TIENI = 0
 
 r = gguf.GGUFReader(SRC, 'r')
@@ -26,9 +27,18 @@ n_blocchi = int(r.fields[campo_blocchi].parts[r.fields[campo_blocchi].data[0]][0
 print('architettura %s | blocchi %d' % (arch, n_blocchi))
 
 # --- trova TUTTI gli array per-blocco (lunghezza == n_blocchi) ---
+# ATTENZIONE, la regola ha un'eccezione e mi ha gia' ingannato una volta:
+# `target_layers` = [41, 42, 43] e' lunga 3 per COINCIDENZA. Non sono i blocchi
+# della bozza: sono i TAP sul bersaglio, cioe' gli strati di DSV4 i cui stati
+# nascosti l'encoder concatena e fonde in `fc` ([12288, 4096] = 3 x 4096).
+# Troncarla riduce le FEATURE D'INGRESSO, non il modello, e mutila `fc`.
+# Il primo braccio blk1 e' nato con due variabili per questo.
+NON_PER_BLOCCO = {'dflash.target_layers'}
 per_blocco = []
 for k in r.fields:
     f = r.fields[k]
+    if k in NON_PER_BLOCCO:
+        continue
     if len(f.types) > 1 and f.types[0] == gguf.GGUFValueType.ARRAY and len(f.data) == n_blocchi:
         per_blocco.append(k)
 print('array per-blocco trovati (%d):' % len(per_blocco))
@@ -66,9 +76,13 @@ for c in cambiati:
 # impacchettato, e il loader a 1 blocco ne pretende 4096. La quantizzazione
 # Q2_K corre lungo ne0, quindi le righe sono indipendenti e affettare ne1 e'
 # un taglio di byte pulito. Prendo la prima terza parte (stadio 0).
+# Stessa eccezione: `fc.weight` e' [12288, 4096] perche' fonde i TRE TAP sul
+# bersaglio (target_layers), non i tre blocchi della bozza. Con target_layers
+# lasciata intatta, n_embd_inp resta 12288 e `fc` NON va toccata.
+NON_CONCATENATO = {'fc.weight'}
 concatenati = {}
 for t in tenuti:
-    if t.name.startswith('blk.'):
+    if t.name.startswith('blk.') or t.name in NON_CONCATENATO:
         continue
     ne = [int(x) for x in t.shape if x > 0]
     # ne0 e' la dimensione VELOCE: se vale n_blocchi volte ne1, il tensore

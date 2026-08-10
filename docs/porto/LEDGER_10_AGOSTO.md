@@ -326,6 +326,46 @@ lecita una barriera raggiunta da siti diversi.
 
 Trovato da Codex dopo che la mia revisione aveva dato il verde.
 
+## 5octies. LA CONFIGURAZIONE NUOVA, tutte le leve insieme
+
+Prompt da 5.987 token, 1.200 generati, cioe' profondita' media ~6.590 -- il
+regime vero, non i ~660 su cui abbiamo classificato leve per giorni.
+
+| braccio | prefill | decode | ciclo | mean_len | p1 | colpi |
+|---|---:|---:|---:|---:|---:|---:|
+| ub 64, sfratto parallelo | 22,27 | **11,23** | 153,2 | 1,72 | 0,72126 | 37,9% |
+| **ub 1024 + mmq_x 64 + parallelo** | **104,82** | **11,21** | 153,4 | 1,72 | 0,71633 | 38,7% |
+| ub 1024 + mmq_x 64, sfratto seriale | 104,84 | 10,09 | 168,5 | 1,70 | 0,70312 | 40,8% |
+| ub 64, parallelo (deriva) | 22,26 | 11,23 | 153,2 | 1,72 | 0,72126 | 37,9% |
+
+**Deriva ZERO**: i due bracci di riferimento sono identici alla terza cifra su
+ogni colonna. Macchina ferma, misura pulita, nessun margine di dubbio.
+
+```
+  prefill   22,26 -> 104,82 t/s   x4,71    ub 1024 + indexer fuso + mmq_x 64
+  decode    10,09 ->  11,21       +11,1%   sfratto parallelo
+```
+
+**Le leve compongono senza interferenze.** `ub` e `mmq_x` non toccano il decode
+(11,23 contro 11,21, due per mille) nemmeno alla profondita' vera; lo sfratto
+parallelo non tocca il prefill (104,82 contro 104,84).
+
+E lo sfratto parallelo **paga di piu' dove serve di piu'**: +11,1% qui contro
++9,8% a coda corta. A contesto profondo i colpi scendono al 38% contro il 55%
+di coda 660, quindi si sfratta di continuo, e rendere economica quella
+decisione conta di piu'.
+
+Attesa dichiarata prima della corsa: prefill ~104 (centrata), decode ~11,5
+(leggermente ottimistica).
+
+### Il dato che tiene insieme la giornata
+
+**I colpi scendono dal 55% al 38% passando da coda 660 a coda 6.590.** Non e'
+la cache che peggiora: e' il working set che RUOTA mentre il testo procede. E'
+la stessa cosa che il reap-loop misurava il 2 agosto -- «la recency pura
+prenderebbe ZERO colpi: il ciclo e' piu' lungo della cache» -- e che abbiamo
+cancellato dall'albero il 10 continuando a far girare la cache VRAM in LRU pura.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

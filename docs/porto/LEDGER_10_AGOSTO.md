@@ -268,6 +268,64 @@ Misurato: 63,70. **Falsificata di 60 punti.**
 Il decode non si muove in nessun braccio (10,44-10,59): a batch 2 il cammino
 `MUL_MAT_ID` non passa da MMQ, come atteso.
 
+## 5septies. LO SFRATTO PARALLELO PAGA: +9,8%, BIT-ESATTO
+
+Il risultato della giornata. Cancello **passato**: SHA `33D76723EB8D` identico
+fra sfratto seriale e parallelo a 339 slot -- la riduzione ad albero sceglie la
+**stessa vittima**, solo piu' in fretta.
+
+| braccio | t/s | ms/ciclo | p1 | colpi | VRAM | SHA |
+|---|---:|---:|---:|---:|---:|---|
+| 339 seriale | 12,33 | 150,9 | 0,86470 | 54,4% | 1.177 | 33D76723EB8D |
+| **339 parallelo** | **13,54** | **137,4** | 0,86470 | 53,6% | 1.178 | 33D76723EB8D |
+| 448 parallelo | 13,33 | **135,8** | 0,80845 | 59,4% | 443 | 9F1EF2F280D9 |
+| 480 parallelo | 12,57 | 145,6 | 0,83180 | 63,8% | 299 | 4C7070E4D946 |
+| 339 seriale (deriva) | 12,44 | 149,5 | 0,86470 | 54,4% | 1.186 | 33D76723EB8D |
+
+**+9,8%**, con deriva allo 0,9% fra i due bracci seriali: undici volte il
+rumore. Il ciclo cala di 13,5 ms.
+
+Attesa dichiarata da Codex (`audit/58`): 121-126 ms/ciclo. Misurato 137,4:
+troppo ottimistica, **la scansione non era tutto il termine** -- ma direzione e
+meta' dell'ordine di grandezza reggono.
+
+### E la capienza si scompone, finalmente
+
+A 448 slot con lo sfratto parallelo il ciclo scende a **135,8 ms, il piu' basso
+di tutta la campagna** -- piu' basso che a 339. Quindi **la capienza aiuta
+davvero il ciclo**, una volta tolto il costo della scansione. Ma il t/s resta
+sotto (13,33 contro 13,54) perche' il p1 crolla di 5,6 punti.
+
+La caduta della capienza misurata prima (§1) era dunque:
+
+```
+  due terzi   il costo O(n_slot) della scansione   -> RIPARATO
+  un terzo    la retroazione sulla bozza           -> non si ripara coi kernel
+```
+
+Non e' piu' un'ipotesi con tre conferme: e' isolata. E il terzo che resta dice
+che oltre 339 slot si paga in accordo bozza-bersaglio piu' di quanto si guadagni
+in colpi -- **i colpi restano non convertibili**, ma per un motivo diverso da
+quello di prima.
+
+A 480 il ciclo torna a salire (145,6 contro 135,8 a 448) con 299 MiB di VRAM
+libera: li' comincia un terzo effetto, non identificato.
+
+### La causa del blocco, e l'errore della mia revisione
+
+Il protocollo cooperativo faceva raggiungere `__syncthreads()` al thread 0 e ai
+lavoranti da **rami divergenti diversi**, cioe' da siti statici diversi. Il
+conteggio delle barriere era in pari -- e la mia revisione statica lo aveva
+dichiarato corretto proprio per questo -- ma CUDA richiede che sia la **stessa
+chiamata sotto condizione uniforme**. Il blocco nel warmup e' l'esito previsto.
+
+Il commento nel codice affermava il contrario: «`__syncthreads` dentro rami
+divergenti e' definito dall'arrivo per-thread di Volta in poi». **Falso**:
+l'independent thread scheduling cambia come i warp progrediscono, non rende
+lecita una barriera raggiunta da siti diversi.
+
+Trovato da Codex dopo che la mia revisione aveva dato il verde.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

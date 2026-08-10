@@ -120,6 +120,59 @@ leggano alla prima barriera.
 Vale la pena sistemarlo: e' il candidato piu' grosso rimasto sul tavolo, perche'
 attacca i 24-28 ms del punto 1a.
 
+## 5bis. STAVAMO OTTIMIZZANDO IL REGIME SBAGLIATO
+
+Il riferimento di tutta la campagna e' `jprompt.txt`: ~60 token di prompt piu'
+1.200 generati, cioe' una coda che va da 60 a 1.260, **profondita' media ~660**.
+Nessuno aveva mai misurato un turno vero.
+
+Sullo stesso binario, stessa configurazione, prompt da 5.987 token (coda da
+5.987 a 7.187, media ~6.590):
+
+```
+  profondita' media ~660      12,59 t/s     p1 0,86470     colpi 54,0%
+  profondita' media ~6.590    10,51 t/s     p1 0,71689     colpi 46,9%
+```
+
+**−16,5% e quindici punti di p1**, e non e' una regressione: e' il regime in cui
+abbiamo sempre girato senza guardarlo. Tutte le classifiche di leve degli ultimi
+giorni sono state stilate a profondita' ~660.
+
+Conseguenza di metodo: il `t/s` finale di llama.cpp e' **cumulativo su tutto
+l'intervallo di profondita'**, quindi mescola la parte poco profonda con quella
+profonda e appiattisce proprio la pendenza che interessa. Lo strumento giusto e'
+`print_timing` (`n_decoded` + `tg_3s`): profondita' della coda e velocita'
+istantanea in quel punto. Una generazione lunga da' tutta la curva; i punti
+storici diventano due righe di quella curva.
+
+## 5ter. ub 1024 E' GRATIS, e la VRAM a fasi risolve un problema che non abbiamo piu'
+
+Quattro bracci sullo stesso prompt da 5.987 token, con la deriva in coda:
+
+| braccio | prefill | decode | ms/ciclo | p1 | VRAM dopo carico | SHA |
+|---|---:|---:|---:|---:|---:|---|
+| ub 64 | 22,16 | 10,51 | 163,7 | 0,71689 | 1.260 | CDC50E63C3B0 |
+| ub 1024 | **101,00** | 10,51 | 167,5 | 0,76154 | 710 | 4F77E5909450 |
+| ub 1024 + fasi=1 | 100,65 | 10,46 | 168,3 | 0,76154 | **1.216** | 4F77E5909450 |
+| ub 64 (deriva) | 22,48 | 10,73 | 160,3 | 0,71689 | 1.269 | CDC50E63C3B0 |
+
+**(a) `ub 1024` vale prefill x4,5 e costa ZERO in decode.** I quattro decode
+stanno fra 10,46 e 10,73, dentro la deriva del 2,4%. Il buffer di calcolo passa
+da 34 a 541 MiB -- 750 MiB di VRAM in meno -- e il decode non se ne accorge.
+Giravamo a `ub 64` per paura che il buffer rubasse spazio alla cache: il buffer
+non costa, **e** la cache piu' grande non paga (§1). Le due paure si annullano.
+`ub 1024` va adottato come difetto.
+
+**(b) `LLAMA_VRAM_A_FASI=1` fa esattamente quello che promette**: restituisce
+506 MiB dopo il carico (710 -> 1.216) con **SHA identico**, quindi e'
+computazionalmente inerte come deve essere. Non serve piu' per la cache; serve
+per far entrare **contesti piu' lunghi**, dove il buffer di calcolo cresce.
+
+**(c) `ub` sposta il p1 di 4,5 punti** (0,71689 -> 0,76154) e sposta il ciclo di
+altrettanto in senso opposto: le due cose si annullano esattamente sul t/s.
+Quarto caso in giornata in cui il p1 si muove perche' e' cambiato **come** il
+bersaglio ha costruito il suo stato, non quanto lavoro ha fatto.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

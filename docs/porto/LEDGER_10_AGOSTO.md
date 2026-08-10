@@ -427,6 +427,81 @@ un terzo di esperto per la prelazionabilita', scarto delle copie non ancora
 sottoposte, sfratto che protegge i previsti come ultima classe. Va agganciata
 all'altro asse.
 
+## 5decies. FIDDLER: l'architettura funziona, e la mangia il CONFINE
+
+Idea dell'utente, testuale: *«non si duplica roba, bisogna spostarla. Se non
+siamo in tempo per farla su GPU la facciamo su CPU. La copia e' il problema.»*
+
+Una casa di calcolo per esperto invece di due copie: in VRAM lo fa la GPU, in
+RAM lo fa la CPU **dove sta**, senza trasferire. Ramo `fix/fiddler`, 13 file,
+binario separato in `D:\wt-fiddler\build`.
+
+| braccio | t/s | ciclo | mean_len | p1 | SHA |
+|---|---:|---:|---:|---:|---|
+| leva spenta | 13,60 | 136,8 | 1,86 | 0,86470 | 33D76723EB8D |
+| Fiddler + sentinelle | 12,69 | 147,4 | 1,87 | 0,86604 | 3DD29EE1D59D |
+| **Fiddler** | **12,60** | **148,4** | 1,87 | 0,86604 | 3DD29EE1D59D |
+| leva spenta (deriva) | 13,72 | 135,6 | 1,86 | 0,86470 | 33D76723EB8D |
+
+Deriva 0,9%. Il binario a leva spenta e' **inerte**: SHA identico, e riproduce
+il riferimento dell'altro albero (13,69). Per un cambiamento che tocca `ggml.c`,
+il backend CPU, `mmvq.cu` e il costruttore del grafo, non era scontato.
+
+### Cosa funziona, e va detto prima del verdetto
+
+**La partizione e' esatta.** Contatori per ciclo:
+
+```
+  CPU                 165,7 corsie
+  GPU residenti       136,0
+  GPU non residenti    44,2   (22,1 esperti distinti)
+  ────────────────────────
+  totale              345,9   contro 344 previste dalla formula dell'unione
+```
+
+Ogni posizione top-k compare in uno solo dei due tensori, i due risultati si
+sommano, **nessuna sentinella violata**. E le sentinelle sono inerti: il braccio
+con `VERIFICA=1` ha lo **stesso SHA** di quello senza.
+
+**La qualita' non si muove**: p1 0,86604 contro 0,86470.
+
+**La CPU regge**: 166 corsie per ciclo, 2,93 core equivalenti su 7, il 41,9%
+del servizio isolato misurato. Non era esclusa ne' dal servizio ne' dalla banda.
+
+### Il verdetto, e il numero che lascia
+
+**-7,8%.** E l'attesa che Codex aveva scritto PRIMA della patch -- una
+previsione di sconfitta contro il proprio lavoro -- era **12,0-12,7 t/s, ciclo
+147-155, centro 151**. Misurato: **12,60 e 148,4**. In pieno centro.
+
+Il motivo non e' la CPU, non e' la frammentazione del GEMV, non e' la qualita':
+
+```
+  ideale senza trasporto      121,0 ms
+  misurato                    148,4
+  ────────────────────────────────
+  costo dei CONFINI            27,4 ms   su ~29 strati MoE  =  0,94 ms l'uno
+```
+
+**Ventisette millisecondi per ciclo -- il 18,5% -- spesi soltanto a far
+aspettare CPU e GPU l'una con l'altra.** Codex stimava 0,6-0,8 ms per confine
+dal ramo overlap; la macchina dice 0,94.
+
+Quindi l'architettura fa quello che promette -- il trasporto sparisce, restano
+~22 esperti distinti da trasferire per ciclo invece di ~236 -- e viene mangiata
+intera da un costo che con gli esperti non c'entra niente.
+
+**Il bersaglio del prossimo giro ha un numero**: se quei 29 rendezvous si
+pagassero UNA VOLTA invece che uno per strato, il ciclo andrebbe a 121 ms e il
+decode a **15,4 t/s**, sopra qualunque cosa abbiamo mai misurato.
+
+### Uno scostamento aperto
+
+Codex prevedeva ~2,8 esperti distinti da trasferire per ciclo; ne misuriamo
+**22,1, otto volte tanto**. O ci sono molti piu' esperti con `s>=2` di quanti
+la formula dell'unione predica, o la regola manda alla GPU piu' del dovuto.
+E' il primo scostamento fra il modello di costo e la macchina, ed e' aperto.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

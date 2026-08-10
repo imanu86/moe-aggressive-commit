@@ -173,6 +173,66 @@ altrettanto in senso opposto: le due cose si annullano esattamente sul t/s.
 Quarto caso in giornata in cui il p1 si muove perche' e' cambiato **come** il
 bersaglio ha costruito il suo stato, non quanto lavoro ha fatto.
 
+## 5quater. LA CURVA A PROFONDITA' VERA — mai vista prima
+
+Prompt da 73.200 caratteri, `-c 32000`, `ub 1024`, 339 slot, VRAM libera 1.211.
+
+```
+  prefill      75,62 t/s su 23.693 token   [5,2 min]
+  salvataggio  0,2 s  ->  233,5 MiB su disco
+```
+
+Due cose gia' qui. **Il rapporto caratteri/token e' 3,09**, non 3,66 come
+stimavo (73.200 / 23.693): tutte le stime di lunghezza dei prompt vanno rifatte
+con questo. E **il prefill degrada col contesto**: 101,00 t/s a 6k token,
+**75,62 a 23,7k**, stesso `ub`, stesso binario.
+
+E poi la curva, letta da `print_timing` (`tg_3s`, velocita' istantanea):
+
+```
+  profondita' coda      t/s ISTANTANEO
+     23.793               10,37
+     24.018               10,16
+     24.529                9,56
+     25.008                9,14
+     25.500                8,71
+```
+
+**−16% in 1.700 token di crescita della coda**, cioe' circa un t/s ogni mille
+token a questa profondita'. Il t/s cumulativo della stessa corsa era 9,33: la
+media da sola avrebbe nascosto sia il punto di partenza sia la pendenza.
+
+Il quadro completo delle profondita' misurate oggi, stesso binario:
+
+```
+  coda media ~660      12,59 t/s     p1 0,86470
+  coda media ~6.590    10,51         p1 0,71689
+  coda 23.793          10,37         (p1 cumulativo 0,78323)
+  coda 25.500           8,71
+```
+
+Non e' ancora chiaro **quanto** della caduta sia costo dell'attenzione e quanto
+sia il p1 che si degrada: la corsa da' il p1 solo cumulativo. Serve leggerlo a
+finestra come il t/s.
+
+## 5quinquies. DUE TRAPPOLE DEL BANCO, costate due corse
+
+**(a) PowerShell SROTOLA gli array restituiti da una funzione.** Una funzione
+che ritorna `[Text.Encoding]::UTF8.GetBytes(...)` restituisce 73.948 oggetti
+separati, e `-Body` li manda come la stringa `"123 34 109 ..."`. Il server
+risponde `500 parse error at column 6: unexpected number literal`, che sembra un
+problema di codifica e non lo e'. Cura: `return ,$bytes` -- la virgola
+impacchetta. Negli script che assegnano a una variabile il difetto non si vede.
+
+**(b) I nomi di variabile in PowerShell NON distinguono maiuscole e minuscole.**
+`$KV` (il percorso di `--slot-save-path`) e `$kv` (la profondita' della coda nel
+ciclo che stampa la curva) sono **la stessa variabile**. Il rilancio del server
+e' fallito con `--slot-save-path: not a directory: 25690`, dove 25690 era
+l'ultima profondita' stampata.
+
+Entrambe hanno prodotto errori che puntavano altrove. Fa parte della stessa
+famiglia di [[strumenti-che-mentono-in-silenzio]].
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

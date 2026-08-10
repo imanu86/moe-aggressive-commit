@@ -366,6 +366,67 @@ la stessa cosa che il reap-loop misurava il 2 agosto -- «la recency pura
 prenderebbe ZERO colpi: il ciclo e' piu' lungo della cache» -- e che abbiamo
 cancellato dall'albero il 10 continuando a far girare la cache VRAM in LRU pura.
 
+## 5nonies. IL CAMMINO DMA: la leva che si nega da sola, e il numero che cercavamo
+
+Commit `05368db19`. Entrambi i cancelli **passati**: SHA `33D76723EB8D`
+identico a leva spenta E a leva accesa (piu' lo strumento a finestra
+dell'audit 59, anch'esso inerte). Deriva 0,15%.
+
+| braccio | t/s | ciclo | colpi | SHA |
+|---|---:|---:|---:|---|
+| DMA spento | 13,73 | 135,5 | 53,4% | 33D76723EB8D |
+| **DMA acceso** | 13,69 | 135,9 | 53,6% | 33D76723EB8D |
+| DMA spento (deriva) | 13,71 | 135,7 | 53,7% | 33D76723EB8D |
+
+**IL NUMERO**, misurato per la prima volta:
+
+```
+  overlap 863/2064 (41,8%, ammesso=0)
+  filtrati=491
+  in prefetch (stream DMA)  0,00 GiB
+```
+
+**La sovrapposizione fra le route di due token consecutivi e' il 41,8%.**
+Attesa dichiarata da Codex prima della corsa: ~39,7%. Centrata.
+
+E la leva **si e' rifiutata di accendersi**: misura l'overlap reale dopo otto
+transizioni e si ammette solo sopra l'85%. Zero byte spostati, zero danno,
+decode invariato entro la deriva.
+
+E' il contrario esatto del prefetch attuale, che con una previsione altrettanto
+cattiva si accende lo stesso e porta i colpi dal 55,0% al 41,4% (-49% di t/s).
+**La stessa cattiva previsione, due comportamenti opposti: uno si nega, l'altro
+inquina.**
+
+### La correzione che vale piu' del risultato
+
+Il mio mandato poggiava sul 90,2%, che avevo attribuito alla previsione fra
+token. **E' il numero del predittore fra STRATI** -- il gate di L+1 calcolato
+sullo stato nascosto di L. Sono due assi diversi:
+
+```
+  fra TOKEN     overlap 41,8%   anticipo 137 ms   inutile
+  fra STRATI    90,2%           anticipo 3,2 ms   e l'anticipo BASTA
+```
+
+Il conto che chiude la questione: un ciclo da 137 ms su 43 strati fa **3,2 ms
+per strato**; sei esperti da 6,75 MiB a 24,4 GiB/s costano **1,66 ms**. **Un
+solo strato di anticipo copre il doppio del tempo di copia.** Non servono k
+token: serve un solo strato, e il previsore giusto esiste gia' ed e' il migliore
+dei due.
+
+Sui k token c'e' anche un ostacolo strutturale: la bozza darebbe gli **id dei
+token** k passi avanti, non il **routing**. Per sapere quali esperti servono
+bisogna far girare i router del bersaglio, e il router di L ha bisogno dello
+stato di L. MoE-SpeQ ci riesce perche' il loro drafter e' **una copia
+quantizzata dello stesso modello**; DSpark ha tre strati DSV4 e una testa
+Markov, e non puo'.
+
+**La meccanica costruita e' tutta riutilizzabile** -- stream dedicato, chunk da
+un terzo di esperto per la prelazionabilita', scarto delle copie non ancora
+sottoposte, sfratto che protegge i previsti come ultima classe. Va agganciata
+all'altro asse.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

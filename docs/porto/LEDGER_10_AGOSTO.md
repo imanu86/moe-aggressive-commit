@@ -233,6 +233,41 @@ l'ultima profondita' stampata.
 Entrambe hanno prodotto errori che puntavano altrove. Fa parte della stessa
 famiglia di [[strumenti-che-mentono-in-silenzio]].
 
+## 5sexies. `mmq_x`: IL RIEMPITIVO NON ERA IL COLLO
+
+Cancello bit-esatto **PASSATO**: SHA `AF3766AF0A87` identico in tutti e cinque
+i bracci. La leva e' corretta, quindi i numeri valgono.
+
+```
+  mmq_x   prefill (t/s)   contro il difetto
+   128       101,73             --          (il secondo braccio a 128: 101,82)
+    32        63,70          -37,4%
+    48       100,33           -1,4%
+    64       104,25           +2,4%
+```
+
+Deriva fra i due bracci a 128: **0,1%** -- macchina ferma, quindi il +2,4% di
+`mmq_x=64` e' ventiquattro volte il rumore ed e' reale.
+
+**L'ipotesi dell'audit 56 e' falsificata.** Il ragionamento era: a `ub` alto un
+esperto serve ~12 token su un tile da 128 colonne, quindi il 91% e' riempitivo,
+quindi tile piu' piccoli vanno piu' veloci. E' il contrario: `mmq_x=32` perde il
+37%. **Frammentare i lanci costa piu' di quanto il riempitivo faccia sprecare.**
+
+Le due controipotesi scritte prima della misura avevano ragione entrambe:
+
+- Codex, `audit/57-mmqx.md`: «`32` puo' perdere contro `48` se il costo dei tile
+  vuoti o la coda degli esperti grassi domina il risparmio medio».
+- Fable, dal repo di DwarfStar: «la decomposizione multi-taglia dei tail HA
+  PERSO contro un lancio guarded» (`reslice6: 64% of down time in tail
+  launches`).
+
+Attesa dichiarata da Codex prima del codice: ~123 t/s per `mmq_x=32` (+8,4%).
+Misurato: 63,70. **Falsificata di 60 punti.**
+
+Il decode non si muove in nessun braccio (10,44-10,59): a batch 2 il cammino
+`MUL_MAT_ID` non passa da MMQ, come atteso.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

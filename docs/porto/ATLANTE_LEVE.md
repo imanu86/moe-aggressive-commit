@@ -113,17 +113,24 @@ Ognuna fa **esattamente quello che dichiara** — è stato verificato con contat
 — e **non arriva al ciclo**. Questa è la lista che merita una rilettura fresca,
 perché nessuna di queste è mai stata composta con le altre.
 
+**CORRETTA il 10/8 sera** dopo che un agente ha riletto il trascritto grezzo
+(`RECUPERO_SESSIONE.md` §1): due righe di questa tabella erano sbagliate, e
+sbagliate nella direzione comoda -- «nullo» invece di «dannoso», «mai
+misurato» invece di «misurato male».
+
 | leva | cosa fa, verificato | effetto sul ciclo |
 |---|---|---|
-| prefetch (`_W`, `_PREFETCH_FILTRO`) | copia in anticipo, contatori confermano | ~0 |
+| prefetch (`_W`, `_PREFETCH_FILTRO`) | copia in anticipo, colpi fino al 78% | **da −15% a −44%**, non ~0 |
 | `LLAMA_ACCEPTMOE` | −349 GiB di trasporto misurati | ~0 |
 | capienza (`_SLOT` 339→480) | colpi 54,0 → 63,8% | **−8,8%** |
 | join asincrono | sync −30% misurato | ~0 |
 | `LLAMA_OVERLAP_SPIN` | da 2M a 0 | 0 |
-| `LLAMA_VRAM_A_FASI` livello 1 | libera ~654 MiB al decode | ~metà dell'atteso |
-| K frazionario | atteso negativo dall'audit 55 | mai misurato |
+| `LLAMA_VRAM_A_FASI` livello 1 | restituisce 506 MiB, SHA identico | 0 (e non serve piu') |
+| K frazionario | 6 bracci esistono (K 1,5/2,0/2,33/2,5) | **misurati PRIMA della correzione del parser `atoi`/`atof` (979efd899): contaminati, mai rifatti** |
 | D2R (fusione) | dichiarato +25% dall'upstream | non ancora misurato |
 | checkpoint | 2,36 ms/ciclo | 1,6% |
+| `ub` 64 → 1024 | prefill x4,5 | **0 sul decode: e' gratis** |
+| `ub` 1024 → 2048 | 4 passate invece di 7 | **−47% di prefill**: il termine per token triplica |
 
 **La domanda aperta, mai affrontata**: sono nulle perché il ciclo è saturo per
 un'altra ragione (e allora comporle non serve), oppure ognuna toglie un pezzo
@@ -141,11 +148,27 @@ Fatti, non letture:
   VRAM condivisa        Windows la limita a ~76,7 GB; i mappati ne usano 74,3.
   VRAM dedicata         12.288 MiB. Desktop 600-700. Parte densa 7.384.
                         Cache esperti 6,75 MiB per slot.
-  PCIe                  Gen4 x16, misurato 18,4 GiB/s.
+  PCIe                  Gen4 x16. DUE NUMERI INCOMPATIBILI, non uno:
+                        24,35-24,46 GiB/s dal microbanco (400 x 6,75 MiB in
+                        108,28 ms; copia da 54 MiB) contro 18,4 GiB/s
+                        dall'audit. IPOTESI non verificata: 24,4 e' copia
+                        sintetica da RAM pinnata, 18,4 e' lettura a domanda
+                        da memoria mappata. Finche' non sono etichettati,
+                        usare 18,4 come costante fisica unica E' SCORRETTO.
   deriva del banco      2,4% fra due corse identiche con SHA identico.
                         Qualunque verdetto sotto il 3% va rifatto.
   ricattura grafo CUDA  ~50 ms a ogni cambio di taglia del batch.
-  sfratto sequenziale   ~0,07-0,08 ms per slot per ciclo.
+  sfratto sequenziale   ~0,07-0,08 ms per slot per ciclo, DEDOTTO da tre
+                        punti (339/448/480) con deriva 2,4%: e' una pendenza
+                        fra bracci, non una misura diretta del termine.
+  contesto 104k         CARICA, verificato due volte (ub 64: VRAM 419 MiB,
+                        prefill 22,61, decode 9,71 -- ub 512 con indexer
+                        fuso: VRAM 965, prefill 75,62, decode 9,81).
+                        Quello che manca e' la velocita' a CODA 102k-110k.
+  ripristino slot       meccanicamente funziona (0,68-0,78 s, 23.693 token,
+                        233,5 MiB) ma la richiesta successiva ri-prefilla
+                        tutto lo stesso, anche con LCP similarity 1,000 e
+                        anche con LLAMA_KV_POSMIN_VERO=1. Causa ignota.
 ```
 
 ## 6. LE MIE LETTURE — da verificare o scartare

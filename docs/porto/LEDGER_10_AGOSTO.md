@@ -502,6 +502,60 @@ Codex prevedeva ~2,8 esperti distinti da trasferire per ciclo; ne misuriamo
 la formula dell'unione predica, o la regola manda alla GPU piu' del dovuto.
 E' il primo scostamento fra il modello di costo e la macchina, ed e' aperto.
 
+## 5undecies. LA BANDA 102k-121k (11 agosto, notte): il contesto lungo NON degrada
+
+Prompt tagliato a 285.242 caratteri = 101.558 token misurati, `-c 124.160`,
+generazione da 20.000 token con `ignore_eos`. La coda attraversa **102k → 121k**.
+
+```
+  il contesto 124.160 CARICA     VRAM libera 1.168 MiB, RAM libera 5,9 GiB
+  prefill                        86,81 t/s su 101.558 token   [19,5 min]
+  slot salvato                   840,3 MiB in 1,43 s
+```
+
+```
+  coda 102k -> 121k, diciannovemila token
+    media           ~9,0 t/s
+    dispersione     8,32 - 9,84   (±8% fra campioni adiacenti)
+    caduta totale   9,36 -> 8,77  ≈ 6%, DENTRO la dispersione
+```
+
+**Non c'e' una pendenza leggibile: c'e' un livello.** A 120k di coda facciamo
+nove token al secondo e sono stabili.
+
+Il quadro con tutti i punti:
+
+```
+  coda    660     12,59 t/s     colpi 54%
+  coda  6.590     10,51
+  coda 102-121k    9,00         colpi 31%
+```
+
+**Il prezzo del contesto lungo si paga PRESTO e UNA VOLTA**, ed e' tutto nei
+colpi della cache. Non e' l'attenzione che cresce: e' il working set degli
+esperti che diventa piu' vario e la cache non lo copre piu'.
+
+### E falsifica la mia lettura del 10 agosto
+
+I **10,8 µs per token** che avevo calcolato fra 23,8k e 25,5k -- duecentosessanta-
+tre volte la pendenza di riferimento di `llama.cpp` -- **erano il transitorio**:
+la cache che ruotava subito dopo un prefill. Misurato a regime, da 108k a 120k,
+il ciclo si muove di 5,2 ms su dodicimila token: **0,43 µs/token**, venticinque
+volte meno.
+
+Restiamo dieci volte sopra il riferimento esterno (0,041 µs/token), non
+duecentosessantatre. La differenza e' reale e da spiegare, ma non e' piu'
+un'anomalia di ordine di grandezza.
+
+### Lo strumento che l'ha resa leggibile
+
+`p1_3s`, `mean_len_3s`, `ms_cycle_3s`, `cache_hits_3s` accanto a `tg_3s`
+(audit 59). Con `p1_3s` inchiodato a 1,0 e `mean_len_3s` a 2,0 -- artefatto di
+`ignore_eos`, che porta il modello in ripetizione e rende la bozza sempre
+giusta -- **l'unica variabile rimasta e' il ciclo**. Il confondimento fra
+accordo e calcolo, che il 10 agosto rendeva ogni verdetto sospetto, qui e'
+eliminato per costruzione.
+
 ## 6. COSE CHE ESISTEVANO E NON STAVAMO USANDO
 
 - **`LLAMA_VRAM_A_FASI`** (+ `_UB`, `_MIN`): ubatch grande in prefill e piccolo

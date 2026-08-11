@@ -789,3 +789,77 @@ proteggere tutto equivale a non proteggere niente, quindi c'e' anche `W=1`.
 configurazione in cui gira.** `CURA` era a registro come implementata e chiusa
 dal 27/7 ([[reap-loop-concept-conditional-dynamic]], task #3): lo era davvero,
 ma sotto `LRU=0`, che non usiamo da nessuna parte.
+
+### 10.1 La prova a runtime, arrivata gratis
+
+Il primo braccio della spazzata stampa i contatori di vittima per classe, e sono
+la conferma diretta della lettura del sorgente:
+
+```
+  cura domanda=62831 prefetch=0 | non residenti=0, non usate/non predette=0,
+       non usate/predette=0, usate/non predette=0, usate/predette=0
+```
+
+**62.831 sfratti eseguiti, e tutti e cinque i contatori di classe a zero.** Si
+incrementano solo dentro il blocco `cura` (`:1889-1896`): zero su 62.831
+significa che non e' stato attraversato nemmeno una volta. Non e' piu' una
+deduzione dall'ordine dei rami, e' misurato.
+
+### 10.2 Lo SCUDO non protegge il prefetch: lo SPEGNE
+
+```
+  braccio    W  SCUDO  oracolo   colpi   a domanda  prefetch   t/s     ciclo
+  sc_rif     0    0    spento    46,7%    414,38      0,00    11,22   89,1
+  sc_w2s0    2    0    ACCESO    31,3%    617,61    845,48     6,25  160,0
+  sc_w2s1    2    1    ACCESO    46,6%    404,35      0,00    10,99   91,0
+  sc_w1s1    1    1    ACCESO    46,7%    414,12      0,00    11,05   90,5
+```
+
+Con lo scudo il prefetch muove **0,00 GiB** e fa **0 sfratti**, a W=1 come a
+W=2: il braccio collassa numero per numero sul riferimento. Il perche' e' scritto
+in `kern_prenota` (`:2534`) ed e' intenzionale:
+
+```c
+    if (c.scudo && !c.dma) {
+        for (int i = 0; i < n_id; i++) {
+            const int32_t slot = c.dove[(strato << 8) | (esperto & 0xff)];
+            if (slot >= 0 && c.chi[slot] == k) cache_predici(c, strato, esperto, slot);
+        }
+        return;                       // e non prenota NIENTE
+    }
+```
+
+`SCUDO` da solo e' **protezione senza prefetch**: marca come predetti solo gli
+esperti gia' residenti e ritorna prima di prenotare. Per costruzione non porta
+dentro niente.
+
+Il che da' comunque un verdetto vero su una domanda vera: **proteggere dallo
+sfratto i residenti che serviranno ai prossimi 1-2 token e' neutro-negativo**
+(-1,5..-2,0%, colpi invariati). La LRU quegli esperti li teneva gia', perche'
+sono anche i piu' recenti. Terza faccia della stessa parete di
+[[prefetch-falsificato-sfratto-vale-23-punti]].
+
+**E IL CANCELLO CHE AVEVO SCRITTO ERA AGGIRABILE.** Avevo dichiarato una sola
+condizione — «i colpi devono smettere di scendere» — ed e' passata (46,6% >=
+46,3%) per il motivo sbagliato: il prefetch si era spento, non curato. Solo la
+riga del trasporto, stampata di lato, ha impedito di annunciare una leva
+inesistente. **Un cancello sui COLPI ha bisogno di una guardia sul MECCANISMO:
+`in prefetch > 0` prima di guardare qualunque altro numero.**
+
+### 10.3 Il ramo mai composto: `LLAMA_CACHE_ESPERTI_DMA`
+
+L'altro lato della stessa guardia. Con `c.dma` acceso il blocco `:2534` viene
+saltato — la prenotazione normale gira — **e** la protezione a `:1806` resta
+attiva, perche' li' la condizione e' `(c.scudo || c.dma)`. E' `DMA=1` con `W>0`,
+che accende `dma_strato` (`:1276`). Leva diversa da `DOMANDA_DMA` di §3.2, che
+era `runtime->domanda_dma`.
+
+Ha un cancello suo, e va aperto a mano o si misura il cancello:
+
+```c
+  #define CACHE_ESPERTI_DMA_HIT_PM 534      // ammette solo se i colpi >= 53,4%
+```
+
+Su questo banco i colpi stanno a 46,7%: resterebbe in `BASELINE` e non passerebbe
+mai a `PROVA` (`:2294-2303`). Braccio `dmastrato.ps1` con
+`LLAMA_CACHE_ESPERTI_DMA_HIT_PM=0`.

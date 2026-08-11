@@ -1169,3 +1169,47 @@ vale +5,5%; il tetto (~18 t/s) chiede di coprire con lo strato **successivo**,
 cioe' l'anticipo di **uno strato** — 6 esperti da prevedere invece di 258, col
 predittore di route gia' misurato al 71% / 90,2%
 ([[predittore-route-gate-strato-dopo]]).
+
+### 12.5 Con la lane accesa il fork NON aborta — e perde il 4,2% per il p1
+
+Configurazione adottata (`ASYNC=1 K=2`, `IBRIDO=1`, 339 slot), 1.200 token:
+
+```
+  braccio      t/s     ciclo    p1        colpi    a domanda    SHA
+  fl0 FORK=0  14,17   131,3   0,86470   53,2%   560,93 GiB   33D76723EB8D
+  fl2 FORK=2  13,57   129,7   0,75806   56,1%   466,58       73483508CD43
+  sonda: join visti 20.083 | copia gia' finita 19.971 (99,4%)
+```
+
+**Il meccanismo funziona anche qui**, e meglio del previsto: il ciclo migliora
+(131,3 -> 129,7, +1,2% — avevo dichiarato «+~1%»), i byte trasportati calano del
+**16,8%**, i colpi salgono, la sonda dice 99,4% coperto. Nessun `GGML_ABORT`: il
+walker della lane non biforca la terna.
+
+**Poi il p1 crolla: 0,86470 -> 0,75806, −12,3%.** E siccome `t/s = mean_len /
+ciclo`, i token accettati in meno mangiano tutto e altro.
+
+E' [[retroazione-stato-bersaglio-drafter]] nella sua forma piu' pulita mai vista:
+il fork **non e' bit-esatto per costruzione** — spezza il matmul esperti in due
+passate e cambia l'ordine di somma — e cambiare come il bersaglio ricostruisce il
+suo stato degrada la bozza.
+
+**ERRORE MIO, e sta nella forma della previsione.** Avevo scritto la non-esattezza
+in `ATLANTE_LEVE.md` due passi prima, e poi ho dichiarato l'attesa in `t/s` su un
+banco CON la bozza senza portarmi dietro quel rischio. Il numero previsto (+1%)
+era giusto sulla grandezza sbagliata: il ciclo. **Quando una leva cambia gli
+arrotondamenti, l'attesa va dichiarata sul CICLO e sul p1 separatamente, mai sul
+t/s** — che li moltiplica e nasconde quale dei due si e' mosso.
+
+**Dove lascia la leva:**
+
+```
+  banco senza bozza (GPU-only)   11,28 -> 11,90   +5,5%   ADOTTABILE
+  banco adottato (con bozza)     14,17 -> 13,57   -4,2%   NON adottabile
+```
+
+Il costo non e' nel meccanismo, e' nella **non-identita' numerica**. Se le due
+passate accumulassero in ordine fisso, sul banco adottato darebbe +1,2% di ciclo
+**tenendo** il p1. Diventa un cantiere con un bersaglio preciso: rendere
+bit-esatta la somma delle due passate (accumulatori separati sommati in ordine di
+indice esperto), non riprogettare il fork.

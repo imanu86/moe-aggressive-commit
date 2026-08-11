@@ -77,14 +77,31 @@ L'unica misura precedente era `c2_k2fork` (9/8, `audit/32-seconda-posizione.md`)
 `kern_copia` muove 0,08 GiB e non c'e' niente da coprire. Sul banco senza lane
 `kern_copia` e' 37,87 ms/token, il 41% di una GPU satura al 97,3%.
 
-**ATTENZIONE, due condizioni:**
-- **non e' bit-esatta**: spezza il matmul esperti in due passate (residenti
-  mascherati, poi i mancanti dopo il join) e l'ordine di somma cambia gli
-  arrotondamenti. Lo SHA cambia per costruzione, quindi i COLPI non sono
-  confrontabili fra `FORK=0` e `FORK>=1`; il t/s end-to-end si'.
-- **con un walker concorrente aborta**: `ggml_cuda_cache_esperti_fork_fase`
-  chiama `GGML_ABORT` se la terna gate/up/down cambia stream. Da verificare con
-  `LLAMA_OVERLAP_ASYNC=1` prima di portarla nella configurazione adottata.
+**MA SOLO SENZA BOZZA. Con la speculazione accesa perde il 4,2%:**
+
+```
+  configurazione adottata (ASYNC=1 K=2, IBRIDO=1, 339 slot), 1.200 token
+    FORK=0   14,17 t/s   ciclo 131,3   p1 0,86470   colpi 53,2%   560,93 GiB
+    FORK=2   13,57       129,7         p1 0,75806   colpi 56,1%   466,58
+```
+
+Il meccanismo funziona anche li' — ciclo −1,2%, byte −16,8%, sonda 99,4% coperto,
+nessun `GGML_ABORT` — ma il **p1 crolla del 12,3%** e il t/s (`mean_len / ciclo`)
+ci va dietro.
+
+**La causa e' la non-esattezza**: il fork spezza il matmul esperti in due passate
+(residenti mascherati, poi i mancanti dopo il join) e l'ordine di somma cambia
+gli arrotondamenti. Cambiare come il bersaglio ricostruisce il suo stato degrada
+la bozza — la regola del 10/8.
+
+Conseguenze operative:
+- **i COLPI non sono confrontabili** fra `FORK=0` e `FORK>=1`: sono traiettorie
+  diverse, non una cache migliore;
+- **l'attesa va dichiarata su CICLO e p1 separatamente**, mai sul t/s, che li
+  moltiplica e nasconde quale dei due si e' mosso;
+- il cantiere ha un bersaglio preciso: **rendere bit-esatta la somma delle due
+  passate** (accumulatori separati sommati in ordine di indice esperto). Fatto
+  quello, sul banco adottato vale +1,2% di ciclo a p1 invariato.
 
 ### 2b. Presenti negli script ma SEMPRE allo stesso valore letterale
 

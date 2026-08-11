@@ -388,3 +388,93 @@ Due strade, entrambe indicate dall'utente e coerenti con tutto il misurato:
    coppie il token corrente deve ancora usare; la leva `LLAMA_CACHE_ESPERTI_CURA`
    («lo sfratto deve conoscere la previsione») esiste dal 27/7 e non e' mai
    stata composta con l'oracolo.
+
+## 5. COSA CHIEDE L'ATTESA: il ramo CPU, e non e' sovrapposto
+
+Domanda dell'utente: se il trasporto usa 5,5 GiB/s su 24 ed e' sempre fermo,
+cosa chiede quell'attesa?
+
+### 5.1 Il profilo di ieri, riletto
+
+Il `.sqlite` era su disco dalle 06:26 e non l'avevo mai interrogato oltre i
+kernel. `cuda_api_sum`:
+
+```
+  57,0%  cudaEventSynchronize   17,6 s   28.320 chiamate, mediana 0,65 ms
+   9,0%  cudaStreamSynchronize   2,8 s   78.046
+   5,0%  cudaLaunchKernel        1,6 s   75.687
+   5,0%  cudaMemcpyAsync         1,6 s   64.416
+```
+
+L'host passa il **57% del tempo di parete bloccato su eventi**. Nei sorgenti
+che compiliamo l'unico chiamante caldo e' `ggml-backend.cpp:906`, nel ciclo del
+lavoratore dell'overlap CPU||GPU.
+
+E il profilo lanciato apposta per rispondere (`--sample`, `--cpuctxsw`) e'
+inutilizzabile due volte: `osrt` non esiste su Windows, e sostituito con `wddm`
+**ha fatto cadere la macchina**. Campionamento CPU e context switch richiedono
+privilegi di amministratore. Non serviva: la sonda era gia' in casa.
+
+### 5.2 `GGML_SCHED_PROFILO=1`, spenta da sempre
+
+```
+                    spec OFF (83,3 ms/token)   spec ON, adottata (137,9 ms/ciclo)
+  split per grafo          130,7                        36,3
+  ingressi                  14,56 ms (sync 12,18)        4,51 (sync 3,78)
+  calc altri (lanci)         8,01                        3,07
+  worker, lavori/grafo         42                          11
+    attesa-evento            32,81                        8,68
+    calcolo                  29,49                       16,10
+  JOIN (sched)               62,03                       24,89
+  join su tempo di parete    74,5%                       73,4%
+```
+
+Il commento di chi ha messo la sonda (`ggml-backend.cpp:847`) dice: «join ~0
+significa che il ramo CPU e' stato interamente coperto dal ramo GPU, cioe'
+sovrapposizione riuscita». **Il join e' i tre quarti del tempo, in entrambe le
+configurazioni.**
+
+Bilancio della configurazione adottata, su 61 s e 1.800 grafi:
+
+```
+  47,5%   il lavoratore CPU CALCOLA        <- e la GPU aspetta
+  25,6%   il lavoratore CPU aspetta la GPU
+  11,1%   sync ai confini degli split
+   9,1%   lanci GPU
+  ------
+  95,8%   contato
+```
+
+### 5.3 Perche' non si sovrappone: la finestra e' larga UNO SPLIT
+
+`ggml-backend.cpp:2147`: allo split **N** (GPU) si spedisce al lavoratore lo
+split **N+2** (CPU), se N+1 e' GPU. Poi `ggml-backend.cpp:1881`:
+
+```c
+  // - qualunque split che viene DOPO quello spedito PUO' dipenderne;
+  // - qualunque split CPU va unito comunque (un solo proprietario del threadpool)
+  if (split_id > split_spedito || e_cpu) { ggml_sched_worker_unisci(...); }
+```
+
+Gli split si scorrono in ordine, quindi il join scatta al primo split dopo
+N+2. **La finestra di sovrapposizione e' esattamente lo split N+1.**
+
+```
+  lavoro GPU per split    ~33 ms / 130,7  =  0,25 ms
+  lavoro CPU per lavoro    29,5 ms / 42   =  0,70 ms
+```
+
+**Tre volte piu' stretta del lavoro che deve coprire.** Per questo il
+lavoratore aspetta 32,8 ms (la GPU che drena) e poi calcola 29,5 ms con la GPU
+vuota: in serie. E spiega perche' la spazzata su `LLAMA_OVERLAP_K` non aveva
+dato niente — K allarga il batch, non la finestra
+([[overlap-fase2-tetto-cpu]]).
+
+La condizione e' **cautelativa**: dice «*puo'* dipenderne». Dentro uno strato lo
+split degli esperti GPU e quello degli esperti CPU sono fratelli e non
+dipendono l'uno dall'altro. Il controllo di dipendenza vera esiste gia' poche
+righe sotto (`prodotto_dallo_split_unito`, `:1908-1916`), usato per un'altra
+ottimizzazione.
+
+Se i due rami girassero davvero insieme: `max(32,8; 29,5) + 22,6 = 55,4 ms`
+invece di 83,3. **+50%.**

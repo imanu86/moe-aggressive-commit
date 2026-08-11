@@ -1067,3 +1067,105 @@ indipendenti; in produzione la copia di uno strato deve finire prima del
 sufficiente**: resta da vedere se il grafo sa esprimere quella pipeline. Ed e'
 esattamente la forma dell'errore del 10/8 sulla finestra dell'overlap, dove
 l'aritmetica dava +50% e la dipendenza per-strato ne lasciava +4.
+
+## 12. IL FORK/JOIN ERA GIA' SCRITTO, E SPENTO PER UN VERDETTO PRESO NEL REGIME SBAGLIATO
+
+Domanda dell'utente: *«come facciamo ad arrivare al tetto?»*.
+
+### 12.1 Cosa dice la traccia, e come uccide la pipeline intra-strato
+
+Dalla traccia GPU gia' su disco (`banco3.nsys-rep`, 1 GB di `cuda_gpu_trace`),
+uno strato in microsecondi:
+
+```
+   rel_us  dur_us  gap_us   kernel
+      4,4    21,1     0,1   kern_decidi
+     25,5   810,7     0,1   kern_copia          <- 810 us
+    836,2     1,5     0,0   quantize_q8_1
+    837,7    78,7     0,0   mul_mat_vec_q<16>   <- lo consuma, 1,5 us dopo
+    917,5     8,5     0,0   kern_decidi
+    928,6     1,1     2,6   kern_copia          <- 1,1 us
+    931,1    78,0     0,1   mul_mat_vec_q<16>
+   1.012,0    8,5     0,1   kern_decidi
+   1.020,6    1,1     0,1   kern_copia          <- 1,1 us
+   1.023,0  109,9     0,0   mul_mat_vec_q<10>
+```
+
+**Una `kern_copia` su tre fa tutto.** Quella del gate porta l'esperto intero
+(810 us); le altre due sono controlli di parita' da 1,1 us. Torna con
+l'aggregato: mediana 1,088 us, media 291 us su 64.887 istanze — un terzo grosse
+(43 x 500 = 21.500) da 881 us. Non ci sono tre copie da amortizzare: **ce n'e'
+una sola, grande**.
+
+**E i gap sono 0,1 us**: lo stream e' pieno ovunque, il 97,3% non era una media.
+
+Il che **falsifica la pipeline intra-strato** che avevo proposto in §11.4: il
+lavoro che dentro uno strato non dipende da quella copia (esperto condiviso piu'
+norme) e' ~100 us contro 810. Nasconde il 12% della copia, cioe' +2%.
+
+### 12.2 La leva esisteva dal 9 agosto
+
+`LLAMA_CACHE_ESPERTI_FORK` (llama-overlap `2776a5e76`, contratto in
+`audit/FORKJOIN.md`): `kern_decidi` -> maschera + istantanea della lista -> la
+copia dei mancanti parte su `stream_fork` -> il flusso di calcolo fa il lavoro
+**residente** mascherato -> il join e' un **evento CUDA**, che ordina davvero gli
+stream «dentro e fuori dalla cattura dei CUDA graph» (commento a `:3062`).
+
+**Misurata una volta sola, e nel regime sbagliato.**
+`audit/32-seconda-posizione.md`, braccio `c2_k2fork`: **12,95 t/s contro 12,83**
+del migliore senza fork, cioe' +0,9%, con «fork/join alpha=0,08; sonda join
+98,7% copie gia' atterrate». La copertura era del 98,7% — il meccanismo
+funzionava — e ha reso zero, perche' quel braccio aveva **la lane CPU accesa
+(K=2)**: meta' del lavoro esperti la fa la CPU, i byte passano dal fallback dello
+scheduler, e `alpha=0,08` vuol dire che `kern_copia` muoveva 0,08 GiB. **Il fork
+copriva perfettamente una cosa che li' non costava niente.** Da quel numero
+`ATLANTE_LEVE.md` lo ha scritto «sempre 0», e da allora e' spento in ogni
+braccio e nella configurazione adottata.
+
+### 12.3 Nel regime giusto: +5,5%, e la previsione ci ha preso
+
+Banco `sc_rif`, 600 token (`fork.ps1`). Attesa **dichiarata prima**: «se copre
+solo il residente dello stesso strato, ~11,9 (+6%)».
+
+```
+  braccio     t/s     ciclo    colpi    a domanda    SHA
+  f0 FORK=0  11,28    88,7     46,7%    417,48 GiB   5CD5806D6CA0
+  f1 FORK=1  11,90    84,0     52,2%    397,40       0EFF1EBB450C
+  f2 FORK=2  11,92    83,9     52,0%    379,12       0EFF1EBB450C
+
+  fork sonda -> join visti=19.730 | copia gia' finita=19.613 (99,4%), in corso=117
+```
+
+**Misurato 11,90 contro un'attesa di 11,90.** Il modello di costo costruito oggi
+predice, non solo descrive.
+
+**LO SHA CAMBIA, e non va nascosto.** `f1` e `f2` danno lo stesso testo fra loro
+(deterministico) ma diverso da `f0`. E' atteso per costruzione: il fork spezza il
+matmul degli esperti in due passate — prima i residenti mascherati, poi i
+mancanti dopo il join — e sommare in ordine diverso arrotonda diverso.
+Conseguenza: **i colpi 46,7 -> 52,2 NON sono confrontabili**, stanno su
+traiettorie diverse. Il `t/s` end-to-end si': stesso prompt, stessa temperatura,
+stesso numero di token, e il +5,5% sta sopra la deriva del banco (2,4%).
+
+`FORK=2` costa quanto `FORK=1` (11,92 contro 11,90): la sonda e' gratis e puo'
+restare accesa.
+
+### 12.4 Le quattro leve, e i quattro modi di non esistere
+
+```
+  CURA    classifica in un ramo mai raggiunto        (lru esce prima)
+  SCUDO   marca e non prenota                        (kern_prenota :2534)
+  DMA     pianifica e non consegna                   (piano sempre stantio)
+  FORK    funziona, ed e' stato giudicato dove non serviva
+```
+
+I primi tre erano difetti di composizione. **Il quarto era un difetto di banco**,
+ed e' l'unico che valeva qualcosa. E' [[misura-il-regime-non-la-media]] e
+[[cpu-nasconde-trasporto-inefficiente]] applicati alla stessa riga di
+`ATLANTE_LEVE.md`.
+
+Resta il fronte vero e non cambia: coprire con il residente dello stesso strato
+vale +5,5%; il tetto (~18 t/s) chiede di coprire con lo strato **successivo**,
+cioe' l'anticipo di **uno strato** — 6 esperti da prevedere invece di 258, col
+predittore di route gia' misurato al 71% / 90,2%
+([[predittore-route-gate-strato-dopo]]).

@@ -59,6 +59,33 @@ assegnazione `$env:LLAMA_*` / `$env:GGML_*`.
   diag      (5 leve)
 ```
 
+### 2a-bis. RIABILITATA l'11/8: `LLAMA_CACHE_ESPERTI_FORK`
+
+Stava qui sotto come «sempre 0». **Vale +5,5% sul banco senza lane CPU**, ed era
+spenta per un verdetto preso nel regime sbagliato.
+
+```
+  banco sc_rif (spec OFF, ASYNC=0, IBRIDO=0, 512 slot), 600 token
+    FORK=0   11,28 t/s   ciclo 88,7   SHA 5CD5806D6CA0
+    FORK=1   11,90       84,0         SHA 0EFF1EBB450C
+    FORK=2   11,92       83,9         SHA 0EFF1EBB450C   (sonda gratis)
+  sonda: join visti 19.730 | copia gia' finita 19.613 (99,4%)
+```
+
+L'unica misura precedente era `c2_k2fork` (9/8, `audit/32-seconda-posizione.md`):
+12,95 contro 12,83, cioe' +0,9%, **con la lane CPU accesa a K=2** — dove
+`kern_copia` muove 0,08 GiB e non c'e' niente da coprire. Sul banco senza lane
+`kern_copia` e' 37,87 ms/token, il 41% di una GPU satura al 97,3%.
+
+**ATTENZIONE, due condizioni:**
+- **non e' bit-esatta**: spezza il matmul esperti in due passate (residenti
+  mascherati, poi i mancanti dopo il join) e l'ordine di somma cambia gli
+  arrotondamenti. Lo SHA cambia per costruzione, quindi i COLPI non sono
+  confrontabili fra `FORK=0` e `FORK>=1`; il t/s end-to-end si'.
+- **con un walker concorrente aborta**: `ggml_cuda_cache_esperti_fork_fase`
+  chiama `GGML_ABORT` se la terna gate/up/down cambia stream. Da verificare con
+  `LLAMA_OVERLAP_ASYNC=1` prima di portarla nella configurazione adottata.
+
 ### 2b. Presenti negli script ma SEMPRE allo stesso valore letterale
 
 Queste hanno un nome, un codice dietro e un audit che le descrive, e **nessuna
@@ -70,7 +97,6 @@ corsa le ha mai spostate**:
   LLAMA_CACHE_ESPERTI_CURA              sempre 0   (scadenza previsioni)
   LLAMA_CACHE_ESPERTI_CODA_MAX          sempre 0
   LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO   sempre 0
-  LLAMA_CACHE_ESPERTI_FORK              sempre 0   (copia sullo stream dedicato)
   LLAMA_CKPT_CRONO                      sempre 0
   LLAMA_SPEC_CONF_ESENTA_POS0           sempre 0
   LLAMA_KV_ROLLBACK_SOLO_ANELLO         sempre 0

@@ -144,7 +144,41 @@ int main(int argc, char ** argv) {
     CHECK(cudaEventRecord(b, s)); CHECK(cudaEventSynchronize(b));
     CHECK(cudaEventElapsedTime(&ms, a, b)); riporta("contiguo", ms);
 
+    // 5. LA DOMANDA DELL'UTENTE (11/8): «la ram pinnata non dovrebbe nemmeno
+    //    servire, la usiamo per fare un mix vram+ram sulla lane gpu; se il
+    //    trasporto fosse efficiente non servirebbe leggere zerocopy».
+    //
+    //    I 74.304 MiB pinnati e mappati sono il prezzo dello ZERO-COPY: servono
+    //    perche' la GPU possa leggere SUL POSTO. Se si trasporta e basta,
+    //    basterebbe un'area di transito da poche centinaia di MiB e il modello
+    //    potrebbe stare in RAM NORMALE -- e sparirebbe il tetto della pinnata,
+    //    che oggi ha fatto morire due bracci e ci impedisce di mettere il
+    //    drafter sulla GPU.
+    //
+    //    Quanto costa il DMA da RAM normale invece che bloccata? Se la
+    //    differenza e' piccola, i 74 GiB pinnati si buttano.
+    {
+        char * pag = (char *) malloc(HOST);
+        if (pag) {
+            memset(pag, 3, 1024 * 1024);
+            CHECK(cudaEventRecord(a, s));
+            for (int g = 0; g < GIRI; g++)
+                for (int i = 0; i < N; i++)
+                    for (int q = 0; q < PEZZI; q++)
+                        CHECK(cudaMemcpyAsync(h_dst[i * PEZZI + q],
+                                              pag + off[i] + q * PEZZO,
+                                              PEZZO, cudaMemcpyHostToDevice, s));
+            CHECK(cudaEventRecord(b, s)); CHECK(cudaEventSynchronize(b));
+            CHECK(cudaEventElapsedTime(&ms, a, b)); riporta("dma_pagabile", ms);
+            free(pag);
+        } else {
+            printf("  dma_pagabile: malloc di %.1f GiB fallita, saltato\n", HOST / 1073741824.0);
+        }
+    }
+
     printf("\n  il confronto che decide: dma_raffica contro kernel.\n");
+    printf("  e il secondo: dma_pagabile contro dma_raffica -- se sono vicini, i\n");
+    printf("  74.304 MiB di RAM BLOCCATA non servono e il tetto della pinnata sparisce.\n");
     printf("  in produzione (11/8) il trasporto misura 5,5 GiB/s a domanda, 9,9 col prefetch.\n");
     printf("  469 MiB per token: a 5,5 sono 94 ms, a 18,4 sono 25,5.\n");
     return 0;

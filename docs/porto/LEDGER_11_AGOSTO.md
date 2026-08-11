@@ -1031,3 +1031,39 @@ strato la route e' nota tutta insieme, e le tre `kern_copia` (gate/up/down) sono
 indipendenti dal `mul_mat_vec` che le segue di una posizione. E' pipeline
 intra-strato, non anticipo — e l'anticipo e' proprio la cosa che oggi si e'
 falsificata tre volte.
+
+### 11.5 IL CAVEAT MISURATO: il motore di copia regge sotto carico (costa il 9%)
+
+Il `max(54,2 ; 28,2)` presumeva una sovrapposizione che nessuno aveva visto: i
+24,4 GiB/s del motore di copia vengono dal microbench `blocco`, misurati a **GPU
+scarica**. Qui la GPU e' satura al 97,3% e la copia scrive in VRAM, cioe' contende
+la banda che il calcolo sta gia' consumando a leggere i pesi. Se i due si
+serializzassero, il tetto sarebbe `54,2 + 28,2` e la leva varrebbe **zero**.
+
+Microbench nuovo, `.microbench/concorrenza`: un kernel che legge la VRAM in
+streaming (proxy dei 302 `mul_mat_vec` per token) contro la raffica di
+`cudaMemcpyAsync` da RAM mappata, su stream diversi.
+
+```
+  calcolo solo      75,39 ms   (318,3 GiB/s di VRAM letta = 88% del picco della 3060)
+  copia sola        28,17 ms   (24,00 GiB/s)
+  INSIEME           78,01 ms
+
+  max = 75,39   somma = 103,56   insieme/max = 1,03
+  costo MARGINALE della copia dentro il calcolo: 2,62 ms invece di 28,17 = 9%
+```
+
+Cancello dichiarato prima (`<= 1,15 x max` = si sovrappongono): **passato a
+1,03**. E il test era severo — il kernel di carico stava gia' saturando all'88%
+proprio la risorsa che avrebbe dovuto entrare in conflitto.
+
+**Il tetto regge.** Ventotto millisecondi di trasporto ne costano 2,62 se girano
+accanto al calcolo invece che dentro.
+
+**CAVEAT DEL CAVEAT, e va tenuto in testa:** questo e' il verdetto
+dell'**hardware**, non dello **scheduler**. Nel microbench i due flussi sono
+indipendenti; in produzione la copia di uno strato deve finire prima del
+`mul_mat_vec` che la consuma. Che il ferro regga e' condizione **necessaria e non
+sufficiente**: resta da vedere se il grafo sa esprimere quella pipeline. Ed e'
+esattamente la forma dell'errore del 10/8 sulla finestra dell'overlap, dove
+l'aritmetica dava +50% e la dipendenza per-strato ne lasciava +4.

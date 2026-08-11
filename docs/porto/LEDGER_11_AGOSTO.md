@@ -1376,3 +1376,71 @@ Reperto laterale, **pre-esistente e non toccato**:
 (`mmvq.cu:1367`). Inerte su questa macchina (PDL richiede `__CUDA_ARCH__ >=`
 Hopper; la 3060 e' sm_86 e `pdl_sync` compila a nulla), ma su Hopper+ leggerebbe
 la maschera prima che `kern_fj_maschera` l'abbia scritta.
+
+### 14.1 La cura NON cura: c'e' una SECONDA sorgente, e vive a batch >= 2
+
+Patch compilata (`BUILD_OK`, warning innocui). Quattro bracci, cancelli in ordine.
+
+```
+  braccio                            t/s    ciclo    p1        SHA
+  e_rif  lane, FORK=0               14,23   130,7   0,86470   33D76723EB8D   <- neutro
+  e_e1   lane, FORK=1 ESATTO=1      13,88   125,4   0,74381   6959978AF537
+  e_e2   lane, FORK=1 ESATTO=2      13,91   125,1   0,74381   6959978AF537
+  e_g2   spoglio, FORK=2 ESATTO=2   11,83    84,5      -      1C5B24C858FF
+```
+
+**Cancello 1 passato**: 515 righe nuove, di cui 431 in `mmvq.cu` che e' cammino
+caldo, e a leva spenta il binario riproduce t/s, p1 e SHA. La patch e' neutra.
+
+**Cancello 3 FALLITO**: lo SHA passa da `73483508CD43` (fork non esatto) a
+`6959978AF537`. La cura **cambia** la divergenza, non la **toglie**. E `=1` e `=2`
+danno lo stesso identico risultato fra loro: cio' che resta e' comune a entrambi.
+
+**Dove vive, isolato con una corsa sola.** Sul banco spoglio tutti i forward sono
+a un token, quindi `ESATTO=1` deve spegnere il fork del tutto:
+
+```
+  x0  FORK=0            11,28 t/s   88,7 ms   5CD5806D6CA0
+  x1  FORK=2 ESATTO=1   11,28       88,7      5CD5806D6CA0   <- IDENTICO a x0
+  x2  FORK=2 ESATTO=0   12,39       80,7      0EFF1EBB450C
+```
+
+`x1` e' identico a `x0` cifra per cifra: **`ESATTO=1` fa esattamente quello che
+dichiara**, la patch non e' rotta. Quindi la seconda sorgente **vive a batch >= 2**
+— ed e' li' che l'affermazione «a batch >= 2 il fork e' gia' bit-esatto (entrambi
+usano `mul_mat_vec_q_moe`, stessa griglia, `rows_per_block=2`)» e' **falsificata
+dalla misura**. Era una deduzione da lettura statica, non una verifica.
+
+**Il testimone non testimonia quel che promette.** `mmid a un token viste=129` sul
+banco con la lane, e `129 = 43 x 3` e' esattamente UN forward su 1.200 token; sul
+banco spoglio, dove tutti i forward sono a un token, ne conta 903 invece di 77.400.
+Non conta i forward: conta le **catture del grafo CUDA**. La decisione e' fossilizzata
+nel grafo, quindi il numero e' corretto per quel che fa — ma il suo nome mente.
+
+**Un'ipotesi sollevata e chiusa nella stessa ora.** Il kernel MoE mascherato legge
+`maschera[token_idx * nchannels_tot + channel_dst]` (`mmvq.cu:1373`), cioe' un
+layout `[token][canale]`, mentre `kern_fj_maschera` scrive `maschera[i]` piatto —
+e a un token qualunque disallineamento di riga sarebbe invisibile, il che
+combaciava perfettamente col fatto che la divergenza sopravvive solo a batch >= 2.
+**Ma non regge**: `kern_decidi` tiene `slot_out` contiguo per riga con passo `ne0`
+(commento a `:2453`), e `nchannels_tot` e' `nchannels_dst`, che su questo modello
+vale 6 come `ne0`. I due layout coincidono.
+
+**La seconda sorgente resta senza nome**, ed e' esattamente la situazione della
+regola di §8.1: *quando un numero grosso non ha un nome, il primo lavoro e' dargli
+un nome, non spiegarlo.* Lo strumento per nominarla non e' un'altra ipotesi: e' un
+confronto bit-a-bit dell'uscita delle tre `mul_mat_id` a batch 2, fra cammino
+forkato e non, con `llama-eval-callback` e `LLAMA_DEBUG_DUMP`.
+
+**Stato del fronte:**
+
+```
+  acquisito   il binario e' neutro a leva spenta
+  acquisito   ESATTO=1 e' corretto: a un token riporta il bit-esatto
+  acquisito   FORK_BLOCCHI=8 vale +10,8% sul banco spoglio (11,22 -> 12,43)
+  fallito     ESATTO non basta: la divergenza a batch >= 2 resta
+  aperto      come si chiama quella divergenza
+```
+
+La patch resta in albero: e' spenta di difetto, il cancello 1 dimostra che non
+costa niente, e il contatore delle catture serve comunque.

@@ -478,3 +478,79 @@ ottimizzazione.
 
 Se i due rami girassero davvero insieme: `max(32,8; 29,5) + 22,6 = 55,4 ms`
 invece di 83,3. **+50%.**
+
+### 5.4 Che cosa calcola la CPU: NON il drafter
+
+Prima ipotesi: gli esperti della bozza, che `-otd` mette su CPU (DSpark e' al
+97,5% esperti). **Caduta prima di provarla**, dal confronto gia' in mano:
+
+```
+                      drafter    calcolo CPU per TOKEN
+  spec OFF (c_off)      NO          29,5 ms
+  spec ON  (b_rif)      SI          34,2 ms   (15,62 x 2,19 grafi/token)
+```
+
+Senza drafter la CPU calcola quanto o piu' che con. Il braccio di conferma
+(`-otd` tutto su `CUDA0_Mapped`) e' comunque morto sul tetto della pinnata —
+`cudaHostAlloc di 6672,00 MiB fallita: out of memory`, perche' i 74.304 MiB del
+bersaglio piu' i 6.672 della bozza fanno 79,1 GiB contro un tetto misurato fra
+74,7 e 76,9 ([[doublekvring-pinnata-e-la-risorsa-scarsa]]).
+
+Il candidato che resta, e torna coi numeri: **i MANCANTI della cache**.
+
+```
+  colpi 53-56%  ->  ~113-121 mancanti per token
+  x ~0,25 ms l'uno  ->  ~30 ms per token       = il calcolo del worker
+```
+
+Da verificare col nome (`GGML_SCHED_DEBUG=1` stampa gli split e le loro
+operazioni): per ora e' un'inferenza da tre numeri che tornano.
+
+Il braccio di controllo chiude con **deriva zero**: `b_rifb` riproduce `b_rif`
+cifra per cifra (13,78 t/s, 131,3 ms, p1 0,81364, colpi 56,0 contro 56,1).
+
+## 6. LA POLITICA DI SFRATTO: il margine di Belady NON e' raccoglibile
+
+Domanda dell'utente: la politica degli esperti che portiamo in VRAM non e'
+ottimale, e resta quel punto da sistemare.
+
+E' vero, e ho provato a prenderlo. Cinque euristiche implementabili, sulla
+stessa traccia, contro il tetto:
+
+```
+  capienza     LRU     LFU    MASSA    SLRU   RIUSO  CONSUMATO   BELADY
+    339      40,3%   37,7%   10,7%    6,8%    7,8%     12,6%     63,4%
+    448      47,5%   42,3%   14,3%   50,4%   15,1%     14,8%     68,3%
+    512      50,8%   44,6%   16,4%   52,8%   18,9%     16,1%     70,5%
+```
+
+**Nessuna batte la LRU**, tranne SLRU da 448 in su (+2,9 e +2,0 punti) — e a
+339 crolla al 6,8%, comportamento sospetto da non prendere per buono.
+
+**CORREZIONE A QUELLO CHE AVEVO DETTO.** Avevo presentato i +24 punti di Belady
+come se valessero ~+25% di t/s. Erano un TETTO, e l'ho passato per raccoglibile.
+Non lo e': il margine sta quasi tutto in informazione che nessuna statistica del
+passato possiede, ed e' lo stesso muro che ha fermato il prefetch stamattina,
+visto dall'altro lato.
+
+```
+  copertura del top-K da QUALUNQUE finestra passata   44-47%   (§2.1)
+  colpi della LRU                                     40,3%
+  ------
+  raccoglibile con una politica a finestra            +4..7 punti
+  in tempo                                            ~4 ms/token   ~+6%
+```
+
+## 7. L'ORDINE CHE NE ESCE
+
+| fronte | raccoglibile | perche' |
+|---|---:|---|
+| **finestra dell'overlap** | fino a **+50%** | difetto di meccanismo, causa nota, riga nota |
+| politica di sfratto | ~+6% | il resto e' informazione che non abbiamo |
+| trasporto (DMA / anticipo / blocco) | **0** | chiuso da tre angoli, §4 |
+
+La tesi dell'utente — «se portassimo gli esperti in VRAM al momento giusto
+andremmo come un modello interamente residente» — **regge**, e oggi ha un
+prezzo: il costo della non-residenza e' i ~30 ms per token di CPU seriale. Ma
+non si recupera indovinando meglio COSA tenere: si recupera non pagandolo in
+serie.

@@ -234,3 +234,59 @@ chiede 1,05.
 **Il cantiere e': predittore di route -> coda DMA a uno strato di anticipo.**
 Non e' una leva nuova, e' una composizione di due cose gia' in casa e mai
 messe insieme.
+
+### 3.2 DOMANDA_DMA misurato: ZERO, e il perche' e' istruttivo
+
+Cancello e prima misura, 11/8 h07:54-08:03. Il cancello SHA passa su tutti e
+tre i bracci — la build che ha rilinkato `ggml-cuda.dll` e' neutra.
+
+```
+  braccio          t/s     ciclo    p1        colpi    SHA
+  g_rif           14,24    130,6    0,86470   53,3%    33D76723EB8D   passa
+  g_dom           14,25    130,5    0,86470   53,4%    33D76723EB8D   passa
+  g_rifb          14,26    130,4    0,86470   53,5%    33D76723EB8D   passa
+  deriva del banco fra i due riferimenti: 0,14%
+```
+
+La leva vale **zero**. E i contatori dicono perche':
+
+```
+  g_rif   a domanda (stream CALCOLO) 549,52 GiB   in prefetch (stream DMA) 0,00 GiB
+  g_dom   a domanda (stream CALCOLO) 541,41 GiB   H2D 11,23 GiB, fallback cattura=129
+```
+
+Ha spostato **11,2 GiB su 552,6 — il 2,0%**. Il cancello che avevo dichiarato
+(`fallback cattura == 0`) **non passa**: 129 ricadute in cattura del grafo.
+
+Guardando `cache-esperti.cu:2774-2819`, tre scelte glielo impediscono per
+costruzione:
+
+```c
+  2789:  CUDA_CHECK(cudaStreamSynchronize(stream));        // un sync PER STRATO
+  2812:  cudaMemcpyAsync(dst, src, passi[q], ..., stream); // lo STESSO stream di calcolo
+  2781:  if (cattura != None) { fallback++; return false; } // solo fuori cattura
+```
+
+Il commento in cima al blocco lo dichiara: «Sostituisce il trasporto del primo
+`kern_copia` della terna con DMA **sullo stesso stream**».
+
+**Cambia il MECCANISMO, non il MOMENTO.** Resta a domanda, resta sullo stream
+di calcolo, e ci aggiunge una sincronizzazione per strato — il costo che il
+disegno originale evitava apposta. Che sia uscita neutra invece che peggiore e'
+quasi fortuna. E' [[costo-non-e-quanto-ma-quando]] scritto in codice: abbiamo
+misurato *quanto*, non *quando*.
+
+### 3.3 Il numero che nessuno aveva mai visto in chiaro
+
+```
+  549,52 GiB di esperti attraversano il bus in 1.200 token
+  = 469 MiB per token,  e lo stream di prefetch ne ha mossi 0,00
+```
+
+Non e' una brutta notizia: e' la conferma che il corridoio esiste. 469 MiB a
+24,4 GiB/s sono 19,2 ms per token, cioe' **36,5 ms su un ciclo da 130** — sul
+motore di copia ci stanno con tre volte il margine.
+
+E `runtime->stream_pf`, lo stream di prefetch, **viene creato all'avvio**
+(`cache-esperti.cu:1535`) e in questa configurazione trasporta zero. Il canale
+e' gia' aperto e inutilizzato.

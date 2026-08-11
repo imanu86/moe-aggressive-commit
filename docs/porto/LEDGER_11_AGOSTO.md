@@ -1213,3 +1213,51 @@ passate accumulassero in ordine fisso, sul banco adottato darebbe +1,2% di ciclo
 **tenendo** il p1. Diventa un cantiere con un bersaglio preciso: rendere
 bit-esatta la somma delle due passate (accumulatori separati sommati in ordine di
 indice esperto), non riprogettare il fork.
+
+### 12.6 CORREZIONE: «secondo stream» non e' «motore di copia», e i 18 t/s chiedono DUE pezzi
+
+Domanda dell'utente: *«e quei 18 t/s che avevi promesso?»*.
+
+Il tetto di §11.4 era `max(54,2 ; 28,2) = 54,2 ms -> 18,5 t/s`, e il microbench di
+§11.5 lo ha validato — ma **su una raffica di `cudaMemcpyAsync`, che gira sul
+MOTORE DI COPIA**, hardware separato dagli SM. Il fork fa un'altra cosa:
+
+```c
+__global__ static void kern_fj_copia(...)                              // e' un KERNEL
+kern_fj_copia<<<runtime->fj_blocchi, 256, 0, runtime->stream_fork>>>(...)
+```
+
+**Stream diverso, stesso ferro.** Legge la memoria mappata con gli SM, su 32
+blocchi, in concorrenza con la MMVQ. E' time-slicing, non sovrapposizione fra
+unita' indipendenti. Ho trattato il fork come l'implementazione di quel tetto
+senza verificare che lo fosse.
+
+**E i numeri lo dicevano, se li avessi incrociati:** la sonda dice **99,4%
+coperto** e il guadagno e' **+5,5%**. Se la copia fosse davvero uscita dal
+percorso critico, dei 37,9 ms/token ne sarebbero spariti 37,9. Ne sono spariti
+**4,7** (88,7 -> 84,0). Un «99,4% coperto» che vale il 12% del suo costo e' un
+segnale, non un successo.
+
+L'aritmetica corretta, coi due pezzi separati:
+
+```
+  oggi GPU-only, fork acceso          84,0 ms/token   11,90 t/s
+  + copia sul MOTORE invece che SM   ~77             ~13,0    finestra ancora 125 us
+  + finestra di UNO STRATO           ~57             ~17,5    predittore al 90,2%
+  tetto (copia a costo zero)          54,2            18,5
+```
+
+**Servono entrambi, e nessuno dei due da solo ci arriva.** Il motore di copia
+toglie la contesa sugli SM ma la finestra resta 125 us contro i ~660 che la copia
+chiede per strato: il join aspetta lo stesso. La finestra da uno strato allarga a
+1,26 ms ma se la copia resta un kernel continua a rubare SM al matmul.
+
+Il primo pezzo e' piccolo e gia' validato: **sostituire `kern_fj_copia` con una
+raffica di `cudaMemcpyAsync` sullo stesso `stream_fork`**, tenendo il join a
+evento che esiste gia' (e che, a differenza di `cudaStreamSynchronize`, funziona
+dentro la cattura dei grafi).
+
+**REGOLA: un microbench valida la FORMA che ha misurato, non il nome che le
+diamo.** «Portare la copia su un altro stream» e «portarla sul motore di copia»
+sono due frasi diverse in italiano e due pezzi di hardware diversi; le ho trattate
+come sinonime per tre ore.

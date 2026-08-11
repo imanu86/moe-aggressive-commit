@@ -1444,3 +1444,74 @@ forkato e non, con `llama-eval-callback` e `LLAMA_DEBUG_DUMP`.
 
 La patch resta in albero: e' spenta di difetto, il cancello 1 dimostra che non
 costa niente, e il contatore delle catture serve comunque.
+
+## 15. SOTA 14,77 — e la manopola non era mai stata portata sul banco che conta
+
+### 15.1 La dimenticanza
+
+`FORK_BLOCCHI=8` l'ho trovato sul banco SPOGLIO (12,43 contro 11,83 del difetto
+32) e **non l'ho mai riportato sul banco con la bozza**: il braccio di §12.5 e'
+girato col difetto 32, cioe' col punto peggiore della curva. Tarare una manopola
+su un banco e misurare la leva su un altro e' lo stesso errore di regime che ho
+passato la giornata a trovare negli altri.
+
+### 15.2 I numeri, a macchina ferma e ripetuti
+
+```
+  braccio                       ciclo    p1        t/s     SHA
+  qs_rif   339 slot, FORK=0    130,8   0,86470   14,22   33D76723EB8D
+  qs512    512 slot, FORK=2    126,0   0,85449   14,68   FE90AC77066D
+  qs512b   512 slot, FORK=2    125,3   0,85449   14,77   FE90AC77066D
+  qs576    MORTO -- muro VRAM col modello di bozza caricato
+  qs640    MORTO
+```
+
+Le due ripetizioni concordano allo **0,6%** e danno lo stesso SHA anche della
+corsa fatta a macchina sporca: deterministico e riproducibile.
+
+```
+  record precedente        14,26  (11/8 mattina, 339 slot)
+  riferimento appaiato     14,22  (stessa sessione, stesso binario)
+  NUOVO                    14,77          +3,9%
+  ciclo                    130,8 -> 125,3  -4,2%   <- il meccanismo
+  p1                       0,86470 -> 0,85449  -1,2%
+```
+
+**La configurazione e' due variabili d'ambiente, zero righe nuove sul cammino
+caldo:**
+
+```
+  LLAMA_CACHE_ESPERTI_SLOT          339  ->  512
+  LLAMA_CACHE_ESPERTI_FORK            0  ->  2     (2 = con la sonda, che e' gratis)
+  LLAMA_CACHE_ESPERTI_FORK_BLOCCHI   32  ->   8
+```
+
+### 15.3 RITIRATA la conclusione di §12.5: il p1 non e' rotto dal fork
+
+Avevo scritto «il fork con la bozza perde il 4,2%, e la colpa e' del p1 che
+crolla del 12,3%». Quel crollo c'e' **solo a 339 slot**:
+
+```
+  339 slot   p1 0,75806
+  448 slot   p1 0,86604   <- PIU' ALTO del riferimento (0,86470)
+  512 slot   p1 0,85449
+```
+
+Il fork cambia gli arrotondamenti, il testo diverge, e quale continuazione esca
+e' una **lotteria**. A 339 slot era uscita male. Avevo costruito un cantiere
+(«rendere bit-esatto il fork», task #36) su un campione da **un braccio solo** —
+lo stesso difetto di metodo che ho contestato a un'analisi altrui tre ore prima.
+
+Il cantiere della bit-esattezza non e' inutile — un cancello SHA che non tiene
+rende le regressioni piu' difficili — ma **non vale +12% di p1**: vale la
+riproducibilita', e va ri-prezzato.
+
+### 15.4 Due caveat da non nascondere
+
+- **Lo SHA cambia.** Il testo prodotto e' diverso da `FORK=0`. Non e' peggiore
+  (il p1 quasi identico lo conferma), ma chi usa il cancello d'identita' per le
+  regressioni deve saperlo, e i COLPI restano non confrontabili con `FORK=0`.
+- **512 e' al muro.** 576 e 640 muoiono con il modello di bozza in VRAM. Sul
+  banco spoglio (niente bozza) l'ottimo e' pure 512, ma li' il muro e' a 768.
+  In entrambi i casi la capienza e' limitata dalla VRAM, e i **7,4 GiB di pesi
+  densi** sono la stanza da liberare.

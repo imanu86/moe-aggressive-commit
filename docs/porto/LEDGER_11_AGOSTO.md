@@ -554,3 +554,144 @@ andremmo come un modello interamente residente» — **regge**, e oggi ha un
 prezzo: il costo della non-residenza e' i ~30 ms per token di CPU seriale. Ma
 non si recupera indovinando meglio COSA tenere: si recupera non pagandolo in
 serie.
+
+## 8. IL BANCO ERA SBAGLIATO, E CON ESSO META' DEI VERDETTI
+
+Intuizione dell'utente, confermata dalla misura:
+
+> «abbiamo nascosto qualcosa che non sapevamo fare bene (trasporto e
+> orchestrazione GPU) dietro un'altra leva che ci aiuta tanto (CPU)»
+
+### 8.1 Che cosa calcola la CPU: LETTO, dopo quattro ipotesi sbagliate
+
+Quattro congetture, quattro falsificazioni, e ogni volta un ragionamento che
+tornava: gli esperti del drafter (smentita dal confronto spec-off/spec-on), i
+mancanti della cache (smentita dal codice: `supports_op` sospende il rifiuto
+quando la cache e' accesa), l'indexer non fuso (`FUSO=1` e' neutro), la soglia
+di offload a 32 (quattro bracci, gli split non si muovono).
+
+La risposta stava in una stampa che il logger buttava via. `GGML_LOG_DEBUG` non
+esce dal server nemmeno con `-lv 4`; aggiunto `GGML_SCHED_DEBUG_INFO=1` per
+farla uscire a INFO (commit `b839bf1ee`), i 978 nodi su CPU sono **tutti**:
+
+```
+  MUL_MAT_ID   ffn_moe_gate_overlap   x129
+  MUL_MAT_ID   ffn_moe_up_overlap     x129
+  MUL_MAT_ID   ffn_moe_down_overlap   x129
+```
+
+Il suffisso dice tutto: li crea **il nostro `LLAMA_OVERLAP_ASYNC`**, la leva del
+7/8. Non un ripiego, non un difetto: un secondo ramo degli esperti, messo li'
+apposta.
+
+**REGOLA: quando un numero grosso non ha un nome, il primo lavoro e' dargli un
+nome, non spiegarlo.** Se avessi forzato quella stampa alle 09:00 invece che
+alle 12:20, le quattro congetture non sarebbero servite.
+
+### 8.2 Spegnendo la lane, i verdetti si ribaltano
+
+```
+                        t/s    ciclo   colpi   split/grafo   ingressi (sync)
+  overlap K=2         13,96   129,7   56,0%      35,1        4,73 ( 4,07)
+  overlap K=1         10,76   164,5   28,3%      35,2       20,07 (19,45)
+  overlap SPENTO       9,80   185,7   18,8%       3,7       36,24 (35,80)
+```
+
+Gli **stessi 339 slot** passano da 56,0% a 18,8% di colpi: la cache comincia a
+vedere TUTTE le domande. Il 56% era misurato sulla frazione che restava alla GPU.
+
+E la capienza, che il 10/8 avevamo chiuso come «non paga» (339→448: +6,5 punti
+di colpi, **−8,3%** di t/s), sul banco senza lane **paga moltissimo**:
+
+```
+  339 slot   9,93 t/s   colpi 18,9%   sync 35,34 ms/grafo
+  448       12,32       46,5%         28,20
+  480       12,41       48,6%         27,81
+  512       12,64       49,0%         27,21   <- massimo che carica, 270 MiB liberi
+  544       MORTO
+```
+
+Il ginocchio cade dove deve: a 448 slot il working set di un token (258 coppie)
+ci sta con 190 di margine, a 339 no. E **il simulatore aveva previsto 50,8% a
+512; misurato 49,0%** — si puo' usare per scartare idee senza toccare la macchina.
+
+`LLAMA_CACHE_ESPERTI_BATCH` e' **inerte** (18,9% contro 19,3% a 8 e 64): risposta
+alla domanda aperta del mandato RING, quel cancello non e' il vincolo.
+
+### 8.3 IL VERO COLLO: 277 copie per token, e non sono nostre
+
+Profilo per kernel sul banco GPU-only (512 slot, lane spenta):
+
+```
+  GPU                              host, dentro le API CUDA
+  30%  mul_mat_q<16,64>     86     69%  cudaStreamSynchronize  368.765
+  19%  mul_mat_q<10,64>     43     16%  cudaMemcpyAsync        221.963
+  20%  kern_copia        1.425
+   3%  mul_mat_vec_q_moe   774
+```
+
+**221.963 `cudaMemcpyAsync` su 800 token = 277 per token**, contro 258 domande
+di esperti. Non sono della nostra cache — `kern_copia` fa 1.425 lanci in tutto.
+Sono del fallback dello scheduler, `ggml-backend.cpp:1946`:
+
+> «when offloading MoE weights, we can reduce the amount of data copied by
+> copying only the experts that are used»
+
+Copia **un esperto per volta**, e l'host ci sta dentro 82 us di media. Ci sono
+**due trasporti in concorrenza**, e quello di ggml fa 156 volte i lanci del
+nostro — il che spiega perche' nessuna leva sulla cache morde: **i byte non
+passano di li'**.
+
+La condizione che lo accende (`:1948`) e'
+`ggml_backend_buffer_is_host(input->buffer)`, cioe' esattamente cio' che decide
+`LLAMA_MAPPED_IBRIDO` (`ggml-cuda.cu:1439`). Con `IBRIDO=0` il buffer diventa
+CUDA puro e non c'e' niente da copiare al confine.
+
+```
+  IBRIDO=1  ASYNC=1   configurazione adottata          13,96 t/s
+  IBRIDO=1  ASYNC=0   banco nuovo                      12,64
+  IBRIDO=0  ASYNC=1   disastro (212 split, 3.266 ms)       -
+  IBRIDO=0  ASYNC=0   MAI PROVATA
+```
+
+### 8.4 E il moltiplicatore: la bozza paga il pedaggio della residenza
+
+```
+  senza bozza   12,01 t/s  ->  1 token ogni  83,3 ms
+  con bozza     14,26      ->  1,91 token ogni 134 ms
+```
+
+La bozza produce **+91% di token** e il ciclo si allunga del **+61%**: resta
++18,7%. E quel 61% e' residenza — verificare due token non raddoppia il
+calcolo (i pesi sono gli stessi) ma **raddoppia l'insieme da tenere in VRAM**,
+perche' due token consecutivi condividono solo il 36,4% delle route: l'unione e'
+~420 coppie invece di 258.
+
+```
+  se la residenza non costasse: 1,91 token in 83,3 ms = 22,9 t/s
+```
+
+**La residenza non e' un fronte fra i tanti: e' il moltiplicatore di tutti gli
+altri.** Ogni leva che aggiunge token per ciclo paga quel pedaggio, e il pedaggio
+cresce col batch. E' anche il motivo per cui `n-max 1` e' rimasto: a 2 o 3
+servirebbero 700-900 coppie contro 512 slot.
+
+### 8.5 La lane CPU si e' svuotata mentre il resto migliorava
+
+Dai 349 log storici (`residenza.csv`), il migliore per giorno:
+
+```
+  08/08  10,74 t/s   |  drafter ON 10,74  OFF 10,44   (la bozza valeva +2,9%)
+  08/09  12,83       |
+  08/10  13,73       |  ON 13,73  OFF 11,89          (+15,5%)
+  08/11  14,26       |  ON 14,26  OFF 12,01          (+18,7%)
+```
+
+Il drafter era **gia' acceso l'8/8**: non l'abbiamo acceso, l'abbiamo fatto
+funzionare (TOPK=1 il 9/8, fusione HC il 10/8). Le due leve si sono mosse in
+direzioni opposte: la lane CPU dalla SOTA di allora a **+10,4%** oggi, la
+speculazione da +2,9% a **+18,7%**.
+
+(Sono «il migliore del giorno» su configurazioni eterogenee: indicano la
+direzione, non la misurano. I due numeri controllati di oggi sono lane +10,4% e
+speculazione +18,7%.)

@@ -290,3 +290,101 @@ motore di copia ci stanno con tre volte il margine.
 E `runtime->stream_pf`, lo stream di prefetch, **viene creato all'avvio**
 (`cache-esperti.cu:1535`) e in questa configurazione trasporta zero. Il canale
 e' gia' aperto e inutilizzato.
+
+## 4. IL MANDATO «ANTICIPO» E' FALSIFICATO — e non dove pensavo
+
+Quattro ore dopo averlo scritto. Tre esperimenti, in ordine di costo crescente.
+
+### 4.1 Accendere il prefetch: il ciclo raddoppia
+
+```
+  braccio    t/s     ciclo     colpi    byte CALCOLO / PREFETCH
+  g_rif     14,24   130,6 ms   53,3%     549,52 GiB /    0,00 GiB
+  w2         6,03   300,2      55,1%          -    /      -
+  w4         4,68   393,2      49,8%     715,06    / 3081,44
+```
+
+Il canale funziona: 3.081 GiB si sono davvero mossi sul motore di copia. Ma il
+prefetch cieco trasporta **5,6 volte i byte** e ne scarta 386.100, e satura:
+3.796 GiB in 256 s sono 14,8 GiB/s. Saturandolo rallenta anche il traffico a
+domanda, che infatti SALE da 549 a 715 GiB.
+
+### 4.2 Il tetto con la pianificazione ESATTA: identico al cieco
+
+Catena in tre passi (`oracolo_1_rif` -> `oracolo_2_pista` -> `oracolo_3_tetto`),
+tutta a speculazione spenta, perche' l'oracolo avanza una riga per PASSO di
+decode (`llama-context.cpp:2057`, solo con `n_tokens == 1`) e con la bozza ogni
+passo porta due token: l'indice sfaserebbe per costruzione.
+
+```
+  o_w0    prefetch spento              11,89 t/s   84,1 ms   colpi 52,7%    555 GiB
+  o_w2    prefetch, previsione CIECA     5,89     169,8       55,8%       2.048 GiB
+  o_ora   prefetch, previsione ESATTA    5,97     167,5       57,0%       1.984 GiB
+  o_w0b   controllo di deriva           11,86      84,3       53,3%         505 GiB
+```
+
+I due bracci a prefetch spento danno lo **stesso SHA `10EDB3A9C39B`** e deriva
+0,25%: la base non si muove, e il raddoppio del ciclo non e' rumore.
+
+**L'oracolo vale +1,2 punti di colpi e +1,4% di velocita' sul cieco.** Sapere
+tutto in anticipo, token per token e strato per strato, non cambia niente.
+
+E il numero che spiega perche': con la previsione perfetta il prefetch muove
+**1.984 GiB contro i 2.048 del cieco, il 3% in meno**. Se il collo fosse la
+precisione, l'oracolo trasporterebbe solo i mancanti (~970 GiB). Ne muove il
+doppio: con `W=2` ogni strato viene predetto da due punti di vista, quindi
+**ogni esperto viene trasportato due volte**.
+
+**Il costo e' del MECCANISMO, non della previsione.** E la banda lo conferma:
+
+```
+  a domanda, W=0        554,93 GiB in 101 s  =  5,5 GiB/s
+  oracolo,   W=2       1.984,18 GiB in 201 s  =  9,9 GiB/s
+  letto mappato, misurato                       18,4 GiB/s
+  DMA, misurato                                 24,4 GiB/s
+```
+
+Non siamo vicini al limite di banda in nessuno dei due casi. Il trasporto un
+pezzo per volta e' **orchestration-bound** ([[orchestration-bound-not-byte-bound]]),
+e l'aritmetica del mandato («469 MiB/token a 24,4 GiB/s stanno in 36,5 ms»)
+usava una banda che su questo cammino non abbiamo mai visto.
+
+### 4.3 E dove sono invece i punti: nello SFRATTO
+
+Simulazione sulla traccia vera, nessuna GPU (`docs/porto/simula_sfratto.py`):
+1.268 token x 43 strati x 6 id = 327.144 accessi, 9.164 coppie distinte, di cui
+il 2,8% sono miss obbligatorie.
+
+```
+  capienza     LRU     "sfratta il consumato"     BELADY (ottimo)
+    339      40,3%            12,6%                  63,4%      +23,1
+    448      47,5%            14,8%                  68,3%      +20,8
+    512      50,8%            16,1%                  70,5%      +19,7
+```
+
+**Ventitre punti di colpi sul tavolo a parita' di capienza**, solo cambiando chi
+si butta. Nessuna politica puo' superare Belady: e' il tetto, non una proposta.
+
+E una mia idea falsificata nella stessa corsa. Avevo scritto all'utente che
+l'esperto appena usato e' «il candidato allo sfratto perfetto», perche' non
+serve piu' per 43 strati. Sui dati veri e' **il peggiore possibile**: 12,6%
+contro 40,3%. Il motivo e' aritmetico e me l'ero perso: 43 strati sono 258
+accessi, **esattamente un token** — e la cache ne tiene 339. Non e' lontano, e'
+vicino. Buttandolo subito si distrugge proprio il 36,4% che sopravvive da un
+token all'altro.
+
+### 4.4 Cosa resta
+
+Due strade, entrambe indicate dall'utente e coerenti con tutto il misurato:
+
+1. **Trasporto IN BLOCCO** (idea dell'utente): un evento per token invece di
+   43xW. E' l'unica leva che attacca il costo per-operazione, che e' il collo
+   dimostrato. Il cammino esiste gia' spento: `LLAMA_VRAM_A_FASI_CALDO` con
+   `kern_ricarica` (`cache-esperti.cu:812`), che dichiara 2.289 MiB a
+   ~18,4 GiB/s = 124 ms prevedibili invece di 339 buchi sparsi. **Quel 18,4 e'
+   la banda del letto mappato, non una misura di quel cammino**: e' la prima
+   cosa da mettere sul banco.
+2. **La conoscenza serve allo SFRATTO, non al prefetch.** L'oracolo sa quali
+   coppie il token corrente deve ancora usare; la leva `LLAMA_CACHE_ESPERTI_CURA`
+   («lo sfratto deve conoscere la previsione») esiste dal 27/7 e non e' mai
+   stata composta con l'oracolo.

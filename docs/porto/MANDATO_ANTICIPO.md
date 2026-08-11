@@ -1,5 +1,25 @@
 # MANDATO — l'anticipo di uno strato
 
+> ## ⛔ FALSIFICATO l'11/8, quattro ore dopo essere stato scritto.
+>
+> Misurato: con la pianificazione **esatta** il prefetch fa 5,97 t/s contro i
+> 5,89 di quella **cieca**, e i 11,89 a prefetch spento. La previsione non e'
+> il collo — **il costo e' del meccanismo**. Con la previsione perfetta si
+> muovono 1.984 GiB contro i 2.048 del cieco: il 3% in meno, dove ci si
+> aspetterebbe la meta'.
+>
+> E l'aritmetica qui sotto usa una banda mai vista su questo cammino: a domanda
+> il trasporto viaggia a **5,5 GiB/s**, col prefetch a 9,9, contro i 24,4 del
+> DMA che avevo assunto. E' orchestration-bound.
+>
+> **Dove sono i punti**: nello SFRATTO. Belady sulla traccia vera fa 63,4%
+> contro il 40,3% della LRU a 339 slot — **+23 punti a parita' di capienza**.
+> E il trasporto **in blocco** (un evento per token invece di 43xW) e' l'unica
+> leva che attacca il costo per-operazione.
+>
+> Dettaglio completo in `LEDGER_11_AGOSTO.md` §4. Il testo che segue resta come
+> registro di cosa si pensava e su quali numeri, non come indicazione.
+
 ## La tesi, in una riga
 
 Il trasporto non e' caro: e' **in ritardo**. Pagarlo un solo strato prima, sul

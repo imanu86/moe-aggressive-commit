@@ -863,3 +863,55 @@ Ha un cancello suo, e va aperto a mano o si misura il cancello:
 Su questo banco i colpi stanno a 46,7%: resterebbe in `BASELINE` e non passerebbe
 mai a `PROVA` (`:2294-2303`). Braccio `dmastrato.ps1` con
 `LLAMA_CACHE_ESPERTI_DMA_HIT_PM=0`.
+
+### 10.4 Il piano DMA e' sempre STANTIO: zero chunk consegnati su settemila
+
+```
+  braccio  W  oracolo   colpi   a domanda  prefetch   t/s     ciclo   chunk
+  sc_rif   0  spento    46,7%    414,38      0,00    11,22   89,1     --
+  d_w1     1  ACCESO    46,7%    414,52     14,81    11,13   89,8      0  (scartati 6.738)
+  d_w2     2  ACCESO    46,4%    361,42     15,74    11,04   90,6      0  (scartati 7.158)
+  d_w2c    2  spento    46,6%    412,95     15,50    11,06   90,4      0  (scartati 7.050)
+```
+
+Il braccio cieco (`d_w2c`) e' indistinguibile da quello con la pista esatta: e'
+la controprova che la previsione non c'entra.
+
+Il cancello (1) passa — il prefetch muove byte — ma il contatore che conta dice
+che **il cammino DMA non ha consegnato un solo chunk**, in nessun braccio, e ne
+ha scartati settemila. I 14-16 GiB in corsia di prefetch sono del `kern_copia`
+normale su `stream_pf`, non del DMA.
+
+Il motivo e' in `cache_dma_servi`: quando la route VERA arriva prima che il piano
+sia esaurito, il resto del piano si butta come stantio.
+
+```c
+    if (vera && !finita) {
+        runtime->dma_chunk_scartati +=
+                (uint64_t) (runtime->dma_batch_n - runtime->dma_batch_i) * 3 - runtime->dma_batch_q;
+    }
+```
+
+**Non e' la previsione a sbagliare** — l'oracolo e' esatto per costruzione — **e'
+il piano che arriva dopo il fatto.** Il cancello del DMA se ne accorge da solo e
+resta in `PROVA` senza mai ammettere, perche' `chunk_prova == 0` lo marca inerte
+(`:2310`).
+
+E' il terzo no-op silenzioso della giornata, e i tre insieme dicono una cosa
+sola: **la catena del prefetch e' fatta di pezzi che non si toccano.** `CURA`
+classifica in un ramo mai raggiunto, `SCUDO` protegge senza portare, `DMA` pianifica
+senza consegnare. Nessuno dei tre e' rotto per conto suo; e' la composizione che
+non esiste.
+
+### 10.5 Cosa si e' sistemato
+
+Tre avvisi in `cache-esperti.cu`, sullo stesso modello di quello che
+`SFRATTO_PAR` stampa gia' quando la LRU pura non c'e' — una leva che non fa
+niente deve DIRLO ([[strumenti-che-mentono-in-silenzio]]):
+
+- `CURA` con `lru=1` o `massa=1`: «e' INERTE, `cache_vittima()` esce nel ramo
+  precedente»;
+- `SCUDO` senza `DMA`: «protezione SOLA, `kern_prenota` non prenota: il prefetch
+  muovera' 0 byte»;
+- cancello `DMA` con `hit_pm > 0`: «sotto quella percentuale di colpi non ammette
+  MAI, abbassarlo per misurare la leva invece del cancello».

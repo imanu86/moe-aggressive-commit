@@ -100,3 +100,137 @@ ripasso quella sequenza in **un prefill** sotto `llama-eval-callback`.
 Caveat onesto: prefill e decode girano a batch diverso e l'aritmetica GPU non
 e' identica al bit, quindi qualche scelta top-6 al limite puo' cambiare. Su un
 CONTEGGIO DI DISTINTI e' rumore, non un errore sistematico.
+
+Tre inciampi lungo la strada, tutti e tre nostri:
+
+- `-b 512` con una sequenza da 7.268 token: `eval-callback` fa **una sola**
+  `llama_decode`, quindi `GGML_ASSERT(n_tokens_all <= cparams.n_batch)`.
+  `-ub` spezza, `-b` no.
+- il template DeepSeek chiude con `<｜Assistant｜><think>` e l'uscita grezza e'
+  `ragionamento</think>risposta`. Il server le restituisce separate, e
+  riconcatenarle senza il tag perde un token e sfasa tutte le posizioni.
+- `--no-warmup` non e' un argomento di `eval-callback` (lo spegne da se').
+
+### 1.4 IL COSTO DEL CALLBACK ERA UNA RIGA
+
+Il dump girava a **16 file ogni due minuti**: quattro ore per una corsa. La
+causa e' in `common/debug.cpp`:
+
+```c
+    if (ask) {
+        return true;  // Always retrieve data
+    }
+```
+
+«true» a `ask` non e' gratis: lo scheduler **spezza il grafo su quel nodo** e ne
+copia l'uscita su host. Dirlo per ogni nodo significa una barriera per nodo — e
+il nostro grafo ne ha ~10.500 per ubatch, di cui ne volevamo 129.
+
+Corretto: col dump acceso, `ask` risponde di si' solo per cio' che verra'
+scritto. Senza `LLAMA_DEBUG_DUMP` il comportamento resta quello di prima.
+
+## 2. MASSA = PESO x FREQUENZA, e l'intervallo cambia la domanda
+
+Precisazione dell'utente: **massa = peso × frequenza in un dato intervallo**.
+Il conteggio delle bussate da solo non e' massa.
+
+Nota sul nostro codice: `LLAMA_CACHE_ESPERTI_MASSA` non implementa questa
+definizione. `c.massa[indice]` e' il contatore delle bussate (`+= 1` a ogni
+domanda, `cache-esperti.cu:2400`) con dimezzamento nella scansione di sfratto
+(`:1719`). E' frequenza con decadimento, **senza il peso**. La leva si chiama
+massa ma pesa solo le volte.
+
+Il peso vero e' `ffn_moe_weights` (`llama-graph.cpp:2149`). Su questo modello
+non compaiono `_norm` ne' `_scaled` nel dump, quindi e' la probabilita' grezza
+del router per gli esperti scelti.
+
+E l'intervallo e' il punto. Su UN token servono 43x6 = **258** coppie
+(strato, esperto): **meno dei 448 slot che teniamo**. Il problema non e' la
+capienza di un token — e' quanto in fretta l'insieme RUOTA. Strumento:
+`docs/porto/massa_finestre.py`, che per ogni ampiezza W misura i distinti nella
+finestra, il tetto dell'oracolo sulla finestra, e la politica implementabile
+(migliori K dei W token precedenti, giudicata sul token dopo).
+
+### 2.1 La misura, su neuraforge (7.267 posizioni, K = 448 slot)
+
+```
+   W   distinti   /258W    ORACOLO sulla finestra    PREDITTIVO sul token dopo
+                          massa      domande         massa      domande
+   1       258   100,0%      100,0%      100,0%         43,5%      36,4%
+   2       420    81,4%       99,5%       98,9%         53,5%      46,2%
+   3       557    72,0%       92,5%       85,9%         55,2%      47,1%
+   5       795    61,7%       82,6%       72,8%         55,6%      46,9%
+  10     1.278    49,6%       73,3%       63,5%         54,9%      46,3%
+  20     1.986    38,5%       66,8%       57,0%         55,6%      46,6%
+  50     3.284    25,5%       61,2%       51,6%         54,7%      45,7%
+ 100     4.492    17,4%       58,2%       48,6%         53,8%      44,5%
+1000     8.422     3,3%       51,0%       41,9%         48,0%      38,9%
+```
+
+**Tre cose, e la terza ribalta il quadro.**
+
+**(1) La rotazione da token a token e' del 64%.** Tenendo esattamente le 258
+coppie del token precedente, del token dopo se ne indovina il **36,4%**. Due
+token consecutivi condividono poco piu' di un terzo del loro instradamento.
+
+**(2) La massa pesa piu' delle volte, ma di poco.** Il PREDITTIVO in massa sta
+sempre 8-9 punti sopra quello in domande (55,6% contro 46,9% a W=5): gli
+esperti che restano caldi sono anche quelli col peso piu' grosso. Non e'
+niente, ma non e' il fattore due che servirebbe.
+
+**(3) IL PREDITTIVO NON DIPENDE DALLA FINESTRA.** Da W=2 a W=100 sta fra 44,5%
+e 47,1%: **due punti e mezzo su un fattore cinquanta di ampiezza**. Il massimo
+e' a W=3 e vale 47,1%. Guardare piu' indietro non aiuta, e guardare meno
+indietro nemmeno. Non c'e' una finestra giusta da trovare: la storia recente
+contiene circa la stessa informazione qualunque sia la sua lunghezza, e non
+basta.
+
+E l'oracolo dice perche': a W=1 copre il **100%** (258 domande in 448 slot,
+ci stanno tutte), a W=3 gia' l'85,9%, a W=10 il 63,5%. **L'unica cosa che
+sposta il numero e' il FUTURO, non il passato.** Con un token di anticipo la
+cache e' gia' abbastanza grande cosi' com'e'.
+
+## 3. IL COSTO NON E' IL TRASPORTO, E' QUANDO LO PAGHI
+
+Correzione dell'utente, e ha ragione. Avevo scritto che portare un esperto in
+VRAM (~0,20 ms) costa quanto calcolarlo su CPU (0,242 ms), e quindi che
+spostare il lavoro non serve. Il paragone e' sbagliato: **quei due numeri non
+stanno sullo stesso orologio**.
+
+I 0,20 ms del trasporto oggi si pagano *a domanda*, dentro `kern_copia`, che
+gira **sugli SM e sullo stream di calcolo** — mentre copia, la GPU non calcola.
+Anticipati sul motore di copia si pagano in parallelo, e non esistono.
+
+L'aritmetica, tutta misurata:
+
+```
+  mancanti per token          164        (258 domande, 36,4% gia' residenti)
+  per strato                    3,8      -> 25,7 MiB
+  tempo di uno strato           1,78 ms  (ciclo 145 ms / 1,9 token / 43 strati)
+  banda necessaria             14,4 GiB/s
+  banda DMA misurata           24,4 GiB/s    <- ci sta, 40% di margine
+```
+
+E il premio e' la voce piu' grossa del profilo Nsight: i **34 ms** di
+`kern_copia` per ciclo escono dal percorso critico.
+
+```
+  145 ms -> 111 ms per ciclo   =   13,2 -> 17,1 t/s
+```
+
+### 3.1 Perche' non l'abbiamo gia': il prefetch predice dal PASSATO
+
+Il prefetch fra token e' gia' stato provato e vale 41,8% di sovrapposizione —
+ed e' esattamente il numero che questa tabella spiega: predire dal token
+precedente **non puo'** fare meglio del 36-47%, qualunque finestra si usi.
+
+Il pezzo che serve esiste, e' misurato, e non e' mai stato collegato al
+prefetch: il **predittore di route** ([[predittore-route-gate-strato-dopo]]),
+cioe' il gate dello strato L+1 applicato allo stato nascosto di L. Fa **71% da
+solo e 90,2% con la recency**, allo 0,2% del calcolo. E' anticipo di **un solo
+strato**, che e' quanto basta: servono 1,78 ms di finestra e il trasporto ne
+chiede 1,05.
+
+**Il cantiere e': predittore di route -> coda DMA a uno strato di anticipo.**
+Non e' una leva nuova, e' una composizione di due cose gia' in casa e mai
+messe insieme.

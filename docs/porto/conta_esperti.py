@@ -173,6 +173,17 @@ print('  se fossero tutti residenti: %s MiB' % p(distinti * MIB))
 print('  domande totali            : %s' % p(domande))
 print('=' * 70)
 
+# --- LA CRESCITA: quanto in fretta satura. Se a 2.000 posizioni ha gia'
+# toccato quasi tutto, generare fino a 8k non allarga il problema: lo conferma.
+print()
+print('  quanti distinti dopo le prime N posizioni:')
+tappe = [t for t in (100, 250, 500, 1000, 2000, 4000, 6000, n_tok) if t <= n_tok]
+for t in sorted(set(tappe)):
+    d = sum(len(np.unique(tracce[L][:t])) for L in strati)
+    print('     %6s posizioni -> %6s distinti  (%.1f%% del possibile, %.1f%% del finale)'
+          % (format(t, ',d').replace(',', '.'), format(d, ',d').replace(',', '.'),
+             100.0 * d / (len(strati) * N_EXP), 100.0 * d / max(1, sum(len(v) for v in visti.values()))))
+
 n_per_strato = np.array([len(visti[L]) for L in strati])
 print()
 print('  per strato, quanti dei %d vengono chiamati:' % N_EXP)
@@ -194,6 +205,19 @@ for q in (0.50, 0.70, 0.80, 0.90, 0.95, 0.99, 1.00):
     k = int(np.searchsorted(cum, q * domande) + 1)
     print('     %3d%% <- i %6s piu\' chiamati   (%s MiB)' % (q * 100, p(k), p(k * MIB)))
 print('     riferimenti: 339 slot = 2.288 MiB | 448 = 3.024 | 512 = 3.456')
+
+# --- E LA DIREZIONE CHE SERVE DAVVERO: dato K, quanto copre il MIGLIORE
+# insieme statico possibile. E' un ORACOLO -- sceglie i top-K sapendo gia'
+# tutta la corsa -- quindi e' un TETTO SUPERIORE, non una proposta. Nessuna
+# politica reap-loop puo' fare meglio di questa riga a parita' di capienza.
+print()
+print('  === TETTO DELL\'INSIEME STATICO: dato K, quante domande copre ===')
+print('     (oracolo: sceglie i top-K conoscendo gia\' tutta la corsa)')
+for k in (339, 448, 512, 768, 1024, 2048):
+    if k <= len(cum):
+        print('     K=%5s slot (%5s MiB) -> %5.1f%% delle domande'
+              % (p(k), p(k * MIB), 100.0 * cum[k - 1] / domande))
+print('     confronto: la LRU DINAMICA misura 53,6%% a 339 | 59,4%% a 448 | 63,8%% a 480')
 
 # --- e la coda: quanto pesa cio' che si chiama una volta sola --------------
 usati = freq[freq > 0]

@@ -695,3 +695,97 @@ speculazione da +2,9% a **+18,7%**.
 (Sono «il migliore del giorno» su configurazioni eterogenee: indicano la
 direzione, non la misurano. I due numeri controllati di oggi sono lane +10,4% e
 speculazione +18,7%.)
+
+## 9. LA CAPIENZA CON LA LANE ACCESA: col p1 controllato, il verdetto e' netto
+
+Rifatta la curva del 10/8 sul binario di oggi, lane accesa (`ASYNC=1, K=2`),
+1.200 token per braccio (`sota_slot.ps1`):
+
+```
+  slot   t/s     ciclo    p1        colpi    a domanda
+  339   14,20   131,0    0,86470   53,7%    499,11 GiB   <- riproduce il riferimento
+  448   13,96   129,7    0,80845   59,1%    491,76
+  512   14,06   132,3    0,86025   61,6%    456,59
+```
+
+**CORREZIONE A UNA CONCLUSIONE CHE AVEVO DATO SU DUE PUNTI.** Coi soli 339 e
+448 avevo scritto che «la capienza paga sul trasporto e la bozza si riprende il
+guadagno», perche' il p1 cadeva da 0,86470 a 0,80845 mentre il ciclo migliorava.
+Col terzo punto la storia non regge: a 512 il p1 **torna** a 0,86025 — pari a
+quello di 339 — e il t/s resta 14,06.
+
+Il verdetto col p1 controllato:
+
+```
+  colpi        53,7%  ->  61,6%     +7,9 punti
+  trasportato  499,11 ->  456,59    -42,5 GiB  (-8,5%)
+  ciclo        131,0  ->  132,3     PEGGIORA
+```
+
+Otto punti di colpi e quarantadue GiB in meno non comprano niente, **e il ciclo
+peggiora**. E' la sesta conferma di [[orchestration-bound-not-byte-bound]], ed
+e' la piu' pulita: stavolta il p1 non e' un confondimento, e' appaiato.
+
+I due valori di p1 sono identici a quelli misurati il 10/8 su un altro binario:
+la retroazione residenza -> arrotondamenti -> accordo bozza-bersaglio e'
+deterministica e riproducibile ([[retroazione-stato-bersaglio-drafter]]).
+
+## 10. `CURA` E' IRRAGGIUNGIBILE: la leva si chiama `SCUDO`
+
+Domanda dell'utente: *«il sospetto tecnico e' a portata: `CURA=0` in tutti i
+bracci. La cura e' proprio il meccanismo che rende lo sfratto consapevole della
+previsione — senza, il prefetch installa e la LRU butta alla cieca. Su questo
+non lavori?»*
+
+La diagnosi e' giusta. **Il nome della leva no**, e si legge nel codice senza
+accendere niente. `cache_vittima()` in `cache-esperti.cu` prova i rami in
+quest'ordine, e ognuno esce con `return`:
+
+```
+  1747   if (c.politica_massa)            -> return
+  1786   if (c.lru)                       -> return   <- protegge SOLO se (scudo||dma)
+  1834   if (c.cura || c.scudo || c.dma)  -> return   <- il blocco a 5 classi
+  1902   fallback clock
+```
+
+Tutti i bracci della campagna — **e la configurazione adottata in produzione** —
+girano con `LLAMA_CACHE_ESPERTI_LRU=1`. Il ramo `lru` esce a riga 1831 e **il
+blocco `cura` non viene mai raggiunto**.
+
+`CURA=1` con LRU acceso marca e nient'altro: la marcatura di `predetto[]`
+richiede `cura || scudo || dma` (`:2077`), ma per la scelta della vittima quel
+flag lo legge solo un'altra riga, la 1806 nel ramo LRU:
+
+```c
+    if ((c.scudo || c.dma) && c.predetto[slot]) { ... vittima_protetta ... continue; }
+```
+
+**La leva e' `SCUDO`.** E lo sfratto parallelo la implementa gia' — `:2003`,
+`chiave = (2ull << 62) | ultimo[slot]`, la classe «protetto» che perde contro
+tutto:
+
+```c
+        if (!residente)                                  chiave = 0ull;               // (a)
+        else if ((c.scudo || c.dma) && c.predetto[slot]) chiave = (2ull<<62)|ultimo;  // (c)
+        else                                             chiave = (1ull<<62)|ultimo;  // (b)
+```
+
+Il che ritira una preoccupazione che avevo dato per buona un'ora prima:
+`decidi_fili` (`:2762`) condiziona su `sfratto_par && lru && !politica_massa` e
+non guarda `scudo`. **Con lo scudo acceso lo sfratto resta parallelo**: non si
+paga nessuna scansione sequenziale, non c'e' nessun compromesso.
+
+Ecco perche' il prefetch col piano esatto perde 15 punti muovendo 3,7x i byte
+(`601 + 825 = 1.427 GiB` contro `382`, colpi `46,3% -> 31,5%`): **installa, e
+la LRU butta alla cieca cio' che e' appena arrivato, perche' nulla lo protegge.**
+
+Braccio `scudo.ps1`, cancello dichiarato prima dei numeri: **i colpi devono
+smettere di scendere**. Se tornano >= 46,3% la diagnosi del thrashing regge e il
+prefetch ha un indirizzo; se restano ~31% il prefetch e' chiuso su entrambi i
+banchi. Rischio detto prima: a `W=2` sono ~516 previsioni contro 512 slot —
+proteggere tutto equivale a non proteggere niente, quindi c'e' anche `W=1`.
+
+**REGOLA: una leva «esiste» solo se il ramo che la legge e' raggiungibile nella
+configurazione in cui gira.** `CURA` era a registro come implementata e chiusa
+dal 27/7 ([[reap-loop-concept-conditional-dynamic]], task #3): lo era davvero,
+ma sotto `LRU=0`, che non usiamo da nessuna parte.

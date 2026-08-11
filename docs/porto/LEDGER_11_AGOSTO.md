@@ -915,3 +915,119 @@ niente deve DIRLO ([[strumenti-che-mentono-in-silenzio]]):
   muovera' 0 byte»;
 - cancello `DMA` con `hit_pm > 0`: «sotto quella percentuale di colpi non ammette
   MAI, abbassarlo per misurare la leva invece del cancello».
+
+## 11. LA GPU NON ASPETTA: E' SATURA AL 97,3%, E IL 41% E' `kern_copia`
+
+Domanda dell'utente: *«quei 28 ms indagati»*.
+
+### 11.1 Due strumenti che hanno mentito prima di dare il numero
+
+**(a) `nsys --delay` scrive un rapporto VUOTO senza dirlo.** Con
+`--delay=170 --duration=100` il rapporto pesa 0,3 MB e le tre `nsys stats`
+rispondono «does not contain CUDA kernel data». Nessun errore, nessun codice di
+uscita diverso da zero. La mia somma ha stampato `0 ms = 0% della finestra` —
+che letto di fretta e' «la GPU e' completamente ferma», cioe' **il verdetto
+opposto a quello vero, a costo zero**. Lo script che funzionava non usava
+`--delay`: la comodita' l'avevo aggiunta io.
+
+**(b) nsys NON riporta i kernel dentro i grafi CUDA, di difetto.** Senza
+`--delay` i dati ci sono (10,8 MB) ma i conteggi non tornano: 172 istanze di
+`mul_mat_vec_q_moe` su 43 strati sono **quattro** token, non cinquecento. La
+spia e' in `cuda_api_sum`: `cudaGraphLaunch_v10000` con **1.984 chiamate**. Il
+decode gira dentro grafi CUDA e `--cuda-graph-trace=graph` (il difetto) traccia
+il grafo come un blocco unico. Quello che si vede nella tabella per-kernel e'
+solo il FUORI-grafo, cioe' in pratica il prefill.
+
+**Conseguenza su un verdetto gia' a registro:** le percentuali per-kernel di
+§8.3 (`kern_copia 20%`, `mul_mat_q<16,64> 30%`) sono percentuali del fuori-grafo,
+non del token, e vanno ritirate. Regge invece l'altra meta' di §8.3, che veniva
+da `cuda_api_sum` e non dai kernel: le 221.963 `cudaMemcpyAsync` del fallback
+dello scheduler e la loro attribuzione a `ggml-backend.cpp:1946` — quella conta
+chiamate dell'host, che i grafi non nascondono.
+
+Terzo strumento, terza bugia silenziosa della giornata, dopo `CURA` e `SCUDO`.
+
+### 11.2 Il numero, con `--cuda-graph-trace=node`
+
+Banco `sc_rif`: spec OFF, `ASYNC=0`, `IBRIDO=0`, 512 slot, 500 token cronometrati
+dentro la cattura (`nsight_banco3.ps1`).
+
+```
+  kernel   46.018,3 ms        copie 1.408,3 ms        somma 47.426,6 ms
+  parete   48.700 ms   (500 token, 97,5 ms/token; senza sonda 89,1)
+  ---------------------------------------------------------------
+  OCCUPAZIONE DELLA GPU   97,3%
+```
+
+**La GPU non aspetta: e' satura.** I 71,0 ms di `sync` per grafo del
+`sched-profilo` sono l'HOST bloccato mentre il DEVICE lavora — e con la lane CPU
+spenta l'host non ha altro da fare per costruzione. Host bloccato non e' GPU
+ferma, ed e' il caveat scritto in testa allo script prima di guardare.
+
+### 11.3 Dentro la saturazione: `kern_copia` e' il 41%
+
+```
+  kernel                    ms/token   quota   istanze/token
+  kern_copia                  37,87    41,0%      129,8      <- 3,0 per strato
+  mul_mat_vec_q<8,1>          20,15    21,0%      302
+  mul_mat_vec_q<16,1>          6,83     7,0%       86
+  mul_mat_vec_q<10,1>          4,78     5,0%       43
+  mul_mat_vec_f<half,256>      4,08     4,0%      253
+  kern_decidi                  1,69     1,0%      129,8
+  flash_attn_ext_f16           1,28     1,0%       43
+  mul_mat_vec_q<8,1,true>      1,22     1,0%       43
+  k_bin_bcast add + mul        1,69     0,0%    1.300
+  (mul_mat_q<16,64> e <10,64>: 2.052 ms in tutto, sono il PREFILL)
+```
+
+**`kern_copia` — il trasporto della nostra cache — e' 37,87 ms per token, il 41%
+di una GPU satura, e gira sullo stream di calcolo.**
+
+E la sua velocita' chiude il cerchio col microbench:
+
+```
+  707 MiB/token in 37,87 ms  =  18,2 GiB/s
+  letto mappato, microbench  =  18,4 GiB/s     <- coincide
+  DMA contiguo, microbench   =  24,4 GiB/s
+```
+
+**Il trasporto non e' inefficiente: sta girando al suo tetto**, che e' la lettura
+da RAM host via PCIe. Non c'e' niente da ottimizzare *dentro* `kern_copia`.
+
+Le copie vere (`cudaMemcpy`) sono 2,82 ms/token e 15,6 MiB/token: rumore. Con
+`IBRIDO=0` il fallback per-esperto dello scheduler non c'e' piu', come previsto
+in §8.3 — e questa e' la conferma dal lato opposto che le 221.963 copie
+dell'altro banco erano davvero sue.
+
+### 11.4 Il modello di costo di questo banco, e cosa ne segue
+
+```
+  token = calcolo (54,2 ms)  +  trasporto (37,9 ms)     IN SERIE, stesso stream
+```
+
+Tre cose cambiano:
+
+**(1) Spiega perche' QUI la capienza paga e sull'altro banco no.** 339→512 dava
+9,93→12,64 t/s (+27%): meno mancanti significa meno `kern_copia`, cioe' meno
+tempo GPU, *direttamente*. Non e' un effetto di secondo ordine sui colpi.
+
+**(2) Qualifica [[orchestration-bound-not-byte-bound]].** Su questo banco la GPU
+e' satura al 97,3% e il 41% sono byte: **byte-bound, attraverso un kernel**. La
+tesi orchestration-bound e' stata stabilita su banchi con la lane CPU accesa e
+`IBRIDO=1`, dove meta' del lavoro esce dal cammino GPU e il fallback dello
+scheduler emette 277 copie a token. Le due cose non sono in contraddizione: sono
+due regimi diversi, ed e' [[misura-il-regime-non-la-media]].
+
+**(3) Il tetto della leva, misurato invece che stimato.** Se i 37,9 ms uscissero
+dallo stream di calcolo verso il motore di copia (che il microbench da' a
+24,4 GiB/s, cioe' 28,2 ms per 707 MiB):
+
+```
+  token = max(54,2 ; 28,2) = 54,2 ms   ->   18,5 t/s   contro 11,22
+```
+
+E non serve prevedere niente per prendere una parte di quel margine: dentro UNO
+strato la route e' nota tutta insieme, e le tre `kern_copia` (gate/up/down) sono
+indipendenti dal `mul_mat_vec` che le segue di una posizione. E' pipeline
+intra-strato, non anticipo — e l'anticipo e' proprio la cosa che oggi si e'
+falsificata tre volte.

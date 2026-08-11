@@ -1190,9 +1190,14 @@ walker della lane non biforca la terna.
 ciclo`, i token accettati in meno mangiano tutto e altro.
 
 E' [[retroazione-stato-bersaglio-drafter]] nella sua forma piu' pulita mai vista:
-il fork **non e' bit-esatto per costruzione** — spezza il matmul esperti in due
-passate e cambia l'ordine di somma — e cambiare come il bersaglio ricostruisce il
-suo stato degrada la bozza.
+il fork **non e' bit-esatto**, e cambiare come il bersaglio ricostruisce il suo
+stato degrada la bozza.
+
+> **CORREZIONE (§12.7): il PERCHE' non e' bit-esatto non e' quello scritto qui.**
+> Avevo detto «spezza il matmul in due passate e cambia l'ordine di somma». E'
+> falso: in `MUL_MAT_ID` ogni elemento d'uscita e' il prodotto scalare di UN solo
+> esperto, e la somma *sugli* esperti sta a valle, dopo lo swiglu. Non c'e'
+> nessuna somma spezzata. La causa vera e' la **scelta del kernel a un token**.
 
 **ERRORE MIO, e sta nella forma della previsione.** Avevo scritto la non-esattezza
 in `ATLANTE_LEVE.md` due passi prima, e poi ho dichiarato l'attesa in `t/s` su un
@@ -1261,3 +1266,113 @@ dentro la cattura dei grafi).
 diamo.** «Portare la copia su un altro stream» e «portarla sul motore di copia»
 sono due frasi diverse in italiano e due pezzi di hardware diversi; le ho trattate
 come sinonime per tre ore.
+
+## 13. `FORK_BLOCCHI`: il massimo sta in BASSO, e la sonda misura la cosa sbagliata
+
+`LLAMA_CACHE_ESPERTI_FORK_BLOCCHI` e' fra le leve che `ATLANTE_LEVE.md` §2a
+elenca come «mai toccate da nessuno script»: 160 script, difetto 32, mai spostata.
+`kern_copia` (quello sul flusso di calcolo) ne usa 112 (`blocchi_copia()` =
+4 x 28 SM). Il commento a `cache-esperti.cu:3085` dichiara il compromesso: «per
+saturare il PCIe bastano ~25-50 KiB in volo (~10 blocchi), il resto degli SM resta
+alla MMVQ concorrente».
+
+Banco `sc_rif`, `FORK=2`, 600 token. **Stesso SHA su tutti e quattro i bracci**,
+quindi il confronto e' pulito:
+
+```
+  blocchi   t/s     ciclo    copertura    SHA
+     8     12,38   80,8      5,1%  (!)   0EFF1EBB450C
+    32     11,83   84,5     99,3%        0EFF1EBB450C   <- il difetto
+    64     11,86   84,3     99,5%        0EFF1EBB450C
+   112     11,91   84,0     91,4%        0EFF1EBB450C
+```
+
+**Meno il fork copre, piu' va veloce.** Con 8 blocchi, al momento del join la
+copia non e' finita nel 94,9% dei casi — il join aspetta — e il token e' comunque
+3,5 ms piu' corto di quelli che coprono il 99%.
+
+Due conseguenze.
+
+**(1) La diagnosi di §12.6 e' confermata e rafforzata.** `kern_fj_copia` non costa
+perche' e' lento: costa perche' **ruba SM alla MMVQ**. Togliergliene tre quarti
+vale piu' di tutta la copertura che ci compra. E la grandezza da minimizzare non
+e' il tempo del trasporto ne' la sua banda: e' **quanto calcolo gli si toglie**.
+
+```
+  ieri        il trasporto e' lento        -> falsificato: va a 18,2 GiB/s, al tetto
+  stamattina  il trasporto e' in serie     -> vero, ma cambiargli stream rende poco
+  adesso      il trasporto RUBA CALCOLO    <- e' questa la grandezza
+```
+
+Il che rende `cudaMemcpyAsync` interessante per un motivo diverso da quello di
+§11.4: non perche' vada a 24 invece che a 18 GiB/s — quello guadagna poco — ma
+perche' **usa zero SM**. Se la grandezza da minimizzare e' l'occupazione degli SM,
+il motore di copia la porta a zero per costruzione.
+
+**(2) La sonda di copertura misura la grandezza SBAGLIATA.** Il disegno del fork
+ottimizza «copie gia' atterrate al join», e su questa curva quella metrica e'
+**anti-correlata con la velocita'**. Quinto strumento della giornata che indica
+nella direzione opposta a quella giusta, dopo `nsys --delay`, i grafi CUDA non
+tracciati, i contatori della bozza e il cancello DMA.
+
+**Nuovo migliore sul banco spoglio: 12,38 t/s contro 11,22 di partenza, +10,3%.**
+Non e' confrontabile con la SOTA adottata (14,17-14,26), che ha bozza e lane.
+
+## 14. CORREZIONE: il fork NON spezza nessuna somma
+
+Il cantiere bit-esatto (§12.5) partiva da una mia diagnosi sbagliata.
+
+**Quel che avevo scritto:** «il fork spezza il matmul esperti in due passate —
+residenti mascherati, poi i mancanti dopo il join — e sommare in ordine diverso
+arrotonda diverso».
+
+**Perche' e' falso:** in `MUL_MAT_ID` ogni elemento di uscita
+`dst[riga, posizione-esperto, token]` e' il prodotto scalare di **UN** esperto; la
+somma *sugli* esperti sta a valle, dopo lo swiglu, in `moe_out`, fuori da queste
+tre `mul_mat_id`. La maschera partiziona per colonna `(posizione, token)`, e ogni
+colonna la calcola per intero **una sola** delle due passate. Accumulatori separati
+«sommati in ordine di indice esperto» non avrebbero avuto niente da sommare.
+
+**La causa vera e' la scelta del kernel a UN TOKEN** (`mmvq.cu:915`,
+`mul_mat_vec_q_switch_ncols_dst`):
+
+```
+  cammino normale, ncols_dst == 1   ->  mul_mat_vec_q<type,1,...> GENERICO
+                                        nwarps per blocco, somme parziali in shared,
+                                        poi warp_reduce_sum
+  cammino MASCHERATO                ->  sempre il kernel MoE
+                                        un warp per colonna, riduzione dentro il warp
+```
+
+Stesso valore matematico, **albero di riduzione diverso**, arrotondamenti diversi.
+`ncols_dst = dst->ne[2]` e' il numero di token del forward, quindi:
+
+- a **batch >= 2** il fork e' **gia' bit-esatto** (entrambi i cammini usano
+  `mul_mat_vec_q_moe`, stessa griglia, `rows_per_block=2`);
+- a **un token** no. E nel braccio con la bozza i forward a un token sono i cicli
+  a bozza azzerata piu' il primo decode: **ne basta uno** per cambiare lo SHA, e da
+  li' il testo diverge e il p1 e' misurato su un'altra continuazione.
+
+Falsificata anche l'ipotesi «diverge il drafter in proprio»: `fork_attivo` richiede
+`!runtime->bozza` (`cache-esperti.cu:3131`), la bozza dal fork non passa.
+
+**E la diagnosi e' falsificabile al primo braccio**, non per bisezione: la patch
+porta un contatore testimone, `fork -> mmid a un token viste=N`. Se **N e' zero**,
+questa spiegazione e' sbagliata e si vede subito.
+
+La cura che ne segue (`LLAMA_CACHE_ESPERTI_FORK_ESATTO`, difetto 0, non ancora
+compilata):
+
+- **`=1`** — i forward a un token **escono dal fork** e ripercorrono il cammino di
+  `FORK=0` riga per riga: bit-esatto per costruzione, zero kernel nuovi. Prezzo:
+  sul banco spoglio (tutto a un token) il +5,5% sparisce del tutto.
+- **`=2`** — clone mascherato del kernel generico (`mmvq.cu:1450-1686`): bit-esatto
+  **e** sovrapposto anche a un token. L'uscita anticipata e' per blocco intero, non
+  per filo, quindi la regola delle barriere e' rispettata nel modo forte
+  ([[barriere-stesso-sito-non-solo-in-pari]]).
+
+Reperto laterale, **pre-esistente e non toccato**:
+`mul_mat_vec_q_moe_maschera` legge `maschera[]` **prima** di `ggml_cuda_pdl_sync()`
+(`mmvq.cu:1367`). Inerte su questa macchina (PDL richiede `__CUDA_ARCH__ >=`
+Hopper; la 3060 e' sm_86 e `pdl_sync` compila a nulla), ma su Hopper+ leggerebbe
+la maschera prima che `kern_fj_maschera` l'abbia scritta.

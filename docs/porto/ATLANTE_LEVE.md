@@ -41,8 +41,22 @@ assegnazione `$env:LLAMA_*` / `$env:GGML_*`.
 
 ### 2a. Mai toccate da nessuno script
 
+**`LLAMA_CACHE_ESPERTI_FORK_BLOCCHI` e' uscita da questa lista l'11/8, e vale
+piu' del fork stesso.** Banco `sc_rif`, `FORK=2`, stesso SHA su tutti i bracci:
+
 ```
-  cache     LLAMA_CACHE_ESPERTI_FORK_BLOCCHI      difetto 32
+  blocchi   t/s     ciclo    copertura
+     8     12,38   80,8      5,1%  (!)   <- il migliore
+    32     11,83   84,5     99,3%        <- il difetto
+    64     11,86   84,3     99,5%
+   112     11,91   84,0     91,4%        <- quanti ne usa kern_copia
+```
+
+Meno il fork copre, piu' va veloce: `kern_fj_copia` non costa perche' e' lento,
+costa perche' **ruba SM alla MMVQ**. E ne segue che la sonda di copertura di
+`FORK=2` misura una grandezza **anti-correlata** con la velocita'.
+
+```
   cache     LLAMA_CACHE_ESPERTI_SPIN              difetto 256
   spec      LLAMA_ACCEPTMOE_BATCH_MAX             difetto 8
   spec      LLAMA_ACCEPTMOE_SOGLIA                difetto 0
@@ -89,10 +103,19 @@ Il meccanismo funziona anche li' — ciclo −1,2%, byte −16,8%, sonda 99,4% c
 nessun `GGML_ABORT` — ma il **p1 crolla del 12,3%** e il t/s (`mean_len / ciclo`)
 ci va dietro.
 
-**La causa e' la non-esattezza**: il fork spezza il matmul esperti in due passate
-(residenti mascherati, poi i mancanti dopo il join) e l'ordine di somma cambia
-gli arrotondamenti. Cambiare come il bersaglio ricostruisce il suo stato degrada
-la bozza — la regola del 10/8.
+**La causa e' la non-esattezza**, ma NON per il motivo che avevo scritto («due
+passate sommate in ordine diverso»: in `MUL_MAT_ID` ogni uscita e' il prodotto
+scalare di UN esperto e la somma sugli esperti sta a valle — non c'e' nessuna
+somma spezzata). E' la **scelta del kernel a un token**: il cammino normale con
+`ncols_dst == 1` usa `mul_mat_vec_q<type,1>` generico (nwarps, somme in shared,
+`warp_reduce_sum`), il mascherato usa sempre il kernel MoE (un warp per colonna).
+Albero di riduzione diverso, arrotondamenti diversi. **A batch >= 2 il fork e' gia'
+bit-esatto**; a un token no, e nel braccio con la bozza basta un ciclo a bozza
+azzerata per far divergere il testo. Cambiare come il bersaglio ricostruisce il
+suo stato degrada la bozza — la regola del 10/8.
+
+**E c'e' una manopola mai toccata che vale piu' del fork stesso**: vedi
+`LLAMA_CACHE_ESPERTI_FORK_BLOCCHI` qui sotto.
 
 Conseguenze operative:
 - **i COLPI non sono confrontabili** fra `FORK=0` e `FORK>=1`: sono traiettorie

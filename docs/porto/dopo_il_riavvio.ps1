@@ -84,6 +84,13 @@ $SLOT = if ($args.Count -gt 1) { [string]$args[1] } else { '512' }
 # 0,6%), ma su una piattaforma dove sync valeva 2,17 invece di 6,5: quella
 # falsificazione non si trasferisce a questo regime.
 $ZAV = if ($args.Count -gt 2) { [string]$args[2] } else { $null }
+# Quarto parametro: variabili extra, separate da ';', nella forma NOME=VALORE.
+# Servono per i bracci che cambiano UNA leva sola rispetto al riferimento:
+#   "LLAMA_OVERLAP_JOIN_ASYNC=1"   la leva che da accesa fa 10,7 copie/grafo
+#   "LLAMA_CACHE_ESPERTI_DMA=1;LLAMA_CACHE_ESPERTI_DMA_HIT_PM=400"
+#   "LLAMA_DSV4_HC_FUSO=7"        la maschera: 1=comb 2=pre 4=post
+# Vengono applicate DOPO le comuni, quindi sovrascrivono.
+$EXTRA = if ($args.Count -gt 3) { [string]$args[3] } else { $null }
 while (Get-Process -Name llama-cli, llama-server -ErrorAction SilentlyContinue) { Start-Sleep -Seconds 5 }
 Start-Sleep -Seconds 30
 
@@ -120,6 +127,13 @@ if ($ZAV) { $env:LLAMA_VRAM_ZAVORRA = $ZAV } else { [Environment]::SetEnvironmen
 [Environment]::SetEnvironmentVariable('LLAMA_CACHE_ORACOLO', $null)
 $env:GGML_SCHED_PROFILO = '1'          # <- come j_rif
 
+if ($EXTRA) {
+  foreach ($p in ($EXTRA -split ';')) {
+    if ($p -match '^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=\s*(.*)$') {
+      [Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])
+    }
+  }
+}
 $up = [math]::Round(((Get-Date)-(Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalMinutes,1)
 Nota ""
 Nota ("=== " + $tag + "  " + [DateTime]::Now.ToString('HH:mm') + "   (uptime " + $up + " min)  SLOT=" + $SLOT + "  -- confronto con j_rif delle 05:10 ===")

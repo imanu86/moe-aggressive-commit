@@ -79,7 +79,12 @@ $bracci = @(
 # al gruppo della console, quindi anche a QUESTO script: in un ciclo si suicida
 # dopo il primo giro (successo due volte il 12/8). Il regista chiama questo file
 # una volta per braccio, passando il tag.
-if ($args.Count -gt 0) { $bracci = @($bracci | Where-Object { $_.tag -eq $args[0] }) }
+# ATTENZIONE: $args dentro un blocco di Where-Object e' quello DELLO SCRIPTBLOCK,
+# non quello dello script -- ed e' vuoto. Va catturato prima in una variabile.
+# Con $args[0] diretto qui, i quattro bracci del 2x2 sono morti tutti e quattro
+# stampando "nessun braccio con quel nome".
+$SOLO = if ($args.Count -gt 0) { [string]$args[0] } else { $null }
+if ($SOLO) { $bracci = @($bracci | Where-Object { $_.tag -eq $SOLO }) }
 if ($bracci.Count -eq 0) { "nessun braccio con quel nome"; exit 1 }
 
 Nota ""

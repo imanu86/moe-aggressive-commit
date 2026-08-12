@@ -1,3 +1,16 @@
+> **RITIRATO IL 12/8 ALLE 10:00.** Il gradino descritto in questo documento NON
+> esisteva: era `LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1` che il mio runner non
+> impostava, e che il manifesto non stampa. Rimessa la variabile, stessa
+> configurazione e stesso binario: **14,40 t/s, sync 2,266** contro i 12,82 e
+> 6,208 di r512, e contro i 14,46 / 2,166 del riferimento di stanotte.
+>
+> Cadono con esso: la curva della capienza, l'ipotesi del margine VRAM, il
+> «costo per confine», e il sospetto sui tre KB di Windows. Restano valide le
+> esclusioni (GPU, PCIe, banda, CPU, driver, OneDrive, VRAM libera all'avvio,
+> contesa) e i verdetti fra corse omogenee a sfratto_par=0.
+>
+> Vedi docs/porto/lettura/ e il commit di ritiro.
+
 # 12 agosto: il banco ha perso il 13-14%, e la perdita ha un nome
 
 ## Il fatto

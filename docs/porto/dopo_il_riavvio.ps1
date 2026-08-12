@@ -93,6 +93,17 @@ $env:LLAMA_CACHE_ESPERTI_CODA_MAX = '0'
 $env:LLAMA_CACHE_ESPERTI_CURA = '0';    $env:LLAMA_CACHE_ESPERTI_SCUDO = '0'
 $env:LLAMA_CACHE_ESPERTI_MASSA = '0';   $env:LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO = '0'
 $env:LLAMA_CACHE_ESPERTI_LRU = '1';     $env:LLAMA_CACHE_ESPERTI_W = '0'
+# LA VARIABILE CHE IL MANIFESTO NON STAMPA, ed e' costata una giornata.
+# Con SFRATTO_PAR=0 la scelta della vittima e' la scansione SEQUENZIALE
+# O(n_slot) su UN SOLO thread GPU (`decidi_fili` -> 1, cache-esperti.cu:2893);
+# con =1 e' una riduzione cooperativa a 256 thread. E' lavoro DEVICE accodato
+# sullo stream di calcolo, quindi il suo tempo cade dentro `us_sync` e lascia
+# intatti calc CPU e calc altri -- ed e' proporzionale a sfratti x n_slot.
+# Tutte le corse veloci (14,46-14,77) hanno sfratto_par=1; tutte le mie di
+# oggi (12,79-12,88) hanno sfratto_par=0, perche' ho costruito l'ambiente DAL
+# MANIFESTO e questa voce li' dentro non c'e'.
+# Si verifica nel log, non qui: `grep -o "sfratto_par=[0-9]" <tag>.server.log`.
+$env:LLAMA_CACHE_ESPERTI_SFRATTO_PAR = '1'
 $env:LLAMA_CACHE_ESPERTI_SLOT = $SLOT
 $env:LLAMA_CACHE_ESPERTI_FORK = '2';    $env:LLAMA_CACHE_ESPERTI_FORK_BLOCCHI = '8'
 $env:LLAMA_ACCEPTMOE = '0';             $env:LLAMA_CKPT_CRONO = '0'

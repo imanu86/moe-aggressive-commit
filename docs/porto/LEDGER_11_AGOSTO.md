@@ -1513,5 +1513,84 @@ riproducibilita', e va ri-prezzato.
   regressioni deve saperlo, e i COLPI restano non confrontabili con `FORK=0`.
 - **512 e' al muro.** 576 e 640 muoiono con il modello di bozza in VRAM. Sul
   banco spoglio (niente bozza) l'ottimo e' pure 512, ma li' il muro e' a 768.
-  In entrambi i casi la capienza e' limitata dalla VRAM, e i **7,4 GiB di pesi
-  densi** sono la stanza da liberare.
+  In entrambi i casi la capienza e' limitata dalla VRAM. *(Nota del 12/8: i
+  «7,4 GiB di pesi densi da liberare» che avevo scritto qui sono un fronte
+  chiuso dieci volte — §16.)*
+
+## 16. IL JOIN NON E' SYNC-BOUND: chiusa per la terza volta, e stavolta col perche'
+
+Terzo giro sul numero piu' grosso della campagna (join = 73,4% del tempo di
+parete), e il primo in cui la causa ha un nome invece di un'ipotesi.
+
+### 16.1 Il revert upstream spiega il nostro +4%
+
+`3fc4e1052` (#20793) e il suo revert `86b94708f` (#25138) sono **entrambi
+antenati della nostra base**: li abbiamo gia' ereditati, dal lato del revert. Non
+sono da portare — sono da leggere.
+
+**Il revert NON e' per l'hardware AMD**, come avevo ripetuto tutta la sera. E'
+firmato NVIDIA, e la causa e' la nostra stessa regola
+([[barriere-stesso-sito-non-solo-in-pari]]): #20793 rendeva la sync per-ingresso
+condizionale a `!iface.cpy_tensor_async` — una **dichiarazione di capacita'** —
+mentre la copia era davvero asincrona solo se `copy_from_host`, una **macro di
+build** forzata a `false` su HIP. Due condizioni diverse per un invariante solo.
+Su HIP la barriera saltava, `cpy_tensor_async` tornava falso, e si cadeva in un
+fallback che fa **due** sync invece di una.
+
+### 16.2 La leva era in casa, spenta, e il suo contatore stampava zero in ogni log
+
+`copia_join_async` (`ggml-backend.cpp:2014`) e' #20793 **scritta bene**: la
+guardia che salta la barriera (`set_tensor_async != NULL`) e' la stessa che rende
+la copia asincrona. `LLAMA_OVERLAP_JOIN_ASYNC`, difetto 0.
+
+E in **ogni** log della campagna c'era scritto `| copie join-async 0.0`, accanto
+al numero piu' grosso che avevamo aperto. Sesta leva silenziosa della giornata,
+dopo `CURA`, `SCUDO`, il cancello `DMA`, `FORK`, `FORK_BLOCCHI`.
+
+### 16.3 La misura, e la falsificazione che passa
+
+Configurazione SOTA (512 slot, `FORK=2` blocchi 8, lane K=2, bozza), 1.200 token:
+
+```
+  braccio                   join-async   sync    ciclo    t/s
+  j_rif   JOIN_ASYNC=-          0,0     2,166   127,9   14,46
+  j_on    JOIN_ASYNC=1         10,7     1,884   127,8   14,48
+  j_f1    +FINESTRA=1          10,7     1,911   128,0   14,45
+  j_f4    +FINESTRA=4          10,7     1,941   128,2   14,43
+  j_f8    +FINESTRA=8          10,7     1,878   128,2   14,43
+```
+
+- **il ramo gira**: 10,7 copie asincrone per grafo;
+- **`sync` scende del 13%** (2,166 -> 1,884): la leva morde sulla grandezza
+  accusata;
+- **FALSIFICAZIONE PASSATA**: `sync` e' **piatto** da finestra 1 a 8. Satura per
+  **barriere**, non per ampiezza della finestra;
+- **e il ciclo non si muove**: 127,8 -> 128,2, dentro lo 0,3%.
+
+### 16.4 L'aritmetica che mancava a tutti e tre i tentativi
+
+```
+  sync risparmiato   0,28 ms/grafo x 2,17 grafi/token = 0,61 ms su 127,8 = 0,5%
+  ma il join e'      24,7 ms/grafo, e il sync agli ingressi ne e' l'8%
+  il worker CPU:     calcolo 15,4 ms | attesa-evento 9,3 | attesa-lavoro 8,3
+```
+
+**Il join non e' dominato dalle barriere: e' dominato dai 15,4 ms in cui la CPU
+calcola e la GPU non riesce a coprirla.** Togliere il 13% dell'8% da' lo 0,5%,
+che e' esattamente quel che si misura.
+
+Il che chiude la storia del «+50%» in modo diverso da come l'avevo chiusa il
+10/8. Non era «l'aritmetica era giusta ma la dipendenza per-strato la limita».
+Era: **la finestra non poteva dare il 50% perche' il join non e' sync-bound.** Le
+barriere sono reali — la falsificazione lo conferma — ma sono un ottavo del
+problema.
+
+### 16.5 E `#26649` non serve: verificato, non dedotto
+
+Il commit che avevo messo in testa alla lista dei porti (`ggml_build_forward_order`,
+tre righe che inseriscono nodi senza marcarli per il calcolo) **non e' nemmeno
+sulla strada**: `_order` e' `_expand` con `compute=false`, e per un nodo che
+finisce calcolato il flag viene **riacceso** da `ggml_visit_parents_graph`
+(`ggml.c:7247`). Grafo identico, split identici. E i nodi senza `FLAG_COMPUTE`
+**creano confini lo stesso** (`split_graph` non legge mai quel flag) e **vengono
+allocati lo stesso**: 62,5 us di barriera per zero calcolo.

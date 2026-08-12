@@ -1,0 +1,86 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -9932,6 +9932,13 @@ typedef struct ds4_nextn_drafter {
+     uint64_t stat_steps;
+     double stat_step_ms_sum;
+     double stat_step_ms_max;
++    /* DSPARK-2fix3: per-step attribution.  q4 = routed Q4_K matvec (the
++     * expert pool, the only per-step working set NOT pinned at PIN=1);
++     * dense = Q8 projections/attention/router/prequant; head = base Q8_0
++     * vocabulary matvec.  Together they say WHERE a slow step pays. */
++    double stat_q4_ms_sum;
++    double stat_dense_ms_sum;
++    double stat_head_ms_sum;
+ 
+     /* Worker-thread-owned; other threads never touch these. */
+     os_thread_t thread;
+@@ -10091,13 +10098,14 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+             os_mutex_unlock(&d->mu);
+             if (abandon) break;
+ 
++            ds4_mtp_cpu_telemetry step_tm;
+             const double fwd0 = now_sec();
+             ds4_mtp_cpu_forward_nextn_q4_k(
+                 &d->cpu,
+                 d->base_model, d->base_weights,
+                 d->mtp_model, d->mtp,
+                 prev, token, pos,
+-                next, d->head_hidden, NULL);
++                next, d->head_hidden, &step_tm);
+             d->kv_last_pos = pos;
+             d->kv_any = true;
+             const double fwd1 = now_sec();
+@@ -10142,6 +10150,10 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+             if ((head1 - fwd0) * 1000.0 > d->stat_step_ms_max) {
+                 d->stat_step_ms_max = (head1 - fwd0) * 1000.0;
+             }
++            d->stat_q4_ms_sum += step_tm.q4_matvec_ms;
++            d->stat_dense_ms_sum +=
++                step_tm.q8_prequant_ms + step_tm.other_ms;
++            d->stat_head_ms_sum += (head1 - fwd1) * 1000.0;
+             if (d->job_seq == seq) {
+                 d->pub_steps = step;
+                 d->pub_ms = (now_sec() - t0) * 1000.0;
+@@ -20453,6 +20465,9 @@ static void ds4_nextn_request_begin(ds4_session *s) {
+     d->stat_steps = 0;
+     d->stat_step_ms_sum = 0.0;
+     d->stat_step_ms_max = 0.0;
++    d->stat_q4_ms_sum = 0.0;
++    d->stat_dense_ms_sum = 0.0;
++    d->stat_head_ms_sum = 0.0;
+     os_mutex_unlock(&d->mu);
+ }
+ 
+@@ -20460,16 +20475,20 @@ static void ds4_nextn_request_end(ds4_session *s) {
+     ds4_nextn_drafter *d = s->nextn;
+     if (!d || d->req_cycles == 0) return;
+     uint64_t steps;
+-    double step_sum, step_max;
++    double step_sum, step_max, q4_sum, dense_sum, head_sum;
+     os_mutex_lock(&d->mu);
+     steps = d->stat_steps;
+     step_sum = d->stat_step_ms_sum;
+     step_max = d->stat_step_ms_max;
++    q4_sum = d->stat_q4_ms_sum;
++    dense_sum = d->stat_dense_ms_sum;
++    head_sum = d->stat_head_ms_sum;
+     os_mutex_unlock(&d->mu);
+     fprintf(stderr,
+             "ds4: [nextn-draft] summary cycles=%llu k_gen=%llu "
+             "k_delivered=%llu k_accepted=%llu kicks=%llu pending=%llu "
+             "chain_steps=%llu step_ms_avg=%.1f step_ms_max=%.1f "
++            "fwd_q4_avg=%.1f fwd_dense_avg=%.1f head_avg=%.1f "
+             "draft_ms_avg=%.3f\n",
+             (unsigned long long)d->req_cycles,
+             (unsigned long long)d->req_generated,
+@@ -20480,6 +20499,9 @@ static void ds4_nextn_request_end(ds4_session *s) {
+             (unsigned long long)steps,
+             steps ? step_sum / (double)steps : 0.0,
+             step_max,
++            steps ? q4_sum / (double)steps : 0.0,
++            steps ? dense_sum / (double)steps : 0.0,
++            steps ? head_sum / (double)steps : 0.0,
+             d->req_draft_ms / (double)d->req_cycles);
+     for (int i = 0; i < d->k && i < DS4_NEXTN_DRAFT_MAX; i++) {
+         if (d->req_offered_pos[i] == 0) continue;

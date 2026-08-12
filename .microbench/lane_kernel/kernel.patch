@@ -1,0 +1,586 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+index 22be838..1e56bd9 100644
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -822,6 +822,140 @@ static void ds4_parallel_for(uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
+     ds4_parallel_for_min_rows(n_rows, fn, ctx, 512);
+ }
+ 
++/*
++ * G132 runs while the CUDA decode thread is still submitting work.  The
++ * process-global pool above has one mutable fn/ctx/done slot and therefore
++ * does not support concurrent submitters.  Give the opt-in lane an independent
++ * pool instead of adding locking or a branch to every normal parallel_for.
++ * One lane orchestrator is the caller thread; n_threads-1 persistent helpers
++ * cover the remaining row partitions.
++ */
++static ds4_thread_pool g_g132_pool;
++static uint32_t g_g132_threads_started;
++static bool g_g132_mutex_ready;
++static bool g_g132_work_cond_ready;
++static bool g_g132_done_cond_ready;
++
++static void *ds4_g132_worker_main(void *arg) {
++    const uint32_t tid = (uint32_t)(uintptr_t)arg;
++    uint32_t seen_generation = 0;
++
++    for (;;) {
++        os_mutex_lock(&g_g132_pool.mutex);
++        while (seen_generation == g_g132_pool.generation &&
++               !g_g132_pool.shutdown) {
++            os_cond_wait(&g_g132_pool.work_cond, &g_g132_pool.mutex);
++        }
++        if (g_g132_pool.shutdown) {
++            os_mutex_unlock(&g_g132_pool.mutex);
++            return NULL;
++        }
++
++        seen_generation = g_g132_pool.generation;
++        ds4_parallel_fn fn = g_g132_pool.fn;
++        void *ctx = g_g132_pool.ctx;
++        const uint64_t n_rows = g_g132_pool.n_rows;
++        const uint32_t n_threads = g_g132_pool.n_threads;
++        os_mutex_unlock(&g_g132_pool.mutex);
++
++        const uint64_t rows_per_thread =
++            (n_rows + n_threads - 1) / n_threads;
++        const uint64_t row0 = (uint64_t)tid * rows_per_thread;
++        uint64_t row1 = row0 + rows_per_thread;
++        if (row1 > n_rows) row1 = n_rows;
++        if (row0 < row1) fn(ctx, row0, row1);
++
++        os_mutex_lock(&g_g132_pool.mutex);
++        g_g132_pool.done++;
++        if (g_g132_pool.done == g_g132_pool.n_workers) {
++            os_cond_signal(&g_g132_pool.done_cond);
++        }
++        os_mutex_unlock(&g_g132_pool.mutex);
++    }
++}
++
++void ds4_g132_lane_parallel_shutdown(void) {
++    if (!g_g132_pool.initialized) return;
++    os_mutex_lock(&g_g132_pool.mutex);
++    g_g132_pool.shutdown = true;
++    g_g132_pool.generation++;
++    os_cond_broadcast(&g_g132_pool.work_cond);
++    os_mutex_unlock(&g_g132_pool.mutex);
++    for (uint32_t i = 0; i < g_g132_threads_started; i++) {
++        os_thread_join(g_g132_pool.threads[i + 1u]);
++    }
++    if (g_g132_done_cond_ready) os_cond_destroy(&g_g132_pool.done_cond);
++    if (g_g132_work_cond_ready) os_cond_destroy(&g_g132_pool.work_cond);
++    if (g_g132_mutex_ready) os_mutex_destroy(&g_g132_pool.mutex);
++    memset(&g_g132_pool, 0, sizeof(g_g132_pool));
++    g_g132_threads_started = 0;
++    g_g132_mutex_ready = false;
++    g_g132_work_cond_ready = false;
++    g_g132_done_cond_ready = false;
++}
++
++int ds4_g132_lane_parallel_init(void) {
++    if (g_g132_pool.initialized) return 1;
++    ds4_threads_init();
++    if (os_mutex_init(&g_g132_pool.mutex) != 0) return 0;
++    g_g132_mutex_ready = true;
++    if (os_cond_init(&g_g132_pool.work_cond) != 0) goto fail;
++    g_g132_work_cond_ready = true;
++    if (os_cond_init(&g_g132_pool.done_cond) != 0) goto fail;
++    g_g132_done_cond_ready = true;
++    g_g132_pool.n_threads = g_pool.n_threads;
++    g_g132_pool.n_workers =
++        g_g132_pool.n_threads > 0 ? g_g132_pool.n_threads - 1u : 0u;
++    g_g132_pool.initialized = true;
++    for (uint32_t i = 1; i < g_g132_pool.n_threads; i++) {
++        if (os_thread_create(&g_g132_pool.threads[i],
++                             ds4_g132_worker_main,
++                             (void *)(uintptr_t)i) != 0) {
++            g_g132_pool.n_workers = g_g132_threads_started;
++            goto fail;
++        }
++        g_g132_threads_started++;
++    }
++    return 1;
++fail:
++    if (g_g132_pool.initialized) {
++        ds4_g132_lane_parallel_shutdown();
++    } else {
++        if (g_g132_done_cond_ready) os_cond_destroy(&g_g132_pool.done_cond);
++        if (g_g132_work_cond_ready) os_cond_destroy(&g_g132_pool.work_cond);
++        if (g_g132_mutex_ready) os_mutex_destroy(&g_g132_pool.mutex);
++        memset(&g_g132_pool, 0, sizeof(g_g132_pool));
++        g_g132_mutex_ready = false;
++        g_g132_work_cond_ready = false;
++        g_g132_done_cond_ready = false;
++    }
++    return 0;
++}
++
++static int ds4_g132_parallel_for(
++        uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
++    if (!g_g132_pool.initialized || !fn || n_rows == 0) return 0;
++    os_mutex_lock(&g_g132_pool.mutex);
++    g_g132_pool.fn = fn;
++    g_g132_pool.ctx = ctx;
++    g_g132_pool.n_rows = n_rows;
++    g_g132_pool.done = 0;
++    g_g132_pool.generation++;
++    os_cond_broadcast(&g_g132_pool.work_cond);
++    const uint64_t rows_per_thread =
++        (n_rows + g_g132_pool.n_threads - 1) / g_g132_pool.n_threads;
++    const uint64_t row1 = rows_per_thread < n_rows
++        ? rows_per_thread : n_rows;
++    os_mutex_unlock(&g_g132_pool.mutex);
++    if (row1 > 0) fn(ctx, 0, row1);
++    os_mutex_lock(&g_g132_pool.mutex);
++    while (g_g132_pool.done < g_g132_pool.n_workers) {
++        os_cond_wait(&g_g132_pool.done_cond, &g_g132_pool.mutex);
++    }
++    os_mutex_unlock(&g_g132_pool.mutex);
++    return 1;
++}
++
+ static void cursor_error(ds4_cursor *c, const char *msg) {
+     if (c->error[0] == '\0') {
+         snprintf(c->error, sizeof(c->error), "%s at byte %" PRIu64, msg, c->pos);
+@@ -4660,6 +4777,34 @@ static void matvec_iq2_xxs_expert_pair_prequant(
+     ds4_parallel_for(out_dim0, matvec_iq2_xxs_pair_worker, &ctx);
+ }
+ 
++int ds4_g132_matvec_iq2_xxs_expert_pair_prequant(
++        float       *out0,
++        float       *out1,
++        const void  *base0,
++        const void  *base1,
++        const void  *xq,
++        uint64_t     in_dim,
++        uint64_t     out_dim,
++        uint64_t     row_bytes0,
++        uint64_t     row_bytes1) {
++    if (!out0 || !out1 || !base0 || !base1 || !xq ||
++        in_dim == 0 || in_dim % QK_K != 0 || out_dim == 0) {
++        return 0;
++    }
++    matvec_iq2_xxs_pair_ctx ctx = {
++        .out0 = out0,
++        .out1 = out1,
++        .base0 = base0,
++        .base1 = base1,
++        .xq = xq,
++        .in_dim = in_dim,
++        .row_bytes0 = row_bytes0,
++        .row_bytes1 = row_bytes1,
++    };
++    return ds4_g132_parallel_for(
++        out_dim, matvec_iq2_xxs_pair_worker, &ctx);
++}
++
+ static float silu(float x);
+ 
+ typedef struct {
+@@ -4790,6 +4932,44 @@ static void matvec_q2_k_expert(
+     free(xq);
+ }
+ 
++int ds4_g132_quantize_row_q8_K(
++        const float *x, void *xq, uint64_t count) {
++    if (!x || !xq || count == 0 || count % QK_K != 0 ||
++        count > INT64_MAX) {
++        return 0;
++    }
++    ds4_quantize_row_q8_K(x, (block_q8_K *)xq, (int64_t)count);
++    return 1;
++}
++
++int ds4_g132_matvec_q2_k_expert(
++        float       *out,
++        const void  *base,
++        const float *x,
++        uint64_t     in_dim,
++        uint64_t     out_dim,
++        uint64_t     row_bytes) {
++    if (!out || !base || !x || in_dim == 0 || in_dim % QK_K != 0 ||
++        out_dim == 0 || in_dim > INT64_MAX) {
++        return 0;
++    }
++    block_q8_K *xq =
++        malloc((size_t)(in_dim / QK_K) * sizeof(xq[0]));
++    if (!xq) return 0;
++    ds4_quantize_row_q8_K(x, xq, (int64_t)in_dim);
++    matvec_q2_k_ctx ctx = {
++        .out = out,
++        .base = base,
++        .xq = xq,
++        .in_dim = in_dim,
++        .row_bytes = row_bytes,
++    };
++    const int ok = ds4_g132_parallel_for(
++        out_dim, matvec_q2_k_worker, &ctx);
++    free(xq);
++    return ok;
++}
++
+ typedef struct {
+     float *out;
+     const uint8_t *base[DS4_N_EXPERT_USED];
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index d937b98..0a36b28 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -40,5 +40,27 @@
+ #include "ds4_spex_queue.h"
+ 
++extern "C" int ds4_g132_lane_parallel_init(void);
++extern "C" void ds4_g132_lane_parallel_shutdown(void);
++extern "C" int ds4_g132_quantize_row_q8_K(
++    const float *x, void *xq, uint64_t count);
++extern "C" int ds4_g132_matvec_iq2_xxs_expert_pair_prequant(
++    float *out0,
++    float *out1,
++    const void *base0,
++    const void *base1,
++    const void *xq,
++    uint64_t in_dim,
++    uint64_t out_dim,
++    uint64_t row_bytes0,
++    uint64_t row_bytes1);
++extern "C" int ds4_g132_matvec_q2_k_expert(
++    float *out,
++    const void *base,
++    const float *x,
++    uint64_t in_dim,
++    uint64_t out_dim,
++    uint64_t row_bytes);
++
+ #ifndef M_PI
+ #define M_PI 3.14159265358979323846
+ #endif
+@@ -1640,8 +1665,8 @@ static uint64_t g_q1_0_mixed_cold_one_invariant_failures;
+ 
+ enum {
+-    /* At most six persistent jobs run at once; two logical cores remain for
+-     * CUDA submission and the rest of the decode pipeline. */
+-    CUDA_G132_CPU_LANE_MAX_WORKERS = 6u,
++    /* One orchestrator sequences experts; its private row pool supplies the
++     * intra-expert parallelism. */
++    CUDA_G132_CPU_LANE_MAX_WORKERS = 1u,
+     CUDA_G132_CPU_LANE_MAX_ROUTES = 8u,
+     CUDA_G132_CPU_LANE_LAYER_COUNT = 43u,
+ };
+@@ -1694,9 +1719,10 @@ struct cuda_g132_cpu_lane_worker {
+     cuda_g132_cpu_lane *lane;
+     uint32_t index;
+     std::vector<float> output;
++    std::vector<float> gate;
++    std::vector<float> up;
+     std::vector<float> mid;
+     std::vector<cuda_block_q8_K> xq;
+-    std::vector<cuda_block_q8_K> midq;
+ };
+ 
+ struct cuda_g132_cpu_lane {
+@@ -1741,6 +1767,8 @@ struct cuda_g132_cpu_lane {
+     double layer_join_wait_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     double cpu_started;
+     double cpu_finished;
++    double cpu_expert_seconds;
++    uint32_t cpu_expert_count;
+     double gpu_started;
+     double gpu_finished;
+     uint64_t source_generation;
+@@ -1797,10 +1825,12 @@ struct cuda_g132_cpu_lane {
+     uint64_t general_fallback_pipeline;
+     uint64_t general_fallback_runtime;
+     uint64_t general_staging_routes;
++    double general_expert_seconds;
+     double general_cpu_seconds;
+     double general_gpu_seconds;
+     double general_gpu_wait_cpu_seconds;
+     double general_cpu_wait_gpu_seconds;
+     uint64_t general_layer_calls[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     uint64_t general_layer_cpu_routes[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    double general_layer_expert_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     double general_layer_cpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+@@ -49140,12 +49171,9 @@ static int cuda_g132_cpu_lane_forward(
+     if (job >= lane.job_count || !lane.host_input ||
+         worker->output.size() != lane.out_dim ||
++        worker->gate.size() != lane.expert_mid_dim ||
++        worker->up.size() != lane.expert_mid_dim ||
+         worker->mid.size() != lane.expert_mid_dim ||
+-        worker->xq.size() != lane.expert_in_dim / CUDA_QK_K ||
+-        worker->midq.size() != lane.expert_mid_dim / CUDA_QK_K) {
+-        return 0;
+-    }
+-    if (!cuda_g132_quantize_row_q8_K(
+-            lane.host_input, worker->xq.data(), lane.expert_in_dim)) {
++        worker->xq.size() != lane.expert_in_dim / CUDA_QK_K) {
+         return 0;
+     }
+     if (lane.backings[job] == CUDA_G132_CPU_LANE_BACKING_ARENA) {
+@@ -49191,34 +49220,32 @@ static int cuda_g132_cpu_lane_forward(
+     const char *gate_base = lane.gate_ptrs[job];
+     const char *up_base = lane.up_ptrs[job];
+     const char *down_base = lane.down_ptrs[job];
+-    for (uint32_t row = 0; row < lane.expert_mid_dim; row++) {
+-        const cuda_block_iq2_xxs *gate =
+-            (const cuda_block_iq2_xxs *)(gate_base + row * lane.gate_row_bytes);
+-        const cuda_block_iq2_xxs *up =
+-            (const cuda_block_iq2_xxs *)(up_base + row * lane.gate_row_bytes);
+-        float gate_value = cuda_g132_dot_iq2_xxs_q8_K(
+-            lane.expert_in_dim, gate, worker->xq.data());
+-        float up_value = cuda_g132_dot_iq2_xxs_q8_K(
+-            lane.expert_in_dim, up, worker->xq.data());
++    if (!ds4_g132_matvec_iq2_xxs_expert_pair_prequant(
++            worker->gate.data(), worker->up.data(),
++            gate_base, up_base, worker->xq.data(),
++            lane.expert_in_dim, lane.expert_mid_dim,
++            lane.gate_row_bytes, lane.gate_row_bytes)) {
++        return 0;
++    }
++    for (uint32_t row = 0; row < lane.expert_mid_dim; row++) {
++        float gate_value = worker->gate[row];
++        float up_value = worker->up[row];
+         if (lane.clamp > 1.0e-6f) {
+             if (gate_value > lane.clamp) gate_value = lane.clamp;
+             if (up_value > lane.clamp) up_value = lane.clamp;
+             if (up_value < -lane.clamp) up_value = -lane.clamp;
+         }
++        /* Identical ordering to the existing lane: clamp, SwiGLU, then
++         * pre-down router weight for GENERAL. */
+         worker->mid[row] =
+             (gate_value / (1.0f + expf(-gate_value))) * up_value *
+             (lane.general_active ? lane.route_weights[job] : 1.0f);
+     }
+-    if (!cuda_g132_quantize_row_q8_K(
+-            worker->mid.data(), worker->midq.data(), lane.expert_mid_dim)) {
++    if (!ds4_g132_matvec_q2_k_expert(
++            worker->output.data(), down_base, worker->mid.data(),
++            lane.expert_mid_dim, lane.out_dim, lane.down_row_bytes)) {
+         return 0;
+     }
+-    for (uint32_t row = 0; row < lane.out_dim; row++) {
+-        const cuda_block_q2_K *down = (const cuda_block_q2_K *)(
+-            down_base + row * lane.down_row_bytes);
+-        worker->output[row] = cuda_g132_dot_q2_K_q8_K(
+-            lane.expert_mid_dim, down, worker->midq.data());
+-    }
+     /* The general lane applies the router weight before Q8_K quantization,
+      * matching the GPU path.  The legacy mixed caller keeps its established
+      * post-down weighting so GENERAL=0 is behaviorally neutral. */
+@@ -49230,6 +49260,7 @@ static int cuda_g132_cpu_lane_forward(
+ static void *cuda_g132_cpu_lane_worker_main(void *arg) {
+     cuda_g132_cpu_lane_worker *worker = (cuda_g132_cpu_lane_worker *)arg;
+     cuda_g132_cpu_lane &lane = *worker->lane;
++    (void)worker->index;
+     for (;;) {
+         os_mutex_lock(&lane.mutex);
+         while (!lane.stop &&
+@@ -49241,18 +49272,32 @@ static void *cuda_g132_cpu_lane_worker_main(void *arg) {
+             os_mutex_unlock(&lane.mutex);
+             break;
+         }
+-        const uint32_t job = lane.next_job++;
++        /* This is the sole submitter to the private row pool.  Claim the
++         * complete batch so experts cannot overlap each other. */
++        lane.next_job = lane.job_count;
+         os_mutex_unlock(&lane.mutex);
+ 
+-        const int ok = cuda_g132_cpu_lane_forward(worker, job);
++        int ok = ds4_g132_quantize_row_q8_K(
++            lane.host_input, worker->xq.data(), lane.expert_in_dim);
++        double expert_seconds = 0.0;
++        uint32_t expert_count = 0u;
++        if (ok) {
++            for (uint32_t job = 0; job < lane.job_count; job++) {
++                const double started = cuda_wall_sec();
++                ok = cuda_g132_cpu_lane_forward(worker, job);
++                expert_seconds += cuda_wall_sec() - started;
++                if (!ok) break;
++                expert_count++;
++            }
++        }
+ 
+         os_mutex_lock(&lane.mutex);
+         if (!ok) lane.job_failed = 1;
+-        lane.completed_jobs++;
+-        if (lane.completed_jobs == lane.job_count) {
+-            lane.cpu_finished = cuda_wall_sec();
+-            os_cond_signal(&lane.done_cond);
+-        }
++        lane.cpu_expert_seconds = expert_seconds;
++        lane.cpu_expert_count = expert_count;
++        lane.completed_jobs = lane.job_count;
++        lane.cpu_finished = cuda_wall_sec();
++        os_cond_signal(&lane.done_cond);
+         os_mutex_unlock(&lane.mutex);
+     }
+     return NULL;
+@@ -49286,6 +49332,11 @@ static int cuda_g132_cpu_lane_init(void) {
+     if (os_cond_init(&lane.done_cond) != 0) goto fail;
+     lane.done_cond_ready = 1;
+ 
++    if (!ds4_g132_lane_parallel_init()) {
++        fprintf(stderr, "ds4: [g132-cpu-lane] result=fail-open "
++                        "reason=parallel-pool-init\n");
++        goto fail;
++    }
+     error = cudaMemcpyFromSymbol(
+         g_g132_iq2xxs_grid, cuda_iq2xxs_grid, sizeof(g_g132_iq2xxs_grid));
+     if (error != cudaSuccess) goto cuda_fail;
+@@ -49329,10 +49380,6 @@ static int cuda_g132_cpu_lane_init(void) {
+ 
+     {
+-        const long cores = os_cpu_count();
+-        lane.worker_count = cores > 2 ? (uint32_t)(cores - 2) : 1u;
+-        if (lane.worker_count > CUDA_G132_CPU_LANE_MAX_WORKERS) {
+-            lane.worker_count = CUDA_G132_CPU_LANE_MAX_WORKERS;
+-        }
++        lane.worker_count = 1u;
+         lane.max_experts_per_layer = 3u;
+         const char *max_env = getenv("DS4_G132_CPU_LANE_MAX");
+         if (max_env && max_env[0]) {
+@@ -49418,9 +49465,10 @@ static void cuda_g132_cpu_lane_release(void) {
+                 "route_gpu=%llu bytes_non_attraversati=%llu "
+                 "cpu_wall_ms=%.6f gpu_wall_ms=%.6f "
++                "expert_ms=%.6f "
+                 "gpu_wait_cpu_ms=%.6f cpu_wait_gpu_ms=%.6f "
+                 "eligible=%llu rejected_cap=%llu rejected_balance=%llu "
+                 "fallback_contract=%llu fallback_reservation=%llu "
+                 "fallback_wrap=%llu fallback_pipeline=%llu "
+                 "fallback_runtime=%llu "
+                 "staging_routes=%llu\n",
+                 (unsigned long long)lane.general_calls,
+@@ -49431,6 +49479,10 @@ static void cuda_g132_cpu_lane_release(void) {
+                 (unsigned long long)lane.general_bytes_not_crossed,
+                 lane.general_cpu_seconds * 1000.0,
+                 lane.general_gpu_seconds * 1000.0,
++                lane.general_route_cpu != 0u
++                    ? lane.general_expert_seconds * 1000.0 /
++                        (double)lane.general_route_cpu
++                    : 0.0,
+                 lane.general_gpu_wait_cpu_seconds * 1000.0,
+                 lane.general_cpu_wait_gpu_seconds * 1000.0,
+                 (unsigned long long)lane.general_eligible,
+@@ -49449,17 +49501,22 @@ static void cuda_g132_cpu_lane_release(void) {
+                     "ds4: [g132-general-layer-summary] layer=%u calls=%llu "
+                     "route_cpu=%llu route_gpu=%llu "
+                     "bytes_non_attraversati=%llu cpu_wall_ms=%.6f "
++                    "expert_ms=%.6f "
+                     "gpu_wall_ms=%.6f gpu_wait_cpu_ms=%.6f "
+                     "cpu_wait_gpu_ms=%.6f\n",
+                     layer_index,
+                     (unsigned long long)
+                         lane.general_layer_calls[layer_index],
+-                    (unsigned long long)
+-                        lane.general_layer_cpu_routes[layer_index],
++                    (unsigned long long)lane.general_layer_cpu_routes[layer_index],
+                     (unsigned long long)lane.layer_gpu_routes[layer_index],
+                     (unsigned long long)
+                         lane.layer_bytes_not_crossed[layer_index],
+                     lane.general_layer_cpu_seconds[layer_index] * 1000.0,
++                    lane.general_layer_cpu_routes[layer_index] != 0u
++                        ? lane.general_layer_expert_seconds[layer_index] *
++                            1000.0 /
++                            (double)lane.general_layer_cpu_routes[layer_index]
++                        : 0.0,
+                     lane.layer_gpu_seconds[layer_index] * 1000.0,
+                     lane.layer_gpu_wait_cpu_seconds[layer_index] * 1000.0,
+                     lane.layer_cpu_wait_gpu_seconds[layer_index] * 1000.0);
+@@ -49520,11 +49572,13 @@ static void cuda_g132_cpu_lane_release(void) {
+     lane.bridge_stream = NULL;
+     lane.route_outputs.clear();
+     for (uint32_t i = 0; i < CUDA_G132_CPU_LANE_MAX_WORKERS; i++) {
+         lane.workers[i].output.clear();
++        lane.workers[i].gate.clear();
++        lane.workers[i].up.clear();
+         lane.workers[i].mid.clear();
+         lane.workers[i].xq.clear();
+-        lane.workers[i].midq.clear();
+     }
++    ds4_g132_lane_parallel_shutdown();
+     if (lane.done_cond_ready) os_cond_destroy(&lane.done_cond);
+     if (lane.work_cond_ready) os_cond_destroy(&lane.work_cond);
+     if (lane.mutex_ready) os_mutex_destroy(&lane.mutex);
+@@ -49688,9 +49743,10 @@ static int cuda_g132_cpu_lane_prepare_dispatch(
+         lane.route_outputs.resize((uint64_t)count * out_dim);
+         for (uint32_t i = 0; i < lane.worker_count; i++) {
+             lane.workers[i].output.resize(out_dim);
++            lane.workers[i].gate.resize(expert_mid_dim);
++            lane.workers[i].up.resize(expert_mid_dim);
+             lane.workers[i].mid.resize(expert_mid_dim);
+             lane.workers[i].xq.resize(expert_in_dim / CUDA_QK_K);
+-            lane.workers[i].midq.resize(expert_mid_dim / CUDA_QK_K);
+         }
+     } catch (...) {
+         os_mutex_unlock(&lane.mutex);
+@@ -49723,6 +49779,8 @@ static int cuda_g132_cpu_lane_prepare_dispatch(
+     lane.job_failed = 0;
+     lane.cpu_started = 0.0;
+     lane.cpu_finished = 0.0;
++    lane.cpu_expert_seconds = 0.0;
++    lane.cpu_expert_count = 0u;
+     lane.generation++;
+     if (lane.generation == 0u) lane.generation++;
+     lane.job_active = 1;
+@@ -49795,9 +49853,10 @@ static int cuda_g132_cpu_lane_prepare_general(
+         lane.route_outputs.resize((uint64_t)plan.cpu_count * out_dim);
+         for (uint32_t i = 0; i < lane.worker_count; i++) {
+             lane.workers[i].output.resize(out_dim);
++            lane.workers[i].gate.resize(expert_mid_dim);
++            lane.workers[i].up.resize(expert_mid_dim);
+             lane.workers[i].mid.resize(expert_mid_dim);
+             lane.workers[i].xq.resize(expert_in_dim / CUDA_QK_K);
+-            lane.workers[i].midq.resize(expert_mid_dim / CUDA_QK_K);
+         }
+     } catch (...) {
+         os_mutex_unlock(&lane.mutex);
+@@ -49829,6 +49888,8 @@ static int cuda_g132_cpu_lane_prepare_general(
+     lane.job_failed = 0;
+     lane.cpu_started = 0.0;
+     lane.cpu_finished = 0.0;
++    lane.cpu_expert_seconds = 0.0;
++    lane.cpu_expert_count = 0u;
+     lane.gpu_started = 0.0;
+     lane.gpu_finished = 0.0;
+     lane.gpu_done = 0;
+@@ -50003,5 +50064,9 @@ static int cuda_g132_cpu_lane_wait_and_join(
+     const double cpu_seconds = lane.cpu_finished >= lane.cpu_started
+         ? lane.cpu_finished - lane.cpu_started : 0.0;
++    const double expert_seconds = lane.cpu_expert_seconds;
++    const uint32_t expert_count = lane.cpu_expert_count;
++    const double expert_ms = expert_count != 0u
++        ? expert_seconds * 1000.0 / (double)expert_count : 0.0;
+     const double gpu_seconds =
+         general_active && lane.gpu_finished >= lane.gpu_started
+         ? lane.gpu_finished - lane.gpu_started : 0.0;
+@@ -50048,6 +50112,7 @@ static int cuda_g132_cpu_lane_wait_and_join(
+         lane.general_route_cpu += count;
+         lane.general_route_gpu += gpu_routes;
+         lane.general_bytes_not_crossed += (uint64_t)count * native_bytes;
++        lane.general_expert_seconds += expert_seconds;
+         lane.general_cpu_seconds += cpu_seconds;
+         lane.general_gpu_seconds += gpu_seconds;
+         lane.general_gpu_wait_cpu_seconds += gpu_wait_cpu_seconds;
+@@ -50057,5 +50122,7 @@ static int cuda_g132_cpu_lane_wait_and_join(
+         lane.general_layer_cpu_routes[layer_index] += count;
+         lane.general_layer_cpu_seconds[layer_index] += cpu_seconds;
++        lane.general_layer_expert_seconds[layer_index] +=
++            expert_seconds;
+         lane.layer_gpu_routes[layer_index] += gpu_routes;
+         lane.layer_bytes_not_crossed[layer_index] +=
+             (uint64_t)count * native_bytes;
+@@ -50134,5 +50201,6 @@ static int cuda_g132_cpu_lane_wait_and_join(
+                 "route_gpu=%u bytes_non_attraversati=%llu "
+                 "cpu_wall_ms=%.6f gpu_wall_ms=%.6f "
++                "expert_ms=%.6f "
+                 "gpu_wait_cpu_ms=%.6f cpu_wait_gpu_ms=%.6f "
+                 "eligible=%u rejected_cap=%u rejected_balance=%u "
+                 "next_target_cpu=%u\n",
+@@ -50143,6 +50211,6 @@ static int cuda_g132_cpu_lane_wait_and_join(
+                      g_moe_expert_cache.down_expert_bytes)),
+                 cpu_seconds * 1000.0, gpu_seconds * 1000.0,
+-                gpu_wait_cpu_seconds * 1000.0,
++                expert_ms, gpu_wait_cpu_seconds * 1000.0,
+                 cpu_wait_gpu_seconds * 1000.0,
+                 eligible, rejected_cap, rejected_balance, next_target);
+     }

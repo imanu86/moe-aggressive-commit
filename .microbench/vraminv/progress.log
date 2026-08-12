@@ -1,0 +1,37 @@
+2026-07-27T17:29:46Z [FASE-A] start analisi gestore VRAM priorita invertita; worktree ds4-p4a; campagna1 DONE assente -> NIENTE BUILD
+17:35:34Z [FASE-A] victim picker = cuda_model_pick_victim ds4_cuda.cu:6823-6839; log 'CUDA evicted streamed range' :6967 in cuda_model_stream_alloc :6931-6971
+17:35:34Z [FASE-A] CORREZIONE PREMESSA: la 2-tier expert-before-backbone ESISTE GIA :6832-6833 via cuda_model_range::pinned :1486-1488 (is_hot :6983). Il degrado 8-9x NON e ordine tier.
+17:35:34Z [FASE-A] CAUSA VERA: pool vittime = solo g_model_ranges :1517; slab esperti g_moe_expert_cache :26554/:26681 e KV sono alloc separate NON raggiungibili dal picker -> tier0 vuoto -> backbone-vs-backbone. Sovra-sottoscrizione, non mis-ordering.
+17:35:34Z [FASE-A] INVERSIONE REALE trovata: scudo recency pin_floor :6824 applicato a ENTRAMBE le classi a :6831 -> expert recente protetto mentre backbone piu freddo sfrattato. Vera ma non e la leva del 150k.
+17:35:34Z [FASE-A] sizing capacita = cuda_moe_expert_cache_prepare :34863, formula :35045-35061 cap=min(requested,(free-reserve)/per_expert); reserve :29058-29070 def 0.5GiB; requested :29030-29039 clamp 512
+17:35:34Z [FASE-A] competitor VRAM: q1-vram-lru sizing :34091-34128; stream reserve :6793-6801 def 2048MiB; scratch g_cuda_tmp; KV(+staged :28224)
+17:35:34Z [FASE-A] SIZING RACE citata in-code a :34118-34119 e :35068-35069 (requisito 5)
+17:35:34Z [FASE-A] decode-start = ds4_gpu_vram_ledger_decode_start :28221-28300; RELEASE_PREFILL_SCRATCH :28226; cudaFree scratch :28246; plumbing two-phase GIA ESISTENTE (DS4_CUDA_EXPERT_CACHE_GROW :28193, alloc definitiva :28264-28292) -> cambiare la FORMULA non il meccanismo
+17:35:34Z [FASE-A] classificazione backbone/expert AFFIDABILE e gia presente (pinned/is_hot); KV fuori pool -> evict_kv strutturalmente 0 (emesso comunque per parita riga A/B)
+17:35:34Z [FASE-A] NON FATTIBILE ora: shrink a caldo dello slab (cudaMalloc contigua, piani a offset, device slot map, route worker vivo, invariante slots.size()==capacity) -> dichiarato non fatto; scelta = equivalente PREVENTIVO al sizing + fix scudo + strumentazione
+17:35:34Z [FASE-A] ANALISI.md scritta. Campagna1 DONE ancora assente -> passo a FASE B (solo codice, nessuna build)
+17:42:40Z [FASE-B] edit1: blocco config+contatori+account_eviction+note_backbone_reload inserito a :6818-7043; pick_victim riscritto 3 passi :7077-7106 (pass1 = expert rilassato, saltato se flag OFF -> OFF bit-identico)
+17:42:40Z [FASE-B] edit2: contabilita vittima al call site :7231-7238 (classifica PRIMA dello swap-erase); attiva in ENTRAMBI i modi
+17:42:40Z [FASE-B] edit3: backbone_reload_bytes esatto in cuda_model_range_ptr_from_fd (post push_back, if is_hot)
+17:42:40Z [FASE-B] edit4: cuda_vram_prio_log() accanto a cuda_vram_ledger_log :28486; riga [vram-prio] SEMPRE emessa
+17:42:40Z [FASE-B] edit5/6: hook decode-start (cattura vram_free_at_decode_start dopo release scratch, log a fine funzione) + hook request-end
+17:42:40Z [FASE-B] edit7: sizing elastico + riserva backbone :35395-35484, con relax esplicito anti auto-disabilitazione silenziosa
+17:42:40Z [FASE-B] memoizzati i getter nel percorso caldo (shield_ticks, thrash_limit, thrash_window): una getenv per sfratto avrebbe falsato il braccio ON
+17:42:40Z [FASE-B] codice COMPLETO. In attesa di D:\ds4_work\campagna1\DONE per compilare (poll 120s).
+17:45:00Z [ATTESA] campagna1 usa ESATTAMENTE build-native/ds4_server.exe (runner2.sh:12) e il REPORT header cita 'bin 78c9f431c861a6d1' = prefisso SHA del binario corrente -> buildare adesso lo sovrascriverebbe a meta campagna. Vincolo confermato non teorico.
+17:45:00Z [ATTESA] SHA256 PRE-BUILD = 78c9f431c861a6d1180853606324d5e3f0f3be2489fce5d6dccadca0544822ce
+17:45:00Z [ATTESA] config build: Ninja + Release + nvcc CUDA v12.6 + MSVC 14.44 (VS2022 Community), DS4_CUDA_ARCHITECTURES=80;86;89;90 (sm_86 incluso)
+17:45:00Z [ATTESA] campagna = 10 bracci ctx150000 ntok800, ~13 min/braccio (BASE_pre 19:25:31->19:34:35); a WHOLE (2/10) alle 19:38 -> ETA DONE ~21:35 locali. Monitor armato su DONE + stallo.
+17:45:00Z [FASE-B] aggiunta auto-disabilitazione esplicita elastic senza DS4_CUDA_EXPERT_CACHE_GROW=1 (requisito SICUREZZA: niente degrado silenzioso)
+17:48:10Z [FASE-B] AUTOREVISIONE: il ramo 'relax to base_reserve' era un DIFETTO (rimetteva la capacita piena = la config che thrasha). Sostituito con PAVIMENTO di slot (DS4_CUDA_VRAM_MIN_EXPERT_SLOTS, def 32) che attinge solo alla riserva base.
+17:48:10Z [FASE-B] default DS4_CUDA_VRAM_BACKBONE_RESERVE_MB portato a 1536 (calibrato: 320 vs 140 slot = ~180 slot = ~1.2GiB a 6.75MiB/slot; sotto i 2048 dello stream reserve per non contare due volte quel margine)
+17:48:10Z [ATTESA] build config verificata: /W3 ma NIENTE /WX (warning non fatali), -Xcompiler=/EHsc (try/catch ok), std=c++17, sm_80/86/89/90 -> sm_86 incluso
+17:48:10Z [ATTESA] diff verificato: 9 hunk miei, tutti nelle sedi previste, ~440 righe aggiunte; il resto del diff del worktree e preesistente (ROUTE_READ_WHOLE ecc, gia dentro il binario della campagna)
+17:48:10Z [ATTESA] ANALISI.md completata con tabella flag/contatori/log per l A/B
+18:39:53Z [GATE] DONE apparso (20:36:27 locali). ANOMALIA: nessuna riga 'CAMPAGNA COMPLETATA' nel progress della campagna e solo 6/10 run dir -> DONE NON scritto dal runner (che lo tocca insieme a quella riga). Runner assente dai processi, ds4_server=0, progress fermo da 818s -> gate rilasciato a mano dall operatore con campagna troncata a TIERBUD16 (5/10).
+18:39:53Z [BUILD] backup ds4_server.pre_vraminv.exe creato = binario campagna, SHA256 78C9F431C861A6D1180853606324D5E3F0F3BE2489FCE5D6DCCADCA0544822CE
+18:39:54Z [BUILD] vcvars64 + cmake VS2022 --build build-native Release/Ninja: EXIT=0 in 70s, 6/6 target linkati
+18:39:54Z [BUILD] warning: solo C4244 PREESISTENTI (righe 21610-22999, 44559-48231); NESSUN warning nelle mie righe (6815-7360, 28495-28660, 35394-35500)
+18:39:54Z [BUILD] SHA256 POST = BDDB1EB6871AAB2C13ED892C06A80A89FE9EB4E5AC57CA9B0C5F706D31A19159 (12499968 byte, +8192)
+18:39:54Z [VERIFICA] 9 flag + tag 'vram-prio' presenti nel nuovo binario e ASSENTI nel backup pre -> codice effettivamente compilato dentro
+18:39:54Z [FINE] A/B NON eseguito come da istruzioni (lo orchestra il committente)

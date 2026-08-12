@@ -1,0 +1,629 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 509cab7..85156a9 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -28098,6 +28098,21 @@ struct cuda_moe_tiering {
+     uint32_t policy_adaptive_budget_step;
+     uint32_t policy_adaptive_pressure_threshold;
+     uint32_t policy_min_frequency;
++    int policy_admit_enabled;
++    int policy_admit_ssd_enabled;
++    int policy_admit_warm_enabled;
++    int policy_admit_vram_enabled;
++    int policy_admit_adaptive;
++    uint32_t policy_admit_knocks_ssd;
++    uint32_t policy_admit_knocks_warm;
++    uint32_t policy_admit_knocks_vram;
++    uint32_t policy_admit_current_ssd;
++    uint32_t policy_admit_current_warm;
++    uint32_t policy_admit_current_vram;
++    double policy_admit_mass_bypass_ssd;
++    double policy_admit_mass_bypass_warm;
++    double policy_admit_mass_bypass_vram;
++    uint64_t policy_admit_epoch;
+     uint32_t snapshot_backing_entries;
+     uint32_t open_router_reserve_slots;
+     uint64_t policy_epoch;
+@@ -28134,6 +28149,19 @@ struct cuda_moe_tiering {
+     uint64_t policy_adaptive_budget_downs;
+     uint64_t policy_adaptive_pressure_epochs;
+     uint64_t policy_adaptive_quiet_epochs;
++    uint64_t admit_knocks_skips_ssd;
++    uint64_t admit_knocks_skips_warm;
++    uint64_t admit_knocks_skips_vram;
++    uint64_t admit_mass_bypass_ssd;
++    uint64_t admit_mass_bypass_warm;
++    uint64_t admit_mass_bypass_vram;
++    uint64_t admit_replaced_worse_ssd;
++    uint64_t policy_admit_window_free_ssd;
++    uint64_t policy_admit_window_replacements_ssd;
++    uint64_t policy_admit_window_free_warm;
++    uint64_t policy_admit_window_replacements_warm;
++    uint64_t policy_admit_window_free_vram;
++    uint64_t policy_admit_window_replacements_vram;
+     uint64_t snapshot_backing_hits;
+     uint64_t snapshot_backing_misses;
+     uint64_t snapshot_to_vram_bytes;
+@@ -28146,6 +28174,7 @@ struct cuda_moe_tiering {
+     uint32_t g133_promote_budget;
+     double g133_decay;
+     double g133_demotion_margin;
++    uint16_t admit_knocks[CUDA_MOE_LAYER_COUNT * 256u];
+     std::vector<cuda_moe_tier_entry> entries;
+     std::vector<uint8_t> open_router_pool_slot;
+ };
+@@ -31869,6 +31898,92 @@ static double cuda_moe_tiering_lfru(
+     return entry.mass + (double)entry.frequency / (double)(age + 1u);
+ }
+ 
++static void cuda_moe_tiering_admit_adjust_threshold(
++        uint32_t base, uint32_t *current,
++        uint64_t free_promotions, uint64_t replacements) {
++    if (!current) return;
++    const uint64_t total = free_promotions + replacements;
++    if (total == 0u) return;
++    /* Per-boundary analogue of
++     * policy_replacements/(policy_free_promotions+policy_replacements). */
++    const double pressure = (double)replacements / (double)total;
++    const uint32_t floor = std::max(1u, base);
++    if (pressure >= 0.5) {
++        if (*current < UINT16_MAX) (*current)++;
++    } else if (pressure <= 0.25 && *current > floor) {
++        (*current)--;
++    }
++}
++
++static void cuda_moe_tiering_admit_refresh_window(void) {
++    if (!g_moe_tiering.policy_admit_enabled ||
++        g_moe_tiering.policy_clock_calls == 0u) {
++        return;
++    }
++    const uint64_t epoch = g_moe_tiering.call_tick /
++        (uint64_t)g_moe_tiering.policy_clock_calls;
++    if (epoch == g_moe_tiering.policy_admit_epoch) return;
++    if (g_moe_tiering.policy_admit_epoch != UINT64_MAX) {
++        uint64_t elapsed = epoch > g_moe_tiering.policy_admit_epoch ?
++            epoch - g_moe_tiering.policy_admit_epoch : 1u;
++        if (elapsed > 16u) elapsed = 16u;
++        for (uint32_t i = 0;
++             i < CUDA_MOE_LAYER_COUNT * 256u; i++) {
++            g_moe_tiering.admit_knocks[i] =
++                (uint16_t)(g_moe_tiering.admit_knocks[i] >> elapsed);
++        }
++        if (g_moe_tiering.policy_admit_adaptive) {
++            cuda_moe_tiering_admit_adjust_threshold(
++                g_moe_tiering.policy_admit_knocks_ssd,
++                &g_moe_tiering.policy_admit_current_ssd,
++                g_moe_tiering.policy_admit_window_free_ssd,
++                g_moe_tiering.policy_admit_window_replacements_ssd);
++            cuda_moe_tiering_admit_adjust_threshold(
++                g_moe_tiering.policy_admit_knocks_warm,
++                &g_moe_tiering.policy_admit_current_warm,
++                g_moe_tiering.policy_admit_window_free_warm,
++                g_moe_tiering.policy_admit_window_replacements_warm);
++            cuda_moe_tiering_admit_adjust_threshold(
++                g_moe_tiering.policy_admit_knocks_vram,
++                &g_moe_tiering.policy_admit_current_vram,
++                g_moe_tiering.policy_admit_window_free_vram,
++                g_moe_tiering.policy_admit_window_replacements_vram);
++        }
++        g_moe_tiering.policy_admit_window_free_ssd = 0u;
++        g_moe_tiering.policy_admit_window_replacements_ssd = 0u;
++        g_moe_tiering.policy_admit_window_free_warm = 0u;
++        g_moe_tiering.policy_admit_window_replacements_warm = 0u;
++        g_moe_tiering.policy_admit_window_free_vram = 0u;
++        g_moe_tiering.policy_admit_window_replacements_vram = 0u;
++    }
++    g_moe_tiering.policy_admit_epoch = epoch;
++}
++
++static uint16_t cuda_moe_tiering_admit_note(
++        uint32_t layer, uint32_t expert) {
++    cuda_moe_tiering_admit_refresh_window();
++    const size_t index = cuda_moe_tiering_entry_index(layer, expert);
++    uint16_t &knocks = g_moe_tiering.admit_knocks[index];
++    if (knocks != UINT16_MAX) knocks++;
++    return knocks;
++}
++
++static int cuda_moe_tiering_admit_gate(
++        const cuda_moe_tier_entry &entry, uint32_t layer, uint32_t expert,
++        uint32_t threshold, double mass_bypass,
++        uint64_t *knock_skips, uint64_t *mass_bypasses) {
++    if (threshold == 0u) return 1;
++    const uint16_t knocks = g_moe_tiering.admit_knocks[
++        cuda_moe_tiering_entry_index(layer, expert)];
++    if ((uint32_t)knocks >= threshold) return 1;
++    if (mass_bypass > 0.0 && entry.mass >= mass_bypass) {
++        if (mass_bypasses) (*mass_bypasses)++;
++        return 1;
++    }
++    if (knock_skips) (*knock_skips)++;
++    return 0;
++}
++
+ static void cuda_moe_tiering_clear_owned_slots(void) {
+     for (uint32_t entry_index = 0;
+          entry_index < g_moe_tiering.entries.size(); entry_index++) {
+@@ -31909,7 +32024,7 @@ static void cuda_moe_tiering_report_and_reset(int flush_ssd_wrap) {
+         }
+         if (g_moe_tiering.compose_prefill_mass_tiering) {
+             fprintf(stderr,
+-                "ds4: [expert-tiering] final mode=%s policy=%s compose_prefill_mass_tiering=%u compose_router_open=%u snapshot_generation=%llu snapshot_backing_entries=%u snapshot_backing_hits=%llu snapshot_backing_misses=%llu snapshot_to_vram_bytes=%llu forbidden_cold_ssd_to_vram=%llu general_backing_reclaims=%llu clock_calls=%u replacement_budget=%u replacement_budget_base=%u adaptive_budget=%u adaptive_current_budget=%u adaptive_min=%u adaptive_max=%u adaptive_step=%u adaptive_pressure_threshold=%u adaptive_ups=%llu adaptive_downs=%llu adaptive_pressure_epochs=%llu adaptive_quiet_epochs=%llu adaptive_last_budget_skips_delta=%llu adaptive_last_replacements_delta=%llu min_frequency=%u hysteresis=%.9g calls=%llu selected=%llu cold=%llu ram_hits=%llu vram_hits=%llu cold_to_ram=%llu cold_to_vram=%llu ram_to_warm=%llu vram_promotions=%llu vram_demotions=%llu ram_evictions=%llu ram_admit_skips=%llu transient=%llu failures=%llu ssd_bytes=%llu ram_h2d_bytes=%llu policy_epochs=%llu policy_free_promotions=%llu policy_replacements=%llu policy_min_frequency_skips=%llu policy_budget_skips=%llu policy_score_skips=%llu states_ssd=%u states_probation=%u states_warm=%u states_vram=%u mass_sum=%.9g lfru_top=%.9g\n",
++                "ds4: [expert-tiering] final mode=%s policy=%s compose_prefill_mass_tiering=%u compose_router_open=%u snapshot_generation=%llu snapshot_backing_entries=%u snapshot_backing_hits=%llu snapshot_backing_misses=%llu snapshot_to_vram_bytes=%llu forbidden_cold_ssd_to_vram=%llu general_backing_reclaims=%llu clock_calls=%u replacement_budget=%u replacement_budget_base=%u adaptive_budget=%u adaptive_current_budget=%u adaptive_min=%u adaptive_max=%u adaptive_step=%u adaptive_pressure_threshold=%u adaptive_ups=%llu adaptive_downs=%llu adaptive_pressure_epochs=%llu adaptive_quiet_epochs=%llu adaptive_last_budget_skips_delta=%llu adaptive_last_replacements_delta=%llu min_frequency=%u hysteresis=%.9g calls=%llu selected=%llu cold=%llu ram_hits=%llu vram_hits=%llu cold_to_ram=%llu cold_to_vram=%llu ram_to_warm=%llu vram_promotions=%llu vram_demotions=%llu ram_evictions=%llu ram_admit_skips=%llu transient=%llu failures=%llu ssd_bytes=%llu ram_h2d_bytes=%llu policy_epochs=%llu policy_free_promotions=%llu policy_replacements=%llu policy_min_frequency_skips=%llu policy_budget_skips=%llu policy_score_skips=%llu admit_knocks_skips_ssd=%llu admit_knocks_skips_warm=%llu admit_knocks_skips_vram=%llu admit_mass_bypass_ssd=%llu admit_mass_bypass_warm=%llu admit_mass_bypass_vram=%llu admit_replaced_worse_ssd=%llu admit_current_knocks_ssd=%u admit_current_knocks_warm=%u admit_current_knocks_vram=%u states_ssd=%u states_probation=%u states_warm=%u states_vram=%u mass_sum=%.9g lfru_top=%.9g\n",
+                 cuda_moe_tiering_mode_name(g_moe_tiering.mode),
+                 cuda_moe_tiering_policy_name(g_moe_tiering.policy),
+                 g_moe_tiering.compose_prefill_mass_tiering ? 1u : 0u,
+@@ -31960,6 +32075,16 @@ static void cuda_moe_tiering_report_and_reset(int flush_ssd_wrap) {
+                 (unsigned long long)g_moe_tiering.policy_min_frequency_skips,
+                 (unsigned long long)g_moe_tiering.policy_budget_skips,
+                 (unsigned long long)g_moe_tiering.policy_score_skips,
++                (unsigned long long)g_moe_tiering.admit_knocks_skips_ssd,
++                (unsigned long long)g_moe_tiering.admit_knocks_skips_warm,
++                (unsigned long long)g_moe_tiering.admit_knocks_skips_vram,
++                (unsigned long long)g_moe_tiering.admit_mass_bypass_ssd,
++                (unsigned long long)g_moe_tiering.admit_mass_bypass_warm,
++                (unsigned long long)g_moe_tiering.admit_mass_bypass_vram,
++                (unsigned long long)g_moe_tiering.admit_replaced_worse_ssd,
++                g_moe_tiering.policy_admit_current_ssd,
++                g_moe_tiering.policy_admit_current_warm,
++                g_moe_tiering.policy_admit_current_vram,
+                 states[CUDA_MOE_TIER_SSD_COLD],
+                 states[CUDA_MOE_TIER_RAM_PROBATION],
+                 states[CUDA_MOE_TIER_RAM_WARM],
+@@ -31967,7 +32092,7 @@ static void cuda_moe_tiering_report_and_reset(int flush_ssd_wrap) {
+                 mass_sum, lfru_top);
+         } else {
+             fprintf(stderr,
+-                "ds4: [expert-tiering] final mode=%s policy=%s clock_calls=%u replacement_budget=%u replacement_budget_base=%u adaptive_budget=%u adaptive_current_budget=%u adaptive_min=%u adaptive_max=%u adaptive_step=%u adaptive_pressure_threshold=%u adaptive_ups=%llu adaptive_downs=%llu adaptive_pressure_epochs=%llu adaptive_quiet_epochs=%llu adaptive_last_budget_skips_delta=%llu adaptive_last_replacements_delta=%llu min_frequency=%u hysteresis=%.9g calls=%llu selected=%llu cold=%llu ram_hits=%llu vram_hits=%llu cold_to_ram=%llu cold_to_vram=%llu ram_to_warm=%llu vram_promotions=%llu vram_demotions=%llu ram_evictions=%llu ram_admit_skips=%llu general_backing_reclaims=%llu transient=%llu failures=%llu ssd_bytes=%llu ram_h2d_bytes=%llu policy_epochs=%llu policy_free_promotions=%llu policy_replacements=%llu policy_min_frequency_skips=%llu policy_budget_skips=%llu policy_score_skips=%llu states_ssd=%u states_probation=%u states_warm=%u states_vram=%u mass_sum=%.9g lfru_top=%.9g\n",
++                "ds4: [expert-tiering] final mode=%s policy=%s clock_calls=%u replacement_budget=%u replacement_budget_base=%u adaptive_budget=%u adaptive_current_budget=%u adaptive_min=%u adaptive_max=%u adaptive_step=%u adaptive_pressure_threshold=%u adaptive_ups=%llu adaptive_downs=%llu adaptive_pressure_epochs=%llu adaptive_quiet_epochs=%llu adaptive_last_budget_skips_delta=%llu adaptive_last_replacements_delta=%llu min_frequency=%u hysteresis=%.9g calls=%llu selected=%llu cold=%llu ram_hits=%llu vram_hits=%llu cold_to_ram=%llu cold_to_vram=%llu ram_to_warm=%llu vram_promotions=%llu vram_demotions=%llu ram_evictions=%llu ram_admit_skips=%llu general_backing_reclaims=%llu transient=%llu failures=%llu ssd_bytes=%llu ram_h2d_bytes=%llu policy_epochs=%llu policy_free_promotions=%llu policy_replacements=%llu policy_min_frequency_skips=%llu policy_budget_skips=%llu policy_score_skips=%llu admit_knocks_skips_ssd=%llu admit_knocks_skips_warm=%llu admit_knocks_skips_vram=%llu admit_mass_bypass_ssd=%llu admit_mass_bypass_warm=%llu admit_mass_bypass_vram=%llu admit_replaced_worse_ssd=%llu admit_current_knocks_ssd=%u admit_current_knocks_warm=%u admit_current_knocks_vram=%u states_ssd=%u states_probation=%u states_warm=%u states_vram=%u mass_sum=%.9g lfru_top=%.9g\n",
+                 cuda_moe_tiering_mode_name(g_moe_tiering.mode),
+                 cuda_moe_tiering_policy_name(g_moe_tiering.policy),
+                 g_moe_tiering.policy_clock_calls,
+@@ -32010,6 +32135,16 @@ static void cuda_moe_tiering_report_and_reset(int flush_ssd_wrap) {
+                 (unsigned long long)g_moe_tiering.policy_min_frequency_skips,
+                 (unsigned long long)g_moe_tiering.policy_budget_skips,
+                 (unsigned long long)g_moe_tiering.policy_score_skips,
++                (unsigned long long)g_moe_tiering.admit_knocks_skips_ssd,
++                (unsigned long long)g_moe_tiering.admit_knocks_skips_warm,
++                (unsigned long long)g_moe_tiering.admit_knocks_skips_vram,
++                (unsigned long long)g_moe_tiering.admit_mass_bypass_ssd,
++                (unsigned long long)g_moe_tiering.admit_mass_bypass_warm,
++                (unsigned long long)g_moe_tiering.admit_mass_bypass_vram,
++                (unsigned long long)g_moe_tiering.admit_replaced_worse_ssd,
++                g_moe_tiering.policy_admit_current_ssd,
++                g_moe_tiering.policy_admit_current_warm,
++                g_moe_tiering.policy_admit_current_vram,
+                 states[CUDA_MOE_TIER_SSD_COLD],
+                 states[CUDA_MOE_TIER_RAM_PROBATION],
+                 states[CUDA_MOE_TIER_RAM_WARM],
+@@ -32253,6 +32388,13 @@ static int cuda_moe_tiering_prepare(void) {
+     uint32_t adaptive_budget_step = 8u;
+     uint32_t adaptive_pressure_threshold = 64u;
+     uint32_t min_frequency = 3u;
++    int admit_adaptive = 0;
++    uint32_t admit_knocks_ssd = 0u;
++    uint32_t admit_knocks_warm = 0u;
++    uint32_t admit_knocks_vram = 3u;
++    double admit_mass_bypass_ssd = 0.0;
++    double admit_mass_bypass_warm = 0.0;
++    double admit_mass_bypass_vram = 0.0;
+     double hysteresis = 1.25;
+     uint32_t g133_knock_x = 3u;
+     uint32_t g133_knock_y = 5u;
+@@ -32275,6 +32417,51 @@ static int cuda_moe_tiering_prepare(void) {
+              &hysteresis)) {
+         return 0;
+     }
++    admit_knocks_vram = min_frequency;
++    const char *admit_knocks_vram_env =
++        getenv("DS4_EXPERT_TIER_ADMIT_KNOCKS_VRAM");
++    if (!cuda_g133_bool_env(
++            "DS4_EXPERT_TIER_ADMIT_ADAPTIVE", 0, &admit_adaptive) ||
++        !cuda_moe_tiering_u32_env(
++            "DS4_EXPERT_TIER_ADMIT_KNOCKS_SSD", 0u, 0u, UINT16_MAX,
++            &admit_knocks_ssd) ||
++        !cuda_moe_tiering_u32_env(
++            "DS4_EXPERT_TIER_ADMIT_KNOCKS_WARM", 0u, 0u, UINT16_MAX,
++            &admit_knocks_warm) ||
++        !cuda_moe_tiering_u32_env(
++            "DS4_EXPERT_TIER_ADMIT_KNOCKS_VRAM", min_frequency, 0u,
++            UINT16_MAX, &admit_knocks_vram) ||
++        !cuda_moe_tiering_double_env(
++            "DS4_EXPERT_TIER_ADMIT_MASS_BYPASS_SSD", 0.0, 0.0, 1.0e300,
++            &admit_mass_bypass_ssd) ||
++        !cuda_moe_tiering_double_env(
++            "DS4_EXPERT_TIER_ADMIT_MASS_BYPASS_WARM", 0.0, 0.0, 1.0e300,
++            &admit_mass_bypass_warm) ||
++        !cuda_moe_tiering_double_env(
++            "DS4_EXPERT_TIER_ADMIT_MASS_BYPASS_VRAM", 0.0, 0.0, 1.0e300,
++            &admit_mass_bypass_vram)) {
++        return 0;
++    }
++    if (!admit_adaptive &&
++        ((admit_mass_bypass_ssd > 0.0 && admit_knocks_ssd == 0u) ||
++         (admit_mass_bypass_warm > 0.0 && admit_knocks_warm == 0u))) {
++        fprintf(stderr,
++                "ds4: SSD/warm mass bypass requires a positive boundary "
++                "knock threshold or adaptive admission\n");
++        return 0;
++    }
++    const int admit_ssd_enabled =
++        admit_adaptive || admit_knocks_ssd > 0u ||
++        admit_mass_bypass_ssd > 0.0;
++    const int admit_warm_enabled =
++        admit_adaptive || admit_knocks_warm > 0u ||
++        admit_mass_bypass_warm > 0.0;
++    const int admit_vram_enabled =
++        admit_adaptive ||
++        (admit_knocks_vram_env && admit_knocks_vram_env[0]) ||
++        admit_mass_bypass_vram > 0.0;
++    const int admit_policy_enabled =
++        admit_ssd_enabled || admit_warm_enabled || admit_vram_enabled;
+     if (g133_enabled &&
+         (!cuda_moe_tiering_u32_env(
+              "DS4_G133_KNOCK_X", 3u, 1u,
+@@ -32356,6 +32543,11 @@ static int cuda_moe_tiering_prepare(void) {
+         }
+     }
+     if (policy_requested == CUDA_MOE_TIER_POLICY_SECOND_TOUCH) {
++        if (admit_policy_enabled) {
++            fprintf(stderr,
++                    "ds4: boundary admission policy requires mass-lfru tiering\n");
++            return 0;
++        }
+         clock_calls = 0u;
+         replacement_budget = 0u;
+         adaptive_budget = 0;
+@@ -32373,6 +32565,20 @@ static int cuda_moe_tiering_prepare(void) {
+         g_moe_tiering.policy_adaptive_pressure_threshold ==
+             adaptive_pressure_threshold &&
+         g_moe_tiering.policy_min_frequency == min_frequency &&
++        g_moe_tiering.policy_admit_enabled == admit_policy_enabled &&
++        g_moe_tiering.policy_admit_ssd_enabled == admit_ssd_enabled &&
++        g_moe_tiering.policy_admit_warm_enabled == admit_warm_enabled &&
++        g_moe_tiering.policy_admit_vram_enabled == admit_vram_enabled &&
++        g_moe_tiering.policy_admit_adaptive == admit_adaptive &&
++        g_moe_tiering.policy_admit_knocks_ssd == admit_knocks_ssd &&
++        g_moe_tiering.policy_admit_knocks_warm == admit_knocks_warm &&
++        g_moe_tiering.policy_admit_knocks_vram == admit_knocks_vram &&
++        g_moe_tiering.policy_admit_mass_bypass_ssd ==
++            admit_mass_bypass_ssd &&
++        g_moe_tiering.policy_admit_mass_bypass_warm ==
++            admit_mass_bypass_warm &&
++        g_moe_tiering.policy_admit_mass_bypass_vram ==
++            admit_mass_bypass_vram &&
+         g_moe_tiering.policy_hysteresis == hysteresis &&
+         g_moe_tiering.g133_enabled == g133_enabled &&
+         g_moe_tiering.g133_seed_dynamic == g133_seed_dynamic &&
+@@ -32460,6 +32666,24 @@ static int cuda_moe_tiering_prepare(void) {
+     g_moe_tiering.policy_adaptive_pressure_threshold =
+         adaptive_pressure_threshold;
+     g_moe_tiering.policy_min_frequency = min_frequency;
++    g_moe_tiering.policy_admit_enabled = admit_policy_enabled;
++    g_moe_tiering.policy_admit_ssd_enabled = admit_ssd_enabled;
++    g_moe_tiering.policy_admit_warm_enabled = admit_warm_enabled;
++    g_moe_tiering.policy_admit_vram_enabled = admit_vram_enabled;
++    g_moe_tiering.policy_admit_adaptive = admit_adaptive;
++    g_moe_tiering.policy_admit_knocks_ssd = admit_knocks_ssd;
++    g_moe_tiering.policy_admit_knocks_warm = admit_knocks_warm;
++    g_moe_tiering.policy_admit_knocks_vram = admit_knocks_vram;
++    g_moe_tiering.policy_admit_current_ssd =
++        admit_adaptive ? std::max(1u, admit_knocks_ssd) : admit_knocks_ssd;
++    g_moe_tiering.policy_admit_current_warm =
++        admit_adaptive ? std::max(1u, admit_knocks_warm) : admit_knocks_warm;
++    g_moe_tiering.policy_admit_current_vram =
++        admit_adaptive ? std::max(1u, admit_knocks_vram) : admit_knocks_vram;
++    g_moe_tiering.policy_admit_mass_bypass_ssd = admit_mass_bypass_ssd;
++    g_moe_tiering.policy_admit_mass_bypass_warm = admit_mass_bypass_warm;
++    g_moe_tiering.policy_admit_mass_bypass_vram = admit_mass_bypass_vram;
++    g_moe_tiering.policy_admit_epoch = UINT64_MAX;
+     g_moe_tiering.policy_hysteresis = hysteresis;
+     g_moe_tiering.policy_epoch = UINT64_MAX;
+     g_moe_tiering.g133_enabled = g133_enabled;
+@@ -32536,6 +32760,28 @@ static int cuda_moe_tiering_prepare(void) {
+                 g_moe_tiering.g133_seed_dynamic ? 1u : 0u,
+                 g_moe_tiering.g133_promote_budget);
+     }
++    if (g_moe_tiering.policy_admit_enabled) {
++        fprintf(stderr,
++                "ds4: [expert-tiering] boundary-admission adaptive=%u "
++                "ssd_enabled=%u warm_enabled=%u vram_enabled=%u "
++                "knocks_ssd=%u knocks_warm=%u knocks_vram=%u "
++                "current_ssd=%u current_warm=%u current_vram=%u "
++                "mass_bypass_ssd=%.9g mass_bypass_warm=%.9g "
++                "mass_bypass_vram=%.9g window=clock_calls\n",
++                g_moe_tiering.policy_admit_adaptive ? 1u : 0u,
++                g_moe_tiering.policy_admit_ssd_enabled ? 1u : 0u,
++                g_moe_tiering.policy_admit_warm_enabled ? 1u : 0u,
++                g_moe_tiering.policy_admit_vram_enabled ? 1u : 0u,
++                g_moe_tiering.policy_admit_knocks_ssd,
++                g_moe_tiering.policy_admit_knocks_warm,
++                g_moe_tiering.policy_admit_knocks_vram,
++                g_moe_tiering.policy_admit_current_ssd,
++                g_moe_tiering.policy_admit_current_warm,
++                g_moe_tiering.policy_admit_current_vram,
++                g_moe_tiering.policy_admit_mass_bypass_ssd,
++                g_moe_tiering.policy_admit_mass_bypass_warm,
++                g_moe_tiering.policy_admit_mass_bypass_vram);
++    }
+     fprintf(stderr, "ds4: expert tiering active mode=%s policy=%s compose_prefill_mass_tiering=%u compose_router_open=%u snapshot_generation=%llu snapshot_backing_entries=%u clock_calls=%u replacement_budget=%u replacement_budget_base=%u adaptive_budget=%u adaptive_current_budget=%u adaptive_min=%u adaptive_max=%u adaptive_step=%u adaptive_pressure_threshold=%u adaptive_ups=%llu adaptive_downs=%llu adaptive_pressure_epochs=%llu adaptive_quiet_epochs=%llu adaptive_last_budget_skips_delta=%llu adaptive_last_replacements_delta=%llu min_frequency=%u hysteresis=%.9g entries=%u ram_slots=%u\n",
+             cuda_moe_tiering_mode_name(g_moe_tiering.mode),
+             cuda_moe_tiering_policy_name(g_moe_tiering.policy),
+@@ -33232,6 +33478,126 @@ static int cuda_moe_tiering_pick_ram_slot(
+     return -1;
+ }
+ 
++/* Opt-in SSD -> RAM selector. The legacy selector above remains the complete
++ * default path. This copy adds the missing merit comparison at a full arena. */
++static int cuda_moe_tiering_pick_ram_slot_admit(
++        uint32_t current_layer, uint32_t current_expert,
++        size_t *victim_entry_out, const ds4_gpu_g133_epoch &g133_epoch,
++        int preferred_pageable = -1, int strict_storage = 0) {
++    if (!victim_entry_out) return -1;
++    *victim_entry_out = SIZE_MAX;
++    const int open_router_pool_active =
++        g_moe_tiering.compose_prefill_mass_tiering &&
++        g_moe_tiering.compose_router_open &&
++        g_moe_tiering.open_router_reserve_slots > 0u;
++    const auto slot_allowed = [open_router_pool_active](uint32_t slot) -> bool {
++        if (!open_router_pool_active) return true;
++        return slot < g_moe_tiering.open_router_pool_slot.size() &&
++            g_moe_tiering.open_router_pool_slot[slot] != 0u;
++    };
++    cuda_moe_tier_entry &candidate = g_moe_tiering.entries[
++        cuda_moe_tiering_entry_index(current_layer, current_expert)];
++    const double candidate_score = g_moe_tiering.g133_enabled
++        ? cuda_g133_decayed_heat(candidate, g133_epoch)
++        : cuda_moe_tiering_lfru(candidate, g_moe_tiering.call_tick);
++    const uint32_t storage_passes =
++        preferred_pageable < 0 || strict_storage ? 1u : 2u;
++    for (uint32_t pass = 0; pass < storage_passes; pass++) {
++        for (uint32_t slot = 0; slot < g_dynamic_arena.slots.size(); slot++) {
++            if (!slot_allowed(slot)) continue;
++            if (cuda_q1_0_ssd_wrap_slot_reserved(slot)) continue;
++            cuda_dynamic_arena_slot &arena_slot =
++                g_dynamic_arena.slots[slot];
++            if (arena_slot.state != DS4_GPU_ARENA_FREE ||
++                cuda_dynamic_arena_slot_refs_load(
++                    &arena_slot.cpu_lane_slot_refs) != 0u) {
++                continue;
++            }
++            if (pass == 0u && preferred_pageable >= 0 &&
++                (int)arena_slot.pageable != preferred_pageable) {
++                continue;
++            }
++            if (cuda_dynamic_arena_slot_writer_try_acquire(&arena_slot)) {
++                return (int)slot;
++            }
++        }
++    }
++    for (uint32_t pass = 0; pass < storage_passes; pass++) {
++        int after_writer_cas_loss = 0;
++        double lost_score = 0.0;
++        size_t lost_entry = 0;
++        for (;;) {
++            int best_slot = -1;
++            size_t best_entry = 0;
++            double best_score = 1.0e300;
++            for (size_t index = 0; index < g_moe_tiering.entries.size();
++                 index++) {
++                cuda_moe_tier_entry &entry = g_moe_tiering.entries[index];
++                const uint32_t entry_layer = (uint32_t)(index / 256u);
++                const uint32_t entry_expert = (uint32_t)(index % 256u);
++                const int reclaimable_vram_backing =
++                    entry.state == CUDA_MOE_TIER_VRAM_PROTECTED &&
++                    cuda_moe_tiering_has_exact_vram(
++                        entry_layer, entry_expert);
++                if (entry.ram_slot >= g_dynamic_arena.slots.size() ||
++                    !slot_allowed(entry.ram_slot) ||
++                    cuda_q1_0_ssd_wrap_slot_reserved(entry.ram_slot) ||
++                    cuda_dynamic_arena_slot_refs_load(
++                        &g_dynamic_arena.slots[entry.ram_slot].
++                            cpu_lane_slot_refs) != 0u ||
++                    (pass == 0u && preferred_pageable >= 0 &&
++                     (int)g_dynamic_arena.slots[entry.ram_slot].pageable !=
++                         preferred_pageable) ||
++                    (entry.state == CUDA_MOE_TIER_VRAM_PROTECTED &&
++                     !reclaimable_vram_backing) ||
++                    entry.last_call == g_moe_tiering.call_tick ||
++                    index == cuda_moe_tiering_entry_index(
++                        current_layer, current_expert)) {
++                    continue;
++                }
++                if (g_moe_tiering.g133_enabled &&
++                    !cuda_g133_ram_demotion_eligible(entry, g133_epoch)) {
++                    continue;
++                }
++                const double score = g_moe_tiering.g133_enabled
++                    ? cuda_g133_decayed_heat(entry, g133_epoch)
++                    : cuda_moe_tiering_lfru(
++                        entry, g_moe_tiering.call_tick);
++                if (g_moe_tiering.g133_enabled) {
++                    if (candidate_score <=
++                            score + g_moe_tiering.g133_demotion_margin) {
++                        continue;
++                    }
++                } else if (candidate_score <= score) {
++                    continue;
++                }
++                if (after_writer_cas_loss &&
++                    (score < lost_score ||
++                     (score == lost_score && index <= lost_entry))) {
++                    continue;
++                }
++                if (score < best_score ||
++                    (score == best_score && index < best_entry)) {
++                    best_score = score;
++                    best_slot = (int)entry.ram_slot;
++                    best_entry = index;
++                }
++            }
++            if (best_slot < 0) break;
++            cuda_dynamic_arena_slot &arena_slot =
++                g_dynamic_arena.slots[(uint32_t)best_slot];
++            if (cuda_dynamic_arena_slot_writer_try_acquire(&arena_slot)) {
++                *victim_entry_out = best_entry;
++                return best_slot;
++            }
++            after_writer_cas_loss = 1;
++            lost_score = best_score;
++            lost_entry = best_entry;
++        }
++    }
++    return -1;
++}
++
+ struct cuda_q1_0_promotion_record_context {
+     int active;
+     uint64_t record_id;
+@@ -35255,8 +35621,31 @@ static int cuda_moe_tiering_load_to_ram(
+         return 0;
+     }
+     size_t victim_entry_index = SIZE_MAX;
+-    const int slot_i = cuda_moe_tiering_pick_ram_slot(
+-        layer, expert, &victim_entry_index, request.g133_epoch);
++    int slot_i = -1;
++    if (!g_moe_tiering.policy_admit_ssd_enabled) {
++        /* Preserve the pre-boundary-policy path verbatim when all new
++         * admission knobs are absent. */
++        slot_i = cuda_moe_tiering_pick_ram_slot(
++            layer, expert, &victim_entry_index, request.g133_epoch);
++    } else {
++        cuda_moe_tier_entry &candidate = g_moe_tiering.entries[
++            cuda_moe_tiering_entry_index(layer, expert)];
++        if (!cuda_moe_tiering_admit_gate(
++                candidate, layer, expert,
++                g_moe_tiering.policy_admit_current_ssd,
++                g_moe_tiering.policy_admit_mass_bypass_ssd,
++                &g_moe_tiering.admit_knocks_skips_ssd,
++                &g_moe_tiering.admit_mass_bypass_ssd)) {
++            if (admission_denied) *admission_denied = 1;
++            if (promotion_record && promotion_record->active) {
++                promotion_record->preadmit_reject_reason =
++                    "ram_admit_knocks";
++            }
++            return 0;
++        }
++        slot_i = cuda_moe_tiering_pick_ram_slot_admit(
++            layer, expert, &victim_entry_index, request.g133_epoch);
++    }
+     if (slot_i < 0) {
+         if (admission_denied) *admission_denied = 1;
+         if (promotion_record && promotion_record->active) {
+@@ -35479,6 +35868,10 @@ static int cuda_moe_tiering_load_to_ram(
+         memcpy(slot.host_ptr, replacement_scratch.data(),
+                (size_t)g_dynamic_arena.slot_bytes);
+         g_moe_tiering.ram_evictions++;
++        if (g_moe_tiering.policy_admit_ssd_enabled) {
++            g_moe_tiering.admit_replaced_worse_ssd++;
++            g_moe_tiering.policy_admit_window_replacements_ssd++;
++        }
+         if (g_moe_tiering.g133_enabled) {
+             cuda_g133_telemetry_increment(g_cuda_g133_telemetry.reaps);
+         }
+@@ -35499,6 +35892,9 @@ static int cuda_moe_tiering_load_to_ram(
+         cuda_g133_mark_promotion(entry, request.g133_epoch);
+         g_moe_tiering.ram_to_warm++;
+     }
++    if (g_moe_tiering.policy_admit_ssd_enabled && !replacing) {
++        g_moe_tiering.policy_admit_window_free_ssd++;
++    }
+     g_moe_tiering.cold_to_ram++;
+     g_moe_tiering.ssd_bytes += g_dynamic_arena.slot_bytes;
+     return 1;
+@@ -35510,6 +35906,9 @@ static cuda_moe_tier_state cuda_moe_tiering_observe_route(
+     cuda_moe_tier_entry &entry =
+         g_moe_tiering.entries[cuda_moe_tiering_entry_index(layer, expert)];
+     const cuda_moe_tier_state prior = entry.state;
++    if (g_moe_tiering.policy_admit_enabled) {
++        (void)cuda_moe_tiering_admit_note(layer, expert);
++    }
+     if (g_moe_tiering.g133_enabled && cuda_g133_epoch_valid(g133_epoch)) {
+         cuda_g133_record_observation(entry, g133_epoch, (double)weight);
+     }
+@@ -35520,8 +35919,24 @@ static cuda_moe_tier_state cuda_moe_tiering_observe_route(
+     entry.last_weight = weight;
+     entry.frequency++;
+     entry.last_call = g_moe_tiering.call_tick;
++    if (g_moe_tiering.policy_admit_warm_enabled &&
++        entry.state == CUDA_MOE_TIER_RAM_PROBATION &&
++        g_moe_tiering.policy_admit_current_warm != 0u) {
++        if (cuda_moe_tiering_admit_gate(
++                entry, layer, expert,
++                g_moe_tiering.policy_admit_current_warm,
++                g_moe_tiering.policy_admit_mass_bypass_warm,
++                &g_moe_tiering.admit_knocks_skips_warm,
++                &g_moe_tiering.admit_mass_bypass_warm)) {
++            entry.state = CUDA_MOE_TIER_RAM_WARM;
++            g_moe_tiering.ram_to_warm++;
++            g_moe_tiering.policy_admit_window_free_warm++;
++        }
++    }
+     if (g_moe_tiering.g133_enabled && cuda_g133_epoch_valid(g133_epoch)) {
+-        if (entry.state == CUDA_MOE_TIER_RAM_PROBATION &&
++        if ((!g_moe_tiering.policy_admit_warm_enabled ||
++             g_moe_tiering.policy_admit_current_warm == 0u) &&
++            entry.state == CUDA_MOE_TIER_RAM_PROBATION &&
+             cuda_g133_ram_candidate(entry, g133_epoch)) {
+             entry.state = CUDA_MOE_TIER_RAM_WARM;
+             cuda_g133_mark_promotion(entry, g133_epoch);
+@@ -38420,13 +38835,35 @@ static int cuda_moe_tiering_pick_vram_slot(
+             return -1;
+         }
+     }
+-    const uint32_t min_frequency =
+-        g_moe_tiering.policy == CUDA_MOE_TIER_POLICY_MASS_LFRU ?
+-        g_moe_tiering.policy_min_frequency : 2u;
+-    if (!g_moe_tiering.g133_enabled &&
+-        candidate.frequency < min_frequency) {
+-        g_moe_tiering.policy_min_frequency_skips++;
+-        return -1;
++    if (!g_moe_tiering.policy_admit_vram_enabled) {
++        const uint32_t min_frequency =
++            g_moe_tiering.policy == CUDA_MOE_TIER_POLICY_MASS_LFRU ?
++            g_moe_tiering.policy_min_frequency : 2u;
++        if (!g_moe_tiering.g133_enabled &&
++            candidate.frequency < min_frequency) {
++            g_moe_tiering.policy_min_frequency_skips++;
++            return -1;
++        }
++    } else {
++        if (g_moe_tiering.policy_admit_warm_enabled &&
++            g_moe_tiering.policy_admit_current_warm != 0u &&
++            candidate.state == CUDA_MOE_TIER_RAM_PROBATION) {
++            return -1;
++        }
++        const size_t candidate_index =
++            (size_t)(&candidate - g_moe_tiering.entries.data());
++        const uint32_t candidate_layer =
++            (uint32_t)(candidate_index / 256u);
++        const uint32_t candidate_expert =
++            (uint32_t)(candidate_index % 256u);
++        if (!cuda_moe_tiering_admit_gate(
++                candidate, candidate_layer, candidate_expert,
++                g_moe_tiering.policy_admit_current_vram,
++                g_moe_tiering.policy_admit_mass_bypass_vram,
++                &g_moe_tiering.admit_knocks_skips_vram,
++                &g_moe_tiering.admit_mass_bypass_vram)) {
++            return -1;
++        }
+     }
+     if (g_moe_tiering.g133_enabled) {
+         cuda_g133_refresh_entry(candidate, g133_epoch);
+@@ -38641,9 +39078,15 @@ static void cuda_moe_tiering_commit_vram_reservations(
+         if (reservation.free_promotion && cache->count < cache->capacity) {
+             cache->count++;
+             g_moe_tiering.policy_free_promotions++;
++            if (g_moe_tiering.policy_admit_vram_enabled) {
++                g_moe_tiering.policy_admit_window_free_vram++;
++            }
+         } else if (reservation.replacement) {
+             cache->evictions++;
+             g_moe_tiering.policy_replacements++;
++            if (g_moe_tiering.policy_admit_vram_enabled) {
++                g_moe_tiering.policy_admit_window_replacements_vram++;
++            }
+         }
+         cache->admissions++;
+         if (reservation.candidate_prior_state ==

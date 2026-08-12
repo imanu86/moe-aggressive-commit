@@ -1,0 +1,39 @@
+[step 0] START. workspace .microbench\iq2_kernel creata. obiettivo: microbench col KERNEL REALE (IQ2_XXS gate/up 66B, Q2_K down 84B) vs bench precedente int8 (0.274 mapped / 0.079 vram).
+[step 1] env check OK: nessun ds4_server/llama/server attivo. GPU RTX 3060 12GB idle (632 MiB), driver 596.21.
+[step 2] estrazione kernel da ds4-p4a\ds4_cuda.cu — VERBATIM:
+         struct cuda_block_q2_K/q8_K/iq2_xxs (690-706), dev_f16_to_f32 (22958), dev_unpack_iq2_signs (22962),
+         dev_dot_q2_16 (22979), dev_iq2_i8x8_lut (22996), dev_dot_iq2_xxs_q8_K_block_lut (23011),
+         dev_dot_q2_K_q8_K_block (23269), quarter_warp_sum_f32 (23444), q8_K_quantize_kernel (23453),
+         moe_gate_up_mid_decode_ptrs_lut_qwarp32_kernel (24160), moe_down_ptrs_masked_qwarp32_kernel (25287).
+         ds4_iq2_tables_cuda.inc copiato tal quale (cuda_iq2xxs_grid[256] + cuda_ksigns_iq2xs[128]).
+         NIENTE omesso della logica di dequant/lettura. Omesso solo cio' che non tocca i pesi esperti
+         (router/arena/tiering host-side) — vedi results.txt sezione FEDELTA'.
+[step 3] geometria REALE ricavata dal runtime (non inventata):
+         ds4_cuda.cu:45011 -> expert_in_dim=4096, out_dim=4096; ds4_cuda.cu:45004-45006 -> gate_row=16*66=1056,
+         down_row=(mid/256)*84; g7_runs/g75_iq1_s_real_expert_gate/run1.json -> gate_or_up_expert_bytes=2162688,
+         down_expert_bytes=2752512, expert_bytes=7077888 => expert_mid_dim = 2162688/1056 = 2048, midq_blocks=8.
+         Coincide col 7077888 del bench int8 precedente: stesso peso per expert, confronto lecito.
+         Launch shapes dal runtime: gate/up <<<(16,6),256>>> (43554/43562), down <<<(128,6),256>>> (43556/43697).
+[step 4] scritto iq2_kernel_bench.cu: pool 64 expert x 7077888 B = 432 MiB per forma (VRAM / mapped / pinned),
+         gruppo di 6 che ruota su 10 gruppi, 3 warmup + 20 misure, mediana su cudaEvent + wall.
+         Scenari: K1/K2 gate-up VRAM vs zero-copy, K3/K4 down, K5 sequenza reale (gate/up -> q8_K quantize -> down),
+         K6 status quo (copy pinned->VRAM + compute), K7 varianti occupancy, K8 tetto PCIe.
+[step 5] BUILD OK (vcvars64 VS2022 + nvcc 12.6, -O3 -arch=sm_86 -lineinfo).
+[step 6] PRIMA RUN: zero-copy col kernel vero = 4.30 GB/s (gate/up) e 5.74 (down), contro 25.86 del banco int8.
+         6x peggio. Sospetto d'obbligo -> non e' "piu' veloce del possibile" ma molto piu' LENTO: indago.
+[step 7] aggiunto K0 = CONTROL_stream_uint4_kernel (NON di runtime): legge gli stessi byte dallo stesso pool
+         mappato con load uint4 coalescenti. Risultato 25.99 GB/s = 98.8% del tetto PCIe (26.31) e riproduce
+         il 25.86 del banco int8. => pool mappato/harness/PCIe SANI. La perdita e' tutta granularita' di accesso
+         (blocchi 66 B non allineati a 4 -> load a 16 bit, lane a stride 66 B -> ~32 settori per istruzione).
+[step 8] RUN A + RUN B (riproducibilita' entro l'1%). Sanita': checksum identico tra forme di memoria per ogni
+         kernel (7e63521c… gate/up, d064dd39… down, 7bcc3ded… catena K5 = K6 copia); nessuno scenario su RAM
+         supera il tetto PCIe; output riletti dalla global (load non eliminabili); working set 24.8/15.8 MB >> L2 2.25.
+[step 9] VARIANTI OCCUPANCY: il design stimava margine (27 warp/SM su 48). REFUTATO: piu' blocchi = peggio,
+         monotono. gate/up RR=4 1.003 -> RR=2 1.594 -> RR=1 2.334 ms/exp. down ROWS=32 0.479 -> ROWS=16 0.567.
+         Il collo e' l'efficienza delle richieste PCIe, non la concorrenza. RR=4 e' il migliore anche su VRAM.
+[step 10] VERDETTO: gate/up 1.005 ms/exp MORTA; down 0.479 ms/exp MORTA (pro-quota: soglia morte 0.268);
+         expert intero 1.494 ms/exp = 205.6 ms/token a 137.6 miss = MORTA (2.2x la soglia 0.69).
+         Confronto decisivo: il path a copia attuale (K6) fa 0.321 ms/exp = 44.2 ms/token al 84% del filo PCIe.
+         La leva zero-copy sarebbe una REGRESSIONE 4.65x (+161 ms/token). Verdetto del banco int8 INVERTITO.
+[step 11] results.txt scritto (verdetto + causa + fedelta' estrazione + geometria + sanita' + 2 run integrali).
+         GPU rilasciata: 634 MiB idle, nessun processo lasciato attivo. FINE.

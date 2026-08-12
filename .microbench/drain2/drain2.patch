@@ -1,0 +1,512 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 509cab7..134d7d7 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -25784,8 +25784,9 @@ __global__ static void moe_publish_route_batch_kernel(
+ 
+ /* P4a materializes arbitrary resident destinations and publishes all demand
+  * routes in one launch. The launch is ordered after the two layer H2D copies
+- * on route_upload_stream; the host mailbox is not released until that stream
+- * has drained. */
++ * on route_upload_stream. In overlap mode the consumer waits on the
++ * generation-local completion event; otherwise the worker drains the stream
++ * before releasing the host mailbox. */
+ __global__ static void moe_publish_demand_batch_kernel(
+         int32_t *slot_by_layer_expert,
+         uint64_t *route_ptrs,
+@@ -28362,6 +28363,16 @@ struct cuda_moe_expert_cache {
+     double route_ready_wait_seconds;
+ };
+ static cuda_moe_expert_cache g_moe_expert_cache;
++
++/* A2 neutrality: overlap-only state must not shift the cache lines shared by
++ * the decode and route-worker threads. The first drain patch inserted these
++ * members into cuda_moe_expert_cache even when its flag was off. */
++struct cuda_moe_drain_overlap_sidecar {
++    cudaEvent_t ready_event[2];
++    std::atomic<uint64_t> ready_generation;
++    uint32_t requested;
++};
++static cuda_moe_drain_overlap_sidecar g_moe_drain_overlap;
+ static int g_moe_expert_cache_decode_started;
+ static uint64_t g_moe_expert_cache_deferred_gate_expert_bytes;
+ static uint64_t g_moe_expert_cache_deferred_down_expert_bytes;
+@@ -31061,6 +31072,11 @@ static int cuda_moe_split_fused_requested(void) {
+     return env && env[0] && strcmp(env, "0") != 0;
+ }
+ 
++static int cuda_moe_drain_overlap_requested(void) {
++    const char *env = getenv("DS4_CUDA_DRAIN_OVERLAP");
++    return env && strcmp(env, "1") == 0;
++}
++
+ static int cuda_moe_route_no_default_sync_requested(void) {
+     const char *env = getenv("DS4_CUDA_MOE_ROUTE_NO_DEFAULT_SYNC");
+     return env && env[0] && strcmp(env, "0") != 0;
+@@ -36047,6 +36063,14 @@ static void cuda_moe_expert_cache_release(void) {
+     if (g_moe_expert_cache.route_upload_stream) {
+         (void)cudaStreamSynchronize(g_moe_expert_cache.route_upload_stream);
+     }
++    if (g_moe_drain_overlap.requested) {
++        for (uint32_t slot = 0; slot < 2u; slot++) {
++            if (g_moe_drain_overlap.ready_event[slot]) {
++                (void)cudaEventDestroy(
++                    g_moe_drain_overlap.ready_event[slot]);
++            }
++        }
++    }
+     if (g_moe_expert_cache.route_consumer_done_event) {
+         (void)cudaEventDestroy(
+             g_moe_expert_cache.route_consumer_done_event);
+@@ -36216,6 +36240,14 @@ static void cuda_moe_expert_cache_release(void) {
+     g_moe_expert_cache.route_host_up = NULL;
+     g_moe_expert_cache.route_host_down = NULL;
+     g_moe_expert_cache.route_upload_stream = NULL;
++    if (g_moe_drain_overlap.requested) {
++        for (uint32_t slot = 0; slot < 2u; slot++) {
++            g_moe_drain_overlap.ready_event[slot] = NULL;
++        }
++        g_moe_drain_overlap.ready_generation.store(
++            0u, std::memory_order_relaxed);
++        g_moe_drain_overlap.requested = 0u;
++    }
+     g_moe_expert_cache.route_consumer_done_event = NULL;
+     g_moe_expert_cache.gate_expert_bytes = 0;
+     g_moe_expert_cache.down_expert_bytes = 0;
+@@ -37220,6 +37252,8 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         cuda_moe_route_batched_publish_requested();
+     const int demand_pipeline_requested =
+         cuda_moe_demand_pipeline_requested();
++    const int drain_overlap_requested =
++        cuda_moe_drain_overlap_requested();
+     const int demand_packed_layout =
+         packed_copy_requested || demand_pipeline_requested;
+     const int g73_host_selected_requested =
+@@ -37335,6 +37369,8 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             (batched_publish_requested ? 1u : 0u) &&
+         g_moe_expert_cache.demand_pipeline_requested ==
+             (demand_pipeline_requested ? 1u : 0u) &&
++        g_moe_drain_overlap.requested ==
++            (drain_overlap_requested ? 1u : 0u) &&
+         g_moe_expert_cache.g73_host_selected_requested ==
+             (g73_host_selected_requested ? 1u : 0u) &&
+         g_moe_expert_cache.route_io_qd_requested ==
+@@ -37541,6 +37577,8 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         char *transient_up = NULL;
+         char *transient_down = NULL;
+         cudaStream_t route_stream = NULL;
++        cudaEvent_t upload_ready_event[2] = {
++            NULL, NULL};
+         cudaEvent_t consumer_done_event = NULL;
+ #ifdef _WIN32
+         HANDLE route_io_qd_event[4] = {NULL, NULL, NULL, NULL};
+@@ -37676,6 +37714,13 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             err = cudaEventCreateWithFlags(
+                 &consumer_done_event, cudaEventDisableTiming);
+         }
++        if (err == cudaSuccess && gpu_routes && drain_overlap_requested) {
++            for (uint32_t slot = 0; slot < 2u; slot++) {
++                err = cudaEventCreateWithFlags(
++                    &upload_ready_event[slot], cudaEventDisableTiming);
++                if (err != cudaSuccess) break;
++            }
++        }
+ #ifdef _WIN32
+         if (err == cudaSuccess && gpu_routes && route_io_qd_requested) {
+             for (uint32_t i = 0; i < route_io_qd_requested; i++) {
+@@ -37760,6 +37805,16 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             g_moe_expert_cache.packed_transient_alloc =
+                 transient_packed_base ? 1u : 0u;
+             g_moe_expert_cache.route_upload_stream = route_stream;
++            if (drain_overlap_requested) {
++                for (uint32_t slot = 0; slot < 2u; slot++) {
++                    g_moe_drain_overlap.ready_event[slot] =
++                        upload_ready_event[slot];
++                    upload_ready_event[slot] = NULL;
++                }
++                g_moe_drain_overlap.ready_generation.store(
++                    0u, std::memory_order_relaxed);
++                g_moe_drain_overlap.requested = 1u;
++            }
+             g_moe_expert_cache.route_consumer_done_event =
+                 consumer_done_event;
+             g_moe_expert_cache.route_stop.store(
+@@ -37921,6 +37976,12 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+                             batched_publish_requested ? "composed" : "off",
+                             route_io_qd_requested);
+                 }
++                if (drain_overlap_requested) {
++                    fprintf(stderr,
++                            "ds4: CUDA route drain overlap active: "
++                            "ready=per-generation-event consumer=stream-0-wait "
++                            "early-transaction-drain=blocking\n");
++                }
+                 if (g73_host_selected_requested) {
+                     fprintf(stderr,
+                             "ds4: CUDA G73 host-selected reuse active: "
+@@ -37985,6 +38046,11 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             if (transient_down) (void)cudaFree(transient_down);
+         }
+         if (route_stream) (void)cudaStreamDestroy(route_stream);
++        for (uint32_t slot = 0; slot < 2u; slot++) {
++            if (upload_ready_event[slot]) {
++                (void)cudaEventDestroy(upload_ready_event[slot]);
++            }
++        }
+         if (consumer_done_event) {
+             (void)cudaEventDestroy(consumer_done_event);
+         }
+@@ -38698,6 +38764,78 @@ static void cuda_moe_tiering_refund_failed_promotions(
+     }
+ }
+ 
++/* Record one generation-local completion point after every H2D and route_ptrs
++ * publication for the layer. The consumer-side wait is armed only after this
++ * succeeds. Event reuse is protected by route_consumer_done_event: the worker
++ * cannot claim generation N+1 before stream 0 has consumed generation N.
++ *
++ * A2: the old patch put the flag test inside this helper, so flag-off drains
++ * still called new code before synchronizing. Every caller below is now inside
++ * the requested branch; the legacy branch cannot reach this helper or its
++ * acquire/release state. */
++static int cuda_moe_route_upload_overlap_arm(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request *request) {
++    if (!cache || !request || request->host_generation == 0u) return 0;
++    cudaEvent_t ready =
++        g_moe_drain_overlap.ready_event[request->host_generation & 1u];
++    if (!ready ||
++        cudaEventRecord(ready, cache->route_upload_stream) != cudaSuccess) {
++        (void)cudaGetLastError();
++        return 0;
++    }
++    g_moe_drain_overlap.ready_generation.store(
++        request->host_generation, std::memory_order_release);
++    return 1;
++}
++
++static int cuda_moe_tiering_finish_vram_reservations_overlap(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request *trace_request,
++        const uint32_t *admitted,
++        const cuda_moe_vram_promotion_reservation *reservations,
++        uint32_t count, const ds4_gpu_g133_epoch &g133_epoch,
++        int commit_on_success, double absolute_deadline,
++        int *overlap_armed_out) {
++    if (overlap_armed_out) *overlap_armed_out = 0;
++    const double sync_started = g_moe_tiering.g133_enabled
++        ? cuda_wall_sec() : 0.0;
++    const uint64_t trace_sync_started = trace_request
++        ? cuda_decode_trace_request_qpc(*trace_request) : 0u;
++    const cudaError_t pending_error = cudaGetLastError();
++    const int overlap_armed =
++        commit_on_success && pending_error == cudaSuccess &&
++        cuda_moe_route_upload_overlap_arm(cache, trace_request);
++    const cudaError_t sync_error = overlap_armed
++        ? cudaSuccess
++        : cuda_g73_finish_launched_copy(
++              cache->route_upload_stream, absolute_deadline,
++              count > 0u ? reservations[0].candidate_layer : 0u,
++              "tiering-reservation");
++    cuda_decode_trace_note_upload_drain(
++        trace_request, trace_sync_started);
++    if (sync_started != 0.0 && !overlap_armed) {
++        cuda_g133_telemetry_note_upload_sync_wait(
++            cuda_wall_sec() - sync_started);
++    }
++    const int transfer_ok =
++        pending_error == cudaSuccess && sync_error == cudaSuccess;
++    if (!transfer_ok || !commit_on_success) {
++        (void)cudaGetLastError();
++        cuda_moe_tiering_refund_failed_promotions(
++            reservations, count, g133_epoch);
++        if (count > 0u) cuda_moe_expert_cache_invalidate();
++        return transfer_ok;
++    }
++    for (uint32_t i = 0; i < count; i++) {
++        cache->slots[admitted[i]].state = CUDA_MOE_CACHE_VALID;
++    }
++    cuda_moe_tiering_commit_vram_reservations(
++        cache, reservations, count, g133_epoch);
++    if (overlap_armed_out) *overlap_armed_out = overlap_armed;
++    return 1;
++}
++
+ static int cuda_moe_tiering_finish_vram_reservations(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request *trace_request,
+@@ -40053,27 +40191,57 @@ static int cuda_moe_tiering_enforce_request(
+         g_moe_zerocopy.t_orchestration_ms += flush_ms;
+         ds4_workerprof_add_ms(wprof, WP_PUBLISH_NS, flush_ms);
+     }
+-    const double drain_started = cuda_moe_zerocopy_now_ms();
+-    const int transfers_ok = cuda_moe_tiering_finish_vram_reservations(
+-        cache, &request, admitted, promotion_reservations, admitted_count,
+-        request.g133_epoch, ok, request.absolute_deadline);
+-    ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
+-    {
+-        const double drain_ms = cuda_moe_zerocopy_now_ms() - drain_started;
+-        g_moe_zerocopy.t_drain_ms += drain_ms;
+-        g_moe_zerocopy.t_orchestration_ms += drain_ms;
+-        /* WORKER-PROF: qui il worker aspetta davvero il completamento degli
+-         * H2D accodati sopra (sync dello stream di upload). */
+-        ds4_workerprof_add_ms(wprof, WP_DRAIN_NS, drain_ms);
+-    }
+-    if (h2d_sync_started != 0.0) {
+-        g_nested_residual.profile_h2d_sync_calls++;
+-        g_nested_residual.profile_h2d_sync_seconds +=
+-            cuda_wall_sec() - h2d_sync_started;
+-    }
+-    if (!transfers_ok) {
+-        failure_reason = "upload-sync";
+-        ok = 0;
++    if (!g_moe_drain_overlap.requested) {
++        const double drain_started = cuda_moe_zerocopy_now_ms();
++        const int transfers_ok = cuda_moe_tiering_finish_vram_reservations(
++            cache, &request, admitted, promotion_reservations, admitted_count,
++            request.g133_epoch, ok, request.absolute_deadline);
++        ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
++        {
++            const double drain_ms = cuda_moe_zerocopy_now_ms() - drain_started;
++            g_moe_zerocopy.t_drain_ms += drain_ms;
++            g_moe_zerocopy.t_orchestration_ms += drain_ms;
++            /* WORKER-PROF: qui il worker aspetta davvero il completamento degli
++             * H2D accodati sopra (sync dello stream di upload). */
++            ds4_workerprof_add_ms(wprof, WP_DRAIN_NS, drain_ms);
++        }
++        if (h2d_sync_started != 0.0) {
++            g_nested_residual.profile_h2d_sync_calls++;
++            g_nested_residual.profile_h2d_sync_seconds +=
++                cuda_wall_sec() - h2d_sync_started;
++        }
++        if (!transfers_ok) {
++            failure_reason = "upload-sync";
++            ok = 0;
++        }
++    } else {
++        const double drain_started = cuda_moe_zerocopy_now_ms();
++        int overlap_armed = 0;
++        const int transfers_ok =
++            cuda_moe_tiering_finish_vram_reservations_overlap(
++                cache, &request, admitted, promotion_reservations,
++                admitted_count, request.g133_epoch, ok,
++                request.absolute_deadline, &overlap_armed);
++        if (overlap_armed) {
++            ds4_transport_h2d_batch_invalidate(&transport_batch);
++        }
++        ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
++        {
++            const double drain_ms =
++                cuda_moe_zerocopy_now_ms() - drain_started;
++            g_moe_zerocopy.t_drain_ms += drain_ms;
++            g_moe_zerocopy.t_orchestration_ms += drain_ms;
++            ds4_workerprof_add_ms(wprof, WP_DRAIN_NS, drain_ms);
++        }
++        if (h2d_sync_started != 0.0 && !overlap_armed) {
++            g_nested_residual.profile_h2d_sync_calls++;
++            g_nested_residual.profile_h2d_sync_seconds +=
++                cuda_wall_sec() - h2d_sync_started;
++        }
++        if (!transfers_ok) {
++            failure_reason = "upload-sync";
++            ok = 0;
++        }
+     }
+     if constexpr (G73) {
+         if (ok) cuda_g73_publish_pending_outcomes(
+@@ -40727,56 +40895,117 @@ static void *cuda_moe_route_worker(void *arg) {
+         }
+ 
+         if (g_moe_tiering.mode != CUDA_MOE_TIER_ENFORCE) {
+-            const uint64_t wprof_flush = ds4_workerprof_start(wprof);
+-            if (ok && cache->batched_publish_requested &&
+-                !cuda_moe_route_publish_batch_flush(
+-                    cache, request, &publish_batch)) {
+-                failure_reason = "publish-batch";
+-                failure_cuda_error = cudaPeekAtLastError();
+-                ok = 0;
+-            }
+-            ds4_workerprof_stop(wprof, WP_PUBLISH_NS, wprof_flush);
+-            const double h2d_sync_started =
+-                nested_profile_request ? cuda_wall_sec() : 0.0;
+-            const uint64_t trace_upload_drain_started =
+-                cuda_decode_trace_request_qpc(request);
+-            const uint64_t wprof_drain = ds4_workerprof_start(wprof);
+-            const cudaError_t pending_error = cudaGetLastError();
+-            const cudaError_t sync_error =
+-                cudaStreamSynchronize(cache->route_upload_stream);
+-            ds4_workerprof_stop(wprof, WP_DRAIN_NS, wprof_drain);
+-            cuda_decode_trace_note_upload_drain(
+-                &request, trace_upload_drain_started);
+-            if (nested_profile_request) {
+-                g_nested_residual.profile_h2d_sync_calls++;
+-                g_nested_residual.profile_h2d_sync_seconds +=
+-                    cuda_wall_sec() - h2d_sync_started;
+-            }
+-            ds4_transport_h2d_batch_finish(
+-                &transport_batch,
+-                pending_error == cudaSuccess && sync_error == cudaSuccess);
+-            if (pending_error != cudaSuccess || sync_error != cudaSuccess) {
+-                failure_cuda_error = pending_error != cudaSuccess ?
+-                    pending_error : sync_error;
+-                failure_reason = pending_error != cudaSuccess ?
+-                    "pending-cuda-error" : "upload-sync";
+-                ok = 0;
+-            }
+-            if (ok) {
+-                for (uint32_t i = 0; i < admitted_count; i++) {
+-                    cache->slots[admitted[i]].state = CUDA_MOE_CACHE_VALID;
++            if (!g_moe_drain_overlap.requested) {
++                const uint64_t wprof_flush = ds4_workerprof_start(wprof);
++                if (ok && cache->batched_publish_requested &&
++                    !cuda_moe_route_publish_batch_flush(
++                        cache, request, &publish_batch)) {
++                    failure_reason = "publish-batch";
++                    failure_cuda_error = cudaPeekAtLastError();
++                    ok = 0;
++                }
++                ds4_workerprof_stop(wprof, WP_PUBLISH_NS, wprof_flush);
++                const double h2d_sync_started =
++                    nested_profile_request ? cuda_wall_sec() : 0.0;
++                const uint64_t trace_upload_drain_started =
++                    cuda_decode_trace_request_qpc(request);
++                const uint64_t wprof_drain = ds4_workerprof_start(wprof);
++                const cudaError_t pending_error = cudaGetLastError();
++                const cudaError_t sync_error =
++                    cudaStreamSynchronize(cache->route_upload_stream);
++                ds4_workerprof_stop(wprof, WP_DRAIN_NS, wprof_drain);
++                cuda_decode_trace_note_upload_drain(
++                    &request, trace_upload_drain_started);
++                if (nested_profile_request) {
++                    g_nested_residual.profile_h2d_sync_calls++;
++                    g_nested_residual.profile_h2d_sync_seconds +=
++                        cuda_wall_sec() - h2d_sync_started;
+                 }
+-            } else if (admitted_count > 0u) {
+-                for (uint32_t i = 0; i < admitted_count; i++) {
+-                    const cuda_moe_cache_slot &entry =
+-                        cache->slots[admitted[i]];
+-                    if (entry.layer_index < CUDA_MOE_LAYER_COUNT &&
+-                        entry.expert_id < 256u) {
+-                        cuda_moe_tiering_demote_cache_entry(
+-                            entry.layer_index, entry.expert_id);
++                ds4_transport_h2d_batch_finish(
++                    &transport_batch,
++                    pending_error == cudaSuccess && sync_error == cudaSuccess);
++                if (pending_error != cudaSuccess || sync_error != cudaSuccess) {
++                    failure_cuda_error = pending_error != cudaSuccess ?
++                        pending_error : sync_error;
++                    failure_reason = pending_error != cudaSuccess ?
++                        "pending-cuda-error" : "upload-sync";
++                    ok = 0;
++                }
++                if (ok) {
++                    for (uint32_t i = 0; i < admitted_count; i++) {
++                        cache->slots[admitted[i]].state = CUDA_MOE_CACHE_VALID;
+                     }
++                } else if (admitted_count > 0u) {
++                    for (uint32_t i = 0; i < admitted_count; i++) {
++                        const cuda_moe_cache_slot &entry =
++                            cache->slots[admitted[i]];
++                        if (entry.layer_index < CUDA_MOE_LAYER_COUNT &&
++                            entry.expert_id < 256u) {
++                            cuda_moe_tiering_demote_cache_entry(
++                                entry.layer_index, entry.expert_id);
++                        }
++                    }
++                    cuda_moe_expert_cache_invalidate();
++                }
++            } else {
++                const uint64_t wprof_flush = ds4_workerprof_start(wprof);
++                if (ok && cache->batched_publish_requested &&
++                    !cuda_moe_route_publish_batch_flush(
++                        cache, request, &publish_batch)) {
++                    failure_reason = "publish-batch";
++                    failure_cuda_error = cudaPeekAtLastError();
++                    ok = 0;
++                }
++                ds4_workerprof_stop(wprof, WP_PUBLISH_NS, wprof_flush);
++                const double h2d_sync_started =
++                    nested_profile_request ? cuda_wall_sec() : 0.0;
++                const uint64_t trace_upload_drain_started =
++                    cuda_decode_trace_request_qpc(request);
++                const uint64_t wprof_drain = ds4_workerprof_start(wprof);
++                const cudaError_t pending_error = cudaGetLastError();
++                const int overlap_armed =
++                    ok && pending_error == cudaSuccess &&
++                    cuda_moe_route_upload_overlap_arm(cache, &request);
++                const cudaError_t sync_error = overlap_armed
++                    ? cudaSuccess
++                    : cudaStreamSynchronize(cache->route_upload_stream);
++                ds4_workerprof_stop(wprof, WP_DRAIN_NS, wprof_drain);
++                cuda_decode_trace_note_upload_drain(
++                    &request, trace_upload_drain_started);
++                if (nested_profile_request && !overlap_armed) {
++                    g_nested_residual.profile_h2d_sync_calls++;
++                    g_nested_residual.profile_h2d_sync_seconds +=
++                        cuda_wall_sec() - h2d_sync_started;
++                }
++                if (overlap_armed) {
++                    ds4_transport_h2d_batch_invalidate(&transport_batch);
++                }
++                ds4_transport_h2d_batch_finish(
++                    &transport_batch,
++                    pending_error == cudaSuccess && sync_error == cudaSuccess);
++                if (pending_error != cudaSuccess || sync_error != cudaSuccess) {
++                    failure_cuda_error = pending_error != cudaSuccess ?
++                        pending_error : sync_error;
++                    failure_reason = pending_error != cudaSuccess ?
++                        "pending-cuda-error" : "upload-sync";
++                    ok = 0;
++                }
++                if (ok) {
++                    for (uint32_t i = 0; i < admitted_count; i++) {
++                        cache->slots[admitted[i]].state = CUDA_MOE_CACHE_VALID;
++                    }
++                } else if (admitted_count > 0u) {
++                    for (uint32_t i = 0; i < admitted_count; i++) {
++                        const cuda_moe_cache_slot &entry =
++                            cache->slots[admitted[i]];
++                        if (entry.layer_index < CUDA_MOE_LAYER_COUNT &&
++                            entry.expert_id < 256u) {
++                            cuda_moe_tiering_demote_cache_entry(
++                                entry.layer_index, entry.expert_id);
++                        }
++                    }
++                    cuda_moe_expert_cache_invalidate();
+                 }
+-                cuda_moe_expert_cache_invalidate();
+             }
+         }
+         cache->route_worker_jobs++;
+@@ -45583,6 +45812,30 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+         g_nested_residual.profile_route_ready_wait_seconds +=
+             ready_wait_seconds;
+     }
++    if (g_moe_drain_overlap.requested) {
++        const uint64_t generation =
++            cache->route_submitted_generation.load(std::memory_order_acquire);
++        if (generation != 0u &&
++            g_moe_drain_overlap.ready_generation.load(
++                std::memory_order_acquire) == generation) {
++            cudaEvent_t ready =
++                g_moe_drain_overlap.ready_event[generation & 1u];
++            const cudaError_t wait_error = ready
++                ? cudaStreamWaitEvent(0, ready, 0)
++                : cudaErrorInvalidResourceHandle;
++            if (wait_error != cudaSuccess) {
++                (void)cudaGetLastError();
++                (void)cuda_moe_route_mailbox_fail_closed(
++                    cache, sequence, generation, "upload-ready-wait");
++                fprintf(stderr,
++                        "ds4: CUDA route upload-ready wait failed "
++                        "seq=%u generation=%llu error=%s\n",
++                        sequence, (unsigned long long)generation,
++                        cudaGetErrorString(wait_error));
++                return NULL;
++            }
++        }
++    }
+     if (*(volatile uint32_t *)cache->route_failed_host == sequence) {
+         fprintf(stderr,
+                 "ds4: CUDA GPU-resident route resolver observed failure seq=%u; falling back\n",

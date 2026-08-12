@@ -1,0 +1,648 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 47ab35f..1699769 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -1832,6 +1832,33 @@ struct cuda_g132_cpu_lane {
+     double layer_gpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     double layer_gpu_wait_cpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     double layer_cpu_wait_gpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    /* ---- lane_econ: async join state + per-dispatch decomposition.
++     * All of this lives inside the lane singleton: no shared runtime
++     * struct changes layout and nothing below is touched unless the
++     * GENERAL lane actually engages a dispatch. */
++    double plan_begin_wall;
++    double dispatch_worker_window_seconds;
++    double dispatch_prepare_wait_seconds;
++    double dispatch_enqueue_seconds;
++    double cpu_wake_seconds;
++    double cpu_quant_seconds;
++    double cpu_reduce_seconds;
++    uint32_t prev_dispatch_layer;
++    int prev_dispatch_valid;
++    int join_enqueued;
++    int cpu_join_done;
++    int stats_pending;
++    int async_fault;
++    uint64_t general_join_async;
++    uint64_t general_prepare_waits;
++    uint64_t general_stats_dropped;
++    double general_wake_seconds;
++    double general_quant_seconds;
++    double general_reduce_seconds;
++    double general_enqueue_seconds;
++    double general_prepare_wait_seconds;
++    double general_worker_window_seconds;
++    double general_layer_prepare_wait_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+ };
+ 
+ static cuda_g132_cpu_lane g_g132_cpu_lane;
+@@ -1855,6 +1882,12 @@ static void cuda_g132_cpu_lane_cancel_dispatch(void);
+ static int cuda_g132_cpu_lane_wait_and_join(
+         ds4_gpu_tensor *out, uint32_t layer_index,
+         const float **captured_input);
++/* lane_econ: asynchronous join for the GENERAL lane (the caller thread
++ * never blocks on the CPU tail; a bridge-stream chain owns the join). */
++static void cuda_g132_cpu_lane_emit_general_stats_locked(
++        cuda_g132_cpu_lane *lane);
++static int cuda_g132_cpu_lane_enqueue_join_general(
++        ds4_gpu_tensor *out, uint32_t layer_index);
+ static uint32_t g_q1_0_dual_sparse_entries;
+ static uint64_t g_q1_0_dual_sparse_bytes;
+ static double g_q1_0_dual_sparse_seconds;
+@@ -39720,8 +39753,11 @@ static void cuda_g132_general_plan_begin(
+     cuda_g132_general_plan &plan = cache->route_cpu_plan;
+     cuda_g132_general_plan_release(cache, &plan);
+     if (!request.cpu_lane_allowed || !cuda_g132_general_requested() ||
++        g_g132_cpu_lane.async_fault ||
+         request.route_count < 2u ||
+         request.layer_index >= CUDA_G132_CPU_LANE_LAYER_COUNT) {
++        /* async_fault: a CPU job failed after its join chain was already
++         * enqueued; the lane fails closed from the next engagement on. */
+         return;
+     }
+     plan.sequence = request.sequence;
+@@ -39729,6 +39765,10 @@ static void cuda_g132_general_plan_begin(
+     plan.layer_index = request.layer_index;
+     plan.route_count = request.route_count;
+     os_mutex_lock(&g_g132_cpu_lane.mutex);
++    /* lane_econ: timestamp of the worker-phase start.  prepare_general
++     * reads it after finish(): the difference is the window the CPU lane
++     * could overlap (resolver + staging + drain), measured per dispatch. */
++    g_g132_cpu_lane.plan_begin_wall = cuda_wall_sec();
+     const uint32_t adaptive_target =
+         g_g132_cpu_lane.layer_target_cpu[request.layer_index];
+     os_mutex_unlock(&g_g132_cpu_lane.mutex);
+@@ -48352,8 +48392,13 @@ static int routed_moe_launch_impl(
+                         cuda_g132_cpu_lane_cancel_dispatch();
+                         return 0;
+                     }
+-                    if (!cuda_g132_cpu_lane_wait_and_join(
+-                            out, layer_index, NULL)) {
++                    /* lane_econ: asynchronous join.  The old blocking join
++                     * cost the caller thread ~1,1 ms/layer of pure serial
++                     * time (28/7: the whole measured lane loss); the
++                     * bridge-stream chain now owns the join and the caller
++                     * returns right after the enqueue. */
++                    if (!cuda_g132_cpu_lane_enqueue_join_general(
++                            out, layer_index)) {
+                         return 0;
+                     }
+                 }
+@@ -48804,8 +48849,10 @@ static int routed_moe_launch_impl(
+                     cuda_g132_cpu_lane_cancel_dispatch();
+                     return 0;
+                 }
+-                if (!cuda_g132_cpu_lane_wait_and_join(
+-                        out, layer_index, NULL)) {
++                /* lane_econ: asynchronous join, same contract as the split
++                 * consumer above. */
++                if (!cuda_g132_cpu_lane_enqueue_join_general(
++                        out, layer_index)) {
+                     return 0;
+                 }
+             }
+@@ -49317,10 +49364,16 @@ static void *cuda_g132_cpu_lane_worker_main(void *arg) {
+         /* This is the sole submitter to the private row pool.  Claim the
+          * complete batch so experts cannot overlap each other. */
+         lane.next_job = lane.job_count;
++        /* lane_econ: general is stable for the whole dispatch (set by
++         * prepare_general before input_ready, cleared only by the join
++         * chain or a cancel), so a snapshot under the mutex is exact. */
++        const int general = lane.general_active;
+         os_mutex_unlock(&lane.mutex);
+ 
++        const double dequeue_wall = cuda_wall_sec();
+         int ok = ds4_g132_quantize_row_q8_K(
+             lane.host_input, worker->xq.data(), lane.expert_in_dim);
++        const double quant_finished_wall = cuda_wall_sec();
+         double expert_seconds = 0.0;
+         uint32_t expert_count = 0u;
+         if (ok) {
+@@ -49332,14 +49385,42 @@ static void *cuda_g132_cpu_lane_worker_main(void *arg) {
+                 expert_count++;
+             }
+         }
++        double reduce_seconds = 0.0;
++        if (general) {
++            /* lane_econ: the single orchestrator reduces its own partial,
++             * so the join no longer needs the caller thread.  On failure
++             * the partial is zeros: the H2D+add enqueued behind the gate
++             * callback joins an exact zero and the gate callback latches
++             * the fault fail-closed. */
++            const double reduce_started = cuda_wall_sec();
++            memset(lane.host_partial, 0,
++                   (size_t)lane.out_dim * sizeof(float));
++            if (ok) {
++                for (uint32_t job = 0; job < lane.job_count; job++) {
++                    const float *route = lane.route_outputs.data() +
++                        (uint64_t)job * lane.out_dim;
++                    for (uint32_t i = 0; i < lane.out_dim; i++) {
++                        lane.host_partial[i] += route[i];
++                    }
++                }
++            }
++            reduce_seconds = cuda_wall_sec() - reduce_started;
++        }
+ 
+         os_mutex_lock(&lane.mutex);
+         if (!ok) lane.job_failed = 1;
+         lane.cpu_expert_seconds = expert_seconds;
+         lane.cpu_expert_count = expert_count;
++        lane.cpu_wake_seconds =
++            lane.cpu_started > 0.0 && dequeue_wall >= lane.cpu_started
++            ? dequeue_wall - lane.cpu_started : 0.0;
++        lane.cpu_quant_seconds = quant_finished_wall - dequeue_wall;
++        lane.cpu_reduce_seconds = reduce_seconds;
+         lane.completed_jobs = lane.job_count;
+         lane.cpu_finished = cuda_wall_sec();
+-        os_cond_signal(&lane.done_cond);
++        /* lane_econ: broadcast - the waiters can now be the join gate
++         * callback, a cancel and a prepare at the same time. */
++        os_cond_broadcast(&lane.done_cond);
+         os_mutex_unlock(&lane.mutex);
+     }
+     return NULL;
+@@ -49492,7 +49573,14 @@ static void cuda_g132_cpu_lane_release(void) {
+     if (lane.mutex_ready) {
+         os_mutex_lock(&lane.mutex);
+         lane.stop = 1;
++        /* lane_econ: revoke any pending async join so the gate callback
++         * exits instead of waiting on workers that are being stopped;
++         * otherwise destroying the bridge stream would hang on it. */
++        lane.join_enqueued = 0;
++        lane.stats_pending = 0;
++        lane.job_active = 0;
+         if (lane.work_cond_ready) os_cond_broadcast(&lane.work_cond);
++        if (lane.done_cond_ready) os_cond_broadcast(&lane.done_cond);
+         os_mutex_unlock(&lane.mutex);
+     }
+     for (uint32_t i = 0; i < lane.threads_started; i++) {
+@@ -49513,7 +49601,10 @@ static void cuda_g132_cpu_lane_release(void) {
+                 "fallback_contract=%llu fallback_reservation=%llu "
+                 "fallback_wrap=%llu fallback_pipeline=%llu "
+                 "fallback_runtime=%llu "
+-                "staging_routes=%llu\n",
++                "staging_routes=%llu "
++                "join_async=%llu prepare_waits=%llu prepare_wait_ms=%.6f "
++                "stats_dropped=%llu wake_ms=%.6f quant_ms=%.6f "
++                "reduce_ms=%.6f enqueue_ms=%.6f worker_window_ms=%.6f\n",
+                 (unsigned long long)lane.general_calls,
+                 (unsigned long long)lane.general_route_cpu,
+                 (unsigned long long)lane.general_route_gpu,
+@@ -49534,7 +49625,16 @@ static void cuda_g132_cpu_lane_release(void) {
+                 (unsigned long long)lane.general_fallback_wrap,
+                 (unsigned long long)lane.general_fallback_pipeline,
+                 (unsigned long long)lane.general_fallback_runtime,
+-                (unsigned long long)lane.general_staging_routes);
++                (unsigned long long)lane.general_staging_routes,
++                (unsigned long long)lane.general_join_async,
++                (unsigned long long)lane.general_prepare_waits,
++                lane.general_prepare_wait_seconds * 1000.0,
++                (unsigned long long)lane.general_stats_dropped,
++                lane.general_wake_seconds * 1000.0,
++                lane.general_quant_seconds * 1000.0,
++                lane.general_reduce_seconds * 1000.0,
++                lane.general_enqueue_seconds * 1000.0,
++                lane.general_worker_window_seconds * 1000.0);
+         for (uint32_t layer_index = 0;
+              layer_index < CUDA_G132_CPU_LANE_LAYER_COUNT; layer_index++) {
+             if (lane.general_layer_calls[layer_index] == 0u) continue;
+@@ -49544,7 +49644,7 @@ static void cuda_g132_cpu_lane_release(void) {
+                     "bytes_non_attraversati=%llu cpu_wall_ms=%.6f "
+                     "expert_ms=%.6f "
+                     "gpu_wall_ms=%.6f gpu_wait_cpu_ms=%.6f "
+-                    "cpu_wait_gpu_ms=%.6f\n",
++                    "cpu_wait_gpu_ms=%.6f prepare_wait_charged_ms=%.6f\n",
+                     layer_index,
+                     (unsigned long long)
+                         lane.general_layer_calls[layer_index],
+@@ -49560,7 +49660,9 @@ static void cuda_g132_cpu_lane_release(void) {
+                         : 0.0,
+                     lane.layer_gpu_seconds[layer_index] * 1000.0,
+                     lane.layer_gpu_wait_cpu_seconds[layer_index] * 1000.0,
+-                    lane.layer_cpu_wait_gpu_seconds[layer_index] * 1000.0);
++                    lane.layer_cpu_wait_gpu_seconds[layer_index] * 1000.0,
++                    lane.general_layer_prepare_wait_seconds[layer_index] *
++                        1000.0);
+         }
+     }
+     if (lane.requested && cuda_q1_0_profile_requested()) {
+@@ -49890,10 +49992,85 @@ static int cuda_g132_cpu_lane_prepare_general(
+     }
+ 
+     os_mutex_lock(&lane.mutex);
+-    if (lane.job_active) {
++    if (lane.async_fault) {
+         os_mutex_unlock(&lane.mutex);
+         return 0;
+     }
++    double prepare_waited = 0.0;
++    if (lane.job_active || (lane.stats_pending && !lane.gpu_done)) {
++        /* lane_econ: the async tail of the previous dispatch is still in
++         * flight.  This bounded wait is the ONLY critical-path cost the
++         * lane can still induce; it is measured here and charged by the
++         * balancer to the layer that caused it. */
++        const double wait_started = cuda_wall_sec();
++        while ((lane.job_active ||
++                (lane.stats_pending && !lane.gpu_done)) &&
++               cuda_wall_sec() - wait_started < 0.100) {
++            (void)os_cond_timedwait_ms(&lane.done_cond, &lane.mutex, 2u);
++        }
++        if (lane.job_active) {
++            os_mutex_unlock(&lane.mutex);
++            return 0;
++        }
++        prepare_waited = cuda_wall_sec() - wait_started;
++        lane.general_prepare_wait_seconds += prepare_waited;
++        lane.general_prepare_waits++;
++        if (lane.prev_dispatch_layer < CUDA_G132_CPU_LANE_LAYER_COUNT) {
++            lane.general_layer_prepare_wait_seconds
++                [lane.prev_dispatch_layer] += prepare_waited;
++        }
++    }
++    if (lane.stats_pending) {
++        /* The previous dispatch never emitted (its GPU callback was outrun
++         * past the deadline above): account it - with ITS own per-dispatch
++         * fields still intact - before reusing them. */
++        if (lane.gpu_done && lane.cpu_join_done) {
++            cuda_g132_cpu_lane_emit_general_stats_locked(&lane);
++        } else {
++            lane.general_stats_dropped++;
++            lane.stats_pending = 0;
++        }
++    }
++    lane.cpu_join_done = 0;
++    lane.dispatch_prepare_wait_seconds = prepare_waited;
++    if (lane.prev_dispatch_valid &&
++        lane.prev_dispatch_layer < CUDA_G132_CPU_LANE_LAYER_COUNT) {
++        /* lane_econ balancer v2.  With the asynchronous join nobody waits
++         * on the CPU/GPU walls anymore, so equalizing them minimizes the
++         * wrong quantity.  The profit criterion is: maximize admitted
++         * routes (transport quota removed from the serial relay) subject
++         * to ZERO induced serialization, which is exactly the prepare wait
++         * measured above.  No wait -> one more route; wait -> one less.
++         * Streak/cooldown machinery and bounds unchanged. */
++        const uint32_t prev = lane.prev_dispatch_layer;
++        const double balance_hysteresis = 0.000150;
++        const int32_t direction =
++            lane.dispatch_prepare_wait_seconds > balance_hysteresis
++            ? -1 : 1;
++        lane.prev_dispatch_valid = 0;
++        if (lane.layer_balance_cooldown[prev] != 0u) {
++            lane.layer_balance_cooldown[prev]--;
++            lane.layer_imbalance_streak[prev] = 0u;
++        } else {
++            if (lane.layer_imbalance_direction[prev] == direction) {
++                lane.layer_imbalance_streak[prev]++;
++            } else {
++                lane.layer_imbalance_direction[prev] = direction;
++                lane.layer_imbalance_streak[prev] = 1u;
++            }
++            if (lane.layer_imbalance_streak[prev] >= 3u) {
++                uint32_t &target = lane.layer_target_cpu[prev];
++                if (direction < 0 && target > 1u) {
++                    target--;
++                } else if (direction > 0 &&
++                           target < lane.max_experts_per_layer) {
++                    target++;
++                }
++                lane.layer_imbalance_streak[prev] = 0u;
++                lane.layer_balance_cooldown[prev] = 4u;
++            }
++        }
++    }
+     try {
+         lane.route_outputs.resize((uint64_t)plan.cpu_count * out_dim);
+         for (uint32_t i = 0; i < lane.worker_count; i++) {
+@@ -49945,6 +50122,19 @@ static int cuda_g132_cpu_lane_prepare_general(
+     lane.general_current_eligible = plan.eligible;
+     lane.general_current_rejected_cap = plan.rejected_cap;
+     lane.general_current_rejected_balance = plan.rejected_balance;
++    /* lane_econ: measured overlap budget of this dispatch - how much
++     * worker-phase (resolver + staging + drain) ran between the request
++     * begin and this attach.  An early-start lane could hide its whole
++     * cpu_wall inside this window. */
++    lane.dispatch_worker_window_seconds = lane.plan_begin_wall > 0.0
++        ? cuda_wall_sec() - lane.plan_begin_wall : 0.0;
++    lane.general_worker_window_seconds +=
++        lane.dispatch_worker_window_seconds;
++    lane.dispatch_enqueue_seconds = 0.0;
++    lane.cpu_wake_seconds = 0.0;
++    lane.cpu_quant_seconds = 0.0;
++    lane.cpu_reduce_seconds = 0.0;
++    lane.stats_pending = 1;
+     lane.generation++;
+     if (lane.generation == 0u) lane.generation++;
+     lane.job_active = 1;
+@@ -49965,7 +50155,10 @@ static int cuda_g132_cpu_lane_prepare_general(
+ static void CUDART_CB cuda_g132_cpu_lane_gpu_started_callback(void *arg) {
+     cuda_g132_cpu_lane *lane = (cuda_g132_cpu_lane *)arg;
+     os_mutex_lock(&lane->mutex);
+-    if (lane->job_active && lane->general_active) {
++    /* lane_econ: same ownership token as the finished callback - with the
++     * asynchronous join, job_active can be cleared before stream 0
++     * executes this callback. */
++    if (lane->stats_pending && lane->gpu_started == 0.0) {
+         lane->gpu_started = cuda_wall_sec();
+     }
+     os_mutex_unlock(&lane->mutex);
+@@ -49974,10 +50167,17 @@ static void CUDART_CB cuda_g132_cpu_lane_gpu_started_callback(void *arg) {
+ static void CUDART_CB cuda_g132_cpu_lane_gpu_finished_callback(void *arg) {
+     cuda_g132_cpu_lane *lane = (cuda_g132_cpu_lane *)arg;
+     os_mutex_lock(&lane->mutex);
+-    if (lane->job_active && lane->general_active) {
++    /* lane_econ: stats_pending is the per-dispatch ownership token (the
++     * idle callback may clear job_active before stream 0 executes this
++     * callback); gpu_finished == 0 guards against a late callback of an
++     * already-finalized dispatch stamping the next one. */
++    if (lane->stats_pending && lane->gpu_finished == 0.0) {
+         lane->gpu_finished = cuda_wall_sec();
+         lane->gpu_done = 1;
+-        os_cond_signal(&lane->done_cond);
++        os_cond_broadcast(&lane->done_cond);
++        /* Emit here when the CPU side already joined (the gate callback
++         * saw gpu_done=0 and left the emission to whoever is last). */
++        cuda_g132_cpu_lane_emit_general_stats_locked(lane);
+     }
+     os_mutex_unlock(&lane->mutex);
+ }
+@@ -50021,6 +50221,12 @@ static void cuda_g132_cpu_lane_cancel_dispatch(void) {
+         const int general_active = lane.general_active;
+         lane.job_active = 0;
+         lane.input_ready = 0;
++        /* lane_econ: revoke a pending async join.  The gate/idle callbacks
++         * check join_enqueued under this mutex and become no-ops; every
++         * cleanup below is idempotent with theirs in any order. */
++        lane.join_enqueued = 0;
++        lane.stats_pending = 0;
++        lane.cpu_join_done = 0;
+         cuda_g132_cpu_lane_release_reservations_locked(&lane);
+         lane.general_active = 0;
+         if (general_active) {
+@@ -50033,6 +50239,7 @@ static void cuda_g132_cpu_lane_cancel_dispatch(void) {
+                 cuda_g132_general_plan{};
+         }
+         os_cond_broadcast(&lane.work_cond);
++        os_cond_broadcast(&lane.done_cond);
+     }
+     os_mutex_unlock(&lane.mutex);
+ }
+@@ -50269,6 +50476,239 @@ static int cuda_g132_cpu_lane_wait_and_join(
+     return 1;
+ }
+ 
++/* =======================================================================
++ * lane_econ: asynchronous join for the GENERAL lane.
++ *
++ * Measured 28/7 (run 2250-2600 tok, ctx 150k, kernel row-parallel): the
++ * blocking wait_and_join cost the caller thread ~1,1 ms per engaged layer
++ * (gpu_wall ~0,2 + gpu_wait_cpu 0,89 + wake/reduce/enqueue) - within noise
++ * of the WHOLE measured lane loss (47-50 ms/token / 43 layer).  The toll it
++ * was supposed to buy back (one route's transport quota) is NOT on the
++ * serial path in the demand-pipeline config: admission excludes staging
++ * routes, and an arena route's H2D drains overlapped with the other
++ * routes' SSD reads.  So the join must cost ~zero for the lane to have any
++ * economy at all.
++ *
++ * New shape: the caller ENQUEUES the join and returns.
++ *   bridge:  [gate hostfunc: wait CPU done, release reservations+lease,
++ *             emit stats]  ->  [H2D partial]  ->  [event]  ->
++ *            [idle hostfunc: dispatch reusable]
++ *   stream0: [waitEvent]  ->  [add partial]
++ * The CPU tail then hides under the NEXT layer's relay; the only residual
++ * critical-path cost is the bounded wait in prepare_general when the tail
++ * outlives that relay - measured and fed to the balancer.
++ *
++ * Failure semantics (job_failed after the chain is enqueued): the worker
++ * zeroed host_partial, the add joins an exact zero, the gate callback
++ * latches async_fault and the lane fails closed from the next engagement.
++ * The old path aborted the whole request instead; the fault is unreachable
++ * with the reservations/lease held (admit+prepare validated them) and is
++ * counted in fallback_runtime plus a loud stderr line.
++ * ======================================================================= */
++static void cuda_g132_cpu_lane_emit_general_stats_locked(
++        cuda_g132_cpu_lane *lane) {
++    if (!lane->stats_pending || !lane->gpu_done || !lane->cpu_join_done) {
++        return;
++    }
++    lane->stats_pending = 0;
++    const uint32_t layer_index = lane->layer_index;
++    const uint32_t count = lane->completed_jobs;
++    const uint32_t gpu_routes = lane->general_gpu_routes;
++    const uint32_t eligible = lane->general_current_eligible;
++    const uint32_t rejected_cap = lane->general_current_rejected_cap;
++    const uint32_t rejected_balance =
++        lane->general_current_rejected_balance;
++    const double cpu_seconds = lane->cpu_finished >= lane->cpu_started
++        ? lane->cpu_finished - lane->cpu_started : 0.0;
++    const double expert_seconds = lane->cpu_expert_seconds;
++    const uint32_t expert_count = lane->cpu_expert_count;
++    const double expert_ms = expert_count != 0u
++        ? expert_seconds * 1000.0 / (double)expert_count : 0.0;
++    const double gpu_seconds =
++        lane->gpu_started > 0.0 && lane->gpu_finished >= lane->gpu_started
++        ? lane->gpu_finished - lane->gpu_started : 0.0;
++    const double gpu_wait_cpu_seconds =
++        lane->gpu_finished > 0.0 && lane->cpu_finished > lane->gpu_finished
++        ? lane->cpu_finished - lane->gpu_finished : 0.0;
++    const double cpu_wait_gpu_seconds =
++        lane->gpu_finished > lane->cpu_finished
++        ? lane->gpu_finished - lane->cpu_finished : 0.0;
++    const uint64_t native_bytes =
++        g_moe_expert_cache.gate_expert_bytes * 2ull +
++        g_moe_expert_cache.down_expert_bytes;
++    lane->general_calls++;
++    lane->general_join_async++;
++    lane->general_route_cpu += count;
++    lane->general_route_gpu += gpu_routes;
++    lane->general_bytes_not_crossed += (uint64_t)count * native_bytes;
++    lane->general_expert_seconds += expert_seconds;
++    lane->general_cpu_seconds += cpu_seconds;
++    lane->general_gpu_seconds += gpu_seconds;
++    lane->general_gpu_wait_cpu_seconds += gpu_wait_cpu_seconds;
++    lane->general_cpu_wait_gpu_seconds += cpu_wait_gpu_seconds;
++    lane->general_wake_seconds += lane->cpu_wake_seconds;
++    lane->general_quant_seconds += lane->cpu_quant_seconds;
++    lane->general_reduce_seconds += lane->cpu_reduce_seconds;
++    lane->general_enqueue_seconds += lane->dispatch_enqueue_seconds;
++    lane->routes += count;
++    lane->partial_h2d_bytes += (uint64_t)lane->out_dim * sizeof(float);
++    if (layer_index < CUDA_G132_CPU_LANE_LAYER_COUNT) {
++        lane->general_layer_calls[layer_index]++;
++        lane->general_layer_cpu_routes[layer_index] += count;
++        lane->general_layer_cpu_seconds[layer_index] += cpu_seconds;
++        lane->general_layer_expert_seconds[layer_index] += expert_seconds;
++        lane->layer_gpu_routes[layer_index] += gpu_routes;
++        lane->layer_bytes_not_crossed[layer_index] +=
++            (uint64_t)count * native_bytes;
++        lane->layer_gpu_seconds[layer_index] += gpu_seconds;
++        lane->layer_gpu_wait_cpu_seconds[layer_index] +=
++            gpu_wait_cpu_seconds;
++        lane->layer_cpu_wait_gpu_seconds[layer_index] +=
++            cpu_wait_gpu_seconds;
++        lane->layer_calls[layer_index]++;
++        lane->layer_routes[layer_index] += count;
++        lane->layer_cpu_seconds[layer_index] += cpu_seconds;
++    }
++    fprintf(stderr,
++            "ds4: [g132-general-layer] layer=%u route_cpu=%u "
++            "route_gpu=%u bytes_non_attraversati=%llu "
++            "cpu_wall_ms=%.6f gpu_wall_ms=%.6f "
++            "expert_ms=%.6f "
++            "gpu_wait_cpu_ms=%.6f cpu_wait_gpu_ms=%.6f "
++            "wake_ms=%.6f quant_ms=%.6f reduce_ms=%.6f enqueue_ms=%.6f "
++            "worker_window_ms=%.6f prepare_wait_ms=%.6f join=async "
++            "eligible=%u rejected_cap=%u rejected_balance=%u "
++            "target_cpu=%u\n",
++            layer_index, count, gpu_routes,
++            (unsigned long long)((uint64_t)count * native_bytes),
++            cpu_seconds * 1000.0, gpu_seconds * 1000.0,
++            expert_ms, gpu_wait_cpu_seconds * 1000.0,
++            cpu_wait_gpu_seconds * 1000.0,
++            lane->cpu_wake_seconds * 1000.0,
++            lane->cpu_quant_seconds * 1000.0,
++            lane->cpu_reduce_seconds * 1000.0,
++            lane->dispatch_enqueue_seconds * 1000.0,
++            lane->dispatch_worker_window_seconds * 1000.0,
++            lane->dispatch_prepare_wait_seconds * 1000.0,
++            eligible, rejected_cap, rejected_balance,
++            layer_index < CUDA_G132_CPU_LANE_LAYER_COUNT
++                ? lane->layer_target_cpu[layer_index] : 0u);
++}
++
++static void CUDART_CB cuda_g132_cpu_lane_join_gate_callback(void *arg) {
++    cuda_g132_cpu_lane *lane = (cuda_g132_cpu_lane *)arg;
++    os_mutex_lock(&lane->mutex);
++    while (lane->job_active && lane->join_enqueued &&
++           lane->completed_jobs < lane->job_count) {
++        (void)os_cond_wait(&lane->done_cond, &lane->mutex);
++    }
++    if (lane->job_active && lane->join_enqueued) {
++        lane->cpu_join_done = 1;
++        if (lane->job_failed) {
++            /* The worker zeroed host_partial: the H2D+add behind this
++             * callback joins an exact zero.  Latch the fault so the next
++             * engagement fails closed instead of trusting the lane. */
++            lane->async_fault = 1;
++            lane->failures++;
++            lane->general_fallback_runtime++;
++            fprintf(stderr,
++                    "ds4: [g132-general] result=async-fault layer=%u "
++                    "jobs=%u; partial joined as zeros, lane fails closed "
++                    "from the next engagement\n",
++                    lane->layer_index, lane->completed_jobs);
++        }
++        /* Workers are done: no CPU path touches resident expert bytes
++         * after this point, so the arena readers and the staging lease can
++         * go now instead of at a caller-side join.  The cache plan is NOT
++         * reset here: prepare_general already took ownership
++         * (plan.cpu_count = 0) and the route worker of the NEXT request
++         * may be writing the plan concurrently. */
++        cuda_g132_cpu_lane_release_reservations_locked(lane);
++        {
++            uint64_t expected = lane->source_generation;
++            (void)g_moe_expert_cache.route_cpu_staging_generation
++                .compare_exchange_strong(
++                    expected, 0u, std::memory_order_acq_rel,
++                    std::memory_order_acquire);
++        }
++        cuda_g132_cpu_lane_emit_general_stats_locked(lane);
++    }
++    os_mutex_unlock(&lane->mutex);
++}
++
++static void CUDART_CB cuda_g132_cpu_lane_dispatch_idle_callback(void *arg) {
++    cuda_g132_cpu_lane *lane = (cuda_g132_cpu_lane *)arg;
++    os_mutex_lock(&lane->mutex);
++    if (lane->join_enqueued) {
++        /* The partial H2D ahead of this callback has completed: only now
++         * may a new dispatch reuse host_partial and the job slots. */
++        lane->join_enqueued = 0;
++        lane->job_active = 0;
++        lane->input_ready = 0;
++        lane->general_active = 0;
++        os_cond_broadcast(&lane->work_cond);
++        os_cond_broadcast(&lane->done_cond);
++    }
++    os_mutex_unlock(&lane->mutex);
++}
++
++static int cuda_g132_cpu_lane_enqueue_join_general(
++        ds4_gpu_tensor *out, uint32_t layer_index) {
++    cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
++    if (!lane.general_active || !out || !out->ptr) return 0;
++    const double enqueue_started = cuda_wall_sec();
++    os_mutex_lock(&lane.mutex);
++    lane.join_enqueued = 1;
++    lane.prev_dispatch_layer = layer_index;
++    lane.prev_dispatch_valid = 1;
++    os_mutex_unlock(&lane.mutex);
++    const size_t bytes = (size_t)lane.out_dim * sizeof(float);
++    int chain_ok =
++        cuda_ok(cudaLaunchHostFunc(
++                    lane.bridge_stream,
++                    cuda_g132_cpu_lane_join_gate_callback, &lane),
++                "G132 general join gate") &&
++        cuda_ok(cudaMemcpyAsync(
++                    lane.device_partial, lane.host_partial, bytes,
++                    cudaMemcpyHostToDevice, lane.bridge_stream),
++                "G132 CPU lane partial H2D") &&
++        cuda_ok(cudaEventRecord(lane.partial_copy_done, lane.bridge_stream),
++                "G132 CPU lane partial event") &&
++        cuda_ok(cudaLaunchHostFunc(
++                    lane.bridge_stream,
++                    cuda_g132_cpu_lane_dispatch_idle_callback, &lane),
++                "G132 general dispatch idle") &&
++        cuda_ok(cudaStreamWaitEvent(0, lane.partial_copy_done, 0),
++                "G132 CPU lane join wait");
++    if (chain_ok) {
++        /* Stream 0 already contains the hit/miss accumulation; the event
++         * wait publishes the one CPU partial after those writes, exactly
++         * like the old synchronous tail. */
++        add_f32_u64_kernel<<<(lane.out_dim + 255u) / 256u, 256>>>(
++            (float *)out->ptr, (const float *)out->ptr,
++            lane.device_partial, lane.out_dim);
++        chain_ok = cuda_ok(cudaGetLastError(), "G132 CPU lane output join");
++    }
++    os_mutex_lock(&lane.mutex);
++    lane.dispatch_enqueue_seconds = cuda_wall_sec() - enqueue_started;
++    if (!chain_ok) {
++        /* Revoke the join ownership: whatever part of the chain was
++         * enqueued becomes inert (both callbacks check join_enqueued under
++         * this mutex) and the synchronous cancel below cleans the
++         * dispatch.  The caller fails the request, so the layer output the
++         * add never reached is not consumed. */
++        lane.join_enqueued = 0;
++        os_cond_broadcast(&lane.done_cond);
++    }
++    os_mutex_unlock(&lane.mutex);
++    if (!chain_ok) {
++        lane.general_fallback_runtime++;
++        cuda_g132_cpu_lane_cancel_dispatch();
++        return 0;
++    }
++    return 1;
++}
++
+ static void cuda_g132_cpu_lane_discard_dispatch(void) {
+     cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
+     if (!lane.mutex_ready) return;
+@@ -50279,6 +50719,10 @@ static void cuda_g132_cpu_lane_discard_dispatch(void) {
+     }
+     lane.job_active = 0;
+     lane.input_ready = 0;
++    /* lane_econ: same async-join revocation as cancel_dispatch. */
++    lane.join_enqueued = 0;
++    lane.stats_pending = 0;
++    lane.cpu_join_done = 0;
+     const uint64_t source_generation = lane.source_generation;
+     const int general_active = lane.general_active;
+     cuda_g132_cpu_lane_release_reservations_locked(&lane);
+@@ -50292,6 +50736,7 @@ static void cuda_g132_cpu_lane_discard_dispatch(void) {
+         g_moe_expert_cache.route_cpu_plan = cuda_g132_general_plan{};
+     }
+     os_cond_broadcast(&lane.work_cond);
++    os_cond_broadcast(&lane.done_cond);
+     os_mutex_unlock(&lane.mutex);
+ }
+ 

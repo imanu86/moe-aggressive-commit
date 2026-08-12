@@ -1,0 +1,20 @@
+2026-07-28T07:30:04.195+02:00 START mandato pickup route worker; divieto di applicare prima di GO_APPLY e di buildare prima di GO_BUILD registrato
+2026-07-28T07:30:04.195+02:00 INSPECT snapshot ds4-p4a/ds4_cuda.cu sha256=b7b2ca4d52cfa8440db147438568c9b1a414cfe7430c60b8ef21cb5e2b510630
+2026-07-28T07:30:04.195+02:00 DIAG loop cuda_moe_route_worker: Windows SwitchToThread per ogni poll senza nuova sequence; nessun Sleep(1), evento o condvar
+2026-07-28T07:30:04.195+02:00 DIAG pickup timestamp prima di barrier/copia/claim; segnale token_active già disponibile dai marker begin/end
+2026-07-28T07:30:04.195+02:00 WRITE .microbench/pickup/DIAGNOSI.md completata prima di qualunque modifica al codice
+2026-07-28T07:33:31.867+02:00 PATCH snapshot base sha256=1100569523343cdf5ea4a3c5ed4b4f122df0905441d8db044f4d847dde6a20c8
+2026-07-28T07:33:31.867+02:00 PATCH scritto .microbench/pickup/pickup.patch sha256=2aea636153d1cbfd8da9cfe66dbb16fada1905a9e29d310c4a29d6e483c0e35e
+2026-07-28T07:33:31.867+02:00 CHECK git apply --check riuscito contro sorgente concorrente sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0 (hunk worker offset -2)
+2026-07-28T07:33:31.867+02:00 GATE GO_APPLY assente; ds4-p4a/ds4_cuda.cu non modificato dal task pickup
+2026-07-28T07:33:31.867+02:00 CLEAN rimossi i due snapshot temporanei usati per generare il diff
+2026-07-28T07:35:39.610+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:37:46.746+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:39:55.833+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:42:03.349+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:44:14.614+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:46:47.711+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:48:54.943+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:51:01.353+02:00 GATE polling 120s: GO_APPLY assente, GO_BUILD assente, sorgente invariato sha256=aac858fc5c8422c5d5160e4c6fc4c2f5d262a5c416f42154665e89f1b43242b0
+2026-07-28T07:51:31.557+02:00 FINAL-CHECK git apply --check riuscito; GO_APPLY assente, GO_BUILD assente; applicazione e build non autorizzate
+2026-07-28T07:51:31.557+02:00 PAUSE consegna diagnosi e diff separato; ripresa richiesta alla comparsa dei gate

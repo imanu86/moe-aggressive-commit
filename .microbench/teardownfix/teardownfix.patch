@@ -1,0 +1,576 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 9ac3ba2..e56d128 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -429,6 +429,10 @@ static uint64_t g_alloc_kind_live[DS4_ALLOC_KIND_COUNT];
+ static uint64_t g_alloc_kind_cum[DS4_ALLOC_KIND_COUNT];
+ static uint64_t g_alloc_kind_peak[DS4_ALLOC_KIND_COUNT];
+ static uint64_t g_alloc_untracked_frees;
++/* 10-B2: rilasci (cudaFree/cudaFreeHost/cudaHostUnregister) RESPINTI dal
++ * driver.  Contatore fuori dal lock del tracer e sempre attivo: alimenta la
++ * riga [teardown] finale anche a tracer spento. */
++static std::atomic<uint64_t> g_alloc_release_failures{0};
+ static uint64_t g_alloc_trace_events;
+ 
+ /* Caller attribution for ds4.c tensor allocations: ds4_gpu.h turns every
+@@ -679,18 +683,36 @@ static cudaError_t ds4_trace_cuda_free(void *ptr, const char *fn, int line) {
+         ds4_vram_peak_sample(fn, "pre-free", line, 0);
+         ds4_vram_peak_count_free();
+     }
+-    ds4_alloc_trace_release(ptr);
+-    return cudaFree(ptr);
++    const cudaError_t err = cudaFree(ptr);
++    /* 10-B2: il live-set scala solo su rilascio ACCETTATO dal driver.  Un
++     * esito respinto resta nel live-set e nel contatore dei fallimenti,
++     * invece di sparire dalla telemetria come "zero live". */
++    if (err == cudaSuccess) {
++        ds4_alloc_trace_release(ptr);
++    } else if (ptr) {
++        g_alloc_release_failures.fetch_add(1, std::memory_order_relaxed);
++    }
++    return err;
+ }
+ 
+ static cudaError_t ds4_trace_cuda_free_host(void *ptr) {
+-    ds4_alloc_trace_release(ptr);
+-    return cudaFreeHost(ptr);
++    const cudaError_t err = cudaFreeHost(ptr);
++    if (err == cudaSuccess) {
++        ds4_alloc_trace_release(ptr);
++    } else if (ptr) {
++        g_alloc_release_failures.fetch_add(1, std::memory_order_relaxed);
++    }
++    return err;
+ }
+ 
+ static cudaError_t ds4_trace_cuda_host_unregister(void *ptr) {
+-    ds4_alloc_trace_release(ptr);
+-    return cudaHostUnregister(ptr);
++    const cudaError_t err = cudaHostUnregister(ptr);
++    if (err == cudaSuccess) {
++        ds4_alloc_trace_release(ptr);
++    } else if (ptr) {
++        g_alloc_release_failures.fetch_add(1, std::memory_order_relaxed);
++    }
++    return err;
+ }
+ 
+ /* One VRAM snapshot with the tracked totals alongside, so the untracked delta
+@@ -763,9 +785,11 @@ extern "C" void ds4_gpu_alloc_trace_summary(const char *phase) {
+     const int row_count = (int)rows.size();
+     fprintf(stderr,
+             "ds4: [cuda-alloc-summary] phase=%s sites=%d events=%llu "
+-            "site_overflow=%d untracked_frees=%llu\n",
++            "site_overflow=%d untracked_frees=%llu release_failures=%llu\n",
+             phase ? phase : "?", row_count, (unsigned long long)events,
+-            overflow, (unsigned long long)untracked_frees);
++            overflow, (unsigned long long)untracked_frees,
++            (unsigned long long)g_alloc_release_failures.load(
++                std::memory_order_relaxed));
+ 
+     for (int i = 0; i < row_count; ++i) {
+         const ds4_alloc_site &site = rows[i];
+@@ -9053,8 +9077,43 @@ extern "C" int ds4_gpu_init(void) {
+     return 1;
+ }
+ 
++/* 10-B3: reset esplicito del primary context come ULTIMA operazione del
++ * cleanup (default ON, DS4_CUDA_DEVICE_RESET_ON_EXIT=0 per spegnerlo).
++ * Rende sincrono e osservabile il confine di teardown context/WDDM che oggi
++ * e' demandato alla morte del processo; gira solo a processo morente, quindi
++ * non puo' toccare le misure del run. */
++static int cuda_device_reset_on_exit_requested(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *env = getenv("DS4_CUDA_DEVICE_RESET_ON_EXIT");
++        cached = (env == NULL || strcmp(env, "0") != 0) ? 1 : 0;
++    }
++    return cached;
++}
++
++/* Definita accanto a cuda_moe_expert_cache_release: risponde "c'e' ancora
++ * un proprietario vivo (thread detached / I/O kernel pendente / cache
++ * quarantinata) che un device reset ucciderebbe?" */
++static int cuda_moe_teardown_leak_residual(void);
++
+ extern "C" void ds4_gpu_cleanup(void) {
+-    const cudaError_t cleanup_sync_error = cudaDeviceSynchronize();
++    cudaError_t cleanup_sync_error = cudaDeviceSynchronize();
++    if (cleanup_sync_error != cudaSuccess) {
++        /* 10-B1: l'esito della sync di cleanup non e' mai piu' silenzioso:
++         * log SEMPRE (non solo sotto profilo q1), UN retry bounded, e lo
++         * stato resta marcato nella riga [teardown] finale. */
++        fprintf(stderr,
++                "ds4: [teardown] cleanup synchronize failed code=%d "
++                "error=%s action=retry-once\n",
++                (int)cleanup_sync_error,
++                cudaGetErrorString(cleanup_sync_error));
++        (void)cudaGetLastError();
++        cleanup_sync_error = cudaDeviceSynchronize();
++        fprintf(stderr,
++                "ds4: [teardown] cleanup synchronize retry result=%s\n",
++                cleanup_sync_error == cudaSuccess
++                    ? "ok" : cudaGetErrorString(cleanup_sync_error));
++    }
+     if (cleanup_sync_error != cudaSuccess &&
+             cuda_q1_0_profile_requested()) {
+         fprintf(stderr,
+@@ -9161,6 +9220,39 @@ extern "C" void ds4_gpu_cleanup(void) {
+         (void)cudaStreamDestroy(g_model_prefetch_stream);
+         g_model_prefetch_stream = NULL;
+     }
++    /* 10-B3: chiusura osservabile del confine di teardown.  Il reset
++     * distrugge il primary context in modo sincrono invece di demandare al
++     * process exit il ritiro WDDM (il candidato del "secondo server
++     * avvelenato").  VIETATO con thread detached o I/O kernel pendente: il
++     * context reset libererebbe lo staging host-pinned che quei proprietari
++     * possono ancora toccare. */
++    const int leak_residual = cuda_moe_teardown_leak_residual() ||
++        g_cuda_dynamic_arena_storage_safe_leaked;
++    const char *device_reset_state = "disabled";
++    if (cuda_device_reset_on_exit_requested()) {
++        if (leak_residual) {
++            device_reset_state = "skipped-safe-leak";
++        } else {
++            const cudaError_t reset_error = cudaDeviceReset();
++            device_reset_state = reset_error == cudaSuccess
++                ? "ok" : cudaGetErrorString(reset_error);
++        }
++    }
++    /* 10-B1/10-B2: una riga di bilancio del teardown SEMPRE, anche a tracer
++     * spento: sync (post-retry), release respinte dal driver, residui
++     * safe-leak e sorte del device reset. */
++    const unsigned long long release_failures =
++        (unsigned long long)g_alloc_release_failures.load(
++            std::memory_order_relaxed);
++    fprintf(stderr,
++            "ds4: [teardown] result=%s sync=%s release_failures=%llu "
++            "safe_leak_residual=%d device_reset=%s\n",
++            (cleanup_sync_error == cudaSuccess && !leak_residual &&
++             release_failures == 0ull) ? "clean" : "degraded",
++            cleanup_sync_error == cudaSuccess
++                ? "ok" : cudaGetErrorString(cleanup_sync_error),
++            release_failures, leak_residual ? 1 : 0,
++            device_reset_state);
+ }
+ 
+ static void cuda_kv_staged_ring_release(void) {
+@@ -28651,7 +28743,11 @@ static ds4_transport_report_snapshot ds4_transport_snapshot(void) {
+     return snapshot;
+ }
+ 
+-static void ds4_transport_report(const char *phase) {
++/* 05-B3: qualify_tail=1 (solo riga final) aggiunge il campo pending= e,
++ * con un batch DOV di coda non ritirato, forza ledger_complete=0: mai piu'
++ * complete=1 con un buco di coda. */
++static void ds4_transport_report_ex(const char *phase, int qualify_tail,
++                                    int tail_pending) {
+     if (!cuda_transport_ledger_enabled() ||
+         !g_transport_ledger.armed.load(std::memory_order_acquire)) {
+         return;
+@@ -28663,13 +28759,20 @@ static void ds4_transport_report(const char *phase) {
+         ? (double)s.repeat_h2d_bytes / (double)classified_h2d : 0.0;
+     const double pcie_busy_pct = s.decode_seconds > 0.0
+         ? 100.0 * s.h2d_active_seconds / s.decode_seconds : 0.0;
++    const int complete_out = s.complete && !tail_pending;
++    char pending_field[24];
++    pending_field[0] = '\0';
++    if (qualify_tail) {
++        snprintf(pending_field, sizeof(pending_field),
++                 " pending=%d", tail_pending ? 1 : 0);
++    }
+     fprintf(stderr,
+             "ds4: [transport] phase=%s tokens=%llu "
+             "unique_pairs_touched=%llu first_touch_bytes=%llu "
+             "repeat_h2d_bytes=%llu repeat_file_bytes=%llu "
+             "repeat_ratio=%.9f h2d_bytes_total=%llu "
+             "h2d_active_ms=%.3f decode_ms=%.3f pcie_busy_pct=%.6f "
+-            "ledger_complete=%d\n",
++            "ledger_complete=%d%s\n",
+             phase ? phase : "unknown",
+             (unsigned long long)s.tokens,
+             (unsigned long long)s.unique_pairs_touched,
+@@ -28681,7 +28784,12 @@ static void ds4_transport_report(const char *phase) {
+             s.h2d_active_seconds * 1000.0,
+             s.decode_seconds * 1000.0,
+             pcie_busy_pct,
+-            s.complete);
++            complete_out,
++            pending_field);
++}
++
++static void ds4_transport_report(const char *phase) {
++    ds4_transport_report_ex(phase, 0, 0);
+ }
+ 
+ static void ds4_transport_token_end(uint32_t token_count) {
+@@ -28707,12 +28815,22 @@ static void ds4_transport_token_end(uint32_t token_count) {
+     if (due) ds4_transport_report("periodic");
+ }
+ 
++/* 05-B3: tenta il ritiro del batch DOV di coda; 1 = nessun pendente resta,
++ * 0 = la riga final va qualificata con pending=1.  Definita accanto allo
++ * stato DOV (le servono cache e slot differito). */
++static int cuda_moe_drain_overlap4_tail_retire(void);
++
+ static void ds4_transport_request_end(void) {
+     if (!cuda_transport_ledger_enabled() ||
+         !g_transport_ledger.armed.load(std::memory_order_acquire)) {
+         return;
+     }
+-    ds4_transport_report("final");
++    /* 05-B3: PRIMA della riga final si tenta il retire del pendente DOV
++     * (finestra bounded); se resta pendente la riga lo dichiara e
++     * ledger_complete scende a 0 invece di dichiarare completo un registro
++     * col batch di coda omesso. */
++    const int tail_pending = !cuda_moe_drain_overlap4_tail_retire();
++    ds4_transport_report_ex("final", 1, tail_pending);
+     g_transport_ledger.armed.store(0, std::memory_order_release);
+ }
+ 
+@@ -29180,6 +29298,12 @@ struct cuda_moe_expert_cache {
+     double route_ready_wait_seconds;
+ };
+ static cuda_moe_expert_cache g_moe_expert_cache;
++/* 10-B4: latch di processo "il route worker e' stato DETACHED" (join scaduto).
++ * Distingue, dentro route_worker_safe_leaked, il caso thread-ancora-vivo
++ * (niente e' rilasciabile, il worker puo' toccare tutto) dai casi
++ * worker-joinato (teardown parziale/riqualificato possibile).  Statico
++ * fuori dalla struct: nessuno slittamento di layout condiviso. */
++static std::atomic<int> g_moe_route_worker_detached{0};
+ static int g_moe_expert_cache_decode_started;
+ static uint64_t g_moe_expert_cache_deferred_gate_expert_bytes;
+ static uint64_t g_moe_expert_cache_deferred_down_expert_bytes;
+@@ -31745,6 +31869,13 @@ static int cuda_moe_route_upload_stream_quiesce(
+     return 0;
+ }
+ 
++/* 05-B1/05-B2: decisione del batch DOV differito quando il worker e'
++ * provabilmente morto (join riuscito o mai partito).  Definita accanto allo
++ * stato DOV; MAI chiamarla con worker vivo o detached. */
++static int cuda_moe_drain_overlap4_decide_pending_joined(
++        cuda_moe_expert_cache *cache, int stream_proven_drained,
++        int force_decide);
++
+ static int cuda_moe_route_worker_cancel_and_join(
+         cuda_moe_expert_cache *cache, uint32_t sequence,
+         double request_deadline) {
+@@ -31769,6 +31900,11 @@ static int cuda_moe_route_worker_cancel_and_join(
+                 sequence, std::memory_order_release);
+             cache->route_worker_safe_leaked.store(
+                 1, std::memory_order_release);
++            /* 10-B4: il latch di detach separa questo ramo (thread ancora
++             * vivo: NIENTE e' rilasciabile e nessuno puo' toccare lo slot
++             * ledger DOV) dai safe-leak con worker joinato. */
++            g_moe_route_worker_detached.store(
++                1, std::memory_order_release);
+             os_thread_detach(cache->route_thread);
+             cache->route_thread_started = 0;
+             cache->route_worker_ready.store(0, std::memory_order_release);
+@@ -31794,11 +31930,21 @@ static int cuda_moe_route_worker_cancel_and_join(
+                 "ds4: CUDA route I/O cancellation still pending seq=%u; "
+                 "persistent I/O slot/cache safe-leaked permanently\n",
+                 sequence);
++        /* 05-B2: worker joinato (morto): il chiamante e' l'unico
++         * proprietario dello slot ledger DOV.  Decisione non forzata: se lo
++         * stream e' gia' quiescente il batch viene committato ORA con quella
++         * prova; un NotReady resta al prossimo decisore (release/request-end
++         * chiudono comunque, mai piu' orfano silenzioso). */
++        (void)cuda_moe_drain_overlap4_decide_pending_joined(cache, 0, 0);
+         return 0;
+     }
+-    if (!cuda_moe_route_upload_stream_quiesce(
+-            cache, sequence, "cancel-and-join")) {
+-        return 0;
++    {
++        const int upload_quiesced = cuda_moe_route_upload_stream_quiesce(
++            cache, sequence, "cancel-and-join");
++        /* 05-B2: stessa decisione dopo il tentativo di quiescenza (sia esso
++         * riuscito, fallito o non provante a gate staged-KV spento). */
++        (void)cuda_moe_drain_overlap4_decide_pending_joined(cache, 0, 0);
++        if (!upload_quiesced) return 0;
+     }
+     cache->route_worker_ready.store(0, std::memory_order_release);
+     cache->route_worker_failed.store(1, std::memory_order_release);
+@@ -36270,6 +36416,13 @@ static void cuda_q1_0_ssd_wrap_release(int report) {
+             os_thread_detach(state.thread);
+             state.thread_detached = 1;
+             state.thread_started = 0;
++            /* 10-B5: il commento sotto ("ring remain valid") e' un contratto
++             * che il chiamante onora SOLO tramite il latch globale: senza
++             * questo store, cuda_dynamic_arena_storage_release vede il latch
++             * falso e fa cudaFreeHost dell'arena che CONTIENE i ring sotto
++             * una lettura cancellata ancora viva (UAF).  Stesso contratto
++             * del ramo commit_safe_leaked. */
++            g_cuda_dynamic_arena_storage_safe_leaked = 1;
+             fprintf(stderr,
+                     "ds4: [q1-0-ssd-wrap] worker detached after bounded "
+                     "cancel/join; static rotator storage safe-leaked\n");
+@@ -37627,6 +37780,77 @@ static void cuda_moe_drain_overlap4_retire_at_claim(int wprof) {
+     cuda_moe_drain_overlap4_retire(wprof, 1);
+ }
+ 
++/* 05-B1/05-B2 (raccordi ledgerfix): con il route worker provabilmente MORTO
++ * (join riuscito o mai partito; mai col ramo detach) il thread chiamante e'
++ * l'unico proprietario dello slot ledger differito.  Decide il pendente con
++ * la prova piu' forte disponibile: stream_proven_drained=1 (sync riuscita
++ * del chiamante) o una cudaStreamQuery diretta -> commit; errore duro o
++ * force_decide=1 (lo stato DOV sta per essere azzerato: nessun decisore
++ * futuro) -> batch omesso con complete=0, la semantica del batch errato del
++ * percorso classico.  NotReady senza force lascia il pendente al prossimo
++ * decisore (release, request-end, worker respawnato o fail-safe del defer):
++ * mai degradare una prova che un decisore successivo avrebbe piu' forte.
++ * Ritorna 1 se lo slot e' deciso (o vuoto), 0 se resta pendente. */
++static int cuda_moe_drain_overlap4_decide_pending_joined(
++        cuda_moe_expert_cache *cache, int stream_proven_drained,
++        int force_decide) {
++    if (!cuda_moe_drain_overlap4_requested()) return 1;
++    if (!cuda_moe_drain_overlap4_outstanding()) return 1;
++    if (stream_proven_drained) {
++        cuda_moe_drain_overlap4_retire(0, 1);
++        return 1;
++    }
++    cudaError_t status = cudaErrorInvalidValue;
++    if (cache && cache->route_upload_stream) {
++        status = cudaStreamQuery(cache->route_upload_stream);
++        if (status == cudaSuccess) {
++            cuda_moe_drain_overlap4_retire(0, 1);
++            return 1;
++        }
++    }
++    if (status == cudaErrorNotReady && !force_decide) return 0;
++    cuda_moe_drain_overlap4_retire(0, 0);
++    return 1;
++}
++
++/* 05-B3: al request-end il thread di decode fa ritirare (o ritira esso
++ * stesso) il batch DOV di coda PRIMA della riga final del transport ledger.
++ * Finestra bounded di 50 ms: un batch di coda e' <=6 esperti (~42 MB, ~15 ms
++ * a ~3 GiB/s).  Con worker vivo si aspetta il SUO poll idle (una
++ * cudaStreamQuery per giro); con worker detached niente mani sullo slot;
++ * con worker joinato decide questo thread, da unico proprietario. */
++static int cuda_moe_drain_overlap4_tail_retire(void) {
++    if (!cuda_moe_drain_overlap4_requested()) return 1;
++    if (!cuda_moe_drain_overlap4_outstanding()) return 1;
++    cuda_moe_expert_cache *cache = &g_moe_expert_cache;
++    const double deadline = cuda_wall_sec() + 0.050;
++    if (cache->route_thread_started) {
++        while (cuda_moe_drain_overlap4_outstanding() &&
++               cuda_wall_sec() < deadline) {
++#ifdef _WIN32
++            (void)SwitchToThread();
++#else
++            usleep(0);
++#endif
++        }
++        return cuda_moe_drain_overlap4_outstanding() ? 0 : 1;
++    }
++    if (g_moe_route_worker_detached.load(std::memory_order_acquire)) {
++        return 0;
++    }
++    for (;;) {
++        if (cuda_moe_drain_overlap4_decide_pending_joined(cache, 0, 0)) {
++            return 1;
++        }
++        if (cuda_wall_sec() >= deadline) return 0;
++#ifdef _WIN32
++        (void)SwitchToThread();
++#else
++        usleep(0);
++#endif
++    }
++}
++
+ /* DRAIN4FIX: nessun veto dell'arm resta silenzioso.  Una riga per CLASSE
+  * di veto per processo (bitmask sopra), poi silenzio: se la leva e' inerte
+  * il log lo dice alla prima richiesta, non alla fine di un run strumentato.
+@@ -37704,10 +37928,26 @@ static void cuda_moe_drain_overlap4_consumer_sync_exit(void) {
+                        ds4_workerprof_span_ns(started_ns, stall_end_ns));
+ }
+ 
++/* 10-B3: residuo di proprieta' viva al momento del device reset: thread
++ * detached, cache quarantinata non riqualificata, o I/O kernel pendente
++ * sullo slot pread persistente (che tiene vive fette di staging host). */
++static int cuda_moe_teardown_leak_residual(void) {
++    return g_moe_route_worker_detached.load(std::memory_order_acquire) ||
++        g_moe_expert_cache.route_worker_safe_leaked.load(
++            std::memory_order_acquire) ||
++        os_pread_cancellable_pending(
++            &g_moe_expert_cache.route_transient_pread);
++}
++
+ static void cuda_moe_expert_cache_release(void) {
+     g_model_expert_cache_ready = 0;
+-    if (g_moe_expert_cache.route_worker_safe_leaked.load(
+-            std::memory_order_acquire)) return;
++    /* 10-B4: niente piu' ritorno cieco su safe-leak.  Il vecchio early
++     * return lasciava al contesto CUDA stream route, eventi DOV, slab,
++     * mailbox e staging host-pinned — e non fermava nemmeno il worker di
++     * una cache quarantinata a meta' run.  Ora: prima si cancella/join-a il
++     * worker se il thread e' ancora vivo, poi si classifica la proprieta'
++     * residua e si rilascia tutto cio' che non appartiene piu' a un
++     * proprietario vivo. */
+     if (g_moe_expert_cache.route_thread_started) {
+         const uint32_t sequence =
+             g_moe_expert_cache.route_submitted_sequence.load(
+@@ -37717,31 +37957,90 @@ static void cuda_moe_expert_cache_release(void) {
+                 std::memory_order_acquire) == sequence
+             ? g_moe_expert_cache.route_transient_read_deadline
+             : cuda_wall_sec();
+-        if (!cuda_moe_route_worker_cancel_and_join(
+-                &g_moe_expert_cache, sequence, request_deadline)) {
+-            return;
+-        }
++        (void)cuda_moe_route_worker_cancel_and_join(
++            &g_moe_expert_cache, sequence, request_deadline);
++    }
++    if (g_moe_route_worker_detached.load(std::memory_order_acquire)) {
++        /* Thread DETACHED: puo' ancora toccare mailbox, staging, upload
++         * stream, slab, slot DOV e contatori.  Nulla e' dimostrabilmente
++         * nostro: full safe-leak come prima, ma dichiarato sempre. */
++        fprintf(stderr,
++                "ds4: [moe-cache] teardown=degraded "
++                "reason=route-worker-detached action=full-safe-leak\n");
++        return;
+     }
++    /* Da qui il worker e' provabilmente morto (join riuscito o mai
++     * partito). */
++    const int quarantined =
++        g_moe_expert_cache.route_worker_safe_leaked.load(
++            std::memory_order_acquire);
++    const int pread_pending = os_pread_cancellable_pending(
++        &g_moe_expert_cache.route_transient_pread);
++    int stream_quiescent = 1;
+     if (g_moe_expert_cache.route_upload_stream) {
+-        (void)cudaStreamSynchronize(g_moe_expert_cache.route_upload_stream);
++        if (!quarantined && !pread_pending) {
++            /* Percorso storico non quarantinato: drain bloccante (esito ora
++             * catturato: e' la prova che decide il ledger DOV sotto). */
++            stream_quiescent = cudaStreamSynchronize(
++                g_moe_expert_cache.route_upload_stream) == cudaSuccess;
++        } else {
++            /* Gia' quarantinata: mai piu' un blocco illimitato.  Poll
++             * bounded con la stessa finestra del quiesce (5 s): a shutdown
++             * uno stream sano e' drenato da un pezzo. */
++            const double drain_deadline = cuda_wall_sec() + 5.0;
++            cudaError_t status = cudaStreamQuery(
++                g_moe_expert_cache.route_upload_stream);
++            while (status == cudaErrorNotReady &&
++                   cuda_wall_sec() < drain_deadline) {
++#ifdef _WIN32
++                (void)SwitchToThread();
++#else
++                usleep(0);
++#endif
++                status = cudaStreamQuery(
++                    g_moe_expert_cache.route_upload_stream);
++            }
++            stream_quiescent = status == cudaSuccess;
++        }
+     }
++    if ((quarantined || pread_pending) && !stream_quiescent) {
++        /* Lavoro device non provato quiescente: slab, staging e mailbox
++         * possono essere ancora referenziati da copie/kernel in volo.
++         * Full safe-leak come prima, ma dichiarato; lo slot DOV resta al
++         * fail-safe del defer o alla riga final qualificata. */
++        fprintf(stderr,
++                "ds4: [moe-cache] teardown=degraded "
++                "reason=route-upload-stream-busy action=full-safe-leak\n");
++        return;
++    }
++    /* 05-B1: worker morto e drain tentato qui sopra: il pendente DOV va
++     * deciso ADESSO, PRIMA che events_destroy azzeri armed_generation e
++     * l'orfano diventi un drain_ok=0 al prossimo defer.  Riusa la prova del
++     * drain (sync/poll): commit se provato, altrimenti batch omesso con
++     * complete=0.  force=1: dopo questo punto non esistono altri decisori. */
++    (void)cuda_moe_drain_overlap4_decide_pending_joined(
++        &g_moe_expert_cache, stream_quiescent, 1);
+     if (g_moe_expert_cache.route_consumer_done_event) {
+         (void)cudaEventDestroy(
+             g_moe_expert_cache.route_consumer_done_event);
+     }
+-    /* DRAIN4: distruzione dopo la cudaStreamSynchronize dell'upload stream
+-     * qui sopra — nessun evento puo' essere ancora in volo.  A flag spento
++    /* DRAIN4: distruzione dopo la prova di drain dell'upload stream qui
++     * sopra — nessun evento puo' essere ancora in volo.  A flag spento
+      * events_created e' 0 e il ciclo di destroy non trova nulla. */
+     cuda_moe_drain_overlap4_events_destroy();
+ #ifdef _WIN32
+-    for (uint32_t i = 0; i < 4u; i++) {
+-        if (g_moe_expert_cache.route_io_qd_event[i]) {
+-            (void)CloseHandle(g_moe_expert_cache.route_io_qd_event[i]);
++    if (!pread_pending) {
++        for (uint32_t i = 0; i < 4u; i++) {
++            if (g_moe_expert_cache.route_io_qd_event[i]) {
++                (void)CloseHandle(g_moe_expert_cache.route_io_qd_event[i]);
++            }
+         }
+     }
+ #endif
+-    os_pread_cancellable_destroy(
+-        &g_moe_expert_cache.route_transient_pread);
++    if (!pread_pending) {
++        os_pread_cancellable_destroy(
++            &g_moe_expert_cache.route_transient_pread);
++    }
+     /* P.5a: printed next to the resident-route ledger so both arms of the A/B
+      * end with the same row, mode 0 included. */
+     cuda_moe_zerocopy_report("final");
+@@ -37855,6 +38154,57 @@ static void cuda_moe_expert_cache_release(void) {
+         g_moe_expert_cache.route_transient_down) {
+         (void)cudaFree(g_moe_expert_cache.route_transient_down);
+     }
++    if (pread_pending) {
++        /* 10-B4 teardown PARZIALE: il kernel possiede ancora lo slot pread
++         * persistente e le fette host in cui scrive (host_gate/up/down
++         * puntano dentro route_host_*).  Rilasciato sopra tutto cio' che
++         * non e' suo — slab e metadati device (stream provato quiescente),
++         * eventi DOV, consumer event; qui lo stream.  Restano vivi, coi
++         * puntatori a documentare il leak: slot pread, staging host-pinned
++         * e mailbox zero-copy.  safe_leaked resta 1 (prepare continua a
++         * rifiutare la cache) e il device reset di 10-B3 resta vietato. */
++        if (g_moe_expert_cache.route_upload_stream) {
++            (void)cudaStreamDestroy(g_moe_expert_cache.route_upload_stream);
++        }
++        g_moe_expert_cache.route_upload_stream = NULL;
++        g_moe_expert_cache.route_consumer_done_event = NULL;
++        g_moe_expert_cache.packed_base = NULL;
++        g_moe_expert_cache.gate = NULL;
++        g_moe_expert_cache.up = NULL;
++        g_moe_expert_cache.down = NULL;
++        g_moe_expert_cache.device_slot_by_layer_expert = NULL;
++        g_moe_expert_cache.device_route_ptrs = NULL;
++        g_moe_expert_cache.device_route_hit_mask = NULL;
++        g_moe_expert_cache.device_route_split_down = NULL;
++        g_moe_expert_cache.device_route_split_down_bytes = 0;
++        g_moe_expert_cache.route_transient_packed_base = NULL;
++        g_moe_expert_cache.route_transient_gate = NULL;
++        g_moe_expert_cache.route_transient_up = NULL;
++        g_moe_expert_cache.route_transient_down = NULL;
++        g_moe_expert_cache.capacity = 0;
++        g_moe_expert_cache.count = 0;
++        g_moe_expert_cache.slots.clear();
++        g_moe_expert_cache.host_slot_by_layer_expert.clear();
++        /* Una seconda release (shed poi cleanup) non deve ristampare la
++         * riga [gpu-resident-routes] final: contatori del report azzerati
++         * (worker morto, nessuno li muove piu'). */
++        g_moe_expert_cache.route_calls = 0;
++        g_moe_expert_cache.route_worker_jobs = 0;
++        fprintf(stderr,
++                "ds4: [moe-cache] teardown=partial "
++                "reason=persistent-io-pending "
++                "released=device-slab,dov-events,route-stream "
++                "leaked=pread-slot,host-staging,mailbox\n");
++        return;
++    }
++    if (quarantined) {
++        /* 10-B4: la ragione della quarantena e' evaporata (worker joinato,
++         * nessun I/O pendente, stream drenato): teardown completo, il
++         * debito non passa al WDDM. */
++        fprintf(stderr,
++                "ds4: [moe-cache] teardown=requalified "
++                "reason=worker-joined-stream-drained action=full-release\n");
++    }
+     if (g_moe_expert_cache.route_ready_host) {
+         (void)cudaFreeHost(g_moe_expert_cache.route_ready_host);
+     }

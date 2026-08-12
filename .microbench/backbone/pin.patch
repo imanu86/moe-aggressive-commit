@@ -1,0 +1,300 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 67d66c5..0000000 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -7786,6 +7787,15 @@ static int cuda_vram_inverted_priority_enabled(void) {
+     return cached;
+ }
+ 
++static int cuda_vram_pin_backbone_enabled(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *e = getenv("DS4_CUDA_PIN_BACKBONE");
++        cached = (e && strcmp(e, "1") == 0) ? 1 : 0;
++    }
++    return cached;
++}
++
+ static int cuda_vram_elastic_expert_slots_enabled(void) {
+     static int cached = -1;
+     if (cached < 0) {
+@@ -7951,6 +7961,22 @@ static uint64_t g_vram_prio_window_backbone = 0;
+ /* Usata come set (valore ignorato) per non aggiungere <unordered_set> agli include. */
+ static std::unordered_map<uint64_t, uint8_t> g_vram_prio_evicted_backbone_offsets;
+ 
++/* DS4_CUDA_PIN_BACKBONE.  Lo slab resident-expert e' contiguo: non si puo'
++ * restituire un singolo slot al driver.  Al primo conflitto lo si cede intero
++ * e si usa l'exact-streaming gia' esistente per il resto della richiesta. */
++static int g_vram_pin_expert_cache_shed = 0;
++static uint64_t g_vram_pin_backbone_blocked = 0;
++static uint64_t g_vram_pin_expert_range_ceded = 0;
++static uint64_t g_vram_pin_expert_cache_sheds = 0;
++static uint64_t g_vram_pin_expert_cache_slots_ceded = 0;
++static uint64_t g_vram_pin_expert_cache_resident_ceded = 0;
++static uint64_t g_vram_pin_expert_cache_bytes_ceded = 0;
++static uint64_t g_vram_pin_expert_cache_shed_failures = 0;
++static uint64_t g_vram_pin_exact_stream_fallbacks = 0;
++static uint64_t g_vram_pin_backbone_failopen = 0;
++static uint64_t g_vram_pin_no_victim = 0;
++static int cuda_vram_pin_shed_expert_cache(const char *requester);
++
+ /* =======================================================================
+  * FIX-B. Tre strumenti indipendenti, ognuno dietro il proprio flag e TUTTI
+  * neutri con i default: con i default il binario si comporta esattamente
+@@ -8063,7 +8089,7 @@ static uint64_t cuda_vram_prio_log_every_tokens(void) {
+ 
+ /* Contabilita' di uno sfratto. Chiamata sempre, flag on o off. */
+ static void cuda_vram_prio_account_eviction(
+-        int pinned, uint64_t bytes, uint64_t offset, const char *what) {
++        int pinned, uint64_t bytes, uint64_t offset, const char *requester) {
+     g_vram_prio_window_evicts++;
+     if (!pinned) {
+         g_vram_prio_evict_expert++;
+@@ -8076,11 +8101,13 @@ static void cuda_vram_prio_account_eviction(
+         if (g_vram_prio_evict_backbone <= 8ull ||
+             (g_vram_prio_evict_backbone % 256ull) == 0ull) {
+             fprintf(stderr,
+-                    "ds4: [vram-prio] ANOMALY evict_backbone=%llu bytes=%llu what=%s "
++                    "ds4: [vram-prio] ANOMALY evict_backbone=%llu bytes=%llu "
++                    "victim_category=backbone victim_offset=%llu requester=%s "
+                     "reason=no-expert-victim inverted=%d\n",
+                     (unsigned long long)g_vram_prio_evict_backbone,
+                     (unsigned long long)bytes,
+-                    what ? what : "weights",
++                    (unsigned long long)offset,
++                    requester ? requester : "weights",
+                     cuda_vram_inverted_priority_enabled());
+         }
+         try {
+@@ -8309,14 +8336,65 @@ static char *cuda_model_stream_alloc(
+         if (cuda_stream_pool_reclaim() > 0) continue;
+         if (!allow_evict) return NULL;
+-        const long vi = cuda_model_pick_victim();
+-        if (vi < 0) return NULL;
++        long vi = cuda_model_pick_victim();
++        const int pin_backbone = cuda_vram_pin_backbone_enabled();
++        if (pin_backbone && vi >= 0 &&
++            g_model_ranges[(size_t)vi].pinned) {
++            const cuda_model_range &blocked = g_model_ranges[(size_t)vi];
++            g_vram_pin_backbone_blocked++;
++            if (g_vram_pin_backbone_blocked <= 8ull ||
++                (g_vram_pin_backbone_blocked % 256ull) == 0ull) {
++                fprintf(stderr,
++                        "ds4: [vram-prio] PIN blocked_backbone=%llu "
++                        "victim_category=backbone victim_offset=%llu "
++                        "victim_bytes=%llu requester=%s "
++                        "action=seek-expert-category\n",
++                        (unsigned long long)g_vram_pin_backbone_blocked,
++                        (unsigned long long)blocked.offset,
++                        (unsigned long long)blocked.bytes,
++                        what ? what : "weights");
++            }
++            if (cuda_vram_pin_shed_expert_cache(what)) {
++                /* cudaFree dello slab ha restituito VRAM: rifare prima
++                 * cudaMemGetInfo/cudaMalloc, senza toccare il backbone. */
++                continue;
++            }
++            /* Forward progress esplicito: se lo slab non esiste o non puo'
++             * essere quiesciuto, il runtime attuale non ha un backend CPU per
++             * i pesi dense.  Fail-open dichiarato invece di un NULL/OOM. */
++            g_vram_pin_backbone_failopen++;
++            fprintf(stderr,
++                    "ds4: [vram-prio] PIN ESCAPE category=backbone "
++                    "reason=no-reclaimable-expert victim_offset=%llu requester=%s "
++                    "failopen=%llu\n",
++                    (unsigned long long)blocked.offset,
++                    what ? what : "weights",
++                    (unsigned long long)g_vram_pin_backbone_failopen);
++        }
++        if (vi < 0) {
++            if (pin_backbone && cuda_vram_pin_shed_expert_cache(what)) {
++                continue;
++            }
++            if (pin_backbone) {
++                g_vram_pin_no_victim++;
++                fprintf(stderr,
++                        "ds4: [vram-prio] PIN EXHAUSTED category=none "
++                        "requester=%s no_victim=%llu action=caller-fallback\n",
++                        what ? what : "weights",
++                        (unsigned long long)g_vram_pin_no_victim);
++            }
++            return NULL;
++        }
+         /* Classifica la vittima PRIMA dello swap-erase, che invalida l'indice.
+          * Contabilita' attiva in entrambi gli stati del flag: e' la strumentazione
+          * che rende confrontabili i due bracci dell'A/B. */
+         {
+             const cuda_model_range &victim = g_model_ranges[(size_t)vi];
++            if (pin_backbone && !victim.pinned) {
++                g_vram_pin_expert_range_ceded++;
++            }
+             cuda_vram_prio_account_eviction(
+-                victim.pinned, victim.bytes, victim.offset, what);
++                victim.pinned, victim.bytes, victim.offset,
++                what);
+         }
+         cuda_model_range_evict_to_pool((size_t)vi);   /* event-fenced, no device sync */
+         g_model_evict_count++;
+@@ -30277,18 +30351,26 @@ static void cuda_vram_prio_log(const char *phase) {
+     if (mem_err != cudaSuccess) (void)cudaGetLastError();
+     g_vram_prio_expert_slots_current = g_moe_expert_cache.capacity;
+     fprintf(stderr,
+-            "ds4: [vram-prio] phase=%s inverted=%d elastic=%d "
++            "ds4: [vram-prio] phase=%s inverted=%d elastic=%d pin_backbone=%d "
+             "evict_backbone=%llu evict_expert=%llu evict_kv=%llu "
+             "backbone_evicted_bytes=%llu backbone_reload_bytes=%llu "
+             "backbone_reloads=%llu expert_relaxed_saves=%llu "
++            "pin_backbone_blocked=%llu pin_expert_range_ceded=%llu "
++            "pin_expert_cache_sheds=%llu pin_expert_cache_slots_ceded=%llu "
++            "pin_expert_cache_resident_ceded=%llu "
++            "pin_expert_cache_bytes_ceded=%llu "
++            "pin_expert_cache_shed_failures=%llu "
++            "pin_exact_stream_fallbacks=%llu pin_backbone_failopen=%llu "
++            "pin_no_victim=%llu "
+             "expert_slots_current=%u expert_slots_resident=%u "
+             "expert_slots_requested=%u "
+             "vram_free_at_decode_start=%llu vram_free_now=%llu "
+             "backbone_reserve_mib=%.1f hysteresis_mib=%.1f "
+             "stabilized=%d stabilized_slots=%u evicts_total=%llu mem_status=%s\n",
+             phase,
+             cuda_vram_inverted_priority_enabled(),
+             cuda_vram_elastic_expert_slots_enabled(),
++            cuda_vram_pin_backbone_enabled(),
+             (unsigned long long)g_vram_prio_evict_backbone,
+             (unsigned long long)g_vram_prio_evict_expert,
+             (unsigned long long)g_vram_prio_evict_kv,
+@@ -30296,6 +30376,16 @@ static void cuda_vram_prio_log(const char *phase) {
+             (unsigned long long)g_vram_prio_backbone_reload_bytes,
+             (unsigned long long)g_vram_prio_backbone_reloads,
+             (unsigned long long)g_vram_prio_expert_relaxed_saves,
++            (unsigned long long)g_vram_pin_backbone_blocked,
++            (unsigned long long)g_vram_pin_expert_range_ceded,
++            (unsigned long long)g_vram_pin_expert_cache_sheds,
++            (unsigned long long)g_vram_pin_expert_cache_slots_ceded,
++            (unsigned long long)g_vram_pin_expert_cache_resident_ceded,
++            (unsigned long long)g_vram_pin_expert_cache_bytes_ceded,
++            (unsigned long long)g_vram_pin_expert_cache_shed_failures,
++            (unsigned long long)g_vram_pin_exact_stream_fallbacks,
++            (unsigned long long)g_vram_pin_backbone_failopen,
++            (unsigned long long)g_vram_pin_no_victim,
+             g_vram_prio_expert_slots_current,
+             g_moe_expert_cache.count,
+             g_moe_expert_cache.requested,
+@@ -30432,7 +30530,12 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+      * E' la riga da diffare fra i due bracci dell'A/B. */
+     cuda_vram_prio_log("request-end");
+     /* Sintesi del probe: minimo assoluto del run e token in cui e' avvenuto. */
+     ds4_vram_peak_summary("request-end");
++    /* Lo shed e' request-scoped. La richiesta successiva puo' ricostruire la
++     * cache durante il proprio prefill/decode-start. */
++    if (cuda_vram_pin_backbone_enabled()) {
++        g_vram_pin_expert_cache_shed = 0;
++    }
+     ds4_transport_request_end();
+ }
+ 
+@@ -36573,5 +36676,52 @@ static void cuda_moe_expert_cache_invalidate(void) {
+     g_moe_expert_cache.tick = 0;
+     g_moe_expert_cache.count = 0;
+ }
+ 
++static int cuda_vram_pin_shed_expert_cache(const char *requester) {
++    if (!cuda_vram_pin_backbone_enabled() ||
++        g_vram_pin_expert_cache_shed ||
++        g_moe_expert_cache.capacity == 0u) {
++        return 0;
++    }
++
++    const uint32_t slots = g_moe_expert_cache.capacity;
++    const uint32_t resident = g_moe_expert_cache.count;
++    const uint64_t slot_bytes =
++        g_moe_expert_cache.gate_expert_bytes * 2ull +
++        g_moe_expert_cache.down_expert_bytes;
++    const uint64_t bytes = slot_bytes * (uint64_t)slots;
++
++    /* Impedisce a un fallback concorrente di ricreare subito lo stesso slab. */
++    g_vram_pin_expert_cache_shed = 1;
++    cuda_moe_expert_cache_release();
++    if (g_moe_expert_cache.capacity != 0u ||
++        g_moe_expert_cache.packed_base != NULL ||
++        g_moe_expert_cache.gate != NULL ||
++        g_moe_expert_cache.up != NULL ||
++        g_moe_expert_cache.down != NULL) {
++        g_vram_pin_expert_cache_shed_failures++;
++        fprintf(stderr,
++                "ds4: [vram-prio] PIN degrade result=blocked "
++                "category=resident-expert-slab requester=%s "
++                "slots=%u resident=%u bytes=%llu "
++                "reason=worker-not-quiescent action=backbone-failopen\n",
++                requester ? requester : "weights", slots, resident,
++                (unsigned long long)bytes);
++        return 0;
++    }
++
++    g_vram_pin_expert_cache_sheds++;
++    g_vram_pin_expert_cache_slots_ceded += slots;
++    g_vram_pin_expert_cache_resident_ceded += resident;
++    g_vram_pin_expert_cache_bytes_ceded += bytes;
++    fprintf(stderr,
++            "ds4: [vram-prio] PIN degrade result=ok "
++            "category=resident-expert-slab requester=%s "
++            "slots=%u resident=%u bytes=%llu "
++            "action=disable-cache-exact-streaming\n",
++            requester ? requester : "weights", slots, resident,
++            (unsigned long long)bytes);
++    return 1;
++}
++
+ static void cuda_moe_expert_cache_release(void) {
+@@ -37754,6 +37892,9 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         uint64_t down_expert_bytes) {
+     if (g_moe_expert_cache.route_worker_safe_leaked.load(
+             std::memory_order_acquire)) return NULL;
++    if (g_vram_pin_expert_cache_shed) {
++        return NULL;
++    }
+     const uint32_t requested = cuda_moe_expert_cache_requested();
+     const int tier_mode = cuda_moe_tiering_mode_requested();
+     const int compose_requested = cuda_moe_prefill_tier_compose_requested();
+@@ -46755,17 +46902,31 @@ static int routed_moe_launch_impl(
+             g_nested_residual.hard_failure = 1;
+         }
+         if constexpr (!G73) {
+-            fprintf(stderr,
+-                    "ds4: %s decode route unavailable at layer=%u; refusing fallback\n",
+-                    nested_gpu_cache_requested ?
+-                        "nested residual GPU-cache" : "expert tiering",
+-                    layer_index);
+-            return 0;
++            if (!g_vram_pin_expert_cache_shed ||
++                nested_gpu_cache_requested) {
++                fprintf(stderr,
++                        "ds4: %s decode route unavailable at layer=%u; refusing fallback\n",
++                        nested_gpu_cache_requested ?
++                            "nested residual GPU-cache" : "expert tiering",
++                        layer_index);
++                return 0;
++            }
++            g_vram_pin_exact_stream_fallbacks++;
++            if (g_vram_pin_exact_stream_fallbacks <= 8ull ||
++                (g_vram_pin_exact_stream_fallbacks % 256ull) == 0ull) {
++                fprintf(stderr,
++                        "ds4: [vram-prio] PIN degrade "
++                        "category=exact-streaming layer=%u fallbacks=%llu "
++                        "reason=resident-expert-slab-ceded\n",
++                        layer_index,
++                        (unsigned long long)g_vram_pin_exact_stream_fallbacks);
++            }
++        } else {
++            fprintf(stderr,
++                    "ds4: [g73-open] exact transient route unavailable at layer=%u; "
++                    "falling back to exact selected-load\n",
++                    layer_index);
+         }
+-        fprintf(stderr,
+-                "ds4: [g73-open] exact transient route unavailable at layer=%u; "
+-                "falling back to exact selected-load\n",
+-                layer_index);
+     }
+     if (gpu_route_cache) {
+         if constexpr (G73) {

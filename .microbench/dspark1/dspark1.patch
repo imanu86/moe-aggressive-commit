@@ -1,0 +1,773 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -2334,6 +2334,74 @@ static void ds4_vec_dot_q2_K_q8_K(int n, float *s, const block_q2_K *x, const b
+ #endif
+ }
+ 
++/* Decode the packed 6-bit Q4_K scale/min pair for one 32-value group.  This
++ * is the same layout used by tools/mtp_q4k_requant.c's golden dequantizer. */
++static inline void ds4_q4_k_scale_min(
++        int j, const uint8_t scales[12], uint8_t *scale, uint8_t *minv) {
++    if (j < 4) {
++        *scale = scales[j] & 63u;
++        *minv = scales[j + 4] & 63u;
++    } else {
++        *scale = (uint8_t)((scales[j + 4] & 0x0fu) |
++                           ((scales[j - 4] >> 6) << 4));
++        *minv = (uint8_t)((scales[j + 4] >> 4) |
++                          ((scales[j] >> 6) << 4));
++    }
++}
++
++/* Q4_K routed-expert row dot Q8_K activation.  Q4 dequantization is fused
++ * into the dot: each packed nibble is multiplied by its 6-bit group scale,
++ * while Q8_K bsums apply the Q4_K per-group minimum without materializing a
++ * float row. */
++static void ds4_vec_dot_q4_K_q8_K(
++        int n,
++        float *s,
++        const block_q4_K *x,
++        const block_q8_K *y) {
++    if (n % QK_K != 0) ds4_die("Q4_K dot length is not QK_K aligned");
++
++    const int nb = n / QK_K;
++    float sumf = 0.0f;
++    for (int ib = 0; ib < nb; ib++) {
++        const float d = f16_to_f32(x[ib].d);
++        const float dmin = f16_to_f32(x[ib].dmin);
++        const float yd = y[ib].d;
++        const uint8_t *q = x[ib].qs;
++        const int8_t *q8 = y[ib].qs;
++        int is = 0;
++
++        for (int off = 0; off < QK_K; off += 64) {
++            uint8_t sc0, min0, sc1, min1;
++            ds4_q4_k_scale_min(is + 0, x[ib].scales, &sc0, &min0);
++            ds4_q4_k_scale_min(is + 1, x[ib].scales, &sc1, &min1);
++
++            int32_t dot0 = 0;
++            int32_t dot1 = 0;
++            for (int j = 0; j < 32; j++) {
++                dot0 += (int32_t)(q[j] & 0x0fu) * (int32_t)q8[j];
++                dot1 += (int32_t)(q[j] >> 4) * (int32_t)q8[32 + j];
++            }
++            const int bsum = off / 16;
++            const int32_t sum0 =
++                (int32_t)y[ib].bsums[bsum + 0] +
++                (int32_t)y[ib].bsums[bsum + 1];
++            const int32_t sum1 =
++                (int32_t)y[ib].bsums[bsum + 2] +
++                (int32_t)y[ib].bsums[bsum + 3];
++
++            sumf += yd * (
++                d * ((float)sc0 * (float)dot0 +
++                     (float)sc1 * (float)dot1) -
++                dmin * ((float)min0 * (float)sum0 +
++                        (float)min1 * (float)sum1));
++            q += 32;
++            q8 += 64;
++            is += 2;
++        }
++    }
++    *s = sumf;
++}
++
+ static DS4_MAYBE_UNUSED void ds4_vec_dot_iq2_xxs_q8_K(int n, float *s, const block_iq2_xxs *x, const block_q8_K *y) {
+     const int nb = n / QK_K;
+ 
+@@ -6636,7 +6704,340 @@ static void layer_topk_selected_experts_from_probs(
+         expert_weight[i] = expert_weight[i] / sum * DS4_EXPERT_WEIGHT_SCALE;
+     }
+ }
+ 
++typedef struct {
++    double total_ms;
++    double q8_prequant_ms;
++    double q4_dequant_ms;
++    double q4_matvec_ms;
++    double other_ms;
++} ds4_mtp_cpu_telemetry;
++
++typedef struct {
++    float *out0;
++    float *out1;
++    const uint8_t *base0;
++    const uint8_t *base1;
++    const block_q8_K *xq;
++    uint64_t in_dim;
++    uint64_t row_bytes0;
++    uint64_t row_bytes1;
++} matvec_q4_k_pair_ctx;
++
++static void matvec_q4_k_pair_worker(void *vctx, uint64_t row0, uint64_t row1) {
++    matvec_q4_k_pair_ctx *ctx = vctx;
++    for (uint64_t row = row0; row < row1; row++) {
++        const block_q4_K *w0 =
++            (const block_q4_K *)(ctx->base0 + row * ctx->row_bytes0);
++        const block_q4_K *w1 =
++            (const block_q4_K *)(ctx->base1 + row * ctx->row_bytes1);
++        ds4_vec_dot_q4_K_q8_K(
++            (int)ctx->in_dim, &ctx->out0[row], w0, ctx->xq);
++        ds4_vec_dot_q4_K_q8_K(
++            (int)ctx->in_dim, &ctx->out1[row], w1, ctx->xq);
++    }
++}
++
++/* Single-expert gate/up entry point, matching the existing IQ2 pair kernel:
++ * one Q8_K activation prequant is shared and output rows are pool-parallel. */
++static DS4_MAYBE_UNUSED void matvec_q4_k_expert_pair_prequant(
++        float *out0,
++        float *out1,
++        const ds4_model *model,
++        const ds4_tensor *w0,
++        const ds4_tensor *w1,
++        const block_q8_K *xq,
++        uint32_t expert) {
++    if (w0->type != DS4_TENSOR_Q4_K ||
++        w1->type != DS4_TENSOR_Q4_K) {
++        ds4_die("expected paired Q4_K expert tensors");
++    }
++
++    uint64_t in0, out0_dim, row0;
++    uint64_t in1, out1_dim, row1;
++    const uint8_t *base0 =
++        tensor_expert_bytes(model, w0, expert, &in0, &out0_dim, &row0);
++    const uint8_t *base1 =
++        tensor_expert_bytes(model, w1, expert, &in1, &out1_dim, &row1);
++    if (in0 != in1 || out0_dim != out1_dim || in0 % QK_K != 0) {
++        ds4_die("paired Q4_K expert tensors do not share a QK_K layout");
++    }
++
++    matvec_q4_k_pair_ctx ctx = {
++        .out0 = out0,
++        .out1 = out1,
++        .base0 = base0,
++        .base1 = base1,
++        .xq = xq,
++        .in_dim = in0,
++        .row_bytes0 = row0,
++        .row_bytes1 = row1,
++    };
++    ds4_parallel_for(out0_dim, matvec_q4_k_pair_worker, &ctx);
++}
++
++typedef struct {
++    float *mid;
++    const uint8_t *gate_base[DS4_N_EXPERT_USED];
++    const uint8_t *up_base[DS4_N_EXPERT_USED];
++    const block_q8_K *xq;
++    float expert_weight[DS4_N_EXPERT_USED];
++    float clamp;
++    uint64_t in_dim;
++    uint64_t out_dim;
++    uint64_t gate_row_bytes[DS4_N_EXPERT_USED];
++    uint64_t up_row_bytes[DS4_N_EXPERT_USED];
++    int n_expert;
++} matvec_q4_k_mid_ctx;
++
++static void matvec_q4_k_mid_worker(void *vctx, uint64_t row0, uint64_t row1) {
++    matvec_q4_k_mid_ctx *ctx = vctx;
++    for (uint64_t idx = row0; idx < row1; idx++) {
++        const int slot = (int)(idx / ctx->out_dim);
++        const uint64_t row = idx - (uint64_t)slot * ctx->out_dim;
++        const block_q4_K *gate_row = (const block_q4_K *)(
++            ctx->gate_base[slot] + row * ctx->gate_row_bytes[slot]);
++        const block_q4_K *up_row = (const block_q4_K *)(
++            ctx->up_base[slot] + row * ctx->up_row_bytes[slot]);
++        float gate = 0.0f;
++        float up = 0.0f;
++        ds4_vec_dot_q4_K_q8_K(
++            (int)ctx->in_dim, &gate, gate_row, ctx->xq);
++        ds4_vec_dot_q4_K_q8_K(
++            (int)ctx->in_dim, &up, up_row, ctx->xq);
++        if (ctx->clamp > 1.0e-6f) {
++            if (gate > ctx->clamp) gate = ctx->clamp;
++            if (up > ctx->clamp) up = ctx->clamp;
++            if (up < -ctx->clamp) up = -ctx->clamp;
++        }
++        ctx->mid[idx] =
++            silu(gate) * up * ctx->expert_weight[slot];
++    }
++}
++
++static void matvec_q4_k_experts_mid_prequant(
++        float *mid,
++        const ds4_model *model,
++        const ds4_tensor *gate_w,
++        const ds4_tensor *up_w,
++        const block_q8_K *xq,
++        const int *selected,
++        const float *expert_weight,
++        int n_expert,
++        float clamp) {
++    if (gate_w->type != DS4_TENSOR_Q4_K ||
++        up_w->type != DS4_TENSOR_Q4_K) {
++        ds4_die("expected Q4_K routed gate/up tensors");
++    }
++    if (n_expert < 1 || n_expert > DS4_N_EXPERT_USED) {
++        ds4_die("unexpected Q4_K routed expert count");
++    }
++
++    matvec_q4_k_mid_ctx ctx = {
++        .mid = mid,
++        .xq = xq,
++        .clamp = clamp,
++        .n_expert = n_expert,
++    };
++    for (int i = 0; i < n_expert; i++) {
++        uint64_t gate_in, gate_out, up_in, up_out;
++        ctx.gate_base[i] = tensor_expert_bytes(
++            model, gate_w, (uint32_t)selected[i],
++            &gate_in, &gate_out, &ctx.gate_row_bytes[i]);
++        ctx.up_base[i] = tensor_expert_bytes(
++            model, up_w, (uint32_t)selected[i],
++            &up_in, &up_out, &ctx.up_row_bytes[i]);
++        if (gate_in != up_in || gate_out != up_out) {
++            ds4_die("paired Q4_K routed tensors do not match");
++        }
++        if (i == 0) {
++            ctx.in_dim = gate_in;
++            ctx.out_dim = gate_out;
++        } else if (gate_in != ctx.in_dim || gate_out != ctx.out_dim) {
++            ds4_die("Q4_K routed tensors do not share a layout");
++        }
++        ctx.expert_weight[i] = expert_weight[i];
++    }
++    if (ctx.in_dim % QK_K != 0) {
++        ds4_die("Q4_K routed gate/up row is not QK_K aligned");
++    }
++    ds4_parallel_for(
++        (uint64_t)n_expert * ctx.out_dim,
++        matvec_q4_k_mid_worker,
++        &ctx);
++}
++
++typedef struct {
++    float *out;
++    const uint8_t *base[DS4_N_EXPERT_USED];
++    const block_q8_K *xq[DS4_N_EXPERT_USED];
++    uint64_t in_dim;
++    uint64_t row_bytes[DS4_N_EXPERT_USED];
++    int n_expert;
++} matvec_q4_k_accum_ctx;
++
++static void matvec_q4_k_accum_worker(
++        void *vctx, uint64_t row0, uint64_t row1) {
++    matvec_q4_k_accum_ctx *ctx = vctx;
++    for (uint64_t row = row0; row < row1; row++) {
++        float acc = 0.0f;
++        for (int i = 0; i < ctx->n_expert; i++) {
++            const block_q4_K *w = (const block_q4_K *)(
++                ctx->base[i] + row * ctx->row_bytes[i]);
++            float v = 0.0f;
++            ds4_vec_dot_q4_K_q8_K(
++                (int)ctx->in_dim, &v, w, ctx->xq[i]);
++            acc += v;
++        }
++        ctx->out[row] = acc;
++    }
++}
++
++static void matvec_q4_k_experts_accum_prequant(
++        float *out,
++        const ds4_model *model,
++        const ds4_tensor *w,
++        const block_q8_K *xq,
++        const int *selected,
++        int n_expert) {
++    if (w->type != DS4_TENSOR_Q4_K) {
++        ds4_die("expected a Q4_K routed down tensor");
++    }
++    if (n_expert < 1 || n_expert > DS4_N_EXPERT_USED) {
++        ds4_die("unexpected Q4_K routed expert count");
++    }
++
++    matvec_q4_k_accum_ctx ctx = {
++        .out = out,
++        .n_expert = n_expert,
++    };
++    uint64_t out_dim = 0;
++    for (int i = 0; i < n_expert; i++) {
++        uint64_t in_dim_i, out_dim_i;
++        ctx.base[i] = tensor_expert_bytes(
++            model, w, (uint32_t)selected[i],
++            &in_dim_i, &out_dim_i, &ctx.row_bytes[i]);
++        if (i == 0) {
++            ctx.in_dim = in_dim_i;
++            out_dim = out_dim_i;
++        } else if (in_dim_i != ctx.in_dim || out_dim_i != out_dim) {
++            ds4_die("Q4_K routed down tensors do not share a layout");
++        }
++    }
++    if (ctx.in_dim % QK_K != 0) {
++        ds4_die("Q4_K routed down row is not QK_K aligned");
++    }
++    const uint64_t n_blocks = ctx.in_dim / QK_K;
++    for (int i = 0; i < n_expert; i++) {
++        ctx.xq[i] = xq + (uint64_t)i * n_blocks;
++    }
++    ds4_parallel_for(out_dim, matvec_q4_k_accum_worker, &ctx);
++}
++
++/* The MTP router is learned even though the GPU path uses logical layer 1 to
++ * select dense RoPE semantics.  Keep it independent of backbone hash routing
++ * and REAP masks, and accept either F16 or F32 plain GGUF router weights. */
++static void mtp_cpu_router_select(
++        int selected[DS4_N_EXPERT_USED],
++        float expert_weight[DS4_N_EXPERT_USED],
++        const ds4_model *model,
++        const ds4_layer_weights *layer,
++        const float *x) {
++    float logits[DS4_N_EXPERT];
++    float probs[DS4_N_EXPERT];
++    float selection[DS4_N_EXPERT];
++    matvec_any(logits, model, layer->ffn_gate_inp, x);
++    for (int i = 0; i < DS4_N_EXPERT; i++) {
++        probs[i] = sqrtf(softplus_stable(logits[i]));
++        selection[i] = probs[i];
++    }
++    if (layer->ffn_exp_probs_b) {
++        const float *bias = tensor_data(model, layer->ffn_exp_probs_b);
++        for (int i = 0; i < DS4_N_EXPERT; i++) {
++            selection[i] += bias[i];
++        }
++    }
++    topk_desc(selection, DS4_N_EXPERT, DS4_N_EXPERT_USED, selected);
++
++    float sum = 0.0f;
++    for (int i = 0; i < DS4_N_EXPERT_USED; i++) {
++        expert_weight[i] = probs[selected[i]];
++        sum += expert_weight[i];
++    }
++    if (sum < 6.103515625e-5f) sum = 6.103515625e-5f;
++    for (int i = 0; i < DS4_N_EXPERT_USED; i++) {
++        expert_weight[i] =
++            expert_weight[i] / sum * DS4_EXPERT_WEIGHT_SCALE;
++    }
++}
++
++static void layer_routed_moe_q4_k_one_prealloc(
++        float *out,
++        const ds4_model *model,
++        const ds4_layer_weights *layer,
++        const float *x,
++        float clamp,
++        float *mid_all,
++        block_q8_K *xq,
++        block_q8_K *midq,
++        ds4_mtp_cpu_telemetry *telemetry) {
++    if (layer->ffn_gate_exps->type != DS4_TENSOR_Q4_K ||
++        layer->ffn_up_exps->type != DS4_TENSOR_Q4_K ||
++        layer->ffn_down_exps->type != DS4_TENSOR_Q4_K) {
++        ds4_die("MTP CPU routed path requires Q4_K gate/up/down tensors");
++    }
++    const uint64_t in_dim = layer->ffn_gate_exps->dim[0];
++    const uint64_t mid_dim = layer->ffn_gate_exps->dim[1];
++    const uint64_t down_in = layer->ffn_down_exps->dim[0];
++    /* mid_all/xq/midq scratch buffers are sized on DS4_N_FF_EXP, so this
++     * guard must stay in sync with layer_routed_moe_one_prealloc's checks. */
++    if (in_dim % QK_K != 0 ||
++        mid_dim != down_in ||
++        down_in != DS4_N_FF_EXP ||
++        down_in % QK_K != 0 ||
++        layer->ffn_down_exps->dim[1] != DS4_N_EMBD) {
++        ds4_die("MTP Q4_K routed tensor layout is unexpected");
++    }
++
++    int selected[DS4_N_EXPERT_USED];
++    float expert_weight[DS4_N_EXPERT_USED];
++    mtp_cpu_router_select(selected, expert_weight, model, layer, x);
++
++    double t0 = telemetry ? now_sec() : 0.0;
++    ds4_quantize_row_q8_K(x, xq, (int64_t)in_dim);
++    if (telemetry) {
++        telemetry->q8_prequant_ms += (now_sec() - t0) * 1000.0;
++        t0 = now_sec();
++    }
++    matvec_q4_k_experts_mid_prequant(
++        mid_all, model,
++        layer->ffn_gate_exps,
++        layer->ffn_up_exps,
++        xq, selected, expert_weight,
++        DS4_N_EXPERT_USED, clamp);
++    if (telemetry) {
++        telemetry->q4_matvec_ms += (now_sec() - t0) * 1000.0;
++        t0 = now_sec();
++    }
++
++    for (int i = 0; i < DS4_N_EXPERT_USED; i++) {
++        ds4_quantize_row_q8_K(
++            mid_all + (uint64_t)i * down_in,
++            midq + (uint64_t)i * (down_in / QK_K),
++            (int64_t)down_in);
++    }
++    if (telemetry) {
++        telemetry->q8_prequant_ms += (now_sec() - t0) * 1000.0;
++        t0 = now_sec();
++    }
++    matvec_q4_k_experts_accum_prequant(
++        out, model, layer->ffn_down_exps,
++        midq, selected, DS4_N_EXPERT_USED);
++    if (telemetry) {
++        telemetry->q4_matvec_ms += (now_sec() - t0) * 1000.0;
++    }
++}
++
+ static void ds4_reap_mask_validate_selected(
+         uint32_t il,
+         const int *selected,
+@@ -8991,6 +9392,353 @@ static void layer_forward_raw_swa_one(
+ 
+ }
+ 
++/* CPU-only state for the one-block NextN drafter.  It is deliberately
++ * detached from ds4_engine and has no call site in this patch: loader,
++ * dispatcher, speculative state, cache residency, and admission stay
++ * unchanged until the later DSPARK pieces wire it behind an explicit flag. */
++typedef struct {
++    ds4_cpu_decode_scratch scratch;
++    ds4_layer_cache cache;
++    bool initialized;
++} ds4_mtp_cpu_state;
++
++static void mtp_cpu_hc_pre_from_state_one_scratch(
++        const ds4_model *model,
++        const ds4_tensor *fn,
++        const ds4_tensor *scale_tensor,
++        const ds4_tensor *base_tensor,
++        const float *residual_hc,
++        float *out,
++        float *post,
++        float *comb,
++        float *flat) {
++    const uint64_t hc_dim = (uint64_t)DS4_N_HC * DS4_N_EMBD;
++    float mix[2 * DS4_N_HC + DS4_N_HC * DS4_N_HC];
++    float split[2 * DS4_N_HC + DS4_N_HC * DS4_N_HC];
++
++    rms_norm_no_weight(flat, residual_hc, hc_dim, DS4_RMS_EPS);
++    matvec_any(mix, model, fn, flat);
++    hc_split_sinkhorn_one(
++        split,
++        mix,
++        tensor_data(model, scale_tensor),
++        tensor_data(model, base_tensor),
++        DS4_N_HC,
++        DS4_N_HC_SINKHORN_ITER,
++        DS4_HC_EPS);
++    hc_weighted_sum_one(
++        out, residual_hc, split, DS4_N_EMBD, DS4_N_HC);
++    memcpy(
++        post, split + DS4_N_HC,
++        (size_t)DS4_N_HC * sizeof(post[0]));
++    memcpy(
++        comb, split + 2 * DS4_N_HC,
++        (size_t)DS4_N_HC * DS4_N_HC * sizeof(comb[0]));
++}
++
++static void mtp_cpu_layer_ffn_one(
++        float *out_hc,
++        const ds4_model *model,
++        const ds4_layer_weights *layer,
++        const float *inp_hc,
++        ds4_cpu_decode_scratch *scratch,
++        ds4_mtp_cpu_telemetry *telemetry) {
++    float post[DS4_N_HC];
++    float comb[DS4_N_HC * DS4_N_HC];
++    mtp_cpu_hc_pre_from_state_one_scratch(
++        model,
++        layer->hc_ffn_fn,
++        layer->hc_ffn_scale,
++        layer->hc_ffn_base,
++        inp_hc,
++        scratch->ffn_cur,
++        post,
++        comb,
++        scratch->hc_flat);
++    rms_norm_weight(
++        scratch->ffn_norm,
++        scratch->ffn_cur,
++        tensor_data(model, layer->ffn_norm),
++        DS4_N_EMBD,
++        DS4_RMS_EPS);
++
++    layer_routed_moe_q4_k_one_prealloc(
++        scratch->ffn_moe,
++        model,
++        layer,
++        scratch->ffn_norm,
++        DS4_SWIGLU_CLAMP_EXP,
++        scratch->routed_mid_all,
++        scratch->routed_xq,
++        scratch->routed_midq,
++        telemetry);
++    layer_shared_ffn_one_decode_scratch(
++        scratch->ffn_shared,
++        model,
++        layer,
++        scratch->ffn_norm,
++        scratch);
++    for (uint32_t i = 0; i < DS4_N_EMBD; i++) {
++        scratch->ffn_out[i] =
++            scratch->ffn_moe[i] + scratch->ffn_shared[i];
++    }
++    hc_post_one(
++        out_hc,
++        scratch->ffn_out,
++        inp_hc,
++        post,
++        comb,
++        DS4_N_EMBD,
++        DS4_N_HC);
++}
++
++/* MTP is a dense-attention block with its own raw SWA cache.  Logical layer
++ * 1 matches the existing GPU MTP path: no compression, base RoPE parameters,
++ * and learned routing (the MTP tensor has no token-id hash table). */
++static void mtp_cpu_layer_forward(
++        float *out_hc,
++        const ds4_model *model,
++        const ds4_layer_weights *layer,
++        ds4_layer_cache *cache,
++        const float *inp_hc,
++        uint32_t pos,
++        ds4_cpu_decode_scratch *scratch,
++        ds4_mtp_cpu_telemetry *telemetry) {
++    enum { DS4_MTP_DENSE_LOGICAL_LAYER = 1 };
++    float post[DS4_N_HC];
++    float comb[DS4_N_HC * DS4_N_HC];
++
++    if (cache->compress_ratio != 0 ||
++        cache->cap_raw == 0 ||
++        cache->cap_raw > DS4_N_SWA) {
++        ds4_die("MTP CPU cache must be raw SWA-only");
++    }
++    memcpy(
++        scratch->attn_residual,
++        inp_hc,
++        (size_t)DS4_N_HC * DS4_N_EMBD * sizeof(inp_hc[0]));
++    mtp_cpu_hc_pre_from_state_one_scratch(
++        model,
++        layer->hc_attn_fn,
++        layer->hc_attn_scale,
++        layer->hc_attn_base,
++        scratch->attn_residual,
++        scratch->attn_cur,
++        post,
++        comb,
++        scratch->hc_flat);
++    layer_attn_norm_one(
++        scratch->attn_norm, model, layer, scratch->attn_cur);
++    layer_q_projection_with_lora_one_decode_scratch(
++        model, layer,
++        scratch->attn_norm,
++        scratch->q,
++        scratch->qr_norm,
++        scratch);
++    layer_kv_projection_normed_one_decode_scratch(
++        model, layer,
++        scratch->attn_norm,
++        scratch->kv,
++        scratch);
++    rope_tail_layer_inplace(
++        scratch->q,
++        DS4_N_HEAD,
++        DS4_N_HEAD_DIM,
++        DS4_N_ROT,
++        pos,
++        DS4_MTP_DENSE_LOGICAL_LAYER,
++        false);
++    rope_tail_layer_inplace(
++        scratch->kv,
++        DS4_N_HEAD_KV,
++        DS4_N_HEAD_DIM,
++        DS4_N_ROT,
++        pos,
++        DS4_MTP_DENSE_LOGICAL_LAYER,
++        false);
++    dsv4_fp8_kv_quantize_row_inplace_cpu(
++        scratch->kv, DS4_N_HEAD_DIM, DS4_N_ROT);
++    kv_cache_push_raw(cache, scratch->kv);
++    layer_attention_rows_one(
++        scratch->heads,
++        model,
++        layer,
++        scratch->q,
++        cache->raw_kv,
++        cache->n_raw);
++    rope_tail_layer_inplace(
++        scratch->heads,
++        DS4_N_HEAD,
++        DS4_N_HEAD_DIM,
++        DS4_N_ROT,
++        pos,
++        DS4_MTP_DENSE_LOGICAL_LAYER,
++        true);
++    layer_grouped_out_one_decode_scratch(
++        scratch->attn_out, model, layer, scratch->heads, scratch);
++    hc_post_one(
++        scratch->after_attn_hc,
++        scratch->attn_out,
++        scratch->attn_residual,
++        post,
++        comb,
++        DS4_N_EMBD,
++        DS4_N_HC);
++    mtp_cpu_layer_ffn_one(
++        out_hc,
++        model,
++        layer,
++        scratch->after_attn_hc,
++        scratch,
++        telemetry);
++}
++
++static DS4_MAYBE_UNUSED void ds4_mtp_cpu_state_init(
++        ds4_mtp_cpu_state *state) {
++    if (!state) ds4_die("MTP CPU state is null");
++    memset(state, 0, sizeof(*state));
++    cpu_decode_scratch_init(&state->scratch, DS4_N_SWA);
++    state->cache.cap_raw = DS4_N_SWA;
++    state->cache.raw_kv = xmalloc_zeroed(
++        (size_t)DS4_N_SWA * DS4_N_HEAD_DIM, sizeof(float));
++    state->cache.compress_ratio = 0;
++    state->initialized = true;
++}
++
++static DS4_MAYBE_UNUSED void ds4_mtp_cpu_state_reset(
++        ds4_mtp_cpu_state *state) {
++    if (!state || !state->initialized) return;
++    state->cache.n_raw = 0;
++}
++
++static DS4_MAYBE_UNUSED void ds4_mtp_cpu_state_free(
++        ds4_mtp_cpu_state *state) {
++    if (!state) return;
++    free(state->cache.raw_kv);
++    cpu_decode_scratch_free(&state->scratch);
++    memset(state, 0, sizeof(*state));
++}
++
++/* One callable NextN draft forward.
++ *
++ * prev_hc is exactly 4x4096 F32 HC state: target final HC for the first draft,
++ * then the previous MTP out_hc for recursive drafts.  token is the known true
++ * token for the first call (and the previous draft token thereafter).
++ * out_hc is the recurrent 4x4096 state.  head_hidden is the 4096-vector after
++ * the MTP HC head and mtp.0.norm; it is ready for the base model's resident
++ * Q8_0 vocabulary matrix on GPU.  No vocabulary projection is done here. */
++static DS4_MAYBE_UNUSED void ds4_mtp_cpu_forward_nextn_q4_k(
++        ds4_mtp_cpu_state *state,
++        const ds4_model *base_model,
++        const ds4_weights *base_weights,
++        const ds4_model *mtp_model,
++        const ds4_mtp_weights *mtp,
++        const float *prev_hc,
++        int token,
++        uint32_t pos,
++        float *out_hc,
++        float *head_hidden,
++        ds4_mtp_cpu_telemetry *telemetry) {
++    if (!state || !state->initialized ||
++        !base_model || !base_weights ||
++        !mtp_model || !mtp ||
++        !prev_hc || !out_hc || !head_hidden) {
++        ds4_die("invalid MTP CPU forward argument");
++    }
++
++    ds4_mtp_cpu_telemetry local = {0};
++    ds4_mtp_cpu_telemetry *tm = telemetry ? telemetry : &local;
++    memset(tm, 0, sizeof(*tm));
++    const double total_t0 = now_sec();
++    ds4_cpu_decode_scratch *scratch = &state->scratch;
++
++    embed_token_f16(base_model, base_weights, token, scratch->plain);
++    rms_norm_weight(
++        scratch->output_embd,
++        scratch->plain,
++        tensor_data(mtp_model, mtp->enorm),
++        DS4_N_EMBD,
++        DS4_RMS_EPS);
++    matvec_q8_0_decode_scratch(
++        scratch->output_norm,
++        mtp_model,
++        mtp->e_proj,
++        scratch->output_embd,
++        scratch);
++
++    for (uint32_t h = 0; h < DS4_N_HC; h++) {
++        const float *prev = prev_hc + (uint64_t)h * DS4_N_EMBD;
++        float *hnorm = scratch->cur + (uint64_t)h * DS4_N_EMBD;
++        float *input = scratch->next + (uint64_t)h * DS4_N_EMBD;
++        rms_norm_weight(
++            hnorm,
++            prev,
++            tensor_data(mtp_model, mtp->hnorm),
++            DS4_N_EMBD,
++            DS4_RMS_EPS);
++        matvec_q8_0_decode_scratch(
++            input, mtp_model, mtp->h_proj, hnorm, scratch);
++        for (uint32_t d = 0; d < DS4_N_EMBD; d++) {
++            input[d] += scratch->output_norm[d];
++        }
++    }
++
++    mtp_cpu_layer_forward(
++        scratch->cur,
++        mtp_model,
++        &mtp->block,
++        &state->cache,
++        scratch->next,
++        pos,
++        scratch,
++        tm);
++    memcpy(
++        out_hc,
++        scratch->cur,
++        (size_t)DS4_N_HC * DS4_N_EMBD * sizeof(out_hc[0]));
++
++    const uint64_t hc_dim = (uint64_t)DS4_N_HC * DS4_N_EMBD;
++    rms_norm_no_weight(
++        scratch->output_flat, scratch->cur, hc_dim, DS4_RMS_EPS);
++    matvec_any(
++        scratch->output_pre,
++        mtp_model,
++        mtp->hc_head_fn,
++        scratch->output_flat);
++    const float *head_scale =
++        tensor_data(mtp_model, mtp->hc_head_scale);
++    const float *head_base =
++        tensor_data(mtp_model, mtp->hc_head_base);
++    for (uint32_t h = 0; h < DS4_N_HC; h++) {
++        scratch->output_weights[h] = sigmoid_stable(
++            scratch->output_pre[h] * head_scale[0] + head_base[h]) +
++            DS4_HC_EPS;
++    }
++    hc_weighted_sum_one(
++        scratch->output_embd,
++        scratch->cur,
++        scratch->output_weights,
++        DS4_N_EMBD,
++        DS4_N_HC);
++    rms_norm_weight(
++        head_hidden,
++        scratch->output_embd,
++        tensor_data(mtp_model, mtp->norm),
++        DS4_N_EMBD,
++        DS4_RMS_EPS);
++
++    tm->total_ms = (now_sec() - total_t0) * 1000.0;
++    /* Q4_K dequantization is fused into ds4_vec_dot_q4_K_q8_K, so there is
++     * intentionally no separately materialized dequant pass. */
++    tm->q4_dequant_ms = 0.0;
++    tm->other_ms =
++        tm->total_ms -
++        tm->q8_prequant_ms -
++        tm->q4_dequant_ms -
++        tm->q4_matvec_ms;
++    if (tm->other_ms < 0.0) tm->other_ms = 0.0;
++}
++
+ static void output_logits_one_decode_scratch(
+         float                  * logits,
+         const ds4_model        * model,

@@ -1,0 +1,967 @@
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -137,6 +137,7 @@
+  * ========================================================================= */
+ 
+ static double cuda_wall_sec(void);  /* definita piu' avanti in questo file */
++static void ds4_transport_request_reset(void);
+ 
+ /* Contesto letto nell'istante del minimo.  g_stream_pool_bytes e
+  * g_model_range_bytes sono definite molto piu' avanti del probe, quindi
+@@ -15636,6 +15637,9 @@
+ }
+ 
+ extern "C" int ds4_gpu_dynamic_arena_request_begin(void) {
++    /* Clear the fixed pair table at the true request boundary.  It remains
++     * disarmed through prefill and is re-cleared/armed at decode-start. */
++    ds4_transport_request_reset();
+     const int shared_policy_active = cuda_g133_shared_policy_active();
+     /* Strict boundary ordering for the active shared G133 policy: prior route
+      * work is quiescent before SSD-wrap commits and before epoch advance. */
+@@ -27488,6 +27492,407 @@
+         CUDA_MOE_LAYER_COUNT * CUDA_MOE_DEMAND_PIPELINE_PUBLISH_PER_LAYER,
+ };
+ 
++/* =======================================================================
++ * TRANSPORT LEDGER - request-scoped, exact pair traffic accounting.
++ *
++ * DS4_CUDA_TRANSPORT_LEDGER=1 enables the ledger.  With the default 0 the
++ * table is never cleared or touched, no clock is read and no line is emitted.
++ * DS4_CUDA_TRANSPORT_LEDGER_EVERY_TOKENS (default 32) controls periodic rows.
++ *
++ * "File read" means bytes actually returned by an explicit positioned read.
++ * Mmap page faults and host-mapped GPU reads cannot be attributed exactly to
++ * (layer, expert) here and are deliberately not inferred.  H2D bytes are
++ * committed only after the stream carrying the expert payload drained
++ * successfully.  The active interval is the measured wall-clock union during
++ * which at least one such submitted batch has not yet reached its drain.
++ * ======================================================================= */
++enum {
++    DS4_TRANSPORT_EXPERT_COUNT = 256,
++    DS4_TRANSPORT_PAIR_COUNT =
++        CUDA_MOE_LAYER_COUNT * DS4_TRANSPORT_EXPERT_COUNT,
++};
++
++struct ds4_transport_pair_counters {
++    uint32_t h2d_transfers;
++    uint32_t file_reads;
++};
++static_assert(
++    sizeof(ds4_transport_pair_counters) == 2u * sizeof(uint32_t),
++    "transport pair ledger must use exactly two 32-bit counters");
++static_assert(
++    sizeof(ds4_transport_pair_counters) * DS4_TRANSPORT_PAIR_COUNT == 88064u,
++    "transport pair ledger must be 43*256*2*4 bytes");
++
++struct ds4_transport_ledger_state {
++    std::atomic<int> armed{0};
++    std::atomic_flag lock = ATOMIC_FLAG_INIT;
++    ds4_transport_pair_counters pair[DS4_TRANSPORT_PAIR_COUNT];
++    uint64_t first_touch_bytes;
++    uint64_t repeat_h2d_bytes;
++    uint64_t repeat_file_bytes;
++    uint64_t h2d_bytes_total;
++    uint64_t tokens;
++    uint64_t next_log;
++    double decode_started;
++    double h2d_active_seconds;
++    double h2d_active_started;
++    uint32_t h2d_active_batches;
++    int complete;
++};
++static ds4_transport_ledger_state g_transport_ledger;
++
++struct ds4_transport_h2d_batch_entry {
++    uint32_t layer;
++    uint32_t expert;
++    uint64_t bytes;
++};
++
++struct ds4_transport_h2d_batch {
++    ds4_transport_h2d_batch_entry entries[CUDA_MOE_ROUTE_COUNT];
++    uint32_t count;
++    int active;
++    int complete;
++};
++
++struct ds4_transport_report_snapshot {
++    uint64_t unique_pairs_touched;
++    uint64_t first_touch_bytes;
++    uint64_t repeat_h2d_bytes;
++    uint64_t repeat_file_bytes;
++    uint64_t h2d_bytes_total;
++    uint64_t tokens;
++    double decode_seconds;
++    double h2d_active_seconds;
++    int complete;
++};
++
++static int cuda_transport_ledger_enabled(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *env = getenv("DS4_CUDA_TRANSPORT_LEDGER");
++        cached = env && env[0] && strcmp(env, "0") != 0;
++    }
++    return cached;
++}
++
++static uint64_t cuda_transport_ledger_every_tokens(void) {
++    static int resolved = 0;
++    static uint64_t cached = 32u;
++    if (resolved) return cached;
++    resolved = 1;
++    const char *env = getenv("DS4_CUDA_TRANSPORT_LEDGER_EVERY_TOKENS");
++    if (!env || !env[0]) return cached;
++    char *end = NULL;
++    errno = 0;
++    const unsigned long long parsed = strtoull(env, &end, 10);
++    if (errno == 0 && end != env && end && *end == '\0' && parsed > 0u) {
++        cached = (uint64_t)parsed;
++    } else {
++        fprintf(stderr,
++                "ds4: invalid DS4_CUDA_TRANSPORT_LEDGER_EVERY_TOKENS=%s; "
++                "using 32\n",
++                env);
++    }
++    return cached;
++}
++
++static void ds4_transport_lock(void) {
++    while (g_transport_ledger.lock.test_and_set(std::memory_order_acquire)) {
++    }
++}
++
++static void ds4_transport_unlock(void) {
++    g_transport_ledger.lock.clear(std::memory_order_release);
++}
++
++static int ds4_transport_pair_index(
++        uint32_t layer, uint32_t expert, uint32_t *index) {
++    if (layer >= CUDA_MOE_LAYER_COUNT ||
++        expert >= DS4_TRANSPORT_EXPERT_COUNT || !index) {
++        return 0;
++    }
++    *index = layer * DS4_TRANSPORT_EXPERT_COUNT + expert;
++    return 1;
++}
++
++static int ds4_transport_add_u64(uint64_t *value, uint64_t add) {
++    if (!value || *value > UINT64_MAX - add) return 0;
++    *value += add;
++    return 1;
++}
++
++static void ds4_transport_mark_incomplete(void) {
++    if (!cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    ds4_transport_lock();
++    g_transport_ledger.complete = 0;
++    ds4_transport_unlock();
++}
++
++/* Begin one conceptual file materialization of a pair. Gate/up/down reads and
++ * their chunking share the returned classification, so distinct first-touch
++ * bytes are never mislabeled as repeats merely because GGUF has three planes. */
++static int ds4_transport_file_load_begin(
++        uint32_t layer, uint32_t expert) {
++    if (!cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return -1;
++    }
++    uint32_t index = 0;
++    if (!ds4_transport_pair_index(layer, expert, &index)) {
++        ds4_transport_mark_incomplete();
++        return -1;
++    }
++    ds4_transport_lock();
++    if (!g_transport_ledger.armed.load(std::memory_order_relaxed)) {
++        ds4_transport_unlock();
++        return -1;
++    }
++    ds4_transport_pair_counters &pair = g_transport_ledger.pair[index];
++    const int repeat = pair.file_reads != 0u;
++    if (pair.file_reads == UINT32_MAX) {
++        g_transport_ledger.complete = 0;
++    } else {
++        pair.file_reads++;
++    }
++    ds4_transport_unlock();
++    return repeat;
++}
++
++static void ds4_transport_record_file_bytes(
++        int repeat, uint64_t bytes) {
++    if (repeat <= 0 || bytes == 0u || !cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    ds4_transport_lock();
++    if (!ds4_transport_add_u64(
++            &g_transport_ledger.repeat_file_bytes, bytes)) {
++        g_transport_ledger.complete = 0;
++    }
++    ds4_transport_unlock();
++}
++
++static void ds4_transport_h2d_batch_begin(ds4_transport_h2d_batch *batch) {
++    if (!batch || batch->active || !cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    const double now = cuda_wall_sec();
++    ds4_transport_lock();
++    if (g_transport_ledger.armed.load(std::memory_order_relaxed)) {
++        if (g_transport_ledger.h2d_active_batches++ == 0u) {
++            g_transport_ledger.h2d_active_started = now;
++        }
++        batch->active = 1;
++    }
++    ds4_transport_unlock();
++}
++
++static void ds4_transport_h2d_batch_append(
++        ds4_transport_h2d_batch *batch,
++        uint32_t layer, uint32_t expert, uint64_t bytes) {
++    if (!batch || bytes == 0u || !cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    if (batch->count >= CUDA_MOE_ROUTE_COUNT ||
++        layer >= CUDA_MOE_LAYER_COUNT ||
++        expert >= DS4_TRANSPORT_EXPERT_COUNT) {
++        ds4_transport_mark_incomplete();
++        batch->complete = 0;
++        return;
++    }
++    if (batch->count == 0u) batch->complete = 1;
++    batch->entries[batch->count++] =
++        ds4_transport_h2d_batch_entry{layer, expert, bytes};
++}
++
++static void ds4_transport_h2d_batch_invalidate(
++        ds4_transport_h2d_batch *batch) {
++    if (!batch) return;
++    batch->complete = 0;
++    ds4_transport_mark_incomplete();
++}
++
++static void ds4_transport_h2d_batch_finish(
++        ds4_transport_h2d_batch *batch, int drain_ok) {
++    if (!batch || !batch->active) return;
++    const double now = cuda_wall_sec();
++    ds4_transport_lock();
++    if (g_transport_ledger.h2d_active_batches == 0u) {
++        g_transport_ledger.complete = 0;
++    } else if (--g_transport_ledger.h2d_active_batches == 0u) {
++        const double elapsed = now - g_transport_ledger.h2d_active_started;
++        if (elapsed >= 0.0) {
++            g_transport_ledger.h2d_active_seconds += elapsed;
++        } else {
++            g_transport_ledger.complete = 0;
++        }
++        g_transport_ledger.h2d_active_started = 0.0;
++    }
++    if (!drain_ok || !batch->complete) {
++        /* CUDA does not reveal which subset of an errored async batch crossed
++         * PCIe.  Keep all byte totals exact by omitting it and expose the gap. */
++        g_transport_ledger.complete = 0;
++    } else {
++        for (uint32_t i = 0; i < batch->count; i++) {
++            const ds4_transport_h2d_batch_entry &entry = batch->entries[i];
++            uint32_t index = 0;
++            if (!ds4_transport_pair_index(
++                    entry.layer, entry.expert, &index)) {
++                g_transport_ledger.complete = 0;
++                continue;
++            }
++            ds4_transport_pair_counters &pair =
++                g_transport_ledger.pair[index];
++            const int repeat = pair.h2d_transfers != 0u;
++            if (pair.h2d_transfers == UINT32_MAX) {
++                g_transport_ledger.complete = 0;
++            } else {
++                pair.h2d_transfers++;
++            }
++            uint64_t *classification = repeat
++                ? &g_transport_ledger.repeat_h2d_bytes
++                : &g_transport_ledger.first_touch_bytes;
++            if (!ds4_transport_add_u64(classification, entry.bytes) ||
++                !ds4_transport_add_u64(
++                    &g_transport_ledger.h2d_bytes_total, entry.bytes)) {
++                g_transport_ledger.complete = 0;
++            }
++        }
++    }
++    ds4_transport_unlock();
++    *batch = ds4_transport_h2d_batch{};
++}
++
++static void ds4_transport_clear(int arm_for_decode) {
++    if (!cuda_transport_ledger_enabled()) return;
++    g_transport_ledger.armed.store(0, std::memory_order_release);
++    ds4_transport_lock();
++    memset(g_transport_ledger.pair, 0, sizeof(g_transport_ledger.pair));
++    g_transport_ledger.first_touch_bytes = 0u;
++    g_transport_ledger.repeat_h2d_bytes = 0u;
++    g_transport_ledger.repeat_file_bytes = 0u;
++    g_transport_ledger.h2d_bytes_total = 0u;
++    g_transport_ledger.tokens = 0u;
++    g_transport_ledger.next_log = cuda_transport_ledger_every_tokens();
++    g_transport_ledger.decode_started =
++        arm_for_decode ? cuda_wall_sec() : 0.0;
++    g_transport_ledger.h2d_active_seconds = 0.0;
++    g_transport_ledger.h2d_active_started = 0.0;
++    g_transport_ledger.h2d_active_batches = 0u;
++    g_transport_ledger.complete = 1;
++    ds4_transport_unlock();
++    if (arm_for_decode) {
++        g_transport_ledger.armed.store(1, std::memory_order_release);
++    }
++}
++
++static void ds4_transport_request_reset(void) {
++    ds4_transport_clear(0);
++}
++
++static void ds4_transport_decode_begin(void) {
++    ds4_transport_clear(1);
++}
++
++static ds4_transport_report_snapshot ds4_transport_snapshot(void) {
++    ds4_transport_report_snapshot snapshot = {};
++    const double now = cuda_wall_sec();
++    ds4_transport_lock();
++    for (uint32_t i = 0; i < DS4_TRANSPORT_PAIR_COUNT; i++) {
++        const ds4_transport_pair_counters &pair =
++            g_transport_ledger.pair[i];
++        if (pair.h2d_transfers != 0u || pair.file_reads != 0u) {
++            snapshot.unique_pairs_touched++;
++        }
++    }
++    snapshot.first_touch_bytes = g_transport_ledger.first_touch_bytes;
++    snapshot.repeat_h2d_bytes = g_transport_ledger.repeat_h2d_bytes;
++    snapshot.repeat_file_bytes = g_transport_ledger.repeat_file_bytes;
++    snapshot.h2d_bytes_total = g_transport_ledger.h2d_bytes_total;
++    snapshot.tokens = g_transport_ledger.tokens;
++    snapshot.decode_seconds = now >= g_transport_ledger.decode_started
++        ? now - g_transport_ledger.decode_started : 0.0;
++    snapshot.h2d_active_seconds = g_transport_ledger.h2d_active_seconds;
++    if (g_transport_ledger.h2d_active_batches != 0u &&
++        now >= g_transport_ledger.h2d_active_started) {
++        snapshot.h2d_active_seconds +=
++            now - g_transport_ledger.h2d_active_started;
++    }
++    snapshot.complete = g_transport_ledger.complete;
++    ds4_transport_unlock();
++    return snapshot;
++}
++
++static void ds4_transport_report(const char *phase) {
++    if (!cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    const ds4_transport_report_snapshot s = ds4_transport_snapshot();
++    const uint64_t classified_h2d =
++        s.first_touch_bytes + s.repeat_h2d_bytes;
++    const double repeat_ratio = classified_h2d != 0u
++        ? (double)s.repeat_h2d_bytes / (double)classified_h2d : 0.0;
++    const double pcie_busy_pct = s.decode_seconds > 0.0
++        ? 100.0 * s.h2d_active_seconds / s.decode_seconds : 0.0;
++    fprintf(stderr,
++            "ds4: [transport] phase=%s tokens=%llu "
++            "unique_pairs_touched=%llu first_touch_bytes=%llu "
++            "repeat_h2d_bytes=%llu repeat_file_bytes=%llu "
++            "repeat_ratio=%.9f h2d_bytes_total=%llu "
++            "h2d_active_ms=%.3f decode_ms=%.3f pcie_busy_pct=%.6f "
++            "ledger_complete=%d\n",
++            phase ? phase : "unknown",
++            (unsigned long long)s.tokens,
++            (unsigned long long)s.unique_pairs_touched,
++            (unsigned long long)s.first_touch_bytes,
++            (unsigned long long)s.repeat_h2d_bytes,
++            (unsigned long long)s.repeat_file_bytes,
++            repeat_ratio,
++            (unsigned long long)s.h2d_bytes_total,
++            s.h2d_active_seconds * 1000.0,
++            s.decode_seconds * 1000.0,
++            pcie_busy_pct,
++            s.complete);
++}
++
++static void ds4_transport_token_end(uint32_t token_count) {
++    if (token_count == 0u || !cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    int due = 0;
++    ds4_transport_lock();
++    if (g_transport_ledger.tokens <= UINT64_MAX - token_count) {
++        g_transport_ledger.tokens += token_count;
++    } else {
++        g_transport_ledger.complete = 0;
++    }
++    if (g_transport_ledger.tokens >= g_transport_ledger.next_log) {
++        const uint64_t every = cuda_transport_ledger_every_tokens();
++        g_transport_ledger.next_log =
++            g_transport_ledger.tokens <= UINT64_MAX - every
++                ? g_transport_ledger.tokens + every : UINT64_MAX;
++        due = 1;
++    }
++    ds4_transport_unlock();
++    if (due) ds4_transport_report("periodic");
++}
++
++static void ds4_transport_request_end(void) {
++    if (!cuda_transport_ledger_enabled() ||
++        !g_transport_ledger.armed.load(std::memory_order_acquire)) {
++        return;
++    }
++    ds4_transport_report("final");
++    g_transport_ledger.armed.store(0, std::memory_order_release);
++}
++
+ struct cuda_moe_cache_key {
+     uint64_t gate_src;
+     uint64_t up_src;
+@@ -29809,6 +30214,9 @@
+     }
+     /* Dopo il grow, cosi' expert_slots_current riflette la capacita' definitiva. */
+     cuda_vram_prio_log("decode-start");
++    /* Request-scoped expert transport starts at the decode boundary: prefill
++     * traffic is intentionally outside both byte totals and decode wall time. */
++    ds4_transport_decode_begin();
+     /* Stesso istante della fotografia [vram-prio]: da qui in poi il probe del
+      * picco misura contro g_vram_free_at_decode_start. */
+     ds4_vram_peak_run_reset();
+@@ -29833,6 +30241,7 @@
+     cuda_vram_prio_log("request-end");
+     /* Sintesi del probe: minimo assoluto del run e token in cui e' avvenuto. */
+     ds4_vram_peak_summary("request-end");
++    ds4_transport_request_end();
+ }
+ 
+ template <bool G73>
+@@ -30034,6 +30443,7 @@
+ static int cuda_moe_transient_pread_chunked(
+         cuda_moe_expert_cache *cache, uint32_t sequence,
+         uint64_t trace_sample_id, uint32_t trace_layer,
++        int transport_repeat,
+         const os_file_t *file, void *buf, uint64_t bytes, uint64_t offset,
+         double absolute_deadline) {
+     const uint64_t chunk_bytes = 1u << 20;
+@@ -30050,6 +30460,7 @@
+                 std::memory_order_acquire) == sequence ||
+             (absolute_deadline > 0.0 &&
+              cuda_wall_sec() >= absolute_deadline)) {
++            ds4_transport_mark_incomplete();
+             return -1;
+         }
+         const uint64_t remaining = bytes - completed;
+@@ -30095,6 +30506,8 @@
+         if (got > 0) {
+             g_transient_pread_bytes.fetch_add(
+                 (uint64_t)got, std::memory_order_relaxed);
++            ds4_transport_record_file_bytes(
++                transport_repeat, (uint64_t)got);
+         }
+         if (staged_kv_io_tracking) {
+             cache->route_transient_io_sequence.store(
+@@ -30108,14 +30521,21 @@
+         if (got < 0 &&
+             cache->route_transient_timeout_cancel_sequence.load(
+                 std::memory_order_acquire) == sequence) {
++            ds4_transport_mark_incomplete();
+             return -1;
+         }
+-        if (got < 0 || (uint64_t)got != request_bytes) return 0;
++        if (got < 0 || (uint64_t)got != request_bytes) {
++            ds4_transport_mark_incomplete();
++            return 0;
++        }
+         completed += request_bytes;
+         cache->route_transient_read_bytes.fetch_add(
+             request_bytes, std::memory_order_release);
+         if (absolute_deadline > 0.0 &&
+-            cuda_wall_sec() >= absolute_deadline) return -1;
++            cuda_wall_sec() >= absolute_deadline) {
++            ds4_transport_mark_incomplete();
++            return -1;
++        }
+     }
+     return 1;
+ }
+@@ -30173,7 +30593,7 @@
+ static int cuda_moe_transient_timeout_fallback_serve(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+-        uint32_t stage_done,
++        int transport_repeat, uint32_t stage_done,
+         char *host_gate, char *host_up, char *host_down,
+         uint64_t gate_src, uint64_t up_src, uint64_t down_src,
+         const char **skipped_reason) {
+@@ -30235,7 +30655,7 @@
+         const uint64_t wprof_gate = ds4_workerprof_start(wprof);
+         result = cuda_moe_transient_pread_chunked(
+             cache, request.sequence, request.trace_sample_id,
+-            request.layer_index, &g_model_file, host_gate,
++            request.layer_index, transport_repeat, &g_model_file, host_gate,
+             cache->gate_expert_bytes, gate_src, 0.0);
+         ds4_workerprof_stop(wprof, WP_READ_GATE_NS, wprof_gate);
+     }
+@@ -30243,7 +30663,7 @@
+         const uint64_t wprof_up = ds4_workerprof_start(wprof);
+         result = cuda_moe_transient_pread_chunked(
+             cache, request.sequence, request.trace_sample_id,
+-            request.layer_index, &g_model_file, host_up,
++            request.layer_index, transport_repeat, &g_model_file, host_up,
+             cache->gate_expert_bytes, up_src, 0.0);
+         ds4_workerprof_stop(wprof, WP_READ_UP_NS, wprof_up);
+     }
+@@ -30251,7 +30671,7 @@
+         const uint64_t wprof_down = ds4_workerprof_start(wprof);
+         result = cuda_moe_transient_pread_chunked(
+             cache, request.sequence, request.trace_sample_id,
+-            request.layer_index, &g_model_file, host_down,
++            request.layer_index, transport_repeat, &g_model_file, host_down,
+             cache->down_expert_bytes, down_src, 0.0);
+         ds4_workerprof_stop(wprof, WP_READ_DOWN_NS, wprof_down);
+     }
+@@ -32563,6 +32983,7 @@
+ extern "C" void ds4_gpu_token_watch_end(
+         uint64_t token_index, uint32_t token_count) {
+     ds4_workerprof_token_end(token_count);
++    ds4_transport_token_end(token_count);
+     if (!g_token_watch.active) return;
+     g_token_watch.active = 0;
+     /* Disarma sempre (anche con token_count==0) ed emette la riga [vram-peak]
+@@ -33371,6 +33792,8 @@
+         job->record.destination_bytes != g_dynamic_arena.slot_bytes) {
+         return result;
+     }
++    const int transport_repeat =
++        ds4_transport_file_load_begin(job->layer, job->expert);
+     cuda_q1_0_ssd_wrap_part parts[3] = {
+         {job->record.destination_gate_offset,
+          job->record.destination_gate_bytes, job->read_base},
+@@ -33403,6 +33826,7 @@
+         const uint32_t remaining_ms =
+             cuda_deadline_remaining_ms(absolute_deadline);
+         if (remaining_ms == 0u) {
++            ds4_transport_mark_incomplete();
+             result.status = CUDA_Q1_0_SSD_WRAP_IO_DEADLINE;
+             result.failure_range = i;
+             result.expected_bytes = bytes;
+@@ -33415,7 +33839,12 @@
+             &g_q1_0_ssd_wrap.file, destination, bytes, source,
+             &g_q1_0_ssd_wrap.pread, job->io_sequence, remaining_ms);
+         const int read_errno = errno;
++        if (got > 0) {
++            ds4_transport_record_file_bytes(
++                transport_repeat, (uint64_t)got);
++        }
+         if (got < 0) {
++            ds4_transport_mark_incomplete();
+             result.status = read_errno == ETIMEDOUT
+                 ? CUDA_Q1_0_SSD_WRAP_IO_TIMEOUT
+                 : (read_errno == ECANCELED
+@@ -33428,6 +33857,7 @@
+             return result;
+         }
+         if ((uint64_t)got != bytes) {
++            ds4_transport_mark_incomplete();
+             result.status = CUDA_Q1_0_SSD_WRAP_IO_SHORT_READ;
+             result.failure_range = i;
+             result.expected_bytes = bytes;
+@@ -34856,13 +35286,37 @@
+             "attempt", "attempt", "admitted", promotion_record,
+             "exact_iq2_ram_pending", (uint32_t)slot_i, 0u);
+     }
+-    if (!g_model_file_valid ||
+-        !cuda_pread_full(&g_model_file, host_gate,
+-                         request.gate_expert_bytes, gate_src) ||
+-        !cuda_pread_full(&g_model_file, host_up,
+-                         request.gate_expert_bytes, up_src) ||
+-        !cuda_pread_full(&g_model_file, host_down,
+-                         request.down_expert_bytes, down_src)) {
++    const int transport_repeat = g_model_file_valid
++        ? ds4_transport_file_load_begin(layer, expert) : -1;
++    int file_ok = g_model_file_valid;
++    if (file_ok) {
++        file_ok = cuda_pread_full(
++            &g_model_file, host_gate, request.gate_expert_bytes, gate_src);
++        if (file_ok) {
++            ds4_transport_record_file_bytes(
++                transport_repeat, request.gate_expert_bytes);
++        }
++    }
++    if (file_ok) {
++        file_ok = cuda_pread_full(
++            &g_model_file, host_up, request.gate_expert_bytes, up_src);
++        if (file_ok) {
++            ds4_transport_record_file_bytes(
++                transport_repeat, request.gate_expert_bytes);
++        }
++    }
++    if (file_ok) {
++        file_ok = cuda_pread_full(
++            &g_model_file, host_down, request.down_expert_bytes, down_src);
++        if (file_ok) {
++            ds4_transport_record_file_bytes(
++                transport_repeat, request.down_expert_bytes);
++        }
++    }
++    if (!file_ok) {
++        /* cuda_pread_full exposes only success/failure.  A short failed read
++         * has no exact byte count at this call site, so flag the run. */
++        ds4_transport_mark_incomplete();
+         if (!replacing) {
+             slot.state = DS4_GPU_ARENA_FREE;
+             slot.layer = UINT32_MAX;
+@@ -38257,6 +38711,8 @@
+     void *destination;
+     uint64_t offset;
+     uint64_t bytes;
++    uint32_t expert;
++    int transport_repeat;
+ };
+ 
+ #ifdef _WIN32
+@@ -38396,10 +38852,15 @@
+             for (uint32_t i = 0; i < submitted; i++) {
+                 DWORD got = 0;
+                 const cuda_moe_route_io_span &span = spans[base + i];
+-                if (!GetOverlappedResult(
+-                        g_model_file.h,
+-                        &cache->route_io_qd_overlapped[i],
+-                        &got, FALSE) ||
++                const BOOL completed = GetOverlappedResult(
++                    g_model_file.h,
++                    &cache->route_io_qd_overlapped[i],
++                    &got, FALSE);
++                if (got > 0u) {
++                    ds4_transport_record_file_bytes(
++                        span.transport_repeat, (uint64_t)got);
++                }
++                if (!completed ||
+                     got != (DWORD)span.bytes) {
+                     result = 0;
+                     break;
+@@ -38444,7 +38905,12 @@
+     cuda_decode_trace_note_qd(
+         request, trace_started, trace_submits, trace_completions,
+         trace_bytes, trace_max_inflight);
+-    if (result != 1) cache->route_io_qd_failures++;
++    if (result != 1) {
++        cache->route_io_qd_failures++;
++        /* CancelIoEx/GetOverlappedResult is drained by the helper, but that
++         * helper intentionally discards each cancelled request's byte count. */
++        ds4_transport_mark_incomplete();
++    }
+     return result;
+ }
+ #endif
+@@ -38473,6 +38939,7 @@
+         promotion_reservations[CUDA_MOE_ROUTE_COUNT] = {};
+     uint32_t admitted_count = 0;
+     cuda_moe_route_publish_batch publish_batch = {};
++    ds4_transport_h2d_batch transport_batch = {};
+     /* P.5a: zero-copy routes get their own publish batch so they are neither
+      * gated on DS4_CUDA_MOE_ROUTE_BATCHED_PUBLISH nor mixed into the demand
+      * pipeline batch, whose flush contract requires count == miss_count. */
+@@ -38580,14 +39047,30 @@
+                 const uint64_t down_src = request.down_offset +
+                     (uint64_t)expert * cache->down_expert_bytes;
+                 spans[span_count++] = cuda_moe_route_io_span{
+-                    host_gate, gate_src, cache->gate_expert_bytes};
++                    host_gate, gate_src, cache->gate_expert_bytes, expert,
++                    -1};
+                 spans[span_count++] = cuda_moe_route_io_span{
+-                    host_up, up_src, cache->gate_expert_bytes};
++                    host_up, up_src, cache->gate_expert_bytes, expert,
++                    -1};
+                 spans[span_count++] = cuda_moe_route_io_span{
+-                    host_down, down_src, cache->down_expert_bytes};
++                    host_down, down_src, cache->down_expert_bytes, expert,
++                    -1};
+                 qd_misses[qd_miss_count++] = miss;
+             }
+             if (plan_valid && span_count > 0u) {
++                for (uint32_t i = 0; i < qd_miss_count; i++) {
++                    const uint32_t qd_miss = qd_misses[i];
++                    const uint32_t qd_route = request.miss_routes[qd_miss];
++                    const uint32_t qd_expert =
++                        (uint32_t)request.selected[qd_route];
++                    const int transport_repeat =
++                        ds4_transport_file_load_begin(
++                            request.layer_index, qd_expert);
++                    for (uint32_t part = 0; part < 3u; part++) {
++                        spans[i * 3u + part].transport_repeat =
++                            transport_repeat;
++                    }
++                }
+                 os_pread_cancellable_reset(
+                     &cache->route_transient_pread);
+                 cache->route_transient_read_bytes.store(
+@@ -38806,6 +39289,8 @@
+                         cache, &request, admitted, promotion_reservations,
+                         admitted_count, request.g133_epoch, 1,
+                         request.absolute_deadline);
++                ds4_transport_h2d_batch_finish(
++                    &transport_batch, early_finish_ok);
+                 const double early_drain_ms =
+                     cuda_moe_zerocopy_now_ms() - early_drain_started;
+                 g_moe_zerocopy.t_drain_ms += early_drain_ms;
+@@ -38834,10 +39319,13 @@
+             const uint64_t down_src = request.down_offset +
+                 (uint64_t)expert * cache->down_expert_bytes;
+             int read_result = route_io_qd_ready[miss] ? 1 : 0;
++            int transport_repeat = -1;
+             /* FIX-B: tensori gia' completi quando il timeout scade, cosi' il
+              * ripiego rilegge solo cio' che manca (0=nessuno, 1=gate, 2=gate+up). */
+             uint32_t transient_stage_done = 0u;
+             if (read_result != 1 && g_model_file_valid) {
++                transport_repeat = ds4_transport_file_load_begin(
++                    request.layer_index, expert);
+                 if (!transient_read_published) {
+                     os_pread_cancellable_reset(
+                         &cache->route_transient_pread);
+@@ -38868,6 +39356,7 @@
+                 read_result = cuda_moe_transient_pread_chunked(
+                     cache, request.sequence,
+                     request.trace_sample_id, request.layer_index,
++                    transport_repeat,
+                     &g_model_file, host_gate,
+                     cache->gate_expert_bytes, gate_src,
+                     transient_request_deadline);
+@@ -38878,6 +39367,7 @@
+                     read_result = cuda_moe_transient_pread_chunked(
+                         cache, request.sequence,
+                         request.trace_sample_id, request.layer_index,
++                        transport_repeat,
+                         &g_model_file, host_up,
+                         cache->gate_expert_bytes, up_src,
+                         transient_request_deadline);
+@@ -38889,6 +39379,7 @@
+                     read_result = cuda_moe_transient_pread_chunked(
+                         cache, request.sequence,
+                         request.trace_sample_id, request.layer_index,
++                        transport_repeat,
+                         &g_model_file, host_down,
+                         cache->down_expert_bytes, down_src,
+                         transient_request_deadline);
+@@ -38918,7 +39409,8 @@
+                             (unsigned long long)streak,
+                             (unsigned long long)max_fallbacks);
+                 } else if (cuda_moe_transient_timeout_fallback_serve(
+-                               cache, request, transient_stage_done,
++                               cache, request, transport_repeat,
++                               transient_stage_done,
+                                host_gate, host_up, host_down,
+                                gate_src, up_src, down_src,
+                                &fallback_skipped_reason)) {
+@@ -39142,6 +39634,9 @@
+             const uint32_t demand_batch_slot =
+                 demand_batch.publish.count;
+             const double deliver_started = cuda_moe_zerocopy_now_ms();
++            if (!demand_pipeline_active) {
++                ds4_transport_h2d_batch_begin(&transport_batch);
++            }
+             const int copy_ok =
+                 demand_pipeline_active ?
+                 cuda_moe_demand_pipeline_stage_host(
+@@ -39185,6 +39680,14 @@
+                 ds4_workerprof_add_ms(wprof, WP_DELIVER_NS, deliver_ms);
+             }
+             if (copy_ok) {
++                ds4_transport_h2d_batch_append(
++                    &transport_batch, request.layer_index, expert,
++                    cache->gate_expert_bytes * 2ull +
++                        cache->down_expert_bytes);
++            } else if (!demand_pipeline_active) {
++                ds4_transport_h2d_batch_invalidate(&transport_batch);
++            }
++            if (copy_ok) {
+                 g_moe_zerocopy.h2d_served++;
+                 g_moe_zerocopy.h2d_bytes +=
+                     cache->gate_expert_bytes * 2ull + cache->down_expert_bytes;
+@@ -39289,6 +39792,9 @@
+             const uint32_t demand_batch_slot =
+                 demand_batch.publish.count;
+             const double deliver_started = cuda_moe_zerocopy_now_ms();
++            if (!demand_pipeline_active) {
++                ds4_transport_h2d_batch_begin(&transport_batch);
++            }
+             const int copy_ok =
+                 demand_pipeline_active ?
+                 cuda_moe_demand_pipeline_stage_host(
+@@ -39332,6 +39838,14 @@
+                 ds4_workerprof_add_ms(wprof, WP_DELIVER_NS, deliver_ms);
+             }
+             if (copy_ok) {
++                ds4_transport_h2d_batch_append(
++                    &transport_batch, request.layer_index, expert,
++                    cache->gate_expert_bytes * 2ull +
++                        cache->down_expert_bytes);
++            } else if (!demand_pipeline_active) {
++                ds4_transport_h2d_batch_invalidate(&transport_batch);
++            }
++            if (copy_ok) {
+                 g_moe_zerocopy.h2d_served++;
+                 g_moe_zerocopy.h2d_bytes +=
+                     cache->gate_expert_bytes * 2ull + cache->down_expert_bytes;
+@@ -39417,8 +39931,12 @@
+      * layer accumulation point: exactly one gate+up H2D, one down H2D, then
+      * one ordered demand materialize/publish kernel. */
+     const double flush_started = cuda_moe_zerocopy_now_ms();
++    if (ok && demand_pipeline_active) {
++        ds4_transport_h2d_batch_begin(&transport_batch);
++    }
+     if (ok && demand_pipeline_active &&
+         !cuda_moe_demand_pipeline_flush(cache, request, &demand_batch)) {
++        ds4_transport_h2d_batch_invalidate(&transport_batch);
+         failure_reason = "demand-pipeline-batch";
+         ok = 0;
+     } else if (ok && cache->batched_publish_requested &&
+@@ -39443,6 +39961,7 @@
+     const int transfers_ok = cuda_moe_tiering_finish_vram_reservations(
+         cache, &request, admitted, promotion_reservations, admitted_count,
+         request.g133_epoch, ok, request.absolute_deadline);
++    ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
+     {
+         const double drain_ms = cuda_moe_zerocopy_now_ms() - drain_started;
+         g_moe_zerocopy.t_drain_ms += drain_ms;
+@@ -39784,6 +40303,7 @@
+         uint32_t admitted[CUDA_MOE_ROUTE_COUNT] = {0};
+         uint32_t admitted_count = 0;
+         cuda_moe_route_publish_batch publish_batch = {};
++        ds4_transport_h2d_batch transport_batch = {};
+         if (ok && g_moe_tiering.mode == CUDA_MOE_TIER_ENFORCE) {
+             ok = cuda_moe_tiering_enforce_request<G73>(
+                 cache, request, claimed.data());
+@@ -39884,6 +40404,9 @@
+                 uint64_t trace_pread_count = 0u;
+                 uint64_t trace_pread_bytes = 0u;
+                 int read_ok = 1;
++                const int transport_repeat =
++                    ds4_transport_file_load_begin(
++                        request.layer_index, expert);
+                 trace_pread_count++;
+                 /* WORKER-PROF: percorso NON-enforce.  cuda_pread_full e' usata
+                  * anche dal caricamento del modello e dai sidecar, quindi la
+@@ -39896,7 +40419,10 @@
+                         &g_model_file, host_gate,
+                         cache->gate_expert_bytes, gate_src)) {
+                     trace_pread_bytes += cache->gate_expert_bytes;
++                    ds4_transport_record_file_bytes(
++                        transport_repeat, cache->gate_expert_bytes);
+                 } else {
++                    ds4_transport_mark_incomplete();
+                     read_ok = 0;
+                 }
+                 ds4_workerprof_stop(wprof, WP_READ_GATE_NS, wprof_t);
+@@ -39911,7 +40437,10 @@
+                             &g_model_file, host_up,
+                             cache->gate_expert_bytes, up_src)) {
+                         trace_pread_bytes += cache->gate_expert_bytes;
++                        ds4_transport_record_file_bytes(
++                            transport_repeat, cache->gate_expert_bytes);
+                     } else {
++                        ds4_transport_mark_incomplete();
+                         read_ok = 0;
+                     }
+                     ds4_workerprof_stop(wprof, WP_READ_UP_NS, wprof_t);
+@@ -39926,7 +40455,10 @@
+                             &g_model_file, host_down,
+                             cache->down_expert_bytes, down_src)) {
+                         trace_pread_bytes += cache->down_expert_bytes;
++                        ds4_transport_record_file_bytes(
++                            transport_repeat, cache->down_expert_bytes);
+                     } else {
++                        ds4_transport_mark_incomplete();
+                         read_ok = 0;
+                     }
+                     ds4_workerprof_stop(wprof, WP_READ_DOWN_NS, wprof_t);
+@@ -39953,6 +40485,7 @@
+                 from_nested && g_nested_residual.profile_enabled ?
+                 cuda_wall_sec() : 0.0;
+             const uint64_t wprof_deliver = ds4_workerprof_start(wprof);
++            ds4_transport_h2d_batch_begin(&transport_batch);
+             const int copy_ok =
+                 from_nested && cuda_nested_residual_gpu_join_requested() ?
+                 cuda_nested_residual_join_to_device_exact(
+@@ -39988,12 +40521,17 @@
+                     cuda_wall_sec() - h2d_enqueue_started;
+             }
+             if (!copy_ok) {
++                ds4_transport_h2d_batch_invalidate(&transport_batch);
+                 if (from_nested) g_nested_residual.gpu_cache_failures++;
+                 ok = 0;
+                 failure_reason = "h2d-copy";
+                 failure_cuda_error = cudaPeekAtLastError();
+                 break;
+             }
++            ds4_transport_h2d_batch_append(
++                &transport_batch, request.layer_index, expert,
++                cache->gate_expert_bytes * 2ull +
++                    cache->down_expert_bytes);
+             if (from_nested && cuda_nested_residual_gpu_join_requested()) {
+                 g_nested_residual.route_h2d_bytes +=
+                     cache->gate_expert_bytes * 2ull +
+@@ -40092,6 +40630,9 @@
+                 g_nested_residual.profile_h2d_sync_seconds +=
+                     cuda_wall_sec() - h2d_sync_started;
+             }
++            ds4_transport_h2d_batch_finish(
++                &transport_batch,
++                pending_error == cudaSuccess && sync_error == cudaSuccess);
+             if (pending_error != cudaSuccess || sync_error != cudaSuccess) {
+                 failure_cuda_error = pending_error != cudaSuccess ?
+                     pending_error : sync_error;
+@@ -41287,6 +41828,8 @@
+         return -1;
+     }
+     const double pread_started = profile ? cuda_wall_sec() : 0.0;
++    const int transport_repeat =
++        ds4_transport_file_load_begin(layer_index, expert);
+     const int pread_ok = cuda_pread_full(
+         &state.file, state.residual_scratch.data(),
+         layer.residual_expert_bytes, residual_offset);
+@@ -41295,9 +41838,12 @@
+         state.profile_pread_seconds += cuda_wall_sec() - pread_started;
+     }
+     if (!pread_ok) {
++        ds4_transport_mark_incomplete();
+         state.failures++;
+         return -1;
+     }
++    ds4_transport_record_file_bytes(
++        transport_repeat, layer.residual_expert_bytes);
+     state.exact_cache_misses++;
+     state.residual_preads++;
+     state.residual_bytes += layer.residual_expert_bytes;
+@@ -41567,6 +42113,8 @@
+     uint8_t *destination = state.cache +
+         (uint64_t)victim * state.cache_slot_bytes;
+     const double pread_started = profile ? cuda_wall_sec() : 0.0;
++    const int transport_repeat =
++        ds4_transport_file_load_begin(layer_index, expert);
+     const int pread_ok = cuda_pread_full(
+         &state.file, destination, layer.residual_expert_bytes,
+         residual_offset);
+@@ -41575,10 +42123,12 @@
+         state.profile_pread_seconds += cuda_wall_sec() - pread_started;
+     }
+     if (!pread_ok) {
++        ds4_transport_mark_incomplete();
+         state.failures++;
+         return -1;
+     }
+-
++    ds4_transport_record_file_bytes(
++        transport_repeat, layer.residual_expert_bytes);
+     state.residual_cache_misses++;
+     state.residual_preads++;
+     state.residual_bytes += layer.residual_expert_bytes;

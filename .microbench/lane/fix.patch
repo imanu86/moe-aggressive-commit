@@ -1,0 +1,158 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -1782,5 +1782,6 @@ struct cuda_g132_cpu_lane {
+     uint32_t layer_balance_cooldown[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     uint64_t general_calls;
++    uint64_t general_split_masks;
+     uint64_t general_route_cpu;
+     uint64_t general_route_gpu;
+     uint64_t general_bytes_not_crossed;
+@@ -25817,6 +25818,32 @@ __global__ static void moe_g132_compact_gpu_routes_kernel(
+     }
+ }
+ 
++/* Split hit/miss starts its hit kernels before the route worker has finished.
++ * A G132 CPU route is necessarily a miss and is deliberately left unpublished,
++ * so publish its ownership into the split mask only after the worker has
++ * assigned it and zero its split-down slot before the ordinary miss kernels.
++ * Stream-0 ordering makes the existing split kernels skip the zero route_ptr
++ * and makes both split reducers add an exact zero for the CPU-owned slot. */
++__global__ static void moe_g132_split_mask_cpu_routes_kernel(
++        float *split_down,
++        uint32_t *route_hit_mask,
++        uint32_t cpu_mask,
++        uint32_t route_count,
++        uint32_t out_dim) {
++    const uint64_t gid =
++        (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
++    const uint64_t count = (uint64_t)route_count * out_dim;
++    if (gid < count) {
++        const uint32_t route = (uint32_t)(gid / out_dim);
++        if ((cpu_mask & (1u << route)) != 0u) {
++            split_down[gid] = 0.0f;
++        }
++    }
++    if (gid == 0u) {
++        *route_hit_mask |= cpu_mask;
++    }
++}
++
+ __global__ static void moe_publish_resident_route_kernel(
+         int32_t *slot_by_layer_expert,
+         uint64_t *route_ptrs,
+@@ -46554,6 +46579,7 @@ static int routed_moe_launch_impl(
+     const uint32_t original_n_expert = n_expert;
+     ds4_gpu_tensor g132_general_weights_tensor = {};
+     int g132_general_candidate = 0;
++    uint32_t g132_general_cpu_mask = 0u;
+     int g132_general_active = 0;
+     const double g73_absolute_deadline =
+         G73 && n_tokens == 1u
+@@ -48014,6 +48040,49 @@ static int routed_moe_launch_impl(
+                     ok = 0;
+                 }
+             }
++
++            /* The split path deliberately overlaps its resident-hit kernels
++             * with the route worker, so the CPU plan cannot be consumed at the
++             * earlier non-split attach point.  Attach here, after finish() has
++             * published the exact miss plan and before any miss kernel can
++             * dereference route_ptrs. */
++            if constexpr (G132) {
++                if (ok && !g73_split_replay && route_iq2_q2 &&
++                    n_tokens == 1u && gpu_route_cache &&
++                    gpu_route_cache->route_cpu_plan.cpu_count != 0u) {
++                    uint32_t gpu_count = 0u;
++                    if (!cuda_g132_cpu_lane_prepare_general(
++                            gpu_route_cache, layer_index,
++                            gate_expert_bytes, gate_row_bytes,
++                            down_expert_bytes, down_row_bytes,
++                            expert_in_dim, expert_mid_dim, out_dim, clamp,
++                            &g132_general_cpu_mask, &gpu_count)) {
++                        g_g132_cpu_lane.general_fallback_contract++;
++                        cuda_g132_general_plan_release(
++                            gpu_route_cache,
++                            &gpu_route_cache->route_cpu_plan);
++                        return 0;
++                    }
++                    g132_general_active = 1;
++                    if (!cuda_g132_cpu_lane_begin_general(x)) {
++                        cuda_g132_cpu_lane_cancel_dispatch();
++                        return 0;
++                    }
++                    const uint64_t split_slots =
++                        (uint64_t)original_n_expert * out_dim;
++                    moe_g132_split_mask_cpu_routes_kernel<<<
++                        (uint32_t)((split_slots + 255u) / 256u), 256>>>(
++                            split_down, hit_mask, g132_general_cpu_mask,
++                            original_n_expert, out_dim);
++                    if (!cuda_ok(cudaGetLastError(),
++                                 "G132 split CPU route mask")) {
++                        g_g132_cpu_lane.general_fallback_runtime++;
++                        cuda_g132_cpu_lane_cancel_dispatch();
++                        return 0;
++                    }
++                    g_g132_cpu_lane.general_split_masks++;
++                }
++            }
+ 
+             if (ok && g73_split_replay) {
+                 /* Full exact replay over the terminal route pointers: every
+@@ -48145,17 +48212,39 @@ static int routed_moe_launch_impl(
+             if constexpr (G73) {
+                 if (!g73_outcomes_ready) {
++                    if constexpr (G132) {
++                        if (g132_general_active) {
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                        }
++                    }
+                     return cuda_g73_contract_error(
+                         layer_index, "missing-split-launch-outcomes");
+                 }
+                 if (!ok) {
+                     cuda_g73_device_error(layer_index, "split-exact-launch");
+                 }
+                 /* Exactly one commit per MoE call: worker outcomes on split
+                  * success, terminal outcomes on replay - never both. */
+                 if (!cuda_g73_commit_outcomes(layer_index, g73_outcomes)) {
++                    if constexpr (G132) {
++                        if (g132_general_active) {
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                        }
++                    }
+                     return 0;
+                 }
+             }
++            if constexpr (G132) {
++                if (g132_general_active) {
++                    if (!ok || !cuda_g132_cpu_lane_end_general_gpu()) {
++                        cuda_g132_cpu_lane_cancel_dispatch();
++                        return 0;
++                    }
++                    if (!cuda_g132_cpu_lane_wait_and_join(
++                            out, layer_index, NULL)) {
++                        return 0;
++                    }
++                }
++            }
+             return ok;
+         }
+         if (ok && use_sorted_pairs) {
+@@ -49296,7 +49363,7 @@ static void cuda_g132_cpu_lane_release(void) {
+                 "cpu_wall_ms=%.6f gpu_wall_ms=%.6f "
+                 "gpu_wait_cpu_ms=%.6f cpu_wait_gpu_ms=%.6f "
+                 "eligible=%llu rejected_cap=%llu rejected_balance=%llu "
+-                "fallback_contract=%llu fallback_reservation=%llu "
++                "split_masks=%llu fallback_contract=%llu fallback_reservation=%llu "
+                 "fallback_wrap=%llu fallback_pipeline=%llu "
+                 "fallback_runtime=%llu "
+                 "staging_routes=%llu\n",
+@@ -49311,6 +49378,7 @@ static void cuda_g132_cpu_lane_release(void) {
+                 (unsigned long long)lane.general_eligible,
+                 (unsigned long long)lane.general_rejected_cap,
+                 (unsigned long long)lane.general_rejected_balance,
++                (unsigned long long)lane.general_split_masks,
+                 (unsigned long long)lane.general_fallback_contract,
+                 (unsigned long long)lane.general_fallback_reservation,
+                 (unsigned long long)lane.general_fallback_wrap,

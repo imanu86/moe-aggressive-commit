@@ -1,0 +1,96 @@
+﻿=====================================================================
+ ZERO-COPY MICROBENCH -- MoE expert weight delivery (RTX 3060 / WDDM)
+=====================================================================
+device                : NVIDIA GeForce RTX 3060 (sm_86, 28 SMs)
+L2 cache              : 2.25 MB
+VRAM theoretical BW   : 360.0 GB/s (192-bit @ 7501 MHz)
+canMapHostMemory      : 1   unifiedAddressing: 1   asyncEngines: 1   integrated: 0
+expert size           : 7077888 B (int8 [1728 x 4096])
+group                 : 6 experts = 40.50 MB;  pool = 64 experts = 432.0 MB per form
+timing                : 3 warmup + 20 measured, median, cudaEvent (wall as cross-check)
+cache guard           : group working set 40.5 MB >> L2 2.25 MB, and the expert group
+                        rotates through the 64-expert pool every iteration.
+---------------------------------------------------------------------
+[alloc] pinned source pool  432.0 MB ...
+[alloc] mapped  zero-copy pool 432.0 MB ...
+[alloc] VRAM resident pool  432.0 MB ...
+[init]  filling pool with pseudorandom int8 in [-8,7] ...
+[init]  done. all three memory forms hold identical bytes.
+---------------------------------------------------------------------
+S1  VRAM resident (baseline, no PCIe)
+  S1  vram, 6 kernels serial                     ev_med    0.475 ms | min    0.473 | wall    0.484 ms |   89.38 GB/s |   0.079 ms/expert | ->     14.9 ms/token | chk -14367658
+S2  ZERO-COPY (kernel reads mapped host RAM directly over PCIe)
+  S2a zero-copy, 6 kernels serial                ev_med    1.642 ms | min    1.638 | wall    1.653 ms |   25.86 GB/s |   0.274 ms/expert | ->     51.6 ms/token | chk -14367658
+  S2b zero-copy, 6 kernels / 6 streams           ev_med    1.658 ms | min    1.653 | wall    1.670 ms |   25.61 GB/s |   0.276 ms/expert | ->     52.1 ms/token | chk -14367658
+S3  COPY pinned->VRAM then compute
+  S3a copy+kernel serialized per-expert          ev_med    2.415 ms | min    2.400 | wall    2.426 ms |   17.58 GB/s |   0.403 ms/expert | ->     75.9 ms/token | chk -14367658
+  S3b 6 copies batched, then 6 kernels           ev_med    2.150 ms | min    2.143 | wall    2.161 ms |   19.75 GB/s |   0.358 ms/expert | ->     67.5 ms/token | chk -14367658
+  S3c copy/kernel pipelined, 3 streams [EXTRA]   ev_med    1.781 ms | min    1.758 | wall    1.794 ms |   23.84 GB/s |   0.297 ms/expert | ->     56.0 ms/token | chk -14367658
+S4  RAW PCIe reference
+  S4  cudaMemcpy H2D 512MB pinned                ev_med   20.389 ms | min   20.384 | wall   20.402 ms |   26.33 GB/s (512 MiB pinned H2D)
+---------------------------------------------------------------------
+SUMMARY  (extrapolation: 188.5 experts/token = 1.334 GB/token)
+---------------------------------------------------------------------
+scenario                                          ms/6exp       GB/s    ms/expert     ms/token
+S1  vram, 6 kernels serial                          0.475      89.38        0.079         14.9
+S2a zero-copy, 6 kernels serial                     1.642      25.86        0.274         51.6
+S2b zero-copy, 6 kernels / 6 streams                1.658      25.61        0.276         52.1
+S3a copy+kernel serialized per-expert               2.415      17.58        0.403         75.9
+S3b 6 copies batched, then 6 kernels                2.150      19.75        0.358         67.5
+S3c copy/kernel pipelined, 3 streams [EXTRA]        1.781      23.84        0.297         56.0
+S4  cudaMemcpy H2D 512MB pinned                    20.389      26.33            -         50.7  (pure wire time at this BW)
+---------------------------------------------------------------------
+reference points: runtime today ~288 ms/token (copy+orchestration);
+                  wire time at 12 GB/s = 111.2 ms/token.
+checksum cross-check: PASS (all compute scenarios produced identical results;
+                      y[] is stored to global memory, so the loads cannot be elided)
+=====================================================================
+
+########## RUN 2 (reproducibility check) ##########
+=====================================================================
+ ZERO-COPY MICROBENCH -- MoE expert weight delivery (RTX 3060 / WDDM)
+=====================================================================
+device                : NVIDIA GeForce RTX 3060 (sm_86, 28 SMs)
+L2 cache              : 2.25 MB
+VRAM theoretical BW   : 360.0 GB/s (192-bit @ 7501 MHz)
+canMapHostMemory      : 1   unifiedAddressing: 1   asyncEngines: 1   integrated: 0
+expert size           : 7077888 B (int8 [1728 x 4096])
+group                 : 6 experts = 40.50 MB;  pool = 64 experts = 432.0 MB per form
+timing                : 3 warmup + 20 measured, median, cudaEvent (wall as cross-check)
+cache guard           : group working set 40.5 MB >> L2 2.25 MB, and the expert group
+                        rotates through the 64-expert pool every iteration.
+---------------------------------------------------------------------
+[alloc] pinned source pool  432.0 MB ...
+[alloc] mapped  zero-copy pool 432.0 MB ...
+[alloc] VRAM resident pool  432.0 MB ...
+[init]  filling pool with pseudorandom int8 in [-8,7] ...
+[init]  done. all three memory forms hold identical bytes.
+---------------------------------------------------------------------
+S1  VRAM resident (baseline, no PCIe)
+  S1  vram, 6 kernels serial                     ev_med    0.475 ms | min    0.472 | wall    0.484 ms |   89.48 GB/s |   0.079 ms/expert | ->     14.9 ms/token | chk -14367658
+S2  ZERO-COPY (kernel reads mapped host RAM directly over PCIe)
+  S2a zero-copy, 6 kernels serial                ev_med    1.642 ms | min    1.640 | wall    1.653 ms |   25.86 GB/s |   0.274 ms/expert | ->     51.6 ms/token | chk -14367658
+  S2b zero-copy, 6 kernels / 6 streams           ev_med    1.659 ms | min    1.653 | wall    1.671 ms |   25.60 GB/s |   0.276 ms/expert | ->     52.1 ms/token | chk -14367658
+S3  COPY pinned->VRAM then compute
+  S3a copy+kernel serialized per-expert          ev_med    2.394 ms | min    2.385 | wall    2.404 ms |   17.74 GB/s |   0.399 ms/expert | ->     75.2 ms/token | chk -14367658
+  S3b 6 copies batched, then 6 kernels           ev_med    2.115 ms | min    2.096 | wall    2.125 ms |   20.08 GB/s |   0.352 ms/expert | ->     66.4 ms/token | chk -14367658
+  S3c copy/kernel pipelined, 3 streams [EXTRA]   ev_med    1.773 ms | min    1.757 | wall    1.784 ms |   23.95 GB/s |   0.296 ms/expert | ->     55.7 ms/token | chk -14367658
+S4  RAW PCIe reference
+  S4  cudaMemcpy H2D 512MB pinned                ev_med   20.396 ms | min   20.390 | wall   20.409 ms |   26.32 GB/s (512 MiB pinned H2D)
+---------------------------------------------------------------------
+SUMMARY  (extrapolation: 188.5 experts/token = 1.334 GB/token)
+---------------------------------------------------------------------
+scenario                                          ms/6exp       GB/s    ms/expert     ms/token
+S1  vram, 6 kernels serial                          0.475      89.48        0.079         14.9
+S2a zero-copy, 6 kernels serial                     1.642      25.86        0.274         51.6
+S2b zero-copy, 6 kernels / 6 streams                1.659      25.60        0.276         52.1
+S3a copy+kernel serialized per-expert               2.394      17.74        0.399         75.2
+S3b 6 copies batched, then 6 kernels                2.115      20.08        0.352         66.4
+S3c copy/kernel pipelined, 3 streams [EXTRA]        1.773      23.95        0.296         55.7
+S4  cudaMemcpy H2D 512MB pinned                    20.396      26.32            -         50.7  (pure wire time at this BW)
+---------------------------------------------------------------------
+reference points: runtime today ~288 ms/token (copy+orchestration);
+                  wire time at 12 GB/s = 111.2 ms/token.
+checksum cross-check: PASS (all compute scenarios produced identical results;
+                      y[] is stored to global memory, so the loads cannot be elided)
+=====================================================================

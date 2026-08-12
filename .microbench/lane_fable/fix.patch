@@ -1,0 +1,160 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 67d66c5..d937b98 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -25818,6 +25818,40 @@ __global__ static void moe_g132_compact_gpu_routes_kernel(
+     }
+ }
+ 
++/* Split hit/miss overlaps its hit kernels with the route worker, so a CPU
++ * route (a miss the worker deliberately left unpublished: its route_ptrs
++ * stay zero and its hit-mask bit stays zero) cannot be consumed by the
++ * pointer compaction the non-split path uses.  Instead, once the worker has
++ * drained, take device-side ownership on stream 0: mark the CPU routes as
++ * non-miss in the hit mask and zero their split-down slots.  The hit
++ * kernels already queued ahead of this launch saw the original mask; the
++ * miss kernels queued after it skip the CPU slots and never dereference
++ * the zero route_ptrs; both split reducers add an exact zero for those
++ * slots.  The 16 KiB CPU partial joins the output afterwards. */
++__global__ static void moe_g132_split_own_cpu_routes_kernel(
++        float *split_down,
++        uint32_t *route_hit_mask,
++        uint32_t cpu_mask,
++        uint32_t route_count,
++        uint32_t out_dim) {
++    if (!split_down || !route_hit_mask ||
++        route_count == 0u || route_count > 6u || out_dim == 0u) {
++        return;
++    }
++    const uint64_t gid =
++        (uint64_t)blockIdx.x * blockDim.x + threadIdx.x;
++    const uint64_t count = (uint64_t)route_count * out_dim;
++    if (gid < count) {
++        const uint32_t route = (uint32_t)(gid / out_dim);
++        if ((cpu_mask & (1u << route)) != 0u) {
++            split_down[gid] = 0.0f;
++        }
++    }
++    if (gid == 0u) {
++        *route_hit_mask |= cpu_mask;
++    }
++}
++
+ __global__ static void moe_publish_resident_route_kernel(
+         int32_t *slot_by_layer_expert,
+         uint64_t *route_ptrs,
+@@ -48015,6 +48049,75 @@ static int routed_moe_launch_impl(
+                 }
+             }
+ 
++            if constexpr (G132) {
++                /* The route worker may have claimed CPU routes for this
++                 * request: their route_ptrs were deliberately left at zero
++                 * and their hit-mask bits at zero.  The miss kernels below
++                 * select exactly the zero-bit slots, so a non-empty plan
++                 * must be either attached or released here -- never left
++                 * orphaned.  An orphaned plan would (a) let the miss
++                 * kernels dereference the zero pointers (illegal memory
++                 * access poisoning the whole context) and (b) keep its
++                 * arena readers/staging lease, fail-closing every later
++                 * mailbox claim. */
++                if (gpu_route_cache->route_cpu_plan.cpu_count != 0u) {
++                    if (!ok || g73_split_replay) {
++                        /* finish() failed (worker joined or idle after a
++                         * published failure) or the exact replay recomputes
++                         * every route on the GPU: the plan is dead weight.
++                         * Skip the release only when the cache was
++                         * safe-leaked -- a detached worker may still own
++                         * the plan, and safe-leak semantics leak. */
++                        if (!gpu_route_cache->route_worker_safe_leaked.load(
++                                std::memory_order_acquire)) {
++                            cuda_g132_general_plan_release(
++                                gpu_route_cache,
++                                &gpu_route_cache->route_cpu_plan);
++                        }
++                    } else {
++                        uint32_t g132_split_cpu_mask = 0u;
++                        uint32_t g132_split_gpu_count = 0u;
++                        if (!cuda_g132_cpu_lane_prepare_general(
++                                gpu_route_cache, layer_index,
++                                gate_expert_bytes, gate_row_bytes,
++                                down_expert_bytes, down_row_bytes,
++                                expert_in_dim, expert_mid_dim, out_dim,
++                                clamp, &g132_split_cpu_mask,
++                                &g132_split_gpu_count)) {
++                            /* The worker already skipped the H2D for the
++                             * claimed routes, so the GPU alone cannot
++                             * finish this layer: fail closed. */
++                            g_g132_cpu_lane.general_fallback_contract++;
++                            cuda_g132_general_plan_release(
++                                gpu_route_cache,
++                                &gpu_route_cache->route_cpu_plan);
++                            return 0;
++                        }
++                        g132_general_active = 1;
++                        if (!cuda_g132_cpu_lane_begin_general(x)) {
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                            return 0;
++                        }
++                        const uint64_t g132_split_slots =
++                            (uint64_t)n_expert * out_dim;
++                        moe_g132_split_own_cpu_routes_kernel<<<
++                                (uint32_t)((g132_split_slots + 255u) / 256u),
++                                256>>>(
++                            split_down,
++                            gpu_route_cache->device_route_hit_mask,
++                            g132_split_cpu_mask,
++                            n_expert,
++                            out_dim);
++                        if (!cuda_ok(cudaGetLastError(),
++                                     "G132 split CPU route ownership")) {
++                            g_g132_cpu_lane.general_fallback_runtime++;
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                            return 0;
++                        }
++                    }
++                }
++            }
++
+             if (ok && g73_split_replay) {
+                 /* Full exact replay over the terminal route pointers: every
+                  * route recomputed from the terminal slots, then summed. */
+@@ -48144,6 +48247,11 @@ static int routed_moe_launch_impl(
+             }
+             if constexpr (G73) {
+                 if (!g73_outcomes_ready) {
++                    if constexpr (G132) {
++                        if (g132_general_active) {
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                        }
++                    }
+                     return cuda_g73_contract_error(
+                         layer_index, "missing-split-launch-outcomes");
+                 }
+@@ -48153,9 +48261,26 @@ static int routed_moe_launch_impl(
+                 /* Exactly one commit per MoE call: worker outcomes on split
+                  * success, terminal outcomes on replay - never both. */
+                 if (!cuda_g73_commit_outcomes(layer_index, g73_outcomes)) {
++                    if constexpr (G132) {
++                        if (g132_general_active) {
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                        }
++                    }
+                     return 0;
+                 }
+             }
++            if constexpr (G132) {
++                if (g132_general_active) {
++                    if (!ok || !cuda_g132_cpu_lane_end_general_gpu()) {
++                        cuda_g132_cpu_lane_cancel_dispatch();
++                        return 0;
++                    }
++                    if (!cuda_g132_cpu_lane_wait_and_join(
++                            out, layer_index, NULL)) {
++                        return 0;
++                    }
++                }
++            }
+             return ok;
+         }
+         if (ok && use_sorted_pairs) {

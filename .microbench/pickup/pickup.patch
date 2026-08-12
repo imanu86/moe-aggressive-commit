@@ -1,0 +1,127 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -4316,10 +4316,44 @@ static int cuda_worker_profile_enabled(void) {
+         cached = (env != NULL && env[0] != '\0' && env[0] != '0') ? 1 : 0;
+     }
+     return cached;
+ }
+ 
++/* Budget di polling attivo del route worker dopo ogni job durante un token.
++ * Zero conserva il percorso storico: yield immediato a ogni poll vuoto. */
++static uint32_t cuda_worker_pickup_spin_us(void) {
++    static int resolved = 0;
++    static uint32_t cached = 0u;
++    if (resolved) return cached;
++    resolved = 1;
++    const char *env = getenv("DS4_CUDA_WORKER_PICKUP_SPIN_US");
++    if (!env || !env[0] || strcmp(env, "0") == 0) return cached;
++    char *end = NULL;
++    errno = 0;
++    const unsigned long value = strtoul(env, &end, 10);
++    if (errno == 0 && end != env && end && *end == '\0' &&
++        value <= 1000000ul) {
++        cached = (uint32_t)value;
++    } else {
++        fprintf(stderr,
++                "ds4: invalid DS4_CUDA_WORKER_PICKUP_SPIN_US=%s "
++                "(expected 0..1000000); using 0\n",
++                env);
++    }
++    return cached;
++}
++
++static inline void ds4_worker_pickup_pause(void) {
++#ifdef _WIN32
++    YieldProcessor();
++#elif defined(__i386__) || defined(__x86_64__)
++    __builtin_ia32_pause();
++#else
++    std::atomic_signal_fence(std::memory_order_seq_cst);
++#endif
++}
++
+ static uint64_t cuda_worker_profile_every_tokens(void) {
+     static int resolved = 0;
+     static uint64_t cached = 32ull;
+     if (resolved) return cached;
+     resolved = 1;
+@@ -4674,18 +4708,20 @@ static void ds4_workerprof_report(const char *tag) {
+ 
+ /* Marcatori di token, chiamati dal thread di decode dentro
+  * ds4_gpu_token_watch_begin/end prima dei loro early return, cosi' il
+  * profilo del worker non dipende dagli altri osservatori per-token. */
+ static void ds4_workerprof_token_begin(void) {
+-    if (!cuda_worker_profile_enabled()) return;
++    const int prof = cuda_worker_profile_enabled();
++    if (!prof && cuda_worker_pickup_spin_us() == 0u) return;
+     g_workerprof_token_active.store(1, std::memory_order_release);
+ }
+ 
+ static void ds4_workerprof_token_end(uint32_t token_count) {
+-    if (!cuda_worker_profile_enabled()) return;
++    const int prof = cuda_worker_profile_enabled();
++    if (!prof && cuda_worker_pickup_spin_us() == 0u) return;
+     g_workerprof_token_active.store(0, std::memory_order_release);
+-    if (token_count == 0u) return;
++    if (!prof || token_count == 0u) return;
+     ds4_workerprof_add(WP_TOKENS, token_count);
+     const uint64_t tokens =
+         g_workerprof_c[WP_TOKENS].load(std::memory_order_relaxed);
+     const uint64_t every = cuda_worker_profile_every_tokens();
+     if (g_workerprof_next_token_log == 0ull) {
+@@ -39503,10 +39539,15 @@ static void *cuda_moe_route_worker(void *arg) {
+     uint64_t consumed_generation = 0u;
+     std::vector<uint8_t> claimed(cache->capacity, 0u);
+     /* WORKER-PROF: issato una volta per vita del thread; nel ciclo di spin
+      * resta un ramo prevedibile. */
+     const int wprof = cuda_worker_profile_enabled();
++    const uint32_t pickup_spin_us = cuda_worker_pickup_spin_us();
++    using pickup_clock = std::chrono::steady_clock;
++    pickup_clock::time_point pickup_spin_deadline;
++    /* 0 = disarmato, 1 = spin in corso, 2 = budget esaurito. */
++    uint32_t pickup_spin_state = 0u;
+     /* Istante in cui il worker e' entrato nello spin senza lavoro, e stato
+      * "token in corso" campionato in quell'istante. */
+     uint64_t wprof_idle_started = wprof ? ds4_workerprof_now_ns() : 0u;
+     int wprof_idle_token = wprof
+         ? g_workerprof_token_active.load(std::memory_order_acquire) : 0;
+@@ -39519,17 +39560,38 @@ static void *cuda_moe_route_worker(void *arg) {
+     uint32_t wprof_seen_sequence = 0u;
+ 
+     while (!cache->route_stop.load(std::memory_order_acquire)) {
+         const uint32_t sequence = cache->route_request_host->sequence;
+         if (sequence == 0u || sequence == consumed_sequence) {
++            if (pickup_spin_us != 0u) {
++                const int token_active = g_workerprof_token_active.load(
++                    std::memory_order_acquire);
++                if (!token_active) {
++                    pickup_spin_state = 0u;
++                } else if (pickup_spin_state != 2u) {
++                    const pickup_clock::time_point now = pickup_clock::now();
++                    if (pickup_spin_state == 0u) {
++                        pickup_spin_deadline =
++                            now + std::chrono::microseconds(pickup_spin_us);
++                        pickup_spin_state = 1u;
++                    }
++                    if (now < pickup_spin_deadline) {
++                        ds4_worker_pickup_pause();
++                        continue;
++                    }
++                    pickup_spin_state = 2u;
++                }
++            }
+ #ifdef _WIN32
+             (void)SwitchToThread();
+ #else
+             usleep(0);
+ #endif
+             continue;
+         }
++        /* La prossima fase idle dopo questo job riceve un budget nuovo. */
++        pickup_spin_state = 0u;
+         if (wprof && wprof_seen_sequence != sequence) {
+             wprof_seen_sequence = sequence;
+             wprof_pickup_ns = ds4_workerprof_now_ns();
+             wprof_pickup_faults = ds4_workerprof_faults_now(wprof);
+             ds4_workerprof_note_idle(

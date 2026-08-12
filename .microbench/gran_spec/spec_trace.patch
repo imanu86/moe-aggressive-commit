@@ -1,0 +1,22 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+index 90d5d0d..120b1c9 100644
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -21131,6 +21131,17 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+                                                   row_logits);
+         }
+         const double verify_done = mtp_timing ? now_sec() : 0.0;
++        if (mtp_conf_log) {
++            fprintf(stderr,
++                    "ds4: mtp conf path=decode2-exact drafted=%d exact_prefix=%d "
++                    "snapshot=%d verifier=%d target_next=%d draft_next=%d\n",
++                    draft_n,
++                    ok ? (row0_top == drafts[1] ? 2 : 1) : 0,
++                    have_frontier ? 1 : 0,
++                    ok ? 1 : 0,
++                    row0_top,
++                    drafts[1]);
++        }
+         if (ok && row0_top == drafts[1]) {
+             memcpy(s->logits, row_logits, (size_t)DS4_N_VOCAB * sizeof(s->logits[0]));
+             token_vec_push(&s->checkpoint, drafts[0]);

@@ -1,0 +1,493 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -6788,27 +6788,25 @@ typedef struct {
+  * inline instead of submitting to g_pool, and (b) routes the heavy kernels it
+  * owns (routed Q4_K and the vocabulary head) to the independent G132 lane
+  * pool through this shim.  The G132 submit slot is single-submitter as well,
+- * so one mutex serializes drafter submissions; the backbone lane itself is
++ * and this build has a second potential submitter - the [shared-cpu] worker
++ * (DS4_CPU_SHARED_EXPERT) - so the drafter serializes on the SAME process
++ * mutex as shared1 via ds4_nextn_g132_submit (defined next to the shared1
++ * block; dspark2 v1 used a private mutex, which would have corrupted the
++ * pool the moment both workers were armed).  The backbone lane itself stays
+  * mutually exclusive with the drafter (enforced at engine open).  On any
+  * other thread the shim is byte-identical to ds4_parallel_for. */
+ static _Thread_local bool g_nextn_drafter_thread;
+-static os_once_t g_nextn_submit_once = OS_ONCE_INIT;
+-static os_mutex_t g_nextn_submit_mu;
+ 
+-static void ds4_nextn_submit_mutex_init(void) {
+-    if (os_mutex_init(&g_nextn_submit_mu) != 0) {
+-        ds4_die("NextN drafter submit mutex init failed");
+-    }
+-}
++#ifndef DS4_NO_GPU
++static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx);
++#endif
+ 
+ static void ds4_nextn_parallel_for(
+         uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
+     if (g_nextn_drafter_thread) {
+-        os_once(&g_nextn_submit_once, ds4_nextn_submit_mutex_init);
+-        os_mutex_lock(&g_nextn_submit_mu);
+-        const int ok = ds4_g132_parallel_for(n_rows, fn, ctx);
+-        os_mutex_unlock(&g_nextn_submit_mu);
+-        if (ok) return;
++#ifndef DS4_NO_GPU
++        if (ds4_nextn_g132_submit(n_rows, fn, ctx)) return;
++#endif
+         fn(ctx, 0, n_rows);
+         return;
+     }
+@@ -9907,14 +9905,26 @@ typedef struct ds4_nextn_drafter {
+     int job_eos_token;
+     bool job_reset_kv;
+     float *job_anchor_hc;           /* [DS4_N_HC * DS4_N_EMBD] */
++    /* Re-base bookkeeping (decode thread, under mu): tokens committed since
++     * the kick, validated one per cycle against the chain's own predictions
++     * so a slow chain can survive several cycles and deliver its tail. */
++    int job_committed[DS4_NEXTN_DRAFT_MAX];
++    int job_checked;                /* first offset not yet validated */
++    uint32_t job_take_expect;       /* next take must land exactly here */
+ 
+     int pub_drafts[DS4_NEXTN_DRAFT_MAX];
+     float pub_margin[DS4_NEXTN_DRAFT_MAX];
+     int pub_runner[DS4_NEXTN_DRAFT_MAX];
+     int pub_count;                  /* deliverable drafts, row-holdback applied */
+     int pub_steps;                  /* NextN forwards completed for pub_seq */
++    int pub_active_step;            /* step currently being computed */
++    bool pub_done;                  /* chain loop finished for pub_seq */
+     double pub_ms;                  /* chain wall time so far */
+     uint64_t pub_seq;
++    /* Chain-step cost stats (under mu; reset per request). */
++    uint64_t stat_steps;
++    double stat_step_ms_sum;
++    double stat_step_ms_max;
+ 
+     /* Worker-thread-owned; other threads never touch these. */
+     os_thread_t thread;
+@@ -9933,11 +9943,15 @@ typedef struct ds4_nextn_drafter {
+     bool needs_reset;
+     int cycle_gen;
+     double cycle_ms;
+-    bool cycle_stale;
++    int cycle_src;                  /* 0 stale, 1 pending, 2 dead, 3 live */
++    int cycle_rebase;
++    int cycle_inflight;
+     uint64_t req_cycles;
+     uint64_t req_generated;
+     uint64_t req_delivered;
+     uint64_t req_accepted;
++    uint64_t req_kicks;
++    uint64_t req_pending;
+     double req_draft_ms;
+     uint64_t req_offered_pos[DS4_NEXTN_DRAFT_MAX];
+     uint64_t req_accepted_pos[DS4_NEXTN_DRAFT_MAX];
+@@ -9995,6 +10009,22 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+      * ds4_nextn_parallel_for. */
+     g_parallel_depth = 1;
+     g_nextn_drafter_thread = true;
++    {
++        /* One line per process: proves the drafter thread exists and shows
++         * the pool it will use.  The pool is created by the drafter itself
++         * at engine open - DS4_G132_CPU_LANE is NOT required (and must stay
++         * off: mutual exclusion at open). */
++        static bool once_online;
++        if (!once_online) {
++            once_online = true;
++            fprintf(stderr,
++                    "ds4: [nextn-cpu] drafter worker online "
++                    "(g132 pool initialized=%d workers=%u; lane env not "
++                    "required)\n",
++                    g_g132_pool.initialized ? 1 : 0,
++                    (unsigned)g_g132_pool.n_workers);
++        }
++    }
+ 
+     uint64_t seen_seq = 0;
+     for (;;) {
+@@ -10019,6 +10049,8 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+         d->pub_seq = seq;
+         d->pub_count = 0;
+         d->pub_steps = 0;
++        d->pub_active_step = 0;
++        d->pub_done = false;
+         d->pub_ms = 0.0;
+         os_mutex_unlock(&d->mu);
+         seen_seq = seq;
+@@ -10050,9 +10082,11 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+             os_mutex_lock(&d->mu);
+             const bool abandon =
+                 d->shutdown || d->job_seq != seq || d->job_consumed;
++            if (!abandon && d->job_seq == seq) d->pub_active_step = step;
+             os_mutex_unlock(&d->mu);
+             if (abandon) break;
+ 
++            const double fwd0 = now_sec();
+             ds4_mtp_cpu_forward_nextn_q4_k(
+                 &d->cpu,
+                 d->base_model, d->base_weights,
+@@ -10061,14 +10095,48 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+                 next, d->head_hidden, NULL);
+             d->kv_last_pos = pos;
+             d->kv_any = true;
++            const double fwd1 = now_sec();
+ 
+             int top0 = -1, top1 = -1;
+             float v0 = 0.0f, v1 = 0.0f;
+             ds4_nextn_head_top2(d, &top0, &v0, &top1, &v1);
+-            if (top0 < 0) break;
++            const double head1 = now_sec();
++            {
++                /* One line per process: the real cost of the first chain
++                 * step, page-in of the pageable module/head included.  This
++                 * is the thrash-vs-wedge discriminator a silent run hides. */
++                static bool once_step;
++                if (!once_step) {
++                    once_step = true;
++                    fprintf(stderr,
++                            "ds4: [nextn-cpu] first chain step done "
++                            "fwd=%.1f ms head=%.1f ms (first-touch page-in "
++                            "of the pageable module/head included)\n",
++                            (fwd1 - fwd0) * 1000.0,
++                            (head1 - fwd1) * 1000.0);
++                }
++            }
++            if (top0 < 0) {
++                static bool once_head_fail;
++                if (!once_head_fail) {
++                    once_head_fail = true;
++                    fprintf(stderr,
++                            "ds4: [nextn-draft] head argmax failed; chain "
++                            "aborted (base output tensor unreadable?)\n");
++                }
++                os_mutex_lock(&d->mu);
++                if (d->job_seq == seq) d->pub_done = true;
++                os_mutex_unlock(&d->mu);
++                break;
++            }
+ 
+             bool hit_eos = false;
+             os_mutex_lock(&d->mu);
++            d->stat_steps++;
++            d->stat_step_ms_sum += (head1 - fwd0) * 1000.0;
++            if ((head1 - fwd0) * 1000.0 > d->stat_step_ms_max) {
++                d->stat_step_ms_max = (head1 - fwd0) * 1000.0;
++            }
+             if (d->job_seq == seq) {
+                 d->pub_steps = step;
+                 d->pub_ms = (now_sec() - t0) * 1000.0;
+@@ -10098,6 +10166,10 @@ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+                 next = tmp;
+             }
+         }
++
++        os_mutex_lock(&d->mu);
++        if (d->job_seq == seq) d->pub_done = true;
++        os_mutex_unlock(&d->mu);
+     }
+ }
+ 
+@@ -11203,6 +11275,20 @@ static void ds4_shared1_pool_mutex_init(void) {
+     g_shared1_pool_mutex_ready = os_mutex_init(&g_shared1_pool_mutex) == 0;
+ }
+ 
++/* DSPARK-2fix: G132 submit for the NextN drafter thread.  The pool has one
++ * mutable submit slot and two possible submitters in this build (the
++ * [shared-cpu] worker above and the drafter), so both must hold the same
++ * process mutex.  The once-init is shared1's own: arming order between the
++ * two workers does not matter and no shared1 line changes. */
++static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
++    os_once(&g_shared1_pool_once, ds4_shared1_pool_mutex_init);
++    if (!g_shared1_pool_mutex_ready) return 0;
++    os_mutex_lock(&g_shared1_pool_mutex);
++    const int ok = ds4_g132_parallel_for(n_rows, fn, ctx);
++    os_mutex_unlock(&g_shared1_pool_mutex);
++    return ok;
++}
++
+ struct ds4_shared1 {
+     os_thread_t thread;
+     os_mutex_t mutex;
+@@ -20119,41 +20205,121 @@ static void ds4_nextn_drafter_destroy(ds4_session *s) {
+ 
+ /* Rendezvous: called right after ds4_session_eval(first_token) committed the
+  * true token.  Takes whatever the pending chain has published - never waits.
+- * A pending job is valid only if it predicted exactly this token at exactly
+- * this position; anything else marks the CPU KV window for reset.  Either
+- * way the job is consumed so the worker stops burning cores on dead drafts. */
++ *
++ * DSPARK-2fix: the chain is PERSISTENT across cycles.  v1 consumed the job on
++ * every empty take and kicked a fresh one, so any chain whose step cost
++ * exceeded one decode window (first-touch page-in of ~820 MB per cold step:
++ * the run of 2026-07-29 showed exactly cycle=stale,late with k_gen=0) was
++ * restarted forever and never delivered.  Now a job that matches the
++ * committed stream keeps running: each cycle validates the one token it
++ * committed against the chain's own prediction for that offset (inductively
++ * the whole span is checked), and as soon as the chain is ahead of the
++ * committed frontier its remaining tail is delivered, re-based.  The exact
++ * batch verifier downstream remains the correctness authority either way.
++ *
++ * Outcomes: n>0 = tail delivered (job consumed); n==0 && *out_pending = the
++ * chain matches and still runs - do NOT kick; n==0 && !*out_pending = no
++ * usable job (never kicked / diverged / exhausted): consumed, and the KV
++ * window is marked for reset when rows may sit on a wrong trajectory. */
+ static int ds4_nextn_drafter_take(
+         ds4_session *s, int first_token, int *drafts, int draft_cap,
+-        float *out_margin, int *out_top0, int *out_top1) {
++        float *out_margin, int *out_top0, int *out_top1, bool *out_pending) {
+     ds4_nextn_drafter *d = s->nextn;
++    *out_pending = false;
+     if (!d) return 0;
+     if (draft_cap > DS4_NEXTN_DRAFT_MAX) draft_cap = DS4_NEXTN_DRAFT_MAX;
+     int n = 0;
+     d->cycle_gen = 0;
+     d->cycle_ms = 0.0;
+-    d->cycle_stale = true;
++    d->cycle_src = 0;
++    d->cycle_rebase = 0;
++    d->cycle_inflight = 0;
+     os_mutex_lock(&d->mu);
+-    const bool addressed = d->job_seq != 0 && !d->job_consumed &&
+-        d->job_first_token == first_token &&
+-        d->job_first_pos == (uint32_t)(s->checkpoint.len - 1);
+-    const bool ready = addressed && d->pub_seq == d->job_seq;
+-    if (d->job_seq != 0) d->job_consumed = true;
+-    if (ready) {
+-        d->cycle_stale = false;
++    const uint32_t pos_now = (uint32_t)(s->checkpoint.len - 1);
++    const bool have_job = d->job_seq != 0 && !d->job_consumed;
++    const bool intaken = have_job && d->pub_seq == d->job_seq;
++    if (intaken) {
+         d->cycle_gen = d->pub_steps;
+         d->cycle_ms = d->pub_ms;
+-        n = d->pub_count;
+-        if (n > draft_cap) n = draft_cap;
+-        if (n > 0) {
+-            for (int i = 0; i < n; i++) drafts[i] = d->pub_drafts[i];
+-            *out_margin = d->pub_margin[n - 1];
+-            *out_top0 = d->pub_drafts[n - 1];
+-            *out_top1 = d->pub_runner[n - 1];
+-        }
+-    } else if (!addressed) {
+-        /* Wrong token or wrong position: the pending chain (and its KV
+-         * rows) belong to a trajectory the stream did not take. */
+-        d->needs_reset = true;
++        d->cycle_inflight = d->pub_active_step;
++    }
++    bool dead = false;
++    bool reset_on_death = false;
++    if (!have_job) {
++        dead = true;
++    } else if (pos_now != d->job_take_expect) {
++        /* Rewind, or tokens committed by non-speculative paths between
++         * takes: the per-cycle validation chain has a gap, so the job (and
++         * its unvalidated rows on committed ground) cannot be trusted. */
++        dead = true;
++        reset_on_death = true;
++    } else if (pos_now - d->job_first_pos >= (uint32_t)d->k ||
++               pos_now - d->job_first_pos >= DS4_NEXTN_DRAFT_MAX) {
++        /* The stream advanced past everything this chain could offer.
++         * Unvalidated rows may sit on committed positions: reset. */
++        dead = true;
++        reset_on_death = d->job_checked <= (int)(pos_now - d->job_first_pos);
++    } else {
++        const int off = (int)(pos_now - d->job_first_pos);
++        d->cycle_rebase = off;
++        d->job_committed[off] = first_token;
++        /* Inductive validation: one committed token arrives per cycle and is
++         * checked as soon as the chain's prediction for that offset exists
++         * (offset 0 = the kicked token, offset j = draft j). */
++        const int avail =
++            intaken ? (d->pub_steps < d->k ? d->pub_steps : d->k) : 0;
++        bool mismatch = false;
++        while (!mismatch && d->job_checked <= off) {
++            const int j = d->job_checked;
++            int predicted;
++            if (j == 0) {
++                predicted = d->job_first_token;
++            } else if (j <= avail) {
++                predicted = d->pub_drafts[j - 1];
++            } else {
++                break;              /* not produced yet */
++            }
++            if (predicted != d->job_committed[j]) mismatch = true;
++            else d->job_checked = j + 1;
++        }
++        if (mismatch) {
++            dead = true;
++            reset_on_death = true;
++        } else if (d->job_checked > off) {
++            /* Validated through the committed frontier: deliver the
++             * deliverable tail beyond it, if any. */
++            int n_avail = intaken ? d->pub_count - off : 0;
++            if (n_avail > 0) {
++                n = n_avail < draft_cap ? n_avail : draft_cap;
++                for (int i = 0; i < n; i++) {
++                    drafts[i] = d->pub_drafts[off + i];
++                }
++                *out_margin = d->pub_margin[off + n - 1];
++                *out_top0 = d->pub_drafts[off + n - 1];
++                *out_top1 = d->pub_runner[off + n - 1];
++            } else if (intaken && d->pub_done) {
++                dead = true;        /* finished, tail exhausted, on-trajectory */
++            }
++        } else if (intaken && d->pub_done) {
++            /* Finished without ever producing the prediction needed to
++             * validate this offset: rows may be wrong on committed ground. */
++            dead = true;
++            reset_on_death = true;
++        }
++    }
++    if (n > 0) {
++        d->job_consumed = true;
++        d->cycle_src = 3;
++    } else if (dead) {
++        if (have_job) d->job_consumed = true;
++        if (reset_on_death) d->needs_reset = true;
++        d->cycle_src = have_job && !reset_on_death ? 2 : 0;
++    } else {
++        /* Right trajectory, still grinding: leave it running, no new kick.
++         * The next take must land on the next committed position. */
++        d->job_take_expect = pos_now + 1u;
++        *out_pending = true;
++        d->cycle_src = 1;
+     }
+     os_mutex_unlock(&d->mu);
+     return n;
+@@ -20189,10 +20355,24 @@ static void ds4_nextn_drafter_kick(
+         d->job_q_valid = (uint32_t)(s->checkpoint.len - 1);
+         d->job_eos_token = eos_token;
+         d->job_reset_kv = d->needs_reset;
++        d->job_checked = 0;
++        d->job_take_expect = d->job_first_pos;
+         d->needs_reset = false;
++        d->req_kicks++;
+         os_cond_signal(&d->cv);
+     }
+     os_mutex_unlock(&d->mu);
++    if (!ok) {
++        /* A silent kick veto would read as eternal src=stale: say it once. */
++        static bool once_kick_veto;
++        if (!once_kick_veto) {
++            once_kick_veto = true;
++            fprintf(stderr,
++                    "ds4: [nextn-cpu] kick veto: anchor D2H read failed "
++                    "(kind=%d row=%u)\n",
++                    anchor_kind, (unsigned)anchor_row);
++        }
++    }
+ }
+ 
+ /* Per-cycle [nextn-draft] telemetry plus the next kick.  Call once per
+@@ -20208,6 +20388,7 @@ static void ds4_nextn_cycle_end(
+     if (d->cycle_gen > 0) d->req_generated += (uint64_t)d->cycle_gen;
+     d->req_delivered += (uint64_t)delivered;
+     d->req_accepted += (uint64_t)accepted;
++    if (d->cycle_src == 1) d->req_pending++;
+     d->req_draft_ms += d->cycle_ms;
+     for (int i = 0; i < delivered && i < DS4_NEXTN_DRAFT_MAX; i++) {
+         d->req_offered_pos[i]++;
+@@ -20219,19 +20400,28 @@ static void ds4_nextn_cycle_end(
+         pos_buf[2 * i + 1] = i + 1 < 7 ? ',' : '\0';
+     }
+     pos_buf[sizeof(pos_buf) - 1] = '\0';
++    const char *src = delivered > 0 ? "live"
++        : d->cycle_src == 1 ? "pending"
++        : d->cycle_src == 2 ? "dead"
++        : "stale";
+     fprintf(stderr,
+             "ds4: [nextn-draft] cycle=%llu src=%s k_gen=%d k_delivered=%d "
+-            "k_accepted=%d draft_ms=%.3f accept_pos=%s\n",
++            "k_accepted=%d rebase=%d inflight=%d draft_ms=%.3f "
++            "accept_pos=%s\n",
+             (unsigned long long)d->req_cycles,
+-            delivered > 0 ? "live" : (d->cycle_stale ? "stale" : "late"),
++            src,
+             d->cycle_gen,
+             delivered,
+             accepted,
++            d->cycle_rebase,
++            d->cycle_inflight,
+             d->cycle_ms,
+             pos_buf);
+     d->cycle_gen = 0;
+     d->cycle_ms = 0.0;
+-    d->cycle_stale = true;
++    d->cycle_src = 0;
++    d->cycle_rebase = 0;
++    d->cycle_inflight = 0;
+     if (continue_ok && !hit_eos) {
+         ds4_nextn_drafter_kick(s, anchor_kind, anchor_row, eos_token);
+     }
+@@ -20244,21 +20434,42 @@ static void ds4_nextn_request_begin(ds4_session *s) {
+     d->req_generated = 0;
+     d->req_delivered = 0;
+     d->req_accepted = 0;
++    d->req_kicks = 0;
++    d->req_pending = 0;
+     d->req_draft_ms = 0.0;
+     memset(d->req_offered_pos, 0, sizeof(d->req_offered_pos));
+     memset(d->req_accepted_pos, 0, sizeof(d->req_accepted_pos));
++    os_mutex_lock(&d->mu);
++    d->stat_steps = 0;
++    d->stat_step_ms_sum = 0.0;
++    d->stat_step_ms_max = 0.0;
++    os_mutex_unlock(&d->mu);
+ }
+ 
+ static void ds4_nextn_request_end(ds4_session *s) {
+     ds4_nextn_drafter *d = s->nextn;
+     if (!d || d->req_cycles == 0) return;
++    uint64_t steps;
++    double step_sum, step_max;
++    os_mutex_lock(&d->mu);
++    steps = d->stat_steps;
++    step_sum = d->stat_step_ms_sum;
++    step_max = d->stat_step_ms_max;
++    os_mutex_unlock(&d->mu);
+     fprintf(stderr,
+             "ds4: [nextn-draft] summary cycles=%llu k_gen=%llu "
+-            "k_delivered=%llu k_accepted=%llu draft_ms_avg=%.3f\n",
++            "k_delivered=%llu k_accepted=%llu kicks=%llu pending=%llu "
++            "chain_steps=%llu step_ms_avg=%.1f step_ms_max=%.1f "
++            "draft_ms_avg=%.3f\n",
+             (unsigned long long)d->req_cycles,
+             (unsigned long long)d->req_generated,
+             (unsigned long long)d->req_delivered,
+             (unsigned long long)d->req_accepted,
++            (unsigned long long)d->req_kicks,
++            (unsigned long long)d->req_pending,
++            (unsigned long long)steps,
++            steps ? step_sum / (double)steps : 0.0,
++            step_max,
+             d->req_draft_ms / (double)d->req_cycles);
+     for (int i = 0; i < d->k && i < DS4_NEXTN_DRAFT_MAX; i++) {
+         if (d->req_offered_pos[i] == 0) continue;
+@@ -23319,14 +23530,20 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+     int nextn_top1 = -1;
+     if (nextn_cpu) {
+         /* Rendezvous with the pending chain: take what is ready, never
+-         * wait.  Zero drafts means this cycle runs as plain decode and the
+-         * chain for the next cycle is kicked from the fresh cur_hc. */
++         * wait.  A chain that matches the committed stream but has nothing
++         * deliverable yet stays RUNNING (pending: no new kick, this cycle is
++         * plain decode); only a dead/absent job triggers a fresh kick from
++         * the cycle's own cur_hc. */
++        bool nextn_pending = false;
+         draft_n = ds4_nextn_drafter_take(s, first_token, drafts, draft_cap,
+                                          &nextn_margin, &nextn_top0,
+-                                         &nextn_top1);
++                                         &nextn_top1, &nextn_pending);
+         if (draft_n <= 0) {
+-            ds4_nextn_cycle_end(s, 0, 0, DS4_NEXTN_ANCHOR_CUR_HC, 0,
+-                                eos_token, max_tokens - n_accept > 0, false);
++            ds4_nextn_cycle_end(s, 0, 0,
++                                nextn_pending ? DS4_NEXTN_ANCHOR_NONE
++                                              : DS4_NEXTN_ANCHOR_CUR_HC,
++                                0, eos_token, max_tokens - n_accept > 0,
++                                false);
+             return n_accept;
+         }
+     } else {

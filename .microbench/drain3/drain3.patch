@@ -1,0 +1,93 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index d937b98..c2ba470 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -4373,6 +4373,20 @@ enum {
+     WP_PICKUP_LAG_NS,
+     WP_PICKUP_EARLY,
+     WP_NOTICE_NS,
++    /* DRAIN3-STRUM (leva P.2, drain sovrapposto al compute).  Le prime due
++     * voci sono quelle richieste per giudicare un eventuale braccio overlap:
++     * oggi restano a zero PER COSTRUZIONE (il drain e' bloccante, niente si
++     * sovrappone) e stampano la riga di base.  Le altre quattro sono i
++     * discriminatori del fallimento 28/7 (abort transient-io-timeout con
++     * worker idle_token 13,6 s/token): budget del guardiano residuo al primo
++     * ingresso transiente e conteggio delle invalidazioni di cache.  Nessun
++     * sito caldo le alimenta con DS4_CUDA_WORKER_PROFILE spento. */
++    WP_DRAIN_OVERLAP_NS,
++    WP_GPU_STALL_ON_DRAIN_NS,
++    WP_DEADLINE_SLACK_NS,
++    WP_DEADLINE_SLACK_EVENTS,
++    WP_DEADLINE_EXHAUSTED,
++    WP_CACHE_INVALIDATES,
+     WP_TOKENS,
+     WP_COUNT
+ };
+@@ -4751,7 +4765,10 @@ static void ds4_workerprof_report(const char *tag) {
+             "job_faults=%llu job_faults_per_token=%.1f "
+             "inflight_max=%u inflight_avg=%.2f inflight_busy_ms=%.3f "
+             "wait_ms_per_token=%.3f read_ms_per_token=%.3f "
+-            "read_calls_per_token=%.1f\n",
++            "read_calls_per_token=%.1f "
++            "drain_overlap_ms=%.3f gpu_stall_on_drain_ms=%.3f "
++            "deadline_slack_ms=%.3f deadline_slack_events=%llu "
++            "deadline_exhausted=%llu cache_invalidates=%llu\n",
+             tag ? tag : "periodic",
+             (unsigned long long)v[WP_TOKENS],
+             (unsigned long long)v[WP_WAITS],
+@@ -4795,7 +4812,13 @@ static void ds4_workerprof_report(const char *tag) {
+             (double)v[WP_INFLIGHT_BUSY_NS] * ms,
+             tokens > 0.0 ? wait_ms / tokens : 0.0,
+             tokens > 0.0 ? read_total_ms / tokens : 0.0,
+-            tokens > 0.0 ? (double)v[WP_READ_CALLS] / tokens : 0.0);
++            tokens > 0.0 ? (double)v[WP_READ_CALLS] / tokens : 0.0,
++            (double)v[WP_DRAIN_OVERLAP_NS] * ms,
++            (double)v[WP_GPU_STALL_ON_DRAIN_NS] * ms,
++            (double)v[WP_DEADLINE_SLACK_NS] * ms,
++            (unsigned long long)v[WP_DEADLINE_SLACK_EVENTS],
++            (unsigned long long)v[WP_DEADLINE_EXHAUSTED],
++            (unsigned long long)v[WP_CACHE_INVALIDATES]);
+ 
+     for (int i = 0; i < WP_COUNT; i++) g_workerprof_prev[i] = cur[i];
+ }
+@@ -36569,6 +36592,13 @@ static void cuda_moe_tiering_demote_cache_entry(
+ }
+ 
+ static void cuda_moe_expert_cache_invalidate(void) {
++    /* DRAIN3-STRUM: ogni invalidazione azzera la residenza e forza il refill
++     * all-miss dei layer successivi.  Nei run degradati del 28/7 e' il bordo
++     * del ciclo invalidate -> all-miss -> guardiano -> invalidate, finora
++     * invisibile nei contatori.  A flag spento resta un ramo su int cachato. */
++    if (cuda_worker_profile_enabled()) {
++        ds4_workerprof_add(WP_CACHE_INVALIDATES, 1u);
++    }
+     for (cuda_moe_cache_slot &slot : g_moe_expert_cache.slots) {
+         if (slot.state == CUDA_MOE_CACHE_VALID &&
+             slot.layer_index < CUDA_MOE_LAYER_COUNT &&
+@@ -40206,6 +40236,26 @@ static int cuda_moe_tiering_enforce_request(
+                         transient_request_deadline;
+                     cache->route_transient_read_sequence.store(
+                         request.sequence, std::memory_order_release);
++                    /* DRAIN3-STRUM: budget residuo del guardiano al PRIMO
++                     * ingresso transiente della richiesta.  Il timer parte
++                     * all'ingresso in enforce (transient_request_deadline,
++                     * testa della funzione): quel che manca qui e' stato
++                     * bruciato DENTRO la richiesta prima di leggere (drain
++                     * anticipato, load RAM), non dalla lettura stessa.
++                     * Discrimina "IO lento" da "budget consumato a monte"
++                     * nei run che abortiscono con transient-io-timeout. */
++                    if (wprof && transient_request_deadline > 0.0) {
++                        const double drain3_slack_sec =
++                            transient_request_deadline - cuda_wall_sec();
++                        ds4_workerprof_add(WP_DEADLINE_SLACK_EVENTS, 1u);
++                        if (drain3_slack_sec > 0.0) {
++                            ds4_workerprof_add(
++                                WP_DEADLINE_SLACK_NS,
++                                (uint64_t)(drain3_slack_sec * 1.0e9));
++                        } else {
++                            ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
++                        }
++                    }
+                     transient_read_published = 1;
+                 }
+                 /* GGUF stores gate/up/down as three tensor-major planes, so

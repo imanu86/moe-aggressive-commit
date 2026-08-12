@@ -1,0 +1,9 @@
+[step 0] env check OK. no ds4_server/llama/server process running. GPU RTX 3060 12GB idle (630 MiB used), driver 596.21. host RAM 63.9 GB (54.4 free). PCIe max gen4 x16 (current gen1 = idle downclock).
+[step 1] nvcc found: C:\Program Files\NVIDIA GPU Computing Toolkit\CUDA\v12.6\bin\nvcc.exe -- release 12.6, V12.6.85 (build cuda_12.6.r12.6).
+[step 2] wrote zerocopy_bench.cu (S1 vram / S2a-S2b zerocopy / S3a-S3b-S3c copy / S4 pcie ref; 64-expert pool, rotating group of 6, 3 warmup + 20 median, cudaEvent + wall).
+[step 3] wrote build.bat (vcvars64 VS2022 Community + nvcc -O3 -arch=sm_86).
+[step 4] BUILD OK -> zerocopy_bench.exe (no errors).
+[step 5] RUN 1 OK, stdout -> results.txt. S4=26.33 GB/s (PCIe gen4 x16 real peak, plausible). S2a zero-copy=25.86 GB/s = 98.2% di S4. checksum PASS (S1/S2a/S2b/S3a/S3b/S3c identici = i pesi sono letti davvero, niente dead-code elimination).
+[step 6] RUN 2 OK (riproducibilita', appesa a results.txt): tutti gli scenari entro <1% della run 1. S2a 1.642 ms identico, S4 26.32 GB/s.
+[step 7] sanity: S2 NON supera S4 (25.86 < 26.33) -> nessun sospetto di caching. working set per gruppo 40.5 MB >> L2 2.25 MB, e il gruppo ruota su pool 432 MB. CAVEAT: S1 (89 GB/s) NON e' il picco VRAM (360 GB/s) ma il tetto del kernel stesso (block-reduction bound su 1 load/thread); resta 3.5x sopra il rate PCIe quindi non falsa S2.
+[step 8] GPU rilasciata, nessun processo lasciato attivo. FINE.

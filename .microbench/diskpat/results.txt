@@ -1,0 +1,10 @@
+file: C:\ds4-models\ds4-2bit.gguf  (86.7 GB)  blocco=768 KB  letture/thread=250
+
+thread       MB letti     wall (s)   MB/s aggreg.   ms/lettura
+1                 197         0.25            797         0.98   (+0% vs 1 thread)
+2                 393         0.31           1251         1.24   (+57% vs 1 thread)
+4                 786         0.48           1636         1.85   (+105% vs 1 thread)
+8                1573         0.86           1831         3.33   (+130% vs 1 thread)
+
+LETTURA: se la banda NON sale coi thread, il dispositivo e' al limite con questo
+schema e la leva e' ridurre i byte. Se sale, il limite e' nel nostro percorso.

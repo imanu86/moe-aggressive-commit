@@ -1,0 +1,257 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 32ad605..5fff2b5 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -28067,6 +28067,11 @@ struct ds4_transport_ledger_state {
+     double h2d_active_started;
+     uint32_t h2d_active_batches;
+     int complete;
++    /* LEDGERFIX (29/7): epoca del registro, incrementata a ogni clear()
++     * sotto lock.  Serve al commit DIFFERITO del percorso DOV: un batch
++     * armato in una richiesta e provato completo dopo il clear della
++     * successiva viene scartato invece di contaminare il registro nuovo. */
++    uint64_t epoch;
+ };
+ static ds4_transport_ledger_state g_transport_ledger;
+ 
+@@ -28297,6 +28302,127 @@ static void ds4_transport_h2d_batch_finish(
+     *batch = ds4_transport_h2d_batch{};
+ }
+ 
++/* =======================================================================
++ * LEDGERFIX (29/7) - commit DIFFERITO per il percorso DOV (drain overlap 4).
++ *
++ * Sotto DS4_CUDA_DRAIN_OVERLAP4=1 l'arm sostituisce il drain bloccante e il
++ * worker non ha la prova di completamento al finish: il batch veniva
++ * INVALIDATO (I4 "versione minima" di drain4) e i byte SPARIVANO dal
++ * registro — misurato il 29/7 su lavoro bit-identico: h2d_bytes_total
++ * 8,4 GB sotto DOV contro 3070,6 GB del controllo, a parita' di transienti
++ * (432.968) e di volume letto.  I byte si muovono comunque; la prova di
++ * completamento ESISTE, solo piu' tardi, negli stessi punti che gia' oggi
++ * chiudono la finestra di overlap: cudaStreamQuery(upload)==Success nel
++ * poll idle del worker, oppure il claim-gate della generazione successiva
++ * (done-event dietro il waitEvent del consumer, invariante I3).  Quindi:
++ *
++ *   defer          = al posto del finish, il batch passa (per copia) a uno
++ *                    slot pendente del chiamante; la finestra h2d_active
++ *                    resta APERTA (le copie sono davvero in volo).
++ *   finish_deferred = stesso corpo del finish (chiusura finestra + commit
++ *                    per-pair prima-volta/ripetizione) MA sotto guardia di
++ *                    epoca nella STESSA presa di lock: niente TOCTOU col
++ *                    clear() del thread di decode.  drain_ok=0 (errore
++ *                    osservato sull'upload stream) = semantica del batch
++ *                    errato del percorso classico: finestra chiusa, byte
++ *                    omessi, complete=0.
++ *
++ * Il contratto del registro ("H2D bytes are committed only after the stream
++ * carrying the expert payload drained successfully") resta LETTERALE: cambia
++ * solo il momento in cui la prova arriva.  Il tempo attivo del tubo e' per
++ * OSSERVAZIONE (il retire e' quando il worker VEDE il completamento, non
++ * quando avviene): limite superiore onesto, nessuna sync aggiunta.  Limiti
++ * dichiarati (riga una-tantum [transport] drain_overlap4=deferred): il
++ * batch di CODA di una richiesta puo' essere ritirato dopo il report final
++ * (sottoconteggio <= 1 batch ~ 6 esperti) o dopo il clear successivo
++ * (scartato dalla guardia di epoca, mai contato altrove).
++ * ======================================================================= */
++static void ds4_transport_h2d_batch_finish_deferred(
++        ds4_transport_h2d_batch *batch, uint64_t epoch, int drain_ok) {
++    if (!batch || !batch->active) return;
++    const double now = cuda_wall_sec();
++    ds4_transport_lock();
++    if (g_transport_ledger.epoch != epoch) {
++        /* Il registro e' stato azzerato fra l'arm e la prova: il batch
++         * appartiene a un report gia' emesso (che ha sottocontato questo
++         * solo batch).  Scartare senza toccare il registro nuovo: il clear
++         * ha gia' azzerato finestra e contatori. */
++        ds4_transport_unlock();
++        *batch = ds4_transport_h2d_batch{};
++        return;
++    }
++    if (g_transport_ledger.h2d_active_batches == 0u) {
++        g_transport_ledger.complete = 0;
++    } else if (--g_transport_ledger.h2d_active_batches == 0u) {
++        const double elapsed = now - g_transport_ledger.h2d_active_started;
++        if (elapsed >= 0.0) {
++            g_transport_ledger.h2d_active_seconds += elapsed;
++        } else {
++            g_transport_ledger.complete = 0;
++        }
++        g_transport_ledger.h2d_active_started = 0.0;
++    }
++    if (!drain_ok || !batch->complete) {
++        /* CUDA does not reveal which subset of an errored async batch crossed
++         * PCIe.  Keep all byte totals exact by omitting it and expose the gap. */
++        g_transport_ledger.complete = 0;
++    } else {
++        for (uint32_t i = 0; i < batch->count; i++) {
++            const ds4_transport_h2d_batch_entry &entry = batch->entries[i];
++            uint32_t index = 0;
++            if (!ds4_transport_pair_index(
++                    entry.layer, entry.expert, &index)) {
++                g_transport_ledger.complete = 0;
++                continue;
++            }
++            ds4_transport_pair_counters &pair =
++                g_transport_ledger.pair[index];
++            const int repeat = pair.h2d_transfers != 0u;
++            if (pair.h2d_transfers == UINT32_MAX) {
++                g_transport_ledger.complete = 0;
++            } else {
++                pair.h2d_transfers++;
++            }
++            uint64_t *classification = repeat
++                ? &g_transport_ledger.repeat_h2d_bytes
++                : &g_transport_ledger.first_touch_bytes;
++            if (!ds4_transport_add_u64(classification, entry.bytes) ||
++                !ds4_transport_add_u64(
++                    &g_transport_ledger.h2d_bytes_total, entry.bytes)) {
++                g_transport_ledger.complete = 0;
++            }
++        }
++    }
++    ds4_transport_unlock();
++    *batch = ds4_transport_h2d_batch{};
++}
++
++static int ds4_transport_h2d_batch_defer(
++        ds4_transport_h2d_batch *batch,
++        ds4_transport_h2d_batch *pending,
++        uint64_t *pending_epoch) {
++    if (!batch || !pending || !pending_epoch) return 0;
++    if (!batch->active) {
++        /* Registro spento o generazione senza H2D (all-hit/zero-copy):
++         * niente da differire, stesso no-op del finish. */
++        *batch = ds4_transport_h2d_batch{};
++        return 0;
++    }
++    if (pending->active) {
++        /* Impossibile per costruzione (al piu' UN overlap outstanding e il
++         * retire-at-claim precede il servizio successivo).  Fail-safe: si
++         * chiude il pendente stantio come batch errato (finestra chiusa,
++         * byte omessi, gap dichiarato via complete=0). */
++        ds4_transport_h2d_batch_finish_deferred(pending, *pending_epoch, 0);
++    }
++    ds4_transport_lock();
++    *pending_epoch = g_transport_ledger.epoch;
++    ds4_transport_unlock();
++    *pending = *batch;
++    *batch = ds4_transport_h2d_batch{};
++    return 1;
++}
++
+ static void ds4_transport_clear(int arm_for_decode) {
+     if (!cuda_transport_ledger_enabled()) return;
+     g_transport_ledger.armed.store(0, std::memory_order_release);
+@@ -28314,6 +28440,9 @@ static void ds4_transport_clear(int arm_for_decode) {
+     g_transport_ledger.h2d_active_started = 0.0;
+     g_transport_ledger.h2d_active_batches = 0u;
+     g_transport_ledger.complete = 1;
++    /* LEDGERFIX: nuova epoca — ogni commit differito armato prima di
++     * questo clear verra' riconosciuto stantio e scartato. */
++    g_transport_ledger.epoch++;
+     ds4_transport_unlock();
+     if (arm_for_decode) {
+         g_transport_ledger.armed.store(1, std::memory_order_release);
+@@ -37186,6 +37315,13 @@ struct cuda_moe_drain_overlap4_state {
+      * silenzioso dell'arm costa un run strumentato per essere visto; un
+      * log per classe per processo lo rende gratuito. */
+     uint32_t arm_vetoes_logged;
++    /* LEDGERFIX: batch del transport ledger consegnato all'arm, in attesa
++     * della prova di completamento (retire).  I byte sono gia' accodati
++     * sull'upload stream; il commit avviene in
++     * cuda_moe_drain_overlap4_retire con la stessa prova che chiude la
++     * finestra di overlap.  Solo thread worker (come arm_vetoes_logged). */
++    ds4_transport_h2d_batch transport_deferred;
++    uint64_t transport_deferred_epoch;
+     /* Generazione armata (0 = niente in volo), pubblicata con release dopo
+      * i timestamp; complete_ns==0 con armed!=0 significa overlap ancora
+      * outstanding. */
+@@ -37266,6 +37402,17 @@ static void cuda_moe_drain_overlap4_retire(int wprof, int credit_overlap) {
+     const uint64_t now_ns = ds4_workerprof_now_ns();
+     const uint64_t armed_ns = g_moe_drain_overlap4.armed_ns.load(
+         std::memory_order_relaxed);
++    /* LEDGERFIX: la prova che chiude la finestra di overlap (stream query
++     * Success dal poll idle, o claim-gate: credit_overlap=1) e' la STESSA
++     * prova che il percorso classico esigeva prima di committare il batch
++     * H2D.  Commit differito qui, con la semantica d'errore del classico:
++     * credit_overlap=0 (errore osservato sull'upload stream) = byte omessi
++     * e complete=0, come un drain bloccante fallito.  Nessuna chiamata CUDA
++     * aggiunta: solo contabilita' sotto il lock del registro. */
++    ds4_transport_h2d_batch_finish_deferred(
++        &g_moe_drain_overlap4.transport_deferred,
++        g_moe_drain_overlap4.transport_deferred_epoch,
++        credit_overlap);
+     g_moe_drain_overlap4.complete_ns.store(
+         now_ns, std::memory_order_release);
+     if (wprof && credit_overlap) {
+@@ -40402,16 +40549,21 @@ static int cuda_moe_drain_overlap4_arm(
+         cuda_moe_tiering_commit_vram_reservations(
+             cache, reservations, admitted_count, *g133_epoch);
+     }
+-    /* I4, versione minima DICHIARATA: senza prova di completamento al
+-     * finish il batch H2D va invalidato, mai contabilizzato.  Una riga di
+-     * dichiarazione una-tantum accanto al registro, mai taciuta. */
++    /* I4, versione DIFFERITA (LEDGERFIX 29/7): il batch H2D non viene piu'
++     * invalidato — il chiamante lo consegna a transport_deferred e il
++     * commit avviene al retire, quando il completamento e' PROVATO (stream
++     * query Success o claim-gate), stessa disciplina del percorso classico.
++     * La riga una-tantum dichiara i due limiti di misura rimasti. */
+     if (!g_moe_drain_overlap4.transport_note_emitted &&
+         cuda_transport_ledger_enabled()) {
+         g_moe_drain_overlap4.transport_note_emitted = 1;
+         fprintf(stderr,
+-                "ds4: [transport] drain_overlap4=minimal: i batch H2D "
+-                "sotto overlap sono invalidati (ledger_complete=0 per "
+-                "disegno)\n");
++                "ds4: [transport] drain_overlap4=deferred: i byte dei "
++                "batch H2D sotto overlap sono committati al retire (prova: "
++                "stream query o claim-gate); h2d_active/pcie_busy chiusi "
++                "all'OSSERVAZIONE del completamento (limite superiore, "
++                "nessuna sync aggiunta); il batch di coda di una richiesta "
++                "puo' mancare dal report final se ritirato dopo\n");
+     }
+     /* Pubblicazione del sidecar: prima i timestamp (relaxed), poi la
+      * generazione (release) — il consumer fa acquire sulla generazione. */
+@@ -42018,8 +42170,14 @@ static int cuda_moe_tiering_enforce_request(
+                 cache, request, admitted, promotion_reservations,
+                 admitted_count, &request.g133_epoch)) {
+             transfers_ok = 1;
+-            ds4_transport_h2d_batch_invalidate(&transport_batch);
+-            ds4_transport_h2d_batch_finish(&transport_batch, 1);
++            /* LEDGERFIX: niente invalidate — i byte del batch sono
++             * accodati e in volo; consegna al commit differito, che
++             * avverra' al retire con la prova di completamento.  La
++             * finestra h2d_active resta aperta fino a li'. */
++            ds4_transport_h2d_batch_defer(
++                &transport_batch,
++                &g_moe_drain_overlap4.transport_deferred,
++                &g_moe_drain_overlap4.transport_deferred_epoch);
+         } else {
+             transfers_ok = cuda_moe_tiering_finish_vram_reservations<SCOPED>(
+                 cache, &request, admitted, promotion_reservations,
+@@ -42734,16 +42892,19 @@ static void *cuda_moe_route_worker(void *arg) {
+             if constexpr (DOV) {
+                 /* DRAIN4 §3.1, gemello non-ENFORCE: arm dopo l'ultimo
+                  * publish (il flush qui sopra).  Se l'arm riesce: VALID
+-                 * ottimistico fatto dall'arm, batch del registro invalidato
+-                 * (I4), niente sync.  Altrimenti il ramo else e' il blocco
+-                 * bloccante attuale, copiato riga per riga (il ramo
+-                 * else esterno dell'istanza DOV=false resta il testo
++                 * ottimistico fatto dall'arm, batch del registro consegnato
++                 * al commit differito (I4 LEDGERFIX: byte contati al retire
++                 * con la prova), niente sync.  Altrimenti il ramo else e'
++                 * il blocco bloccante attuale, copiato riga per riga (il
++                 * ramo else esterno dell'istanza DOV=false resta il testo
+                  * originale, token-identico). */
+                 if (ok && cuda_moe_drain_overlap4_arm(
+                         cache, request, admitted, NULL,
+                         admitted_count, NULL)) {
+-                    ds4_transport_h2d_batch_invalidate(&transport_batch);
+-                    ds4_transport_h2d_batch_finish(&transport_batch, 1);
++                    ds4_transport_h2d_batch_defer(
++                        &transport_batch,
++                        &g_moe_drain_overlap4.transport_deferred,
++                        &g_moe_drain_overlap4.transport_deferred_epoch);
+                 } else {
+                     const double h2d_sync_started =
+                         nested_profile_request ? cuda_wall_sec() : 0.0;

@@ -1,0 +1,121 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -8857,17 +8857,35 @@ static void cuda_stream_pool_push(char *ptr, uint64_t aligned) {
+     g_stream_pool_bytes += aligned;
+ }
+ 
+-/* Reuse a ready (event-complete) pooled buffer of the exact size, no wait/malloc. */
+-static char *cuda_stream_pool_take(uint64_t aligned) {
++/* Reuse an exact-size pooled buffer. The legacy path only accepts an already
++ * ready event; unified admission may wait for the oldest exact match after a
++ * new allocation has been refused, which is the wait reclaim would do anyway. */
++static char *cuda_stream_pool_take(uint64_t aligned, int wait_for_exact) {
++    size_t pending = g_stream_pool.size();
+     for (size_t i = 0; i < g_stream_pool.size(); i++) {
+         cuda_stream_pool_buf &b = g_stream_pool[i];
+         if (b.bytes != aligned) continue;
+-        if (cudaEventQuery(b.ev) != cudaSuccess) { (void)cudaGetLastError(); continue; }
+-        char *ptr = b.ptr;
+-        (void)cudaEventDestroy(b.ev);
+-        g_stream_pool_bytes -= b.bytes;
+-        g_stream_pool.erase(g_stream_pool.begin() + (long)i);
+-        return ptr;
++        if (cudaEventQuery(b.ev) == cudaSuccess) {
++            char *ptr = b.ptr;
++            (void)cudaEventDestroy(b.ev);
++            g_stream_pool_bytes -= b.bytes;
++            g_stream_pool.erase(g_stream_pool.begin() + (long)i);
++            return ptr;
++        }
++        (void)cudaGetLastError();
++        if (pending == g_stream_pool.size()) pending = i;
++    }
++    if (wait_for_exact && pending != g_stream_pool.size()) {
++        cuda_stream_pool_buf &b = g_stream_pool[pending];
++        if (cudaEventSynchronize(b.ev) != cudaSuccess) {
++            (void)cudaGetLastError();
++            return NULL;
++        }
++        char *ptr = b.ptr;
++        (void)cudaEventDestroy(b.ev);
++        g_stream_pool_bytes -= b.bytes;
++        g_stream_pool.erase(g_stream_pool.begin() + (long)pending);
++        return ptr;
+     }
+     return NULL;
+ }
+@@ -8959,6 +8977,19 @@ extern "C" int ds4_gpu_model_span_release(
+     return blocked == 0 ? 1 : 0;
+ }
+ 
++/* Opt-in because the legacy admission order is part of existing A/B baselines.
++ * Exact "1" avoids accidentally enabling the experiment with VAR=0. */
++static int cuda_model_stream_admit_unified_enabled(void) {
++    static int initialized = 0;
++    static int enabled = 0;
++    if (!initialized) {
++        const char *e = getenv("DS4_CUDA_STREAM_ADMIT_UNIFIED");
++        enabled = e && strcmp(e, "1") == 0;
++        initialized = 1;
++    }
++    return enabled;
++}
++
+ /* Allocate `bytes` of VRAM for a streamed range, reusing a recycled buffer or
+  * evicting LRU cold ranges as needed. allow_evict=0 during pre-cache (NULL ->
+  * caller defers). No per-eviction device sync: safety is via the pool's events. */
+@@ -8968,13 +8999,16 @@ static char *cuda_model_stream_alloc(
+         const char *what,
+         int hot_weight) {
+     (void)what;
++    const int unified_admission = cuda_model_stream_admit_unified_enabled();
+     const uint64_t aligned = (bytes + 255u) & ~255ull;
+     const uint64_t reserve = hot_weight && g_model_streaming_active
+         ? cuda_model_stream_hot_reserve_bytes()
+         : cuda_model_stream_reserve_bytes();
+-    /* Fast path: recycle a ready same-size buffer (no sync, no malloc). */
+-    char *reuse = cuda_stream_pool_take(aligned);
+-    if (reuse) return reuse;
++    if (!unified_admission) {
++        /* Byte-neutral legacy path: pool reuse precedes query/reserve policy. */
++        char *reuse = cuda_stream_pool_take(aligned, 0);
++        if (reuse) return reuse;
++    }
+     for (;;) {
+         size_t freeb = 0, totalb = 0;
+         if (cudaMemGetInfo(&freeb, &totalb) != cudaSuccess) {
+@@ -8989,12 +9023,22 @@ static char *cuda_model_stream_alloc(
+          * sfratto, cioe' esattamente dove il picco intra-token si forma. */
+         ds4_vram_peak_note_known_free((uint64_t)freeb, what,
+                                       "stream-alloc-loop", aligned);
++        if (unified_admission && (uint64_t)freeb >= reserve) {
++            /* The reserve is a post-admission floor. Reuse has zero incremental
++             * VRAM cost, while cudaMalloc below additionally needs `aligned`. */
++            char *reuse = cuda_stream_pool_take(aligned, 0);
++            if (reuse) return reuse;
++        }
+         if ((uint64_t)freeb >= aligned + reserve) {
+             void *dev = NULL;
+             cudaError_t err = cudaMalloc(&dev, (size_t)aligned);
+             if (err == cudaSuccess) return (char *)dev;
+             (void)cudaGetLastError();
+         }
++        if (unified_admission && (uint64_t)freeb >= reserve) {
++            char *reuse = cuda_stream_pool_take(aligned, 1);
++            if (reuse) return reuse;
++        }
+         /* Reclaim VRAM parked in the pool before evicting live ranges. */
+         if (cuda_stream_pool_reclaim() > 0) continue;
+         if (!allow_evict) return NULL;
+@@ -9092,8 +9136,9 @@ static const char *cuda_model_range_ptr_from_fd(
+      * pressure (inference only; pre-cache defers). No host-pointer fallback: a host
+      * pointer is not device-accessible on Windows (no HMM) and would crash a kernel. */
+     const int is_hot = (what == NULL) || (strncmp(what, "moe_", 4) != 0);
++    const int unified_admission = cuda_model_stream_admit_unified_enabled();
+     const int use_hot_reserve =
+-        what != NULL && strcmp(what, "indexer_f16") == 0;
++        unified_admission ? is_hot : (what != NULL && strcmp(what, "indexer_f16") == 0);
+     /* Nome del range in trasporto: rende leggibile what_at_min del probe del
+      * picco ("moe_gate_exp" invece della sola riga sorgente).  Le stringhe `what`
+      * sono letterali o nomi di tensore di lunga vita, quindi il puntatore

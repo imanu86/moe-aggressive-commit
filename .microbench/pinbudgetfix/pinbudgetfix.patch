@@ -1,0 +1,605 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -605,6 +605,147 @@ static void ds4_alloc_trace_release(const void *ptr) {
+     g_alloc_live_map.erase(it);
+ }
+ 
++/* ==================== PINBUDGETFIX: ledger host-pin SEMPRE ATTIVO ==========
++ * Audit10 01-B1/06-ZC1/07-B1/09-#1: il tetto "da 2 GiB" contava solo
++ * register-mmap per-range + indexerzc; finestra masked, arena KV staged,
++ * staging modello e staging route restavano invisibili (~4,5 GiB pinnati
++ * reali con contatore a 2 GiB).  Questo ledger vive nei wrapper del tracer
++ * (che intercettano OGNI cudaMallocHost/cudaHostAlloc/cudaHostRegister/
++ * cudaFreeHost/cudaHostUnregister del TU), quindi il totale dichiarato
++ * coincide col pinnato CUDA reale per costruzione, anche per i kind non
++ * enumerati ("other").  E' indipendente da DS4_CUDA_ALLOC_TRACE e gira SOLO
++ * alle allocazioni/free (percorsi freddi): i percorsi caldi per-token non
++ * passano di qui.
++ * Budget: il kind masked (window+range+indexer_zc) resta gestito da
++ * g_model_registered_range_bytes contro DS4_CUDA_STREAM_FROM_RAM_MASKED_
++ * BUDGET_GB (ora onesto: la finestra lo consuma).  kv_arena/model_stage/
++ * route_stage sono costi funzionali determinati dalla config (ctx, chunk,
++ * route count): non vengono ammessi contro il budget masked (gate-arli li'
++ * spegnerebbe KV-staged e lo streaming pesi alla config di campagna); sono
++ * dichiarati per-kind nel log e sommati nel totale.  Il tetto opzionale
++ * sulla SOMMA e' DS4_CUDA_HOST_PIN_TOTAL_BUDGET_GB (default: nessun tetto,
++ * comportamento invariato). */
++enum {
++    DS4_HOSTPIN_KIND_OTHER = 0,
++    DS4_HOSTPIN_KIND_WINDOW,      /* finestra masked contigua (cudaHostRegister) */
++    DS4_HOSTPIN_KIND_RANGE,       /* register-mmap per-range (cudaHostRegister) */
++    DS4_HOSTPIN_KIND_INDEXER_ZC,  /* buffer indexer zero-copy (cudaHostAlloc) */
++    DS4_HOSTPIN_KIND_KV_ARENA,    /* arena KV staged (cudaHostAlloc) */
++    DS4_HOSTPIN_KIND_MODEL_STAGE, /* 4 buffer staging modello (cudaMallocHost) */
++    DS4_HOSTPIN_KIND_ROUTE_STAGE, /* staging host route worker (cudaHostAlloc) */
++    DS4_HOSTPIN_KIND_COUNT
++};
++static const char *const g_hostpin_kind_name[DS4_HOSTPIN_KIND_COUNT] = {
++    "other", "window", "range", "indexer_zc", "kv_arena", "model_stage",
++    "route_stage"
++};
++struct ds4_hostpin_rec {
++    uint64_t bytes;
++    int kind;
++};
++static std::mutex g_hostpin_mutex;
++static std::unordered_map<const void *, ds4_hostpin_rec> g_hostpin_map;
++static uint64_t g_hostpin_kind_live[DS4_HOSTPIN_KIND_COUNT];
++static uint64_t g_hostpin_total_live = 0;
++static uint64_t g_hostpin_total_peak = 0;
++static int g_hostpin_pending_kind = DS4_HOSTPIN_KIND_OTHER;
++static uint64_t g_hostpin_admit_refusals = 0;
++
++/* Definite dopo cuda_host_register_budget_bytes/g_model_registered_range_bytes
++ * (servono per la riga di log e per il tetto opzionale sulla somma). */
++static void ds4_hostpin_log_alloc(int kind, uint64_t bytes,
++                                  uint64_t kind_live, uint64_t total_live,
++                                  uint64_t total_peak);
++static uint64_t cuda_host_pin_total_budget_bytes(void);
++
++/* Tag del kind per la PROSSIMA allocazione host-pinned (stesso pattern di
++ * ds4_gpu_alloc_site_label): chiamare immediatamente prima della cuda call. */
++static void ds4_hostpin_tag(int kind) {
++    std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++    g_hostpin_pending_kind = kind;
++}
++
++static uint64_t ds4_hostpin_total_bytes_now(void) {
++    std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++    return g_hostpin_total_live;
++}
++
++/* Tetto opzionale sulla SOMMA host-pinned CUDA del processo: rifiuta PRIMA di
++ * chiamare il driver.  Ogni chiamante ha gia' un percorso di failure gestito
++ * (fail-open indexer, sticky-off KV, prepare fallita cache, window skipped). */
++static int ds4_hostpin_admit(uint64_t bytes, const char *fn, int line) {
++    const uint64_t cap = cuda_host_pin_total_budget_bytes();
++    if (cap == 0) return 1;
++    uint64_t total = 0;
++    int refuse = 0;
++    {
++        std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++        total = g_hostpin_total_live;
++        if (bytes > cap || total + bytes > cap) {
++            refuse = 1;
++            g_hostpin_pending_kind = DS4_HOSTPIN_KIND_OTHER;
++            g_hostpin_admit_refusals++;
++        }
++    }
++    if (refuse && g_hostpin_admit_refusals <= 8ull) {
++        fprintf(stderr,
++                "ds4: [host-pin] refused site=%s@%d bytes=%llu "
++                "total_live_mib=%.1f total_budget_mib=%.1f (somma host-pin "
++                "oltre DS4_CUDA_HOST_PIN_TOTAL_BUDGET_GB)\n",
++                fn ? fn : "?", line, (unsigned long long)bytes,
++                (double)total / 1048576.0, (double)cap / 1048576.0);
++    }
++    return refuse ? 0 : 1;
++}
++
++static void ds4_hostpin_note_alloc(const void *ptr, uint64_t bytes) {
++    if (!ptr) return;
++    int kind = DS4_HOSTPIN_KIND_OTHER;
++    uint64_t kind_live = 0;
++    uint64_t total_live = 0;
++    uint64_t total_peak = 0;
++    {
++        std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++        kind = g_hostpin_pending_kind;
++        g_hostpin_pending_kind = DS4_HOSTPIN_KIND_OTHER;
++        ds4_hostpin_rec rec;
++        rec.bytes = bytes;
++        rec.kind = kind;
++        g_hostpin_map[ptr] = rec;
++        g_hostpin_kind_live[kind] += bytes;
++        g_hostpin_total_live += bytes;
++        if (g_hostpin_total_live > g_hostpin_total_peak) {
++            g_hostpin_total_peak = g_hostpin_total_live;
++        }
++        kind_live = g_hostpin_kind_live[kind];
++        total_live = g_hostpin_total_live;
++        total_peak = g_hostpin_total_peak;
++    }
++    ds4_hostpin_log_alloc(kind, bytes, kind_live, total_live, total_peak);
++}
++
++static void ds4_hostpin_note_alloc_failed(void) {
++    std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++    g_hostpin_pending_kind = DS4_HOSTPIN_KIND_OTHER;
++}
++
++static void ds4_hostpin_note_free(const void *ptr) {
++    if (!ptr) return;
++    std::lock_guard<std::mutex> lock(g_hostpin_mutex);
++    std::unordered_map<const void *, ds4_hostpin_rec>::iterator it =
++        g_hostpin_map.find(ptr);
++    if (it == g_hostpin_map.end()) return;
++    const uint64_t bytes = it->second.bytes;
++    const int kind = it->second.kind;
++    g_hostpin_kind_live[kind] =
++        g_hostpin_kind_live[kind] >= bytes ? g_hostpin_kind_live[kind] - bytes
++                                           : 0;
++    g_hostpin_total_live =
++        g_hostpin_total_live >= bytes ? g_hostpin_total_live - bytes : 0;
++    g_hostpin_map.erase(it);
++}
++/* ================== fine PINBUDGETFIX ledger host-pin ===================== */
++
+ /* -------- tagged wrappers (templated to mirror the CUDA overloads) -------- */
+ 
+ /* I due wrapper di device sotto campionano il picco di VRAM SUBITO DOPO
+@@ -643,7 +784,15 @@ static cudaError_t ds4_trace_cuda_malloc_managed(T **ptr, size_t bytes,
+ template <typename T>
+ static cudaError_t ds4_trace_cuda_malloc_host(T **ptr, size_t bytes,
+                                               const char *fn, int line) {
++    if (!ds4_hostpin_admit((uint64_t)bytes, fn, line)) {
++        return cudaErrorMemoryAllocation;
++    }
+     const cudaError_t err = cudaMallocHost((void **)ptr, bytes);
++    if (err == cudaSuccess) {
++        ds4_hostpin_note_alloc((const void *)*ptr, (uint64_t)bytes);
++    } else {
++        ds4_hostpin_note_alloc_failed();
++    }
+     ds4_alloc_trace_note(fn, line, DS4_ALLOC_KIND_HOST_PINNED, (uint64_t)bytes,
+                          err == cudaSuccess ? (const void *)*ptr : NULL,
+                          err == cudaSuccess ? 1 : 0);
+@@ -654,7 +803,15 @@ template <typename T>
+ static cudaError_t ds4_trace_cuda_host_alloc(T **ptr, size_t bytes,
+                                              unsigned int flags,
+                                              const char *fn, int line) {
++    if (!ds4_hostpin_admit((uint64_t)bytes, fn, line)) {
++        return cudaErrorMemoryAllocation;
++    }
+     const cudaError_t err = cudaHostAlloc((void **)ptr, bytes, flags);
++    if (err == cudaSuccess) {
++        ds4_hostpin_note_alloc((const void *)*ptr, (uint64_t)bytes);
++    } else {
++        ds4_hostpin_note_alloc_failed();
++    }
+     ds4_alloc_trace_note(fn, line, DS4_ALLOC_KIND_HOST_PINNED, (uint64_t)bytes,
+                          err == cudaSuccess ? (const void *)*ptr : NULL,
+                          err == cudaSuccess ? 1 : 0);
+@@ -664,7 +821,15 @@ static cudaError_t ds4_trace_cuda_host_alloc(T **ptr, size_t bytes,
+ static cudaError_t ds4_trace_cuda_host_register(void *ptr, size_t bytes,
+                                                 unsigned int flags,
+                                                 const char *fn, int line) {
++    if (!ds4_hostpin_admit((uint64_t)bytes, fn, line)) {
++        return cudaErrorMemoryAllocation;
++    }
+     const cudaError_t err = cudaHostRegister(ptr, bytes, flags);
++    if (err == cudaSuccess) {
++        ds4_hostpin_note_alloc((const void *)ptr, (uint64_t)bytes);
++    } else {
++        ds4_hostpin_note_alloc_failed();
++    }
+     ds4_alloc_trace_note(fn, line, DS4_ALLOC_KIND_HOST_REG, (uint64_t)bytes,
+                          err == cudaSuccess ? (const void *)ptr : NULL,
+                          err == cudaSuccess ? 1 : 0);
+@@ -684,11 +849,13 @@ static cudaError_t ds4_trace_cuda_free(void *ptr, const char *fn, int line) {
+ }
+ 
+ static cudaError_t ds4_trace_cuda_free_host(void *ptr) {
++    ds4_hostpin_note_free(ptr);
+     ds4_alloc_trace_release(ptr);
+     return cudaFreeHost(ptr);
+ }
+ 
+ static cudaError_t ds4_trace_cuda_host_unregister(void *ptr) {
++    ds4_hostpin_note_free(ptr);
+     ds4_alloc_trace_release(ptr);
+     return cudaHostUnregister(ptr);
+ }
+@@ -3750,6 +3917,51 @@ static uint64_t cuda_host_register_budget_bytes(void) {
+ #endif
+ }
+ 
++/* PINBUDGETFIX: tetto opzionale sulla SOMMA host-pinned CUDA del processo
++ * (tutti i kind, ledger dei wrapper).  0 = nessun tetto (default, invariato). */
++static uint64_t cuda_host_pin_total_budget_bytes(void) {
++    static int cached_read = 0;
++    static uint64_t cached = 0;
++    if (!cached_read) {
++        const char *env = getenv("DS4_CUDA_HOST_PIN_TOTAL_BUDGET_GB");
++        uint64_t v = 0;
++        if (env && env[0]) {
++            const double gv = atof(env);
++            if (gv > 0.0) v = (uint64_t)(gv * 1073741824.0);
++        }
++        cached = v;
++        cached_read = 1;
++    }
++    return cached;
++}
++
++/* PINBUDGETFIX: UNA riga per kind a ogni allocazione host-pinned dichiarata
++ * (window/range/kv_arena/model_stage/route_stage).  indexer_zc e' escluso dal
++ * log per-alloc (42 allocazioni; il suo consumo e' gia' dichiarato dalle righe
++ * [indexer-zc] active/pin_failed), "other" e' escluso per non inondare il log
++ * con i piccoli buffer di controllo: entrambi restano nel totale.  masked_mib
++ * e' l'accumulatore del budget DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB
++ * (window+range+indexer_zc) fotografato PRIMA che il sito lo aggiorni. */
++static void ds4_hostpin_log_alloc(int kind, uint64_t bytes,
++                                  uint64_t kind_live, uint64_t total_live,
++                                  uint64_t total_peak) {
++    if (kind == DS4_HOSTPIN_KIND_OTHER || kind == DS4_HOSTPIN_KIND_INDEXER_ZC) {
++        return;
++    }
++    const uint64_t total_budget = cuda_host_pin_total_budget_bytes();
++    fprintf(stderr,
++            "ds4: [host-pin] kind=%s bytes=%llu kind_live_mib=%.1f "
++            "total_live_mib=%.1f total_peak_mib=%.1f masked_mib=%.1f "
++            "masked_budget_mib=%.1f total_budget_mib=%.1f\n",
++            g_hostpin_kind_name[kind], (unsigned long long)bytes,
++            (double)kind_live / 1048576.0,
++            (double)total_live / 1048576.0,
++            (double)total_peak / 1048576.0,
++            (double)g_model_registered_range_bytes / 1048576.0,
++            (double)cuda_host_register_budget_bytes() / 1048576.0,
++            total_budget ? (double)total_budget / 1048576.0 : 0.0);
++}
++
+ static void cuda_mtp_model_map_release(void) {
+     if (g_mtp_model_registered_base) {
+         (void)cudaHostUnregister(g_mtp_model_registered_base);
+@@ -3940,6 +4152,11 @@ static int g_indexer_zc_announced = 0;          /* una riga all'attivazione */
+ static int cuda_model_stage_read(void *stage, uint64_t stage_bytes,
+                                  uint64_t offset, uint64_t bytes,
+                                  const char **payload);
++/* PINBUDGETFIX 01-B2: il fallback cudaMalloc diretto di cuda_model_range_ptr
++ * deve rispettare le stesse riserve del percorso streaming (definite piu'
++ * avanti nel TU). */
++static uint64_t cuda_model_stream_reserve_bytes(void);
++static uint64_t cuda_model_stream_hot_reserve_bytes(void);
+ 
+ static int cuda_indexer_host_zerocopy_enabled(void) {
+     static int cached = -1;
+@@ -4023,6 +4240,7 @@ static const char *cuda_indexer_zerocopy_range_ptr(
+         return NULL;
+     }
+     void *host = NULL;
++    ds4_hostpin_tag(DS4_HOSTPIN_KIND_INDEXER_ZC);
+     cudaError_t zc_err = cudaHostAlloc(&host, (size_t)alloc_bytes,
+                                        cudaHostAllocMapped);
+     if (zc_err != cudaSuccess || !host) {
+@@ -4046,7 +4264,18 @@ static const char *cuda_indexer_zerocopy_range_ptr(
+         return NULL;
+     }
+     char *dev_ptr = (char *)dev_base + (payload - (const char *)host);
+-    g_indexer_zc_entries.push_back({model_map, offset, bytes, host, dev_ptr});
++    /* PINBUDGETFIX 09-#2: la crescita del vector di registro puo' lanciare
++     * std::bad_alloc; senza catch il processo termina invece del fail-open
++     * promesso e il buffer appena pinnato resta orfano.  Qui si libera il
++     * pin corrente e si latcha il fail-open: le entry gia' valide restano
++     * servite zero-copy, questa e le successive ricadono in fd-cache. */
++    try {
++        g_indexer_zc_entries.push_back({model_map, offset, bytes, host, dev_ptr});
++    } catch (...) {
++        (void)cudaFreeHost(host);
++        cuda_indexer_zerocopy_failopen("registry-bad-alloc");
++        return NULL;
++    }
+     g_indexer_zc_pinned_bytes += bytes;
+     g_indexer_zc_alloc_bytes += alloc_bytes;
+     g_model_registered_range_bytes += alloc_bytes;
+@@ -4143,6 +4372,7 @@ static const char *cuda_model_range_ptr(const void *model_map, uint64_t offset,
+         const uint64_t reg_bytes = (reg_delta + bytes + page_sz - 1u) & ~(page_sz - 1u);
+         if (g_model_registered_range_bytes + reg_bytes <= cuda_host_register_budget_bytes()) {
+             void *reg_dev = NULL;
++            ds4_hostpin_tag(DS4_HOSTPIN_KIND_RANGE);
+             err = cudaHostRegister((void *)reg_addr,
+                                    (size_t)reg_bytes,
+                                    cudaHostRegisterMapped | cudaHostRegisterReadOnly);
+@@ -4180,14 +4410,47 @@ static const char *cuda_model_range_ptr(const void *model_map, uint64_t offset,
+         }
+     }
+ 
+-    /* Standalone per-span VRAM copy (untracked/non-evictable). During pre-cache
+-     * (streaming not yet active) defer beyond-window spans to on-demand streaming
+-     * instead of burning the VRAM reserve here. At inference the fd-cache stream
+-     * path with eviction handles these, so this legacy fallback isn't reached. */
++    /* Per-span VRAM copy. During pre-cache (streaming not yet active) defer
++     * beyond-window spans to on-demand streaming instead of burning the VRAM
++     * reserve here.
++     * PINBUDGETFIX 01-B2: a inferenza questo fallback E' raggiungibile — la
++     * fd-cache torna NULL dopo PIN EXHAUSTED e il register-mmap e' scavalcato
++     * a budget masked pieno.  Prima consumava la riserva (nessun check) e
++     * inseriva un range streamed=0 invisibile a pick_victim: il pool delle
++     * vittime si restringeva PERMANENTEMENTE.  Ora (a) rispetta la stessa
++     * riserva del percorso streaming e fallisce stabile se la violerebbe,
++     * (b) alloca alla granularita' del pool (align 256) e inserisce il range
++     * come streamed/sfrattabile, identico al push della fd-cache. */
+     if (!g_model_streaming_active) return NULL;
+ 
++    const uint64_t fb_aligned = (bytes + 255u) & ~255ull;
++    if (fb_aligned < bytes) return NULL;
++    {
++        const int fb_hot_reserve =
++            what != NULL && strcmp(what, "indexer_f16") == 0;
++        const uint64_t fb_reserve = fb_hot_reserve
++            ? cuda_model_stream_hot_reserve_bytes()
++            : cuda_model_stream_reserve_bytes();
++        size_t fb_free = 0;
++        size_t fb_total = 0;
++        if (cudaMemGetInfo(&fb_free, &fb_total) != cudaSuccess) {
++            (void)cudaGetLastError();
++            return NULL;
++        }
++        if ((uint64_t)fb_free < fb_aligned + fb_reserve) {
++            fprintf(stderr,
++                    "ds4: CUDA model range fallback refused for %s (%.2f MiB): "
++                    "free %.1f MiB < size+reserve %.1f MiB (riserva preservata, "
++                    "fail stabile)\n",
++                    what ? what : "weights", (double)bytes / 1048576.0,
++                    (double)fb_free / 1048576.0,
++                    (double)(fb_aligned + fb_reserve) / 1048576.0);
++            return NULL;
++        }
++    }
++
+     void *dev = NULL;
+-    err = cudaMalloc(&dev, (size_t)bytes);
++    err = cudaMalloc(&dev, (size_t)fb_aligned);
+     if (err != cudaSuccess) {
+         (void)cudaGetLastError();
+         fprintf(stderr, "ds4: CUDA model range alloc failed for %s (%.2f MiB): %s\n",
+@@ -4211,7 +4474,17 @@ static const char *cuda_model_range_ptr(const void *model_map, uint64_t offset,
+             return NULL;
+         }
+     }
+-    g_model_ranges.push_back({model_map, offset, bytes, (char *)dev, NULL, NULL, 0, 0, 0});
++    /* PINBUDGETFIX 01-B2 (b): stesso shape del push fd-cache — streamed=1,
++     * tick LRU corrente, keep-hot per i pesi non-expert.  Cosi' il range resta
++     * visibile a pick_victim/span_release e sfrattabile nel pool di riciclo
++     * (l'allocazione qui sopra e' gia' alla granularita' align-256 del pool). */
++    {
++        const int fb_pinned =
++            (what == NULL) || (strncmp(what, "moe_", 4) != 0);
++        g_model_ranges.push_back({model_map, offset, bytes, (char *)dev, NULL,
++                                  NULL, 0, 0, /*arena_allocated=*/0,
++                                  /*streamed=*/1, ++g_model_tick, fb_pinned});
++    }
+     g_model_range_by_offset[offset] = g_model_ranges.size() - 1u;
+     g_model_range_bytes += bytes;
+     if (getenv("DS4_CUDA_WEIGHT_CACHE_VERBOSE")) {
+@@ -6530,6 +6803,7 @@ static int cuda_model_stage_pool_alloc(uint64_t bytes) {
+         }
+     }
+     for (size_t i = 0; i < 4; i++) {
++        ds4_hostpin_tag(DS4_HOSTPIN_KIND_MODEL_STAGE); /* PINBUDGETFIX 06-ZC1 */
+         cudaError_t err = cudaMallocHost(&g_model_stage_raw[i], (size_t)bytes);
+         if (err != cudaSuccess) {
+             fprintf(stderr, "ds4: CUDA pinned model staging allocation failed: %s\n", cudaGetErrorString(err));
+@@ -17282,8 +17556,23 @@ extern "C" int ds4_gpu_set_model_map(const void *model_map, uint64_t model_size)
+         uint64_t window = model_size;
+         const uint64_t budget = cuda_host_register_budget_bytes();
+         if (window > budget) window = budget;
++        /* PINBUDGETFIX 01-B1: la finestra ora CONSUMA il budget masked (sotto),
++         * quindi su un modello piu' grande del budget lo saturerebbe sempre e
++         * i consumatori masked tardivi (indexerzc) farebbero sempre fail-open
++         * onesto.  Cap opzionale della SOLA finestra per lasciare headroom
++         * masked dentro lo stesso budget (es. budget 2, finestra 1.6 ->
++         * ~0.4 GiB per indexerzc).  Default: assente, sizing invariato. */
++        const char *window_cap_env = getenv("DS4_CUDA_HOST_PIN_WINDOW_GB");
++        if (window_cap_env && window_cap_env[0]) {
++            const double wv = atof(window_cap_env);
++            if (wv > 0.0) {
++                const uint64_t wcap = (uint64_t)(wv * 1073741824.0);
++                if (window > wcap) window = wcap;
++            }
++        }
+         window &= ~(uint64_t)(cuda_page_size() - 1u);
+         if (window > 0) {
++            ds4_hostpin_tag(DS4_HOSTPIN_KIND_WINDOW);
+             cudaError_t err = cudaHostRegister((void *)model_map, (size_t)window,
+                                                cudaHostRegisterMapped | cudaHostRegisterReadOnly);
+             if (err == cudaSuccess) {
+@@ -17294,8 +17583,18 @@ extern "C" int ds4_gpu_set_model_map(const void *model_map, uint64_t model_size)
+                     g_model_window_bytes = window;
+                     g_model_window_registered = 1;
+                     if (window >= model_size) g_model_registered = 1; /* whole model resident */
+-                    fprintf(stderr, "ds4: CUDA registered %.2f GiB contiguous host window (of %.2f GiB model) for zero-copy device access\n",
+-                            (double)window / 1073741824.0, (double)model_size / 1073741824.0);
++                    /* PINBUDGETFIX 01-B1/06-ZC1/07-B1/09-#1: la finestra e' un
++                     * cudaHostRegister che consuma lo stesso budget fisico WDDM
++                     * dichiarato dal knob; ora lo contabilizza, cosi' indexerzc
++                     * e register-mmap ammettono contro il consumo REALE del
++                     * kind masked invece di ri-spendere lo stesso tetto. */
++                    g_model_registered_range_bytes += window;
++                    fprintf(stderr, "ds4: CUDA registered %.2f GiB contiguous host window (of %.2f GiB model) for zero-copy device access "
++                            "[masked_pinned=%.2f GiB masked_budget=%.2f GiB hostpin_total=%.2f GiB]\n",
++                            (double)window / 1073741824.0, (double)model_size / 1073741824.0,
++                            (double)g_model_registered_range_bytes / 1073741824.0,
++                            (double)budget / 1073741824.0,
++                            (double)ds4_hostpin_total_bytes_now() / 1073741824.0);
+                 } else {
+                     fprintf(stderr, "ds4: CUDA host window devptr lookup failed: %s\n", cudaGetErrorString(err));
+                     (void)cudaHostUnregister((void *)model_map);
+@@ -21807,19 +22106,28 @@ static int cuda_kv_staged_restore_to_device_locked(
+         tensor->host_ptr = NULL;
+     }
+     state.host_resident = 0;
++    const uint64_t arena_bytes_at_restore = state.host_bytes;
++    int arena_released = 0;
+     if (release_arena && state.host_arena) {
+         if (cudaFreeHost(state.host_arena) == cudaSuccess) {
+             state.host_arena = NULL;
+             state.host_bytes = 0;
++            arena_released = 1;
+         } else {
+             (void)cudaGetLastError();
+         }
+     }
++    /* PINBUDGETFIX 06-ZC3: dichiara ESPLICITAMENTE se l'arena pinnata resta
++     * viva dopo il restore (headroom host trattenuto) o e' stata rilasciata,
++     * col totale host-pin di processo accanto. */
+     fprintf(stderr,
+-            "ds4: [kv-staged] restored tensors=%llu bytes=%llu reason=%s\n",
++            "ds4: [kv-staged] restored tensors=%llu bytes=%llu reason=%s "
++            "arena_released=%d hostpin_total_mib=%.1f\n",
+             (unsigned long long)state.tensors.size(),
+-            (unsigned long long)state.host_bytes,
+-            reason ? reason : "request-end");
++            (unsigned long long)arena_bytes_at_restore,
++            reason ? reason : "request-end",
++            arena_released,
++            (double)ds4_hostpin_total_bytes_now() / 1048576.0);
+     return 1;
+ }
+ 
+@@ -21829,13 +22137,33 @@ static int cuda_kv_staged_disable_and_restore(const char *reason) {
+     return cuda_kv_staged_restore_to_device_locked(reason, 1);
+ }
+ 
++/* PINBUDGETFIX 06-ZC3: DS4_CUDA_KV_ARENA_RELEASE=1 rilascia l'arena host
++ * pinnata (~1,93 GiB a ctx 150k) al restore di fine richiesta anche nel caso
++ * sano non-sticky, restituendo l'headroom host-pin tra una richiesta e la
++ * successiva.  DEFAULT 0 (arena trattenuta, comportamento odierno): il
++ * ri-cudaHostAlloc dell'arena alla richiesta successiva ha un costo reale di
++ * page-locking (~GiB) sul percorso di decode-start, e tutte le baseline del
++ * ledger sono state misurate con arena persistente.  Con la contabilita'
++ * per-kind l'arena trattenuta ora e' DICHIARATA (arena_released=0 +
++ * [host-pin] kind=kv_arena), non piu' silenziosa: chi vuole l'headroom
++ * accende il flag e paga la ri-allocazione. */
++static int cuda_kv_arena_release_requested(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *env = getenv("DS4_CUDA_KV_ARENA_RELEASE");
++        cached = (env != NULL && strcmp(env, "1") == 0) ? 1 : 0;
++    }
++    return cached;
++}
++
+ static int cuda_kv_staged_restore_to_device(void) {
+     if (!ds4_gpu_staged_kv_gate_requested()) return 1;
+     std::lock_guard<std::mutex> lock(g_kv_staged_ring_mutex);
+     const int sticky =
+         g_kv_staged_sticky_off.load(std::memory_order_acquire) != 0;
++    const int release_arena = sticky || cuda_kv_arena_release_requested();
+     return cuda_kv_staged_restore_to_device_locked(
+-        sticky ? "sticky-off retry" : "request-end", sticky);
++        sticky ? "sticky-off retry" : "request-end", release_arena);
+ }
+ 
+ static int cuda_kv_staged_migrate_to_host(uint64_t *released_bytes) {
+@@ -21872,6 +22200,7 @@ static int cuda_kv_staged_migrate_to_host(uint64_t *released_bytes) {
+ 
+     if (!state.host_arena || state.host_bytes < arena_bytes) {
+         void *new_arena = NULL;
++        ds4_hostpin_tag(DS4_HOSTPIN_KIND_KV_ARENA); /* PINBUDGETFIX 06-ZC1 */
+         if (!cuda_ok(cudaHostAlloc(&new_arena,
+                                    (size_t)arena_bytes,
+                                    cudaHostAllocDefault),
+@@ -39252,6 +39581,10 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         char *transient_down = NULL;
+         cudaStream_t route_stream = NULL;
+         cudaEvent_t consumer_done_event = NULL;
++        /* PINBUDGETFIX 06-ZC2: discrimina il fallimento host-pin (staging a
++         * dimensione FISSA per route: ridurre cap non lo cura) dal fallimento
++         * VRAM (slab per-slot: ridurre cap lo cura). */
++        int host_pin_failed = 0;
+ #ifdef _WIN32
+         HANDLE route_io_qd_event[4] = {NULL, NULL, NULL, NULL};
+ #endif
+@@ -39292,6 +39625,7 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         if (err == cudaSuccess && gpu_routes) {
+             err = cudaHostAlloc((void **)&ready_host, sizeof(uint32_t),
+                                 cudaHostAllocMapped);
++            if (err != cudaSuccess) host_pin_failed = 1;
+         }
+         if (err == cudaSuccess && gpu_routes) {
+             err = cudaHostGetDevicePointer((void **)&device_ready, ready_host, 0);
+@@ -39299,6 +39633,7 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         if (err == cudaSuccess && gpu_routes) {
+             err = cudaHostAlloc((void **)&failed_host, sizeof(uint32_t),
+                                 cudaHostAllocMapped);
++            if (err != cudaSuccess) host_pin_failed = 1;
+         }
+         if (err == cudaSuccess && gpu_routes) {
+             err = cudaHostGetDevicePointer((void **)&device_failed, failed_host, 0);
+@@ -39306,6 +39641,7 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+         if (err == cudaSuccess && gpu_routes) {
+             err = cudaHostAlloc((void **)&request_host, sizeof(*request_host),
+                                 cudaHostAllocMapped);
++            if (err != cudaSuccess) host_pin_failed = 1;
+         }
+         if (err == cudaSuccess && gpu_routes) {
+             err = cudaHostGetDevicePointer((void **)&request_device, request_host, 0);
+@@ -39321,8 +39657,10 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             } else {
+                 const uint64_t packed_bytes =
+                     gate_plane_bytes * 2ull + down_plane_bytes;
++                ds4_hostpin_tag(DS4_HOSTPIN_KIND_ROUTE_STAGE);
+                 err = cudaHostAlloc((void **)&host_packed_base,
+                     (size_t)packed_bytes, cudaHostAllocDefault);
++                if (err != cudaSuccess) host_pin_failed = 1;
+             }
+             if (err == cudaSuccess) {
+                 host_gate = host_packed_base;
+@@ -39331,16 +39669,22 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             }
+         }
+         if (err == cudaSuccess && gpu_routes && !demand_packed_layout) {
++            ds4_hostpin_tag(DS4_HOSTPIN_KIND_ROUTE_STAGE);
+             err = cudaHostAlloc((void **)&host_gate,
+                 (size_t)CUDA_MOE_ROUTE_COUNT * gate_expert_bytes, cudaHostAllocDefault);
++            if (err != cudaSuccess) host_pin_failed = 1;
+         }
+         if (err == cudaSuccess && gpu_routes && !demand_packed_layout) {
++            ds4_hostpin_tag(DS4_HOSTPIN_KIND_ROUTE_STAGE);
+             err = cudaHostAlloc((void **)&host_up,
+                 (size_t)CUDA_MOE_ROUTE_COUNT * gate_expert_bytes, cudaHostAllocDefault);
++            if (err != cudaSuccess) host_pin_failed = 1;
+         }
+         if (err == cudaSuccess && gpu_routes && !demand_packed_layout) {
++            ds4_hostpin_tag(DS4_HOSTPIN_KIND_ROUTE_STAGE);
+             err = cudaHostAlloc((void **)&host_down,
+                 (size_t)CUDA_MOE_ROUTE_COUNT * down_expert_bytes, cudaHostAllocDefault);
++            if (err != cudaSuccess) host_pin_failed = 1;
+         }
+         if (err == cudaSuccess && tier_mode == CUDA_MOE_TIER_ENFORCE &&
+             demand_packed_layout) {
+@@ -39741,6 +40085,22 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             }
+         }
+ #endif
++        /* PINBUDGETFIX 06-ZC2: se ha fallito uno staging HOST (dimensione
++         * fissa su CUDA_MOE_ROUTE_COUNT, indipendente da cap), ridurre gli
++         * slot VRAM non puo' curarlo: il vecchio loop camminava fino a cap=0
++         * buttando l'intera cache residente per un fallimento host.  Qui si
++         * esce SUBITO senza shrink, dichiarando la risorsa giusta; il
++         * percorso routed prosegue in exact-streaming come per cap=0. */
++        if (host_pin_failed) {
++            fprintf(stderr,
++                    "ds4: CUDA resident expert cache allocation failed at %u "
++                    "slots: %s; host-pin staging (fixed-size) failed -> no "
++                    "slot shrink, cache disabled "
++                    "(hostpin_total_mib=%.1f)\n",
++                    cap, why,
++                    (double)ds4_hostpin_total_bytes_now() / 1048576.0);
++            break;
++        }
+         const uint32_t release = (cap + 9u) / 10u;
+         const uint32_t next = cap > release ? cap - release : 0;
+         fprintf(stderr,

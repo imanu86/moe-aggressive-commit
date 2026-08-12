@@ -1,0 +1,793 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -30566,7 +30566,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+     ds4_transport_request_end();
+ }
+ 
+-template <bool G73, bool G132 = false, bool SCOPED = false>
++template <bool G73, bool G132 = false, bool SCOPED = false, bool DOV = false>
+ static void *cuda_moe_route_worker(void *arg);
+ static os_thread_fn g_cuda_moe_route_worker_dispatch =
+     cuda_moe_route_worker<false>;
+@@ -36733,6 +36733,226 @@ static void cuda_moe_expert_cache_invalidate(const char *site) {
+     }
+ }
+ 
++/* =======================================================================
++ * DRAIN4 (DS4_CUDA_DRAIN_OVERLAP4=1, opt-in) — drain sovrapposto al compute.
++ *
++ * Il worker smette di drenare route_upload_stream in modo bloccante prima
++ * di pubblicare route_ready: registra un evento CUDA sull'upload stream
++ * (dopo l'ultimo publish) e il consumer accoda cudaStreamWaitEvent su
++ * stream 0 prima dei kernel che dereferenziano slot o route_ptrs in volo.
++ * Lo spigolo di visibilita' (I1) passa da host a device; la transazione
++ * slot LOADING->VALID (I2) diventa ottimistica ed e' legale perche' l'unico
++ * lettore (i kernel consumer) sta dietro il waitEvent e l'unico riciclatore
++ * (il worker alla generazione successiva) sta dietro il claim-gate, il cui
++ * done-event su stream 0 sta — in ordine di stream — DOPO il waitEvent e
++ * quindi prova transitivamente il completamento fisico degli upload (I3).
++ * Il registro dei trasporti non riceve batch non provati: sotto overlap il
++ * batch e' invalidato, versione minima dichiarata (I4).
++ *
++ * Forma: quarto parametro di template DOV su route worker / enforce /
++ * finish / submit / launch_impl, selezionato UNA VOLTA in
++ * cuda_g73_route_dispatch_init come G132 e SCOPED.  Ogni riga nuova sta in
++ * `if constexpr (DOV)`: nelle istanze false il codice non esiste nel
++ * percorso compilato.  Lo stato vive in QUESTO sidecar globale, mai dentro
++ * cuda_moe_expert_cache (lezione dei due tentativi morti: niente slittamenti
++ * di layout condiviso).  Scrittori: solo il thread worker (arm/retire) e i
++ * campi consumer_* solo il thread di decode; il consumer legge il resto con
++ * acquire.  Zero-inizializzato a memoria statica come g_workerprof_c.
++ * ======================================================================= */
++struct cuda_moe_drain_overlap4_state {
++    /* Un evento per parita' di generazione: il riuso della stessa parita'
++     * (N e N+2) e' serializzato dal claim-gate, quindi il record di N+2 non
++     * puo' precedere l'esecuzione del waitEvent di N. */
++    cudaEvent_t ready_event[2];
++    int events_created;
++    int transport_note_emitted;
++    /* Generazione armata (0 = niente in volo), pubblicata con release dopo
++     * i timestamp; complete_ns==0 con armed!=0 significa overlap ancora
++     * outstanding. */
++    std::atomic<uint64_t> armed_generation;
++    std::atomic<uint64_t> armed_ns;
++    std::atomic<uint64_t> complete_ns;
++    /* Solo thread di decode: finestra della sync del resolver usata per
++     * gpu_stall_on_drain_ms. */
++    uint64_t consumer_sync_started_ns;
++};
++static cuda_moe_drain_overlap4_state g_moe_drain_overlap4;
++
++static int cuda_moe_drain_overlap4_requested(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *env = getenv("DS4_CUDA_DRAIN_OVERLAP4");
++        cached = env && strcmp(env, "1") == 0;
++    }
++    return cached;
++}
++
++static int cuda_moe_drain_overlap4_events_ready(void) {
++    return g_moe_drain_overlap4.events_created &&
++        g_moe_drain_overlap4.ready_event[0] &&
++        g_moe_drain_overlap4.ready_event[1];
++}
++
++/* Creazione SOLO a flag acceso, dalla prepare (come drain2 righe 107-113,
++ * la parte giudicata giusta).  Fallimento = niente eventi = ogni arm
++ * ricade sul drain bloccante; la prepare non viene bocciata. */
++static cudaError_t cuda_moe_drain_overlap4_events_create(void) {
++    if (g_moe_drain_overlap4.events_created) return cudaSuccess;
++    for (uint32_t parity = 0; parity < 2u; parity++) {
++        const cudaError_t event_error = cudaEventCreateWithFlags(
++            &g_moe_drain_overlap4.ready_event[parity],
++            cudaEventDisableTiming);
++        if (event_error != cudaSuccess) {
++            for (uint32_t undo = 0; undo < parity; undo++) {
++                (void)cudaEventDestroy(
++                    g_moe_drain_overlap4.ready_event[undo]);
++                g_moe_drain_overlap4.ready_event[undo] = NULL;
++            }
++            g_moe_drain_overlap4.ready_event[parity] = NULL;
++            return event_error;
++        }
++    }
++    g_moe_drain_overlap4.events_created = 1;
++    return cudaSuccess;
++}
++
++static void cuda_moe_drain_overlap4_events_destroy(void) {
++    for (uint32_t parity = 0; parity < 2u; parity++) {
++        if (g_moe_drain_overlap4.ready_event[parity]) {
++            (void)cudaEventDestroy(
++                g_moe_drain_overlap4.ready_event[parity]);
++            g_moe_drain_overlap4.ready_event[parity] = NULL;
++        }
++    }
++    g_moe_drain_overlap4.events_created = 0;
++    g_moe_drain_overlap4.armed_generation.store(
++        0u, std::memory_order_release);
++    g_moe_drain_overlap4.armed_ns.store(0u, std::memory_order_relaxed);
++    g_moe_drain_overlap4.complete_ns.store(0u, std::memory_order_relaxed);
++    g_moe_drain_overlap4.consumer_sync_started_ns = 0u;
++}
++
++static int cuda_moe_drain_overlap4_outstanding(void) {
++    return g_moe_drain_overlap4.armed_generation.load(
++               std::memory_order_acquire) != 0u &&
++        g_moe_drain_overlap4.complete_ns.load(
++            std::memory_order_acquire) == 0u;
++}
++
++/* Chiusura della finestra di overlap (thread worker).  credit=1 quando il
++ * completamento e' provato (stream query Success o claim-gate): alimenta
++ * drain_overlap_ms = quota di drain avvenuta sotto il compute. */
++static void cuda_moe_drain_overlap4_retire(int wprof, int credit_overlap) {
++    const uint64_t now_ns = ds4_workerprof_now_ns();
++    const uint64_t armed_ns = g_moe_drain_overlap4.armed_ns.load(
++        std::memory_order_relaxed);
++    g_moe_drain_overlap4.complete_ns.store(
++        now_ns, std::memory_order_release);
++    if (wprof && credit_overlap) {
++        ds4_workerprof_add(WP_DRAIN_OVERLAP_NS,
++                           ds4_workerprof_span_ns(armed_ns, now_ns));
++    }
++}
++
++/* Loop idle del worker: UNA cudaStreamQuery per iterazione finche' l'upload
++ * armato non risulta completo (contratto drain_overlap_ms di
++ * .microbench/drain3/ANALISI.md §4).  Errore != NotReady: NON si inghiotte
++ * e NON si azzera (§3.4) — restera' visibile al prossimo confine CUDA
++ * (record del done-event del consumer o cudaEventQuery del claim); qui si
++ * chiude solo la finestra di telemetria per non riloggare. */
++static void cuda_moe_drain_overlap4_poll(
++        cuda_moe_expert_cache *cache, int wprof) {
++    if (!cache || !cache->route_upload_stream) return;
++    if (g_moe_drain_overlap4.armed_generation.load(
++            std::memory_order_relaxed) == 0u ||
++        g_moe_drain_overlap4.complete_ns.load(
++            std::memory_order_relaxed) != 0u) {
++        return;
++    }
++    const cudaError_t status = cudaStreamQuery(cache->route_upload_stream);
++    if (status == cudaErrorNotReady) return;
++    if (status != cudaSuccess) {
++        fprintf(stderr,
++                "ds4: [drain-overlap4] result=upload-stream-error cuda=%s "
++                "(errore lasciato pendente: sara' intercettato al prossimo "
++                "confine done-event/claim)\n",
++                cudaGetErrorString(status));
++    }
++    cuda_moe_drain_overlap4_retire(wprof, status == cudaSuccess);
++}
++
++/* Al claim della generazione N+1 il gate ha appena esatto
++ * cudaEventQuery(route_consumer_done_event) == cudaSuccess: il done-event
++ * sta, in ordine di stream 0, dopo il waitEvent dell'upload di N, quindi
++ * l'upload e' fisicamente completo (I3).  Ritiro senza query aggiuntive. */
++static void cuda_moe_drain_overlap4_retire_at_claim(int wprof) {
++    if (g_moe_drain_overlap4.armed_generation.load(
++            std::memory_order_relaxed) == 0u ||
++        g_moe_drain_overlap4.complete_ns.load(
++            std::memory_order_relaxed) != 0u) {
++        return;
++    }
++    cuda_moe_drain_overlap4_retire(wprof, 1);
++}
++
++/* Fence del consumer (§3.1): se la generazione armata coincide con quella
++ * sottomessa, i kernel consumer accodati DOPO questo punto su stream 0 non
++ * possono eseguire prima del completamento fisico delle copie (I1).
++ * Ritorna 0 solo su errore del waitEvent: il chiamante fa fail-closed
++ * (cancel_and_join + invalidate) come i percorsi watchdog esistenti. */
++static int cuda_moe_drain_overlap4_consumer_fence(
++        cuda_moe_expert_cache *cache, uint32_t sequence, const char *site) {
++    if (!cache) return 1;
++    const uint64_t armed_generation =
++        g_moe_drain_overlap4.armed_generation.load(
++            std::memory_order_acquire);
++    if (armed_generation == 0u ||
++        armed_generation != cache->route_submitted_generation.load(
++            std::memory_order_acquire)) {
++        return 1;
++    }
++    cudaEvent_t ready_event =
++        g_moe_drain_overlap4.ready_event[armed_generation & 1u];
++    const cudaError_t wait_error = ready_event
++        ? cudaStreamWaitEvent(0, ready_event, 0)
++        : cudaErrorInvalidResourceHandle;
++    if (wait_error == cudaSuccess) return 1;
++    fprintf(stderr,
++            "ds4: [drain-overlap4] result=wait-event-failed seq=%u "
++            "generation=%llu site=%s cuda=%s\n",
++            sequence, (unsigned long long)armed_generation,
++            site ? site : "unknown", cudaGetErrorString(wait_error));
++    return 0;
++}
++
++/* Telemetria gpu_stall_on_drain_ms (thread di decode, stesso punto della
++ * sync del resolver gia' cronometrata in route_resolve_sync_seconds).
++ * enter campiona l'overlap outstanding all'ingresso; exit attribuisce la
++ * porzione [inizio sync, completamento osservato dal worker] — se il worker
++ * non ha ancora stampato il completamento, l'intera sync e' il limite
++ * superiore onesto, dichiarato. */
++static void cuda_moe_drain_overlap4_consumer_sync_enter(void) {
++    g_moe_drain_overlap4.consumer_sync_started_ns = 0u;
++    if (!cuda_moe_drain_overlap4_outstanding()) return;
++    g_moe_drain_overlap4.consumer_sync_started_ns = ds4_workerprof_now_ns();
++}
++
++static void cuda_moe_drain_overlap4_consumer_sync_exit(void) {
++    const uint64_t started_ns = g_moe_drain_overlap4.consumer_sync_started_ns;
++    if (started_ns == 0u) return;
++    g_moe_drain_overlap4.consumer_sync_started_ns = 0u;
++    if (!cuda_worker_profile_enabled()) return;
++    const uint64_t now_ns = ds4_workerprof_now_ns();
++    const uint64_t complete_ns = g_moe_drain_overlap4.complete_ns.load(
++        std::memory_order_acquire);
++    uint64_t stall_end_ns = now_ns;
++    if (complete_ns >= started_ns && complete_ns < stall_end_ns) {
++        stall_end_ns = complete_ns;
++    }
++    ds4_workerprof_add(WP_GPU_STALL_ON_DRAIN_NS,
++                       ds4_workerprof_span_ns(started_ns, stall_end_ns));
++}
++
+ static void cuda_moe_expert_cache_release(void) {
+     g_model_expert_cache_ready = 0;
+     if (g_moe_expert_cache.route_worker_safe_leaked.load(
+@@ -36758,6 +36978,10 @@ static void cuda_moe_expert_cache_release(void) {
+         (void)cudaEventDestroy(
+             g_moe_expert_cache.route_consumer_done_event);
+     }
++    /* DRAIN4: distruzione dopo la cudaStreamSynchronize dell'upload stream
++     * qui sopra — nessun evento puo' essere ancora in volo.  A flag spento
++     * events_created e' 0 e il ciclo di destroy non trova nulla. */
++    cuda_moe_drain_overlap4_events_destroy();
+ #ifdef _WIN32
+     for (uint32_t i = 0; i < 4u; i++) {
+         if (g_moe_expert_cache.route_io_qd_event[i]) {
+@@ -38386,6 +38610,25 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+             err = cudaEventCreateWithFlags(
+                 &consumer_done_event, cudaEventDisableTiming);
+         }
++        /* DRAIN4: eventi creati SOLO a flag acceso, alla prepare.  Un
++         * fallimento non boccia la prepare: senza eventi ogni arm ricade
++         * sul drain bloccante identico a oggi, e il log + drain_overlap_ms
++         * fermo a zero rendono la degradazione visibile nel protocollo. */
++        if (err == cudaSuccess && gpu_routes &&
++            cuda_moe_drain_overlap4_requested()) {
++            const cudaError_t overlap_event_error =
++                cuda_moe_drain_overlap4_events_create();
++            if (overlap_event_error != cudaSuccess) {
++                /* Errore di init, loggato qui sotto: si azzera lo stato
++                 * pendente perche' non contamini la prima cudaGetLastError
++                 * di un job. */
++                (void)cudaGetLastError();
++                fprintf(stderr,
++                        "ds4: [drain-overlap4] result=event-create-failed "
++                        "cuda=%s; overlap disattivato, drain bloccante\n",
++                        cudaGetErrorString(overlap_event_error));
++            }
++        }
+ #ifdef _WIN32
+         if (err == cudaSuccess && gpu_routes && route_io_qd_requested) {
+             for (uint32_t i = 0; i < route_io_qd_requested; i++) {
+@@ -39590,6 +39833,81 @@ static int cuda_moe_tiering_scoped_invalidate(
+     return 1;
+ }
+ 
++/* DRAIN4 — braccio armato: sostituisce la coppia [drain bloccante -> VALID]
++ * con [cudaEventRecord sull'upload stream -> commit ottimistico].
++ * Raggiungibile SOLO dalle istanze DOV=true.  Ritorna 1 se l'overlap e'
++ * armato (il chiamante salta il drain bloccante e invalida il batch del
++ * registro, I4); ritorna 0 su QUALUNQUE precondizione mancante o fallimento
++ * del record, e il chiamante esegue il percorso bloccante attuale riga per
++ * riga — l'eventuale errore CUDA pendente NON viene azzerato qui (Peek, non
++ * Get), cosi' la cudaGetLastError del percorso bloccante lo attribuisce
++ * esattamente come oggi (niente errori inghiottiti).
++ *
++ * reservations/g133_epoch: non-NULL solo nel percorso ENFORCE (commit del
++ * tiering sul confine ottimistico, I2); il percorso legacy non-ENFORCE
++ * passa NULL e riceve solo la promozione LOADING->VALID degli slot admitted. */
++static int cuda_moe_drain_overlap4_arm(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request &request,
++        const uint32_t *admitted,
++        const cuda_moe_vram_promotion_reservation *reservations,
++        uint32_t admitted_count,
++        const ds4_gpu_g133_epoch *g133_epoch) {
++    if (!cache || !cache->route_upload_stream ||
++        request.host_generation == 0u) {
++        return 0;
++    }
++    /* §3.3 del disegno: mai armare sotto la policy condivisa G133 (Q1 /
++     * SSD-wrap): quei percorsi leggono route_completed_* ai confini
++     * (request-boundary, q1-0-mixed-entry, ...) come prova di quiescenza
++     * del lavoro di rotta, e con un overlap armato la publicazione di
++     * completed non implicherebbe piu' upload drenato. */
++    if (cuda_g133_shared_policy_active()) return 0;
++    if (!cuda_moe_drain_overlap4_events_ready()) return 0;
++    if (cudaPeekAtLastError() != cudaSuccess) return 0;
++    cudaEvent_t ready_event =
++        g_moe_drain_overlap4.ready_event[request.host_generation & 1u];
++    const cudaError_t record_error =
++        cudaEventRecord(ready_event, cache->route_upload_stream);
++    if (record_error != cudaSuccess) {
++        fprintf(stderr,
++                "ds4: [drain-overlap4] result=record-failed seq=%u layer=%u "
++                "cuda=%s; ricado sul drain bloccante\n",
++                request.sequence, request.layer_index,
++                cudaGetErrorString(record_error));
++        return 0;
++    }
++    /* Commit ottimistico (I2): nessun attore puo' osservare questi VALID
++     * con copie in volo — i kernel consumer stanno dietro il waitEvent del
++     * consumer, il riciclo degli slot dietro il claim-gate. */
++    for (uint32_t i = 0; i < admitted_count; i++) {
++        cache->slots[admitted[i]].state = CUDA_MOE_CACHE_VALID;
++    }
++    if (reservations && g133_epoch) {
++        cuda_moe_tiering_commit_vram_reservations(
++            cache, reservations, admitted_count, *g133_epoch);
++    }
++    /* I4, versione minima DICHIARATA: senza prova di completamento al
++     * finish il batch H2D va invalidato, mai contabilizzato.  Una riga di
++     * dichiarazione una-tantum accanto al registro, mai taciuta. */
++    if (!g_moe_drain_overlap4.transport_note_emitted &&
++        cuda_transport_ledger_enabled()) {
++        g_moe_drain_overlap4.transport_note_emitted = 1;
++        fprintf(stderr,
++                "ds4: [transport] drain_overlap4=minimal: i batch H2D "
++                "sotto overlap sono invalidati (ledger_complete=0 per "
++                "disegno)\n");
++    }
++    /* Pubblicazione del sidecar: prima i timestamp (relaxed), poi la
++     * generazione (release) — il consumer fa acquire sulla generazione. */
++    g_moe_drain_overlap4.complete_ns.store(0u, std::memory_order_relaxed);
++    g_moe_drain_overlap4.armed_ns.store(
++        ds4_workerprof_now_ns(), std::memory_order_relaxed);
++    g_moe_drain_overlap4.armed_generation.store(
++        request.host_generation, std::memory_order_release);
++    return 1;
++}
++
+ template <bool SCOPED>
+ static int cuda_moe_tiering_finish_vram_reservations(
+         cuda_moe_expert_cache *cache,
+@@ -40080,7 +40398,7 @@ static int cuda_g132_general_plan_admit(
+     return 1;
+ }
+ 
+-template <bool G73, bool G132 = false, bool SCOPED = false>
++template <bool G73, bool G132 = false, bool SCOPED = false, bool DOV = false>
+ static int cuda_moe_tiering_enforce_request(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+@@ -41171,10 +41489,35 @@ static int cuda_moe_tiering_enforce_request(
+         ds4_workerprof_add_ms(wprof, WP_PUBLISH_NS, flush_ms);
+     }
+     const double drain_started = cuda_moe_zerocopy_now_ms();
+-    const int transfers_ok = cuda_moe_tiering_finish_vram_reservations<SCOPED>(
+-        cache, &request, admitted, promotion_reservations, admitted_count,
+-        request.g133_epoch, ok, request.absolute_deadline);
+-    ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
++    int transfers_ok;
++    if constexpr (DOV) {
++        /* DRAIN4 §3.1: al posto della coppia [drain bloccante -> VALID ->
++         * ready], record dell'evento dopo l'ultimo publish (i flush qui
++         * sopra) e commit ottimistico.  Su qualunque fallimento dell'arm il
++         * ramo else e' il percorso bloccante attuale, riga per riga.  Il
++         * drain anticipato pre-SSD piu' in alto resta bloccante (I2: e' un
++         * rollback, mai ottimistico).  drain_ms misura ora il costo
++         * dell'arm (~us): la quota spostata sotto il compute e' visibile in
++         * drain_overlap_ms. */
++        if (ok && cuda_moe_drain_overlap4_arm(
++                cache, request, admitted, promotion_reservations,
++                admitted_count, &request.g133_epoch)) {
++            transfers_ok = 1;
++            ds4_transport_h2d_batch_invalidate(&transport_batch);
++            ds4_transport_h2d_batch_finish(&transport_batch, 1);
++        } else {
++            transfers_ok = cuda_moe_tiering_finish_vram_reservations<SCOPED>(
++                cache, &request, admitted, promotion_reservations,
++                admitted_count, request.g133_epoch, ok,
++                request.absolute_deadline);
++            ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
++        }
++    } else {
++        transfers_ok = cuda_moe_tiering_finish_vram_reservations<SCOPED>(
++            cache, &request, admitted, promotion_reservations, admitted_count,
++            request.g133_epoch, ok, request.absolute_deadline);
++        ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
++    }
+     {
+         const double drain_ms = cuda_moe_zerocopy_now_ms() - drain_started;
+         g_moe_zerocopy.t_drain_ms += drain_ms;
+@@ -41222,7 +41565,7 @@ static int cuda_moe_tiering_enforce_request(
+     return ok;
+ }
+ 
+-template <bool G73, bool G132, bool SCOPED>
++template <bool G73, bool G132, bool SCOPED, bool DOV>
+ static void *cuda_moe_route_worker(void *arg) {
+     cuda_moe_expert_cache *cache = (cuda_moe_expert_cache *)arg;
+     if (!cache || cudaSetDevice(cache->route_device) != cudaSuccess) {
+@@ -41262,6 +41605,12 @@ static void *cuda_moe_route_worker(void *arg) {
+     while (!cache->route_stop.load(std::memory_order_acquire)) {
+         const uint32_t sequence = cache->route_request_host->sequence;
+         if (sequence == 0u || sequence == consumed_sequence) {
++            if constexpr (DOV) {
++                /* DRAIN4: con un overlap outstanding, una cudaStreamQuery
++                 * per iterazione idle chiude la finestra e alimenta
++                 * drain_overlap_ms.  Senza overlap: un load relaxed. */
++                cuda_moe_drain_overlap4_poll(cache, wprof);
++            }
+             if (pickup_spin_us != 0u) {
+                 const int token_active = g_workerprof_token_active.load(
+                     std::memory_order_acquire);
+@@ -41315,6 +41664,13 @@ static void *cuda_moe_route_worker(void *arg) {
+                 cache, sequence, request.host_generation)) {
+             break;
+         }
++        if constexpr (DOV) {
++            /* DRAIN4: il claim appena riuscito prova (done-event eseguito su
++             * stream 0, dietro il waitEvent del consumer) che l'upload della
++             * generazione precedente e' fisicamente completo: ritira un
++             * eventuale overlap che il loop idle non ha visto chiudersi. */
++            cuda_moe_drain_overlap4_retire_at_claim(wprof);
++        }
+         /* sequence is the GPU->host publication word: the resolver writes it
+          * only after __threadfence_system().  host_generation is ordinary
+          * request payload and may become visible while sequence still names
+@@ -41550,7 +41906,7 @@ static void *cuda_moe_route_worker(void *arg) {
+         cuda_moe_route_publish_batch publish_batch = {};
+         ds4_transport_h2d_batch transport_batch = {};
+         if (ok && g_moe_tiering.mode == CUDA_MOE_TIER_ENFORCE) {
+-            ok = cuda_moe_tiering_enforce_request<G73, G132, SCOPED>(
++            ok = cuda_moe_tiering_enforce_request<G73, G132, SCOPED, DOV>(
+                 cache, request, claimed.data());
+             if (cache->route_worker_safe_leaked.load(
+                     std::memory_order_acquire)) return NULL;
+@@ -41859,6 +42215,68 @@ static void *cuda_moe_route_worker(void *arg) {
+                 ok = 0;
+             }
+             ds4_workerprof_stop(wprof, WP_PUBLISH_NS, wprof_flush);
++            if constexpr (DOV) {
++                /* DRAIN4 §3.1, gemello non-ENFORCE: arm dopo l'ultimo
++                 * publish (il flush qui sopra).  Se l'arm riesce: VALID
++                 * ottimistico fatto dall'arm, batch del registro invalidato
++                 * (I4), niente sync.  Altrimenti il ramo else e' il blocco
++                 * bloccante attuale, copiato riga per riga (il ramo
++                 * else esterno dell'istanza DOV=false resta il testo
++                 * originale, token-identico). */
++                if (ok && cuda_moe_drain_overlap4_arm(
++                        cache, request, admitted, NULL,
++                        admitted_count, NULL)) {
++                    ds4_transport_h2d_batch_invalidate(&transport_batch);
++                    ds4_transport_h2d_batch_finish(&transport_batch, 1);
++                } else {
++                    const double h2d_sync_started =
++                        nested_profile_request ? cuda_wall_sec() : 0.0;
++                    const uint64_t trace_upload_drain_started =
++                        cuda_decode_trace_request_qpc(request);
++                    const uint64_t wprof_drain = ds4_workerprof_start(wprof);
++                    const cudaError_t pending_error = cudaGetLastError();
++                    const cudaError_t sync_error =
++                        cudaStreamSynchronize(cache->route_upload_stream);
++                    ds4_workerprof_stop(wprof, WP_DRAIN_NS, wprof_drain);
++                    cuda_decode_trace_note_upload_drain(
++                        &request, trace_upload_drain_started);
++                    if (nested_profile_request) {
++                        g_nested_residual.profile_h2d_sync_calls++;
++                        g_nested_residual.profile_h2d_sync_seconds +=
++                            cuda_wall_sec() - h2d_sync_started;
++                    }
++                    ds4_transport_h2d_batch_finish(
++                        &transport_batch,
++                        pending_error == cudaSuccess &&
++                            sync_error == cudaSuccess);
++                    if (pending_error != cudaSuccess ||
++                        sync_error != cudaSuccess) {
++                        failure_cuda_error = pending_error != cudaSuccess ?
++                            pending_error : sync_error;
++                        failure_reason = pending_error != cudaSuccess ?
++                            "pending-cuda-error" : "upload-sync";
++                        ok = 0;
++                    }
++                    if (ok) {
++                        for (uint32_t i = 0; i < admitted_count; i++) {
++                            cache->slots[admitted[i]].state =
++                                CUDA_MOE_CACHE_VALID;
++                        }
++                    } else if (admitted_count > 0u) {
++                        for (uint32_t i = 0; i < admitted_count; i++) {
++                            const cuda_moe_cache_slot &entry =
++                                cache->slots[admitted[i]];
++                            if (entry.layer_index < CUDA_MOE_LAYER_COUNT &&
++                                entry.expert_id < 256u) {
++                                cuda_moe_tiering_demote_cache_entry(
++                                    entry.layer_index, entry.expert_id);
++                            }
++                        }
++                        cuda_moe_expert_cache_invalidate(
++                            "worker-legacy-failure");
++                    }
++                }
++            } else {
+             const double h2d_sync_started =
+                 nested_profile_request ? cuda_wall_sec() : 0.0;
+             const uint64_t trace_upload_drain_started =
+@@ -41901,6 +42319,7 @@ static void *cuda_moe_route_worker(void *arg) {
+                 }
+                 cuda_moe_expert_cache_invalidate("worker-legacy-failure");
+             }
++            }
+         }
+         cache->route_worker_jobs++;
+         if (g_moe_zerocopy.log_every_jobs != 0ull &&
+@@ -46484,7 +46903,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_begin(
+     return cache;
+ }
+ 
+-template <bool G73>
++template <bool G73, bool DOV = false>
+ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+         cuda_moe_expert_cache *cache,
+         uint32_t sequence,
+@@ -46511,6 +46930,14 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+         cache->route_default_sync_calls++;
+         trace_stream_waited = 1;
+         const double resolve_started = cuda_wall_sec();
++        if constexpr (DOV) {
++            /* DRAIN4: questa sync (gia' cronometrata in
++             * route_resolve_sync_seconds) e' il punto dove uno stallo GPU
++             * attribuibile al drain spostato diventa attesa host: con il
++             * fence, stream 0 completa solo dopo l'upload della generazione
++             * precedente.  Campionamento host-side, nessun evento CUDA. */
++            cuda_moe_drain_overlap4_consumer_sync_enter();
++        }
+         /* Preserve the original OFF synchronization exactly. Only the G73
+          * specialization polls to its serving deadline and falls through. */
+         const cudaError_t resolve_err = G73
+@@ -46519,6 +46946,9 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                   "route-resolver-default")
+             : cudaStreamSynchronize(0);
+         const double resolve_seconds = cuda_wall_sec() - resolve_started;
++        if constexpr (DOV) {
++            cuda_moe_drain_overlap4_consumer_sync_exit();
++        }
+         cache->route_resolve_sync_seconds += resolve_seconds;
+         if (nested_profile) {
+             g_nested_residual.profile_route_resolve_sync_calls++;
+@@ -46736,6 +47166,25 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+         cuda_moe_expert_cache_invalidate("consumer-route-failure");
+         return NULL;
+     }
++    if constexpr (DOV) {
++        /* DRAIN4 §3.1: fence dopo l'uscita dallo spin ready e il check di
++         * route_failed_host.  Nei rami split (split_mode 1/2) il fence e'
++         * rimandato al ramo split del launch impl — DOPO il kernel di
++         * ownership del fix Fable e PRIMA della passata miss (§3.2), cosi'
++         * il compute hit e il kernel Fable eseguono sotto le copie residue.
++         * Su errore del waitEvent: fail-closed come i watchdog esistenti
++         * (cancel_and_join quiesce l'upload stream prima dell'invalidate:
++         * mai invalidare con copie in volo). */
++        if (split_mode == 0 &&
++            !cuda_moe_drain_overlap4_consumer_fence(
++                cache, sequence, "finish-nonsplit")) {
++            if (cuda_moe_route_worker_cancel_and_join(
++                    cache, sequence, cuda_wall_sec())) {
++                cuda_moe_expert_cache_invalidate("consumer-dov4-wait-event");
++            }
++            return NULL;
++        }
++    }
+     const cuda_moe_route_request *request = cache->route_request_host;
+     if (request && request->sequence == sequence &&
+         request->host_generation ==
+@@ -46776,6 +47225,23 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+             fprintf(stderr,
+                     "ds4: CUDA fused split telemetry contract failed seq=%u\n",
+                     sequence);
++            if constexpr (DOV) {
++                /* DRAIN4, chiusura difensiva di un buco che il disegno non
++                 * copre: questo NULL arriva DOPO ready con worker sano e
++                 * potenzialmente armato, e con G73 il chiamante prosegue il
++                 * layer col replay esatto e registra il done-event.  Senza
++                 * fence il done-event non proverebbe piu' il completamento
++                 * degli upload (I3).  Fence best-effort; su errore,
++                 * quiesce+invalidate come i watchdog. */
++                if (!cuda_moe_drain_overlap4_consumer_fence(
++                        cache, sequence, "fused-telemetry-contract")) {
++                    if (cuda_moe_route_worker_cancel_and_join(
++                            cache, sequence, cuda_wall_sec())) {
++                        cuda_moe_expert_cache_invalidate(
++                            "consumer-dov4-wait-event");
++                    }
++                }
++            }
+             return NULL;
+         }
+         const uint64_t misses = request->miss_count;
+@@ -46790,7 +47256,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+     return cache;
+ }
+ 
+-template <bool G73, bool G132 = false>
++template <bool G73, bool G132 = false, bool DOV = false>
+ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_submit(
+         uint32_t layer_index,
+         uint64_t gate_offset,
+@@ -46812,7 +47278,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_submit(
+         gate_expert_bytes, down_expert_bytes, expert_in_dim,
+         selected, weights, n_expert, n_tokens, spex_queue, g133_epoch,
+         absolute_deadline, 0u, &sequence);
+-    return cuda_moe_gpu_resident_routes_finish<G73>(
++    return cuda_moe_gpu_resident_routes_finish<G73, DOV>(
+         cache, sequence, layer_index, 0, 0u, absolute_deadline);
+ }
+ 
+@@ -46889,7 +47355,7 @@ static int cuda_g73_copy_selected_from_route_mailbox(
+     return 1;
+ }
+ 
+-template <bool G73, bool G132 = false>
++template <bool G73, bool G132 = false, bool DOV = false>
+ static int routed_moe_launch_impl(
+         ds4_gpu_tensor *out,
+         ds4_gpu_tensor *gate,
+@@ -47108,7 +47574,7 @@ static int routed_moe_launch_impl(
+             use_split_fused = gpu_route_cache != NULL && split_fused_requested;
+             use_split_hit_miss = gpu_route_cache != NULL && split_hit_miss_requested;
+         } else {
+-            gpu_route_cache = cuda_moe_gpu_resident_routes_submit<G73, G132>(
++            gpu_route_cache = cuda_moe_gpu_resident_routes_submit<G73, G132, DOV>(
+                 layer_index,
+                 gate_offset, up_offset, down_offset,
+                 gate_expert_bytes, down_expert_bytes,
+@@ -48332,7 +48798,7 @@ static int routed_moe_launch_impl(
+ 
+             {
+                 cuda_moe_expert_cache *finished_cache =
+-                    cuda_moe_gpu_resident_routes_finish<G73>(
++                    cuda_moe_gpu_resident_routes_finish<G73, DOV>(
+                         gpu_route_cache, gpu_route_sequence, layer_index,
+                         use_split_fused ? 2 : 1, out_dim, route_io_deadline);
+                 if (finished_cache) {
+@@ -48455,6 +48921,37 @@ static int routed_moe_launch_impl(
+                 }
+             }
+ 
++            if constexpr (DOV) {
++                /* DRAIN4 §3.2: il fence del ramo split sta QUI — dopo la
++                 * passata hit (gia' accodata prima del finish) e dopo il
++                 * kernel di ownership del fix Fable (scrive hit-mask e
++                 * split_down, stato per-richiesta gia' in VRAM: non legge
++                 * gli slot in volo e resta sotto le copie), e PRIMA della
++                 * passata miss, i cui kernel dereferenziano route_ptrs e
++                 * slot in volo.  Nel replay G73 non c'e' nulla di armato
++                 * per questa generazione (il worker ha fallito o e' stato
++                 * cancellato con quiesce): fence non necessario.  Su errore
++                 * del waitEvent: lane cancellata se attiva, poi fail-closed
++                 * come i watchdog (quiesce prima dell'invalidate). */
++                if (ok && !g73_split_replay &&
++                    !cuda_moe_drain_overlap4_consumer_fence(
++                        gpu_route_cache, gpu_route_sequence,
++                        "split-before-miss-pass")) {
++                    if constexpr (G132) {
++                        if (g132_general_active) {
++                            cuda_g132_cpu_lane_cancel_dispatch();
++                        }
++                    }
++                    if (cuda_moe_route_worker_cancel_and_join(
++                            gpu_route_cache, gpu_route_sequence,
++                            cuda_wall_sec())) {
++                        cuda_moe_expert_cache_invalidate(
++                            "consumer-dov4-wait-event-split");
++                    }
++                    return 0;
++                }
++            }
++
+             if (ok && g73_split_replay) {
+                 /* Full exact replay over the terminal route pointers: every
+                  * route recomputed from the terminal slots, then summed. */
+@@ -49144,34 +49641,76 @@ static void cuda_g73_route_dispatch_init(void) {
+      * il codice del rollback mirato non esiste nel compilato attivo. */
+     const char *scoped_env = getenv("DS4_CUDA_SCOPED_INVALIDATE");
+     const int scoped_enabled = scoped_env && strcmp(scoped_env, "1") == 0;
++    /* DRAIN4: stessa cucitura — una getenv (cachata) a init, mai sul
++     * percorso caldo.  A flag spento le specializzazioni selezionate sono
++     * le STESSE istanze di oggi (DOV=false di default): il codice
++     * dell'overlap non esiste nel compilato attivo.  Il dispatch MTP piu'
++     * sotto resta cablato su <false> (DOV=false), e i percorsi Q1/IQ1 non
++     * passano di qui: restano sulle istanze non-overlap (§3.3). */
++    const int dov_enabled = cuda_moe_drain_overlap4_requested();
++    if (dov_enabled) {
++        fprintf(stderr,
++                "ds4: [drain-overlap4] dispatch=armed g73=%d general=%d "
++                "scoped=%d\n",
++                g_cuda_g73_open_enabled ? 1 : 0, general_enabled,
++                scoped_enabled);
++    }
+     if (g_cuda_g73_open_enabled && general_enabled) {
+-        g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true, false>;
+-        g_cuda_routed_moe_general_launch_dispatch =
+-            &routed_moe_launch_impl<true, true>;
++        g_cuda_routed_moe_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<true, false, true>
++            : &routed_moe_launch_impl<true, false>;
++        g_cuda_routed_moe_general_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<true, true, true>
++            : &routed_moe_launch_impl<true, true>;
+         g_cuda_moe_route_worker_dispatch = scoped_enabled
+-            ? cuda_moe_route_worker<true, true, true>
+-            : cuda_moe_route_worker<true, true>;
++            ? (dov_enabled
++                ? cuda_moe_route_worker<true, true, true, true>
++                : cuda_moe_route_worker<true, true, true>)
++            : (dov_enabled
++                ? cuda_moe_route_worker<true, true, false, true>
++                : cuda_moe_route_worker<true, true>);
+     } else if (g_cuda_g73_open_enabled) {
+-        g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true>;
+-        g_cuda_routed_moe_general_launch_dispatch =
+-            &routed_moe_launch_impl<true, false>;
++        g_cuda_routed_moe_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<true, false, true>
++            : &routed_moe_launch_impl<true>;
++        g_cuda_routed_moe_general_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<true, false, true>
++            : &routed_moe_launch_impl<true, false>;
+         g_cuda_moe_route_worker_dispatch = scoped_enabled
+-            ? cuda_moe_route_worker<true, false, true>
+-            : cuda_moe_route_worker<true, false>;
++            ? (dov_enabled
++                ? cuda_moe_route_worker<true, false, true, true>
++                : cuda_moe_route_worker<true, false, true>)
++            : (dov_enabled
++                ? cuda_moe_route_worker<true, false, false, true>
++                : cuda_moe_route_worker<true, false>);
+     } else if (general_enabled) {
+-        g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false, false>;
+-        g_cuda_routed_moe_general_launch_dispatch =
+-            &routed_moe_launch_impl<false, true>;
++        g_cuda_routed_moe_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<false, false, true>
++            : &routed_moe_launch_impl<false, false>;
++        g_cuda_routed_moe_general_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<false, true, true>
++            : &routed_moe_launch_impl<false, true>;
+         g_cuda_moe_route_worker_dispatch = scoped_enabled
+-            ? cuda_moe_route_worker<false, true, true>
+-            : cuda_moe_route_worker<false, true>;
++            ? (dov_enabled
++                ? cuda_moe_route_worker<false, true, true, true>
++                : cuda_moe_route_worker<false, true, true>)
++            : (dov_enabled
++                ? cuda_moe_route_worker<false, true, false, true>
++                : cuda_moe_route_worker<false, true>);
+     } else {
+-        g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false>;
+-        g_cuda_routed_moe_general_launch_dispatch =
+-            &routed_moe_launch_impl<false, false>;
++        g_cuda_routed_moe_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<false, false, true>
++            : &routed_moe_launch_impl<false>;
++        g_cuda_routed_moe_general_launch_dispatch = dov_enabled
++            ? &routed_moe_launch_impl<false, false, true>
++            : &routed_moe_launch_impl<false, false>;
+         g_cuda_moe_route_worker_dispatch = scoped_enabled
+-            ? cuda_moe_route_worker<false, false, true>
+-            : cuda_moe_route_worker<false, false>;
++            ? (dov_enabled
++                ? cuda_moe_route_worker<false, false, true, true>
++                : cuda_moe_route_worker<false, false, true>)
++            : (dov_enabled
++                ? cuda_moe_route_worker<false, false, false, true>
++                : cuda_moe_route_worker<false, false>);
+     }
+ }
+ 

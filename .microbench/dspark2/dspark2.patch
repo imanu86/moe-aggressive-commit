@@ -1,0 +1,1004 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -6778,6 +6778,43 @@ typedef struct {
+     double other_ms;
+ } ds4_mtp_cpu_telemetry;
+ 
++/* DSPARK-2: parallel dispatch for the NextN CPU draft cycle.
++ *
++ * The draft cycle runs on a dedicated drafter thread while the CUDA decode
++ * thread may still be submitting to the process-global pool, whose single
++ * mutable fn/ctx/done slot supports one submitter (see the G132 lane comment
++ * above ds4_g132_worker_main).  A drafter thread therefore (a) pins its own
++ * thread-local g_parallel_depth to 1 so every existing helper it reuses runs
++ * inline instead of submitting to g_pool, and (b) routes the heavy kernels it
++ * owns (routed Q4_K and the vocabulary head) to the independent G132 lane
++ * pool through this shim.  The G132 submit slot is single-submitter as well,
++ * so one mutex serializes drafter submissions; the backbone lane itself is
++ * mutually exclusive with the drafter (enforced at engine open).  On any
++ * other thread the shim is byte-identical to ds4_parallel_for. */
++static _Thread_local bool g_nextn_drafter_thread;
++static os_once_t g_nextn_submit_once = OS_ONCE_INIT;
++static os_mutex_t g_nextn_submit_mu;
++
++static void ds4_nextn_submit_mutex_init(void) {
++    if (os_mutex_init(&g_nextn_submit_mu) != 0) {
++        ds4_die("NextN drafter submit mutex init failed");
++    }
++}
++
++static void ds4_nextn_parallel_for(
++        uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
++    if (g_nextn_drafter_thread) {
++        os_once(&g_nextn_submit_once, ds4_nextn_submit_mutex_init);
++        os_mutex_lock(&g_nextn_submit_mu);
++        const int ok = ds4_g132_parallel_for(n_rows, fn, ctx);
++        os_mutex_unlock(&g_nextn_submit_mu);
++        if (ok) return;
++        fn(ctx, 0, n_rows);
++        return;
++    }
++    ds4_parallel_for(n_rows, fn, ctx);
++}
++
+ typedef struct {
+     float *out0;
+     float *out1;
+@@ -6838,7 +6875,7 @@ static DS4_MAYBE_UNUSED void matvec_q4_k_expert_pair_prequant(
+         .row_bytes0 = row0,
+         .row_bytes1 = row1,
+     };
+-    ds4_parallel_for(out0_dim, matvec_q4_k_pair_worker, &ctx);
++    ds4_nextn_parallel_for(out0_dim, matvec_q4_k_pair_worker, &ctx);
+ }
+ 
+ typedef struct {
+@@ -6926,7 +6963,7 @@ static void matvec_q4_k_experts_mid_prequant(
+     if (ctx.in_dim % QK_K != 0) {
+         ds4_die("Q4_K routed gate/up row is not QK_K aligned");
+     }
+-    ds4_parallel_for(
++    ds4_nextn_parallel_for(
+         (uint64_t)n_expert * ctx.out_dim,
+         matvec_q4_k_mid_worker,
+         &ctx);
+@@ -6996,7 +7033,7 @@ static void matvec_q4_k_experts_accum_prequant(
+     for (int i = 0; i < n_expert; i++) {
+         ctx.xq[i] = xq + (uint64_t)i * n_blocks;
+     }
+-    ds4_parallel_for(out_dim, matvec_q4_k_accum_worker, &ctx);
++    ds4_nextn_parallel_for(out_dim, matvec_q4_k_accum_worker, &ctx);
+ }
+ 
+ /* The MTP router is learned even though the GPU path uses logical layer 1 to
+@@ -9804,6 +9841,266 @@ static DS4_MAYBE_UNUSED void ds4_mtp_cpu_forward_nextn_q4_k(
+     if (tm->other_ms < 0.0) tm->other_ms = 0.0;
+ }
+ 
++/* =========================================================================
++ * DSPARK-2 (pieces 3-5): asynchronous NextN CPU draft cycle.
++ * =========================================================================
++ *
++ * One drafter thread per session runs the pieces 1-2 forward as a k-step
++ * autoregressive chain.  The pipeline hides the chain under the target's own
++ * work: at the end of a speculative cycle the next true token is already
++ * determined (the verify path only engages at temperature<=0, where
++ * ds4_session_sample is sample_argmax), so the chain for the NEXT cycle is
++ * kicked immediately with (backbone HC of the committed frontier, predicted
++ * next token) and runs while the server streams text and the GPU decodes
++ * that token.  The next cycle then takes whatever drafts are ready - never
++ * waiting - and feeds them to the existing k<=16 batch verifier unchanged.
++ *
++ * Chain conditioning matches the existing GPU recursion contract
++ * (metal_graph_eval_mtp_draft_from_hc): each step consumes the token at
++ * position p with the previous step's HC state and RoPE position p, and
++ * emits the draft for p+1.  The first step anchors on the backbone HC of the
++ * last committed position - the "token corrente + hidden dell'ultimo
++ * forward" pairing of DSPARK.md sez. 3 - which is one position staler than
++ * the GPU probe's same-position anchor; the acceptance telemetry below is
++ * what measures the difference.
++ *
++ * The CPU MTP KV window (sliding, kv_cache_push_raw) must stay contiguous:
++ * a draft is deliverable only once the KV row of its own commit position has
++ * been written by the following step (row-holdback), and the chain runs one
++ * extra row-fill step past k, so a fully accepted prefix never leaves a hole
++ * in the window.  An EOS draft is terminal for the request and is exempt.
++ * Rows past the committed prefix are dropped by the worker itself at the
++ * next job intake (n_raw decrement); discontinuities (rewind, invalidate,
++ * missed prediction, prefill jumps) force a window reset.
++ */
++
++enum {
++    DS4_NEXTN_DRAFT_MAX = 16,       /* batch verifier contract: drafts[16] */
++    DS4_NEXTN_DRAFT_K_DEFAULT = 7,
++};
++
++enum {
++    DS4_NEXTN_ANCHOR_NONE = 0,      /* telemetry only, no next kick */
++    DS4_NEXTN_ANCHOR_CUR_HC = 1,    /* g->cur_hc after a one-token decode */
++    DS4_NEXTN_ANCHOR_BATCH_ROW = 2, /* g->batch_cur_hc row after batch verify */
++};
++
++typedef struct ds4_nextn_drafter {
++    /* Immutable after create. */
++    const ds4_model *base_model;
++    const ds4_weights *base_weights;
++    const ds4_model *mtp_model;
++    const ds4_mtp_weights *mtp;
++    int k;                          /* drafts requested per cycle */
++
++    /* Mailbox and published results: mu-protected. */
++    os_mutex_t mu;
++    os_cond_t cv;
++    bool mu_ready;
++    bool cv_ready;
++    bool shutdown;
++    uint64_t job_seq;               /* bumped by every kick */
++    bool job_consumed;              /* rendezvous happened for job_seq */
++    int job_first_token;            /* predicted next true token */
++    uint32_t job_first_pos;         /* position it will be committed at */
++    uint32_t job_q_valid;           /* last committed position */
++    int job_eos_token;
++    bool job_reset_kv;
++    float *job_anchor_hc;           /* [DS4_N_HC * DS4_N_EMBD] */
++
++    int pub_drafts[DS4_NEXTN_DRAFT_MAX];
++    float pub_margin[DS4_NEXTN_DRAFT_MAX];
++    int pub_runner[DS4_NEXTN_DRAFT_MAX];
++    int pub_count;                  /* deliverable drafts, row-holdback applied */
++    int pub_steps;                  /* NextN forwards completed for pub_seq */
++    double pub_ms;                  /* chain wall time so far */
++    uint64_t pub_seq;
++
++    /* Worker-thread-owned; other threads never touch these. */
++    os_thread_t thread;
++    bool thread_ready;
++    ds4_mtp_cpu_state cpu;
++    uint32_t kv_last_pos;           /* position of the newest CPU KV row */
++    bool kv_any;                    /* any row pushed since the last reset */
++    float *hc_a;                    /* [DS4_N_HC * DS4_N_EMBD] chain ping */
++    float *hc_b;                    /* [DS4_N_HC * DS4_N_EMBD] chain pong */
++    float *head_hidden;             /* [DS4_N_EMBD] */
++    float *head_logits;             /* [DS4_N_VOCAB] */
++    int8_t *head_xq;                /* [DS4_N_EMBD] Q8_0 activation */
++    float *head_xscale;             /* [DS4_N_EMBD / 32] */
++
++    /* Decode-thread-owned cycle and request telemetry. */
++    bool needs_reset;
++    int cycle_gen;
++    double cycle_ms;
++    bool cycle_stale;
++    uint64_t req_cycles;
++    uint64_t req_generated;
++    uint64_t req_delivered;
++    uint64_t req_accepted;
++    double req_draft_ms;
++    uint64_t req_offered_pos[DS4_NEXTN_DRAFT_MAX];
++    uint64_t req_accepted_pos[DS4_NEXTN_DRAFT_MAX];
++} ds4_nextn_drafter;
++
++/* Base-model Q8_0 vocabulary head for one draft, on the lane pool.  This is
++ * the exact tail of metal_graph_encode_output_head_mtp: head_hidden is
++ * already through the MTP HC head and mtp.0.norm, so the logits are one
++ * plain Q8_0 matvec against the shared output matrix with no further
++ * normalization; top-2 gives both the greedy draft and the margin. */
++static DS4_MAYBE_UNUSED void ds4_nextn_head_top2(
++        ds4_nextn_drafter *d,
++        int *top0, float *v0,
++        int *top1, float *v1) {
++    const ds4_tensor *w = d->base_weights->output;
++    const uint64_t in_dim = w->dim[0];
++    const uint64_t out_dim = w->dim[1];
++    quantize_q8_0_activation(d->head_hidden, d->head_xq, d->head_xscale, in_dim);
++    matvec_q8_0_ctx ctx = {
++        .out = d->head_logits,
++        .data = tensor_data(d->base_model, w),
++        .xq = d->head_xq,
++        .xscale = d->head_xscale,
++        .in_dim = in_dim,
++        .row0 = 0,
++        .blocks = (in_dim + 31) / 32,
++    };
++    ds4_nextn_parallel_for(out_dim, matvec_q8_0_worker, &ctx);
++    int b0 = -1, b1 = -1;
++    float x0 = DS4_NEG_INF, x1 = DS4_NEG_INF;
++    for (uint64_t i = 0; i < out_dim; i++) {
++        const float v = d->head_logits[i];
++        if (v > x0) {
++            x1 = x0;
++            b1 = b0;
++            x0 = v;
++            b0 = (int)i;
++        } else if (v > x1) {
++            x1 = v;
++            b1 = (int)i;
++        }
++    }
++    *top0 = b0;
++    *v0 = x0;
++    *top1 = b1;
++    *v1 = x1;
++}
++
++static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
++    ds4_nextn_drafter *d = arg;
++    /* Existing helpers reused by the pieces 1-2 forward must not submit to
++     * the process-global pool from this thread: pinning the thread-local
++     * parallel depth makes every nested ds4_parallel_for run inline, while
++     * the routed Q4_K kernels and the head go through the G132 lane pool via
++     * ds4_nextn_parallel_for. */
++    g_parallel_depth = 1;
++    g_nextn_drafter_thread = true;
++
++    uint64_t seen_seq = 0;
++    for (;;) {
++        os_mutex_lock(&d->mu);
++        while (!d->shutdown &&
++               (d->job_seq == seen_seq || d->job_consumed)) {
++            os_cond_wait(&d->cv, &d->mu);
++        }
++        if (d->shutdown) {
++            os_mutex_unlock(&d->mu);
++            return NULL;
++        }
++        const uint64_t seq = d->job_seq;
++        const int first_token = d->job_first_token;
++        const uint32_t first_pos = d->job_first_pos;
++        const uint32_t q_valid = d->job_q_valid;
++        const int eos_token = d->job_eos_token;
++        const bool reset_kv = d->job_reset_kv;
++        const int k = d->k;
++        memcpy(d->hc_a, d->job_anchor_hc,
++               (size_t)DS4_N_HC * DS4_N_EMBD * sizeof(float));
++        d->pub_seq = seq;
++        d->pub_count = 0;
++        d->pub_steps = 0;
++        d->pub_ms = 0.0;
++        os_mutex_unlock(&d->mu);
++        seen_seq = seq;
++
++        /* Reconcile the sliding KV window with the committed prefix before
++         * appending: drop the newest rows past q_valid, or reset on any
++         * discontinuity.  All KV mutations stay on this thread. */
++        if (reset_kv || !d->kv_any || d->kv_last_pos < q_valid) {
++            ds4_mtp_cpu_state_reset(&d->cpu);
++            d->kv_any = false;
++        } else if (d->kv_last_pos > q_valid) {
++            const uint32_t drop = d->kv_last_pos - q_valid;
++            if (drop >= d->cpu.cache.n_raw) {
++                ds4_mtp_cpu_state_reset(&d->cpu);
++                d->kv_any = false;
++            } else {
++                d->cpu.cache.n_raw -= drop;
++            }
++        }
++        d->kv_last_pos = q_valid;
++
++        const double t0 = now_sec();
++        float *prev = d->hc_a;
++        float *next = d->hc_b;
++        int token = first_token;
++        uint32_t pos = first_pos;
++
++        for (int step = 1; step <= k + 1; step++) {
++            os_mutex_lock(&d->mu);
++            const bool abandon =
++                d->shutdown || d->job_seq != seq || d->job_consumed;
++            os_mutex_unlock(&d->mu);
++            if (abandon) break;
++
++            ds4_mtp_cpu_forward_nextn_q4_k(
++                &d->cpu,
++                d->base_model, d->base_weights,
++                d->mtp_model, d->mtp,
++                prev, token, pos,
++                next, d->head_hidden, NULL);
++            d->kv_last_pos = pos;
++            d->kv_any = true;
++
++            int top0 = -1, top1 = -1;
++            float v0 = 0.0f, v1 = 0.0f;
++            ds4_nextn_head_top2(d, &top0, &v0, &top1, &v1);
++            if (top0 < 0) break;
++
++            bool hit_eos = false;
++            os_mutex_lock(&d->mu);
++            if (d->job_seq == seq) {
++                d->pub_steps = step;
++                d->pub_ms = (now_sec() - t0) * 1000.0;
++                if (step <= k) {
++                    d->pub_drafts[step - 1] = top0;
++                    d->pub_margin[step - 1] = v0 - v1;
++                    d->pub_runner[step - 1] = top1;
++                }
++                /* Row-holdback: draft i becomes deliverable once step i+1
++                 * has written the KV row of its commit position.  An EOS
++                 * draft ends the request, so no later row can be needed. */
++                int deliverable = step - 1;
++                if (step <= k && top0 == eos_token) {
++                    deliverable = step;
++                    hit_eos = true;
++                }
++                if (deliverable > d->pub_count) d->pub_count = deliverable;
++            }
++            os_mutex_unlock(&d->mu);
++            if (hit_eos) break;
++
++            token = top0;
++            pos++;
++            {
++                float *tmp = prev;
++                prev = next;
++                next = tmp;
++            }
++        }
++    }
++}
++
+ static void output_logits_one_decode_scratch(
+         float                  * logits,
+         const ds4_model        * model,
+@@ -18332,6 +18629,8 @@ struct ds4_engine {
+     bool iq1_s_sidecar_ready;
+     bool q1_0_sidecar_ready;
+     bool nested_residual_ready;
++    bool nextn_cpu_drafter;
++    int nextn_draft_k;
+ };
+ 
+ static bool cpu_directional_steering_enabled(
+@@ -19731,6 +20030,7 @@ struct ds4_session {
+     token_vec checkpoint;
+     float *logits;
+     float *mtp_logits;
++    ds4_nextn_drafter *nextn;
+     int mtp_draft_token;
+     uint64_t mtp_probe_total;
+     uint64_t mtp_probe_hit;
+@@ -19742,6 +20042,238 @@ struct ds4_session {
+     bool mtp_draft_valid;
+ };
+ 
++#ifndef DS4_NO_GPU
++/* ==== DSPARK-2: session-facing drafter plumbing (flag-gated) ============ */
++
++static bool ds4_nextn_drafter_create(ds4_session *s) {
++    ds4_engine *e = s->engine;
++    ds4_nextn_drafter *d = xcalloc(1, sizeof(*d));
++    const uint64_t hc_dim = (uint64_t)DS4_N_HC * DS4_N_EMBD;
++    d->base_model = &e->model;
++    d->base_weights = &e->weights;
++    d->mtp_model = &e->mtp_model;
++    d->mtp = &e->mtp_weights;
++    d->k = e->nextn_draft_k;
++    if (d->k < 1) d->k = 1;
++    if (d->k > DS4_NEXTN_DRAFT_MAX) d->k = DS4_NEXTN_DRAFT_MAX;
++    d->job_anchor_hc = xmalloc(hc_dim * sizeof(float));
++    d->hc_a = xmalloc(hc_dim * sizeof(float));
++    d->hc_b = xmalloc(hc_dim * sizeof(float));
++    d->head_hidden = xmalloc((size_t)DS4_N_EMBD * sizeof(float));
++    d->head_logits = xmalloc((size_t)DS4_N_VOCAB * sizeof(float));
++    d->head_xq = xmalloc((size_t)DS4_N_EMBD);
++    d->head_xscale = xmalloc(((size_t)DS4_N_EMBD / 32) * sizeof(float));
++    ds4_mtp_cpu_state_init(&d->cpu);
++    d->needs_reset = true;
++    bool ok = os_mutex_init(&d->mu) == 0;
++    d->mu_ready = ok;
++    if (ok) {
++        ok = os_cond_init(&d->cv) == 0;
++        d->cv_ready = ok;
++    }
++    if (ok) {
++        ok = os_thread_create(&d->thread, ds4_nextn_worker_main, d) == 0;
++        d->thread_ready = ok;
++    }
++    if (!ok) {
++        if (d->cv_ready) os_cond_destroy(&d->cv);
++        if (d->mu_ready) os_mutex_destroy(&d->mu);
++        ds4_mtp_cpu_state_free(&d->cpu);
++        free(d->job_anchor_hc);
++        free(d->hc_a);
++        free(d->hc_b);
++        free(d->head_hidden);
++        free(d->head_logits);
++        free(d->head_xq);
++        free(d->head_xscale);
++        free(d);
++        return false;
++    }
++    s->nextn = d;
++    return true;
++}
++
++static void ds4_nextn_drafter_destroy(ds4_session *s) {
++    ds4_nextn_drafter *d = s->nextn;
++    if (!d) return;
++    if (d->thread_ready) {
++        os_mutex_lock(&d->mu);
++        d->shutdown = true;
++        os_cond_broadcast(&d->cv);
++        os_mutex_unlock(&d->mu);
++        os_thread_join(d->thread);
++    }
++    if (d->cv_ready) os_cond_destroy(&d->cv);
++    if (d->mu_ready) os_mutex_destroy(&d->mu);
++    ds4_mtp_cpu_state_free(&d->cpu);
++    free(d->job_anchor_hc);
++    free(d->hc_a);
++    free(d->hc_b);
++    free(d->head_hidden);
++    free(d->head_logits);
++    free(d->head_xq);
++    free(d->head_xscale);
++    free(d);
++    s->nextn = NULL;
++}
++
++/* Rendezvous: called right after ds4_session_eval(first_token) committed the
++ * true token.  Takes whatever the pending chain has published - never waits.
++ * A pending job is valid only if it predicted exactly this token at exactly
++ * this position; anything else marks the CPU KV window for reset.  Either
++ * way the job is consumed so the worker stops burning cores on dead drafts. */
++static int ds4_nextn_drafter_take(
++        ds4_session *s, int first_token, int *drafts, int draft_cap,
++        float *out_margin, int *out_top0, int *out_top1) {
++    ds4_nextn_drafter *d = s->nextn;
++    if (!d) return 0;
++    if (draft_cap > DS4_NEXTN_DRAFT_MAX) draft_cap = DS4_NEXTN_DRAFT_MAX;
++    int n = 0;
++    d->cycle_gen = 0;
++    d->cycle_ms = 0.0;
++    d->cycle_stale = true;
++    os_mutex_lock(&d->mu);
++    const bool addressed = d->job_seq != 0 && !d->job_consumed &&
++        d->job_first_token == first_token &&
++        d->job_first_pos == (uint32_t)(s->checkpoint.len - 1);
++    const bool ready = addressed && d->pub_seq == d->job_seq;
++    if (d->job_seq != 0) d->job_consumed = true;
++    if (ready) {
++        d->cycle_stale = false;
++        d->cycle_gen = d->pub_steps;
++        d->cycle_ms = d->pub_ms;
++        n = d->pub_count;
++        if (n > draft_cap) n = draft_cap;
++        if (n > 0) {
++            for (int i = 0; i < n; i++) drafts[i] = d->pub_drafts[i];
++            *out_margin = d->pub_margin[n - 1];
++            *out_top0 = d->pub_drafts[n - 1];
++            *out_top1 = d->pub_runner[n - 1];
++        }
++    } else if (!addressed) {
++        /* Wrong token or wrong position: the pending chain (and its KV
++         * rows) belong to a trajectory the stream did not take. */
++        d->needs_reset = true;
++    }
++    os_mutex_unlock(&d->mu);
++    return n;
++}
++
++/* Kick the chain for the NEXT cycle.  anchor_kind selects where the
++ * committed-frontier backbone HC lives; the 64 KB D2H read is the same
++ * bridge class as the measured lane input (DSPARK.md sez. 3). */
++static void ds4_nextn_drafter_kick(
++        ds4_session *s, int anchor_kind, uint32_t anchor_row, int eos_token) {
++    ds4_nextn_drafter *d = s->nextn;
++    if (!d || anchor_kind == DS4_NEXTN_ANCHOR_NONE) return;
++    if (s->checkpoint.len <= 0) return;
++    const int next_pred = sample_argmax(s->logits, DS4_N_VOCAB);
++    if (next_pred < 0 || next_pred == eos_token) return;
++    const uint64_t hc_bytes =
++        (uint64_t)DS4_N_HC * DS4_N_EMBD * sizeof(float);
++    os_mutex_lock(&d->mu);
++    bool ok;
++    if (anchor_kind == DS4_NEXTN_ANCHOR_CUR_HC) {
++        ok = ds4_gpu_tensor_read(s->graph.cur_hc, 0,
++                                 d->job_anchor_hc, hc_bytes) != 0;
++    } else {
++        ok = ds4_gpu_tensor_read(s->graph.batch_cur_hc,
++                                 (uint64_t)anchor_row * hc_bytes,
++                                 d->job_anchor_hc, hc_bytes) != 0;
++    }
++    if (ok) {
++        d->job_seq++;
++        d->job_consumed = false;
++        d->job_first_token = next_pred;
++        d->job_first_pos = (uint32_t)s->checkpoint.len;
++        d->job_q_valid = (uint32_t)(s->checkpoint.len - 1);
++        d->job_eos_token = eos_token;
++        d->job_reset_kv = d->needs_reset;
++        d->needs_reset = false;
++        os_cond_signal(&d->cv);
++    }
++    os_mutex_unlock(&d->mu);
++}
++
++/* Per-cycle [nextn-draft] telemetry plus the next kick.  Call once per
++ * speculative cycle at the point where the commit outcome is known and the
++ * final logits row is on the host. */
++static void ds4_nextn_cycle_end(
++        ds4_session *s, int delivered, int accepted,
++        int anchor_kind, uint32_t anchor_row,
++        int eos_token, bool continue_ok, bool hit_eos) {
++    ds4_nextn_drafter *d = s->nextn;
++    if (!d) return;
++    d->req_cycles++;
++    if (d->cycle_gen > 0) d->req_generated += (uint64_t)d->cycle_gen;
++    d->req_delivered += (uint64_t)delivered;
++    d->req_accepted += (uint64_t)accepted;
++    d->req_draft_ms += d->cycle_ms;
++    for (int i = 0; i < delivered && i < DS4_NEXTN_DRAFT_MAX; i++) {
++        d->req_offered_pos[i]++;
++        if (i < accepted) d->req_accepted_pos[i]++;
++    }
++    char pos_buf[2 * 7 + 1];
++    for (int i = 0; i < 7; i++) {
++        pos_buf[2 * i] = i < accepted ? '1' : (i < delivered ? '0' : '-');
++        pos_buf[2 * i + 1] = i + 1 < 7 ? ',' : '\0';
++    }
++    pos_buf[sizeof(pos_buf) - 1] = '\0';
++    fprintf(stderr,
++            "ds4: [nextn-draft] cycle=%llu src=%s k_gen=%d k_delivered=%d "
++            "k_accepted=%d draft_ms=%.3f accept_pos=%s\n",
++            (unsigned long long)d->req_cycles,
++            delivered > 0 ? "live" : (d->cycle_stale ? "stale" : "late"),
++            d->cycle_gen,
++            delivered,
++            accepted,
++            d->cycle_ms,
++            pos_buf);
++    d->cycle_gen = 0;
++    d->cycle_ms = 0.0;
++    d->cycle_stale = true;
++    if (continue_ok && !hit_eos) {
++        ds4_nextn_drafter_kick(s, anchor_kind, anchor_row, eos_token);
++    }
++}
++
++static void ds4_nextn_request_begin(ds4_session *s) {
++    ds4_nextn_drafter *d = s->nextn;
++    if (!d) return;
++    d->req_cycles = 0;
++    d->req_generated = 0;
++    d->req_delivered = 0;
++    d->req_accepted = 0;
++    d->req_draft_ms = 0.0;
++    memset(d->req_offered_pos, 0, sizeof(d->req_offered_pos));
++    memset(d->req_accepted_pos, 0, sizeof(d->req_accepted_pos));
++}
++
++static void ds4_nextn_request_end(ds4_session *s) {
++    ds4_nextn_drafter *d = s->nextn;
++    if (!d || d->req_cycles == 0) return;
++    fprintf(stderr,
++            "ds4: [nextn-draft] summary cycles=%llu k_gen=%llu "
++            "k_delivered=%llu k_accepted=%llu draft_ms_avg=%.3f\n",
++            (unsigned long long)d->req_cycles,
++            (unsigned long long)d->req_generated,
++            (unsigned long long)d->req_delivered,
++            (unsigned long long)d->req_accepted,
++            d->req_draft_ms / (double)d->req_cycles);
++    for (int i = 0; i < d->k && i < DS4_NEXTN_DRAFT_MAX; i++) {
++        if (d->req_offered_pos[i] == 0) continue;
++        fprintf(stderr,
++                "ds4: [nextn-draft] summary pos=%d offered=%llu "
++                "accepted=%llu rate=%.4f\n",
++                i + 1,
++                (unsigned long long)d->req_offered_pos[i],
++                (unsigned long long)d->req_accepted_pos[i],
++                (double)d->req_accepted_pos[i] /
++                    (double)d->req_offered_pos[i]);
++    }
++}
++#endif /* !DS4_NO_GPU */
++
+ /* =========================================================================
+  * Session Snapshot Payloads.
+  * =========================================================================
+@@ -21398,6 +21930,74 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+                 e->mtp_draft_tokens);
+     }
+ 
++    /* DSPARK-2 gate (a): DS4_NEXTN_CPU_DRAFTER=1 serves the NextN module to
++     * the pieces 1-2 CPU forward instead of the CUDA MTP path, whose routed
++     * dispatcher has no Q4_K route and fails every draft (silent zero:
++     * routed_moe_launch_impl type predicate, ds4_cuda.cu:47595-47600).  The
++     * module stays exactly where model_open put it - the pageable host mmap -
++     * and the pinned secondary CUDA registration below is skipped, so its
++     * 3.81 GB never touch VRAM or pinned budgets.  Default off: with the
++     * flag unset this block only performs one getenv. */
++    {
++        const char *nextn_env = getenv("DS4_NEXTN_CPU_DRAFTER");
++        if (nextn_env && strcmp(nextn_env, "1") == 0) {
++            const char *lane_env = getenv("DS4_G132_CPU_LANE");
++            if (!e->mtp_ready) {
++                fprintf(stderr,
++                        "ds4: [nextn-cpu] DS4_NEXTN_CPU_DRAFTER=1 requires "
++                        "an MTP support model (--mtp)\n");
++                ds4_engine_close(e);
++                *out = NULL;
++                return 1;
++            }
++            if (e->backend == DS4_BACKEND_CPU) {
++                fprintf(stderr,
++                        "ds4: [nextn-cpu] the NextN CPU drafter needs a GPU "
++                        "target backend\n");
++                ds4_engine_close(e);
++                *out = NULL;
++                return 1;
++            }
++            if (lane_env && strcmp(lane_env, "1") == 0) {
++                /* The G132 lane pool has a single submit slot and the lane
++                 * orchestrator already owns it during decode.  Fail closed
++                 * instead of racing two submitters. */
++                fprintf(stderr,
++                        "ds4: [nextn-cpu] DS4_NEXTN_CPU_DRAFTER=1 and "
++                        "DS4_G132_CPU_LANE=1 are mutually exclusive\n");
++                ds4_engine_close(e);
++                *out = NULL;
++                return 1;
++            }
++            int draft_k = DS4_NEXTN_DRAFT_K_DEFAULT;
++            const char *k_env = getenv("DS4_NEXTN_DRAFT_K");
++            if (k_env && k_env[0]) {
++                long v = strtol(k_env, NULL, 10);
++                if (v > 0) draft_k = (int)v;
++            }
++            /* Clamp to the verifier contract (drafts[16], --mtp-draft cap). */
++            if (draft_k > DS4_NEXTN_DRAFT_MAX) draft_k = DS4_NEXTN_DRAFT_MAX;
++            if (draft_k < 1) draft_k = 1;
++            if (!ds4_g132_lane_parallel_init()) {
++                fprintf(stderr,
++                        "ds4: [nextn-cpu] failed to start the lane worker "
++                        "pool; failed closed\n");
++                ds4_engine_close(e);
++                *out = NULL;
++                return 1;
++            }
++            e->nextn_cpu_drafter = true;
++            e->nextn_draft_k = draft_k;
++            if (e->mtp_draft_tokens < 2) e->mtp_draft_tokens = 2;
++            if (e->mtp_draft_tokens < draft_k) e->mtp_draft_tokens = draft_k;
++            fprintf(stderr,
++                    "ds4: [nextn-cpu] NextN CPU drafter enabled draft_k=%d "
++                    "(module served from host RAM; CUDA MTP draft path "
++                    "bypassed)\n",
++                    draft_k);
++        }
++    }
++
+ #ifndef DS4_NO_GPU
+     if (e->backend == DS4_BACKEND_CUDA) {
+ #ifdef __APPLE__
+@@ -21514,7 +22114,16 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+          * owns separate pointers and cleanup, so G73 provenance, zero-copy
+          * windows, cached ranges, and terminal state remain exactly intact.
+          */
+-        if (e->mtp_ready &&
++        if (e->mtp_ready && e->nextn_cpu_drafter) {
++            /* DSPARK-2 gate (a): the drafter never routes MTP tensors
++             * through CUDA, so the pinned secondary registration (a
++             * cudaHostRegister of the whole 3.81 GB module window) is
++             * skipped and the module stays pageable host RAM. */
++            fprintf(stderr,
++                    "ds4: [nextn-cpu] secondary CUDA map registration "
++                    "skipped; MTP weights stay in pageable host RAM\n");
++        }
++        if (e->mtp_ready && !e->nextn_cpu_drafter &&
+             !ds4_gpu_set_mtp_model_map_range(
+                 e->mtp_model.map,
+                 e->mtp_model.size,
+@@ -21555,6 +22164,10 @@ void ds4_engine_close(ds4_engine *e) {
+     if (!e) return;
+     weights_free(&e->weights);
+     vocab_free(&e->vocab);
++    /* DSPARK-2: the drafter owns the lane pool only when the flag is on
++     * (mutual exclusion with DS4_G132_CPU_LANE is enforced at open).
++     * Shutdown is idempotent with the CUDA lane cleanup. */
++    if (e->nextn_cpu_drafter) ds4_g132_lane_parallel_shutdown();
+     ds4_threads_shutdown();
+ #ifndef DS4_NO_GPU
+     /* CUDA owns host pointers into the model mmap. Drain and release them
+@@ -22145,6 +22758,15 @@ int ds4_session_create(ds4_session **out, ds4_engine *e, int ctx_size) {
+         s->mtp_logits = xmalloc((size_t)DS4_N_VOCAB * sizeof(s->mtp_logits[0]));
+         s->mtp_draft_token = -1;
+     }
++    if (e->nextn_cpu_drafter && !ds4_nextn_drafter_create(s)) {
++        fprintf(stderr,
++                "ds4: [nextn-cpu] drafter thread unavailable; failed closed\n");
++        metal_graph_free(&s->graph);
++        free(s->logits);
++        free(s->mtp_logits);
++        free(s);
++        return 1;
++    }
+     *out = s;
+     return 0;
+ #endif
+@@ -22158,6 +22780,7 @@ void ds4_session_free(ds4_session *s) {
+     }
+ #ifndef DS4_NO_GPU
+     else {
++        ds4_nextn_drafter_destroy(s);
+         metal_graph_free(&s->graph);
+     }
+ #endif
+@@ -22181,6 +22804,9 @@ void ds4_session_vram_ledger_decode_start(ds4_session *s) {
+ #else
+     (void)s;
+ #endif
++#ifndef DS4_NO_GPU
++    if (s && s->nextn) ds4_nextn_request_begin(s);
++#endif
+ }
+ 
+ void ds4_session_vram_ledger_request_end(ds4_session *s) {
+@@ -22191,6 +22817,9 @@ void ds4_session_vram_ledger_request_end(ds4_session *s) {
+ #else
+     (void)s;
+ #endif
++#ifndef DS4_NO_GPU
++    if (s && s->nextn) ds4_nextn_request_end(s);
++#endif
+ }
+ 
+ #ifndef DS4_NO_GPU
+@@ -22573,9 +23202,13 @@ static int ds4_session_eval_internal(ds4_session *s, int token, bool probe_mtp,
+     ds4_engine *e = s->engine;
+     ds4_reap_mask_poll(&e->model, &e->weights, e->backend == DS4_BACKEND_CUDA);
+     const bool mtp_probe_log = getenv("DS4_MTP_PROBE") != NULL;
++    /* DSPARK-2 gate (a): with the CPU drafter on, the GPU probe draft would
++     * hit the CUDA routed dispatcher that has no Q4_K route and fail every
++     * token; drafts come from the asynchronous CPU chain instead. */
+     const bool mtp_should_draft =
+         probe_mtp && e->mtp_ready && s->mtp_logits &&
+-        (e->mtp_draft_tokens > 1 || mtp_probe_log);
++        (e->mtp_draft_tokens > 1 || mtp_probe_log) &&
++        !e->nextn_cpu_drafter;
+     if (probe_mtp && s->mtp_draft_valid) {
+         if (mtp_probe_log) {
+             s->mtp_probe_total++;
+@@ -22665,7 +23298,12 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+     accepted[n_accept++] = first_token;
+     if (first_token == eos_token || max_tokens == 1 || n_accept >= accepted_cap) return n_accept;
+ 
+-    if (!e->mtp_ready || !s->mtp_draft_valid || e->mtp_draft_tokens <= 1) return n_accept;
++    /* DSPARK-2: with the CPU drafter, proposals come from the asynchronous
++     * NextN chain kicked at the end of the previous cycle; there is no GPU
++     * probe draft and s->mtp_draft_valid stays false by design. */
++    const bool nextn_cpu = e->nextn_cpu_drafter && s->nextn != NULL;
++    if (!e->mtp_ready || e->mtp_draft_tokens <= 1 ||
++        (!nextn_cpu && !s->mtp_draft_valid)) return n_accept;
+ 
+     int draft_cap = e->mtp_draft_tokens;
+     if (draft_cap > max_tokens - n_accept) draft_cap = max_tokens - n_accept;
+@@ -22676,8 +23314,25 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+ 
+     int drafts[16];
+     int draft_n = 1;
+-    drafts[0] = s->mtp_draft_token;
+-    s->mtp_draft_valid = false;
++    float nextn_margin = 0.0f;
++    int nextn_top0 = -1;
++    int nextn_top1 = -1;
++    if (nextn_cpu) {
++        /* Rendezvous with the pending chain: take what is ready, never
++         * wait.  Zero drafts means this cycle runs as plain decode and the
++         * chain for the next cycle is kicked from the fresh cur_hc. */
++        draft_n = ds4_nextn_drafter_take(s, first_token, drafts, draft_cap,
++                                         &nextn_margin, &nextn_top0,
++                                         &nextn_top1);
++        if (draft_n <= 0) {
++            ds4_nextn_cycle_end(s, 0, 0, DS4_NEXTN_ANCHOR_CUR_HC, 0,
++                                eos_token, max_tokens - n_accept > 0, false);
++            return n_accept;
++        }
++    } else {
++        drafts[0] = s->mtp_draft_token;
++        s->mtp_draft_valid = false;
++    }
+     const bool strict_mtp = e->quality || getenv("DS4_MTP_STRICT") != NULL;
+     float mtp_margin_threshold = e->mtp_margin;
+     const char *mtp_margin_env = getenv("DS4_MTP_MIN_MARGIN");
+@@ -22695,6 +23350,13 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+     double mtp_t_after_draft = mtp_t0;
+     float mtp_last_margin = 0.0f;
+     int mtp_last_top0 = -1, mtp_last_top1 = -1;
++    if (nextn_cpu) {
++        /* The CPU chain already computed the last draft's top-2 margin on
++         * its own logits; s->mtp_logits is not written on this path. */
++        mtp_last_margin = nextn_margin;
++        mtp_last_top0 = nextn_top0;
++        mtp_last_top1 = nextn_top1;
++    }
+ 
+     /*
+      * The first proposed token is verified for free: ds4_session_eval() just
+@@ -22706,6 +23368,10 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+         if (getenv("DS4_MTP_SPEC_LOG")) {
+             fprintf(stderr, "ds4: mtp spec miss first draft=%d\n", drafts[0]);
+         }
++        if (nextn_cpu) {
++            ds4_nextn_cycle_end(s, draft_n, 0, DS4_NEXTN_ANCHOR_CUR_HC, 0,
++                                eos_token, max_tokens - n_accept > 0, false);
++        }
+         return n_accept;
+     }
+     if (drafts[0] == eos_token) draft_cap = 1;
+@@ -22722,7 +23388,7 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+         s->graph.mtp_n_raw = keep_; \
+     } while (0)
+ 
+-    for (; draft_n < draft_cap; draft_n++) {
++    for (; !nextn_cpu && draft_n < draft_cap; draft_n++) {
+         ds4_gpu_tensor *prev_hc = (draft_n & 1) ? s->graph.mtp_state_hc : s->graph.mtp_next_hc;
+         ds4_gpu_tensor *out_hc = (draft_n & 1) ? s->graph.mtp_next_hc : s->graph.mtp_state_hc;
+         int mtp_top = -1;
+@@ -22746,7 +23412,7 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+             break;
+         }
+     }
+-    if (mtp_conf_log && draft_n > 1) {
++    if (mtp_conf_log && draft_n > 1 && !nextn_cpu) {
+         float v0 = 0.0f, v1 = 0.0f;
+         logits_top2(s->mtp_logits, DS4_N_VOCAB, &mtp_last_top0, &v0, &mtp_last_top1, &v1);
+         mtp_last_margin = v0 - v1;
+@@ -22754,7 +23420,7 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+     if (mtp_timing) mtp_t_after_draft = now_sec();
+ 
+     if (!strict_mtp && draft_n == 2 && mtp_margin_threshold > 0.0f) {
+-        if (!mtp_conf_log) {
++        if (!mtp_conf_log && !nextn_cpu) {
+             float v0 = 0.0f, v1 = 0.0f;
+             logits_top2(s->mtp_logits, DS4_N_VOCAB, &mtp_last_top0, &v0, &mtp_last_top1, &v1);
+             mtp_last_margin = v0 - v1;
+@@ -22782,6 +23448,12 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+             s->checkpoint_valid = true;
+             s->mtp_draft_valid = false;
+             DS4_MTP_KEEP_ACCEPTED(1);
++            if (nextn_cpu) {
++                ds4_nextn_cycle_end(s, draft_n, 1,
++                                    DS4_NEXTN_ANCHOR_CUR_HC, 0,
++                                    eos_token, n_accept < max_tokens,
++                                    accepted[n_accept - 1] == eos_token);
++            }
+             if (mtp_timing) {
+                 const double done = now_sec();
+                 fprintf(stderr,
+@@ -22849,6 +23521,14 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+             s->checkpoint_valid = true;
+             s->mtp_draft_valid = false;
+             DS4_MTP_KEEP_ACCEPTED(2);
++            if (nextn_cpu) {
++                /* decode2-exact keeps its HC states in local row views, so
++                 * there is no committed-frontier anchor to read: telemetry
++                 * only, the next cycle re-kicks from its own eval. */
++                ds4_nextn_cycle_end(s, draft_n, 2, DS4_NEXTN_ANCHOR_NONE, 0,
++                                    eos_token, false,
++                                    accepted[n_accept - 1] == eos_token);
++            }
+             if (mtp_timing) {
+                 fprintf(stderr,
+                         "ds4: mtp timing decode2 drafted=2 committed=2 draft=%.3f ms snapshot=%.3f ms verify=%.3f ms total=%.3f ms\n",
+@@ -22874,6 +23554,11 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+             s->checkpoint_valid = true;
+             s->mtp_draft_valid = false;
+             DS4_MTP_KEEP_ACCEPTED(1);
++            if (nextn_cpu) {
++                ds4_nextn_cycle_end(s, draft_n, 1, DS4_NEXTN_ANCHOR_NONE, 0,
++                                    eos_token, false,
++                                    accepted[n_accept - 1] == eos_token);
++            }
+             if (mtp_timing) {
+                 const double replay_done = now_sec();
+                 fprintf(stderr,
+@@ -22986,6 +23671,14 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+                         s->checkpoint_valid = true;
+                         s->mtp_draft_valid = false;
+                         DS4_MTP_KEEP_ACCEPTED(replayed);
++                        if (nextn_cpu) {
++                            ds4_nextn_cycle_end(s, draft_n, replayed,
++                                                DS4_NEXTN_ANCHOR_CUR_HC, 0,
++                                                eos_token,
++                                                n_accept < max_tokens,
++                                                accepted[n_accept - 1] ==
++                                                    eos_token);
++                        }
+                         spec_frontier_free(&frontier);
+                         free(row_logits);
+                         free(row_tops);
+@@ -23007,6 +23700,16 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+                     s->checkpoint_valid = true;
+                     s->mtp_draft_valid = false;
+                     DS4_MTP_KEEP_ACCEPTED(draft_n);
++                    if (nextn_cpu) {
++                        /* Full accept: the committed frontier is verify row
++                         * draft_n-1 of the batch HC buffer. */
++                        ds4_nextn_cycle_end(s, draft_n, draft_n,
++                                            DS4_NEXTN_ANCHOR_BATCH_ROW,
++                                            (uint32_t)(draft_n - 1),
++                                            eos_token, n_accept < max_tokens,
++                                            accepted[n_accept - 1] ==
++                                                eos_token);
++                    }
+                     if (mtp_timing) {
+                         fprintf(stderr,
+                                 "ds4: mtp timing micro drafted=%d committed=%d draft=%.3f ms snapshot=%.3f ms verify=%.3f ms total=%.3f ms\n",
+@@ -23037,6 +23740,15 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+                     s->mtp_draft_valid = false;
+                     DS4_MTP_KEEP_ACCEPTED(1);
+                     token_vec_push(&s->checkpoint, drafts[0]);
++                    if (nextn_cpu) {
++                        /* Prefix-1 commit: row 0 of the verify batch is the
++                         * state after drafts[0]. */
++                        ds4_nextn_cycle_end(s, draft_n, 1,
++                                            DS4_NEXTN_ANCHOR_BATCH_ROW, 0,
++                                            eos_token, n_accept < max_tokens,
++                                            accepted[n_accept - 1] ==
++                                                eos_token);
++                    }
+                     if (mtp_timing) {
+                         fprintf(stderr,
+                                 "ds4: mtp timing micro drafted=%d committed=%d draft=%.3f ms snapshot=%.3f ms verify=%.3f ms prefix=%.3f ms total=%.3f ms noreplay=1\n",
+@@ -23071,6 +23783,13 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+                     s->mtp_draft_valid = false;
+                     DS4_MTP_KEEP_ACCEPTED(1);
+                     token_vec_push(&s->checkpoint, drafts[0]);
++                    if (nextn_cpu) {
++                        ds4_nextn_cycle_end(s, draft_n, 1,
++                                            DS4_NEXTN_ANCHOR_CUR_HC, 0,
++                                            eos_token, n_accept < max_tokens,
++                                            accepted[n_accept - 1] ==
++                                                eos_token);
++                    }
+                     if (mtp_timing) {
+                         const double replay_done = now_sec();
+                         fprintf(stderr,
+@@ -23112,6 +23831,16 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+                     s->checkpoint_valid = true;
+                     s->mtp_draft_valid = false;
+                     DS4_MTP_KEEP_ACCEPTED(commit_drafts);
++                    if (nextn_cpu) {
++                        /* Partial accept re-verified as its own batch: the
++                         * frontier is row commit_drafts-1 of that batch. */
++                        ds4_nextn_cycle_end(s, draft_n, commit_drafts,
++                                            DS4_NEXTN_ANCHOR_BATCH_ROW,
++                                            (uint32_t)(commit_drafts - 1),
++                                            eos_token, n_accept < max_tokens,
++                                            accepted[n_accept - 1] ==
++                                                eos_token);
++                    }
+                     if (mtp_timing) {
+                         const double replay_done = now_sec();
+                         fprintf(stderr,
+@@ -23209,6 +23938,14 @@ int ds4_session_eval_speculative_argmax(ds4_session *s, int first_token,
+     }
+     (void)logits_on_host;
+     DS4_MTP_KEEP_ACCEPTED(verified);
++    if (nextn_cpu) {
++        /* Sequential fallback: every accepted draft went through the exact
++         * one-token decode, so cur_hc is the committed frontier. */
++        ds4_nextn_cycle_end(s, draft_n, verified,
++                            DS4_NEXTN_ANCHOR_CUR_HC, 0,
++                            eos_token, n_accept < max_tokens,
++                            accepted[n_accept - 1] == eos_token);
++    }
+ #undef DS4_MTP_KEEP_ACCEPTED
+     if (mtp_timing) {
+         fprintf(stderr,
+@@ -23241,6 +23978,7 @@ void ds4_session_invalidate(ds4_session *s) {
+     s->checkpoint_valid = false;
+     s->checkpoint.len = 0;
+     s->mtp_draft_valid = false;
++    if (s->nextn) s->nextn->needs_reset = true;
+ }
+ 
+ void ds4_session_rewind(ds4_session *s, int pos) {
+@@ -23248,6 +23986,7 @@ void ds4_session_rewind(ds4_session *s, int pos) {
+     if (pos > s->checkpoint.len) pos = s->checkpoint.len;
+     s->checkpoint.len = pos;
+     s->mtp_draft_valid = false;
++    if (s->nextn) s->nextn->needs_reset = true;
+ }
+ 
+ int ds4_session_pos(ds4_session *s) {

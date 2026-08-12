@@ -1,0 +1,1383 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 85156a9..67d66c5 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -879,6 +879,7 @@ struct cuda_moe_route_request {
+     uint32_t layer_index;
+     uint32_t miss_count;
+     uint32_t route_count;
++    uint32_t cpu_lane_allowed;
+     ds4_gpu_g133_epoch g133_epoch;
+     uint64_t gate_offset;
+     uint64_t up_offset;
+@@ -1647,6 +1648,38 @@ enum {
+     CUDA_G132_CPU_LANE_LAYER_COUNT = 43u,
+ };
+ 
++enum cuda_g132_cpu_lane_backing : uint8_t {
++    CUDA_G132_CPU_LANE_BACKING_ARENA = 0,
++    CUDA_G132_CPU_LANE_BACKING_ROUTE_STAGING = 1,
++};
++
++struct cuda_g132_general_route {
++    const char *gate;
++    const char *up;
++    const char *down;
++    uint32_t route;
++    uint32_t slot_identity;
++    uint64_t slot_generation;
++    int32_t expert;
++    float weight;
++    cuda_g132_cpu_lane_backing backing;
++};
++
++struct cuda_g132_general_plan {
++    uint32_t sequence;
++    uint64_t generation;
++    uint32_t layer_index;
++    uint32_t route_count;
++    uint32_t cpu_count;
++    uint32_t cpu_mask;
++    uint32_t target_cpu;
++    uint32_t eligible;
++    uint32_t rejected_cap;
++    uint32_t rejected_balance;
++    uint32_t staging_count;
++    cuda_g132_general_route routes[6];
++};
++
+ enum cuda_q1_0_mixed_representation : uint8_t {
+     CUDA_Q1_0_MIXED_UNKNOWN = 0,
+     CUDA_Q1_0_MIXED_IQ2_VRAM = 1,
+@@ -1657,6 +1690,7 @@ enum cuda_q1_0_mixed_representation : uint8_t {
+ };
+ 
+ struct cuda_g132_cpu_lane;
++struct cuda_moe_expert_cache;
+ struct cuda_g132_cpu_lane_worker {
+     cuda_g132_cpu_lane *lane;
+     uint32_t index;
+@@ -1679,10 +1713,14 @@ struct cuda_g132_cpu_lane {
+     float *host_input;
+     float *host_partial;
+     float *device_partial;
++    uint64_t *device_general_route_ptrs;
++    float *device_general_weights;
+     std::vector<float> route_outputs;
+     const char *gate_ptrs[CUDA_G132_CPU_LANE_MAX_ROUTES];
+     const char *up_ptrs[CUDA_G132_CPU_LANE_MAX_ROUTES];
+     const char *down_ptrs[CUDA_G132_CPU_LANE_MAX_ROUTES];
++    cuda_g132_cpu_lane_backing
++        backings[CUDA_G132_CPU_LANE_MAX_ROUTES];
+     uint32_t slot_identities[CUDA_G132_CPU_LANE_MAX_ROUTES];
+     uint64_t slot_generations[CUDA_G132_CPU_LANE_MAX_ROUTES];
+     int32_t expert_ids[CUDA_G132_CPU_LANE_MAX_ROUTES];
+@@ -1704,6 +1742,14 @@ struct cuda_g132_cpu_lane {
+     double layer_join_wait_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+     double cpu_started;
+     double cpu_finished;
++    double gpu_started;
++    double gpu_finished;
++    uint64_t source_generation;
++    uint32_t source_sequence;
++    uint32_t general_gpu_routes;
++    uint32_t general_current_eligible;
++    uint32_t general_current_rejected_cap;
++    uint32_t general_current_rejected_balance;
+     uint64_t gate_row_bytes;
+     uint64_t down_row_bytes;
+     uint32_t expert_in_dim;
+@@ -1718,6 +1764,7 @@ struct cuda_g132_cpu_lane {
+     uint32_t threads_started;
+     float clamp;
+     int requested;
++    int general_requested;
+     int ready;
+     int failed_open;
+     int mutex_ready;
+@@ -1726,7 +1773,38 @@ struct cuda_g132_cpu_lane {
+     int job_active;
+     int input_ready;
+     int job_failed;
++    int gpu_done;
++    int general_active;
+     int stop;
++    uint32_t layer_target_cpu[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    int32_t layer_imbalance_direction[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    uint32_t layer_imbalance_streak[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    uint32_t layer_balance_cooldown[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    uint64_t general_calls;
++    uint64_t general_route_cpu;
++    uint64_t general_route_gpu;
++    uint64_t general_bytes_not_crossed;
++    uint64_t general_eligible;
++    uint64_t general_rejected_cap;
++    uint64_t general_rejected_balance;
++    uint64_t general_fallback_contract;
++    uint64_t general_fallback_reservation;
++    uint64_t general_fallback_wrap;
++    uint64_t general_fallback_pipeline;
++    uint64_t general_fallback_runtime;
++    uint64_t general_staging_routes;
++    double general_cpu_seconds;
++    double general_gpu_seconds;
++    double general_gpu_wait_cpu_seconds;
++    double general_cpu_wait_gpu_seconds;
++    uint64_t general_layer_calls[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    uint64_t general_layer_cpu_routes[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    double general_layer_cpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    uint64_t layer_gpu_routes[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    uint64_t layer_bytes_not_crossed[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    double layer_gpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    double layer_gpu_wait_cpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
++    double layer_cpu_wait_gpu_seconds[CUDA_G132_CPU_LANE_LAYER_COUNT];
+ };
+ 
+ static cuda_g132_cpu_lane g_g132_cpu_lane;
+@@ -1735,6 +1813,21 @@ static int8_t g_g132_iq2xxs_signed_grid[256][128][8];
+ 
+ static int cuda_g132_cpu_lane_init(void);
+ static void cuda_g132_cpu_lane_release(void);
++static int cuda_g132_cpu_lane_record_input_source(void);
++static int cuda_g132_cpu_lane_enqueue_input(const ds4_gpu_tensor *input);
++static int cuda_g132_cpu_lane_prepare_general(
++        cuda_moe_expert_cache *cache,
++        uint32_t layer_index,
++        uint64_t gate_expert_bytes, uint64_t gate_row_bytes,
++        uint64_t down_expert_bytes, uint64_t down_row_bytes,
++        uint32_t expert_in_dim, uint32_t expert_mid_dim, uint32_t out_dim,
++        float clamp, uint32_t *cpu_mask, uint32_t *gpu_count);
++static int cuda_g132_cpu_lane_begin_general(const ds4_gpu_tensor *input);
++static int cuda_g132_cpu_lane_end_general_gpu(void);
++static void cuda_g132_cpu_lane_cancel_dispatch(void);
++static int cuda_g132_cpu_lane_wait_and_join(
++        ds4_gpu_tensor *out, uint32_t layer_index,
++        const float **captured_input);
+ static uint32_t g_q1_0_dual_sparse_entries;
+ static uint64_t g_q1_0_dual_sparse_bytes;
+ static double g_q1_0_dual_sparse_seconds;
+@@ -25563,6 +25656,7 @@ __global__ static void moe_resolve_resident_routes_kernel(
+         ds4_gpu_g133_epoch g133_epoch,
+         double absolute_deadline,
+         uint32_t defer_all_hit_ready,
++        uint32_t cpu_lane_allowed,
+         uint32_t route_count) {
+     if (blockIdx.x != 0 || threadIdx.x != 0) return;
+     if (route_count == 0u || route_count > 6u) return;
+@@ -25605,6 +25699,7 @@ __global__ static void moe_resolve_resident_routes_kernel(
+     request->layer_index = layer_index;
+     request->miss_count = miss_count;
+     request->route_count = route_count;
++    request->cpu_lane_allowed = cpu_lane_allowed;
+     request->g133_epoch = g133_epoch;
+     request->gate_offset = gate_offset;
+     request->up_offset = up_offset;
+@@ -25692,6 +25787,37 @@ __global__ static void moe_publish_transient_route_kernel(
+         (uint64_t)(uintptr_t)(transient_down + down_byte);
+ }
+ 
++/* The route worker deliberately leaves CPU-owned entries unpublished.  Once
++ * its upload stream has drained, compact the remaining route pointers and
++ * router weights on stream 0 without ever materializing a CPU route in VRAM. */
++__global__ static void moe_g132_compact_gpu_routes_kernel(
++        uint64_t *compact_route_ptrs,
++        float *compact_weights,
++        const uint64_t *route_ptrs,
++        const float *weights,
++        uint32_t route_count,
++        uint32_t cpu_mask,
++        uint32_t gpu_count) {
++    if (blockIdx.x != 0 || threadIdx.x != 0 || !compact_route_ptrs ||
++        !compact_weights || !route_ptrs || !weights ||
++        route_count == 0u || route_count > 6u || gpu_count == 0u ||
++        gpu_count >= route_count) {
++        return;
++    }
++    uint32_t gpu = 0u;
++    for (uint32_t route = 0; route < route_count; route++) {
++        if ((cpu_mask & (1u << route)) != 0u) continue;
++        if (gpu >= gpu_count) return;
++        compact_route_ptrs[gpu] = route_ptrs[route];
++        compact_route_ptrs[gpu_count + gpu] =
++            route_ptrs[route_count + route];
++        compact_route_ptrs[2u * gpu_count + gpu] =
++            route_ptrs[2u * route_count + route];
++        compact_weights[gpu] = weights[route];
++        gpu++;
++    }
++}
++
+ __global__ static void moe_publish_resident_route_kernel(
+         int32_t *slot_by_layer_expert,
+         uint64_t *route_ptrs,
+@@ -28317,6 +28443,8 @@ struct cuda_moe_expert_cache {
+     std::atomic<uint64_t> route_completed_generation;
+     std::atomic<uint64_t> route_consumer_event_generation;
+     std::atomic<uint64_t> route_consumer_done_generation;
++    std::atomic<uint64_t> route_cpu_staging_generation;
++    cuda_g132_general_plan route_cpu_plan;
+     cuda_moe_route_mailbox_slot route_mailbox[2];
+     std::atomic<uint32_t> route_transient_read_sequence;
+     std::atomic<uint32_t> route_transient_io_sequence;
+@@ -30309,7 +30437,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+     ds4_transport_request_end();
+ }
+ 
+-template <bool G73>
++template <bool G73, bool G132 = false>
+ static void *cuda_moe_route_worker(void *arg);
+ static os_thread_fn g_cuda_moe_route_worker_dispatch =
+     cuda_moe_route_worker<false>;
+@@ -30796,6 +30924,11 @@ static int cuda_moe_route_mailbox_worker_claim(
+ 
+     if (generation > 1u) {
+         const uint64_t prior_generation = generation - 1u;
++        if (cache->route_cpu_staging_generation.load(
++                std::memory_order_acquire) == prior_generation) {
++            return cuda_moe_route_mailbox_fail_closed(
++                cache, sequence, generation, "cpu-staging-reader-active");
++        }
+         cuda_moe_route_mailbox_slot &prior =
+             cache->route_mailbox[prior_generation & 1u];
+         const uint64_t recorded_generation =
+@@ -36673,6 +36806,9 @@ static void cuda_moe_expert_cache_release(void) {
+         0u, std::memory_order_relaxed);
+     g_moe_expert_cache.route_consumer_done_generation.store(
+         0u, std::memory_order_relaxed);
++    g_moe_expert_cache.route_cpu_staging_generation.store(
++        0u, std::memory_order_relaxed);
++    g_moe_expert_cache.route_cpu_plan = cuda_g132_general_plan{};
+     for (uint32_t slot = 0; slot < 2u; slot++) {
+         g_moe_expert_cache.route_mailbox[slot].generation.store(
+             0u, std::memory_order_relaxed);
+@@ -38202,6 +38338,9 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+                 0u, std::memory_order_relaxed);
+             g_moe_expert_cache.route_consumer_done_generation.store(
+                 0u, std::memory_order_relaxed);
++            g_moe_expert_cache.route_cpu_staging_generation.store(
++                0u, std::memory_order_relaxed);
++            g_moe_expert_cache.route_cpu_plan = cuda_g132_general_plan{};
+             for (uint32_t slot = 0; slot < 2u; slot++) {
+                 g_moe_expert_cache.route_mailbox[slot].generation.store(
+                     0u, std::memory_order_relaxed);
+@@ -38705,13 +38844,15 @@ static int cuda_moe_demand_pipeline_stage_host(
+ static int cuda_moe_demand_pipeline_flush(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+-        cuda_moe_demand_pipeline_batch *batch) {
+-    if (!cache || !batch || batch->publish.count == 0u ||
+-        batch->publish.count != request.miss_count ||
++        cuda_moe_demand_pipeline_batch *batch,
++        uint32_t cpu_routes) {
++    if (!cache || !batch ||
++        batch->publish.count + cpu_routes != request.miss_count ||
+         request.miss_count > request.route_count ||
+         request.route_count > CUDA_MOE_ROUTE_COUNT) {
+         return 0;
+     }
++    if (batch->publish.count == 0u) return cpu_routes != 0u;
+     const uint32_t batch_count = batch->publish.count;
+     const uint64_t gate_plane_bytes =
+         (uint64_t)CUDA_MOE_ROUTE_COUNT * cache->gate_expert_bytes;
+@@ -39454,7 +39595,153 @@ static int cuda_moe_route_io_qd_read(
+ }
+ #endif
+ 
+-template <bool G73>
++static int cuda_g132_general_requested(void) {
++    return g_g132_cpu_lane.requested &&
++        g_g132_cpu_lane.general_requested &&
++        g_g132_cpu_lane.ready &&
++        !g_g132_cpu_lane.failed_open;
++}
++
++static void cuda_g132_general_plan_release(
++        cuda_moe_expert_cache *cache,
++        cuda_g132_general_plan *plan) {
++    if (!cache || !plan) return;
++    for (uint32_t i = 0; i < plan->cpu_count; i++) {
++        const cuda_g132_general_route &route = plan->routes[i];
++        if (route.backing == CUDA_G132_CPU_LANE_BACKING_ARENA &&
++            route.slot_identity < g_dynamic_arena.slots.size()) {
++            cuda_dynamic_arena_slot_reader_release(
++                &g_dynamic_arena.slots[route.slot_identity]);
++        }
++    }
++    if (plan->staging_count != 0u) {
++        uint64_t expected = plan->generation;
++        (void)cache->route_cpu_staging_generation.compare_exchange_strong(
++            expected, 0u, std::memory_order_acq_rel,
++            std::memory_order_acquire);
++    }
++    *plan = cuda_g132_general_plan{};
++}
++
++static void cuda_g132_general_plan_begin(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request &request) {
++    cuda_g132_general_plan &plan = cache->route_cpu_plan;
++    cuda_g132_general_plan_release(cache, &plan);
++    if (!request.cpu_lane_allowed || !cuda_g132_general_requested() ||
++        request.route_count < 2u ||
++        request.layer_index >= CUDA_G132_CPU_LANE_LAYER_COUNT) {
++        return;
++    }
++    plan.sequence = request.sequence;
++    plan.generation = request.host_generation;
++    plan.layer_index = request.layer_index;
++    plan.route_count = request.route_count;
++    os_mutex_lock(&g_g132_cpu_lane.mutex);
++    const uint32_t adaptive_target =
++        g_g132_cpu_lane.layer_target_cpu[request.layer_index];
++    os_mutex_unlock(&g_g132_cpu_lane.mutex);
++    plan.target_cpu = std::min(
++        adaptive_target,
++        std::min(g_g132_cpu_lane.max_experts_per_layer,
++                 request.route_count - 1u));
++}
++
++static int cuda_g132_general_plan_admit(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request &request,
++        uint32_t route,
++        uint32_t expert,
++        const char *host_gate,
++        const char *host_up,
++        const char *host_down,
++        int have_ram,
++        int from_nested,
++        int demand_pipeline_active,
++        uint32_t arena_slot,
++        uint32_t ssd_wrap_h2d_ring) {
++    cuda_g132_general_plan &plan = cache->route_cpu_plan;
++    if (plan.sequence != request.sequence ||
++        plan.generation != request.host_generation ||
++        plan.target_cpu == 0u || route >= request.route_count ||
++        !host_gate || !host_up || !host_down) {
++        return 0;
++    }
++    plan.eligible++;
++    if (plan.cpu_count >= plan.target_cpu) {
++        if (plan.target_cpu >= g_g132_cpu_lane.max_experts_per_layer) {
++            plan.rejected_cap++;
++        } else {
++            plan.rejected_balance++;
++        }
++        return 0;
++    }
++    if (from_nested) {
++        g_g132_cpu_lane.general_fallback_contract++;
++        return 0;
++    }
++    if (!have_ram && demand_pipeline_active) {
++        /* P4a compacts later GPU misses toward route_host slot zero.  A CPU
++         * reader of an earlier SSD slice would otherwise be overwritten. */
++        g_g132_cpu_lane.general_fallback_pipeline++;
++        return 0;
++    }
++    if (ssd_wrap_h2d_ring != UINT32_MAX) {
++        g_g132_cpu_lane.general_fallback_wrap++;
++        return 0;
++    }
++
++    cuda_g132_general_route admitted = {};
++    admitted.gate = host_gate;
++    admitted.up = host_up;
++    admitted.down = host_down;
++    admitted.route = route;
++    admitted.expert = (int32_t)expert;
++    admitted.weight = request.weights[route];
++    admitted.slot_identity = UINT32_MAX;
++    admitted.slot_generation = 0u;
++    admitted.backing = have_ram
++        ? CUDA_G132_CPU_LANE_BACKING_ARENA
++        : CUDA_G132_CPU_LANE_BACKING_ROUTE_STAGING;
++    if (have_ram) {
++        if (arena_slot >= g_dynamic_arena.slots.size()) {
++            g_g132_cpu_lane.general_fallback_reservation++;
++            return 0;
++        }
++        cuda_dynamic_arena_slot &slot = g_dynamic_arena.slots[arena_slot];
++        const int reader_acquired =
++            cuda_dynamic_arena_slot_reader_acquire(&slot);
++        if (!reader_acquired || slot.pageable || !slot.host_ptr ||
++            slot.layer != request.layer_index || slot.expert != expert ||
++            slot.content_generation == 0u ||
++            host_gate != slot.host_ptr ||
++            host_up != slot.host_ptr + cache->gate_expert_bytes ||
++            host_down != host_up + cache->gate_expert_bytes) {
++            if (reader_acquired) {
++                cuda_dynamic_arena_slot_reader_release(&slot);
++            }
++            g_g132_cpu_lane.general_fallback_reservation++;
++            return 0;
++        }
++        admitted.slot_identity = arena_slot;
++        admitted.slot_generation = slot.content_generation;
++    } else {
++        uint64_t expected = 0u;
++        if (!cache->route_cpu_staging_generation.compare_exchange_strong(
++                expected, request.host_generation,
++                std::memory_order_acq_rel, std::memory_order_acquire) &&
++            expected != request.host_generation) {
++            g_g132_cpu_lane.general_fallback_reservation++;
++            return 0;
++        }
++        plan.staging_count++;
++    }
++    plan.routes[plan.cpu_count++] = admitted;
++    plan.cpu_mask |= 1u << route;
++    return 1;
++}
++
++template <bool G73, bool G132 = false>
+ static int cuda_moe_tiering_enforce_request(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+@@ -39512,6 +39799,9 @@ static int cuda_moe_tiering_enforce_request(
+     /* FIX-B: ripieghi consumati da QUESTA richiesta di rotta. Se la richiesta
+      * chiude senza averne avuto bisogno, la serie consecutiva riparte da zero. */
+     uint32_t transient_fallbacks_used = 0u;
++    if constexpr (G132) {
++        cuda_g132_general_plan_begin(cache, request);
++    }
+     if (g_moe_tiering.compose_prefill_mass_tiering &&
+         g_dynamic_arena.snapshot_generation !=
+             g_moe_tiering.snapshot_generation) {
+@@ -39522,6 +39812,10 @@ static int cuda_moe_tiering_enforce_request(
+                 request.layer_index, request.sequence,
+                 (unsigned long long)g_dynamic_arena.snapshot_generation,
+                 (unsigned long long)g_moe_tiering.snapshot_generation);
++        if constexpr (G132) {
++            cuda_g132_general_plan_release(
++                cache, &cache->route_cpu_plan);
++        }
+         return 0;
+     }
+     /* The router has published this layer's exact miss list. Hint all three
+@@ -40311,6 +40605,25 @@ static int cuda_moe_tiering_enforce_request(
+                 }
+             }
+         } else {
++            if constexpr (G132) {
++                if (request.cpu_lane_allowed &&
++                    cuda_g132_general_plan_admit(
++                        cache, request, route, expert,
++                        host_gate, host_up, host_down,
++                        have_ram, from_nested, demand_pipeline_active,
++                        zc_arena_slot,
++                        ssd_wrap_h2d_ring)) {
++                    g_moe_tiering.transient++;
++                    if constexpr (G73) {
++                        if (g73_out_of_mask[route]) {
++                            g73_outcomes.served_transient++;
++                        }
++                        cuda_g73_open_maybe_schedule_rotation(
++                            request, route, expert, tier);
++                    }
++                    continue;
++                }
++            }
+             if (from_snapshot) {
+                 g_moe_tiering.snapshot_to_vram_bytes +=
+                     cache->gate_expert_bytes * 2ull +
+@@ -40474,7 +40787,9 @@ static int cuda_moe_tiering_enforce_request(
+         ds4_transport_h2d_batch_begin(&transport_batch);
+     }
+     if (ok && demand_pipeline_active &&
+-        !cuda_moe_demand_pipeline_flush(cache, request, &demand_batch)) {
++        !cuda_moe_demand_pipeline_flush(
++            cache, request, &demand_batch,
++            G132 ? cache->route_cpu_plan.cpu_count : 0u)) {
+         ds4_transport_h2d_batch_invalidate(&transport_batch);
+         failure_reason = "demand-pipeline-batch";
+         ok = 0;
+@@ -40539,10 +40854,16 @@ static int cuda_moe_tiering_enforce_request(
+         g_transient_timeout_fallback_streak.store(
+             0u, std::memory_order_relaxed);
+     }
++    if constexpr (G132) {
++        if (!ok) {
++            cuda_g132_general_plan_release(
++                cache, &cache->route_cpu_plan);
++        }
++    }
+     return ok;
+ }
+ 
+-template <bool G73>
++template <bool G73, bool G132>
+ static void *cuda_moe_route_worker(void *arg) {
+     cuda_moe_expert_cache *cache = (cuda_moe_expert_cache *)arg;
+     if (!cache || cudaSetDevice(cache->route_device) != cudaSuccess) {
+@@ -40870,7 +41191,7 @@ static void *cuda_moe_route_worker(void *arg) {
+         cuda_moe_route_publish_batch publish_batch = {};
+         ds4_transport_h2d_batch transport_batch = {};
+         if (ok && g_moe_tiering.mode == CUDA_MOE_TIER_ENFORCE) {
+-            ok = cuda_moe_tiering_enforce_request<G73>(
++            ok = cuda_moe_tiering_enforce_request<G73, G132>(
+                 cache, request, claimed.data());
+             if (cache->route_worker_safe_leaked.load(
+                     std::memory_order_acquire)) return NULL;
+@@ -45550,7 +45871,7 @@ static int cuda_moe_selected_load_q1_0(
+     return 1;
+ }
+ 
+-template <bool G73>
++template <bool G73, bool G132 = false>
+ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_begin(
+         uint32_t layer_index,
+         uint64_t gate_offset,
+@@ -45769,6 +46090,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_begin(
+         g133_epoch,
+         absolute_deadline,
+         G73 ? 1u : 0u,
++        G132 ? 1u : 0u,
+         n_expert);
+     const cudaError_t resolve_launch_error = cudaGetLastError();
+     if (trace_sample_id) {
+@@ -46097,7 +46419,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+     return cache;
+ }
+ 
+-template <bool G73>
++template <bool G73, bool G132 = false>
+ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_submit(
+         uint32_t layer_index,
+         uint64_t gate_offset,
+@@ -46114,7 +46436,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_submit(
+         ds4_gpu_g133_epoch g133_epoch,
+         double absolute_deadline) {
+     uint32_t sequence = 0;
+-    cuda_moe_expert_cache *cache = cuda_moe_gpu_resident_routes_begin<G73>(
++    cuda_moe_expert_cache *cache = cuda_moe_gpu_resident_routes_begin<G73, G132>(
+         layer_index, gate_offset, up_offset, down_offset,
+         gate_expert_bytes, down_expert_bytes, expert_in_dim,
+         selected, weights, n_expert, n_tokens, spex_queue, g133_epoch,
+@@ -46196,7 +46518,7 @@ static int cuda_g73_copy_selected_from_route_mailbox(
+     return 1;
+ }
+ 
+-template <bool G73>
++template <bool G73, bool G132 = false>
+ static int routed_moe_launch_impl(
+         ds4_gpu_tensor *out,
+         ds4_gpu_tensor *gate,
+@@ -46229,6 +46551,10 @@ static int routed_moe_launch_impl(
+         const ds4_gpu_spex_key *spex_key,
+         const int32_t *selected_host,
+         ds4_gpu_g133_epoch g133_epoch) {
++    const uint32_t original_n_expert = n_expert;
++    ds4_gpu_tensor g132_general_weights_tensor = {};
++    int g132_general_candidate = 0;
++    int g132_general_active = 0;
+     const double g73_absolute_deadline =
+         G73 && n_tokens == 1u
+         ? cuda_wall_sec() + cuda_g133_transient_io_timeout_seconds()
+@@ -46400,7 +46726,7 @@ static int routed_moe_launch_impl(
+         if (!sparse_bake_layer &&
+             (split_hit_miss_requested || split_fused_requested) &&
+             getenv("DS4_CUDA_MOE_PROFILE") == NULL) {
+-            gpu_route_cache = cuda_moe_gpu_resident_routes_begin<G73>(
++            gpu_route_cache = cuda_moe_gpu_resident_routes_begin<G73, G132>(
+                 layer_index,
+                 gate_offset, up_offset, down_offset,
+                 gate_expert_bytes, down_expert_bytes,
+@@ -46411,7 +46737,7 @@ static int routed_moe_launch_impl(
+             use_split_fused = gpu_route_cache != NULL && split_fused_requested;
+             use_split_hit_miss = gpu_route_cache != NULL && split_hit_miss_requested;
+         } else {
+-            gpu_route_cache = cuda_moe_gpu_resident_routes_submit<G73>(
++            gpu_route_cache = cuda_moe_gpu_resident_routes_submit<G73, G132>(
+                 layer_index,
+                 gate_offset, up_offset, down_offset,
+                 gate_expert_bytes, down_expert_bytes,
+@@ -46506,6 +46832,13 @@ static int routed_moe_launch_impl(
+                 }
+             }
+         }
++        if constexpr (G132) {
++            if (!use_split_fused && !use_split_hit_miss &&
++                route_iq2_q2 && n_tokens == 1u &&
++                gpu_route_cache->route_cpu_plan.cpu_count != 0u) {
++                g132_general_candidate = 1;
++            }
++        }
+     } else if (route_q1_0) {
+         cuda_q1_0_mixed_profile_sample *mixed_profile_sample =
+             g_q1_0_mixed_profile_current_sample;
+@@ -46750,6 +47083,13 @@ static int routed_moe_launch_impl(
+             if (!cuda_g73_classify_fallback(
+                     layer_index, selected_fixed, n_expert,
+                     1, &g73_outcomes)) {
++                if constexpr (G132) {
++                    if (g132_general_candidate) {
++                        cuda_g132_general_plan_release(
++                            gpu_route_cache,
++                            &gpu_route_cache->route_cpu_plan);
++                    }
++                }
+                 return 0;
+             }
+             g73_outcomes_ready = 1;
+@@ -46762,6 +47102,52 @@ static int routed_moe_launch_impl(
+         }
+     }
+ 
++    if constexpr (G132) {
++        if (g132_general_candidate) {
++            uint32_t cpu_mask = 0u;
++            uint32_t gpu_count = 0u;
++            if (!cuda_g132_cpu_lane_prepare_general(
++                    gpu_route_cache, layer_index,
++                    gate_expert_bytes, gate_row_bytes,
++                    down_expert_bytes, down_row_bytes,
++                    expert_in_dim, expert_mid_dim, out_dim, clamp,
++                    &cpu_mask, &gpu_count)) {
++                g_g132_cpu_lane.general_fallback_contract++;
++                cuda_g132_general_plan_release(
++                    gpu_route_cache,
++                    &gpu_route_cache->route_cpu_plan);
++                return 0;
++            }
++            moe_g132_compact_gpu_routes_kernel<<<1, 1>>>(
++                g_g132_cpu_lane.device_general_route_ptrs,
++                g_g132_cpu_lane.device_general_weights,
++                gpu_route_cache->device_route_ptrs,
++                (const float *)weights->ptr,
++                original_n_expert, cpu_mask, gpu_count);
++            if (!cuda_ok(cudaGetLastError(),
++                         "G132 general route compaction")) {
++                g_g132_cpu_lane.general_fallback_runtime++;
++                cuda_g132_cpu_lane_cancel_dispatch();
++                return 0;
++            }
++            g132_general_weights_tensor.ptr =
++                g_g132_cpu_lane.device_general_weights;
++            g132_general_weights_tensor.host_ptr = NULL;
++            g132_general_weights_tensor.bytes =
++                (uint64_t)gpu_count * sizeof(float);
++            g132_general_weights_tensor.owner = 0;
++            mixed_route_ptrs =
++                g_g132_cpu_lane.device_general_route_ptrs;
++            weights = &g132_general_weights_tensor;
++            n_expert = gpu_count;
++            g132_general_active = 1;
++        }
++        if (g132_general_active &&
++            !cuda_g132_cpu_lane_begin_general(x)) {
++            cuda_g132_cpu_lane_cancel_dispatch();
++            return 0;
++        }
++    }
+     int ok = 1;
+     const uint32_t xq_blocks = expert_in_dim / CUDA_QK_K;
+     const uint32_t midq_blocks = expert_mid_dim / CUDA_QK_K;
+@@ -48188,6 +48574,11 @@ static int routed_moe_launch_impl(
+         }
+         if constexpr (G73) {
+             if (!g73_outcomes_ready) {
++                if constexpr (G132) {
++                    if (g132_general_active) {
++                        cuda_g132_cpu_lane_cancel_dispatch();
++                    }
++                }
+                 return cuda_g73_contract_error(
+                     layer_index, "missing-launch-outcomes");
+             }
+@@ -48196,7 +48587,26 @@ static int routed_moe_launch_impl(
+             }
+             /* Exactly one outcome per out-of-mask route is committed only
+              * after every exact GEMV launch for this MoE call was accepted. */
+-            if (!cuda_g73_commit_outcomes(layer_index, g73_outcomes)) return 0;
++            if (!cuda_g73_commit_outcomes(layer_index, g73_outcomes)) {
++                if constexpr (G132) {
++                    if (g132_general_active) {
++                        cuda_g132_cpu_lane_cancel_dispatch();
++                    }
++                }
++                return 0;
++            }
++        }
++        if constexpr (G132) {
++            if (g132_general_active) {
++                if (!ok || !cuda_g132_cpu_lane_end_general_gpu()) {
++                    cuda_g132_cpu_lane_cancel_dispatch();
++                    return 0;
++                }
++                if (!cuda_g132_cpu_lane_wait_and_join(
++                        out, layer_index, NULL)) {
++                    return 0;
++                }
++            }
+         }
+         return ok;
+     }
+@@ -48250,14 +48660,35 @@ static int routed_moe_launch_impl(
+  * calls inside that specialization, so this adds no net hot-route indirection. */
+ static auto g_cuda_routed_moe_launch_dispatch =
+     &routed_moe_launch_impl<false>;
++static auto g_cuda_routed_moe_general_launch_dispatch =
++    &routed_moe_launch_impl<false, false>;
+ 
+ static void cuda_g73_route_dispatch_init(void) {
+-    if (g_cuda_g73_open_enabled) {
++    const char *lane = getenv("DS4_G132_CPU_LANE");
++    const char *general = getenv("DS4_G132_CPU_LANE_GENERAL");
++    const int general_enabled =
++        lane && strcmp(lane, "1") == 0 &&
++        general && strcmp(general, "1") == 0;
++    if (g_cuda_g73_open_enabled && general_enabled) {
++        g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true, false>;
++        g_cuda_routed_moe_general_launch_dispatch =
++            &routed_moe_launch_impl<true, true>;
++        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true, true>;
++    } else if (g_cuda_g73_open_enabled) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true>;
++        g_cuda_routed_moe_general_launch_dispatch =
++            &routed_moe_launch_impl<true, false>;
++        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true, false>;
++    } else if (general_enabled) {
++        g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false, false>;
++        g_cuda_routed_moe_general_launch_dispatch =
++            &routed_moe_launch_impl<false, true>;
++        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false, true>;
+     } else {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false>;
++        g_cuda_routed_moe_general_launch_dispatch =
++            &routed_moe_launch_impl<false, false>;
++        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false, false>;
+     }
+ }
+ 
+@@ -48269,7 +48700,7 @@ extern "C" int ds4_gpu_routed_moe_one_tensor(ds4_gpu_tensor *out, ds4_gpu_tensor
+      */
+     auto dispatch = model_map == g_mtp_model_host_base
+         ? &routed_moe_launch_impl<false>
+-        : g_cuda_routed_moe_launch_dispatch;
++        : g_cuda_routed_moe_general_launch_dispatch;
+     return dispatch(out, gate, up, mid, down, model_map, model_size,
+                     layer_index,
+                     gate_offset, up_offset, down_offset,
+@@ -48595,10 +49026,42 @@ static int cuda_g132_cpu_lane_forward(
+             lane.host_input, worker->xq.data(), lane.expert_in_dim)) {
+         return 0;
+     }
+-    if (!cuda_g132_cpu_lane_slot_reservation_valid(
+-            lane.slot_identities[job], lane.slot_generations[job],
+-            lane.layer_index, (uint32_t)lane.expert_ids[job])) {
+-        return 0;
++    if (lane.backings[job] == CUDA_G132_CPU_LANE_BACKING_ARENA) {
++        if (!cuda_g132_cpu_lane_slot_reservation_valid(
++                lane.slot_identities[job], lane.slot_generations[job],
++                lane.layer_index, (uint32_t)lane.expert_ids[job])) {
++            return 0;
++        }
++    } else {
++        const cuda_moe_expert_cache &cache = g_moe_expert_cache;
++        const uint64_t gate_plane =
++            (uint64_t)CUDA_MOE_ROUTE_COUNT * cache.gate_expert_bytes;
++        const uint64_t down_plane =
++            (uint64_t)CUDA_MOE_ROUTE_COUNT * cache.down_expert_bytes;
++        const uintptr_t gate_ptr =
++            (uintptr_t)lane.gate_ptrs[job];
++        const uintptr_t up_ptr =
++            (uintptr_t)lane.up_ptrs[job];
++        const uintptr_t down_ptr =
++            (uintptr_t)lane.down_ptrs[job];
++        const uintptr_t gate_base =
++            (uintptr_t)cache.route_host_gate;
++        const uintptr_t up_base =
++            (uintptr_t)cache.route_host_up;
++        const uintptr_t down_base =
++            (uintptr_t)cache.route_host_down;
++        if (cache.route_cpu_staging_generation.load(
++                std::memory_order_acquire) != lane.source_generation ||
++            !cache.route_host_gate || !cache.route_host_up ||
++            !cache.route_host_down ||
++            gate_ptr < gate_base ||
++            gate_ptr > gate_base + gate_plane - cache.gate_expert_bytes ||
++            up_ptr < up_base ||
++            up_ptr > up_base + gate_plane - cache.gate_expert_bytes ||
++            down_ptr < down_base ||
++            down_ptr > down_base + down_plane - cache.down_expert_bytes) {
++            return 0;
++        }
+     }
+     const char *gate_base = lane.gate_ptrs[job];
+     const char *up_base = lane.up_ptrs[job];
+@@ -48618,7 +49081,8 @@ static int cuda_g132_cpu_lane_forward(
+             if (up_value < -lane.clamp) up_value = -lane.clamp;
+         }
+         worker->mid[row] =
+-            (gate_value / (1.0f + expf(-gate_value))) * up_value;
++            (gate_value / (1.0f + expf(-gate_value))) * up_value *
++            (lane.general_active ? lane.route_weights[job] : 1.0f);
+     }
+     if (!cuda_g132_quantize_row_q8_K(
+             worker->mid.data(), worker->midq.data(), lane.expert_mid_dim)) {
+@@ -48630,8 +49094,9 @@ static int cuda_g132_cpu_lane_forward(
+         worker->output[row] = cuda_g132_dot_q2_K_q8_K(
+             lane.expert_mid_dim, down, worker->midq.data());
+     }
+-    /* Keep one output per route. The dispatcher reduces them in route order
+-     * with the router weights, then performs one 16 KiB H2D for the layer. */
++    /* The general lane applies the router weight before Q8_K quantization,
++     * matching the GPU path.  The legacy mixed caller keeps its established
++     * post-down weighting so GENERAL=0 is behaviorally neutral. */
+     memcpy(lane.route_outputs.data() + (uint64_t)job * lane.out_dim,
+            worker->output.data(), (size_t)lane.out_dim * sizeof(float));
+     return 1;
+@@ -48682,8 +49147,11 @@ static void CUDART_CB cuda_g132_cpu_lane_input_ready_callback(void *arg) {
+ static int cuda_g132_cpu_lane_init(void) {
+     cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
+     const char *env = getenv("DS4_G132_CPU_LANE");
++    const char *general_env = getenv("DS4_G132_CPU_LANE_GENERAL");
+     cudaError_t error = cudaSuccess;
+     lane.requested = env && strcmp(env, "1") == 0;
++    lane.general_requested =
++        general_env && strcmp(general_env, "1") == 0;
+     if (!lane.requested || lane.ready) return 1;
+     lane.stop = 0;
+ 
+@@ -48729,6 +49197,14 @@ static int cuda_g132_cpu_lane_init(void) {
+     if (error != cudaSuccess) goto cuda_fail;
+     error = cudaMalloc((void **)&lane.device_partial, 4096u * sizeof(float));
+     if (error != cudaSuccess) goto cuda_fail;
++    if (lane.general_requested) {
++        error = cudaMalloc((void **)&lane.device_general_route_ptrs,
++                           CUDA_MOE_ROUTE_COUNT * 3u * sizeof(uint64_t));
++        if (error != cudaSuccess) goto cuda_fail;
++        error = cudaMalloc((void **)&lane.device_general_weights,
++                           CUDA_MOE_ROUTE_COUNT * sizeof(float));
++        if (error != cudaSuccess) goto cuda_fail;
++    }
+ 
+     {
+         const long cores = os_cpu_count();
+@@ -48753,11 +49229,16 @@ static int cuda_g132_cpu_lane_init(void) {
+                     ? UINT32_MAX : (uint32_t)parsed;
+             }
+         }
+-        const uint32_t max_cap = std::min(
+-            (uint32_t)CUDA_G132_CPU_LANE_MAX_ROUTES, lane.worker_count);
++        const uint32_t max_cap =
++            (uint32_t)CUDA_G132_CPU_LANE_MAX_ROUTES;
+         if (lane.max_experts_per_layer > max_cap) {
+             lane.max_experts_per_layer = max_cap;
+         }
++        for (uint32_t layer_index = 0;
++             layer_index < CUDA_G132_CPU_LANE_LAYER_COUNT; layer_index++) {
++            lane.layer_target_cpu[layer_index] =
++                lane.max_experts_per_layer;
++        }
+     }
+     for (uint32_t i = 0; i < lane.worker_count; i++) {
+         lane.workers[i].lane = &lane;
+@@ -48773,10 +49254,11 @@ static int cuda_g132_cpu_lane_init(void) {
+     fprintf(stderr,
+             "ds4: [g132-cpu-lane] result=ready workers=%u queue_capacity=%u "
+             "max_experts_per_layer=%u input_bytes=%u partial_bytes=%u "
+-            "source=primary_iq2_pinned\n",
++            "source=primary_iq2_pinned_or_route_staging general=%u\n",
+             lane.worker_count, CUDA_G132_CPU_LANE_MAX_ROUTES,
+             lane.max_experts_per_layer,
+-            4096u * (unsigned)sizeof(float), 4096u * (unsigned)sizeof(float));
++            4096u * (unsigned)sizeof(float), 4096u * (unsigned)sizeof(float),
++            lane.general_requested);
+     return 1;
+ 
+ cuda_fail:
+@@ -48804,6 +49286,60 @@ static void cuda_g132_cpu_lane_release(void) {
+         os_thread_join(lane.threads[i]);
+     }
+     cuda_g132_cpu_lane_release_reservations_locked(&lane);
++    g_moe_expert_cache.route_cpu_staging_generation.store(
++        0u, std::memory_order_release);
++    g_moe_expert_cache.route_cpu_plan = cuda_g132_general_plan{};
++    if (lane.requested && lane.general_requested) {
++        fprintf(stderr,
++                "ds4: [g132-general-summary] calls=%llu route_cpu=%llu "
++                "route_gpu=%llu bytes_non_attraversati=%llu "
++                "cpu_wall_ms=%.6f gpu_wall_ms=%.6f "
++                "gpu_wait_cpu_ms=%.6f cpu_wait_gpu_ms=%.6f "
++                "eligible=%llu rejected_cap=%llu rejected_balance=%llu "
++                "fallback_contract=%llu fallback_reservation=%llu "
++                "fallback_wrap=%llu fallback_pipeline=%llu "
++                "fallback_runtime=%llu "
++                "staging_routes=%llu\n",
++                (unsigned long long)lane.general_calls,
++                (unsigned long long)lane.general_route_cpu,
++                (unsigned long long)lane.general_route_gpu,
++                (unsigned long long)lane.general_bytes_not_crossed,
++                lane.general_cpu_seconds * 1000.0,
++                lane.general_gpu_seconds * 1000.0,
++                lane.general_gpu_wait_cpu_seconds * 1000.0,
++                lane.general_cpu_wait_gpu_seconds * 1000.0,
++                (unsigned long long)lane.general_eligible,
++                (unsigned long long)lane.general_rejected_cap,
++                (unsigned long long)lane.general_rejected_balance,
++                (unsigned long long)lane.general_fallback_contract,
++                (unsigned long long)lane.general_fallback_reservation,
++                (unsigned long long)lane.general_fallback_wrap,
++                (unsigned long long)lane.general_fallback_pipeline,
++                (unsigned long long)lane.general_fallback_runtime,
++                (unsigned long long)lane.general_staging_routes);
++        for (uint32_t layer_index = 0;
++             layer_index < CUDA_G132_CPU_LANE_LAYER_COUNT; layer_index++) {
++            if (lane.general_layer_calls[layer_index] == 0u) continue;
++            fprintf(stderr,
++                    "ds4: [g132-general-layer-summary] layer=%u calls=%llu "
++                    "route_cpu=%llu route_gpu=%llu "
++                    "bytes_non_attraversati=%llu cpu_wall_ms=%.6f "
++                    "gpu_wall_ms=%.6f gpu_wait_cpu_ms=%.6f "
++                    "cpu_wait_gpu_ms=%.6f\n",
++                    layer_index,
++                    (unsigned long long)
++                        lane.general_layer_calls[layer_index],
++                    (unsigned long long)
++                        lane.general_layer_cpu_routes[layer_index],
++                    (unsigned long long)lane.layer_gpu_routes[layer_index],
++                    (unsigned long long)
++                        lane.layer_bytes_not_crossed[layer_index],
++                    lane.general_layer_cpu_seconds[layer_index] * 1000.0,
++                    lane.layer_gpu_seconds[layer_index] * 1000.0,
++                    lane.layer_gpu_wait_cpu_seconds[layer_index] * 1000.0,
++                    lane.layer_cpu_wait_gpu_seconds[layer_index] * 1000.0);
++        }
++    }
+     if (lane.requested && cuda_q1_0_profile_requested()) {
+         fprintf(stderr,
+             "ds4: [g132-cpu-lane] result=summary routes=%llu "
+@@ -48835,6 +49371,12 @@ static void cuda_g132_cpu_lane_release(void) {
+                     lane.layer_join_wait_seconds[layer]);
+         }
+     }
++    if (lane.device_general_weights) {
++        (void)cudaFree(lane.device_general_weights);
++    }
++    if (lane.device_general_route_ptrs) {
++        (void)cudaFree(lane.device_general_route_ptrs);
++    }
+     if (lane.device_partial) (void)cudaFree(lane.device_partial);
+     if (lane.host_partial) (void)cudaFreeHost(lane.host_partial);
+     if (lane.host_input) (void)cudaFreeHost(lane.host_input);
+@@ -48843,6 +49385,8 @@ static void cuda_g132_cpu_lane_release(void) {
+     if (lane.input_source_ready) (void)cudaEventDestroy(lane.input_source_ready);
+     if (lane.bridge_stream) (void)cudaStreamDestroy(lane.bridge_stream);
+     lane.device_partial = NULL;
++    lane.device_general_weights = NULL;
++    lane.device_general_route_ptrs = NULL;
+     lane.host_partial = NULL;
+     lane.host_input = NULL;
+     lane.partial_copy_done = NULL;
+@@ -49037,6 +49581,9 @@ static int cuda_g132_cpu_lane_prepare_dispatch(
+            (size_t)count * sizeof(slot_generations[0]));
+     memcpy(lane.expert_ids, experts, (size_t)count * sizeof(experts[0]));
+     memcpy(lane.route_weights, weights, (size_t)count * sizeof(weights[0]));
++    for (uint32_t job = 0; job < count; job++) {
++        lane.backings[job] = CUDA_G132_CPU_LANE_BACKING_ARENA;
++    }
+     lane.gate_row_bytes = gate_row_bytes;
+     lane.down_row_bytes = down_row_bytes;
+     lane.expert_in_dim = expert_in_dim;
+@@ -49058,6 +49605,178 @@ static int cuda_g132_cpu_lane_prepare_dispatch(
+     return 1;
+ }
+ 
++static int cuda_g132_cpu_lane_prepare_general(
++        cuda_moe_expert_cache *cache,
++        uint32_t layer_index,
++        uint64_t gate_expert_bytes, uint64_t gate_row_bytes,
++        uint64_t down_expert_bytes, uint64_t down_row_bytes,
++        uint32_t expert_in_dim, uint32_t expert_mid_dim, uint32_t out_dim,
++        float clamp,
++        uint32_t *cpu_mask,
++        uint32_t *gpu_count) {
++    cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
++    if (!cache || !cpu_mask || !gpu_count ||
++        !cuda_g132_general_requested() ||
++        !lane.device_general_route_ptrs ||
++        !lane.device_general_weights) {
++        return 0;
++    }
++    cuda_g132_general_plan &plan = cache->route_cpu_plan;
++    const uint32_t sequence = cache->route_submitted_sequence.load(
++        std::memory_order_acquire);
++    const uint64_t generation = cache->route_submitted_generation.load(
++        std::memory_order_acquire);
++    const uint64_t expected_gate_row =
++        (uint64_t)(expert_in_dim / CUDA_QK_K) * sizeof(cuda_block_iq2_xxs);
++    const uint64_t expected_down_row =
++        (uint64_t)(expert_mid_dim / CUDA_QK_K) * sizeof(cuda_block_q2_K);
++    const uint64_t native_expert_bytes =
++        gate_expert_bytes * 2ull + down_expert_bytes;
++    if (plan.sequence != sequence || plan.generation != generation ||
++        plan.layer_index != layer_index || plan.cpu_count == 0u ||
++        plan.cpu_count >= plan.route_count ||
++        plan.cpu_count > CUDA_G132_CPU_LANE_MAX_ROUTES ||
++        layer_index >= CUDA_G132_CPU_LANE_LAYER_COUNT ||
++        expert_in_dim != 4096u || out_dim != 4096u ||
++        expert_mid_dim == 0u || expert_mid_dim % CUDA_QK_K != 0u ||
++        gate_row_bytes != expected_gate_row ||
++        down_row_bytes != expected_down_row ||
++        native_expert_bytes != 7077888ull ||
++        gate_expert_bytes != cache->gate_expert_bytes ||
++        down_expert_bytes != cache->down_expert_bytes) {
++        return 0;
++    }
++    for (uint32_t i = 0; i < plan.cpu_count; i++) {
++        const cuda_g132_general_route &route = plan.routes[i];
++        if (route.route >= plan.route_count || route.expert < 0 ||
++            route.expert >= 256 || !std::isfinite(route.weight) ||
++            !route.gate || !route.up || !route.down) {
++            return 0;
++        }
++        if (route.backing == CUDA_G132_CPU_LANE_BACKING_ARENA &&
++            !cuda_g132_cpu_lane_slot_reservation_valid(
++                route.slot_identity, route.slot_generation,
++                layer_index, (uint32_t)route.expert)) {
++            return 0;
++        }
++    }
++
++    os_mutex_lock(&lane.mutex);
++    if (lane.job_active) {
++        os_mutex_unlock(&lane.mutex);
++        return 0;
++    }
++    try {
++        lane.route_outputs.resize((uint64_t)plan.cpu_count * out_dim);
++        for (uint32_t i = 0; i < lane.worker_count; i++) {
++            lane.workers[i].output.resize(out_dim);
++            lane.workers[i].mid.resize(expert_mid_dim);
++            lane.workers[i].xq.resize(expert_in_dim / CUDA_QK_K);
++            lane.workers[i].midq.resize(expert_mid_dim / CUDA_QK_K);
++        }
++    } catch (...) {
++        os_mutex_unlock(&lane.mutex);
++        lane.failures++;
++        return 0;
++    }
++    for (uint32_t i = 0; i < plan.cpu_count; i++) {
++        const cuda_g132_general_route &route = plan.routes[i];
++        lane.gate_ptrs[i] = route.gate;
++        lane.up_ptrs[i] = route.up;
++        lane.down_ptrs[i] = route.down;
++        lane.backings[i] = route.backing;
++        lane.slot_identities[i] = route.slot_identity;
++        lane.slot_generations[i] = route.slot_generation;
++        lane.expert_ids[i] = route.expert;
++        lane.route_weights[i] = route.weight;
++    }
++    lane.gate_row_bytes = gate_row_bytes;
++    lane.down_row_bytes = down_row_bytes;
++    lane.expert_in_dim = expert_in_dim;
++    lane.expert_mid_dim = expert_mid_dim;
++    lane.out_dim = out_dim;
++    lane.layer_index = layer_index;
++    lane.job_count = plan.cpu_count;
++    lane.next_job = 0u;
++    lane.completed_jobs = 0u;
++    lane.clamp = clamp;
++    lane.input_ready = 0;
++    lane.job_failed = 0;
++    lane.cpu_started = 0.0;
++    lane.cpu_finished = 0.0;
++    lane.gpu_started = 0.0;
++    lane.gpu_finished = 0.0;
++    lane.gpu_done = 0;
++    lane.general_active = 1;
++    lane.source_sequence = sequence;
++    lane.source_generation = generation;
++    lane.general_gpu_routes = plan.route_count - plan.cpu_count;
++    lane.general_current_eligible = plan.eligible;
++    lane.general_current_rejected_cap = plan.rejected_cap;
++    lane.general_current_rejected_balance = plan.rejected_balance;
++    lane.generation++;
++    if (lane.generation == 0u) lane.generation++;
++    lane.job_active = 1;
++    *cpu_mask = plan.cpu_mask;
++    *gpu_count = lane.general_gpu_routes;
++    lane.general_eligible += plan.eligible;
++    lane.general_rejected_cap += plan.rejected_cap;
++    lane.general_rejected_balance += plan.rejected_balance;
++    lane.general_staging_routes += plan.staging_count;
++    /* Ownership moves to lane.slot_identities and the explicit staging lease.
++     * Keep the non-owning plan metadata only until the compaction launch. */
++    plan.cpu_count = 0u;
++    plan.staging_count = 0u;
++    os_mutex_unlock(&lane.mutex);
++    return 1;
++}
++
++static void CUDART_CB cuda_g132_cpu_lane_gpu_started_callback(void *arg) {
++    cuda_g132_cpu_lane *lane = (cuda_g132_cpu_lane *)arg;
++    os_mutex_lock(&lane->mutex);
++    if (lane->job_active && lane->general_active) {
++        lane->gpu_started = cuda_wall_sec();
++    }
++    os_mutex_unlock(&lane->mutex);
++}
++
++static void CUDART_CB cuda_g132_cpu_lane_gpu_finished_callback(void *arg) {
++    cuda_g132_cpu_lane *lane = (cuda_g132_cpu_lane *)arg;
++    os_mutex_lock(&lane->mutex);
++    if (lane->job_active && lane->general_active) {
++        lane->gpu_finished = cuda_wall_sec();
++        lane->gpu_done = 1;
++        os_cond_signal(&lane->done_cond);
++    }
++    os_mutex_unlock(&lane->mutex);
++}
++
++static int cuda_g132_cpu_lane_begin_general(const ds4_gpu_tensor *input) {
++    cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
++    if (!lane.general_active ||
++        !cuda_g132_cpu_lane_record_input_source() ||
++        !cuda_g132_cpu_lane_enqueue_input(input) ||
++        !cuda_ok(cudaLaunchHostFunc(
++                     0, cuda_g132_cpu_lane_gpu_started_callback, &lane),
++                 "G132 general GPU start callback")) {
++        lane.general_fallback_runtime++;
++        return 0;
++    }
++    return 1;
++}
++
++static int cuda_g132_cpu_lane_end_general_gpu(void) {
++    cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
++    if (!lane.general_active ||
++        !cuda_ok(cudaLaunchHostFunc(
++                     0, cuda_g132_cpu_lane_gpu_finished_callback, &lane),
++                 "G132 general GPU finish callback")) {
++        lane.general_fallback_runtime++;
++        return 0;
++    }
++    return 1;
++}
++
+ static void cuda_g132_cpu_lane_cancel_dispatch(void) {
+     cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
+     if (!lane.mutex_ready) return;
+@@ -49067,9 +49786,21 @@ static void cuda_g132_cpu_lane_cancel_dispatch(void) {
+         (void)os_cond_wait(&lane.done_cond, &lane.mutex);
+     }
+     if (lane.job_active) {
++        const uint64_t source_generation = lane.source_generation;
++        const int general_active = lane.general_active;
+         lane.job_active = 0;
+         lane.input_ready = 0;
+         cuda_g132_cpu_lane_release_reservations_locked(&lane);
++        lane.general_active = 0;
++        if (general_active) {
++            uint64_t expected = source_generation;
++            (void)g_moe_expert_cache.route_cpu_staging_generation
++                .compare_exchange_strong(
++                    expected, 0u, std::memory_order_acq_rel,
++                    std::memory_order_acquire);
++            g_moe_expert_cache.route_cpu_plan =
++                cuda_g132_general_plan{};
++        }
+         os_cond_broadcast(&lane.work_cond);
+     }
+     os_mutex_unlock(&lane.mutex);
+@@ -49114,36 +49845,129 @@ static int cuda_g132_cpu_lane_wait_and_join(
+     cuda_g132_cpu_lane &lane = g_g132_cpu_lane;
+     const double wait_started = cuda_wall_sec();
+     os_mutex_lock(&lane.mutex);
+-    while (lane.job_active && lane.completed_jobs < lane.job_count) {
++    while (lane.job_active &&
++           (lane.completed_jobs < lane.job_count ||
++            (lane.general_active && !lane.gpu_done))) {
+         (void)os_cond_wait(&lane.done_cond, &lane.mutex);
+     }
+     const double wait_finished = cuda_wall_sec();
+     const uint32_t count = lane.job_count;
++    const uint32_t gpu_routes = lane.general_gpu_routes;
++    const uint32_t eligible = lane.general_current_eligible;
++    const uint32_t rejected_cap = lane.general_current_rejected_cap;
++    const uint32_t rejected_balance =
++        lane.general_current_rejected_balance;
++    const int general_active = lane.general_active;
++    const uint64_t source_generation = lane.source_generation;
+     const int failed = lane.job_failed || count == 0u;
+     if (!failed) {
+         memset(lane.host_partial, 0, (size_t)lane.out_dim * sizeof(float));
+         for (uint32_t job = 0; job < count; job++) {
+             const float *route = lane.route_outputs.data() +
+                 (uint64_t)job * lane.out_dim;
+-            const float weight = lane.route_weights[job];
++            const float post_weight =
++                general_active ? 1.0f : lane.route_weights[job];
+             for (uint32_t i = 0; i < lane.out_dim; i++) {
+-                lane.host_partial[i] += weight * route[i];
++                lane.host_partial[i] += post_weight * route[i];
+             }
+         }
+     }
+     const double cpu_seconds = lane.cpu_finished >= lane.cpu_started
+         ? lane.cpu_finished - lane.cpu_started : 0.0;
++    const double gpu_seconds =
++        general_active && lane.gpu_finished >= lane.gpu_started
++        ? lane.gpu_finished - lane.gpu_started : 0.0;
++    const double gpu_wait_cpu_seconds =
++        general_active && lane.cpu_finished > lane.gpu_finished
++        ? lane.cpu_finished - lane.gpu_finished : 0.0;
++    const double cpu_wait_gpu_seconds =
++        general_active && lane.gpu_finished > lane.cpu_finished
++        ? lane.gpu_finished - lane.cpu_finished : 0.0;
+     lane.job_active = 0;
+     lane.input_ready = 0;
+     /* Workers are done and the host partial is fully reduced, so no CPU path
+      * can touch resident expert bytes after this point. */
+     cuda_g132_cpu_lane_release_reservations_locked(&lane);
++    if (general_active) {
++        uint64_t expected = source_generation;
++        (void)g_moe_expert_cache.route_cpu_staging_generation
++            .compare_exchange_strong(
++                expected, 0u, std::memory_order_acq_rel,
++                std::memory_order_acquire);
++        g_moe_expert_cache.route_cpu_plan = cuda_g132_general_plan{};
++        lane.general_active = 0;
++    }
+     os_cond_broadcast(&lane.work_cond);
+-    os_mutex_unlock(&lane.mutex);
+     if (failed) {
++        if (general_active) {
++            lane.general_fallback_runtime++;
++        }
++        os_mutex_unlock(&lane.mutex);
+         return 0;
+     }
+ 
++    if (general_active) {
++        const uint64_t native_bytes =
++            g_moe_expert_cache.gate_expert_bytes * 2ull +
++            g_moe_expert_cache.down_expert_bytes;
++        lane.general_calls++;
++        lane.general_route_cpu += count;
++        lane.general_route_gpu += gpu_routes;
++        lane.general_bytes_not_crossed += (uint64_t)count * native_bytes;
++        lane.general_cpu_seconds += cpu_seconds;
++        lane.general_gpu_seconds += gpu_seconds;
++        lane.general_gpu_wait_cpu_seconds += gpu_wait_cpu_seconds;
++        lane.general_cpu_wait_gpu_seconds += cpu_wait_gpu_seconds;
++        lane.general_layer_calls[layer_index]++;
++        lane.general_layer_cpu_routes[layer_index] += count;
++        lane.general_layer_cpu_seconds[layer_index] += cpu_seconds;
++        lane.layer_gpu_routes[layer_index] += gpu_routes;
++        lane.layer_bytes_not_crossed[layer_index] +=
++            (uint64_t)count * native_bytes;
++        lane.layer_gpu_seconds[layer_index] += gpu_seconds;
++        lane.layer_gpu_wait_cpu_seconds[layer_index] +=
++            gpu_wait_cpu_seconds;
++        lane.layer_cpu_wait_gpu_seconds[layer_index] +=
++            cpu_wait_gpu_seconds;
++
++        const double hysteresis = std::max(
++            0.000150, 0.10 * std::max(cpu_seconds, gpu_seconds));
++        const double imbalance = cpu_seconds - gpu_seconds;
++        const int32_t direction = imbalance > hysteresis ? -1 :
++            (imbalance < -hysteresis ? 1 : 0);
++        if (lane.layer_balance_cooldown[layer_index] != 0u) {
++            lane.layer_balance_cooldown[layer_index]--;
++            lane.layer_imbalance_streak[layer_index] = 0u;
++        } else if (direction == 0) {
++            lane.layer_imbalance_direction[layer_index] = 0;
++            lane.layer_imbalance_streak[layer_index] = 0u;
++        } else {
++            if (lane.layer_imbalance_direction[layer_index] == direction) {
++                lane.layer_imbalance_streak[layer_index]++;
++            } else {
++                lane.layer_imbalance_direction[layer_index] = direction;
++                lane.layer_imbalance_streak[layer_index] = 1u;
++            }
++            if (lane.layer_imbalance_streak[layer_index] >= 3u) {
++                uint32_t &target = lane.layer_target_cpu[layer_index];
++                const uint32_t target_max = std::min(
++                    lane.max_experts_per_layer,
++                    count + gpu_routes - 1u);
++                if (direction < 0 && target > 1u) {
++                    target--;
++                } else if (direction > 0 && target < target_max) {
++                    target++;
++                }
++                lane.layer_imbalance_streak[layer_index] = 0u;
++                lane.layer_balance_cooldown[layer_index] = 4u;
++            }
++        }
++    }
++    const uint32_t next_target =
++        layer_index < CUDA_G132_CPU_LANE_LAYER_COUNT
++        ? lane.layer_target_cpu[layer_index] : 0u;
++    os_mutex_unlock(&lane.mutex);
++
+     const size_t bytes = (size_t)lane.out_dim * sizeof(float);
+     if (!cuda_ok(cudaMemcpyAsync(
+                      lane.device_partial, lane.host_partial, bytes,
+@@ -49153,6 +49977,9 @@ static int cuda_g132_cpu_lane_wait_and_join(
+                  "G132 CPU lane partial event") ||
+         !cuda_ok(cudaStreamWaitEvent(0, lane.partial_copy_done, 0),
+                  "G132 CPU lane join wait")) {
++        if (general_active) {
++            lane.general_fallback_runtime++;
++        }
+         return 0;
+     }
+     /* Stream 0 already contains the hot (and any overflow-Q1) accumulation;
+@@ -49161,6 +49988,9 @@ static int cuda_g132_cpu_lane_wait_and_join(
+         (float *)out->ptr, (const float *)out->ptr,
+         lane.device_partial, lane.out_dim);
+     if (!cuda_ok(cudaGetLastError(), "G132 CPU lane output join")) {
++        if (general_active) {
++            lane.general_fallback_runtime++;
++        }
+         return 0;
+     }
+     lane.routes += count;
+@@ -49172,6 +50002,23 @@ static int cuda_g132_cpu_lane_wait_and_join(
+         lane.layer_join_wait_seconds[layer_index] +=
+             wait_finished - wait_started;
+     }
++    if (general_active) {
++        fprintf(stderr,
++                "ds4: [g132-general-layer] layer=%u route_cpu=%u "
++                "route_gpu=%u bytes_non_attraversati=%llu "
++                "cpu_wall_ms=%.6f gpu_wall_ms=%.6f "
++                "gpu_wait_cpu_ms=%.6f cpu_wait_gpu_ms=%.6f "
++                "eligible=%u rejected_cap=%u rejected_balance=%u "
++                "next_target_cpu=%u\n",
++                layer_index, count, gpu_routes,
++                (unsigned long long)((uint64_t)count *
++                    (g_moe_expert_cache.gate_expert_bytes * 2ull +
++                     g_moe_expert_cache.down_expert_bytes)),
++                cpu_seconds * 1000.0, gpu_seconds * 1000.0,
++                gpu_wait_cpu_seconds * 1000.0,
++                cpu_wait_gpu_seconds * 1000.0,
++                eligible, rejected_cap, rejected_balance, next_target);
++    }
+     if (cuda_q1_0_profile_requested()) {
+         fprintf(stderr,
+                 "ds4: [g132-cpu-lane-layer] layer=%u routes=%u "
+@@ -49193,7 +50040,18 @@ static void cuda_g132_cpu_lane_discard_dispatch(void) {
+     }
+     lane.job_active = 0;
+     lane.input_ready = 0;
++    const uint64_t source_generation = lane.source_generation;
++    const int general_active = lane.general_active;
+     cuda_g132_cpu_lane_release_reservations_locked(&lane);
++    lane.general_active = 0;
++    if (general_active) {
++        uint64_t expected = source_generation;
++        (void)g_moe_expert_cache.route_cpu_staging_generation
++            .compare_exchange_strong(
++                expected, 0u, std::memory_order_acq_rel,
++                std::memory_order_acquire);
++        g_moe_expert_cache.route_cpu_plan = cuda_g132_general_plan{};
++    }
+     os_cond_broadcast(&lane.work_cond);
+     os_mutex_unlock(&lane.mutex);
+ }

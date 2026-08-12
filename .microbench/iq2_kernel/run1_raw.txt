@@ -1,0 +1,171 @@
+=====================================================================
+ IQ2/Q2_K REAL-KERNEL ZERO-COPY MICROBENCH -- MoE expert delivery
+=====================================================================
+device                : NVIDIA GeForce RTX 3060 (sm_86, 28 SMs)
+L2 cache              : 2.25 MB   maxThreadsPerSM 1536   sharedPerSM 100 KB
+canMapHostMemory      : 1   unifiedAddressing: 1   asyncEngines: 1
+geometry              : in=4096 mid=2048 out=4096 | gate_row=1056 B (16x66) down_row=672 B (8x84)
+expert bytes          : gate 2162688 + up 2162688 + down 2752512 = 7077888 B
+group                 : 6 experts = 40.50 MB ; pool 64 experts = 432.0 MB per form
+timing                : 3 warmup + 20 measured, median, cudaEvent (wall cross-check)
+cache guard           : gate/up working set 24.8 MB, down 15.8 MB, both >> L2 2.25 MB;
+                        group rotates over 10 groups (60 distinct experts) each iteration.
+---------------------------------------------------------------------
+[alloc] pinned source pool  432.0 MB ...
+[alloc] mapped zero-copy pool 432.0 MB ...
+[alloc] VRAM resident pool  432.0 MB ...
+[init]  filling pool with pseudorandom IQ2_XXS / Q2_K blocks ...
+[init]  done. all three memory forms hold identical bytes (memcmp OK).
+[occ]   gate/up verbatim: 5 blocks/SM resident max -> grid 16x6 = 96 blocks = 27.4 warps/SM offered
+[occ]   down    verbatim: 6 blocks/SM resident max -> grid 128x6 = 768 blocks = 219.4 warps/SM offered
+[occ]   gate/up RR=1    : 5 blocks/SM resident max -> grid 64x6 = 384 blocks = 109.7 warps/SM offered
+---------------------------------------------------------------------
+K1/K2  gate/up  (moe_gate_up_mid_decode_ptrs_lut_qwarp32_kernel, 1 launch = 6 experts)
+  K1  gate/up VRAM                             ev_med    0.171 ms | min    0.169 | wall    0.180 |  151.87 GB/s |  0.0285 ms/exp | ->     3.9 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K2  gate/up ZERO-COPY (mapped RAM)           ev_med    6.055 ms | min    5.726 | wall    6.053 |    4.29 GB/s |  1.0091 ms/exp | ->   138.9 ms/tok(137.6) | chk 7e63521c6e411f1f
+K3/K4  down  (moe_down_ptrs_masked_qwarp32_kernel, 1 launch = 6 experts)
+  K3  down VRAM                                ev_med    0.066 ms | min    0.063 | wall    0.076 |  252.00 GB/s |  0.0109 ms/exp | ->     1.5 ms/tok(137.6) | chk d064dd3997071eff
+  K4  down ZERO-COPY (mapped RAM)              ev_med    2.964 ms | min    2.816 | wall    2.967 |    5.57 GB/s |  0.4940 ms/exp | ->    68.0 ms/tok(137.6) | chk d064dd3997071eff
+K5  realistic sequence gate/up -> q8_K quantize -> down, 6 experts
+  K5a full expert VRAM                         ev_med    0.232 ms | min    0.227 | wall    0.245 |  183.10 GB/s |  0.0387 ms/exp | ->     5.3 ms/tok(137.6) | chk 0000000000000000
+  K5b full expert ZERO-COPY                    ev_med    9.015 ms | min    8.798 | wall    9.126 |    4.71 GB/s |  1.5025 ms/exp | ->   206.7 ms/tok(137.6) | chk 0000000000000000
+  K5 chain checksums: VRAM 7bcc3ded03787396  ZERO-COPY 7bcc3ded03787396  -> IDENTICAL
+K6  status quo: copy 6 experts pinned->VRAM, then the same two kernels
+  K6  full expert copy pinned->VRAM + compute  ev_med    1.924 ms | min    1.904 | wall    1.938 |   22.07 GB/s |  0.3207 ms/exp | ->    44.1 ms/tok(137.6) | chk 7bcc3ded03787396
+K7  occupancy variants (same dequant/addressing, different row->block split)
+  K7a gate/up RR=4 (== verbatim) VRAM          ev_med    0.165 ms | min    0.159 | wall    0.176 |  157.42 GB/s |  0.0275 ms/exp | ->     3.8 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7b gate/up RR=4 (== verbatim) ZERO-COPY     ev_med    6.023 ms | min    5.695 | wall    6.020 |    4.31 GB/s |  1.0038 ms/exp | ->   138.1 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7c gate/up RR=2 (2x blocks) ZERO-COPY       ev_med    9.608 ms | min    9.461 | wall    9.664 |    2.70 GB/s |  1.6013 ms/exp | ->   220.3 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7d gate/up RR=1 (4x blocks) ZERO-COPY       ev_med   14.123 ms | min   13.382 | wall   14.046 |    1.84 GB/s |  2.3538 ms/exp | ->   323.9 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7e gate/up RR=1 (4x blocks) VRAM            ev_med    0.328 ms | min    0.309 | wall    0.337 |   79.22 GB/s |  0.0546 ms/exp | ->     7.5 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7f down ROWS=32 (== verbatim) ZERO-COPY     ev_med    2.946 ms | min    2.752 | wall    2.947 |    5.61 GB/s |  0.4911 ms/exp | ->    67.6 ms/tok(137.6) | chk abe3aa455a9e6826
+  K7g down ROWS=16/128thr (2x blocks) ZERO-COPY ev_med    3.447 ms | min    3.257 | wall    3.455 |    4.79 GB/s |  0.5745 ms/exp | ->    79.0 ms/tok(137.6) | chk abe3aa455a9e6826
+K8  raw PCIe reference (cudaMemcpy H2D, 384 MB pinned)
+  K8  cudaMemcpy H2D 384 MiB pinned            ev_med   15.310 ms | min   15.300 | wall   15.368 |   26.30 GB/s (PCIe peak)
+---------------------------------------------------------------------
+SUMMARY   (ms/expert normalised over the 6 experts of one launch group)
+          extrapolation A: 137.6 experts/token = RAM-arena misses (patch perimeter)
+          extrapolation B: 188.5 experts/token = base of the previous int8 bench
+---------------------------------------------------------------------
+scenario                                         ms/6exp     GB/s   ms/expert ms/tok(137.6) ms/tok(188.5)
+K1  gate/up VRAM                                   0.171   151.87      0.0285         3.9         5.4
+K2  gate/up ZERO-COPY (mapped RAM)                 6.055     4.29      1.0091       138.9       190.2
+K3  down VRAM                                      0.066   252.00      0.0109         1.5         2.1
+K4  down ZERO-COPY (mapped RAM)                    2.964     5.57      0.4940        68.0        93.1
+K5a full expert VRAM                               0.232   183.10      0.0387         5.3         7.3
+K5b full expert ZERO-COPY                          9.015     4.71      1.5025       206.7       283.2
+K6  full expert copy pinned->VRAM + compute        1.924    22.07      0.3207        44.1        60.4
+K7a gate/up RR=4 (== verbatim) VRAM                0.165   157.42      0.0275         3.8         5.2
+K7b gate/up RR=4 (== verbatim) ZERO-COPY           6.023     4.31      1.0038       138.1       189.2
+K7c gate/up RR=2 (2x blocks) ZERO-COPY             9.608     2.70      1.6013       220.3       301.9
+K7d gate/up RR=1 (4x blocks) ZERO-COPY            14.123     1.84      2.3538       323.9       443.7
+K7e gate/up RR=1 (4x blocks) VRAM                  0.328    79.22      0.0546         7.5        10.3
+K7f down ROWS=32 (== verbatim) ZERO-COPY           2.946     5.61      0.4911        67.6        92.6
+K7g down ROWS=16/128thr (2x blocks) ZERO-COPY      3.447     4.79      0.5745        79.0       108.3
+---------------------------------------------------------------------
+PCIe ceiling measured this run: 26.30 GB/s. Sanity: no scenario may exceed it.
+checksums (must be identical across memory forms for the same kernel):
+  K1  gate/up VRAM                               7e63521c6e411f1f
+  K2  gate/up ZERO-COPY (mapped RAM)             7e63521c6e411f1f
+  K3  down VRAM                                  d064dd3997071eff
+  K4  down ZERO-COPY (mapped RAM)                d064dd3997071eff
+  K5a full expert VRAM                           7bcc3ded03787396
+  K5b full expert ZERO-COPY                      7bcc3ded03787396
+  K6  full expert copy pinned->VRAM + compute    7bcc3ded03787396
+  K7a gate/up RR=4 (== verbatim) VRAM            7e63521c6e411f1f
+  K7b gate/up RR=4 (== verbatim) ZERO-COPY       7e63521c6e411f1f
+  K7c gate/up RR=2 (2x blocks) ZERO-COPY         7e63521c6e411f1f
+  K7d gate/up RR=1 (4x blocks) ZERO-COPY         7e63521c6e411f1f
+  K7e gate/up RR=1 (4x blocks) VRAM              7e63521c6e411f1f
+  K7f down ROWS=32 (== verbatim) ZERO-COPY       abe3aa455a9e6826
+  K7g down ROWS=16/128thr (2x blocks) ZERO-COPY  abe3aa455a9e6826
+=====================================================================
+=====================================================================
+ IQ2/Q2_K REAL-KERNEL ZERO-COPY MICROBENCH -- MoE expert delivery
+=====================================================================
+device                : NVIDIA GeForce RTX 3060 (sm_86, 28 SMs)
+L2 cache              : 2.25 MB   maxThreadsPerSM 1536   sharedPerSM 100 KB
+canMapHostMemory      : 1   unifiedAddressing: 1   asyncEngines: 1
+geometry              : in=4096 mid=2048 out=4096 | gate_row=1056 B (16x66) down_row=672 B (8x84)
+expert bytes          : gate 2162688 + up 2162688 + down 2752512 = 7077888 B
+group                 : 6 experts = 40.50 MB ; pool 64 experts = 432.0 MB per form
+timing                : 3 warmup + 20 measured, median, cudaEvent (wall cross-check)
+cache guard           : gate/up working set 24.8 MB, down 15.8 MB, both >> L2 2.25 MB;
+                        group rotates over 10 groups (60 distinct experts) each iteration.
+---------------------------------------------------------------------
+[alloc] pinned source pool  432.0 MB ...
+[alloc] mapped zero-copy pool 432.0 MB ...
+[alloc] VRAM resident pool  432.0 MB ...
+[init]  filling pool with pseudorandom IQ2_XXS / Q2_K blocks ...
+[init]  done. all three memory forms hold identical bytes (memcmp OK).
+[occ]   gate/up verbatim: 5 blocks/SM resident max -> grid 16x6 = 96 blocks = 27.4 warps/SM offered
+[occ]   down    verbatim: 6 blocks/SM resident max -> grid 128x6 = 768 blocks = 219.4 warps/SM offered
+[occ]   gate/up RR=1    : 5 blocks/SM resident max -> grid 64x6 = 384 blocks = 109.7 warps/SM offered
+---------------------------------------------------------------------
+K0  CONTROL coalesced uint4 streamer over the SAME pool (not a runtime kernel)
+  K0a CONTROL coalesced VRAM                   ev_med    0.685 ms | min    0.681 | wall    0.695 |   62.01 GB/s |  0.1141 ms/exp | ->    15.7 ms/tok(137.6) | chk 0000000000000000
+  K0b CONTROL coalesced ZERO-COPY              ev_med    1.634 ms | min    1.628 | wall    1.645 |   25.99 GB/s |  0.2724 ms/exp | ->    37.5 ms/tok(137.6) | chk 0000000000000000
+K1/K2  gate/up  (moe_gate_up_mid_decode_ptrs_lut_qwarp32_kernel, 1 launch = 6 experts)
+  K1  gate/up VRAM                             ev_med    0.171 ms | min    0.169 | wall    0.180 |  151.76 GB/s |  0.0285 ms/exp | ->     3.9 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K2  gate/up ZERO-COPY (mapped RAM)           ev_med    6.029 ms | min    5.899 | wall    6.076 |    4.30 GB/s |  1.0048 ms/exp | ->   138.3 ms/tok(137.6) | chk 7e63521c6e411f1f
+K3/K4  down  (moe_down_ptrs_masked_qwarp32_kernel, 1 launch = 6 experts)
+  K3  down VRAM                                ev_med    0.065 ms | min    0.063 | wall    0.074 |  254.36 GB/s |  0.0108 ms/exp | ->     1.5 ms/tok(137.6) | chk d064dd3997071eff
+  K4  down ZERO-COPY (mapped RAM)              ev_med    2.875 ms | min    2.761 | wall    2.884 |    5.74 GB/s |  0.4791 ms/exp | ->    65.9 ms/tok(137.6) | chk d064dd3997071eff
+K5  realistic sequence gate/up -> q8_K quantize -> down, 6 experts
+  K5a full expert VRAM                         ev_med    0.232 ms | min    0.224 | wall    0.242 |  182.82 GB/s |  0.0387 ms/exp | ->     5.3 ms/tok(137.6) | chk 0000000000000000
+  K5b full expert ZERO-COPY                    ev_med    8.966 ms | min    8.823 | wall    9.041 |    4.74 GB/s |  1.4943 ms/exp | ->   205.6 ms/tok(137.6) | chk 0000000000000000
+  K5 chain checksums: VRAM 7bcc3ded03787396  ZERO-COPY 7bcc3ded03787396  -> IDENTICAL
+K6  status quo: copy 6 experts pinned->VRAM, then the same two kernels
+  K6  full expert copy pinned->VRAM + compute  ev_med    1.926 ms | min    1.909 | wall    1.937 |   22.06 GB/s |  0.3209 ms/exp | ->    44.2 ms/tok(137.6) | chk 7bcc3ded03787396
+K7  occupancy variants (same dequant/addressing, different row->block split)
+  K7a gate/up RR=4 (== verbatim) VRAM          ev_med    0.164 ms | min    0.159 | wall    0.173 |  158.42 GB/s |  0.0273 ms/exp | ->     3.8 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7b gate/up RR=4 (== verbatim) ZERO-COPY     ev_med    6.027 ms | min    5.914 | wall    6.062 |    4.31 GB/s |  1.0044 ms/exp | ->   138.2 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7c gate/up RR=2 (2x blocks) ZERO-COPY       ev_med    9.565 ms | min    9.190 | wall    9.725 |    2.71 GB/s |  1.5942 ms/exp | ->   219.4 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7d gate/up RR=1 (4x blocks) ZERO-COPY       ev_med   14.020 ms | min   12.925 | wall   14.110 |    1.85 GB/s |  2.3367 ms/exp | ->   321.5 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7e gate/up RR=1 (4x blocks) VRAM            ev_med    0.326 ms | min    0.308 | wall    0.336 |   79.70 GB/s |  0.0543 ms/exp | ->     7.5 ms/tok(137.6) | chk 7e63521c6e411f1f
+  K7f down ROWS=32 (== verbatim) ZERO-COPY     ev_med    2.858 ms | min    2.725 | wall    2.866 |    5.78 GB/s |  0.4763 ms/exp | ->    65.5 ms/tok(137.6) | chk abe3aa455a9e6826
+  K7g down ROWS=16/128thr (2x blocks) ZERO-COPY ev_med    3.386 ms | min    3.238 | wall    3.411 |    4.88 GB/s |  0.5644 ms/exp | ->    77.7 ms/tok(137.6) | chk abe3aa455a9e6826
+K8  raw PCIe reference (cudaMemcpy H2D, 384 MB pinned)
+  K8  cudaMemcpy H2D 384 MiB pinned            ev_med   15.304 ms | min   15.299 | wall   15.334 |   26.31 GB/s (PCIe peak)
+---------------------------------------------------------------------
+SUMMARY   (ms/expert normalised over the 6 experts of one launch group)
+          extrapolation A: 137.6 experts/token = RAM-arena misses (patch perimeter)
+          extrapolation B: 188.5 experts/token = base of the previous int8 bench
+---------------------------------------------------------------------
+scenario                                         ms/6exp     GB/s   ms/expert ms/tok(137.6) ms/tok(188.5)
+K0a CONTROL coalesced VRAM                         0.685    62.01      0.1141        15.7        21.5
+K0b CONTROL coalesced ZERO-COPY                    1.634    25.99      0.2724        37.5        51.3
+K1  gate/up VRAM                                   0.171   151.76      0.0285         3.9         5.4
+K2  gate/up ZERO-COPY (mapped RAM)                 6.029     4.30      1.0048       138.3       189.4
+K3  down VRAM                                      0.065   254.36      0.0108         1.5         2.0
+K4  down ZERO-COPY (mapped RAM)                    2.875     5.74      0.4791        65.9        90.3
+K5a full expert VRAM                               0.232   182.82      0.0387         5.3         7.3
+K5b full expert ZERO-COPY                          8.966     4.74      1.4943       205.6       281.7
+K6  full expert copy pinned->VRAM + compute        1.926    22.06      0.3209        44.2        60.5
+K7a gate/up RR=4 (== verbatim) VRAM                0.164   158.42      0.0273         3.8         5.1
+K7b gate/up RR=4 (== verbatim) ZERO-COPY           6.027     4.31      1.0044       138.2       189.3
+K7c gate/up RR=2 (2x blocks) ZERO-COPY             9.565     2.71      1.5942       219.4       300.5
+K7d gate/up RR=1 (4x blocks) ZERO-COPY            14.020     1.85      2.3367       321.5       440.5
+K7e gate/up RR=1 (4x blocks) VRAM                  0.326    79.70      0.0543         7.5        10.2
+K7f down ROWS=32 (== verbatim) ZERO-COPY           2.858     5.78      0.4763        65.5        89.8
+K7g down ROWS=16/128thr (2x blocks) ZERO-COPY      3.386     4.88      0.5644        77.7       106.4
+---------------------------------------------------------------------
+PCIe ceiling measured this run: 26.31 GB/s. Sanity: no scenario may exceed it.
+checksums (must be identical across memory forms for the same kernel):
+  K0a CONTROL coalesced VRAM                     0000000000000000
+  K0b CONTROL coalesced ZERO-COPY                0000000000000000
+  K1  gate/up VRAM                               7e63521c6e411f1f
+  K2  gate/up ZERO-COPY (mapped RAM)             7e63521c6e411f1f
+  K3  down VRAM                                  d064dd3997071eff
+  K4  down ZERO-COPY (mapped RAM)                d064dd3997071eff
+  K5a full expert VRAM                           7bcc3ded03787396
+  K5b full expert ZERO-COPY                      7bcc3ded03787396
+  K6  full expert copy pinned->VRAM + compute    7bcc3ded03787396
+  K7a gate/up RR=4 (== verbatim) VRAM            7e63521c6e411f1f
+  K7b gate/up RR=4 (== verbatim) ZERO-COPY       7e63521c6e411f1f
+  K7c gate/up RR=2 (2x blocks) ZERO-COPY         7e63521c6e411f1f
+  K7d gate/up RR=1 (4x blocks) ZERO-COPY         7e63521c6e411f1f
+  K7e gate/up RR=1 (4x blocks) VRAM              7e63521c6e411f1f
+  K7f down ROWS=32 (== verbatim) ZERO-COPY       abe3aa455a9e6826
+  K7g down ROWS=16/128thr (2x blocks) ZERO-COPY  abe3aa455a9e6826
+=====================================================================

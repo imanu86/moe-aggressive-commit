@@ -1,0 +1,27 @@
+[2026-07-28T04:45:29Z] START workerprof task - reading code
+[2026-07-28T04:48:52Z] Mapped code. Key sites: worker=cuda_moe_route_worker@38750; enforce=cuda_moe_tiering_enforce_request@37795; chunked read=cuda_moe_transient_pread_chunked@29539; QD4 read=cuda_moe_route_io_qd_read@37654; caller wait=@43909-44035; GPU all-hit ready publish in kernel@25092. Build dir = build-native (sha matches 99ED54F6...).
+[2026-07-28T05:00:23Z] Code written: profiler block + 20 call sites instrumented. Gate check: absent.
+[2026-07-28T05:07Z] CODE COMPLETE. Static checks: brace/paren BALANCED; [worker-prof] fprintf 41 specs / 41 args MATCH.
+[2026-07-28T05:07Z] Backup: build-native/ds4_server.pre_workerprof.exe SHA256=99ED54F6B22B3C3D035EC93A9D21CEFB7C460A2773A214CBD3DE41FE8CB8905B (= current pre-build binary).
+[2026-07-28T05:07Z] Flags: DS4_CUDA_WORKER_PROFILE (default 0), DS4_CUDA_WORKER_PROFILE_EVERY_TOKENS (default 32).
+[2026-07-28T05:07Z] WAITING on D:\ds4_work\workerprof_gate\GO before compiling. Poll every 120s. ds4_server NEVER launched.
+[2026-07-28T05:12Z] Added WP_WRAP_POLL_NS (cuda_q1_0_ssd_wrap_poll sits between pickup and serve on the G73 path) and WP_FAULTS (per-job PageFaultCount delta - the mapped-pages probe).
+[2026-07-28T05:12Z] Static re-check: BALANCED; fprintf 42/42 MATCH; wprof scope OK in all 6 functions.
+[2026-07-28T05:12Z] Build script staged (vcvars64 + cmake --build build-native). NOT executed: gate absent.
+[2026-07-28T05:12Z] Added WP_LOAD_RAM_NS (cuda_moe_tiering_load_to_ram, live only with G73 off). Final static checks: fprintf 43/43 MATCH, BALANCED, wprof scope OK.
+[2026-07-28T05:12Z] Emitted line format saved to line_format.txt. Only ds4_cuda.cu modified.
+[2026-07-28T05:12Z] STATE: code complete, build BLOCKED on gate. Monitor armed (polls every 120s).
+[2026-07-28T05:11Z] END OF RUN. Gate D:\ds4_work\workerprof_gate\GO never appeared -> NO COMPILE PERFORMED, ds4_server NEVER LAUNCHED.
+[2026-07-28T05:11Z] TO BUILD when GO appears:
+   cmd /c "call \"C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat\" && cmake --build C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a\build-native"
+   (Ninja/Release/sm 80;86;89;90 already in build-native/CMakeCache.txt; CTest on Windows = ds4_bake_test only, does not launch the server.)
+[2026-07-28T05:11Z] pre-build SHA256 build-native/ds4_server.exe = 99ED54F6B22B3C3D035EC93A9D21CEFB7C460A2773A214CBD3DE41FE8CB8905B
+[2026-07-28T05:11Z] backup            build-native/ds4_server.pre_workerprof.exe = same hash. Post-build hash TO BE RECORDED.
+[2026-07-28T05:13:14Z] GATE PRESENT - starting build
+[2026-07-28T05:14Z] BUILD OK. exit=0, Ninja/Release, 6/6 steps (1 compile ds4_cuda.cu + 5 links), CUDA 12.6, sm 80;86;89;90.
+[2026-07-28T05:14Z] SHA256 PRE  = 99ED54F6B22B3C3D035EC93A9D21CEFB7C460A2773A214CBD3DE41FE8CB8905B (build-native/ds4_server.pre_workerprof.exe)
+[2026-07-28T05:14Z] SHA256 POST = 86E66F0C5482498B6D6AF1D9F876DE587D22F02D9401B5562CF84510A1E59EB1 (build-native/ds4_server.exe, mtime 2026-07-28T07:14:38)
+[2026-07-28T05:14Z] Warnings: 0 errors. Classes seen = C4244, #221-D, #177-D, #550-D - all already in the accepted baseline. 91 distinct warning lines in ds4_cuda.cu, ZERO within +/-4 lines of any instrumented line. No new warning class, no warning attributable to the worker-prof code.
+[2026-07-28T05:14Z] CTest 1/1 PASSED (ds4_bake_test), exit 0.
+[2026-07-28T05:14Z] Binary contains: worker-prof, DS4_CUDA_WORKER_PROFILE_EVERY_TOKENS, wrap_poll_ms, job_faults_per_token, inflight_avg.
+[2026-07-28T05:14Z] ds4_server NEVER LAUNCHED (verification is the coordinator's).

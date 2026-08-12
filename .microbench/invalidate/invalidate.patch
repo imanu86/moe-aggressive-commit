@@ -1,0 +1,533 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 8181499..afdc49a 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -3562,7 +3562,7 @@ static cuda_reap_router_trace *g_reap_router_trace_host = NULL;
+ static int g_reap_router_trace_valid = 0;
+ 
+ static int cuda_ok(cudaError_t err, const char *what);
+-static void cuda_moe_expert_cache_invalidate(void);
++static void cuda_moe_expert_cache_invalidate(const char *site);
+ static void cuda_moe_expert_cache_release(void);
+ static void cuda_iq1_s_ram_cache_release(void);
+ static void cuda_iq1_s_vram_cache_release(void);
+@@ -4414,6 +4414,13 @@ enum {
+     WP_DEADLINE_SLACK_EVENTS,
+     WP_DEADLINE_EXHAUSTED,
+     WP_CACHE_INVALIDATES,
++    /* INVALIDATE-SCOPED: eventi di rollback mirato (per richiesta fallita) e
++     * voci coinvolte, tenuti separati dal reset totale.  Le voci VALID
++     * buttate da ogni reset totale rendono giudicabile il costo reale di
++     * ciascun evento: un reset a cache vuota (avvio) pesa zero. */
++    WP_CACHE_INVALIDATES_SCOPED,
++    WP_CACHE_SCOPED_ENTRIES_DROPPED,
++    WP_CACHE_FULL_VALID_DROPPED,
+     WP_TOKENS,
+     WP_COUNT
+ };
+@@ -4795,7 +4802,9 @@ static void ds4_workerprof_report(const char *tag) {
+             "read_calls_per_token=%.1f "
+             "drain_overlap_ms=%.3f gpu_stall_on_drain_ms=%.3f "
+             "deadline_slack_ms=%.3f deadline_slack_events=%llu "
+-            "deadline_exhausted=%llu cache_invalidates=%llu\n",
++            "deadline_exhausted=%llu cache_invalidates_total=%llu "
++            "cache_invalidates_scoped=%llu cache_scoped_entries_dropped=%llu "
++            "cache_full_valid_dropped=%llu\n",
+             tag ? tag : "periodic",
+             (unsigned long long)v[WP_TOKENS],
+             (unsigned long long)v[WP_WAITS],
+@@ -4845,7 +4854,10 @@ static void ds4_workerprof_report(const char *tag) {
+             (double)v[WP_DEADLINE_SLACK_NS] * ms,
+             (unsigned long long)v[WP_DEADLINE_SLACK_EVENTS],
+             (unsigned long long)v[WP_DEADLINE_EXHAUSTED],
+-            (unsigned long long)v[WP_CACHE_INVALIDATES]);
++            (unsigned long long)v[WP_CACHE_INVALIDATES],
++            (unsigned long long)v[WP_CACHE_INVALIDATES_SCOPED],
++            (unsigned long long)v[WP_CACHE_SCOPED_ENTRIES_DROPPED],
++            (unsigned long long)v[WP_CACHE_FULL_VALID_DROPPED]);
+ 
+     for (int i = 0; i < WP_COUNT; i++) g_workerprof_prev[i] = cur[i];
+ }
+@@ -16984,7 +16996,7 @@ extern "C" int ds4_gpu_set_mtp_model_map_range(
+ }
+ 
+ extern "C" int ds4_gpu_set_model_file(const os_file_t *file) {
+-    cuda_moe_expert_cache_invalidate();
++    cuda_moe_expert_cache_invalidate("set-model-file");
+     cuda_model_file_clear();
+     if (!file || !os_file_valid(file)) return 1;
+     if (os_file_dup(&g_model_file, file) != 0) {
+@@ -30521,7 +30533,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+     ds4_transport_request_end();
+ }
+ 
+-template <bool G73, bool G132 = false>
++template <bool G73, bool G132 = false, bool SCOPED = false>
+ static void *cuda_moe_route_worker(void *arg);
+ static os_thread_fn g_cuda_moe_route_worker_dispatch =
+     cuda_moe_route_worker<false>;
+@@ -36618,15 +36630,29 @@ static void cuda_moe_tiering_demote_cache_entry(
+     }
+ }
+ 
+-static void cuda_moe_expert_cache_invalidate(void) {
++static void cuda_moe_expert_cache_invalidate(const char *site) {
+     /* DRAIN3-STRUM: ogni invalidazione azzera la residenza e forza il refill
+      * all-miss dei layer successivi.  Nei run degradati del 28/7 e' il bordo
+      * del ciclo invalidate -> all-miss -> guardiano -> invalidate, finora
+-     * invisibile nei contatori.  A flag spento resta un ramo su int cachato. */
++     * invisibile nei contatori.  A flag spento resta un ramo su int cachato.
++     *
++     * INVALIDATE-STRUM: il sito chiamante e le voci VALID/LOADING buttate
++     * rendono ogni evento giudicabile da solo: i due reset di avvio
++     * (set-model-file, expert-cache-prepare) buttano zero voci per
++     * costruzione, quelli dei percorsi di fallimento riportano il costo
++     * reale.  Telemetria sotto lo stesso guardiano DS4_CUDA_WORKER_PROFILE
++     * gia' usato dal contatore. */
+     if (cuda_worker_profile_enabled()) {
+         ds4_workerprof_add(WP_CACHE_INVALIDATES, 1u);
+     }
++    uint32_t invalidate_valid_dropped = 0u;
++    uint32_t invalidate_loading_dropped = 0u;
+     for (cuda_moe_cache_slot &slot : g_moe_expert_cache.slots) {
++        if (slot.state == CUDA_MOE_CACHE_VALID) {
++            invalidate_valid_dropped++;
++        } else if (slot.state == CUDA_MOE_CACHE_LOADING) {
++            invalidate_loading_dropped++;
++        }
+         if (slot.state == CUDA_MOE_CACHE_VALID &&
+             slot.layer_index < CUDA_MOE_LAYER_COUNT &&
+             slot.expert_id < 256u) {
+@@ -36663,6 +36689,15 @@ static void cuda_moe_expert_cache_invalidate(void) {
+     g_moe_expert_cache.route_g73_outcomes = cuda_g73_route_outcomes{};
+     g_moe_expert_cache.tick = 0;
+     g_moe_expert_cache.count = 0;
++    if (cuda_worker_profile_enabled()) {
++        ds4_workerprof_add(WP_CACHE_FULL_VALID_DROPPED,
++                           invalidate_valid_dropped);
++        fprintf(stderr,
++                "ds4: [cache-invalidate] scope=full site=%s valid_dropped=%u "
++                "loading_dropped=%u\n",
++                site ? site : "unattributed",
++                invalidate_valid_dropped, invalidate_loading_dropped);
++    }
+ }
+ 
+ static void cuda_moe_expert_cache_release(void) {
+@@ -38468,7 +38503,7 @@ static cuda_moe_expert_cache *cuda_moe_expert_cache_prepare(
+                 cuda_moe_expert_cache_release();
+                 return NULL;
+             }
+-            cuda_moe_expert_cache_invalidate();
++            cuda_moe_expert_cache_invalidate("expert-cache-prepare");
+             if ((prefill_vram_seed_per_layer > 0 ||
+                  prefill_vram_seed_total > 0) &&
+                 !cuda_moe_prefill_vram_seed(
+@@ -39373,6 +39408,156 @@ static void cuda_moe_tiering_refund_failed_promotions(
+     }
+ }
+ 
++/* =======================================================================
++ * INVALIDATE-SCOPED (DS4_CUDA_SCOPED_INVALIDATE=1, opt-in).
++ *
++ * Invariante protetto — lo stesso del reset totale: ogni voce della mappa
++ * device (layer,expert)->slot visibile al resolver deve puntare a uno slot
++ * i cui byte VRAM sono i pesi COMPLETI e CORRENTI di quella coppia, e gli
++ * indici host (slots[], host_slot_by_layer_expert, count) devono
++ * concordare.  Su una richiesta fallita le sole voci che possono violarlo
++ * sono quelle del registro di prenotazione della richiesta stessa
++ * (promotion_reservations): lo slot prenotato (byte eventualmente
++ * sovrascritti a meta' dagli H2D accodati), la chiave candidata (publish
++ * eventualmente eseguito) e la chiave vittima (publish eventualmente NON
++ * eseguito con H2D gia' passato: mappa device stantia su byte
++ * sovrascritti).  Ogni altro slot resta intatto per costruzione:
++ * pick_vram_slot reclama solo gli slot del registro e le richieste sono
++ * serializzate dalla mailbox.
++ *
++ * Il rollback mirato e' lecito SOLO a stream di upload provato quieto:
++ * con publish ancora in volo la mappa device puo' mutare in un istante
++ * arbitrario (ds4_cuda.cu, commento "A joined host worker is not a drained
++ * CUDA producer").  transfer_ok del drain e' la prova nel caso comune
++ * (G73_OPEN=0: poll senza deadline fino a quiescenza); altrimenti si
++ * ri-polla con lo stesso bound di cancel_and_join e, se non si dimostra,
++ * si ricade sul reset totale di oggi.
++ *
++ * Tutto il codice nuovo e' raggiungibile solo dalle specializzazioni
++ * SCOPED=true del route worker, selezionate una volta all'init: a flag
++ * spento le istanze compilate del percorso attivo sono le stesse di oggi.
++ * ======================================================================= */
++static std::atomic<uint32_t> g_moe_route_failure_scoped_sequence(0u);
++
++static void cuda_moe_route_failure_scoped_sign(
++        uint32_t sequence, uint32_t reservations,
++        uint32_t slots_emptied, uint32_t victims_unmapped,
++        const char *note) {
++    if (sequence == 0u) return;
++    g_moe_route_failure_scoped_sequence.store(
++        sequence, std::memory_order_release);
++    if (cuda_worker_profile_enabled()) {
++        ds4_workerprof_add(WP_CACHE_INVALIDATES_SCOPED, 1u);
++        ds4_workerprof_add(WP_CACHE_SCOPED_ENTRIES_DROPPED, slots_emptied);
++        fprintf(stderr,
++                "ds4: [cache-invalidate] scope=scoped seq=%u reservations=%u "
++                "slots_emptied=%u victims_unmapped=%u note=%s\n",
++                sequence, reservations, slots_emptied, victims_unmapped,
++                note ? note : "none");
++    }
++}
++
++static int cuda_moe_route_failure_scoped_consume(uint32_t sequence) {
++    return sequence != 0u &&
++        g_moe_route_failure_scoped_sequence.load(
++            std::memory_order_acquire) == sequence;
++}
++
++static int cuda_moe_tiering_scoped_invalidate(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_vram_promotion_reservation *reservations,
++        uint32_t count, uint32_t sequence, int stream_known_quiet) {
++    if (!cache || !reservations || sequence == 0u) return 0;
++    if (!stream_known_quiet && cache->route_upload_stream) {
++        /* Drain fallito o non concluso: prova la quiescenza con lo stesso
++         * bound del percorso cancel_and_join prima di toccare la mappa. */
++        const double quiesce_deadline = cuda_wall_sec() + 5.0;
++        cudaError_t status = cudaStreamQuery(cache->route_upload_stream);
++        while (status == cudaErrorNotReady &&
++               cuda_wall_sec() < quiesce_deadline) {
++#ifdef _WIN32
++            (void)SwitchToThread();
++#else
++            usleep(0);
++#endif
++            status = cudaStreamQuery(cache->route_upload_stream);
++        }
++        if (status != cudaSuccess) {
++            (void)cudaGetLastError();
++            return 0;
++        }
++    }
++    uint32_t slots_emptied = 0u;
++    uint32_t victims_unmapped = 0u;
++    const int32_t empty_map_entry = -1;
++    for (uint32_t i = 0; i < count; i++) {
++        const cuda_moe_vram_promotion_reservation &reservation =
++            reservations[i];
++        if (!reservation.active ||
++            reservation.cache_slot >= cache->capacity ||
++            reservation.candidate_layer >= CUDA_MOE_LAYER_COUNT ||
++            reservation.candidate_expert >= 256u) {
++            continue;
++        }
++        cuda_moe_cache_slot &entry = cache->slots[reservation.cache_slot];
++        /* Idempotente: il drain anticipato fallito e quello finale possono
++         * rieseguire lo stesso registro; il secondo passaggio trova lo slot
++         * gia' EMPTY e non riconta ne' ridecrementa. */
++        const int first_pass = entry.state != CUDA_MOE_CACHE_EMPTY;
++        const size_t new_map_index = cuda_moe_tiering_entry_index(
++            reservation.candidate_layer, reservation.candidate_expert);
++        if (new_map_index < cache->host_slot_by_layer_expert.size() &&
++            cache->host_slot_by_layer_expert[new_map_index] ==
++                (int32_t)reservation.cache_slot) {
++            cache->host_slot_by_layer_expert[new_map_index] = -1;
++        }
++        if (cache->device_slot_by_layer_expert &&
++            cudaMemcpy(cache->device_slot_by_layer_expert + new_map_index,
++                       &empty_map_entry, sizeof(int32_t),
++                       cudaMemcpyHostToDevice) != cudaSuccess) {
++            (void)cudaGetLastError();
++            return 0;
++        }
++        if (reservation.victim_valid &&
++            reservation.victim_layer < CUDA_MOE_LAYER_COUNT &&
++            reservation.victim_expert < 256u) {
++            const size_t old_map_index = cuda_moe_tiering_entry_index(
++                reservation.victim_layer, reservation.victim_expert);
++            if (old_map_index < cache->host_slot_by_layer_expert.size() &&
++                cache->host_slot_by_layer_expert[old_map_index] ==
++                    (int32_t)reservation.cache_slot) {
++                cache->host_slot_by_layer_expert[old_map_index] = -1;
++            }
++            if (cache->device_slot_by_layer_expert &&
++                cudaMemcpy(cache->device_slot_by_layer_expert + old_map_index,
++                           &empty_map_entry, sizeof(int32_t),
++                           cudaMemcpyHostToDevice) != cudaSuccess) {
++                (void)cudaGetLastError();
++                return 0;
++            }
++            if (first_pass) {
++                victims_unmapped++;
++                if (cache->count > 0u) cache->count--;
++            }
++        }
++        /* Il rollback di stato tier (candidato ripristinato, vittima
++         * demansionata) e' gia' stato fatto da refund_failed_promotions,
++         * chiamata prima di questa funzione: qui si azzera solo l'indice. */
++        entry.state = CUDA_MOE_CACHE_EMPTY;
++        entry.age = 0;
++        entry.layer_key = 0;
++        entry.layer_index = UINT32_MAX;
++        entry.expert_id = UINT32_MAX;
++        entry.layer_owned = 0;
++        if (first_pass) slots_emptied++;
++    }
++    cuda_moe_route_failure_scoped_sign(
++        sequence, count, slots_emptied, victims_unmapped,
++        stream_known_quiet ? "drain-clean" : "quiesced");
++    return 1;
++}
++
++template <bool SCOPED>
+ static int cuda_moe_tiering_finish_vram_reservations(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request *trace_request,
+@@ -39401,7 +39586,30 @@ static int cuda_moe_tiering_finish_vram_reservations(
+         (void)cudaGetLastError();
+         cuda_moe_tiering_refund_failed_promotions(
+             reservations, count, g133_epoch);
+-        if (count > 0u) cuda_moe_expert_cache_invalidate();
++        if constexpr (SCOPED) {
++            /* INVALIDATE-SCOPED: butta solo le voci del registro di questa
++             * richiesta (fino a 6 slot su ~140) invece dell'intera cache, e
++             * firma la sequence cosi' il consumer non riesegue il reset
++             * totale.  count==0 (fallimento puramente transiente, nessuna
++             * promozione accodata): la cache non e' stata toccata e non c'e'
++             * nulla da buttare.  Se la quiescenza dello stream non e'
++             * dimostrabile si ricade sul reset totale identico a oggi. */
++            const uint32_t scoped_sequence =
++                trace_request ? trace_request->sequence : 0u;
++            if (count == 0u) {
++                cuda_moe_route_failure_scoped_sign(
++                    scoped_sequence, 0u, 0u, 0u, "no-reservations");
++            } else if (!cuda_moe_tiering_scoped_invalidate(
++                           cache, reservations, count,
++                           scoped_sequence, transfer_ok)) {
++                cuda_moe_expert_cache_invalidate(
++                    "worker-enforce-failure-scoped-fallback");
++            }
++        } else {
++            if (count > 0u) {
++                cuda_moe_expert_cache_invalidate("worker-enforce-failure");
++            }
++        }
+         return transfer_ok;
+     }
+     for (uint32_t i = 0; i < count; i++) {
+@@ -39832,7 +40040,7 @@ static int cuda_g132_general_plan_admit(
+     return 1;
+ }
+ 
+-template <bool G73, bool G132 = false>
++template <bool G73, bool G132 = false, bool SCOPED = false>
+ static int cuda_moe_tiering_enforce_request(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+@@ -40209,7 +40417,7 @@ static int cuda_moe_tiering_enforce_request(
+                 }
+                 const double early_drain_started = cuda_moe_zerocopy_now_ms();
+                 const int early_finish_ok =
+-                    cuda_moe_tiering_finish_vram_reservations(
++                    cuda_moe_tiering_finish_vram_reservations<SCOPED>(
+                         cache, &request, admitted, promotion_reservations,
+                         admitted_count, request.g133_epoch, 1,
+                         request.absolute_deadline);
+@@ -40923,7 +41131,7 @@ static int cuda_moe_tiering_enforce_request(
+         ds4_workerprof_add_ms(wprof, WP_PUBLISH_NS, flush_ms);
+     }
+     const double drain_started = cuda_moe_zerocopy_now_ms();
+-    const int transfers_ok = cuda_moe_tiering_finish_vram_reservations(
++    const int transfers_ok = cuda_moe_tiering_finish_vram_reservations<SCOPED>(
+         cache, &request, admitted, promotion_reservations, admitted_count,
+         request.g133_epoch, ok, request.absolute_deadline);
+     ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
+@@ -40974,7 +41182,7 @@ static int cuda_moe_tiering_enforce_request(
+     return ok;
+ }
+ 
+-template <bool G73, bool G132>
++template <bool G73, bool G132, bool SCOPED>
+ static void *cuda_moe_route_worker(void *arg) {
+     cuda_moe_expert_cache *cache = (cuda_moe_expert_cache *)arg;
+     if (!cache || cudaSetDevice(cache->route_device) != cudaSuccess) {
+@@ -41302,7 +41510,7 @@ static void *cuda_moe_route_worker(void *arg) {
+         cuda_moe_route_publish_batch publish_batch = {};
+         ds4_transport_h2d_batch transport_batch = {};
+         if (ok && g_moe_tiering.mode == CUDA_MOE_TIER_ENFORCE) {
+-            ok = cuda_moe_tiering_enforce_request<G73, G132>(
++            ok = cuda_moe_tiering_enforce_request<G73, G132, SCOPED>(
+                 cache, request, claimed.data());
+             if (cache->route_worker_safe_leaked.load(
+                     std::memory_order_acquire)) return NULL;
+@@ -41651,7 +41859,7 @@ static void *cuda_moe_route_worker(void *arg) {
+                             entry.layer_index, entry.expert_id);
+                     }
+                 }
+-                cuda_moe_expert_cache_invalidate();
++                cuda_moe_expert_cache_invalidate("worker-legacy-failure");
+             }
+         }
+         cache->route_worker_jobs++;
+@@ -44391,7 +44599,7 @@ static int cuda_moe_selected_load(
+                 g_model_upload_stream, absolute_deadline, layer_index,
+                 "selected-prefetch-cleanup") == cudaSuccess;
+             cuda_spex_prefetch_release(spex_queue, spex_prefetch_slot, fenced, 0);
+-            if (cache) cuda_moe_expert_cache_invalidate();
++            if (cache) cuda_moe_expert_cache_invalidate("selected-spex-copy");
+             return 0;
+         }
+     }
+@@ -44440,7 +44648,7 @@ static int cuda_moe_selected_load(
+             g_model_upload_stream, absolute_deadline, layer_index,
+             "selected-fill-cleanup") == cudaSuccess;
+         cuda_spex_prefetch_release(spex_queue, spex_prefetch_slot, fenced, 0);
+-        if (cache) cuda_moe_expert_cache_invalidate();
++        if (cache) cuda_moe_expert_cache_invalidate("selected-fill");
+         return 0;
+     }
+ 
+@@ -44477,7 +44685,7 @@ static int cuda_moe_selected_load(
+                     g_model_upload_stream, absolute_deadline, layer_index,
+                     "selected-cache-cleanup") == cudaSuccess;
+                 cuda_spex_prefetch_release(spex_queue, spex_prefetch_slot, fenced, 0);
+-                if (cache) cuda_moe_expert_cache_invalidate();
++                if (cache) cuda_moe_expert_cache_invalidate("selected-cache-copy");
+                 return 0;
+             }
+         }
+@@ -44507,7 +44715,7 @@ static int cuda_moe_selected_load(
+         if (iq1_vram_pending_slot >= 0)
+             g_iq1_s_vram_cache.failures++;
+         cuda_spex_prefetch_release(spex_queue, spex_prefetch_slot, 0, 0);
+-        if (cache) cuda_moe_expert_cache_invalidate();
++        if (cache) cuda_moe_expert_cache_invalidate("selected-compact-upload");
+         return 0;
+     }
+     if (iq1_profile && iq1_upload_experts != 0 && upload_sync_required) {
+@@ -44593,7 +44801,7 @@ static int cuda_moe_selected_load(
+                             cache->host_slot_by_layer_expert.size() * sizeof(int32_t),
+                             cudaMemcpyHostToDevice, 0) != cudaSuccess) {
+             (void)cudaGetLastError();
+-            cuda_moe_expert_cache_invalidate();
++            cuda_moe_expert_cache_invalidate("selected-map-upload");
+             return 0;
+         }
+         cache->calls++;
+@@ -46284,7 +46492,8 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+             if (G73 && resolve_err == cudaErrorNotReady) {
+                 if (cuda_moe_route_worker_cancel_and_join(
+                         cache, sequence, absolute_deadline)) {
+-                    cuda_moe_expert_cache_invalidate();
++                    cuda_moe_expert_cache_invalidate(
++                        "consumer-resolver-notready");
+                 }
+                 return NULL;
+             }
+@@ -46325,7 +46534,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                     sequence);
+             if (cuda_moe_route_worker_cancel_and_join(
+                     cache, sequence, cache->route_transient_read_deadline)) {
+-                cuda_moe_expert_cache_invalidate();
++                cuda_moe_expert_cache_invalidate("consumer-worker-lost");
+             }
+             return NULL;
+         }
+@@ -46368,7 +46577,8 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                 }
+                 if (cuda_moe_route_worker_cancel_and_join(
+                         cache, sequence, transient_absolute_deadline)) {
+-                    cuda_moe_expert_cache_invalidate();
++                    cuda_moe_expert_cache_invalidate(
++                        "consumer-transient-recovery-stall");
+                 }
+                 return NULL;
+             }
+@@ -46388,7 +46598,8 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+             }
+             if (cuda_moe_route_worker_cancel_and_join(
+                     cache, sequence, transient_absolute_deadline)) {
+-                cuda_moe_expert_cache_invalidate();
++                cuda_moe_expert_cache_invalidate(
++                    "consumer-transient-deadline");
+             }
+             return NULL;
+         }
+@@ -46417,7 +46628,8 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                     ? transient_absolute_deadline : now;
+                 if (cuda_moe_route_worker_cancel_and_join(
+                         cache, sequence, cancel_deadline)) {
+-                    cuda_moe_expert_cache_invalidate();
++                    cuda_moe_expert_cache_invalidate(
++                        "consumer-transient-stall");
+                 }
+                 return NULL;
+             }
+@@ -46427,7 +46639,7 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                     sequence);
+             if (cuda_moe_route_worker_cancel_and_join(
+                     cache, sequence, now)) {
+-                cuda_moe_expert_cache_invalidate();
++                cuda_moe_expert_cache_invalidate("consumer-starved");
+             }
+             return NULL;
+         }
+@@ -46473,7 +46685,15 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                 "route-failure-invalidate")) {
+             return NULL;
+         }
+-        cuda_moe_expert_cache_invalidate();
++        if (cuda_moe_route_failure_scoped_consume(sequence)) {
++            /* INVALIDATE-SCOPED: il worker ha gia' eseguito e firmato il
++             * rollback mirato delle sole voci toccate dalla richiesta
++             * fallita; il reset totale qui sarebbe la punizione collettiva
++             * che innesca la tempesta all-miss.  A flag spento la firma non
++             * viene mai scritta e questo ramo e' morto. */
++            return NULL;
++        }
++        cuda_moe_expert_cache_invalidate("consumer-route-failure");
+         return NULL;
+     }
+     const cuda_moe_route_request *request = cache->route_request_host;
+@@ -48871,26 +49091,40 @@ static void cuda_g73_route_dispatch_init(void) {
+     const int general_enabled =
+         lane && strcmp(lane, "1") == 0 &&
+         general && strcmp(general, "1") == 0;
++    /* INVALIDATE-SCOPED: stessa cucitura del dispatch G73/G132 — una getenv
++     * a init, mai sul percorso caldo.  A flag spento le specializzazioni
++     * selezionate sono le STESSE istanze di oggi (SCOPED=false di default):
++     * il codice del rollback mirato non esiste nel compilato attivo. */
++    const char *scoped_env = getenv("DS4_CUDA_SCOPED_INVALIDATE");
++    const int scoped_enabled = scoped_env && strcmp(scoped_env, "1") == 0;
+     if (g_cuda_g73_open_enabled && general_enabled) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true, false>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<true, true>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true, true>;
++        g_cuda_moe_route_worker_dispatch = scoped_enabled
++            ? cuda_moe_route_worker<true, true, true>
++            : cuda_moe_route_worker<true, true>;
+     } else if (g_cuda_g73_open_enabled) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<true, false>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true, false>;
++        g_cuda_moe_route_worker_dispatch = scoped_enabled
++            ? cuda_moe_route_worker<true, false, true>
++            : cuda_moe_route_worker<true, false>;
+     } else if (general_enabled) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false, false>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<false, true>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false, true>;
++        g_cuda_moe_route_worker_dispatch = scoped_enabled
++            ? cuda_moe_route_worker<false, true, true>
++            : cuda_moe_route_worker<false, true>;
+     } else {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<false, false>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false, false>;
++        g_cuda_moe_route_worker_dispatch = scoped_enabled
++            ? cuda_moe_route_worker<false, false, true>
++            : cuda_moe_route_worker<false, false>;
+     }
+ }
+ 

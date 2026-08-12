@@ -1,0 +1,292 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -685,6 +685,16 @@ static ds4_thread_pool g_pool;
+ static _Thread_local int g_parallel_depth;
+ static uint32_t g_requested_threads;
+ 
++/* DSPARK-2: set only on NextN drafter threads (ds4_nextn_worker_main).  The
++ * dispatch in ds4_parallel_for_min_rows sends those threads' row-parallel
++ * jobs to the G132 lane pool so g_pool keeps its single-submitter contract
++ * with the decode thread.  On every other thread this is a false
++ * thread-local: one load and one branch, nothing else. */
++static _Thread_local bool g_nextn_drafter_thread;
++#ifndef DS4_NO_GPU
++static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx);
++#endif
++
+ static void *ds4_worker_main(void *arg) {
+     const uint32_t tid = (uint32_t)(uintptr_t)arg;
+     uint32_t seen_generation = 0;
+@@ -788,6 +798,21 @@ static void ds4_threads_shutdown(void) {
+ static void ds4_parallel_for_min_rows(uint64_t n_rows, ds4_parallel_fn fn, void *ctx, uint64_t min_parallel_rows) {
+     ds4_threads_init();
+ 
++    if (g_nextn_drafter_thread) {
++        /* DSPARK-2fix2: drafter threads never touch g_pool.  Heavy jobs go
++         * to the G132 lane pool on the shared submit mutex - this is what
++         * moves the dense Q8 projections of a chain step (~178 MB) from one
++         * inline core to the pool - and small or nested jobs run inline. */
++#ifndef DS4_NO_GPU
++        if (g_parallel_depth == 0 && n_rows >= min_parallel_rows &&
++            ds4_nextn_g132_submit(n_rows, fn, ctx)) {
++            return;
++        }
++#endif
++        fn(ctx, 0, n_rows);
++        return;
++    }
++
+     if (g_parallel_depth > 0 || g_pool.n_threads <= 1 || n_rows < min_parallel_rows) {
+         fn(ctx, 0, n_rows);
+         return;
+@@ -6780,36 +6805,18 @@ typedef struct {
+ 
+ /* DSPARK-2: parallel dispatch for the NextN CPU draft cycle.
+  *
+- * The draft cycle runs on a dedicated drafter thread while the CUDA decode
+- * thread may still be submitting to the process-global pool, whose single
+- * mutable fn/ctx/done slot supports one submitter (see the G132 lane comment
+- * above ds4_g132_worker_main).  A drafter thread therefore (a) pins its own
+- * thread-local g_parallel_depth to 1 so every existing helper it reuses runs
+- * inline instead of submitting to g_pool, and (b) routes the heavy kernels it
+- * owns (routed Q4_K and the vocabulary head) to the independent G132 lane
+- * pool through this shim.  The G132 submit slot is single-submitter as well,
+- * and this build has a second potential submitter - the [shared-cpu] worker
+- * (DS4_CPU_SHARED_EXPERT) - so the drafter serializes on the SAME process
+- * mutex as shared1 via ds4_nextn_g132_submit (defined next to the shared1
+- * block; dspark2 v1 used a private mutex, which would have corrupted the
+- * pool the moment both workers were armed).  The backbone lane itself stays
+- * mutually exclusive with the drafter (enforced at engine open).  On any
+- * other thread the shim is byte-identical to ds4_parallel_for. */
+-static _Thread_local bool g_nextn_drafter_thread;
+-
+-#ifndef DS4_NO_GPU
+-static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx);
+-#endif
+-
++ * Drafter threads are marked by the thread-local g_nextn_drafter_thread and
++ * the dispatch at the top of ds4_parallel_for_min_rows routes THEIR jobs to
++ * the G132 lane pool (shared submit mutex with the [shared-cpu] worker,
++ * ds4_nextn_g132_submit) instead of g_pool, whose single fn/ctx/done slot
++ * belongs to the decode thread.  Since 2fix2 that dispatch covers every
++ * existing helper the pieces 1-2 forward reuses - attention projections,
++ * shared expert, e/h_proj - not just the Q4_K kernels and the vocabulary
++ * head, so the dense ~178 MB of a chain step run pooled instead of on one
++ * inline core.  This wrapper stays as the explicit call point of the
++ * dspark1/dspark2 kernels; on non-drafter threads it is ds4_parallel_for. */
+ static void ds4_nextn_parallel_for(
+         uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
+-    if (g_nextn_drafter_thread) {
+-#ifndef DS4_NO_GPU
+-        if (ds4_nextn_g132_submit(n_rows, fn, ctx)) return;
+-#endif
+-        fn(ctx, 0, n_rows);
+-        return;
+-    }
+     ds4_parallel_for(n_rows, fn, ctx);
+ }
+ 
+@@ -10002,12 +10009,10 @@ static DS4_MAYBE_UNUSED void ds4_nextn_head_top2(
+ 
+ static DS4_MAYBE_UNUSED void *ds4_nextn_worker_main(void *arg) {
+     ds4_nextn_drafter *d = arg;
+-    /* Existing helpers reused by the pieces 1-2 forward must not submit to
+-     * the process-global pool from this thread: pinning the thread-local
+-     * parallel depth makes every nested ds4_parallel_for run inline, while
+-     * the routed Q4_K kernels and the head go through the G132 lane pool via
+-     * ds4_nextn_parallel_for. */
+-    g_parallel_depth = 1;
++    /* Marking the thread routes every ds4_parallel_for it issues to the
++     * G132 lane pool (dispatch in ds4_parallel_for_min_rows): dense
++     * projections, routed Q4_K kernels and the vocabulary head all run
++     * pooled, and g_pool stays exclusively the decode thread's. */
+     g_nextn_drafter_thread = true;
+     {
+         /* One line per process: proves the drafter thread exists and shows
+@@ -11283,9 +11288,14 @@ static void ds4_shared1_pool_mutex_init(void) {
+ static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
+     os_once(&g_shared1_pool_once, ds4_shared1_pool_mutex_init);
+     if (!g_shared1_pool_mutex_ready) return 0;
++    /* Reentrancy guard: the caller partition of the pool runs on this same
++     * thread, so a nested ds4_parallel_for inside a worker fn must fall back
++     * inline in the dispatch instead of re-acquiring the submit mutex. */
++    g_parallel_depth++;
+     os_mutex_lock(&g_shared1_pool_mutex);
+     const int ok = ds4_g132_parallel_for(n_rows, fn, ctx);
+     os_mutex_unlock(&g_shared1_pool_mutex);
++    g_parallel_depth--;
+     return ok;
+ }
+ 
+@@ -21940,6 +21950,159 @@ int ds4_engine_first_token_test(ds4_engine *e, const ds4_tokens *prompt) {
+     return 0;
+ }
+ 
++/* =========================================================================
++ * DSPARK-2fix2: NextN module warm-up (prewarm + pin).
++ * =========================================================================
++ *
++ * Misura 2026-07-29 (binario 3DE06FD01C7CFB4D): step_ms_avg=186, max=523 -
++ * ogni passo di catena pagava first-touch page fault dal mmap PAGEABLE del
++ * modulo (il gate (a) lo lascia deliberatamente non registrato/non pinnato
++ * lato CUDA).  Working set per passo: denso ~178 MB (attn 113,8 + e/h_proj
++ * 35,7 + shexp 26,7 + hc/router ~1,6) sempre uguale, 6 esperti Q4_K da
++ * 14,16 MB variabili per token (pool 3,54 GiB), testa base Q8_0 562,6 MB.
++ *
++ * Rimedio in due tempi, una volta sola a engine-open:
++ *  - PREWARM (DS4_NEXTN_PREWARM, default 1): una passata sequenziale su
++ *    tutta la finestra tensori del modulo e sulla testa - il first-touch
++ *    si paga a velocita' di readahead all'avvio invece che a fault sparsi
++ *    per passo;
++ *  - PIN (DS4_NEXTN_PIN, default 1): VirtualLock/mlock del working set
++ *    per-passo garantito (denso del modulo + testa, ~741 MB) cosi' la
++ *    pressione di memoria non lo sfratta; DS4_NEXTN_PIN=2 blocca anche i
++ *    256 esperti (~+3,54 GiB), DS4_NEXTN_PIN=0 disattiva.
++ * Fallimenti di lock sono soft: una riga di log, si resta su page cache. */
++#ifndef _WIN32
++#include <sys/mman.h>
++#endif
++
++static uint64_t ds4_nextn_touch_region(const uint8_t *base, uint64_t bytes) {
++    uint64_t sum = 0;
++    for (uint64_t off = 0; off < bytes; off += 4096u) {
++        sum += base[off];
++    }
++    if (bytes != 0) sum += base[bytes - 1u];
++    return sum;
++}
++
++static bool ds4_nextn_lock_region(const void *base, uint64_t bytes) {
++    if (!base || bytes == 0) return true;
++    const uintptr_t page = 4096u;
++    const uintptr_t lo = (uintptr_t)base & ~(page - 1u);
++    const uintptr_t hi =
++        ((uintptr_t)base + (uintptr_t)bytes + page - 1u) & ~(page - 1u);
++#ifdef _WIN32
++    return VirtualLock((LPVOID)lo, (SIZE_T)(hi - lo)) != 0;
++#else
++    return mlock((const void *)lo, (size_t)(hi - lo)) == 0;
++#endif
++}
++
++#ifdef _WIN32
++static void ds4_nextn_grow_working_set(uint64_t bytes) {
++    /* VirtualLock is capped by the process minimum working set: grow it
++     * first (own process, no privilege needed), with headroom. */
++    SIZE_T cur_min = 0;
++    SIZE_T cur_max = 0;
++    HANDLE self = GetCurrentProcess();
++    if (!GetProcessWorkingSetSize(self, &cur_min, &cur_max)) return;
++    const SIZE_T grow = (SIZE_T)bytes + (SIZE_T)(64u << 20);
++    (void)SetProcessWorkingSetSize(self, cur_min + grow, cur_max + grow);
++}
++#endif
++
++static void ds4_nextn_engine_warmup(ds4_engine *e) {
++    const char *pw_env = getenv("DS4_NEXTN_PREWARM");
++    const char *pin_env = getenv("DS4_NEXTN_PIN");
++    const bool do_prewarm = !(pw_env && strcmp(pw_env, "0") == 0);
++    long pin_mode = 1;
++    if (pin_env && pin_env[0]) pin_mode = strtol(pin_env, NULL, 10);
++
++    const uint8_t *mod_base = (const uint8_t *)e->mtp_model.map +
++                              e->mtp_model.tensor_data_pos;
++    const uint64_t mod_bytes =
++        e->mtp_model.size - e->mtp_model.tensor_data_pos;
++    const ds4_tensor *head_t = e->weights.output;
++    const uint8_t *head_base =
++        (const uint8_t *)tensor_data(&e->model, head_t);
++    const uint64_t head_bytes = head_t->bytes;
++
++    if (do_prewarm) {
++        volatile uint64_t sink = 0;
++        const double t0 = now_sec();
++        sink += ds4_nextn_touch_region(mod_base, mod_bytes);
++        const double t_mod = now_sec();
++        sink += ds4_nextn_touch_region(head_base, head_bytes);
++        const double t_head = now_sec();
++        (void)sink;
++        fprintf(stderr,
++                "ds4: [nextn-cpu] prewarm module=%.1f MB in %.0f ms, "
++                "head=%.1f MB in %.0f ms\n",
++                (double)mod_bytes / 1048576.0,
++                (t_mod - t0) * 1000.0,
++                (double)head_bytes / 1048576.0,
++                (t_head - t_mod) * 1000.0);
++    }
++    if (pin_mode <= 0) return;
++
++    const ds4_mtp_weights *mw = &e->mtp_weights;
++    const ds4_layer_weights *bl = &mw->block;
++    const ds4_tensor *dense[] = {
++        mw->e_proj, mw->h_proj, mw->enorm, mw->hnorm, mw->norm,
++        mw->hc_head_base, mw->hc_head_fn, mw->hc_head_scale,
++        bl->hc_attn_fn, bl->hc_attn_scale, bl->hc_attn_base,
++        bl->attn_norm, bl->attn_q_a, bl->attn_q_a_norm, bl->attn_q_b,
++        bl->attn_kv, bl->attn_kv_a_norm, bl->attn_sinks,
++        bl->attn_output_a, bl->attn_output_b,
++        bl->hc_ffn_fn, bl->hc_ffn_scale, bl->hc_ffn_base, bl->ffn_norm,
++        bl->ffn_gate_inp, bl->ffn_exp_probs_b,
++        bl->ffn_gate_shexp, bl->ffn_up_shexp, bl->ffn_down_shexp,
++    };
++    const ds4_tensor *exps[] = {
++        bl->ffn_gate_exps, bl->ffn_up_exps, bl->ffn_down_exps,
++    };
++    uint64_t want = head_bytes;
++    for (size_t i = 0; i < sizeof(dense) / sizeof(dense[0]); i++) {
++        want += dense[i]->bytes;
++    }
++    if (pin_mode >= 2) {
++        for (size_t i = 0; i < sizeof(exps) / sizeof(exps[0]); i++) {
++            want += exps[i]->bytes;
++        }
++    }
++#ifdef _WIN32
++    ds4_nextn_grow_working_set(want);
++#endif
++    uint64_t locked = 0;
++    uint64_t failed = 0;
++    for (size_t i = 0; i < sizeof(dense) / sizeof(dense[0]); i++) {
++        const ds4_tensor *t = dense[i];
++        if (ds4_nextn_lock_region(tensor_data(&e->mtp_model, t), t->bytes)) {
++            locked += t->bytes;
++        } else {
++            failed += t->bytes;
++        }
++    }
++    if (ds4_nextn_lock_region(head_base, head_bytes)) locked += head_bytes;
++    else failed += head_bytes;
++    if (pin_mode >= 2) {
++        for (size_t i = 0; i < sizeof(exps) / sizeof(exps[0]); i++) {
++            const ds4_tensor *t = exps[i];
++            if (ds4_nextn_lock_region(tensor_data(&e->mtp_model, t),
++                                      t->bytes)) {
++                locked += t->bytes;
++            } else {
++                failed += t->bytes;
++            }
++        }
++    }
++    fprintf(stderr,
++            "ds4: [nextn-cpu] pin mode=%ld locked=%.1f MB failed=%.1f MB "
++            "(1=dense+head, 2=+experts, 0=off)\n",
++            pin_mode,
++            (double)locked / 1048576.0,
++            (double)failed / 1048576.0);
++}
++
+ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+     ds4_engine *e = xcalloc(1, sizeof(*e));
+     os_mmap_init(&e->model.mmap);
+@@ -22206,6 +22369,10 @@ int ds4_engine_open(ds4_engine **out, const ds4_engine_options *opt) {
+                     "(module served from host RAM; CUDA MTP draft path "
+                     "bypassed)\n",
+                     draft_k);
++            /* DSPARK-2fix2: pay the module first-touch once, here, and pin
++             * the per-step working set (misura: step_ms_avg=186 col mmap
++             * freddo contro un pavimento di banda di ~20 ms). */
++            ds4_nextn_engine_warmup(e);
+         }
+     }
+ 

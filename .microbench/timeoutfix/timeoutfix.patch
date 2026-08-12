@@ -1,0 +1,371 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 9ac3ba2..f85627e 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -29113,7 +29113,18 @@ struct cuda_moe_expert_cache {
+     std::atomic<uint32_t> route_transient_timeout_cancel_sequence;
+     std::atomic<uint32_t> route_transient_dead_sequence;
+     std::atomic<uint64_t> route_transient_read_bytes;
+-    double route_transient_read_deadline;
++    /* TIMEOUTFIX B2: scritta dal route worker (publish, disarmo pre-ripiego)
++     * e letta a ogni giro di poll dal thread di decode.  Da double ordinario
++     * era una data race: il disarmo a 0.0 poteva non essere mai osservato e
++     * un ripiego in avanzamento veniva cancellato.  Atomico con lo stesso
++     * size/alignment: il layout della struct non cambia.  I siti non
++     * annotati restano validi cosi' come sono (operazioni implicite,
++     * seq_cst). */
++    std::atomic<double> route_transient_read_deadline;
++    static_assert(sizeof(std::atomic<double>) == sizeof(double) &&
++                      alignof(std::atomic<double>) == alignof(double) &&
++                      std::atomic<double>::is_always_lock_free,
++                  "route_transient_read_deadline: atomico a layout invariato");
+     os_pread_cancellable_t route_transient_pread;
+     int route_thread_started;
+     std::atomic<int> route_worker_safe_leaked;
+@@ -31341,10 +31352,19 @@ static int cuda_moe_transient_pread_chunked(
+     uint8_t *destination = (uint8_t *)buf;
+     uint64_t completed = 0u;
+     while (completed < bytes) {
+-        if (cache->route_transient_cancel_sequence.load(
+-                std::memory_order_acquire) == sequence ||
+-            (absolute_deadline > 0.0 &&
+-             cuda_wall_sec() >= absolute_deadline)) {
++        /* TIMEOUTFIX B4: WP_DEADLINE_EXHAUSTED conta le scadenze della
++         * deadline osservate dalle letture (qui, dopo ogni chunk, e nella
++         * classificazione del cancel del consumer), non piu' solo il budget
++         * gia' esaurito al primo ingresso transiente della richiesta. */
++        const int deadline_expired_before_chunk =
++            absolute_deadline > 0.0 &&
++            cuda_wall_sec() >= absolute_deadline;
++        if (deadline_expired_before_chunk ||
++            cache->route_transient_cancel_sequence.load(
++                std::memory_order_acquire) == sequence) {
++            if (wprof && deadline_expired_before_chunk) {
++                ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
++            }
+             ds4_transport_mark_incomplete();
+             return -1;
+         }
+@@ -31406,6 +31426,10 @@ static int cuda_moe_transient_pread_chunked(
+         if (got < 0 &&
+             cache->route_transient_timeout_cancel_sequence.load(
+                 std::memory_order_acquire) == sequence) {
++            /* TIMEOUTFIX B4: il consumer cancella SOLO quando ha osservato la
++             * deadline assoluta scaduta; questa e' una scadenza avvenuta
++             * durante l'I/O e va contata come le altre. */
++            if (wprof) ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
+             ds4_transport_mark_incomplete();
+             return -1;
+         }
+@@ -31418,6 +31442,9 @@ static int cuda_moe_transient_pread_chunked(
+             request_bytes, std::memory_order_release);
+         if (absolute_deadline > 0.0 &&
+             cuda_wall_sec() >= absolute_deadline) {
++            /* TIMEOUTFIX B4: scadenza maturata durante il chunk appena
++             * completato. */
++            if (wprof) ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
+             ds4_transport_mark_incomplete();
+             return -1;
+         }
+@@ -31511,10 +31538,39 @@ static int cuda_moe_transient_timeout_fallback_serve(
+         return 0;
+     }
+     if (deadline_cancelled) {
+-        /* The cancellable call has returned before control reaches here, so its
+-         * persistent slot can be reset and reused.  Clear only the cancellation
+-         * carrying the dedicated deadline marker; a generic cancellation never
+-         * reaches this block. */
++        /* TIMEOUTFIX B1: che la chiamata cancellabile sia gia' rientrata NON
++         * implica che lo slot sia libero.  Su Windows un cancel il cui
++         * completamento supera l'attesa bounded di 50 ms rientra con -1
++         * lasciando active=1 e l'OVERLAPPED pending (os_file.c, rami
++         * WAIT_TIMEOUT/WAIT_FAILED); su POSIX aio_cancel puo' restare
++         * EINPROGRESS.  Il reset azzera solo cancel_sequence, quindi riusare
++         * lo slot faceva fallire EBUSY la prima rilettura e trasformava il
++         * ripiego dichiarato recuperabile in fallback-unavailable.
++         * Precondizione del ripiego: ack del cancel (pending()==0) con
++         * attesa bounded aggiuntiva; uno slot ancora pending non viene MAI
++         * riusato: si abortisce e il successivo cancel_and_join lo mette in
++         * quarantena col ramo pending() che gia' possiede. */
++        const double cancel_ack_deadline = cuda_wall_sec() + 1.0;
++        while (os_pread_cancellable_pending(&cache->route_transient_pread)) {
++            if (cache->route_worker_safe_leaked.load(
++                    std::memory_order_acquire)) {
++                if (skipped_reason) *skipped_reason = "safe-leaked";
++                return 0;
++            }
++            if (cache->route_stop.load(std::memory_order_acquire)) {
++                if (skipped_reason) *skipped_reason = "route-stop";
++                return 0;
++            }
++            if (cuda_wall_sec() >= cancel_ack_deadline) {
++                if (skipped_reason) *skipped_reason = "cancel-ack-timeout";
++                return 0;
++            }
++#ifdef _WIN32
++            (void)SwitchToThread();
++#else
++            usleep(0);
++#endif
++        }
+         os_pread_cancellable_reset(&cache->route_transient_pread);
+         cache->route_transient_cancel_sequence.store(
+             0u, std::memory_order_release);
+@@ -31526,9 +31582,14 @@ static int cuda_moe_transient_timeout_fallback_serve(
+      * route_transient_read_deadline.  Va disarmata prima di rileggere, altrimenti
+      * il ripiego non serve a nulla.  Resta attivo il watchdog di stallo (5 s
+      * senza byte nuovi), che la rilettura tiene alimentato a ogni chunk da 1 MiB.
+-     * La ripubblicazione della sequence e' una release: il prossimo giro di
+-     * poll del thread di decode fa acquire e vede la deadline azzerata. */
+-    cache->route_transient_read_deadline = 0.0;
++     * TIMEOUTFIX B2: il disarmo e' uno store release sull'atomic; e' QUESTA
++     * la pubblicazione della transizione a fallback che il thread di decode
++     * legge con acquire a ogni giro di poll.  La sola ripubblicazione della
++     * sequence (stesso valore) non era un cambio di stato osservabile, e il
++     * double ordinario era una data race: il consumer poteva restare sulla
++     * deadline scaduta e cancellare un ripiego in avanzamento. */
++    cache->route_transient_read_deadline.store(
++        0.0, std::memory_order_release);
+     cache->route_transient_read_sequence.store(
+         request.sequence, std::memory_order_release);
+     /* WORKER-PROF: il ripiego rilegge gli STESSI tensori del percorso normale,
+@@ -36447,11 +36508,84 @@ static int cuda_q1_0_ssd_wrap_record_h2d(
+     return 1;
+ }
+ 
++/* TIMEOUTFIX B3 - pubblicazione unica dello stato transiente della richiesta:
++ * reset dello slot cancellabile, azzeramento di byte e marcatori, deadline,
++ * sequence.  E' il blocco storico del percorso transiente, estratto per poter
++ * essere eseguito PRIMA di ogni lettura SSD del servizio route: anche le
++ * ammissioni SSD_COLD -> RAM devono stare sotto lo stesso guardiano,
++ * altrimenti il consumer le classifica "starved", il cancel colpisce uno slot
++ * che nessuno sta usando e il join scaduto lascia cache e worker safe-leaked
++ * permanenti.
++ *
++ * DRAIN3-STRUM: budget residuo del guardiano al PRIMO ingresso transiente
++ * della richiesta.  Il timer parte all'ingresso in enforce
++ * (transient_request_deadline, testa della funzione): quel che manca qui e'
++ * stato bruciato DENTRO la richiesta prima di leggere (drain anticipato), non
++ * dalla lettura stessa.  Discrimina "IO lento" da "budget consumato a monte"
++ * nei run che abortiscono con transient-io-timeout.  TIMEOUTFIX B4:
++ * WP_DEADLINE_EXHAUSTED non viene piu' incrementato qui; ora conta le
++ * scadenze osservate dalle letture stesse, in
++ * cuda_moe_transient_pread_chunked. */
++static void cuda_moe_transient_read_publish_once(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request &request,
++        double transient_request_deadline, int wprof,
++        int *transient_read_published) {
++    if (*transient_read_published) return;
++    os_pread_cancellable_reset(&cache->route_transient_pread);
++    cache->route_transient_read_bytes.store(
++        0u, std::memory_order_release);
++    cache->route_transient_cancel_sequence.store(
++        0u, std::memory_order_release);
++    cache->route_transient_timeout_cancel_sequence.store(
++        0u, std::memory_order_release);
++    cache->route_transient_read_deadline.store(
++        transient_request_deadline, std::memory_order_release);
++    cache->route_transient_read_sequence.store(
++        request.sequence, std::memory_order_release);
++    if (wprof && transient_request_deadline > 0.0) {
++        const double drain3_slack_sec =
++            transient_request_deadline - cuda_wall_sec();
++        ds4_workerprof_add(WP_DEADLINE_SLACK_EVENTS, 1u);
++        if (drain3_slack_sec > 0.0) {
++            ds4_workerprof_add(
++                WP_DEADLINE_SLACK_NS,
++                (uint64_t)(drain3_slack_sec * 1.0e9));
++        }
++    }
++    *transient_read_published = 1;
++}
++
++/* TIMEOUTFIX B3 - lettura di ammissione SSD -> arena RAM.  Con un contesto
++ * transiente la lettura passa dal percorso cancellabile a chunk: deadline
++ * assoluta controllata a ogni chunk, cancel del consumer onorato, byte
++ * pubblicati per il watchdog di stallo, contabilita' transport per byte
++ * realmente letti.  Senza contesto (chiamanti di promozione fuori dal
++ * servizio route) resta la os_pread bloccante storica, byte-identica. */
++static int cuda_moe_tiering_admission_pread(
++        cuda_moe_expert_cache *transient_cache,
++        const cuda_moe_route_request &request,
++        uint32_t layer, int transport_repeat,
++        void *buf, uint64_t bytes, uint64_t offset,
++        double transient_deadline) {
++    if (transient_cache) {
++        return cuda_moe_transient_pread_chunked(
++            transient_cache, request.sequence, request.trace_sample_id,
++            layer, transport_repeat, &g_model_file, buf, bytes,
++            offset, transient_deadline) == 1;
++    }
++    if (!cuda_pread_full(&g_model_file, buf, bytes, offset)) return 0;
++    ds4_transport_record_file_bytes(transport_repeat, bytes);
++    return 1;
++}
++
+ static int cuda_moe_tiering_load_to_ram(
+         const cuda_moe_route_request &request,
+         uint32_t layer, uint32_t expert,
+         cuda_q1_0_promotion_record_context *promotion_record = NULL,
+-        int *admission_denied = NULL) {
++        int *admission_denied = NULL,
++        cuda_moe_expert_cache *transient_cache = NULL,
++        double transient_deadline = 0.0) {
+     if (admission_denied) *admission_denied = 0;
+     if (g_moe_tiering.mode != CUDA_MOE_TIER_ENFORCE ||
+         layer >= CUDA_MOE_LAYER_COUNT || expert >= 256u ||
+@@ -36581,28 +36715,22 @@ static int cuda_moe_tiering_load_to_ram(
+         ? ds4_transport_file_load_begin(layer, expert) : -1;
+     int file_ok = g_model_file_valid;
+     if (file_ok) {
+-        file_ok = cuda_pread_full(
+-            &g_model_file, host_gate, request.gate_expert_bytes, gate_src);
+-        if (file_ok) {
+-            ds4_transport_record_file_bytes(
+-                transport_repeat, request.gate_expert_bytes);
+-        }
++        file_ok = cuda_moe_tiering_admission_pread(
++            transient_cache, request, layer, transport_repeat,
++            host_gate, request.gate_expert_bytes, gate_src,
++            transient_deadline);
+     }
+     if (file_ok) {
+-        file_ok = cuda_pread_full(
+-            &g_model_file, host_up, request.gate_expert_bytes, up_src);
+-        if (file_ok) {
+-            ds4_transport_record_file_bytes(
+-                transport_repeat, request.gate_expert_bytes);
+-        }
++        file_ok = cuda_moe_tiering_admission_pread(
++            transient_cache, request, layer, transport_repeat,
++            host_up, request.gate_expert_bytes, up_src,
++            transient_deadline);
+     }
+     if (file_ok) {
+-        file_ok = cuda_pread_full(
+-            &g_model_file, host_down, request.down_expert_bytes, down_src);
+-        if (file_ok) {
+-            ds4_transport_record_file_bytes(
+-                transport_repeat, request.down_expert_bytes);
+-        }
++        file_ok = cuda_moe_tiering_admission_pread(
++            transient_cache, request, layer, transport_repeat,
++            host_down, request.down_expert_bytes, down_src,
++            transient_deadline);
+     }
+     if (!file_ok) {
+         /* cuda_pread_full exposes only success/failure.  A short failed read
+@@ -41525,10 +41653,18 @@ static int cuda_moe_tiering_enforce_request(
+              * G73 spento (il compilatore lo elimina nell'istanza G73=true), ma
+              * strumentato lo stesso: il residuo deve significare "non
+              * attribuito", non "non strumentato". */
++            /* TIMEOUTFIX B3: pubblica lo stato transiente PRIMA della lettura
++             * di ammissione, cosi' il consumer la vede come I/O transiente
++             * cancellabile (progresso in route_transient_read_bytes, deadline
++             * assoluta, cancel efficace) e non come worker "starved" da
++             * cancel_and_join. */
++            cuda_moe_transient_read_publish_once(
++                cache, request, transient_request_deadline, wprof,
++                &transient_read_published);
+             const uint64_t wprof_load = ds4_workerprof_start(wprof);
+             (void)cuda_moe_tiering_load_to_ram(
+                 request, request.layer_index, expert, NULL,
+-                &ram_admission_denied);
++                &ram_admission_denied, cache, transient_request_deadline);
+             ds4_workerprof_stop(wprof, WP_LOAD_RAM_NS, wprof_load);
+             have_ram = cuda_moe_tiering_ram_ptrs(
+                 request.layer_index, expert,
+@@ -41555,10 +41691,15 @@ static int cuda_moe_tiering_enforce_request(
+             tier.ram_slot = UINT32_MAX;
+             tier.ram_generation = 0;
+             int retry_admission_denied = 0;
++            /* TIMEOUTFIX B3: come per il ramo SSD_COLD, la rilettura di
++             * ammissione sta sotto il guardiano transiente. */
++            cuda_moe_transient_read_publish_once(
++                cache, request, transient_request_deadline, wprof,
++                &transient_read_published);
+             const uint64_t wprof_load_retry = ds4_workerprof_start(wprof);
+             (void)cuda_moe_tiering_load_to_ram(
+                 request, request.layer_index, expert, NULL,
+-                &retry_admission_denied);
++                &retry_admission_denied, cache, transient_request_deadline);
+             ds4_workerprof_stop(wprof, WP_LOAD_RAM_NS, wprof_load_retry);
+             if (retry_admission_denied) {
+                 /* Policy denial is a serving decision, not a residency
+@@ -41648,41 +41789,14 @@ static int cuda_moe_tiering_enforce_request(
+             if (read_result != 1 && g_model_file_valid) {
+                 transport_repeat = ds4_transport_file_load_begin(
+                     request.layer_index, expert);
+-                if (!transient_read_published) {
+-                    os_pread_cancellable_reset(
+-                        &cache->route_transient_pread);
+-                    cache->route_transient_read_bytes.store(
+-                        0u, std::memory_order_release);
+-                    cache->route_transient_cancel_sequence.store(
+-                        0u, std::memory_order_release);
+-                    cache->route_transient_timeout_cancel_sequence.store(
+-                        0u, std::memory_order_release);
+-                    cache->route_transient_read_deadline =
+-                        transient_request_deadline;
+-                    cache->route_transient_read_sequence.store(
+-                        request.sequence, std::memory_order_release);
+-                    /* DRAIN3-STRUM: budget residuo del guardiano al PRIMO
+-                     * ingresso transiente della richiesta.  Il timer parte
+-                     * all'ingresso in enforce (transient_request_deadline,
+-                     * testa della funzione): quel che manca qui e' stato
+-                     * bruciato DENTRO la richiesta prima di leggere (drain
+-                     * anticipato, load RAM), non dalla lettura stessa.
+-                     * Discrimina "IO lento" da "budget consumato a monte"
+-                     * nei run che abortiscono con transient-io-timeout. */
+-                    if (wprof && transient_request_deadline > 0.0) {
+-                        const double drain3_slack_sec =
+-                            transient_request_deadline - cuda_wall_sec();
+-                        ds4_workerprof_add(WP_DEADLINE_SLACK_EVENTS, 1u);
+-                        if (drain3_slack_sec > 0.0) {
+-                            ds4_workerprof_add(
+-                                WP_DEADLINE_SLACK_NS,
+-                                (uint64_t)(drain3_slack_sec * 1.0e9));
+-                        } else {
+-                            ds4_workerprof_add(WP_DEADLINE_EXHAUSTED, 1u);
+-                        }
+-                    }
+-                    transient_read_published = 1;
+-                }
++                /* TIMEOUTFIX B3/B4: blocco storico estratto in
++                 * cuda_moe_transient_read_publish_once (stessa semantica,
++                 * stessa strumentazione DRAIN3), richiamato anche prima
++                 * delle ammissioni SSD_COLD -> RAM.  WP_DEADLINE_EXHAUSTED
++                 * e' ora contato dentro la pread a chunk. */
++                cuda_moe_transient_read_publish_once(
++                    cache, request, transient_request_deadline, wprof,
++                    &transient_read_published);
+                 /* GGUF stores gate/up/down as three tensor-major planes, so
+                  * one expert's slices are not source-contiguous. READ_WHOLE
+                  * therefore performs one cancellable positioned read per
+@@ -47905,7 +48019,9 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+                     "ds4: CUDA GPU-resident route resolver lost worker seq=%u\n",
+                     sequence);
+             if (cuda_moe_route_worker_cancel_and_join(
+-                    cache, sequence, cache->route_transient_read_deadline)) {
++                    cache, sequence,
++                    cache->route_transient_read_deadline.load(
++                        std::memory_order_acquire))) {
+                 cuda_moe_expert_cache_invalidate("consumer-worker-lost");
+             }
+             return NULL;
+@@ -47932,8 +48048,13 @@ static cuda_moe_expert_cache *cuda_moe_gpu_resident_routes_finish(
+             transient_read_observed = 1;
+             wait_deadline = now + transient_stall_seconds;
+         }
++        /* TIMEOUTFIX B2: acquire per giro di poll; osservare 0.0 qui e' cio'
++         * che fa uscire il consumer dal ramo deadline-scaduta e lo porta al
++         * watchdog progress-aware mentre il ripiego avanza. */
+         const double transient_absolute_deadline = transient_active_now
+-            ? cache->route_transient_read_deadline : 0.0;
++            ? cache->route_transient_read_deadline.load(
++                  std::memory_order_acquire)
++            : 0.0;
+         if (transient_active_now && transient_absolute_deadline > 0.0 &&
+             wait_deadline > transient_absolute_deadline) {
+             wait_deadline = transient_absolute_deadline;

@@ -1,0 +1,13 @@
+01 snapshot corrente di ds4-p4a/ds4_cuda.cu creato; SHA256=AAC858FC5C8422C5D5160E4C6FC4C2F5D262A5C416F42154665E89F1B43242B0
+02 hook esistenti individuati: lifecycle decode/token/request-end, route H2D+drain, transient pread, route QD, load_to_ram, SSD-wrap e worker non-enforce
+03 semantica fissata: nessuna stima; contare solo byte file restituiti e H2D con drain riuscito; errori parziali marcano ledger_complete=0
+04 ledger 43x256x(2*u32) implementato nella sola copia di lavoro; static_assert=88064 byte
+05 lifecycle collegato: clear al request-boundary, re-clear/arm a decode-start, periodic al token-end, final a request-end
+06 file hook collegati: SSD-wrap, load_to_ram, transient chunked+fallback, route-QD, nested residual e worker non-enforce
+07 H2D hook collegati: route enforce (resident/transient/demand pipeline + early drain) e worker non-enforce; commit solo dopo drain riuscito
+08 riga [transport] fissata con denominator decode_ms e ledger_complete; zero-copy/mmap/CUPTI dichiarati come limiti, non stimati
+09 diff unificato generato con path applicabili a ds4-p4a/ds4_cuda.cu
+10 git apply --check --whitespace=error-all superato contro il file corrente
+11 GO_APPLY assente; GO_BUILD assente; nessuna applicazione e nessuna build eseguite
+12 audit semantico: file_reads corretto a una materializzazione per coppia; gate/up/down e chunk condividono first/repeat, evitando falsa ridondanza intra-coppia
+13 patch finale rigenerata; SHA256=C41E8D0BDB46FEB5DF97CE3BB7D54EC12E179A749CC4743CC677DF58AECCB052; apply-check superato

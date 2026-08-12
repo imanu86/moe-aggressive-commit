@@ -1,0 +1,301 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index d937b98..60bf892 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -30471,7 +30471,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+     ds4_transport_request_end();
+ }
+ 
+-template <bool G73, bool G132 = false>
++template <bool G73, bool G132 = false, bool DRAIN_DIAG = false>
+ static void *cuda_moe_route_worker(void *arg);
+ static os_thread_fn g_cuda_moe_route_worker_dispatch =
+     cuda_moe_route_worker<false>;
+@@ -31257,6 +31257,11 @@ static int cuda_moe_split_fused_requested(void) {
+     return env && env[0] && strcmp(env, "0") != 0;
+ }
+ 
++static int cuda_moe_drain_deadlock_diag_requested(void) {
++    const char *env = getenv("DS4_CUDA_DRAIN_DEADLOCK_DIAG");
++    return env && strcmp(env, "1") == 0;
++}
++
+ static int cuda_moe_route_no_default_sync_requested(void) {
+     const char *env = getenv("DS4_CUDA_MOE_ROUTE_NO_DEFAULT_SYNC");
+     return env && env[0] && strcmp(env, "0") != 0;
+@@ -39316,6 +39321,133 @@ static void cuda_moe_tiering_refund_failed_promotions(
+     }
+ }
+ 
++/* Diagnostic-only replacement for the route drain. It deliberately uses
++ * nonblocking queries so a stuck run reports the complete host/mailbox wait
++ * graph before its ordinary watchdog aborts. DRAIN_DIAG is selected once at
++ * init; the normal route-worker specialization cannot call this function. */
++static cudaError_t cuda_moe_route_drain_deadlock_diag_wait(
++        cuda_moe_expert_cache *cache,
++        const cuda_moe_route_request *request,
++        double absolute_deadline,
++        const char *site) {
++    if (!cache || !cache->route_upload_stream) {
++        return cudaErrorInvalidResourceHandle;
++    }
++    const uint32_t sequence = request
++        ? request->sequence
++        : cache->route_submitted_sequence.load(std::memory_order_acquire);
++    const uint64_t generation = request
++        ? request->host_generation
++        : cache->route_submitted_generation.load(std::memory_order_acquire);
++    const uint32_t layer = request ? request->layer_index : UINT32_MAX;
++    const double started = cuda_wall_sec();
++    double next_report = started;
++    uint64_t polls = 0u;
++    for (;;) {
++        const cudaError_t upload_status =
++            cudaStreamQuery(cache->route_upload_stream);
++        polls++;
++        if (upload_status == cudaSuccess) {
++            fprintf(stderr,
++                    "ds4: [drain-deadlock-diag] phase=complete site=%s "
++                    "seq=%u generation=%llu layer=%u elapsed_ms=%.3f "
++                    "polls=%llu\n",
++                    site ? site : "unknown", sequence,
++                    (unsigned long long)generation, layer,
++                    (cuda_wall_sec() - started) * 1000.0,
++                    (unsigned long long)polls);
++            return cudaSuccess;
++        }
++        if (upload_status != cudaErrorNotReady) {
++            fprintf(stderr,
++                    "ds4: [drain-deadlock-diag] phase=error site=%s "
++                    "seq=%u generation=%llu layer=%u upload=%s "
++                    "elapsed_ms=%.3f polls=%llu\n",
++                    site ? site : "unknown", sequence,
++                    (unsigned long long)generation, layer,
++                    cudaGetErrorString(upload_status),
++                    (cuda_wall_sec() - started) * 1000.0,
++                    (unsigned long long)polls);
++            return upload_status;
++        }
++        const double now = cuda_wall_sec();
++        if (now >= next_report) {
++            const cudaError_t default_status = cudaStreamQuery(0);
++            const cudaError_t consumer_status =
++                cache->route_consumer_done_event
++                    ? cudaEventQuery(cache->route_consumer_done_event)
++                    : cudaErrorInvalidResourceHandle;
++            cuda_moe_route_mailbox_slot &slot =
++                cache->route_mailbox[generation & 1u];
++            const uint64_t slot_generation =
++                slot.generation.load(std::memory_order_acquire);
++            const uint32_t slot_state =
++                slot.state.load(std::memory_order_acquire);
++            const uint32_t ready = cache->route_ready_host
++                ? *(volatile uint32_t *)cache->route_ready_host : 0u;
++            const uint32_t failed = cache->route_failed_host
++                ? *(volatile uint32_t *)cache->route_failed_host : 0u;
++            fprintf(stderr,
++                    "ds4: [drain-deadlock-diag] phase=poll site=%s "
++                    "seq=%u generation=%llu layer=%u elapsed_ms=%.3f "
++                    "upload=%s default=%s consumer=%s "
++                    "consumer_event_generation=%llu "
++                    "consumer_done_generation=%llu "
++                    "slot_generation=%llu slot_state=%s "
++                    "submitted=%u/%llu consumed=%u/%llu completed=%u/%llu "
++                    "ready=%u failed=%u polls=%llu\n",
++                    site ? site : "unknown", sequence,
++                    (unsigned long long)generation, layer,
++                    (now - started) * 1000.0,
++                    cudaGetErrorString(upload_status),
++                    cudaGetErrorString(default_status),
++                    cudaGetErrorString(consumer_status),
++                    (unsigned long long)
++                        cache->route_consumer_event_generation.load(
++                            std::memory_order_acquire),
++                    (unsigned long long)
++                        cache->route_consumer_done_generation.load(
++                            std::memory_order_acquire),
++                    (unsigned long long)slot_generation,
++                    cuda_moe_route_mailbox_state_name(slot_state),
++                    cache->route_submitted_sequence.load(
++                        std::memory_order_acquire),
++                    (unsigned long long)
++                        cache->route_submitted_generation.load(
++                            std::memory_order_acquire),
++                    cache->route_consumed_sequence.load(
++                        std::memory_order_acquire),
++                    (unsigned long long)
++                        cache->route_consumed_generation.load(
++                            std::memory_order_acquire),
++                    cache->route_completed_sequence.load(
++                        std::memory_order_acquire),
++                    (unsigned long long)
++                        cache->route_completed_generation.load(
++                            std::memory_order_acquire),
++                    ready, failed, (unsigned long long)polls);
++            next_report = now + 0.250;
++        }
++        if (absolute_deadline > 0.0 && now >= absolute_deadline) {
++            fprintf(stderr,
++                    "ds4: [drain-deadlock-diag] phase=deadline site=%s "
++                    "seq=%u generation=%llu layer=%u elapsed_ms=%.3f "
++                    "polls=%llu\n",
++                    site ? site : "unknown", sequence,
++                    (unsigned long long)generation, layer,
++                    (now - started) * 1000.0,
++                    (unsigned long long)polls);
++            return cudaErrorNotReady;
++        }
++#ifdef _WIN32
++        (void)SwitchToThread();
++#else
++        usleep(0);
++#endif
++    }
++}
++
++template <bool DRAIN_DIAG>
+ static int cuda_moe_tiering_finish_vram_reservations(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request *trace_request,
+@@ -39328,10 +39460,17 @@ static int cuda_moe_tiering_finish_vram_reservations(
+     const uint64_t trace_sync_started = trace_request
+         ? cuda_decode_trace_request_qpc(*trace_request) : 0u;
+     const cudaError_t pending_error = cudaGetLastError();
+-    const cudaError_t sync_error = cuda_g73_finish_launched_copy(
+-        cache->route_upload_stream, absolute_deadline,
+-        count > 0u ? reservations[0].candidate_layer : 0u,
+-        "tiering-reservation");
++    cudaError_t sync_error = cudaSuccess;
++    if constexpr (DRAIN_DIAG) {
++        sync_error = cuda_moe_route_drain_deadlock_diag_wait(
++            cache, trace_request, absolute_deadline,
++            "tiering-reservation");
++    } else {
++        sync_error = cuda_g73_finish_launched_copy(
++            cache->route_upload_stream, absolute_deadline,
++            count > 0u ? reservations[0].candidate_layer : 0u,
++            "tiering-reservation");
++    }
+     cuda_decode_trace_note_upload_drain(
+         trace_request, trace_sync_started);
+     if (sync_started != 0.0) {
+@@ -39775,7 +39914,7 @@ static int cuda_g132_general_plan_admit(
+     return 1;
+ }
+ 
+-template <bool G73, bool G132 = false>
++template <bool G73, bool G132 = false, bool DRAIN_DIAG = false>
+ static int cuda_moe_tiering_enforce_request(
+         cuda_moe_expert_cache *cache,
+         const cuda_moe_route_request &request,
+@@ -40152,7 +40291,7 @@ static int cuda_moe_tiering_enforce_request(
+                 }
+                 const double early_drain_started = cuda_moe_zerocopy_now_ms();
+                 const int early_finish_ok =
+-                    cuda_moe_tiering_finish_vram_reservations(
++                    cuda_moe_tiering_finish_vram_reservations<DRAIN_DIAG>(
+                         cache, &request, admitted, promotion_reservations,
+                         admitted_count, request.g133_epoch, 1,
+                         request.absolute_deadline);
+@@ -40846,9 +40985,10 @@ static int cuda_moe_tiering_enforce_request(
+         ds4_workerprof_add_ms(wprof, WP_PUBLISH_NS, flush_ms);
+     }
+     const double drain_started = cuda_moe_zerocopy_now_ms();
+-    const int transfers_ok = cuda_moe_tiering_finish_vram_reservations(
+-        cache, &request, admitted, promotion_reservations, admitted_count,
+-        request.g133_epoch, ok, request.absolute_deadline);
++    const int transfers_ok =
++        cuda_moe_tiering_finish_vram_reservations<DRAIN_DIAG>(
++            cache, &request, admitted, promotion_reservations, admitted_count,
++            request.g133_epoch, ok, request.absolute_deadline);
+     ds4_transport_h2d_batch_finish(&transport_batch, transfers_ok);
+     {
+         const double drain_ms = cuda_moe_zerocopy_now_ms() - drain_started;
+@@ -40897,7 +41037,7 @@ static int cuda_moe_tiering_enforce_request(
+     return ok;
+ }
+ 
+-template <bool G73, bool G132>
++template <bool G73, bool G132, bool DRAIN_DIAG>
+ static void *cuda_moe_route_worker(void *arg) {
+     cuda_moe_expert_cache *cache = (cuda_moe_expert_cache *)arg;
+     if (!cache || cudaSetDevice(cache->route_device) != cudaSuccess) {
+@@ -41225,7 +41365,7 @@ static void *cuda_moe_route_worker(void *arg) {
+         cuda_moe_route_publish_batch publish_batch = {};
+         ds4_transport_h2d_batch transport_batch = {};
+         if (ok && g_moe_tiering.mode == CUDA_MOE_TIER_ENFORCE) {
+-            ok = cuda_moe_tiering_enforce_request<G73, G132>(
++            ok = cuda_moe_tiering_enforce_request<G73, G132, DRAIN_DIAG>(
+                 cache, request, claimed.data());
+             if (cache->route_worker_safe_leaked.load(
+                     std::memory_order_acquire)) return NULL;
+@@ -41540,8 +41680,14 @@ static void *cuda_moe_route_worker(void *arg) {
+                 cuda_decode_trace_request_qpc(request);
+             const uint64_t wprof_drain = ds4_workerprof_start(wprof);
+             const cudaError_t pending_error = cudaGetLastError();
+-            const cudaError_t sync_error =
+-                cudaStreamSynchronize(cache->route_upload_stream);
++            cudaError_t sync_error = cudaSuccess;
++            if constexpr (DRAIN_DIAG) {
++                sync_error = cuda_moe_route_drain_deadlock_diag_wait(
++                    cache, &request, 0.0, "route-worker-non-enforce");
++            } else {
++                sync_error =
++                    cudaStreamSynchronize(cache->route_upload_stream);
++            }
+             ds4_workerprof_stop(wprof, WP_DRAIN_NS, wprof_drain);
+             cuda_decode_trace_note_upload_drain(
+                 &request, trace_upload_drain_started);
+@@ -48791,6 +48937,7 @@ static auto g_cuda_routed_moe_general_launch_dispatch =
+ static void cuda_g73_route_dispatch_init(void) {
+     const char *lane = getenv("DS4_G132_CPU_LANE");
+     const char *general = getenv("DS4_G132_CPU_LANE_GENERAL");
++    const int drain_diag = cuda_moe_drain_deadlock_diag_requested();
+     const int general_enabled =
+         lane && strcmp(lane, "1") == 0 &&
+         general && strcmp(general, "1") == 0;
+@@ -48798,22 +48945,40 @@ static void cuda_g73_route_dispatch_init(void) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true, false>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<true, true>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true, true>;
++        g_cuda_moe_route_worker_dispatch = drain_diag
++            ? cuda_moe_route_worker<true, true, true>
++            : cuda_moe_route_worker<true, true, false>;
+     } else if (g_cuda_g73_open_enabled) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<true>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<true, false>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<true, false>;
++        g_cuda_moe_route_worker_dispatch = drain_diag
++            ? cuda_moe_route_worker<true, false, true>
++            : cuda_moe_route_worker<true, false, false>;
+     } else if (general_enabled) {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false, false>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<false, true>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false, true>;
++        g_cuda_moe_route_worker_dispatch = drain_diag
++            ? cuda_moe_route_worker<false, true, true>
++            : cuda_moe_route_worker<false, true, false>;
+     } else {
+         g_cuda_routed_moe_launch_dispatch = &routed_moe_launch_impl<false>;
+         g_cuda_routed_moe_general_launch_dispatch =
+             &routed_moe_launch_impl<false, false>;
+-        g_cuda_moe_route_worker_dispatch = cuda_moe_route_worker<false, false>;
++        g_cuda_moe_route_worker_dispatch = drain_diag
++            ? cuda_moe_route_worker<false, false, true>
++            : cuda_moe_route_worker<false, false, false>;
++    }
++    if (drain_diag) {
++        const char *overlap = getenv("DS4_CUDA_DRAIN_OVERLAP");
++        fprintf(stderr,
++                "ds4: [drain-deadlock-diag] phase=init diag=1 "
++                "overlap_env=%s overlap_parsed=%d g73=%d g132=%d\n",
++                overlap ? overlap : "<unset>",
++                overlap && strcmp(overlap, "1") == 0,
++                g_cuda_g73_open_enabled ? 1 : 0,
++                general_enabled ? 1 : 0);
+     }
+ }
+ 

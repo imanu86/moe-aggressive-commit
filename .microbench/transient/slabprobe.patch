@@ -1,0 +1,68 @@
+diff --git a/ds4_cuda.cu b/ds4_cuda.cu
+--- a/ds4_cuda.cu
++++ b/ds4_cuda.cu
+@@ -30152,6 +30152,48 @@ static void cuda_vram_prio_log(const char *phase) {
+             mem_err == cudaSuccess ? "ok" : "query-failed");
+ }
+ 
++static int cuda_transient_slab_probe_requested(void) {
++    static int initialized = 0;
++    static int requested = 0;
++    if (!initialized) {
++        const char *env = getenv("DS4_CUDA_TRANSIENT_SLAB_PROBE");
++        requested = env && strcmp(env, "1") == 0;
++        initialized = 1;
++    }
++    return requested;
++}
++
++static void cuda_transient_slab_probe_log(const char *phase) {
++    if (!cuda_transient_slab_probe_requested()) return;
++    const uint64_t gate_plane_bytes =
++        (uint64_t)CUDA_MOE_ROUTE_COUNT *
++        g_moe_expert_cache.gate_expert_bytes;
++    const uint64_t down_plane_bytes =
++        (uint64_t)CUDA_MOE_ROUTE_COUNT *
++        g_moe_expert_cache.down_expert_bytes;
++    uint64_t slab_bytes = 0;
++    if (g_moe_expert_cache.route_transient_packed_base) {
++        slab_bytes = gate_plane_bytes * 2ull + down_plane_bytes;
++    } else {
++        if (g_moe_expert_cache.route_transient_gate) {
++            slab_bytes += gate_plane_bytes;
++        }
++        if (g_moe_expert_cache.route_transient_up) {
++            slab_bytes += gate_plane_bytes;
++        }
++        if (g_moe_expert_cache.route_transient_down) {
++            slab_bytes += down_plane_bytes;
++        }
++    }
++    const uint64_t slot_bytes =
++        g_moe_expert_cache.gate_expert_bytes * 2ull +
++        g_moe_expert_cache.down_expert_bytes;
++    fprintf(stderr,
++            "ds4: [transient-slab] phase=%s bytes=%llu cache_slots=%llu\n",
++            phase, (unsigned long long)slab_bytes,
++            (unsigned long long)(slot_bytes ? slab_bytes / slot_bytes : 0ull));
++}
++
+ extern "C" void ds4_gpu_vram_ledger_decode_start(void) {
+     /* FIX-B: il tetto ai ripieghi e' "per richiesta", quindi la serie
+      * consecutiva riparte a ogni decode. Neutro a flag spento (resta 0). */
+@@ -30250,6 +30292,7 @@ extern "C" void ds4_gpu_vram_ledger_decode_start(void) {
+     }
+     /* Dopo il grow, cosi' expert_slots_current riflette la capacita' definitiva. */
+     cuda_vram_prio_log("decode-start");
++    cuda_transient_slab_probe_log("decode-start");
+     /* Request-scoped expert transport starts at the decode boundary: prefill
+      * traffic is intentionally outside both byte totals and decode wall time. */
+     ds4_transport_decode_begin();
+@@ -30275,6 +30318,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+     /* Riga di chiusura: porta i contatori di sfratto/reload accumulati nel decode.
+      * E' la riga da diffare fra i due bracci dell'A/B. */
+     cuda_vram_prio_log("request-end");
++    cuda_transient_slab_probe_log("request-end");
+     /* Sintesi del probe: minimo assoluto del run e token in cui e' avvenuto. */
+     ds4_vram_peak_summary("request-end");
+     ds4_transport_request_end();

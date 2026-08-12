@@ -1,0 +1,386 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -11299,6 +11299,271 @@ static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx)
+     return ok;
+ }
+ 
++/* ------------------ shared1: pool DEDICATO opzionale -----------------------
++ * DS4_CPU_SHARED_EXPERT_DEDICATED=N (default 0 = percorso odierno, byte
++ * identico).  Il braccio S1 del 29/7 ha mostrato che il meccanismo
++ * shared-cpu e' sano (fallback=0, shared_wait_ms p50=0,025) ma costa
++ * ~1,1 ms/layer di CONTESA SUI CORE: l'eval fan-outa i due matvec su TUTTE
++ * le partizioni del pool g132 - dimensionato a g_pool.n_threads, cioe'
++ * all'intera macchina (ds4_g132_lane_parallel_init) - e per la durata del
++ * burst (~1,4 ms a ogni layer) i thread compute affamano il route worker
++ * CUDA, il thread SINGOLO che serve le letture del percorso miss (pread a
++ * chunk e QD4 dentro cuda_moe_tiering_enforce_request, ds4_cuda.cu), che
++ * non ha ne' priorita' ne' core riservati.
++ *
++ * Con N>0 il calcolo shared gira su N thread DEDICATI (creati una volta al
++ * primo arm, refcount fra grafi); il submitter NON partecipa alle
++ * partizioni (attende su condvar: il suo core torna allo scheduler) e il
++ * pool g132 non viene ne' inizializzato ne' toccato da shared1: route
++ * worker, g_pool e g132 restano identici.  Con in piu'
++ * DS4_CPU_SHARED_EXPERT_AFFINITY=1 (secondo livello, solo Windows) gli N
++ * thread ricevono una maschera 1-core a scala dai processori logici piu'
++ * alti saltando i sibling SMT (su 16 logici: 15,13,11,9,...), cosi'
++ * l'effetto "meno thread" e l'effetto "core riservati" si misurano
++ * separatamente.
++ *
++ * Concorrenza (lezione dspark2fix): questo e' un pool NUOVO, non un nuovo
++ * submitter della pool g132 a slot singolo - la' shared1 e drafter NextN
++ * continuano a serializzare su g_shared1_pool_mutex, qui il proprio
++ * submit_mutex e' tenuto per l'INTERA durata del job (submit+attesa): due
++ * grafi armati nello stesso processo serializzano per costruzione e non
++ * esiste alcun percorso di submit parallelo alla stessa pool. */
++
++enum { DS4_SHARED1_DEDICATED_MAX = 16 };
++
++typedef struct {
++    os_thread_t threads[DS4_SHARED1_DEDICATED_MAX];
++    os_mutex_t mutex;          /* stato pool: generation/done/shutdown/refs */
++    os_mutex_t submit_mutex;   /* un submitter alla volta, per l'intero job */
++    os_cond_t work_cond;
++    os_cond_t done_cond;
++    uint32_t n_threads;        /* partizioni = thread davvero partiti */
++    uint32_t started;
++    uint32_t refs;
++    uint32_t generation;
++    uint32_t done;
++    uint32_t affinity_applied;
++    int affinity_requested;
++    bool initialized;
++    bool shutdown;
++    ds4_parallel_fn fn;
++    void *ctx;
++    uint64_t n_rows;
++} ds4_shared1_dedicated_pool;
++
++static ds4_shared1_dedicated_pool g_shared1_dedicated;
++static os_once_t g_shared1_dedicated_once = OS_ONCE_INIT;
++static int g_shared1_dedicated_sync_ready;
++
++/* Mutex/cond del pool dedicato: inizializzati una volta per processo e mai
++ * distrutti (su Windows SRWLOCK/CONDITION_VARIABLE non hanno destroy; su
++ * pthread restano vivi fino all'uscita).  Cosi' il ciclo release -> nuovo
++ * arm non ha corse destroy/reinit. */
++static void ds4_shared1_dedicated_sync_init(void) {
++    g_shared1_dedicated_sync_ready =
++        os_mutex_init(&g_shared1_dedicated.mutex) == 0 &&
++        os_mutex_init(&g_shared1_dedicated.submit_mutex) == 0 &&
++        os_cond_init(&g_shared1_dedicated.work_cond) == 0 &&
++        os_cond_init(&g_shared1_dedicated.done_cond) == 0;
++}
++
++/* Letta solo dentro ds4_shared1_create, cioe' solo a
++ * DS4_CPU_SHARED_EXPERT acceso: a flag spenti nessuna getenv nuova. */
++static uint32_t ds4_shared1_dedicated_env_threads(void) {
++    const char *value = getenv("DS4_CPU_SHARED_EXPERT_DEDICATED");
++    if (!value || !value[0]) return 0;
++    char *end = NULL;
++    const long parsed = strtol(value, &end, 10);
++    if (end == value || (end && *end != '\0') || parsed < 0) {
++        fprintf(stderr,
++                "ds4: [shared-cpu] invalid DS4_CPU_SHARED_EXPERT_DEDICATED=%s; "
++                "using 0 (today's pool)\n", value);
++        return 0;
++    }
++    return parsed > DS4_SHARED1_DEDICATED_MAX
++        ? (uint32_t)DS4_SHARED1_DEDICATED_MAX : (uint32_t)parsed;
++}
++
++static int ds4_shared1_dedicated_affinity_requested(void) {
++    const char *value = getenv("DS4_CPU_SHARED_EXPERT_AFFINITY");
++    return value && value[0] && strcmp(value, "0") != 0;
++}
++
++/* Scala dei core per l'affinita': dal processore logico piu' alto verso il
++ * basso saltando i sibling SMT (16 logici -> 15,13,11,9,7,5,3,1 e poi
++ * 14,12,...): lontano da CPU0 (interrupt/DPC) e mai due thread sullo stesso
++ * core fisico finche' ce ne sono di liberi.  -1 = thread lasciato libero
++ * (mai CPU0, un solo processor group). */
++static DS4_MAYBE_UNUSED long ds4_shared1_dedicated_affinity_core(
++        uint32_t tid, long cpus) {
++    if (cpus <= 1) return -1;
++    long idx = 2l * (long)tid;
++    if (idx >= cpus) idx = 2l * ((long)tid - (cpus + 1l) / 2l) + 1l;
++    if (idx < 0 || idx >= cpus) return -1;
++    const long core = cpus - 1l - idx;
++    if (core <= 0 || core >= 64l) return -1;
++    return core;
++}
++
++static void *ds4_shared1_dedicated_worker_main(void *arg) {
++    const uint32_t tid = (uint32_t)(uintptr_t)arg;
++    ds4_shared1_dedicated_pool *p = &g_shared1_dedicated;
++    uint32_t seen_generation = 0;
++    for (;;) {
++        os_mutex_lock(&p->mutex);
++        while (seen_generation == p->generation && !p->shutdown) {
++            os_cond_wait(&p->work_cond, &p->mutex);
++        }
++        if (p->shutdown) {
++            os_mutex_unlock(&p->mutex);
++            return NULL;
++        }
++        seen_generation = p->generation;
++        const ds4_parallel_fn fn = p->fn;
++        void *ctx = p->ctx;
++        const uint64_t n_rows = p->n_rows;
++        const uint32_t n_threads = p->n_threads;
++        os_mutex_unlock(&p->mutex);
++
++        /* Partizione su n_threads soli worker: il submitter non prende
++         * nessuna fetta (sta dormendo su done_cond). */
++        const uint64_t rows_per_thread =
++            (n_rows + n_threads - 1u) / n_threads;
++        const uint64_t row0 = (uint64_t)tid * rows_per_thread;
++        uint64_t row1 = row0 + rows_per_thread;
++        if (row1 > n_rows) row1 = n_rows;
++        if (row0 < row1) fn(ctx, row0, row1);
++
++        os_mutex_lock(&p->mutex);
++        p->done++;
++        if (p->done == p->n_threads) os_cond_signal(&p->done_cond);
++        os_mutex_unlock(&p->mutex);
++    }
++}
++
++/* Crea (o riusa via refcount) il pool dedicato.  Il secondo grafo riusa N e
++ * affinita' del primo arm.  0 = non disponibile (il chiamante ripiega sul
++ * percorso odierno e lo dice). */
++static int ds4_shared1_dedicated_acquire(uint32_t n_threads, int affinity) {
++    os_once(&g_shared1_dedicated_once, ds4_shared1_dedicated_sync_init);
++    if (!g_shared1_dedicated_sync_ready || n_threads == 0) return 0;
++    ds4_shared1_dedicated_pool *p = &g_shared1_dedicated;
++    os_mutex_lock(&p->mutex);
++    if (p->initialized) {
++        p->refs++;
++        os_mutex_unlock(&p->mutex);
++        return 1;
++    }
++    p->n_threads = n_threads;
++    p->started = 0;
++    p->generation = 0;
++    p->done = 0;
++    p->shutdown = false;
++    p->affinity_requested = affinity;
++    p->affinity_applied = 0;
++    for (uint32_t i = 0; i < n_threads; i++) {
++        if (os_thread_create(&p->threads[i],
++                             ds4_shared1_dedicated_worker_main,
++                             (void *)(uintptr_t)i) != 0) {
++            break;
++        }
++        p->started++;
++    }
++    if (p->started == 0) {
++        os_mutex_unlock(&p->mutex);
++        return 0;
++    }
++    p->n_threads = p->started;   /* partizioni = thread reali (tid contigui) */
++#ifdef _WIN32
++    if (affinity) {
++        const long cpus = os_cpu_count();
++        for (uint32_t i = 0; i < p->started; i++) {
++            const long core = ds4_shared1_dedicated_affinity_core(i, cpus);
++            if (core < 0 ||
++                core >= (long)(sizeof(DWORD_PTR) * 8u)) {
++                continue;
++            }
++            const DWORD_PTR mask = (DWORD_PTR)1u << (unsigned)core;
++            /* os_thread_create passa da _beginthreadex: l'HANDLE ha i
++             * diritti pieni; fallimento = soft, il thread resta libero. */
++            if (SetThreadAffinityMask(p->threads[i], mask) != 0) {
++                (void)SetThreadIdealProcessor(p->threads[i], (DWORD)core);
++                p->affinity_applied++;
++            }
++        }
++    }
++#else
++    /* Affinita' solo Windows (macchina di campagna); altrove il flag resta
++     * dichiarato nel log dell'arm come requested-not-applied. */
++    (void)affinity;
++#endif
++    p->initialized = true;
++    p->refs = 1;
++    os_mutex_unlock(&p->mutex);
++    return 1;
++}
++
++/* Rilascio refcount; l'ultimo grafo spegne e joina i thread.  Chiamata da
++ * ds4_shared1_destroy DOPO il join del worker [shared-cpu] dell'istanza:
++ * quando refs tocca 0 nessun submitter puo' essere dentro parallel_for. */
++static void ds4_shared1_dedicated_release(void) {
++    ds4_shared1_dedicated_pool *p = &g_shared1_dedicated;
++    if (!g_shared1_dedicated_sync_ready) return;
++    os_mutex_lock(&p->mutex);
++    if (!p->initialized || p->refs == 0) {
++        os_mutex_unlock(&p->mutex);
++        return;
++    }
++    if (--p->refs != 0) {
++        os_mutex_unlock(&p->mutex);
++        return;
++    }
++    p->shutdown = true;
++    p->generation++;
++    os_cond_broadcast(&p->work_cond);
++    const uint32_t started = p->started;
++    os_mutex_unlock(&p->mutex);
++    for (uint32_t i = 0; i < started; i++) os_thread_join(p->threads[i]);
++    os_mutex_lock(&p->mutex);
++    p->initialized = false;
++    p->shutdown = false;
++    p->started = 0;
++    p->n_threads = 0;
++    p->generation = 0;
++    p->done = 0;
++    p->affinity_requested = 0;
++    p->affinity_applied = 0;
++    os_mutex_unlock(&p->mutex);
++}
++
++/* Submit row-parallel sul pool dedicato.  0 = non disponibile (il chiamante
++ * degrada inline, mai in errore).  Il submit_mutex copre submit E attesa:
++ * lo slot fn/ctx/generation non e' mai conteso fra due submitter. */
++static int ds4_shared1_dedicated_parallel_for(
++        uint64_t n_rows, ds4_parallel_fn fn, void *ctx) {
++    ds4_shared1_dedicated_pool *p = &g_shared1_dedicated;
++    if (!g_shared1_dedicated_sync_ready || !fn || n_rows == 0) return 0;
++    os_mutex_lock(&p->submit_mutex);
++    os_mutex_lock(&p->mutex);
++    if (!p->initialized || p->shutdown) {
++        os_mutex_unlock(&p->mutex);
++        os_mutex_unlock(&p->submit_mutex);
++        return 0;
++    }
++    p->fn = fn;
++    p->ctx = ctx;
++    p->n_rows = n_rows;
++    p->done = 0;
++    p->generation++;
++    os_cond_broadcast(&p->work_cond);
++    while (p->done < p->n_threads) {
++        os_cond_wait(&p->done_cond, &p->mutex);
++    }
++    os_mutex_unlock(&p->mutex);
++    os_mutex_unlock(&p->submit_mutex);
++    return 1;
++}
++
+ struct ds4_shared1 {
+     os_thread_t thread;
+     os_mutex_t mutex;
+@@ -11349,6 +11614,12 @@ struct ds4_shared1 {
+     double wait_s;
+     uint32_t hist_cpu[DS4_SHARED1_HIST];
+     uint32_t hist_wait[DS4_SHARED1_HIST];
++
++    /* Pool dedicato (DS4_CPU_SHARED_EXPERT_DEDICATED=N).  Campi in coda:
++     * struct privata di questo file, allocata con calloc qui sotto (i campi
++     * nuovi nascono azzerati); nessuna struct condivisa cambia layout. */
++    bool use_dedicated;        /* eval instradata sul pool dedicato */
++    bool dedicated_ref;        /* questa istanza detiene un ref del pool */
+ };
+ 
+ static void ds4_shared1_hist_note(uint32_t *hist, double seconds) {
+@@ -11409,7 +11680,23 @@ static int ds4_shared1_eval(
+         .blocks = (hidden + 31) / 32,
+     };
+     const int pooled = s->use_pool && g_shared1_pool_mutex_ready;
+-    if (pooled) {
++    if (s->use_dedicated) {
++        /* Pool dedicato: fan-out su N thread propri; questo thread attende
++         * su condvar (nessuna partizione locale: il suo core torna allo
++         * scheduler).  Pool non disponibile => inline, mai in errore.
++         * g_shared1_pool_mutex non serve: protegge il solo slot di submit
++         * del g132, che questo ramo non tocca. */
++        if (!ds4_shared1_dedicated_parallel_for(
++                hidden, matvec_q8_0_pair_worker, &pctx)) {
++            matvec_q8_0_pair_worker(&pctx, 0, hidden);
++        }
++        swiglu(s->mid, s->gate, s->up, hidden);
++        quantize_q8_0_activation(s->mid, s->xq_mid, s->xscale_mid, hidden);
++        if (!ds4_shared1_dedicated_parallel_for(
++                down_w->dim[1], matvec_q8_0_worker, &dctx)) {
++            matvec_q8_0_worker(&dctx, 0, down_w->dim[1]);
++        }
++    } else if (pooled) {
+         os_mutex_lock(&g_shared1_pool_mutex);
+         if (!ds4_g132_parallel_for(hidden, matvec_q8_0_pair_worker, &pctx)) {
+             matvec_q8_0_pair_worker(&pctx, 0, hidden);
+@@ -11515,7 +11802,8 @@ static void ds4_shared1_summary(ds4_shared1 *s) {
+             (double)s->vram_release_blocked_bytes / 1048576.0,
+             (unsigned long long)s->vram_release_sweeps,
+             (double)g_shared1_startup_excluded_bytes / 1048576.0,
+-            s->use_pool ? "g132" : "single-thread");
++            s->use_dedicated ? "dedicated"
++                             : (s->use_pool ? "g132" : "single-thread"));
+ }
+ 
+ static void ds4_shared1_destroy(ds4_shared1 *s) {
+@@ -11528,6 +11816,9 @@ static void ds4_shared1_destroy(ds4_shared1 *s) {
+         os_thread_join(s->thread);
+         ds4_shared1_summary(s);
+     }
++    /* Il ref del pool dedicato si rilascia DOPO il join del worker: quando
++     * refs tocca 0 nessun submitter di questa istanza e' in volo. */
++    if (s->dedicated_ref) ds4_shared1_dedicated_release();
+     ds4_gpu_async_read_free(s->read_ring);
+     ds4_gpu_async_read_free(s->write_ring);
+     free(s->xscale_mid);
+@@ -11623,9 +11914,41 @@ static ds4_shared1 *ds4_shared1_create(
+         return NULL;
+     }
+ 
++    /* Pool DEDICATO dietro flag: DS4_CPU_SHARED_EXPERT_DEDICATED=N stacca il
++     * calcolo shared dal pool g132 (dimensionato all'intera macchina) e
++     * quindi dai core su cui girano il route worker delle letture miss e il
++     * decode.  Qualunque fallimento = ripiego dichiarato sul percorso
++     * odierno (g132 o single-thread). */
++    const uint32_t dedicated_n = ds4_shared1_dedicated_env_threads();
++    if (dedicated_n > 0) {
++        const int affinity = ds4_shared1_dedicated_affinity_requested();
++        if (ds4_shared1_dedicated_acquire(dedicated_n, affinity)) {
++            s->use_dedicated = true;
++            s->dedicated_ref = true;
++            fprintf(stderr,
++                    "ds4: [shared-cpu] dedicated pool armed threads=%u "
++                    "affinity=%s applied=%u/%u read-pool=untouched "
++                    "(route worker, g132 e g_pool invariati)\n",
++                    g_shared1_dedicated.n_threads,
++                    !affinity ? "no"
++                              : (g_shared1_dedicated.affinity_applied != 0u
++                                     ? "yes" : "requested-not-applied"),
++                    g_shared1_dedicated.affinity_applied,
++                    g_shared1_dedicated.n_threads);
++        } else {
++            fprintf(stderr,
++                    "ds4: [shared-cpu] dedicated pool unavailable; "
++                    "falling back to today's shared-expert path\n");
++        }
++    }
++
+     /* Il pool g132 ha un solo slot di submit: se la lane CPU e' richiesta
+      * dall'ambiente glielo si lascia e qui si degrada a single-thread. */
+-    if (getenv("DS4_G132_CPU_LANE") != NULL ||
++    if (s->use_dedicated) {
++        /* Pool dedicato attivo: shared1 non inizializza e non usa il g132;
++         * il g132 resta di lane/drafter (submitter invariati). */
++        s->use_pool = false;
++    } else if (getenv("DS4_G132_CPU_LANE") != NULL ||
+         getenv("DS4_G132_CPU_LANE_GENERAL") != NULL) {
+         s->use_pool = false;
+         fprintf(stderr,
+@@ -11656,7 +11979,8 @@ static ds4_shared1 *ds4_shared1_create(
+             (unsigned long long)((blocks_in * 34) * hidden * 2u +
+                                  (blocks_mid * 34) * in_dim),
+             (unsigned)DS4_SHARED1_SLOTS,
+-            s->use_pool ? "g132" : "single-thread");
++            s->use_dedicated ? "dedicated"
++                             : (s->use_pool ? "g132" : "single-thread"));
+     return s;
+ }
+ 

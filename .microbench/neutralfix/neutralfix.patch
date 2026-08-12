@@ -1,0 +1,250 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+index 1ddf9b7..5e879b3 100644
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -11329,10 +11329,12 @@ static int ds4_nextn_g132_submit(uint64_t n_rows, ds4_parallel_fn fn, void *ctx)
+  * pool g132 non viene ne' inizializzato ne' toccato da shared1: route
+  * worker, g_pool e g132 restano identici.  Con in piu'
+  * DS4_CPU_SHARED_EXPERT_AFFINITY=1 (secondo livello, solo Windows) gli N
+- * thread ricevono una maschera 1-core a scala dai processori logici piu'
+- * alti saltando i sibling SMT (su 16 logici: 15,13,11,9,...), cosi'
+- * l'effetto "meno thread" e l'effetto "core riservati" si misurano
+- * separatamente.
++ * thread ricevono una maschera 1-core a scala dagli ID logici piu' alti,
++ * CPU0 esclusa (su 16 logici: 15,13,11,... poi 14,12,...).  NEUTRALFIX
++ * 02-#3: la topologia SMT NON viene interrogata, il passo di 2 salta i
++ * sibling solo sulle numerazioni a coppie adiacenti; la promessa onesta
++ * e' "ID logici alti, CPU0 esclusa".  Cosi' l'effetto "meno thread" e
++ * l'effetto "core riservati" si misurano separatamente.
+  *
+  * Concorrenza (lezione dspark2fix): questo e' un pool NUOVO, non un nuovo
+  * submitter della pool g132 a slot singolo - la' shared1 e drafter NextN
+@@ -11367,6 +11369,14 @@ static ds4_shared1_dedicated_pool g_shared1_dedicated;
+ static os_once_t g_shared1_dedicated_once = OS_ONCE_INIT;
+ static int g_shared1_dedicated_sync_ready;
+ 
++/* NEUTRALFIX 03-B1: identita' di incarnazione del pool dedicato.  Statico
++ * FUORI dalla struct (nessuna struct condivisa fra thread cambia layout);
++ * protetto da g_shared1_dedicated.mutex e incrementato a ogni azzeramento
++ * nel release finale.  Con l'acquire shutdown-aware chiude l'ABA del
++ * refcount: nessun ref fantasma durante la join, e il joiner azzera solo
++ * la PROPRIA incarnazione (vedi acquire/release). */
++static uint32_t g_shared1_dedicated_gen;
++
+ /* Mutex/cond del pool dedicato: inizializzati una volta per processo e mai
+  * distrutti (su Windows SRWLOCK/CONDITION_VARIABLE non hanno destroy; su
+  * pthread restano vivi fino all'uscita).  Cosi' il ciclo release -> nuovo
+@@ -11392,8 +11402,32 @@ static uint32_t ds4_shared1_dedicated_env_threads(void) {
+                 "using 0 (today's pool)\n", value);
+         return 0;
+     }
+-    return parsed > DS4_SHARED1_DEDICATED_MAX
++    uint32_t n = parsed > DS4_SHARED1_DEDICATED_MAX
+         ? (uint32_t)DS4_SHARED1_DEDICATED_MAX : (uint32_t)parsed;
++    /* NEUTRALFIX 02-#4 + guardia 02-#1 (primo passo del budget globale dei
++     * thread, tenuto semplice): i compute dedicati non superano i logici
++     * disponibili meno 2 (route worker + decode) meno 1 se il drafter
++     * NextN e' attivo (stesso parser "1" dell'engine-open).  Il blocco
++     * gira solo con DEDICATED>0: a flag spenti nessuna getenv e nessuna
++     * os_cpu_count nuova.  Log solo quando il clamp interviene. */
++    if (n > 0) {
++        const char *nextn = getenv("DS4_NEXTN_CPU_DRAFTER");
++        const long reserved =
++            2l + ((nextn && strcmp(nextn, "1") == 0) ? 1l : 0l);
++        const long online = os_cpu_count();
++        long budget = online - reserved;
++        if (budget < 1l) budget = 1l;
++        if ((long)n > budget) {
++            fprintf(stderr,
++                    "ds4: [shared-cpu] DS4_CPU_SHARED_EXPERT_DEDICATED=%u "
++                    "clamped to %ld (cpu_online=%ld reserved=%ld: "
++                    "route-worker+decode%s)\n",
++                    n, budget, online, reserved,
++                    reserved > 2l ? "+nextn-drafter" : "");
++            n = (uint32_t)budget;
++        }
++    }
++    return n;
+ }
+ 
+ static int ds4_shared1_dedicated_affinity_requested(void) {
+@@ -11401,11 +11435,25 @@ static int ds4_shared1_dedicated_affinity_requested(void) {
+     return value && value[0] && strcmp(value, "0") != 0;
+ }
+ 
+-/* Scala dei core per l'affinita': dal processore logico piu' alto verso il
+- * basso saltando i sibling SMT (16 logici -> 15,13,11,9,7,5,3,1 e poi
+- * 14,12,...): lontano da CPU0 (interrupt/DPC) e mai due thread sullo stesso
+- * core fisico finche' ce ne sono di liberi.  -1 = thread lasciato libero
+- * (mai CPU0, un solo processor group). */
++/* NEUTRALFIX 03-B2: semantica a VALORE, identica al parser della lane CUDA
++ * (cuda_g132_cpu_lane_init accetta solo il valore "1").  Prima shared1
++ * testava la PRESENZA (getenv!=NULL): DS4_G132_CPU_LANE=0 lasciava la lane
++ * davvero spenta ma degradava comunque shared1 a single-thread.  Adesso
++ * 0/false/vuoto/qualunque valore diverso da "1" = spento, coerente con la
++ * lane.  Letta solo dentro ds4_shared1_create (flag shared acceso). */
++static int ds4_shared1_lane_env_active(const char *name) {
++    const char *value = getenv(name);
++    return value && strcmp(value, "1") == 0;
++}
++
++/* Scala ARITMETICA sugli ID logici per l'affinita': dal piu' alto verso il
++ * basso a passo 2 (16 logici -> 15,13,11,9,7,5,3,1 e poi 14,12,...),
++ * lontano da CPU0 (interrupt/DPC).  NEUTRALFIX 02-#3: nessuna query della
++ * topologia core/SMT, quindi NESSUNA garanzia di core fisici distinti (su
++ * numerazioni non a coppie adiacenti due worker possono condividere il
++ * core fisico); la promessa onesta e' "ID logici alti, CPU0 esclusa".
++ * -1 = thread lasciato libero e NON contato in applied (mai CPU0, un solo
++ * processor group). */
+ static DS4_MAYBE_UNUSED long ds4_shared1_dedicated_affinity_core(
+         uint32_t tid, long cpus) {
+     if (cpus <= 1) return -1;
+@@ -11461,6 +11509,17 @@ static int ds4_shared1_dedicated_acquire(uint32_t n_threads, int affinity) {
+     if (!g_shared1_dedicated_sync_ready || n_threads == 0) return 0;
+     ds4_shared1_dedicated_pool *p = &g_shared1_dedicated;
+     os_mutex_lock(&p->mutex);
++    if (p->shutdown) {
++        /* NEUTRALFIX 03-B1: incarnazione in spegnimento (l'ultimo release
++         * rilascia il mutex durante la join e initialized resta true fino
++         * all'azzeramento).  Prima questo ramo prendeva un ref FANTASMA:
++         * l'azzeramento lo perdeva e la destroy di questo grafo poteva poi
++         * consumare il ref di un'incarnazione successiva, spegnendo il
++         * pool di un terzo grafo (ABA sul refcount).  0 = non disponibile:
++         * il chiamante ripiega sul percorso odierno e lo dichiara. */
++        os_mutex_unlock(&p->mutex);
++        return 0;
++    }
+     if (p->initialized) {
+         p->refs++;
+         os_mutex_unlock(&p->mutex);
+@@ -11534,9 +11593,21 @@ static void ds4_shared1_dedicated_release(void) {
+     p->generation++;
+     os_cond_broadcast(&p->work_cond);
+     const uint32_t started = p->started;
++    /* NEUTRALFIX 03-B1: fotografa l'incarnazione che questo joiner spegne.
++     * Con l'acquire shutdown-aware nessun ref puo' nascere nella finestra
++     * di join e un secondo release rientra su refs==0, quindi qui sotto la
++     * generazione DEVE essere invariata: la guardia rende l'identita'
++     * verificabile e in ogni caso impedisce di azzerare lo stato di
++     * un'incarnazione altrui. */
++    const uint32_t incarnation = g_shared1_dedicated_gen;
+     os_mutex_unlock(&p->mutex);
+     for (uint32_t i = 0; i < started; i++) os_thread_join(p->threads[i]);
+     os_mutex_lock(&p->mutex);
++    if (g_shared1_dedicated_gen != incarnation) {
++        os_mutex_unlock(&p->mutex);
++        return;
++    }
++    g_shared1_dedicated_gen++;
+     p->initialized = false;
+     p->shutdown = false;
+     p->started = 0;
+@@ -11937,9 +12008,16 @@ static ds4_shared1 *ds4_shared1_create(
+         if (ds4_shared1_dedicated_acquire(dedicated_n, affinity)) {
+             s->use_dedicated = true;
+             s->dedicated_ref = true;
++            /* NEUTRALFIX 02-#3: il log promette solo cio' che la maschera
++             * fa (ID logici alti, CPU0 esclusa, SMT non interrogato);
++             * applied conta i soli SetThreadAffinityMask riusciti, i
++             * thread saltati (core<0 o >=64) restano liberi e fuori dal
++             * conteggio. */
+             fprintf(stderr,
+                     "ds4: [shared-cpu] dedicated pool armed threads=%u "
+-                    "affinity=%s applied=%u/%u read-pool=untouched "
++                    "affinity=%s applied=%u/%u "
++                    "mask=high-logical-ids-no-cpu0 smt=not-queried "
++                    "read-pool=untouched "
+                     "(route worker, g132 e g_pool invariati)\n",
+                     g_shared1_dedicated.n_threads,
+                     !affinity ? "no"
+@@ -11960,8 +12038,8 @@ static ds4_shared1 *ds4_shared1_create(
+         /* Pool dedicato attivo: shared1 non inizializza e non usa il g132;
+          * il g132 resta di lane/drafter (submitter invariati). */
+         s->use_pool = false;
+-    } else if (getenv("DS4_G132_CPU_LANE") != NULL ||
+-        getenv("DS4_G132_CPU_LANE_GENERAL") != NULL) {
++    } else if (ds4_shared1_lane_env_active("DS4_G132_CPU_LANE") ||
++        ds4_shared1_lane_env_active("DS4_G132_CPU_LANE_GENERAL")) {
+         s->use_pool = false;
+         fprintf(stderr,
+                 "ds4: [shared-cpu] g132 pool ceded to the CPU lane env flags; "
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 92d49d8..957a7b1 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -42544,16 +42544,24 @@ static void *cuda_moe_route_worker(void *arg) {
+             request_valid = 0;
+         }
+         if (!request_valid) {
++            /* NEUTRALFIX 04-#2: g133_epoch e' l'unico termine di
++             * request_valid che poteva fallire restando INVISIBILE (la
++             * riga stampava solo sequence/layer/route/byte, tutti sani nel
++             * caso di epoch nullo).  I due campi rendono il veto
++             * attribuibile; la riga vive solo sul percorso di errore. */
+             fprintf(stderr,
+                     "ds4: [gpu-route-request] result=invalid sequence=%u "
+                     "layer=%u routes=%u misses=%u gate_bytes=%llu/%llu "
+-                    "down_bytes=%llu/%llu\n",
++                    "down_bytes=%llu/%llu g133_request_epoch=%llu "
++                    "g133_position_epoch=%llu\n",
+                     request.sequence, request.layer_index,
+                     request.route_count, request.miss_count,
+                     (unsigned long long)request.gate_expert_bytes,
+                     (unsigned long long)cache->gate_expert_bytes,
+                     (unsigned long long)request.down_expert_bytes,
+-                    (unsigned long long)cache->down_expert_bytes);
++                    (unsigned long long)cache->down_expert_bytes,
++                    (unsigned long long)request.g133_epoch.request_epoch,
++                    (unsigned long long)request.g133_epoch.position_epoch);
+         }
+         if (request_valid &&
+             g_moe_tiering.compose_prefill_mass_tiering &&
+@@ -42604,20 +42612,34 @@ static void *cuda_moe_route_worker(void *arg) {
+                 }
+             }
+             if (routefix1_reject) {
+-                fprintf(stderr,
+-                        "ds4: [gpu-route-request] "
+-                        "result=invalid-compose-snapshot sequence=%u "
+-                        "layer=%u arena=%llu tiering=%llu txn=%d "
+-                        "hits_disabled=%d submissions_blocked=%d mode=%u "
+-                        "resync=%s\n",
+-                        request.sequence, request.layer_index,
+-                        (unsigned long long)routefix1_arena,
+-                        (unsigned long long)routefix1_tiering,
+-                        g_dynamic_arena.txn ? 1 : 0,
+-                        g_dynamic_arena.hits_disabled,
+-                        g_dynamic_arena.submissions_blocked,
+-                        (unsigned)g_moe_tiering.mode,
+-                        routefix1_reject);
++                /* NEUTRALFIX 09-#4: la diagnosi stampa SOLO con
++                 * DS4_CUDA_ROUTE_SNAPSHOT_RESYNC=1 (helper memoizzato: a
++                 * flag spento un load+branch, zero getenv nuove).  A flag
++                 * spento questo ramo torna il veto MUTO pre-ROUTEFIX1
++                 * (failures++/request_valid=0 senza righe): log
++                 * byte-identico al pre-patch.  Scelta "solo a flag acceso"
++                 * e non latch una-tantum: anche una riga sola romperebbe
++                 * l'identita' al byte, e il veto resta gia' osservabile a
++                 * freddo (failures cresce, il funnel a valle dice
++                 * request-invalid); per la diagnosi completa si accende il
++                 * flag, che con arena non quiescente stampa
++                 * resync=arena-busy senza adottare nulla. */
++                if (cuda_route_snapshot_resync_requested()) {
++                    fprintf(stderr,
++                            "ds4: [gpu-route-request] "
++                            "result=invalid-compose-snapshot sequence=%u "
++                            "layer=%u arena=%llu tiering=%llu txn=%d "
++                            "hits_disabled=%d submissions_blocked=%d mode=%u "
++                            "resync=%s\n",
++                            request.sequence, request.layer_index,
++                            (unsigned long long)routefix1_arena,
++                            (unsigned long long)routefix1_tiering,
++                            g_dynamic_arena.txn ? 1 : 0,
++                            g_dynamic_arena.hits_disabled,
++                            g_dynamic_arena.submissions_blocked,
++                            (unsigned)g_moe_tiering.mode,
++                            routefix1_reject);
++                }
+                 g_moe_tiering.failures++;
+                 request_valid = 0;
+             }

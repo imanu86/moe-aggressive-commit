@@ -1,0 +1,95 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -31611,6 +31611,20 @@
+     return env && env[0] && strcmp(env, "0") != 0;
+ }
+ 
++/* ROUTEFIX1: DS4_CUDA_ROUTE_SNAPSHOT_RESYNC=1 riaggancia la snapshot del
++ * tiering compose all'ultima generazione d'arena PUBBLICATA quando il
++ * precheck del route worker trova il mismatch (unico veto muto del
++ * precheck). Dispatch una-tantum stile DS4_G73_OPEN: a flag spento (default)
++ * il ramo di mismatch resta byte-identico al comportamento attuale. */
++static int cuda_route_snapshot_resync_requested(void) {
++    static int enabled = -1;
++    if (enabled < 0) {
++        const char *value = getenv("DS4_CUDA_ROUTE_SNAPSHOT_RESYNC");
++        enabled = value && strcmp(value, "1") == 0;
++    }
++    return enabled;
++}
++
+ static int cuda_moe_split_hit_miss_requested(void) {
+     const char *env = getenv("DS4_CUDA_MOE_SPLIT_HIT_MISS");
+     return env && env[0] && strcmp(env, "0") != 0;
+@@ -42222,8 +42236,68 @@
+             g_moe_tiering.compose_prefill_mass_tiering &&
+             g_dynamic_arena.snapshot_generation !=
+                 g_moe_tiering.snapshot_generation) {
+-            g_moe_tiering.failures++;
+-            request_valid = 0;
++            /* ROUTEFIX1 FATTO 1: questo era l'unico veto MUTO del precheck
++             * (il funnel a valle dice solo "request-invalid"). La riga
++             * nomina i due snapshot e lo stato dell'arena: txn/flag quieti
++             * + una riga "[arena] publish generation=N" a monte nel log
++             * significano pubblicazione reale; txn/flag quieti SENZA
++             * pubblicazione a monte significano writer sconosciuto (sotto
++             * ENFORCE tiering_exclusive blocca ogni transazione: il
++             * mismatch non dovrebbe potersi formare). */
++            const uint64_t routefix1_arena =
++                g_dynamic_arena.snapshot_generation;
++            const uint64_t routefix1_tiering =
++                g_moe_tiering.snapshot_generation;
++            const char *routefix1_reject = "off";
++            if (cuda_route_snapshot_resync_requested()) {
++                /* ROUTEFIX1 FATTO 2 (flag, default spento): adotta SOLO una
++                 * generazione pubblicata e quiescente (niente txn, hit
++                 * abilitati, submission aperte, backing primario, valore
++                 * non nullo). Sicurezza al byte: nessun puntatore nasce da
++                 * questo valore da solo — ogni accesso al backing prestato
++                 * passa da cuda_moe_tiering_snapshot_ram_ptrs, che esige il
++                 * binding per-entry READY ESATTAMENTE alla generazione
++                 * adottata, e i binding con quella generazione li scrive
++                 * solo ds4_gpu_dynamic_arena_publish a contenuto validato.
++                 * Se il valore adottato fosse spurio, ogni entry risulta
++                 * miss (fail-closed/SSD), mai byte non pubblicati. */
++                if (!g_dynamic_arena.txn &&
++                    !g_dynamic_arena.hits_disabled &&
++                    !g_dynamic_arena.submissions_blocked &&
++                    g_dynamic_arena.backing ==
++                        CUDA_DYNAMIC_ARENA_BACKING_PRIMARY &&
++                    routefix1_arena != 0u) {
++                    g_moe_tiering.snapshot_generation = routefix1_arena;
++                    routefix1_reject = NULL;
++                    fprintf(stderr,
++                            "ds4: [gpu-route-request] "
++                            "result=resync-compose-snapshot sequence=%u "
++                            "layer=%u arena=%llu tiering_before=%llu\n",
++                            request.sequence, request.layer_index,
++                            (unsigned long long)routefix1_arena,
++                            (unsigned long long)routefix1_tiering);
++                } else {
++                    routefix1_reject = "arena-busy";
++                }
++            }
++            if (routefix1_reject) {
++                fprintf(stderr,
++                        "ds4: [gpu-route-request] "
++                        "result=invalid-compose-snapshot sequence=%u "
++                        "layer=%u arena=%llu tiering=%llu txn=%d "
++                        "hits_disabled=%d submissions_blocked=%d mode=%u "
++                        "resync=%s\n",
++                        request.sequence, request.layer_index,
++                        (unsigned long long)routefix1_arena,
++                        (unsigned long long)routefix1_tiering,
++                        g_dynamic_arena.txn ? 1 : 0,
++                        g_dynamic_arena.hits_disabled,
++                        g_dynamic_arena.submissions_blocked,
++                        (unsigned)g_moe_tiering.mode,
++                        routefix1_reject);
++                g_moe_tiering.failures++;
++                request_valid = 0;
++            }
+         }
+         if (g_moe_tiering.mode != CUDA_MOE_TIER_OFF && request_valid) {
+             if (!cuda_moe_tiering_advance_call_tick("gpu-route-request")) {

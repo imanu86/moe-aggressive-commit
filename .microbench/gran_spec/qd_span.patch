@@ -1,0 +1,292 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index e6b61ea..509cab7 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -31109,6 +31109,33 @@ static uint32_t cuda_g73_route_io_qd_requested(void) {
+     return 0u;
+ }
+ 
++/* Cap one logical QD span's individual ReadFile requests.  The default keeps
++ * the historical whole-span submit.  This is buffered Windows I/O, so no
++ * sector/device alignment is required; the KiB unit is an operational knob,
++ * not an alignment contract. */
++static uint64_t cuda_route_io_qd_span_bytes_requested(void) {
++    static int initialized = 0;
++    static uint64_t span_bytes = UINT64_MAX;
++    if (initialized) return span_bytes;
++    initialized = 1;
++    const char *env = getenv("DS4_CUDA_ROUTE_IO_QD_SPAN_KB");
++    if (!env || !env[0]) return span_bytes;
++    char *end = NULL;
++    errno = 0;
++    const unsigned long long value = strtoull(env, &end, 10);
++    while (end && (*end == ' ' || *end == '\t')) end++;
++    if (end == env || errno != 0 || !end || *end != '\0' ||
++        value == 0ull || value > 0xffffffffull / 1024ull) {
++        fprintf(stderr,
++                "ds4: invalid DS4_CUDA_ROUTE_IO_QD_SPAN_KB=%s; "
++                "using whole logical span\n",
++                env);
++        return span_bytes;
++    }
++    span_bytes = (uint64_t)value * 1024ull;
++    return span_bytes;
++}
++
+ static int cuda_route_io_qd_allow_no_g73_requested(void) {
+     const char *env = getenv("DS4_CUDA_ROUTE_IO_QD_ALLOW_NO_G73");
+     if (!env || !env[0] || strcmp(env, "0") == 0) return 0;
+@@ -38807,14 +38834,14 @@ static int cuda_moe_route_io_qd_read(
+     cache->route_io_qd_spans += span_count;
+     int result = 1;
+     uint32_t base = 0u;
++    const uint64_t max_submit_bytes =
++        cuda_route_io_qd_span_bytes_requested();
+     cache->route_transient_io_sequence.store(
+         request.sequence, std::memory_order_release);
+     while (base < span_count && result == 1) {
+         const uint32_t count =
+             span_count - base < 4u ? span_count - base : 4u;
+-        int pending[4] = {0, 0, 0, 0};
+-        HANDLE events[4] = {NULL, NULL, NULL, NULL};
+-        uint32_t submitted = 0u;
++        uint64_t span_completed[4] = {0u, 0u, 0u, 0u};
+         for (uint32_t i = 0; i < count; i++) {
+             const cuda_moe_route_io_span &span = spans[base + i];
+             if (!span.destination || span.bytes == 0u ||
+@@ -38824,111 +38851,144 @@ static int cuda_moe_route_io_qd_read(
+                 result = 0;
+                 break;
+             }
+-            OVERLAPPED &overlapped =
+-                cache->route_io_qd_overlapped[i];
+-            memset(&overlapped, 0, sizeof(overlapped));
+-            overlapped.Offset = (DWORD)(span.offset & 0xffffffffu);
+-            overlapped.OffsetHigh = (DWORD)(span.offset >> 32);
+-            overlapped.hEvent = cache->route_io_qd_event[i];
+-            events[i] = overlapped.hEvent;
+-            (void)ResetEvent(overlapped.hEvent);
+-            const BOOL started = ReadFile(
+-                g_model_file.h, span.destination, (DWORD)span.bytes,
+-                NULL, &overlapped);
+-            if (!started && GetLastError() != ERROR_IO_PENDING) {
+-                result = 0;
+-                break;
+-            }
+-            pending[i] = 1;
+-            submitted++;
+-            trace_submits++;
+-            cache->route_io_qd_submits++;
+-            if (wprof) {
+-                ds4_workerprof_inflight_advance(ds4_workerprof_now_ns(), 1);
+-                wprof_outstanding++;
+-            }
+-        }
+-        if (submitted > trace_max_inflight) {
+-            trace_max_inflight = submitted;
+-        }
+-        if (submitted > cache->route_io_qd_max_inflight) {
+-            cache->route_io_qd_max_inflight = submitted;
+         }
+ 
+-        while (result == 1 && submitted > 0u) {
+-            if (cache->route_transient_cancel_sequence.load(
+-                    std::memory_order_acquire) == request.sequence) {
+-                result = -1;
+-                break;
+-            }
+-            DWORD wait_ms = 5u;
+-            if (absolute_deadline > 0.0) {
+-                const double remaining =
+-                    absolute_deadline - cuda_wall_sec();
+-                if (remaining <= 0.0) {
+-                    result = -1;
++        int group_complete = 0;
++        while (result == 1 && !group_complete) {
++            int pending[4] = {0, 0, 0, 0};
++            HANDLE events[4] = {NULL, NULL, NULL, NULL};
++            uint32_t logical_slot[4] = {0u, 0u, 0u, 0u};
++            uint64_t expected_bytes[4] = {0u, 0u, 0u, 0u};
++            uint32_t submitted = 0u;
++            group_complete = 1;
++            for (uint32_t logical = 0; logical < count; logical++) {
++                const cuda_moe_route_io_span &span =
++                    spans[base + logical];
++                if (span_completed[logical] == span.bytes) continue;
++                group_complete = 0;
++                const uint32_t slot = submitted++;
++                const uint64_t remaining =
++                    span.bytes - span_completed[logical];
++                const uint64_t submit_bytes =
++                    remaining < max_submit_bytes ?
++                    remaining : max_submit_bytes;
++                const uint64_t submit_offset =
++                    span.offset + span_completed[logical];
++                OVERLAPPED &overlapped =
++                    cache->route_io_qd_overlapped[slot];
++                memset(&overlapped, 0, sizeof(overlapped));
++                overlapped.Offset =
++                    (DWORD)(submit_offset & 0xffffffffu);
++                overlapped.OffsetHigh = (DWORD)(submit_offset >> 32);
++                overlapped.hEvent = cache->route_io_qd_event[slot];
++                events[slot] = overlapped.hEvent;
++                logical_slot[slot] = logical;
++                expected_bytes[slot] = submit_bytes;
++                (void)ResetEvent(overlapped.hEvent);
++                const BOOL started = ReadFile(
++                    g_model_file.h,
++                    (uint8_t *)span.destination +
++                        span_completed[logical],
++                    (DWORD)submit_bytes, NULL, &overlapped);
++                if (!started && GetLastError() != ERROR_IO_PENDING) {
++                    result = 0;
+                     break;
+                 }
+-                const double remaining_ms = remaining * 1000.0;
+-                if (remaining_ms < (double)wait_ms) {
+-                    wait_ms = (DWORD)ceil(remaining_ms);
+-                    if (wait_ms == 0u) wait_ms = 1u;
++                pending[slot] = 1;
++                trace_submits++;
++                cache->route_io_qd_submits++;
++                if (wprof) {
++                    ds4_workerprof_inflight_advance(
++                        ds4_workerprof_now_ns(), 1);
++                    wprof_outstanding++;
+                 }
+             }
+-            const DWORD wait_result = WaitForMultipleObjects(
+-                submitted, events, TRUE, wait_ms);
+-            if (wait_result == WAIT_OBJECT_0) break;
+-            if (wait_result != WAIT_TIMEOUT) {
+-                result = 0;
+-                break;
++            if (submitted > trace_max_inflight) {
++                trace_max_inflight = submitted;
++            }
++            if (submitted > cache->route_io_qd_max_inflight) {
++                cache->route_io_qd_max_inflight = submitted;
+             }
+-        }
+ 
+-        if (result == 1) {
+-            for (uint32_t i = 0; i < submitted; i++) {
+-                DWORD got = 0;
+-                const cuda_moe_route_io_span &span = spans[base + i];
+-                const BOOL completed = GetOverlappedResult(
+-                    g_model_file.h,
+-                    &cache->route_io_qd_overlapped[i],
+-                    &got, FALSE);
+-                if (got > 0u) {
+-                    ds4_transport_record_file_bytes(
+-                        span.transport_repeat, (uint64_t)got);
++            while (result == 1 && submitted > 0u) {
++                if (cache->route_transient_cancel_sequence.load(
++                        std::memory_order_acquire) == request.sequence) {
++                    result = -1;
++                    break;
++                }
++                DWORD wait_ms = 5u;
++                if (absolute_deadline > 0.0) {
++                    const double remaining =
++                        absolute_deadline - cuda_wall_sec();
++                    if (remaining <= 0.0) {
++                        result = -1;
++                        break;
++                    }
++                    const double remaining_ms = remaining * 1000.0;
++                    if (remaining_ms < (double)wait_ms) {
++                        wait_ms = (DWORD)ceil(remaining_ms);
++                        if (wait_ms == 0u) wait_ms = 1u;
++                    }
+                 }
+-                if (!completed ||
+-                    got != (DWORD)span.bytes) {
++                const DWORD wait_result = WaitForMultipleObjects(
++                    submitted, events, TRUE, wait_ms);
++                if (wait_result == WAIT_OBJECT_0) break;
++                if (wait_result != WAIT_TIMEOUT) {
+                     result = 0;
+                     break;
+                 }
+-                pending[i] = 0;
+-                trace_completions++;
+-                trace_bytes += span.bytes;
+-                cache->route_io_qd_completions++;
+-                cache->route_io_qd_bytes += span.bytes;
+-                cache->route_transient_read_bytes.fetch_add(
+-                    span.bytes, std::memory_order_release);
+-                if (wprof && wprof_outstanding != 0u) {
+-                    ds4_workerprof_inflight_advance(
+-                        ds4_workerprof_now_ns(), -1);
+-                    wprof_outstanding--;
+-                    ds4_workerprof_add(WP_READ_CALLS, 1u);
+-                    ds4_workerprof_add(WP_READ_BYTES, span.bytes);
++            }
++
++            if (result == 1) {
++                for (uint32_t slot = 0; slot < submitted; slot++) {
++                    DWORD got = 0;
++                    const uint32_t logical = logical_slot[slot];
++                    const cuda_moe_route_io_span &span =
++                        spans[base + logical];
++                    const BOOL completed = GetOverlappedResult(
++                        g_model_file.h,
++                        &cache->route_io_qd_overlapped[slot],
++                        &got, FALSE);
++                    if (got > 0u) {
++                        ds4_transport_record_file_bytes(
++                            span.transport_repeat, (uint64_t)got);
++                    }
++                    if (!completed ||
++                        got != (DWORD)expected_bytes[slot]) {
++                        result = 0;
++                        break;
++                    }
++                    pending[slot] = 0;
++                    span_completed[logical] += (uint64_t)got;
++                    trace_completions++;
++                    trace_bytes += (uint64_t)got;
++                    cache->route_io_qd_completions++;
++                    cache->route_io_qd_bytes += (uint64_t)got;
++                    cache->route_transient_read_bytes.fetch_add(
++                        (uint64_t)got, std::memory_order_release);
++                    if (wprof && wprof_outstanding != 0u) {
++                        ds4_workerprof_inflight_advance(
++                            ds4_workerprof_now_ns(), -1);
++                        wprof_outstanding--;
++                        ds4_workerprof_add(WP_READ_CALLS, 1u);
++                        ds4_workerprof_add(
++                            WP_READ_BYTES, (uint64_t)got);
++                    }
+                 }
+             }
+-        }
+-        if (result != 1) {
+-            cuda_moe_route_io_qd_cancel_pending(
+-                cache, pending, submitted);
+-        }
+-        /* cancel_pending attende ogni richiesta ancora aperta, quindi dopo
+-         * questo punto il batch non ha piu' nulla in volo: il residuo va
+-         * scaricato o inflight resterebbe alto per sempre. */
+-        if (wprof && wprof_outstanding != 0u) {
+-            const uint64_t drained = ds4_workerprof_now_ns();
+-            while (wprof_outstanding != 0u) {
+-                ds4_workerprof_inflight_advance(drained, -1);
+-                wprof_outstanding--;
++            if (result != 1) {
++                cuda_moe_route_io_qd_cancel_pending(
++                    cache, pending, submitted);
++            }
++            /* cancel_pending attende ogni richiesta ancora aperta, quindi dopo
++             * questo punto il batch non ha piu' nulla in volo: il residuo va
++             * scaricato o inflight resterebbe alto per sempre. */
++            if (wprof && wprof_outstanding != 0u) {
++                const uint64_t drained = ds4_workerprof_now_ns();
++                while (wprof_outstanding != 0u) {
++                    ds4_workerprof_inflight_advance(drained, -1);
++                    wprof_outstanding--;
++                }
+             }
+         }
+         base += count;

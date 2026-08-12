@@ -1,0 +1,308 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -3830,7 +3830,7 @@ static cuda_reap_router_trace *g_reap_router_trace_host = NULL;
+ 
+ static int cuda_ok(cudaError_t err, const char *what);
+ static void cuda_moe_expert_cache_invalidate(const char *site);
+-static void cuda_moe_expert_cache_release(void);
++static void cuda_moe_expert_cache_release(int preserve_tiering = 0);
+ static void cuda_iq1_s_ram_cache_release(void);
+ static void cuda_iq1_s_vram_cache_release(void);
+ static void cuda_q1_vram_lru_release(void);
+@@ -8507,6 +8507,35 @@ static int cuda_vram_pin_backbone_enabled(void) {
+     return cached;
+ }
+ 
++/* VICTIMFIX: prefer expert storage when a non-expert streamed allocation
++ * needs space. Exact "1"; default off. The separate log gate makes the
++ * flag-off counter observable without changing default stderr. */
++static int cuda_vram_prefer_expert_victim_enabled(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *e = getenv("DS4_CUDA_VRAM_PREFER_EXPERT_VICTIM");
++        cached = (e && strcmp(e, "1") == 0) ? 1 : 0;
++    }
++    return cached;
++}
++
++static int cuda_vram_prefer_expert_victim_log_enabled(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *e =
++            getenv("DS4_CUDA_VRAM_PREFER_EXPERT_VICTIM_LOG");
++        cached = cuda_vram_prefer_expert_victim_enabled() ||
++            (e && strcmp(e, "1") == 0);
++    }
++    return cached;
++}
++
++/* Keep requester classification identical to cuda_model_range_ptr_from_fd:
++ * only moe_* denotes an expert weight; NULL and all other tags are dense. */
++static int cuda_vram_requester_is_expert(const char *requester) {
++    return requester && strncmp(requester, "moe_", 4) == 0;
++}
++
+ static int cuda_vram_elastic_expert_slots_enabled(void) {
+     static int cached = -1;
+     if (cached < 0) {
+@@ -8662,6 +8691,14 @@ static uint64_t g_vram_prio_backbone_reload_bytes = 0; /* byte ri-streammati di
+ static uint64_t g_vram_prio_backbone_reloads = 0;
+ static uint64_t g_vram_prio_expert_relaxed_saves = 0;  /* vittime trovate dal passo rilassato
+                                                         * = sfratti di backbone evitati */
++/* VICTIMFIX: decision counters. `expert_victim` counts both an evicted
++ * streamed expert range and a safely ceded resident-expert slab. */
++static uint64_t g_victimfix_expert_victim = 0;
++static uint64_t g_victimfix_backbone_no_safe_expert = 0;
++static uint64_t g_victimfix_backbone_flag_off = 0;
++/* Outside the requested three-way split: the policy is on but deliberately
++ * does not apply when the requester itself is an expert weight. */
++static uint64_t g_victimfix_backbone_expert_requester = 0;
+ static uint64_t g_vram_free_at_decode_start = 0;
+ static uint32_t g_vram_prio_expert_slots_current = 0;  /* mirror di g_moe_expert_cache.capacity,
+                                                         * dichiarato qui perche' la struct e'
+@@ -8695,7 +8732,8 @@ static uint64_t g_vram_pin_expert_cache_rebuilds = 0;
+ static uint64_t g_vram_pin_exact_stream_fallbacks = 0;
+ static uint64_t g_vram_pin_backbone_failopen = 0;
+ static uint64_t g_vram_pin_no_victim = 0;
+-static int cuda_vram_pin_shed_expert_cache(const char *requester);
++static int cuda_vram_pin_shed_expert_cache(
++    const char *requester, int prefer_for_requester);
+ 
+ /* =======================================================================
+  * FIX-B. Tre strumenti indipendenti, ognuno dietro il proprio flag e TUTTI
+@@ -8880,26 +8918,27 @@ static void cuda_vram_prio_note_backbone_reload(uint64_t offset, uint64_t bytes)
+  * to evicting the coldest PINNED range (pass 2) -- this guarantees forward progress
+  * without deadlocking when the whole live set is pinned.
+  *
+- * Priorita' invertita (DS4_CUDA_VRAM_INVERTED_PRIORITY=1): fra i due passi originali
+- * se ne interpone uno intermedio che riconsidera gli ESPERTI con lo scudo di recency
+- * rilassato (tick - DS4_CUDA_VRAM_EXPERT_SHIELD_TICKS invece di tick - 4). Motivo: lo
+- * scudo a 4 tick e' applicato a entrambe le classi, quindi oggi un esperto appena
+- * toccato e' protetto mentre un backbone piu' freddo viene sfrattato -- l'opposto della
+- * regola voluta. Il passo rilassato non guarda mai nulla di piu' recente di
+- * tick - shield (shield >= 1), quindi il range in uso al tick corrente resta intoccabile.
+- * Con il flag OFF il passo 1 e' saltato e la funzione degenera esattamente nei due
+- * passi originali, con gli stessi predicati e lo stesso ordine di visita. */
+-static long cuda_model_pick_victim(void) {
++ * Priorita' invertita (DS4_CUDA_VRAM_INVERTED_PRIORITY=1) o VICTIMFIX per
++ * un richiedente non-expert: fra i due passi originali se ne interpone uno
++ * che riconsidera gli ESPERTI con lo scudo di recency rilassato
++ * (tick - DS4_CUDA_VRAM_EXPERT_SHIELD_TICKS invece di tick - 4). Il passo
++ * resta LRU e non guarda mai nulla di piu' recente di tick - shield
++ * (shield >= 1), quindi il range consegnato al tick corrente e' intoccabile.
++ * Con entrambi i flag OFF il passo 1 e' saltato e la funzione degenera
++ * esattamente nei due passi originali, con gli stessi predicati e ordine. */
++static long cuda_model_pick_victim(int prefer_expert_victim) {
+     const uint64_t pin_floor = (g_model_tick > 4u) ? (g_model_tick - 4u) : 0u; /* protect current MoE working set */
+     const int inverted = cuda_vram_inverted_priority_enabled();
+     uint64_t relaxed_floor = pin_floor;
+-    if (inverted) {
++    if (inverted || prefer_expert_victim) {
+         const uint64_t shield = cuda_vram_expert_shield_ticks();
+         relaxed_floor = (g_model_tick > shield) ? (g_model_tick - shield) : 0u;
+         if (relaxed_floor < pin_floor) relaxed_floor = pin_floor;
+     }
+     for (int pass = 0; pass < 3; pass++) {
+-        if (pass == 1 && !inverted) continue;   /* flag OFF => comportamento originale */
++        if (pass == 1 && !inverted && !prefer_expert_victim) {
++            continue;                           /* flags OFF => original */
++        }
+         const int want_pinned = (pass == 2);
+         const uint64_t floor = (pass == 1) ? relaxed_floor : pin_floor;
+         long best = -1;
+@@ -9166,77 +9205,104 @@ static char *cuda_model_stream_alloc(
+         /* Reclaim VRAM parked in the pool before evicting live ranges. */
+         if (cuda_stream_pool_reclaim() > 0) continue;
+         if (!allow_evict) return NULL;
+-        const long vi = cuda_model_pick_victim();
++        const int prefer_expert_victim =
++            cuda_vram_prefer_expert_victim_enabled();
++        const int requester_is_expert =
++            cuda_vram_requester_is_expert(what);
++        const int prefer_for_requester =
++            prefer_expert_victim && !requester_is_expert;
++        const long vi = cuda_model_pick_victim(prefer_for_requester);
+         const int pin_backbone = cuda_vram_pin_backbone_enabled();
+-        if (pin_backbone && vi >= 0 &&
++        const int protect_backbone =
++            pin_backbone || prefer_for_requester;
++        const char *victim_policy = pin_backbone ? "PIN" : "PREFER";
++        if (protect_backbone && vi >= 0 &&
+             g_model_ranges[(size_t)vi].pinned) {
+-            /* PIN2: la vittima designata e' backbone. Eventuali range expert
++            /* La vittima designata e' backbone. Eventuali range expert
+              * streammati li avrebbero gia' trovati i passi 0/1 del selettore:
+              * qui l'unica categoria expert che puo' ancora cedere e' lo slab
+              * resident (invisibile a g_model_ranges). */
+             const cuda_model_range &blocked = g_model_ranges[(size_t)vi];
+             g_vram_pin_backbone_blocked++;
+             if (g_vram_pin_backbone_blocked <= 8ull ||
+                 (g_vram_pin_backbone_blocked % 256ull) == 0ull) {
+                 fprintf(stderr,
+-                        "ds4: [vram-prio] PIN blocked_backbone=%llu "
++                        "ds4: [vram-prio] %s blocked_backbone=%llu "
+                         "victim_category=backbone victim_offset=%llu "
+                         "victim_bytes=%llu requester=%s "
+                         "action=seek-expert-category\n",
++                        victim_policy,
+                         (unsigned long long)g_vram_pin_backbone_blocked,
+                         (unsigned long long)blocked.offset,
+                         (unsigned long long)blocked.bytes,
+                         what ? what : "weights");
+             }
+-            if (cuda_vram_pin_shed_expert_cache(what)) {
++            if (cuda_vram_pin_shed_expert_cache(
++                    what, prefer_for_requester)) {
++                g_victimfix_expert_victim++;
+                 /* Il cudaFree dello slab ha restituito VRAM: rifare prima
+                  * cudaMemGetInfo/cudaMalloc, senza toccare il backbone. */
+                 continue;
+             }
+             /* Forward progress esplicito: se lo slab non esiste o non puo'
+              * essere quiesciuto, il runtime non ha un backend CPU per i pesi
+              * dense mancanti. Fail-open dichiarato invece di un NULL/OOM
+              * opaco. Rate-limited (8 poi 1/256): nel regime post-shed con
+              * pressione residua e' un evento PER SFRATTO e a log libero
+              * falserebbe il braccio ON. */
+             g_vram_pin_backbone_failopen++;
+             if (g_vram_pin_backbone_failopen <= 8ull ||
+                 (g_vram_pin_backbone_failopen % 256ull) == 0ull) {
+                 fprintf(stderr,
+-                        "ds4: [vram-prio] PIN ESCAPE category=backbone "
++                        "ds4: [vram-prio] %s ESCAPE category=backbone "
+                         "reason=no-reclaimable-expert victim_offset=%llu "
+                         "requester=%s failopen=%llu\n",
++                        victim_policy,
+                         (unsigned long long)blocked.offset,
+                         what ? what : "weights",
+                         (unsigned long long)g_vram_pin_backbone_failopen);
+             }
+         }
+         if (vi < 0) {
+-            if (pin_backbone && cuda_vram_pin_shed_expert_cache(what)) {
++            if (protect_backbone && cuda_vram_pin_shed_expert_cache(
++                    what, prefer_for_requester)) {
++                g_victimfix_expert_victim++;
+                 continue;
+             }
+-            if (pin_backbone) {
++            if (protect_backbone) {
+                 g_vram_pin_no_victim++;
+                 if (g_vram_pin_no_victim <= 8ull ||
+                     (g_vram_pin_no_victim % 256ull) == 0ull) {
+                     fprintf(stderr,
+-                            "ds4: [vram-prio] PIN EXHAUSTED category=none "
++                            "ds4: [vram-prio] %s EXHAUSTED category=none "
+                             "requester=%s no_victim=%llu "
+                             "action=caller-fallback\n",
++                            victim_policy,
+                             what ? what : "weights",
+                             (unsigned long long)g_vram_pin_no_victim);
+                 }
+             }
+             return NULL;
+         }
+         /* Classifica la vittima PRIMA dello swap-erase, che invalida l'indice.
+          * Contabilita' attiva in entrambi gli stati del flag: e' la strumentazione
+          * che rende confrontabili i due bracci dell'A/B. */
+         {
+             const cuda_model_range &victim = g_model_ranges[(size_t)vi];
++            if (!victim.pinned) {
++                g_victimfix_expert_victim++;
++            } else if (!prefer_expert_victim) {
++                g_victimfix_backbone_flag_off++;
++            } else if (prefer_for_requester) {
++                /* Both streamed-expert passes and the safely reclaimable
++                 * resident slab were exhausted. */
++                g_victimfix_backbone_no_safe_expert++;
++            } else {
++                g_victimfix_backbone_expert_requester++;
++            }
+             if (pin_backbone && !victim.pinned) {
+                 g_vram_pin_expert_range_ceded++;
+             }
+             cuda_vram_prio_account_eviction(
+                 victim.pinned, victim.bytes, victim.offset, what);
+         }
+@@ -31675,6 +31741,20 @@ static void cuda_vram_prio_log(const char *phase) {
+             g_vram_prio_stabilized_slots,
+             (unsigned long long)g_model_evict_count,
+             mem_err == cudaSuccess ? "ok" : "query-failed");
++    if (cuda_vram_prefer_expert_victim_log_enabled()) {
++        fprintf(stderr,
++                "ds4: [victimfix] phase=%s prefer_expert_victim=%d "
++                "victim_expert=%llu "
++                "victim_backbone_no_safe_expert=%llu "
++                "victim_backbone_flag_off=%llu "
++                "victim_backbone_expert_requester=%llu\n",
++                phase,
++                cuda_vram_prefer_expert_victim_enabled(),
++                (unsigned long long)g_victimfix_expert_victim,
++                (unsigned long long)g_victimfix_backbone_no_safe_expert,
++                (unsigned long long)g_victimfix_backbone_flag_off,
++                (unsigned long long)g_victimfix_backbone_expert_requester);
++    }
+ }
+ 
+ extern "C" void ds4_gpu_vram_ledger_decode_start(void) {
+@@ -31808,6 +31888,7 @@ extern "C" void ds4_gpu_vram_ledger_request_end(void) {
+      * riarmo lascia la richiesta successiva libera di ricostruire alla
+      * capacita' piena richiesta, come nel disegno del 28/7. */
+-    if (cuda_vram_pin_backbone_enabled()) {
++    if (cuda_vram_pin_backbone_enabled() ||
++        cuda_vram_prefer_expert_victim_enabled()) {
+         g_vram_pin_expert_cache_shed = 0;
+         g_vram_pin_rebuild_slots = 0;
+     }
+@@ -38599,8 +38680,9 @@ static void cuda_moe_expert_cache_invalidate(const char *site) {
+  * Registra la capacita' dimezzata per la ricostruzione ridotta della prima
+  * prepare() successiva (miglioramento rispetto al disegno del 28/7, che
+  * lasciava la richiesta senza cache). */
+-static int cuda_vram_pin_shed_expert_cache(const char *requester) {
+-    if (!cuda_vram_pin_backbone_enabled() ||
++static int cuda_vram_pin_shed_expert_cache(
++        const char *requester, int prefer_for_requester) {
++    if (!(cuda_vram_pin_backbone_enabled() || prefer_for_requester) ||
+         g_vram_pin_expert_cache_shed ||
+         g_moe_expert_cache.capacity == 0u) {
+         return 0;
+@@ -38662,9 +38744,17 @@ static int cuda_vram_pin_shed_expert_cache(
+     /* Impedisce alla prepare() del fallback di ricreare subito lo stesso
+      * slab a piena capacita': finche' shed=1 la prepare o ricostruisce al
+      * target ridotto o torna NULL. */
+     g_vram_pin_expert_cache_shed = 1;
+     g_vram_pin_rebuild_slots = slots / 2u;
+-    cuda_moe_expert_cache_release();
++    if (prefer_for_requester) {
++        /* Preserve TURNO2FIX authority: demote every VALID VRAM entry while
++         * retaining its checked RAM binding, then release only the resident
++         * cache. The ordinary full release would clear owned arena slots. */
++        cuda_moe_expert_cache_invalidate("victimfix-shed");
++        cuda_moe_expert_cache_release(/*preserve_tiering=*/1);
++    } else {
++        cuda_moe_expert_cache_release();
++    }
+     if (g_moe_expert_cache.capacity != 0u ||
+         g_moe_expert_cache.packed_base != NULL ||
+         g_moe_expert_cache.gate != NULL ||
+@@ -39040,7 +39130,7 @@ static int cuda_moe_teardown_leak_residual(void) {
+             &g_moe_expert_cache.route_transient_pread);
+ }
+ 
+-static void cuda_moe_expert_cache_release(void) {
++static void cuda_moe_expert_cache_release(int preserve_tiering) {
+     g_model_expert_cache_ready = 0;
+     /* 10-B4: niente piu' ritorno cieco su safe-leak.  Il vecchio early
+      * return lasciava al contesto CUDA stream route, eventi DOV, slab,
+@@ -39224,7 +39314,9 @@ static void cuda_moe_expert_cache_release(void) {
+                         (double)g_moe_expert_cache.route_io_qd_calls :
+                     0.0);
+     }
+-    cuda_moe_tiering_report_and_reset(1);
++    if (!preserve_tiering) {
++        cuda_moe_tiering_report_and_reset(1);
++    }
+     if (g_moe_expert_cache.packed_base) {
+         (void)cudaFree(g_moe_expert_cache.packed_base);
+     } else {

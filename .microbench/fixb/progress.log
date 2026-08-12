@@ -1,0 +1,81 @@
+FIX-B — tre interventi su ds4-p4a/ds4_cuda.cu
+worktree: C:\Users\imanu\source\repos\moe-aggressive-commit\ds4-p4a
+build dir riusata: ds4-p4a\build-native (Release, Ninja, CUDA 12.6, DS4_CUDA_ARCHITECTURES=80;86;89;90)
+
+[00] preflight
+  - nessun processo ds4_server attivo (tasklist vuoto) -> build consentita
+  - backup binario: build-native\ds4_server.pre_fixb.exe
+  - SHA256 pre  = bddb1eb6871aab2c13ed892c06a80a89fe9eb4e5ac57ca9b0c5f706d31a19159
+
+[01] analisi punto di abort (intervento 1)
+  - ds4_cuda.cu:28874 cuda_moe_transient_pread_chunked() -> ritorna -1 su
+    scadenza deadline (righe 28888-28890 e 28926-28927) o su cancel/safe-leak
+  - ds4_cuda.cu:37348-37354 (dentro cuda_moe_tiering_enforce_request<G73>):
+        if (read_result != 1) { g_moe_tiering.failures++;
+            failure_reason = read_result < 0 ? "transient-io-timeout" : "pread";
+            ok = 0; break; }
+    <-- QUI la richiesta muore
+  - ds4_cuda.cu:37832-37838 log "[tiering-enforce] result=failed ... reason=transient-io-timeout"
+  - ds4_cuda.cu:38094 il worker riceve ok=0 -> 38410 *route_failed_host = sequence
+  - ds4_cuda.cu:38412 log "CUDA GPU-resident route worker failed"
+  - ds4_cuda.cu:43133 il thread di decode vede route_failed_host -> invalidate + return NULL
+    -> risale fino a "cuda decode failed" / finish=error
+  - SECONDO KILLER (indipendente): ds4_cuda.cu:43049-43068, il watchdog del thread di
+    decode legge cache->route_transient_read_deadline (pubblicata dal worker a 37314)
+    e quando scade CANCELLA il worker. Un recupero interno al worker e' inutile se non
+    si annulla anche questa deadline pubblicata.
+
+[02] vincoli trovati (test statici .ps1 che ispezionano il sorgente)
+  - tests\test_g133_m1_static.ps1:350 -> cuda_g133_transient_io_timeout_seconds()
+    deve comparire ESATTAMENTE 1 volta dentro cuda_moe_tiering_enforce_request
+    => il ripiego NON puo' richiamare quel parser; usa deadline 0.0 (illimitata)
+  - tests\test_prep6_route_read_whole_static.ps1:74-81 -> fra il commento
+    "GGUF stores gate/up/down..." e il primo "if (read_result != 1) {" devono restare
+    esattamente 3 chiamate a cuda_moe_transient_pread_chunked( e 2 "if (read_result == 1)"
+  - tests\test_prep6_...:142 -> devono restare le stringhe
+    'failure_reason = read_result < 0' e '? "transient-io-timeout" : "pread"'
+  - tests\test_p1_decode_trace_static.ps1:87 -> ds4_gpu_decode_trace_token_end NON
+    puo' contenere fprintf( => l'hook slow-token NON va li'
+
+[03] patch applicata (ds4-p4a)
+  ds4_cuda.cu
+    ~7019   blocco FIX-B: 5 contatori globali + 4 parser env (tutti OFF/neutri)
+    ~28674  ds4_gpu_vram_ledger_decode_start: azzera la serie di ripieghi (per-richiesta)
+    ~29003  cuda_moe_transient_pread_chunked: +2 fetch_add (pread_calls / pread_bytes)
+    ~29080  NUOVA cuda_moe_transient_timeout_fallback_serve() (fuori dalle slice dei test)
+    ~31237  [zc]: +transient_timeout_fallbacks= +transient_timeout_aborts= in coda
+    ~31245  NUOVE ds4_gpu_token_watch_begin/end (interventi 2 e 3)
+    ~37288  enforce: uint32_t transient_fallbacks_used
+    ~37600  enforce: uint32_t transient_stage_done (0/1/2 tensori gia' completi)
+    ~37645  enforce: blocco di ripiego prima del fallimento terminale
+    ~38180  enforce: reset serie consecutiva a richiesta pulita
+  ds4_gpu.h      +2 dichiarazioni ds4_gpu_token_watch_*
+  ds4_server.c   +2 call-site nel loop di decode (#if !defined(DS4_NO_GPU), locali propri)
+
+[04] build
+  cmake --build build-native (Release/Ninja, vcvars64, CUDA 12.6, sm_80/86/89/90) RC=0
+  classi di warning invariate (C4244 / #177-D), nessuna nuova
+  SHA256 post = a9507f3122797d0d290c368ddc35c34fdaed69adc4c9b52cc9507eaccfcea202
+
+[05] verifiche (ctx 4096, max_tokens 16, temp 0, seed 12345, log D:\ds4_work\fixb)
+  A) tutti i flag spenti   -> 16 token, sha256 d810090c...96f1
+     0 righe [slow-token], 0 [vram-prio] phase=periodic, 0 [transient-timeout]
+     STESSO sha256 gia' registrato dalla campagna p5a step 13 => default invariato
+  B) tre flag accesi (RECOVERABLE=1, MAX_FALLBACKS=64, SLOW_TOKEN_LOG=1/MS=1500,
+     VRAM_PRIO_LOG_EVERY_TOKENS=4) -> 16 token, STESSO sha256 d810090c...96f1
+     4 righe [vram-prio] phase=periodic (16/4, esatto); 0 [slow-token] perche' il
+     token piu' lento e' 1244,7 ms < 1500 ms (comportamento corretto, non un bug)
+  C) terza run di controllo, SLOW_TOKEN_MS=200 -> stesso sha256, 16 righe [slow-token]
+     con tutti i campi valorizzati (worker_wait_ms ~95% di total_ms)
+  chiusura: sempre POST /__g130_u1_shutdown, SERVER_GRACEFUL_EXIT=1 in tutte e tre.
+  GPU: 443 MiB prima, 433 MiB dopo. Nessun ds4_server residuo.
+
+[06] test statici
+  PASS  test_prep6_route_read_whole_static.ps1 (copre enforce + transient read)
+  PASS  test_p1_decode_trace_static.ps1
+  PASS  test_p4a_demand_pipeline_static.ps1
+  FAIL  test_g133_m1_static.ps1  -> PREESISTENTE: pretende
+        'route_consumed_sequence = sequence;' nel route worker, il sorgente dice
+        'consumed_sequence'; verificato assente anche a HEAD
+  FAIL  test_g73_open_static.ps1 -> PREESISTENTE: pretende SPLIT_FUSED='0' nel
+        preset, il preset checked-in (anche a HEAD) dice '1'

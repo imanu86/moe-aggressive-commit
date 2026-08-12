@@ -1,0 +1,110 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -36921,6 +36921,11 @@ struct cuda_moe_drain_overlap4_state {
+     cudaEvent_t ready_event[2];
+     int events_created;
+     int transport_note_emitted;
++    /* DRAIN4FIX: bitmask delle classi di veto dell'arm gia' loggate (solo
++     * thread worker).  Lezione del run inerte D1 29/7: un ritorno-0
++     * silenzioso dell'arm costa un run strumentato per essere visto; un
++     * log per classe per processo lo rende gratuito. */
++    uint32_t arm_vetoes_logged;
+     /* Generazione armata (0 = niente in volo), pubblicata con release dopo
+      * i timestamp; complete_ns==0 con armed!=0 significa overlap ancora
+      * outstanding. */
+@@ -37050,6 +37055,25 @@ static void cuda_moe_drain_overlap4_retire_at_claim(int wprof) {
+     cuda_moe_drain_overlap4_retire(wprof, 1);
+ }
+ 
++/* DRAIN4FIX: nessun veto dell'arm resta silenzioso.  Una riga per CLASSE
++ * di veto per processo (bitmask sopra), poi silenzio: se la leva e' inerte
++ * il log lo dice alla prima richiesta, non alla fine di un run strumentato.
++ * Chiamata solo dalle istanze DOV=true (via arm): zero presenza a flag
++ * spento. */
++static void cuda_moe_drain_overlap4_note_arm_veto(
++        uint32_t veto_bit, const char *reason,
++        const cuda_moe_route_request &request) {
++    const uint32_t veto_mask = 1u << veto_bit;
++    if (g_moe_drain_overlap4.arm_vetoes_logged & veto_mask) return;
++    g_moe_drain_overlap4.arm_vetoes_logged |= veto_mask;
++    fprintf(stderr,
++            "ds4: [drain-overlap4] result=arm-veto reason=%s seq=%u "
++            "layer=%u (prima occorrenza; drain bloccante su questo "
++            "percorso)\n",
++            reason ? reason : "unknown", request.sequence,
++            request.layer_index);
++}
++
+ /* Fence del consumer (§3.1): se la generazione armata coincide con quella
+  * sottomessa, i kernel consumer accodati DOPO questo punto su stream 0 non
+  * possono eseguire prima del completamento fisico delle copie (I1).
+@@ -40012,14 +40036,42 @@ static int cuda_moe_drain_overlap4_arm(
+         request.host_generation == 0u) {
+         return 0;
+     }
+-    /* §3.3 del disegno: mai armare sotto la policy condivisa G133 (Q1 /
+-     * SSD-wrap): quei percorsi leggono route_completed_* ai confini
+-     * (request-boundary, q1-0-mixed-entry, ...) come prova di quiescenza
+-     * del lavoro di rotta, e con un overlap armato la publicazione di
+-     * completed non implicherebbe piu' upload drenato. */
+-    if (cuda_g133_shared_policy_active()) return 0;
+-    if (!cuda_moe_drain_overlap4_events_ready()) return 0;
+-    if (cudaPeekAtLastError() != cudaSuccess) return 0;
++    /* §3.3 del disegno, perimetro CORRETTO (drain4fix).  Il divieto del
++     * disegno riguarda i percorsi MIXED Q1/IQ1 — q1-0/iq1 -mixed-entry e
++     * -policy leggono route_completed_* come prova di quiescenza del lavoro
++     * di rotta prima dei loro kernel e delle decisioni di policy — quindi
++     * il veto giusto e' "sidecar Q1/IQ1 presente nel processo" (fatto
++     * stabile, fissato al load del modello, prima di ogni decode).
++     *
++     * Il perimetro di drain4 — l'intera cuda_g133_shared_policy_active() —
++     * era SBAGLIATO: la policy condivisa e' VERA in tutto l'assetto di
++     * campagna (DS4_G133_TIER=1 + DS4_CUDA_PREFILL_TIER_COMPOSE=1 +
++     * ENFORCE) e il veto rendeva la leva INERTE a flag acceso (run D1
++     * 29/7: dispatch=armed, drain_overlap_ms=0, regime invariato).  Gli
++     * altri due lettori di drain_completed sotto policy NON richiedono
++     * completed=>drenato: route-failure-invalidate gira solo su richieste
++     * fallite (mai armate: arm e failed sono mutuamente esclusivi per
++     * generazione, e l'overlap della generazione precedente e' gia'
++     * provato completo dal claim che l'ha preceduta); request-boundary
++     * protegge wrap-commit ed epoch-advance, che non toccano ne' staging
++     * ne' VRAM di rotta — il riciclo dei buffer resta dietro il
++     * claim-gate.  Analisi completa: .microbench/drain4fix/NOTA.md §3. */
++    if (g_q1_0_sidecar_file_valid || g_q1_0_sidecar_host_base != NULL ||
++        g_iq1_s_sidecar_file_valid || g_iq1_s_sidecar_host_base != NULL) {
++        cuda_moe_drain_overlap4_note_arm_veto(
++            0u, "q1-iq1-sidecar-present", request);
++        return 0;
++    }
++    if (!cuda_moe_drain_overlap4_events_ready()) {
++        cuda_moe_drain_overlap4_note_arm_veto(
++            1u, "events-missing", request);
++        return 0;
++    }
++    if (cudaPeekAtLastError() != cudaSuccess) {
++        cuda_moe_drain_overlap4_note_arm_veto(
++            2u, "pending-cuda-error", request);
++        return 0;
++    }
+     cudaEvent_t ready_event =
+         g_moe_drain_overlap4.ready_event[request.host_generation & 1u];
+     const cudaError_t record_error =
+@@ -49805,11 +49857,15 @@ static void cuda_g73_route_dispatch_init(void) {
+      * passano di qui: restano sulle istanze non-overlap (§3.3). */
+     const int dov_enabled = cuda_moe_drain_overlap4_requested();
+     if (dov_enabled) {
++        /* DRAIN4FIX: la riga dichiara anche DOV (in coda, i parser a
++         * chiave non si spostano).  Il run inerte del 29/7 e' stato
++         * diagnosticato piu' lentamente proprio perche' la riga elencava
++         * g73/general/scoped ma non lo stato DOV dell'istanza. */
+         fprintf(stderr,
+                 "ds4: [drain-overlap4] dispatch=armed g73=%d general=%d "
+-                "scoped=%d\n",
++                "scoped=%d dov=%d\n",
+                 g_cuda_g73_open_enabled ? 1 : 0, general_enabled,
+-                scoped_enabled);
++                scoped_enabled, dov_enabled);
+     }
+     if (g_cuda_g73_open_enabled && general_enabled) {
+         g_cuda_routed_moe_launch_dispatch = dov_enabled

@@ -1,0 +1,190 @@
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index f8ce8ce..a1aa798 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -3904,6 +3904,156 @@ static cuda_model_range *cuda_model_range_find_override(
+     return NULL;
+ }
+ 
++/* ---- INDEXERZC: indexer servito zero-copy da RAM host pinnata ------------
++ * DS4_CUDA_INDEXER_HOST_ZEROCOPY=1 (default 0 = percorso attuale, nessun
++ * cambiamento): i tensori etichettati "indexer_f16" (blk.*.indexer.attn_q_b
++ * + blk.*.indexer.proj dei layer ratio-4) NON entrano nella fd-cache VRAM
++ * che a pos>=2051 si allarga e sfratta il backbone: ogni tensore viene letto
++ * UNA volta dal file nel proprio buffer host pinnato (cudaHostAlloc mapped)
++ * e servito ai kernel sul posto via cudaHostGetDevicePointer/UVA.  Nessuna
++ * copia per token, nessun transito da arena/staging: sul filo PCIe passano i
++ * byte che i kernel toccano davvero (per il GEMV denso dell'indexer e' il
++ * 100% dei byte pinnati a ogni token con indexer attivo -- derivazione in
++ * .microbench/indexerzc/NOTA.md, FATTO 1).
++ * Fail-open: al primo pin fallito (budget, alloc, lettura, map) UNA riga di
++ * log e latch; i tensori gia' pinnati restano serviti zero-copy, i successivi
++ * proseguono sul percorso odierno (fd-cache).  Il tetto host-pin e' lo STESSO
++ * del register-mmap (DS4_CUDA_STREAM_FROM_RAM_MASKED_BUDGET_GB, accumulatore
++ * condiviso g_model_registered_range_bytes: il pin cudaHostAlloc consuma lo
++ * stesso budget fisico WDDM dei cudaHostRegister).
++ * Le voci vivono FUORI da g_model_ranges: invisibili a pick_victim (nessuno
++ * sfratto possibile), a span_release e alla contabilita' range_bytes/peak
++ * (non occupano VRAM), e alla fd-cache (nessun "fd-cache load" conteggiato).
++ * Mutazioni sul thread di decode/prefill, come g_model_ranges. */
++struct cuda_indexer_zc_entry {
++    const void *host_base;   /* chiave model_map, come g_model_ranges */
++    uint64_t offset;
++    uint64_t bytes;          /* byte utili serviti */
++    void *pinned_host;       /* buffer cudaHostAlloc di proprieta' */
++    char *device_ptr;        /* puntatore device UVA gia' sul payload */
++};
++static std::vector<cuda_indexer_zc_entry> g_indexer_zc_entries;
++static uint64_t g_indexer_zc_pinned_bytes = 0;  /* byte utili pinnati */
++static uint64_t g_indexer_zc_alloc_bytes = 0;   /* pinnati con slack di allineamento */
++static int g_indexer_zc_failed = 0;             /* latch fail-open (una riga) */
++static int g_indexer_zc_announced = 0;          /* una riga all'attivazione */
++static int cuda_model_stage_read(void *stage, uint64_t stage_bytes,
++                                 uint64_t offset, uint64_t bytes,
++                                 const char **payload);
++
++static int cuda_indexer_host_zerocopy_enabled(void) {
++    static int cached = -1;
++    if (cached < 0) {
++        const char *env = getenv("DS4_CUDA_INDEXER_HOST_ZEROCOPY");
++        cached = (env != NULL && strcmp(env, "1") == 0) ? 1 : 0;
++    }
++    return cached;
++}
++
++/* Rilascio legato al ciclo di vita dei range del modello (cleanup e
++ * set_model_map): chiamato da cuda_model_range_release_all PRIMA del reset
++ * dell'accumulatore WDDM condiviso, quindi qui si liberano solo i buffer. */
++static void cuda_indexer_zerocopy_release_all(void) {
++    for (const cuda_indexer_zc_entry &e : g_indexer_zc_entries) {
++        if (e.pinned_host) (void)cudaFreeHost(e.pinned_host);
++    }
++    g_indexer_zc_entries.clear();
++    g_indexer_zc_pinned_bytes = 0;
++    g_indexer_zc_alloc_bytes = 0;
++    g_indexer_zc_failed = 0;
++    g_indexer_zc_announced = 0;
++}
++
++static void cuda_indexer_zerocopy_failopen(const char *reason) {
++    g_indexer_zc_failed = 1;
++    fprintf(stderr,
++            "ds4: [indexer-zc] pin_failed reason=%s pinned_so_far=%.2f MiB "
++            "tensors=%llu action=fail-open (i tensori gia' pinnati restano "
++            "zero-copy, i successivi sul percorso fd-cache attuale)\n",
++            reason ? reason : "unknown",
++            (double)g_indexer_zc_pinned_bytes / 1048576.0,
++            (unsigned long long)g_indexer_zc_entries.size());
++}
++
++static const char *cuda_indexer_zerocopy_range_ptr(
++        const void *model_map, uint64_t offset, uint64_t bytes) {
++    /* Hit di registro: e' il percorso per-token (<= 2 voci per layer ratio-4,
++     * richieste whole-tensor sempre identiche).  Nessun tick LRU: queste voci
++     * non competono con la fd-cache ne' con il selettore di vittime. */
++    for (const cuda_indexer_zc_entry &e : g_indexer_zc_entries) {
++        if (e.host_base == model_map && offset >= e.offset &&
++            offset - e.offset <= e.bytes &&
++            bytes <= e.bytes - (offset - e.offset)) {
++            if (!g_indexer_zc_announced) {
++                /* Primo riuso = il working set indexer del primo passaggio e'
++                 * completo: questa e' l'attivazione.  UNA riga: byte pinnati,
++                 * tensori spostati, previsione di tocco per token (FATTO 1:
++                 * GEMV denso, 100% dei byte pinnati, ctx-indipendente). */
++                g_indexer_zc_announced = 1;
++                fprintf(stderr,
++                        "ds4: [indexer-zc] active=1 tensors=%llu "
++                        "pinned_bytes=%llu (%.2f MiB, alloc=%.2f MiB) "
++                        "mode=hostalloc+fd-read+uva "
++                        "predicted_touch_per_token=%llu bytes "
++                        "(100%% dei pinnati: GEMV denso attn_q_b+proj, "
++                        "ctx-indipendente)\n",
++                        (unsigned long long)g_indexer_zc_entries.size(),
++                        (unsigned long long)g_indexer_zc_pinned_bytes,
++                        (double)g_indexer_zc_pinned_bytes / 1048576.0,
++                        (double)g_indexer_zc_alloc_bytes / 1048576.0,
++                        (unsigned long long)g_indexer_zc_pinned_bytes);
++            }
++            return e.device_ptr + (offset - e.offset);
++        }
++    }
++    if (g_indexer_zc_failed) return NULL;
++    if (!g_model_file_valid) {
++        cuda_indexer_zerocopy_failopen("model-file-not-readable");
++        return NULL;
++    }
++    /* Slack per il ramo O_DIRECT di cuda_model_stage_read (offset arrotondato
++     * in giu', lunghezza in su): il payload atterra dentro il buffer con un
++     * delta < align e il puntatore device viene spostato dello stesso delta. */
++    const uint64_t zc_align = g_model_direct_align > 1 ? g_model_direct_align : 1u;
++    const uint64_t alloc_bytes = bytes + 2u * zc_align;
++    if (alloc_bytes < bytes ||
++        g_model_registered_range_bytes + alloc_bytes >
++            cuda_host_register_budget_bytes()) {
++        cuda_indexer_zerocopy_failopen("host-pin-budget-exceeded");
++        return NULL;
++    }
++    void *host = NULL;
++    cudaError_t zc_err = cudaHostAlloc(&host, (size_t)alloc_bytes,
++                                       cudaHostAllocMapped);
++    if (zc_err != cudaSuccess || !host) {
++        (void)cudaGetLastError();
++        cuda_indexer_zerocopy_failopen("cudaHostAlloc");
++        return NULL;
++    }
++    const char *payload = NULL;
++    if (!cuda_model_stage_read(host, alloc_bytes, offset, bytes, &payload) ||
++        !payload) {
++        (void)cudaFreeHost(host);
++        cuda_indexer_zerocopy_failopen("file-read");
++        return NULL;
++    }
++    void *dev_base = NULL;
++    zc_err = cudaHostGetDevicePointer(&dev_base, host, 0);
++    if (zc_err != cudaSuccess || !dev_base) {
++        (void)cudaGetLastError();
++        (void)cudaFreeHost(host);
++        cuda_indexer_zerocopy_failopen("cudaHostGetDevicePointer");
++        return NULL;
++    }
++    char *dev_ptr = (char *)dev_base + (payload - (const char *)host);
++    g_indexer_zc_entries.push_back({model_map, offset, bytes, host, dev_ptr});
++    g_indexer_zc_pinned_bytes += bytes;
++    g_indexer_zc_alloc_bytes += alloc_bytes;
++    g_model_registered_range_bytes += alloc_bytes;
++    return dev_ptr;
++}
++/* ---- fine INDEXERZC ---------------------------------------------------- */
++
+ static const char *cuda_model_range_ptr(const void *model_map, uint64_t offset, uint64_t bytes, const char *what) {
+     if (model_map == g_mtp_model_host_base) {
+         const char *mtp_ptr =
+@@ -3960,6 +4110,18 @@ static const char *cuda_model_range_ptr(const void *model_map, uint64_t offset,
+         }
+     }
+ 
++    /* INDEXERZC: i pesi dell'indexer non entrano nella fd-cache VRAM qui
++     * sotto; serviti sul posto da RAM pinnata.  Flag spento (default): un
++     * test su un int memoizzato in corto circuito, percorso identico.
++     * Fail-open: se il pin e' fallito la chiamata torna NULL e si prosegue
++     * sul percorso odierno. */
++    if (cuda_indexer_host_zerocopy_enabled() &&
++        what != NULL && strcmp(what, "indexer_f16") == 0) {
++        const char *zc_ptr =
++            cuda_indexer_zerocopy_range_ptr(model_map, offset, bytes);
++        if (zc_ptr) return zc_ptr;
++    }
++
+     if (getenv("DS4_CUDA_NO_FD_CACHE") == NULL) {
+         const char *fd_ptr = cuda_model_range_ptr_from_fd(model_map, offset, bytes, what);
+         if (fd_ptr) return fd_ptr;
+@@ -8821,6 +8983,9 @@ static int cuda_model_copy_chunked(const void *model_map, uint64_t model_size, u
+ }
+ 
+ static void cuda_model_range_release_all(void) {
++    /* INDEXERZC: i buffer host pinnati seguono il ciclo di vita dei range
++     * (cleanup/set_model_map); a flag spento il registro e' vuoto, no-op. */
++    cuda_indexer_zerocopy_release_all();
+     for (const cuda_model_range &r : g_model_ranges) {
+         if (r.host_registered && r.registered_base) {
+             (void)cudaHostUnregister(r.registered_base);

@@ -1,0 +1,1144 @@
+diff --git a/ds4-p4a/ds4.c b/ds4-p4a/ds4.c
+index 7daf743..0b29da2 100644
+--- a/ds4-p4a/ds4.c
++++ b/ds4-p4a/ds4.c
+@@ -1798,6 +1798,23 @@ static void model_validate_bake_tensors(const ds4_model *m) {
+     }
+ }
+ 
++/* ===================== shared1: CPU shared expert ==========================
++ * DS4_CPU_SHARED_EXPERT=1 sposta il calcolo dello shared expert del decode
++ * su CPU (pesi Q8_0 letti dal mmap del modello) e lascia alla GPU il solo
++ * punto di somma non fuso.  Modulo principale piu' avanti nel file (cerca
++ * "shared1 - shared expert su CPU"); percorso dati, residenza VRAM e
++ * telemetria sono documentati in .microbench/shared1/NOTA.md.
++ * A flag spento (default) il flag non viene letto nel percorso caldo:
++ * g->shared1 resta NULL e ogni ramo nuovo e' un confronto puntatore-nullo,
++ * stessa classe del probe SPEX gia' presente. */
++static DS4_MAYBE_UNUSED bool ds4_shared1_env_requested(void) {
++    const char *value = getenv("DS4_CPU_SHARED_EXPERT");
++    return value && value[0] && strcmp(value, "0") != 0;
++}
++
++/* Byte shexp esclusi dal pre-cache di avvio (letti dal summary [shared-cpu]). */
++static DS4_MAYBE_UNUSED uint64_t g_shared1_startup_excluded_bytes;
++
+ #ifndef DS4_NO_GPU
+ #ifndef __APPLE__
+ typedef struct {
+@@ -1844,6 +1861,17 @@ static bool accelerator_tensor_is_routed_expert(const ds4_tensor *tensor) {
+         accelerator_tensor_name_has_suffix(tensor, ".ffn_down_exps.weight");
+ }
+ 
++/* shared1: i tre tensori Q8_0 dello shared expert dei layer base.  Il
++ * prefisso "blk." esclude per costruzione mtp.0.ffn_*_shexp: il blocco MTP
++ * non e' toccato da questa leva. */
++static bool accelerator_tensor_is_base_shared_expert(const ds4_tensor *tensor) {
++    return tensor && tensor->name.len > 4 &&
++        memcmp(tensor->name.ptr, "blk.", 4) == 0 &&
++        (accelerator_tensor_name_has_suffix(tensor, ".ffn_gate_shexp.weight") ||
++         accelerator_tensor_name_has_suffix(tensor, ".ffn_up_shexp.weight") ||
++         accelerator_tensor_name_has_suffix(tensor, ".ffn_down_shexp.weight"));
++}
++
+ static bool accelerator_tensor_uses_embedding_row_staging(const ds4_tensor *tensor) {
+     return getenv("DS4_CUDA_EMBED_ROW_STAGING") != NULL &&
+         accelerator_tensor_name_has_suffix(tensor, "token_embd.weight");
+@@ -1864,8 +1892,10 @@ static bool accelerator_cache_model_tensor_spans(const ds4_model *m, uint64_t *c
+     uint64_t nspan = 0;
+     uint64_t routed_expert_bytes = 0;
+     uint64_t staged_embedding_bytes = 0;
++    uint64_t shared_expert_bytes = 0;
+     const bool dedicated_expert_cache =
+         m->bake_embedded || accelerator_has_dedicated_expert_cache();
++    const bool cpu_shared_expert = ds4_shared1_env_requested();
+     for (uint64_t i = 0; i < m->n_tensors; i++) {
+         const ds4_tensor *t = &m->tensors[i];
+         if (t->bytes == 0) continue;
+@@ -1877,6 +1907,10 @@ static bool accelerator_cache_model_tensor_spans(const ds4_model *m, uint64_t *c
+             routed_expert_bytes += t->bytes;
+             continue;
+         }
++        if (cpu_shared_expert && accelerator_tensor_is_base_shared_expert(t)) {
++            shared_expert_bytes += t->bytes;
++            continue;
++        }
+         if (accelerator_tensor_uses_embedding_row_staging(t)) {
+             staged_embedding_bytes += t->bytes;
+             continue;
+@@ -1934,6 +1968,13 @@ static bool accelerator_cache_model_tensor_spans(const ds4_model *m, uint64_t *c
+                 "ds4: CUDA startup cache excluded %.2f GiB token embedding table; row staging owns access\n",
+                 (double)staged_embedding_bytes / 1073741824.0);
+     }
++    if (shared_expert_bytes != 0) {
++        g_shared1_startup_excluded_bytes = shared_expert_bytes;
++        fprintf(stderr,
++                "ds4: CUDA startup cache excluded %.2f MiB of shared-expert tensors; "
++                "CPU shared-expert lane owns them (DS4_CPU_SHARED_EXPERT=1)\n",
++                (double)shared_expert_bytes / 1048576.0);
++    }
+     if (deferred != 0)
+         fprintf(stderr, "ds4: CUDA startup cache deferred %.2f GiB of tensor spans to on-demand streaming\n",
+                 (double)deferred / 1073741824.0);
+@@ -1948,6 +1989,30 @@ static bool accelerator_cache_model_tensors(ds4_backend backend, const ds4_model
+         return true;
+     }
+ 
++    /* shared1: prima di qualunque pre-cache marca gli span shexp come
++     * CPU-owned, cosi' ne' il preload Q8_F16/F32 di avvio ne' la
++     * materializzazione runtime al prefill li dequantizzano in VRAM.
++     * Lo staging Q8 grezzo resta permesso (il prefill lo usa) e viene
++     * ripulito per-range al confine del decode. */
++    if (ds4_shared1_env_requested()) {
++        uint64_t owned_bytes = 0;
++        uint32_t owned_spans = 0;
++        for (uint64_t i = 0; i < m->n_tensors; i++) {
++            const ds4_tensor *t = &m->tensors[i];
++            if (t->bytes == 0 || !accelerator_tensor_is_base_shared_expert(t)) continue;
++            if (ds4_gpu_model_span_cpu_owned(m->map, t->abs_offset, t->bytes)) {
++                owned_bytes += t->bytes;
++                owned_spans++;
++            }
++        }
++        if (owned_spans != 0) {
++            fprintf(stderr,
++                    "ds4: [shared-cpu] %u shared-expert spans (%.2f MiB) marked CPU-owned; "
++                    "f16/f32 dequant caches skip them\n",
++                    owned_spans, (double)owned_bytes / 1048576.0);
++        }
++    }
++
+     const double t0 = now_sec();
+     uint64_t cached = 0;
+     if (!accelerator_cache_model_tensor_spans(m, &cached)) return false;
+@@ -9433,6 +9498,7 @@ static void print_vec_stats(const char *name, const float *x, uint64_t n) {
+ 
+ #ifndef DS4_NO_GPU
+ typedef struct ds4_spex_cpu_probe ds4_spex_cpu_probe;
++typedef struct ds4_shared1 ds4_shared1;
+ 
+ /* =========================================================================
+  * Metal Release Graph State.
+@@ -9546,6 +9612,8 @@ typedef struct {
+     ds4_gpu_async_read *spex_readback;
+     ds4_gpu_spex_queue *spex_prefetch;
+     ds4_spex_cpu_probe *spex_cpu_probe;
++    /* Opt-in shared expert su CPU (DS4_CPU_SHARED_EXPERT=1); NULL = spento. */
++    ds4_shared1 *shared1;
+     const ds4_weights *spex_model_weights;
+     uint64_t spex_epoch;
+     uint64_t spex_decode_seq;
+@@ -10026,6 +10094,673 @@ static void metal_graph_spex_cpu_observe_exact(
+     os_mutex_unlock(&probe->mutex);
+ }
+ 
++/* =========================================================================
++ * shared1 - shared expert su CPU (DS4_CPU_SHARED_EXPERT=1).
++ * =========================================================================
++ *
++ * Traccia 6 della fattibilita' (.microbench/pilot/ANALISI_FABLE.md): lo
++ * shared expert e' deterministico (nessun router), pesa 26.738.688 B/layer
++ * in Q8_0 e alla GPU costa ~0,09 ms/layer di calcolo: il suo valore in VRAM
++ * e' residenza, non velocita'.  Qui il forward gate/up/SwiGLU/down gira su
++ * CPU dal mmap del modello - stessa matematica di layer_shared_ffn_one -
++ * in concorrenza con la fase routed dello stesso layer:
++ *
++ *   ffn_norm (GPU) --D2H 16 KiB ordinato su stream 0--> worker CPU
++ *   worker: quantizza Q8_0, pair gate/up, SwiGLU, down (row-parallel sul
++ *           pool g132 se libero, altrimenti single-thread)
++ *   join (main thread, punto di somma non fuso): attende il worker SOLO
++ *           li', H2D asincrono 16 KiB in g->shared_out, poi il kernel
++ *           esistente ds4_gpu_hc_expand_add_split_tensor fa la somma.
++ *
++ * Fallimento di QUALUNQUE passo => ricalcolo GPU dello shared come oggi,
++ * mai silenzioso (contatore + log).  La residenza VRAM dei range shexp e'
++ * gestita in tre punti: esclusione dal pre-cache di avvio
++ * (accelerator_cache_model_tensor_spans), blocco delle cache dequant
++ * f16/f32 (registro CPU-owned lato CUDA) e rilascio per-range dei residui
++ * dopo ogni uso GPU batch - prefill/verify/fallback - via
++ * ds4_gpu_model_span_release al primo layer del token successivo.
++ * Il D2H dell'input riusa il ring pinnato del probe SPEX (stesso ponte da
++ * 16 KiB della lane); l'H2D del parziale e' il gemello in scrittura
++ * (ds4_gpu_tensor_write_async_ordered_slot).  Un solo job in volo per
++ * costruzione: schedule(il) e join(il) stanno nello stesso encode.
++ */
++
++enum {
++    DS4_SHARED1_SLOTS = 4,
++    DS4_SHARED1_HIST = 512,     /* bucket da 50 us -> quantili fino a 25,6 ms */
++};
++
++enum {
++    DS4_SHARED1_FREE = 0,
++    DS4_SHARED1_RESERVED = 1,
++    DS4_SHARED1_QUEUED = 2,
++    DS4_SHARED1_RUNNING = 3,
++    DS4_SHARED1_DONE_OK = 4,
++    DS4_SHARED1_DONE_FAIL = 5,
++};
++
++typedef struct {
++    uint64_t seq;
++    uint32_t layer;
++    uint8_t state;
++    double cpu_ms;
++} ds4_shared1_job;
++
++/* Il pool g132 ha un solo slot di submit e nessun lock per i submitter: se
++ * due grafi armassero shared1 nello stesso processo i due worker sarebbero
++ * due submitter.  Questo mutex di processo serializza le submit di shared1
++ * (la lane resta esclusa a monte: con i suoi env il pool non viene usato). */
++static os_once_t g_shared1_pool_once = OS_ONCE_INIT;
++static os_mutex_t g_shared1_pool_mutex;
++static int g_shared1_pool_mutex_ready;
++
++static void ds4_shared1_pool_mutex_init(void) {
++    g_shared1_pool_mutex_ready = os_mutex_init(&g_shared1_pool_mutex) == 0;
++}
++
++struct ds4_shared1 {
++    os_thread_t thread;
++    os_mutex_t mutex;
++    os_cond_t work_cond;
++    os_cond_t done_cond;
++    bool thread_started;
++    bool sync_ready;
++    bool shutdown;
++    bool use_pool;
++    bool verbose;
++
++    const ds4_model *model;
++    const ds4_tensor *gate_w[DS4_N_LAYER];
++    const ds4_tensor *up_w[DS4_N_LAYER];
++    const ds4_tensor *down_w[DS4_N_LAYER];
++
++    /* ponti pinnati da 16 KiB: D2H di ffn_norm e H2D del parziale */
++    ds4_gpu_async_read *read_ring;
++    ds4_gpu_async_read *write_ring;
++
++    /* scratch del worker (un solo job RUNNING per costruzione) */
++    float *gate;
++    float *up;
++    float *mid;
++    int8_t *xq_in;
++    float *xscale_in;
++    int8_t *xq_mid;
++    float *xscale_mid;
++
++    uint64_t seq;               /* token corrente: il==0 lo avanza */
++    int vram_dirty;             /* un percorso GPU ha ritoccato range shexp */
++
++    ds4_shared1_job job[DS4_SHARED1_SLOTS];
++
++    /* telemetria [shared-cpu] */
++    uint64_t scheduled;
++    uint64_t dropped;           /* nessuno slot libero allo schedule */
++    uint64_t sched_failures;    /* D2H non accodabile */
++    uint64_t completed;
++    uint64_t joins;
++    uint64_t fallbacks;
++    uint64_t stale_reclaimed;
++    uint64_t vram_release_sweeps;
++    uint64_t vram_released_bytes;
++    uint64_t vram_release_blocked_bytes;
++    double d2h_wait_s;
++    double cpu_s;
++    double wait_s;
++    uint32_t hist_cpu[DS4_SHARED1_HIST];
++    uint32_t hist_wait[DS4_SHARED1_HIST];
++};
++
++static void ds4_shared1_hist_note(uint32_t *hist, double seconds) {
++    double bucket = seconds * 20000.0;      /* 50 us per bucket */
++    uint32_t idx = bucket <= 0.0 ? 0u : (uint32_t)bucket;
++    if (idx >= DS4_SHARED1_HIST) idx = DS4_SHARED1_HIST - 1u;
++    hist[idx]++;
++}
++
++/* Quantile in millisecondi dall'istogramma (0 se vuoto). */
++static double ds4_shared1_hist_quantile(const uint32_t *hist, double q) {
++    uint64_t total = 0;
++    for (uint32_t i = 0; i < DS4_SHARED1_HIST; i++) total += hist[i];
++    if (total == 0) return 0.0;
++    const uint64_t target = (uint64_t)(q * (double)(total - 1u));
++    uint64_t seen = 0;
++    for (uint32_t i = 0; i < DS4_SHARED1_HIST; i++) {
++        seen += hist[i];
++        if (seen > target) return ((double)i + 0.5) * 0.05;
++    }
++    return ((double)DS4_SHARED1_HIST - 0.5) * 0.05;
++}
++
++/* Forward CPU: identico nella matematica a layer_shared_ffn_one (pair Q8_0
++ * prequantizzato, SwiGLU senza clamp, down Q8_0 su mid riquantizzato), ma
++ * scritto sui worker row-parallel esistenti cosi' da girare sul pool g132
++ * (quello della lane, fermo in decode) invece che sul pool del backend CPU,
++ * che non sopporta submitter concorrenti. */
++static int ds4_shared1_eval(
++        ds4_shared1 *s,
++        uint32_t il,
++        const float *x,
++        float *out) {
++    const ds4_tensor *gate_w = s->gate_w[il];
++    const ds4_tensor *up_w = s->up_w[il];
++    const ds4_tensor *down_w = s->down_w[il];
++    const uint64_t in_dim = gate_w->dim[0];
++    const uint64_t hidden = gate_w->dim[1];
++
++    quantize_q8_0_activation(x, s->xq_in, s->xscale_in, in_dim);
++    matvec_q8_0_pair_ctx pctx = {
++        .out0 = s->gate,
++        .out1 = s->up,
++        .data0 = tensor_data(s->model, gate_w),
++        .data1 = tensor_data(s->model, up_w),
++        .xq = s->xq_in,
++        .xscale = s->xscale_in,
++        .in_dim = in_dim,
++        .blocks = (in_dim + 31) / 32,
++    };
++    matvec_q8_0_ctx dctx = {
++        .out = out,
++        .data = tensor_data(s->model, down_w),
++        .xq = s->xq_mid,
++        .xscale = s->xscale_mid,
++        .in_dim = hidden,
++        .row0 = 0,
++        .blocks = (hidden + 31) / 32,
++    };
++    const int pooled = s->use_pool && g_shared1_pool_mutex_ready;
++    if (pooled) {
++        os_mutex_lock(&g_shared1_pool_mutex);
++        if (!ds4_g132_parallel_for(hidden, matvec_q8_0_pair_worker, &pctx)) {
++            matvec_q8_0_pair_worker(&pctx, 0, hidden);
++        }
++        swiglu(s->mid, s->gate, s->up, hidden);
++        quantize_q8_0_activation(s->mid, s->xq_mid, s->xscale_mid, hidden);
++        if (!ds4_g132_parallel_for(down_w->dim[1], matvec_q8_0_worker, &dctx)) {
++            matvec_q8_0_worker(&dctx, 0, down_w->dim[1]);
++        }
++        os_mutex_unlock(&g_shared1_pool_mutex);
++    } else {
++        matvec_q8_0_pair_worker(&pctx, 0, hidden);
++        swiglu(s->mid, s->gate, s->up, hidden);
++        quantize_q8_0_activation(s->mid, s->xq_mid, s->xscale_mid, hidden);
++        matvec_q8_0_worker(&dctx, 0, down_w->dim[1]);
++    }
++    return 1;
++}
++
++static void *ds4_shared1_worker_main(void *arg) {
++    ds4_shared1 *s = (ds4_shared1 *)arg;
++    for (;;) {
++        uint32_t slot = DS4_SHARED1_SLOTS;
++        os_mutex_lock(&s->mutex);
++        for (;;) {
++            for (uint32_t i = 0; i < DS4_SHARED1_SLOTS; i++) {
++                if (s->job[i].state != DS4_SHARED1_QUEUED) continue;
++                if (s->job[i].seq != s->seq) {
++                    /* token passato: nessun join lo aspetta piu' */
++                    s->job[i].state = DS4_SHARED1_FREE;
++                    s->stale_reclaimed++;
++                    continue;
++                }
++                slot = i;
++                break;
++            }
++            if (slot != DS4_SHARED1_SLOTS || s->shutdown) break;
++            os_cond_wait(&s->work_cond, &s->mutex);
++        }
++        if (slot == DS4_SHARED1_SLOTS) {
++            os_mutex_unlock(&s->mutex);
++            return NULL;
++        }
++        ds4_shared1_job *job = &s->job[slot];
++        job->state = DS4_SHARED1_RUNNING;
++        const uint64_t seq = job->seq;
++        const uint32_t layer = job->layer;
++        os_mutex_unlock(&s->mutex);
++
++        const double d2h0 = now_sec();
++        const int read_ok = ds4_gpu_async_read_wait_slot(s->read_ring, slot);
++        const double cpu0 = now_sec();
++        int ok = read_ok;
++        if (ok) {
++            const float *hidden = (const float *)
++                ds4_gpu_async_read_host_slot(s->read_ring, slot);
++            float *partial = (float *)
++                ds4_gpu_async_read_host_slot(s->write_ring, slot);
++            ok = hidden && partial && layer < DS4_N_LAYER &&
++                 ds4_shared1_eval(s, layer, hidden, partial);
++        }
++        const double cpu1 = now_sec();
++
++        os_mutex_lock(&s->mutex);
++        s->d2h_wait_s += cpu0 - d2h0;
++        s->cpu_s += cpu1 - cpu0;
++        ds4_shared1_hist_note(s->hist_cpu, cpu1 - cpu0);
++        s->completed++;
++        if (job->state == DS4_SHARED1_RUNNING && job->seq == seq) {
++            job->cpu_ms = (cpu1 - cpu0) * 1000.0;
++            job->state = ok ? DS4_SHARED1_DONE_OK : DS4_SHARED1_DONE_FAIL;
++        } else {
++            job->state = DS4_SHARED1_FREE;
++        }
++        os_cond_broadcast(&s->done_cond);
++        os_mutex_unlock(&s->mutex);
++    }
++}
++
++static void ds4_shared1_summary(ds4_shared1 *s) {
++    fprintf(stderr,
++            "ds4: [shared-cpu] final scheduled=%llu completed=%llu joins=%llu "
++            "fallback_count=%llu dropped=%llu sched_failures=%llu stale=%llu "
++            "shared_cpu_ms{p50/p90}=%.3f/%.3f shared_wait_ms{p50/p90}=%.3f/%.3f "
++            "d2h_wait_total_ms=%.1f cpu_total_ms=%.1f wait_total_ms=%.1f "
++            "vram_freed_mb=%.1f vram_release_blocked_mb=%.1f vram_sweeps=%llu "
++            "startup_excluded_mb=%.1f pool=%s\n",
++            (unsigned long long)s->scheduled,
++            (unsigned long long)s->completed,
++            (unsigned long long)s->joins,
++            (unsigned long long)s->fallbacks,
++            (unsigned long long)s->dropped,
++            (unsigned long long)s->sched_failures,
++            (unsigned long long)s->stale_reclaimed,
++            ds4_shared1_hist_quantile(s->hist_cpu, 0.5),
++            ds4_shared1_hist_quantile(s->hist_cpu, 0.9),
++            ds4_shared1_hist_quantile(s->hist_wait, 0.5),
++            ds4_shared1_hist_quantile(s->hist_wait, 0.9),
++            1000.0 * s->d2h_wait_s,
++            1000.0 * s->cpu_s,
++            1000.0 * s->wait_s,
++            (double)s->vram_released_bytes / 1048576.0,
++            (double)s->vram_release_blocked_bytes / 1048576.0,
++            (unsigned long long)s->vram_release_sweeps,
++            (double)g_shared1_startup_excluded_bytes / 1048576.0,
++            s->use_pool ? "g132" : "single-thread");
++}
++
++static void ds4_shared1_destroy(ds4_shared1 *s) {
++    if (!s) return;
++    if (s->thread_started) {
++        os_mutex_lock(&s->mutex);
++        s->shutdown = true;
++        os_cond_broadcast(&s->work_cond);
++        os_mutex_unlock(&s->mutex);
++        os_thread_join(s->thread);
++        ds4_shared1_summary(s);
++    }
++    ds4_gpu_async_read_free(s->read_ring);
++    ds4_gpu_async_read_free(s->write_ring);
++    free(s->xscale_mid);
++    free(s->xq_mid);
++    free(s->xscale_in);
++    free(s->xq_in);
++    free(s->mid);
++    free(s->up);
++    free(s->gate);
++    if (s->sync_ready) {
++        os_cond_destroy(&s->done_cond);
++        os_cond_destroy(&s->work_cond);
++        os_mutex_destroy(&s->mutex);
++    }
++    free(s);
++}
++
++static ds4_shared1 *ds4_shared1_create(
++        const ds4_model *model,
++        const ds4_weights *weights) {
++    if (!ds4_shared1_env_requested()) return NULL;
++    if (!model || !weights) return NULL;
++
++    ds4_shared1 *s = calloc(1, sizeof(*s));
++    if (!s) return NULL;
++    s->model = model;
++    s->verbose = getenv("DS4_CPU_SHARED_EXPERT_VERBOSE") != NULL;
++
++    uint64_t in_dim = 0;
++    uint64_t hidden = 0;
++    for (uint32_t il = 0; il < DS4_N_LAYER; il++) {
++        const ds4_layer_weights *layer = &weights->layer[il];
++        const ds4_tensor *gate_w = layer->ffn_gate_shexp;
++        const ds4_tensor *up_w = layer->ffn_up_shexp;
++        const ds4_tensor *down_w = layer->ffn_down_shexp;
++        if (!gate_w || !up_w || !down_w ||
++            gate_w->type != 8 || up_w->type != 8 || down_w->type != 8 ||
++            gate_w->ndim != 2 || up_w->ndim != 2 || down_w->ndim != 2 ||
++            gate_w->dim[0] != up_w->dim[0] || gate_w->dim[1] != up_w->dim[1] ||
++            down_w->dim[0] != gate_w->dim[1] || down_w->dim[1] != gate_w->dim[0] ||
++            gate_w->dim[0] != DS4_N_EMBD || gate_w->dim[1] != DS4_N_FF_EXP) {
++            fprintf(stderr,
++                    "ds4: [shared-cpu] layer %u shared tensors are not the "
++                    "expected Q8_0 layout; DS4_CPU_SHARED_EXPERT disabled\n", il);
++            free(s);
++            return NULL;
++        }
++        if (il == 0) {
++            in_dim = gate_w->dim[0];
++            hidden = gate_w->dim[1];
++        }
++        s->gate_w[il] = gate_w;
++        s->up_w[il] = up_w;
++        s->down_w[il] = down_w;
++    }
++
++    if (os_mutex_init(&s->mutex) != 0) {
++        free(s);
++        return NULL;
++    }
++    if (os_cond_init(&s->work_cond) != 0) {
++        os_mutex_destroy(&s->mutex);
++        free(s);
++        return NULL;
++    }
++    if (os_cond_init(&s->done_cond) != 0) {
++        os_cond_destroy(&s->work_cond);
++        os_mutex_destroy(&s->mutex);
++        free(s);
++        return NULL;
++    }
++    s->sync_ready = true;
++    os_once(&g_shared1_pool_once, ds4_shared1_pool_mutex_init);
++
++    const uint64_t blocks_in = (in_dim + 31) / 32;
++    const uint64_t blocks_mid = (hidden + 31) / 32;
++    s->gate = xmalloc((size_t)hidden * sizeof(s->gate[0]));
++    s->up = xmalloc((size_t)hidden * sizeof(s->up[0]));
++    s->mid = xmalloc((size_t)hidden * sizeof(s->mid[0]));
++    s->xq_in = xmalloc((size_t)blocks_in * 32);
++    s->xscale_in = xmalloc((size_t)blocks_in * sizeof(s->xscale_in[0]));
++    s->xq_mid = xmalloc((size_t)blocks_mid * 32);
++    s->xscale_mid = xmalloc((size_t)blocks_mid * sizeof(s->xscale_mid[0]));
++    s->read_ring = ds4_gpu_async_read_ring_alloc(
++        (uint64_t)DS4_N_EMBD * sizeof(float), DS4_SHARED1_SLOTS);
++    s->write_ring = ds4_gpu_async_read_ring_alloc(
++        (uint64_t)DS4_N_EMBD * sizeof(float), DS4_SHARED1_SLOTS);
++    if (!s->read_ring || !s->write_ring) {
++        fprintf(stderr,
++                "ds4: [shared-cpu] pinned ring allocation failed; "
++                "DS4_CPU_SHARED_EXPERT disabled\n");
++        ds4_shared1_destroy(s);
++        return NULL;
++    }
++
++    /* Il pool g132 ha un solo slot di submit: se la lane CPU e' richiesta
++     * dall'ambiente glielo si lascia e qui si degrada a single-thread. */
++    if (getenv("DS4_G132_CPU_LANE") != NULL ||
++        getenv("DS4_G132_CPU_LANE_GENERAL") != NULL) {
++        s->use_pool = false;
++        fprintf(stderr,
++                "ds4: [shared-cpu] g132 pool ceded to the CPU lane env flags; "
++                "shared expert runs single-thread\n");
++    } else {
++        s->use_pool = g_shared1_pool_mutex_ready &&
++                      ds4_g132_lane_parallel_init() != 0;
++        if (!s->use_pool) {
++            fprintf(stderr,
++                    "ds4: [shared-cpu] g132 pool init failed; "
++                    "shared expert runs single-thread\n");
++        }
++    }
++
++    if (os_thread_create(&s->thread, ds4_shared1_worker_main, s) != 0) {
++        fprintf(stderr,
++                "ds4: [shared-cpu] worker thread creation failed; "
++                "DS4_CPU_SHARED_EXPERT disabled\n");
++        ds4_shared1_destroy(s);
++        return NULL;
++    }
++    s->thread_started = true;
++    fprintf(stderr,
++            "ds4: [shared-cpu] armed layers=%u q8_bytes_per_layer=%llu slots=%u "
++            "bridge=16KiB/16KiB pool=%s\n",
++            (unsigned)DS4_N_LAYER,
++            (unsigned long long)((blocks_in * 34) * hidden * 2u +
++                                 (blocks_mid * 34) * in_dim),
++            (unsigned)DS4_SHARED1_SLOTS,
++            s->use_pool ? "g132" : "single-thread");
++    return s;
++}
++
++/* Identita' dei tensori: vale solo per i layer base catturati alla create.
++ * Qualsiasi altro chiamante (blocco MTP, layout inattesi) resta sul percorso
++ * GPU odierno per costruzione. */
++static bool metal_graph_shared1_layer_owned(
++        const ds4_gpu_graph *g,
++        const ds4_layer_weights *layer,
++        uint32_t il) {
++    return g->shared1 && layer && il < DS4_N_LAYER &&
++           layer->ffn_gate_shexp == g->shared1->gate_w[il] &&
++           layer->ffn_up_shexp == g->shared1->up_w[il] &&
++           layer->ffn_down_shexp == g->shared1->down_w[il];
++}
++
++/* Spazzata di rilascio per-range dei byte shexp ancora in VRAM.  Chiamata
++ * dal solo thread di decode (stesso thread che muta g_model_ranges via
++ * cuda_model_range_ptr): nessuna nuova concorrenza sul registro dei range. */
++static void metal_graph_shared1_release_spans(ds4_shared1 *s) {
++    uint64_t released = 0;
++    uint64_t blocked = 0;
++    for (uint32_t il = 0; il < DS4_N_LAYER; il++) {
++        const ds4_tensor *w[3] = {s->gate_w[il], s->up_w[il], s->down_w[il]};
++        for (uint32_t i = 0; i < 3; i++) {
++            uint64_t rel = 0;
++            uint64_t blk = 0;
++            (void)ds4_gpu_model_span_release(s->model->map,
++                                             w[i]->abs_offset,
++                                             w[i]->bytes,
++                                             &rel, &blk);
++            released += rel;
++            blocked += blk;
++        }
++    }
++    s->vram_release_sweeps++;
++    s->vram_released_bytes += released;
++    s->vram_release_blocked_bytes += blocked;
++    if (released != 0 || blocked != 0) {
++        fprintf(stderr,
++                "ds4: [shared-cpu] vram sweep #%llu released=%.2f MiB "
++                "blocked=%.2f MiB\n",
++                (unsigned long long)s->vram_release_sweeps,
++                (double)released / 1048576.0,
++                (double)blocked / 1048576.0);
++    }
++}
++
++static void metal_graph_shared1_init(
++        ds4_gpu_graph *g,
++        const ds4_model *model,
++        const ds4_weights *weights) {
++    if (!g || g->shared1) return;
++    g->shared1 = ds4_shared1_create(model, weights);
++    if (!g->shared1) return;
++    /* Prima spazzata: nel regime a esclusione trova 0 byte (mai caricati);
++     * nei regimi window zero-copy o copia-intera trova 0 e blocked=0 - la'
++     * il beneficio di capacita' non esiste e il summary lo rende visibile. */
++    metal_graph_shared1_release_spans(g->shared1);
++}
++
++static void metal_graph_shared1_release(ds4_gpu_graph *g) {
++    if (!g || !g->shared1) return;
++    ds4_shared1_destroy(g->shared1);
++    g->shared1 = NULL;
++}
++
++/* Un percorso GPU (prefill/verify batch, o il fallback del join) ha toccato
++ * i pesi shexp: i loro range vanno rilasciati alla prossima spazzata. */
++static void metal_graph_shared1_note_gpu_use(ds4_gpu_graph *g) {
++    if (g && g->shared1) g->shared1->vram_dirty = 1;
++}
++
++static void metal_graph_shared1_schedule(
++        ds4_gpu_graph *g,
++        const ds4_layer_weights *layer,
++        uint32_t il) {
++    ds4_shared1 *s = g->shared1;
++    if (!s || !metal_graph_shared1_layer_owned(g, layer, il)) return;
++
++    if (il == 0) {
++        os_mutex_lock(&s->mutex);
++        s->seq++;
++        os_mutex_unlock(&s->mutex);
++        if (s->vram_dirty) {
++            s->vram_dirty = 0;
++            metal_graph_shared1_release_spans(s);
++        }
++    }
++
++    uint32_t slot = DS4_SHARED1_SLOTS;
++    os_mutex_lock(&s->mutex);
++    for (uint32_t i = 0; i < DS4_SHARED1_SLOTS; i++) {
++        if (s->job[i].state == DS4_SHARED1_FREE) {
++            slot = i;
++            break;
++        }
++        if ((s->job[i].state == DS4_SHARED1_DONE_OK ||
++             s->job[i].state == DS4_SHARED1_DONE_FAIL) &&
++            s->job[i].seq != s->seq) {
++            s->job[i].state = DS4_SHARED1_FREE;   /* orfano del token scorso */
++            s->stale_reclaimed++;
++            slot = i;
++            break;
++        }
++    }
++    if (slot == DS4_SHARED1_SLOTS) {
++        s->dropped++;
++        os_mutex_unlock(&s->mutex);
++        return;
++    }
++    ds4_shared1_job *job = &s->job[slot];
++    job->seq = s->seq;
++    job->layer = il;
++    job->cpu_ms = 0.0;
++    job->state = DS4_SHARED1_RESERVED;
++    os_mutex_unlock(&s->mutex);
++
++    /* D2H ordinato su stream 0: parte appena la GPU ha prodotto ffn_norm,
++     * cioe' prima del router e della fase routed dello stesso layer. */
++    if (!ds4_gpu_tensor_read_async_ordered_slot(
++            s->read_ring, slot, g->ffn_norm, 0,
++            (uint64_t)DS4_N_EMBD * sizeof(float))) {
++        os_mutex_lock(&s->mutex);
++        job->state = DS4_SHARED1_FREE;
++        s->sched_failures++;
++        os_mutex_unlock(&s->mutex);
++        return;
++    }
++
++    os_mutex_lock(&s->mutex);
++    job->state = DS4_SHARED1_QUEUED;
++    s->scheduled++;
++    os_cond_signal(&s->work_cond);
++    os_mutex_unlock(&s->mutex);
++}
++
++static void metal_graph_shared1_fallback_note(
++        ds4_shared1 *s,
++        uint32_t il,
++        const char *reason) {
++    s->fallbacks++;
++    /* mai silenzioso, mai una tempesta: primi 8 eventi + uno ogni 256 */
++    if (s->fallbacks <= 8u || (s->fallbacks & 255u) == 0u) {
++        fprintf(stderr,
++                "ds4: [shared-cpu] fallback #%llu layer=%u reason=%s "
++                "(shared ricalcolato su GPU)\n",
++                (unsigned long long)s->fallbacks, il, reason);
++    }
++}
++
++/* Punto di somma: attende il parziale CPU, lo accoda come H2D asincrono in
++ * g->shared_out e lascia il join al kernel non fuso esistente.  Su qualunque
++ * fallimento ricalcola lo shared su GPU (identico al percorso odierno
++ * non-overlap) e marca i range shexp da ripulire. */
++static bool metal_graph_shared1_join_or_gpu(
++        ds4_gpu_graph *g,
++        const ds4_model *model,
++        const ds4_layer_weights *layer,
++        uint32_t il,
++        bool fuse_shared_gate_up,
++        uint32_t shared_dim) {
++    ds4_shared1 *s = g->shared1;
++    const char *reason = NULL;
++    uint32_t slot = DS4_SHARED1_SLOTS;
++
++    os_mutex_lock(&s->mutex);
++    for (uint32_t i = 0; i < DS4_SHARED1_SLOTS; i++) {
++        if (s->job[i].seq != s->seq || s->job[i].layer != il) continue;
++        if (s->job[i].state == DS4_SHARED1_QUEUED ||
++            s->job[i].state == DS4_SHARED1_RUNNING ||
++            s->job[i].state == DS4_SHARED1_DONE_OK ||
++            s->job[i].state == DS4_SHARED1_DONE_FAIL) {
++            slot = i;
++            break;
++        }
++    }
++    if (slot == DS4_SHARED1_SLOTS) {
++        os_mutex_unlock(&s->mutex);
++        reason = "not-scheduled";
++    } else {
++        ds4_shared1_job *job = &s->job[slot];
++        const double w0 = now_sec();
++        while (job->state == DS4_SHARED1_QUEUED ||
++               job->state == DS4_SHARED1_RUNNING) {
++            os_cond_wait(&s->done_cond, &s->mutex);
++        }
++        const double w1 = now_sec();
++        const uint8_t state = job->state;
++        const double cpu_ms = job->cpu_ms;
++        job->state = DS4_SHARED1_FREE;
++        s->wait_s += w1 - w0;
++        ds4_shared1_hist_note(s->hist_wait, w1 - w0);
++        s->joins++;
++        os_mutex_unlock(&s->mutex);
++        if (s->verbose) {
++            fprintf(stderr,
++                    "ds4: [shared-cpu] layer=%u cpu_ms=%.3f wait_ms=%.3f ok=%d\n",
++                    il, cpu_ms, (w1 - w0) * 1000.0,
++                    state == DS4_SHARED1_DONE_OK);
++        }
++        if (state != DS4_SHARED1_DONE_OK) {
++            reason = "cpu-eval-failed";
++        } else if (!ds4_gpu_tensor_write_async_ordered_slot(
++                       s->write_ring, slot, g->shared_out, 0,
++                       (uint64_t)DS4_N_EMBD * sizeof(float))) {
++            reason = "h2d-enqueue-failed";
++        } else {
++            return true;
++        }
++    }
++
++    metal_graph_shared1_fallback_note(s, il, reason);
++    s->vram_dirty = 1;
++    bool ok;
++    if (fuse_shared_gate_up) {
++        ok = ds4_gpu_shared_gate_up_swiglu_q8_0_tensor(g->shared_gate,
++                                                         g->shared_up,
++                                                         g->shared_mid,
++                                                         model->map,
++                                                         model->size,
++                                                         layer->ffn_gate_shexp->abs_offset,
++                                                         layer->ffn_up_shexp->abs_offset,
++                                                         DS4_N_EMBD,
++                                                         shared_dim,
++                                                         g->ffn_norm) != 0;
++    } else {
++        ok = ds4_gpu_matmul_q8_0_tensor(g->shared_gate, model->map, model->size,
++                                          layer->ffn_gate_shexp->abs_offset,
++                                          DS4_N_EMBD, shared_dim,
++                                          g->ffn_norm, 1) != 0;
++        if (ok) ok = ds4_gpu_matmul_q8_0_tensor(g->shared_up, model->map, model->size,
++                                                  layer->ffn_up_shexp->abs_offset,
++                                                  DS4_N_EMBD, shared_dim,
++                                                  g->ffn_norm, 1) != 0;
++        if (ok) ok = ds4_gpu_swiglu_tensor(g->shared_mid, g->shared_gate, g->shared_up,
++                                             shared_dim, 0.0f, 1.0f) != 0;
++    }
++    if (ok) ok = ds4_gpu_matmul_q8_0_tensor(g->shared_out, model->map, model->size,
++                                              layer->ffn_down_shexp->abs_offset,
++                                              shared_dim, DS4_N_EMBD,
++                                              g->shared_mid, 1) != 0;
++    return ok;
++}
++
+ static bool metal_graph_spex_dry_run_requested(void) {
+     const char *value = getenv("DS4_SPEX_HIDDEN_GPU_DRY_RUN");
+     return value && value[0] && strcmp(value, "0") != 0;
+@@ -10499,6 +11234,7 @@ static void metal_graph_spex_after_layer(
+ static void metal_graph_free(ds4_gpu_graph *g) {
+     metal_graph_spex_print_stats(g, "final");
+     metal_graph_spex_release(g);
++    metal_graph_shared1_release(g);
+     ds4_gpu_tensor_free(g->directional_steering_dirs);
+     ds4_gpu_tensor_free(g->batch_ffn_out);
+     ds4_gpu_tensor_free(g->batch_routed_out);
+@@ -11079,6 +11815,7 @@ static bool metal_graph_alloc_raw_cap(
+     g->batch_routed_out = ds4_gpu_tensor_alloc(pc * DS4_N_EMBD * sizeof(float));
+ 
+     metal_graph_spex_init(g, model, weights);
++    metal_graph_shared1_init(g, model, weights);
+ 
+     bool layer_cache_ok = true;
+     for (uint32_t il = 0; layer_cache_ok && il < DS4_N_LAYER; il++) {
+@@ -11976,6 +12713,7 @@ static bool metal_graph_encode_decode_layer(
+         metal_graph_debug_dump_tensor("ffn_norm", g->ffn_norm, DS4_N_EMBD, il, pos);
+     }
+     if (ok) metal_graph_spex_cpu_schedule(g, il);
++    if (ok) metal_graph_shared1_schedule(g, layer, il);
+     if (ok) metal_graph_spex_score_next(g, il);
+     const uint64_t gate_row_bytes = routed_expert_row_bytes(route.gate);
+     const uint64_t gate_expert_bytes = expert_mid_dim * gate_row_bytes;
+@@ -12022,13 +12760,18 @@ static bool metal_graph_encode_decode_layer(
+         gate_expert_bytes, down_expert_bytes,
+         g->router_selected, DS4_N_EXPERT_USED, 1) != 0;
+     const bool overlap_shared_full = overlap_shared && overlap_shared_full_requested;
++    /* shared1: a flag spento g->shared1 e' NULL e questo bool e' falso senza
++     * leggere l'ambiente; a flag acceso i kernel GPU dello shared vengono
++     * saltati e il contributo arriva dal join CPU piu' sotto. */
++    const bool shared_cpu = g->shared1 != NULL &&
++        metal_graph_shared1_layer_owned(g, layer, il);
+     ds4_gpu_spex_key spex_key = {
+         g->spex_epoch,
+         g->spex_decode_seq,
+         il ? il - 1u : 0u,
+         il,
+     };
+-    if (ok && overlap_shared) {
++    if (ok && overlap_shared && !shared_cpu) {
+         if (fuse_shared_gate_up) {
+             ok = ds4_gpu_shared_gate_up_swiglu_q8_0_tensor(g->shared_gate,
+                                                              g->shared_up,
+@@ -12199,7 +12942,7 @@ static bool metal_graph_encode_decode_layer(
+     if (ok) {
+         metal_graph_debug_dump_tensor("ffn_moe_out", g->routed_out, DS4_N_EMBD, il, pos);
+     }
+-    if (ok && !overlap_shared) {
++    if (ok && !overlap_shared && !shared_cpu) {
+         if (fuse_shared_gate_up) {
+             ok = ds4_gpu_shared_gate_up_swiglu_q8_0_tensor(g->shared_gate,
+                                                              g->shared_up,
+@@ -12227,7 +12970,7 @@ static bool metal_graph_encode_decode_layer(
+     }
+     const bool keep_ffn_out = metal_graph_needs_ffn_out(g, il, pos);
+     const bool fuse_shared_down_hc =
+-        !overlap_shared_full && !keep_ffn_out &&
++        !overlap_shared_full && !keep_ffn_out && !shared_cpu &&
+         !metal_graph_use_reference_shared_down_hc();
+     if (ok && fuse_shared_down_hc) {
+         ok = ds4_gpu_shared_down_hc_expand_q8_0_tensor(g->after_ffn_hc,
+@@ -12243,12 +12986,16 @@ static bool metal_graph_encode_decode_layer(
+                                                          g->hc_split,
+                                                          DS4_N_EMBD,
+                                                          DS4_N_HC) != 0;
+-    } else if (ok && !overlap_shared_full) {
++    } else if (ok && !overlap_shared_full && !shared_cpu) {
+         ok = ds4_gpu_matmul_q8_0_tensor(g->shared_out, model->map, model->size,
+                                           layer->ffn_down_shexp->abs_offset,
+                                           shared_dim, DS4_N_EMBD,
+                                           g->shared_mid, 1) != 0;
+     }
++    if (ok && shared_cpu) {
++        ok = metal_graph_shared1_join_or_gpu(g, model, layer, il,
++                                             fuse_shared_gate_up, shared_dim);
++    }
+     DS4_METAL_PROFILE_DECODE_STAGE("shared_down");
+     if (ok) {
+         metal_graph_debug_dump_tensor("ffn_shexp", g->shared_out, DS4_N_EMBD, il, pos);
+@@ -15124,6 +15871,9 @@ static bool metal_graph_encode_layer_ffn_batch(
+                                               g->batch_shared_mid,
+                                               n_tokens) != 0;
+     DS4_METAL_PROFILE_FFN_STAGE("shared_down");
++    /* shared1: il batch ha toccato i pesi shexp su GPU; i loro range vanno
++     * rilasciati alla prossima spazzata al confine del decode. */
++    if (ok) metal_graph_shared1_note_gpu_use(g);
+     if (ok) {
+         metal_graph_debug_dump_tensor("ffn_shexp", g->batch_shared_out,
+                                       (uint64_t)n_tokens * DS4_N_EMBD, il, pos0);
+diff --git a/ds4-p4a/ds4_cuda.cu b/ds4-p4a/ds4_cuda.cu
+index 95cffce..0d1688e 100644
+--- a/ds4-p4a/ds4_cuda.cu
++++ b/ds4-p4a/ds4_cuda.cu
+@@ -1987,6 +1987,44 @@ static std::vector<cuda_q8_f16_range> g_q8_f16_ranges;
+ static std::unordered_map<uint64_t, size_t> g_q8_f16_by_offset;
+ static std::vector<cuda_q8_f32_range> g_q8_f32_ranges;
+ static std::unordered_map<uint64_t, size_t> g_q8_f32_by_offset;
++
++/* ---- shared1: span di modello posseduti dalla CPU -------------------------
++ * DS4_CPU_SHARED_EXPERT=1: ds4.c registra qui gli intervalli dei tensori
++ * shexp (3 per layer).  Effetto: le cache dequant f16/f32 non li
++ * materializzano mai in VRAM.  Lo staging Q8 grezzo resta permesso - il
++ * prefill ne ha bisogno - e viene ripulito per-range dal decode via
++ * ds4_gpu_model_span_release.  Il registro e' scritto una volta all'avvio
++ * (prima del pre-cache) e poi solo letto. */
++struct cuda_shared1_span {
++    const void *host_base;
++    uint64_t offset;
++    uint64_t bytes;
++};
++static std::vector<cuda_shared1_span> g_shared1_cpu_owned_spans;
++
++static int cuda_shared1_span_cpu_owned(
++        const void *host_base,
++        uint64_t offset,
++        uint64_t bytes) {
++    if (g_shared1_cpu_owned_spans.empty()) return 0;
++    for (const cuda_shared1_span &sp : g_shared1_cpu_owned_spans) {
++        if (sp.host_base == host_base && offset >= sp.offset &&
++            offset + bytes >= offset &&
++            offset + bytes <= sp.offset + sp.bytes) {
++            return 1;
++        }
++    }
++    return 0;
++}
++
++extern "C" int ds4_gpu_model_span_cpu_owned(
++        const void *model_map,
++        uint64_t offset,
++        uint64_t bytes) {
++    if (!model_map || bytes == 0 || offset + bytes < offset) return 0;
++    g_shared1_cpu_owned_spans.push_back({model_map, offset, bytes});
++    return 1;
++}
+ static std::vector<float *> g_reap_router_bias;
+ static uint8_t g_sparse_bake_retained[43u * 32u];
+ static uint16_t g_sparse_bake_retained_count[43u];
+@@ -4257,6 +4295,7 @@ static const __half *cuda_q8_f16_ptr(
+             return r.device_ptr;
+         }
+     }
++    if (cuda_shared1_span_cpu_owned(model_map, offset, weight_bytes)) return NULL;
+     if (!cuda_q8_f16_cache_allowed(label, in_dim, out_dim)) return NULL;
+ 
+     const char *q8 = cuda_model_range_ptr(model_map, offset, weight_bytes, "q8_0");
+@@ -4312,6 +4351,7 @@ static float *cuda_q8_f32_ptr(
+             return r.device_ptr;
+         }
+     }
++    if (cuda_shared1_span_cpu_owned(model_map, offset, weight_bytes)) return NULL;
+     if (!cuda_q8_f32_cache_allowed(label, in_dim, out_dim)) return NULL;
+ 
+     const char *q8 = cuda_model_range_ptr(model_map, offset, weight_bytes, label ? label : "q8_0");
+@@ -8365,6 +8405,55 @@ static void cuda_model_range_evict_to_pool(size_t i) {
+     }
+ }
+ 
++/* shared1: rilascio per-range dei byte shexp (DS4_CPU_SHARED_EXPERT=1).
++ * Sfratta nel pool di riciclo (free posticipato con fence-evento su stream 0,
++ * la stessa sicurezza dello sfratto LRU) ogni range STREAMED interamente
++ * contenuto nello span richiesto; un range che attraversa il confine dello
++ * span o una residenza non streamed (window zero-copy, copia intera del
++ * modello, override persistente, host-registered) NON e' rilasciabile:
++ * finisce in blocked_bytes e resta intatto.  Le residenze fuori da
++ * g_model_ranges (device-owned, window) semplicemente non compaiono:
++ * released=0 e blocked=0 dicono onestamente che qui non c'era nulla da
++ * liberare.  Chiamare dal thread che gia' muta g_model_ranges (decode). */
++extern "C" int ds4_gpu_model_span_release(
++        const void *model_map,
++        uint64_t offset,
++        uint64_t bytes,
++        uint64_t *released_bytes,
++        uint64_t *blocked_bytes) {
++    uint64_t released = 0;
++    uint64_t blocked = 0;
++    if (model_map && bytes != 0 && offset + bytes >= offset) {
++        const uint64_t end = offset + bytes;
++        size_t i = 0;
++        while (i < g_model_ranges.size()) {
++            const cuda_model_range &r = g_model_ranges[i];
++            const int overlaps = r.host_base == model_map &&
++                r.offset < end && r.offset + r.bytes > offset;
++            if (!overlaps) {
++                i++;
++                continue;
++            }
++            if (r.streamed && r.device_ptr && !r.arena_allocated &&
++                r.offset >= offset && r.offset + r.bytes <= end) {
++                released += r.bytes;
++                /* swap-erase: l'indice i ora contiene l'ex ultimo range */
++                cuda_model_range_evict_to_pool(i);
++                continue;
++            }
++            /* host-registered = zero-copy su RAM pinnata: nessuna VRAM da
++             * liberare, non e' un blocco.  Tutto il resto (range fusi che
++             * attraversano il confine, override persistenti, arena) e' VRAM
++             * non rilasciabile per-range: conteggiato e lasciato intatto. */
++            if (!r.host_registered) blocked += r.bytes;
++            i++;
++        }
++    }
++    if (released_bytes) *released_bytes = released;
++    if (blocked_bytes) *blocked_bytes = blocked;
++    return blocked == 0 ? 1 : 0;
++}
++
+ /* Allocate `bytes` of VRAM for a streamed range, reusing a recycled buffer or
+  * evicting LRU cold ranges as needed. allow_evict=0 during pre-cache (NULL ->
+  * caller defers). No per-eviction device sync: safety is via the pool's events. */
+@@ -16330,6 +16419,48 @@ extern "C" int ds4_gpu_tensor_read_async_ordered_slot(
+     return 1;
+ }
+ 
++/* shared1: gemello in scrittura di ds4_gpu_tensor_read_async_ordered_slot.
++ * Accoda un H2D su stream 0 dal buffer host pinnato dello slot e registra
++ * l'evento done per provare il riuso sicuro dello slot; il chiamante deve
++ * aver finito di scrivere lo slot host PRIMA di accodare (qui il worker CPU
++ * ha gia' pubblicato il parziale sotto mutex).  Tensor host-backed rifiutati:
++ * il contratto e' un tensor device del grafo (g->shared_out). */
++extern "C" int ds4_gpu_tensor_write_async_ordered_slot(
++        ds4_gpu_async_read *ring,
++        uint32_t slot,
++        ds4_gpu_tensor *tensor,
++        uint64_t offset,
++        uint64_t bytes) {
++    if (!ring || !tensor || tensor->host_ptr || !tensor->ptr ||
++        slot >= ring->slots || offset > tensor->bytes ||
++        bytes > tensor->bytes - offset || bytes > ring->bytes) {
++        return 0;
++    }
++    if (ring->pending[slot]) {
++        const int ready = ds4_gpu_async_read_ready_slot(ring, slot);
++        if (ready <= 0) return 0;
++    }
++    ring->pending[slot] = 0;
++    ring->pending_bytes[slot] = bytes;
++    if (bytes == 0) return 1;
++    if (!cuda_ok(cudaMemcpyAsync(
++                     (char *)tensor->ptr + offset,
++                     (const char *)ring->host + (uint64_t)slot * ring->bytes,
++                     (size_t)bytes,
++                     cudaMemcpyHostToDevice,
++                     0),
++                 "ordered async tensor write copy")) {
++        return 0;
++    }
++    if (!cuda_ok(cudaEventRecord(ring->done[slot], 0),
++                 "ordered async write done event record")) {
++        (void)cudaStreamSynchronize(0);
++        return 0;
++    }
++    ring->pending[slot] = 1;
++    return 1;
++}
++
+ static int cuda_spex_key_equal(
+         const ds4_gpu_spex_key *a,
+         const ds4_gpu_spex_key *b) {
+diff --git a/ds4-p4a/ds4_gpu.h b/ds4-p4a/ds4_gpu.h
+index 9cfa091..9ae24bd 100644
+--- a/ds4-p4a/ds4_gpu.h
++++ b/ds4-p4a/ds4_gpu.h
+@@ -154,6 +154,14 @@ int ds4_gpu_tensor_read_async_ordered_slot(ds4_gpu_async_read *readback,
+                                            const ds4_gpu_tensor *tensor,
+                                            uint64_t offset,
+                                            uint64_t bytes);
++/* shared1: gemello in scrittura (H2D su stream 0 dal buffer host pinnato
++ * dello slot).  Il ring e' un normale ds4_gpu_async_read: host pinnato +
++ * evento done per il riuso sicuro dello slot. */
++int ds4_gpu_tensor_write_async_ordered_slot(ds4_gpu_async_read *ring,
++                                            uint32_t slot,
++                                            ds4_gpu_tensor *tensor,
++                                            uint64_t offset,
++                                            uint64_t bytes);
+ int ds4_gpu_async_read_ready(ds4_gpu_async_read *readback);
+ int ds4_gpu_async_read_ready_slot(ds4_gpu_async_read *readback, uint32_t slot);
+ int ds4_gpu_async_read_wait(ds4_gpu_async_read *readback);
+@@ -253,6 +261,14 @@ int ds4_gpu_moe_route_consumer_done(void);
+ 
+ int ds4_gpu_cache_model_range(const void *model_map, uint64_t model_size, uint64_t offset, uint64_t bytes, const char *label);
+ int ds4_gpu_model_range_update(const void *model_map, uint64_t offset, const void *data, uint64_t bytes);
++/* shared1 (DS4_CPU_SHARED_EXPERT=1): marca uno span del modello come
++ * posseduto dalla CPU (le cache dequant f16/f32 non lo materializzano) e
++ * rilascia per-range i suoi byte eventualmente streammati in VRAM.
++ * span_release ritorna 1 se nessun byte e' rimasto bloccato in residenze
++ * non rilasciabili (range fusi, window, copia intera), 0 altrimenti. */
++int ds4_gpu_model_span_cpu_owned(const void *model_map, uint64_t offset, uint64_t bytes);
++int ds4_gpu_model_span_release(const void *model_map, uint64_t offset, uint64_t bytes,
++                               uint64_t *released_bytes, uint64_t *blocked_bytes);
+ void ds4_gpu_reap_router_bias_reset(void);
+ int ds4_gpu_reap_router_bias_update(uint32_t layer_index, const float *bias, uint32_t count);
+ int ds4_gpu_sparse_bake_set_retained_mask(
+diff --git a/ds4-p4a/ds4_metal.m b/ds4-p4a/ds4_metal.m
+index 8020430..750d13c 100644
+--- a/ds4-p4a/ds4_metal.m
++++ b/ds4-p4a/ds4_metal.m
+@@ -14884,3 +14884,41 @@ int ds4_gpu_matmul_q8_0_hc_expand_tensor(
+ 
+     return 1;
+ }
++
++/* ===================== shared1 (DS4_CPU_SHARED_EXPERT) =====================
++ * Stub Metal.  La leva shared-expert-su-CPU e' costruita per il backend CUDA
++ * della campagna (staging per-range, cache dequant f16/f32, H2D ordinato dal
++ * ring pinnato).  Qui:
++ *  - nessuno span puo' essere marcato CPU-owned (ritorna 0);
++ *  - il rilascio per-range non ha nulla da rilasciare (0/0, esito 1);
++ *  - l'H2D ordinato non e' implementato (ritorna 0): a flag acceso il join
++ *    di ds4.c ricade sul ricalcolo GPU dello shared, mai silenzioso. */
++int ds4_gpu_model_span_cpu_owned(const void *model_map, uint64_t offset, uint64_t bytes) {
++    (void)model_map;
++    (void)offset;
++    (void)bytes;
++    return 0;
++}
++
++int ds4_gpu_model_span_release(const void *model_map, uint64_t offset, uint64_t bytes,
++                               uint64_t *released_bytes, uint64_t *blocked_bytes) {
++    (void)model_map;
++    (void)offset;
++    (void)bytes;
++    if (released_bytes) *released_bytes = 0;
++    if (blocked_bytes) *blocked_bytes = 0;
++    return 1;
++}
++
++int ds4_gpu_tensor_write_async_ordered_slot(ds4_gpu_async_read *ring,
++                                            uint32_t slot,
++                                            ds4_gpu_tensor *tensor,
++                                            uint64_t offset,
++                                            uint64_t bytes) {
++    (void)ring;
++    (void)slot;
++    (void)tensor;
++    (void)offset;
++    (void)bytes;
++    return 0;
++}

@@ -110,6 +110,11 @@ foreach ($b in $bracci) {
   $env:LLAMA_CACHE_ESPERTI_CURA = '0';    $env:LLAMA_CACHE_ESPERTI_SCUDO = '0'
   $env:LLAMA_CACHE_ESPERTI_MASSA = '0';   $env:LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO = '0'
   $env:LLAMA_CACHE_ESPERTI_LRU = '1';     $env:LLAMA_CACHE_ESPERTI_W = '0'
+  # LA VARIABILE CHE IL MANIFESTO NON STAMPAVA, e che e' costata una giornata:
+  # senza, la scelta della vittima e' la scansione seriale O(n_slot) su un solo
+  # thread GPU, e il banco rende il 12% in meno. Questo file e' stato scritto
+  # PRIMA di scoprirlo e non la impostava.
+  $env:LLAMA_CACHE_ESPERTI_SFRATTO_PAR = '1'
   $env:LLAMA_CACHE_ESPERTI_SLOT = '512'
   $env:LLAMA_ACCEPTMOE = '0';             $env:LLAMA_CKPT_CRONO = '0'
   $env:LLAMA_MAPPED_IBRIDO_SOGLIA = '2'
@@ -198,7 +203,14 @@ foreach ($b in $bracci) {
     $h = @(Import-Csv $camp | Where-Object { $_.util -match '^[0-9]+$' -and [int]$_.util -gt 50 })
     if ($h.Count -gt 0) { $vu = @($h | ForEach-Object { [int]$_.vram_usata } | Sort-Object); $vram = $vu[[int]($vu.Count/2)] }
   }
-  Nota ("     t/s " + $ts + "   ciclo " + $ciclo + "   p1 " + $p1 + "   sync " + $syn + "   colpi " + $col + "%   VRAM " + $vram + "   SHA " + $sha + "   chiusura " + $via)
+  Nota ("     t/s " + $ts + "   ciclo " + $ciclo + "   p1 " + $p1 + "   sync " + $syn + "   colpi " + $col + "%   VRAM " + $vram + "   SHA " + $sha)
+  # SI SPEGNE QUI, DOPO aver salvato. Riordinando questo file per salvare prima
+  # di spegnere avevo tolto la chiamata e NON l'avevo rimessa: il 12/8 il
+  # braccio g_b8b ha misurato, consegnato, e lasciato il server vivo con 74,5 GB
+  # e 11,9 GiB di VRAM per venticinque minuti, bloccando tutta la campagna
+  # dietro di se'. Un braccio che non rilascia e' peggio di un braccio che muore.
+  $via = Spegni $proc
+  Nota ("     chiusura: " + $via)
   $esiti += [pscustomobject]@{ tag=$tag; ts=$ts; ciclo=$ciclo; p1=$p1; sync=$syn; colpi=$col; atteso=$b.atteso }
 }
 

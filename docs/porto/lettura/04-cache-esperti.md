@@ -8,7 +8,15 @@ File collegati letti nei punti d'aggancio: `ggml-cuda.cu` (righe 130-160, 225-27
 `kv-ring.cu` (110-175), `src/models/deepseek4.cpp` (1390-1440).
 
 Ogni affermazione e' marcata **[LETTO]** (sta nel codice, con file:riga) oppure
-**[DEDOTTO]** (inferenza mia, non verificata da misura).
+**[DEDOTTO]** / **[IPOTESI]** (inferenza mia, non verificata da misura).
+
+> **AVVISO SUI NUMERI DI RIGA.** `cache-esperti.cu` e' stato **modificato durante
+> questa lettura**, alle 14:56:37 del 12/8: 27 righe aggiunte dentro
+> `cache_consuma_previsione`, il file passa da 3.956 a **3.983** righe.
+> Le sezioni **A-D e Domande 1-6** qui sotto citano i numeri **PRE-patch**;
+> per convertirli al file attuale: **invariati fino a riga 2272, +27 dopo**.
+> La sezione finale **«SFRATTO DI UN ESPERTO IN USO»** usa invece i numeri
+> **POST-patch** (file corrente) ed e' l'unica allineata al disco di adesso.
 
 Configurazione di riferimento: `SLOT=512, FORK=2, FORK_BLOCCHI=8, LRU=1, SFRATTO_PAR=1,
 BATCH=8, BATTITO=45, W=0, CURA=0, SCUDO=0, MASSA=0, PREFETCH_FILTRO=0, CODA_MAX=0,
@@ -977,3 +985,403 @@ due cose si sono sempre mosse insieme».
     (il pool assorbe 410); 448→339 ne libera 736 e ne rende 646 (il pool e' saturo).
     **La sonda per chiuderla esiste gia'**: `LLAMA_KV_RING_VRAM_TRACE` sui punti
     `cuda_vmm_pool_after_cuMemCreate` (`ggml-cuda.cu:537-557`).
+
+---
+---
+
+# SFRATTO DI UN ESPERTO IN USO
+
+**Tutti i numeri di riga di questa sezione si riferiscono al file COME STA ADESSO
+sul disco** (`D:\llama-overlap\ggml\src\ggml-cuda\cache-esperti.cu`, 3.983 righe,
+modificato il 12/8 alle 14:56:37). Le sezioni precedenti usano i numeri pre-patch:
+conversione = invariati fino a 2272, **+27** dopo.
+
+## 0. Il patch arrivato mentre leggevo — cosa cura e cosa no
+
+**[LETTO]** `git diff` mostra 27 righe aggiunte in `cache_consuma_previsione`
+(`:2268-2301`). La riga di codice nuova e' una sola:
+
+```c
+cache_tocca(c, slot, true);          // :2298
+```
+
+Il commento che l'accompagna (`:2272-2297`) diagnostica esattamente il meccanismo:
+uscire dalla classe protetta `(2<<62)|ultimo` per entrare nella classe normale
+`(1<<62)|ultimo` **con un'epoca vecchia** fa cadere lo slot al fondo della LRU
+**nell'istante in cui lo si sta usando**.
+
+**[LETTO] La diagnosi e' giusta e la correzione e' parziale.** `cache_tocca`
+(`:2207-2213`) resta **condizionata a `conta`** negli altri tre siti di chiamata:
+
+| sito | riga | gate | stato |
+|---|---|---|---|
+| consumo previsione | **:2298** | `true` — **corretto oggi** | chiuso |
+| **colpo** | **:2576** | `conta != 0` | **ancora scoperto** |
+| colpo via riuso transito (`CURA>=2`) | :2606 | `conta != 0` | ancora scoperto |
+| **installazione** | **:2656** | `conta != 0` | **ancora scoperto, ed e' il peggiore** |
+
+Il commento nuovo scrive: «`conta` serve a non contare due volte le STATISTICHE
+(colpi, riusi_installazione); usarlo anche per saltare la manutenzione LRU confonde
+due cose diverse» (`:2288-2292`). **E' esattamente la diagnosi corretta — ma il
+patch la applica a uno dei quattro siti.** Il sito `:2656` e' quello che produce il
+caso peggiore (vedi §1.4).
+
+Il commento aggiunge un fatto che io non avevo: **«il nostro batch di verifica ha
+DUE token (`--spec-draft-n-max 1`), quindi ogni strato e' interrogato due volte per
+ciclo»** (`:2283-2287`). **[LETTO nel commento, non verificato da me nel codice del
+grafo]** — se e' cosi', `conta` e' falso alla seconda interrogazione e tutta la
+manutenzione LRU di quella interrogazione **salta**.
+
+---
+
+## 1. Puo' la scansione scegliere uno slot in uso dallo strato in esecuzione?
+
+### RISPOSTA: **SI'. [LETTO]** Non c'e' nessuna esclusione, e non c'e' nessun marchio.
+
+### 1.1 Cosa segna uno slot come «in uso»
+
+**[LETTO] NIENTE.** Quando `kern_decidi` serve un id, scrive esattamente questo:
+
+- **colpo** (`:2571-2582`): `c.usato[slot] = 1` (`:2574`),
+  `cache_consuma_previsione` (`:2575`), `cache_tocca(slot, conta != 0)` (`:2576`),
+  `riusi_installazione++` se `conta` (`:2577-2579`), `slot_out[i] = slot` (`:2580`);
+- **installazione** (`:2650-2660`): `chi` (`:2650`), `usato = 1` (`:2651`),
+  `installato = 1` (`:2652`), `riusi = 0` (`:2653`), `predetto = 0` (`:2654`),
+  `dove = vittima` (`:2655`), `cache_tocca(vittima, conta != 0)` (`:2656`),
+  `slot_out[i] = vittima` (`:2658`), voce nella lista di copia (`:2659`).
+
+**[LETTO]** `slot_out` **non e' stato della cache**: e' un buffer d'uscita — un
+temporaneo del pool (`ggml-cuda.cu:2362`) o il tampone persistente `fj_slot` col
+fork (`:3311`). **Nessuno lo rilegge per scegliere una vittima.** L'insieme «gli
+slot che lo strato L sta usando adesso» **non e' rappresentato da nessuna parte**
+nello stato che la scansione consulta.
+
+### 1.2 Quando viene liberato
+
+**[LETTO] Mai, perche' non viene mai preso.** Non esiste un contatore di prestito,
+un bit «in uso ora», ne' un evento di fine lettura. L'unico ciclo di vita
+rappresentato e' `CACHE_ESPERTI_TRANSITO` (`:54`) = «byte in volo», **e vale solo
+per il cammino prefetch**.
+
+### 1.3 La scansione lo esclude?
+
+**[LETTO] No.** La scansione che gira da noi e' `sfratto_coop_scansiona`
+(`:2120-2168`), chiamata da `cache_vittima_par` (`:2184-2205`) da `kern_decidi:2639`.
+Le sue **uniche** discriminazioni sono tre:
+
+| riga | test | effetto |
+|---|---|---|
+| `:2130` | `cm >= 0 && (cm & CACHE_ESPERTI_TRANSITO)` | **`continue` — unica ESCLUSIONE vera** |
+| `:2140-2141` | `!residente` -> `chiave = 0` | preferito (non escluso) |
+| `:2142-2143` | `(c.scudo \|\| c.dma) && c.predetto[slot]` -> `(2<<62)\|ultimo` | ultima istanza |
+| `:2145` | altrimenti -> `(1<<62)\|ultimo` | ordine per recency |
+
+Idem nella sequenziale (`cache_vittima`, ramo LRU `:1931-1956`): `:1934` transito,
+`:1941` non residente (break), `:1945` predetto se `(scudo||dma)`, `:1952` minimo
+`ultimo`.
+
+**[LETTO] `usato[]` NON viene letto da nessuna delle due.** Grep completo delle
+letture di `usato[]` sul file corrente: `:1901` (ramo **massa**), `:1991` (ramo
+**cura**), `:2048`/`:2049` (ramo **orologio**), `:3425` (`kern_partiziona`).
+**Nessuna nel ramo LRU.** Con `LRU=1` il bit `usato` e' **scritto e mai letto** dalla
+politica di sfratto.
+
+### 1.4 Quindi cosa protegge davvero — e i tre buchi
+
+**[LETTO]** L'unica difesa e' **l'ORDINE per `ultimo[]`**: gli id serviti prendono
+l'epoca piu' alta e finiscono in coda alla lista dei candidati. E' una **priorita',
+non un'esclusione** — e ha tre buchi, tutti letti nel codice.
+
+**Buco (i) — la manutenzione LRU e' condizionata alle statistiche.**
+`cache_tocca` (`:2207-2213`) e' un no-op se `conta == 0`, e
+`conta = (strato != runtime->ultimo_strato_contato)` (`:3009-3010` in `assicura`,
+`:3297-3298` in `fork_gate`). Ogni interrogazione **successiva alla prima** dello
+stesso strato usa gli slot **senza rinfrescarli**.
+
+**Buco (ii) — lo sfratto azzera l'epoca, l'installazione non la ripristina.**
+Ogni sfratto fa `c.ultimo[vittima] = 0`: `:1919` (massa), `:1967` (lru seq),
+`:2201` (**parallela, la nostra**), `:2760` e `:2850` (`kern_prenota`).
+Poi l'installazione chiama `cache_tocca(vittima, conta != 0)` (`:2656`).
+**Se `conta == 0`, lo slot appena installato resta a `ultimo == 0`, cioe' e' il
+MINIMO GLOBALE, cioe' e' la prima vittima del buco successivo — nella stessa
+chiamata di kernel, sullo stesso strato.** Questo e' letteralmente «sfrattare un
+esperto chiamato allo strato L mentre lo strato L lo sta ancora usando», e non
+richiede nessuna corsa fra stream: succede dentro un singolo `kern_decidi`.
+Il pareggio a chiave uguale e' rotto dal rango dalla mano (`:2147-2151`), che dopo
+uno sfratto punta appena oltre l'ultima vittima (`:2195`): lo slot appena installato
+ha rango massimo, quindi **viene scelto solo se e' l'unico a `ultimo == 0`** — che e'
+proprio il caso a cache calda, dove tutto il resto e' stato toccato.
+
+**Buco (iii) — la promozione del prefetch non ripristina l'epoca.**
+`cache_promuovi`, ramo di successo (`:2334-2341`): scrive `chi`, `usato`,
+`installato`, `riusi_installazione`, `dove` — **e non tocca `ultimo`**, che la
+prenotazione aveva azzerato (`:2850`). Il ramo di FALLIMENTO invece lo azzera
+esplicitamente (`:2351`), il che rende l'omissione nel ramo di successo ancora piu'
+visibile. **Ogni esperto portato dal prefetch nasce in fondo alla LRU.**
+Finche' `predetto[slot]` vale 1 e' in classe 2 (protetto), e il patch di oggi
+(`:2298`) lo rinfresca quando la domanda lo consuma. **Ma se `predetto` e' gia' 0** —
+perche' `cache_scadi_previsioni` l'ha scaduto (`:2261`) o perche' un id precedente
+della stessa chiamata l'ha consumato — allora `cache_consuma_previsione` non fa
+niente (`:2269`) e si ricade su `cache_tocca(slot, conta != 0)` di `:2576`:
+**buco (i) di nuovo**.
+
+### 1.5 `SFRATTO_PAR` non c'entra
+
+**[LETTO]** `cache_vittima_par` riproduce la sequenziale **per costruzione**: chiave
+lessicografica `(classe, ultimo, rango dalla mano)` (`:2139-2151`), minimo unico
+perche' il rango e' distinto. **Eredita il buco, non lo crea.** Spegnere
+`SFRATTO_PAR` non cambia una vittima.
+
+### 1.6 Chi puo' sfrattare mentre lo strato L lavora, con `DMA=1` e `W>0`
+
+**[LETTO]** Con `W>0` `kern_prenota` **viene lanciato davvero**
+(`ggml-cuda.cu:4761` -> `:3164-3172` -> `kern_prenota<<<1,1>>>` a `:3171`), e usa la
+scansione **sequenziale** `cache_vittima(c, true)` (`:2751` cammino storico, `:2841`
+cammino «mancanti»; con `dma_strato=1` si prende il secondo, perche' `:2722` richiede
+`!c.dma_strato`). La sua scansione e' **globale** e non sa niente dello strato in
+esecuzione.
+
+**[IPOTESI, non verificata]** Sulla POSIZIONE nel grafo: in `deepseek4.cpp` il nodo
+`cache_pf-<lp>` viene espanso esplicitamente a `:1438`
+(`ggml_build_forward_expand(gf, top_pred)`) **dentro** il blocco dello strato `il`, e
+`top_pred` dipende da `cur` (il residuo pre-MoE), **non** da `moe_out`. I nodi MoE
+dello strato `il` entrano nel grafo solo a un'espansione successiva. Se l'ordine di
+visita di `ggml_build_forward_expand` e' quello che credo, i nodi
+`cache_pf-(il+1..il+W)` finiscono **prima** della MoE dello strato `il`, cioe'
+`kern_prenota(L+1)` esegue **immediatamente prima** di `kern_decidi(L)`.
+
+**[IPOTESI] Conseguenza, e spiega «i colpi non salgono, anzi peggiorano» senza
+bisogno di nessuna corsa**: con un carico **ciclico** (43 strati che si ripetono) la
+LRU e' la politica peggiore possibile. Quando `kern_prenota(L+1)` cerca vittime, i
+`ultimo[]` piu' piccoli appartengono **esattamente agli esperti degli strati L..42
+del token precedente** — cioe' quelli che questo token sta per chiedere. Il prefetch
+aggiunge pressione di sfratto proprio nella coda della finestra che serve. E' lo
+stesso reperto di «la LRU prende ZERO colpi» / «la rotazione e' 64%», visto dal lato
+dello sfratto.
+
+---
+
+## 2. `usato`, `installato`, `predetto`, `vive-censurate`
+
+| campo | dove vive | scritto a | letto a | a cosa serve |
+|---|---|---|---|---|
+| **`usato`** `uint8_t[n_slot]` | `.cuh:148` | `:823`, `:2235`, `:2338`, `:2347`, `:2574`, `:2604`, `:2651`, `:2745`, `:2757`, `:2798`, `:2847` | `:1901` (massa), `:1991` (cura), `:2048-2049` (orologio), **`:3425` (`kern_partiziona`)** | bit di **seconda chance dell'OROLOGIO**. Con `LRU=1` **la politica di sfratto non lo legge mai**, e i suoi tre azzeratori (`:2016`, `:2049`, `:2347`) stanno in rami irraggiungibili ⇒ a regime vale **1 ovunque**. Serve solo a ordinare la partizione dell'overlap. **NON e' una protezione.** |
+| **`installato`** `uint8_t[n_slot]` | `.cuh:158` | 1 a `:2652` (installazione) e `:2339` (promozione); 0 a `:1875` | `:1868` (in `cache_registra_sfratto`), `:2577`, `:2607` | **puro strumento**: fa classificare `riusi_installazione` nei quattro secchi dell'istogramma (`:1868-1874`). **Nessuna decisione lo legge.** |
+| **`predetto`** `uint8_t[n_slot]` | `.cuh:164`, allocato solo se `cura\|\|scudo\|\|dma` (`:1382`) | 1 a `:2231` (`cache_predici`); 0 a `:2270`, `:2261`, `:2654`, `:2350`, `:2025` | **`:1945`** (seq) e **`:2142`** (par), **solo se `(scudo\|\|dma)`** | marca un esperto **FUTURO** (una previsione pendente). Lo sfratto lo mette in **classe 2 = ultima istanza**. **Protegge una PRENOTAZIONE, non un uso.** |
+| **`vive-censurate`** | non e' uno stato | — | — | **istantanea host** al momento del dump: `cudaMemcpy` di `installato[n_slot]` + popcount (`:3830-3837`), stampata a `:3838`. Diagnostica pura, soffitto = `n_slot`. |
+
+**[LETTO] RISPOSTA SECCA:**
+
+- **Nessuno dei tre protegge l'esperto in uso ADESSO.** La protezione del presente
+  **non esiste** nel codice: e' delegata implicitamente all'ordinamento per
+  `ultimo[]`, che come si e' visto ha tre buchi.
+- **`predetto` protegge solo una prenotazione futura**, e la perde **esattamente
+  quando l'esperto viene usato** (`cache_consuma_previsione:2270`).
+- **`usato`** sarebbe il candidato naturale per nome, ma sotto `LRU=1` e' inerte
+  (scritto, mai letto, mai azzerato).
+- **`installato`** e **`vive-censurate`** sono strumentazione, non politica.
+
+---
+
+## 3. `SCUDO`: cosa protegge, da cosa, e se basta
+
+**[LETTO]** Letta a `:1243-1244`. Ha **due** effetti, entrambi su `predetto[]`:
+
+**(a) nello sfratto** — e' uno dei due flag che abilitano la lettura di `predetto[]`:
+`:1945` (sequenziale) e `:2142` (parallela). Gli slot predetti passano da chiave
+`(1<<62)|ultimo` a `(2<<62)|ultimo` ⇒ **scelti solo se non esiste nessun residente
+non protetto**.
+
+**(b) in `kern_prenota`** — uscita anticipata a **`:2700-2710`**:
+
+```c
+if (c.scudo && !c.dma) {
+    for (i…) if (slot >= 0 && c.chi[slot] == k) cache_predici(c, strato, esperto, slot);
+    return;                       // <-- ritorna PRIMA di prenotare qualunque cosa
+}
+```
+
+**[LETTO] Con `W>0` E `DMA=1` — il caso dell'utente — `SCUDO=1` e' COMPLETAMENTE
+INERTE.**
+
+- l'effetto (b) e' disattivato dalla condizione `!c.dma` (`:2700`): con DMA=1 il ramo
+  non si prende e la prenotazione avviene davvero;
+- l'effetto (a) e' **gia' abilitato da `c.dma` da solo** (`:1945` e `:2142` testano
+  `(c.scudo || c.dma)`).
+
+⇒ accendere `SCUDO` sopra `DMA=1` **non cambia una riga di comportamento**.
+(Con `DMA=0` e `W>0` invece scatta (b): il prefetch marca e **non muove un byte** —
+e' l'avviso che init stampa gia' a `:1329-1333`.)
+
+**[LETTO] E in ogni caso `SCUDO` NON BASTA a impedire lo sfratto di un esperto in
+uso.** Tre ragioni, tutte nel codice:
+
+1. protegge `predetto[]`, cioe' i **PREDETTI**. Gli esperti che lo strato L sta
+   leggendo sono residenti **ordinari**: `predetto` e' stato azzerato per loro
+   all'installazione (`:2654`) o al consumo (`:2270`);
+2. **servire l'esperto TOGLIE la protezione**: `cache_consuma_previsione`
+   (`:2268-2301`) azzera `predetto[slot]` **nell'istante esatto della domanda**. E' il
+   difetto che il patch delle 14:56 attenua rinfrescando l'epoca (`:2298`) — ma la
+   protezione di classe finisce comunque **nel momento dell'uso**, non dopo;
+3. la protezione e' una **priorita', non un'esclusione**: la classe 2 batte la classe
+   1 soltanto finche' esiste almeno un residente non protetto. Con 512 slot e ~12
+   slot predetti alla volta la classe 1 non e' mai vuota ⇒ i **non protetti — cioe'
+   gli in-uso — restano i PRIMI candidati**.
+
+---
+
+## 4. Dove andrebbe aggiunta la protezione, e quale invariante
+
+*(descrizione, nessuna modifica al codice)*
+
+### 4.1 L'invariante
+
+> **Uno slot consegnato a un consumatore del forward corrente non e' sfrattabile
+> finche' quel consumatore non ha finito di leggerlo.**
+
+**[LETTO]** Sul device non esiste un segnale di fine lettura: le mmvq non registrano
+niente e il fork usa eventi CUDA di **stream**, non di slot. L'approssimazione
+praticabile — e gia' esprimibile con i dati che il kernel carica comunque — e' una
+**barriera di epoca**:
+
+> **Uno slot la cui `ultimo[]` e' >= all'epoca d'inizio dello strato corrente non e'
+> una vittima ammissibile.**
+
+E' la stessa forma logica dell'esclusione dei transiti — «questo slot e' impegnato,
+saltalo» — solo con un'altra ragione di impegno.
+
+### 4.2 Il punto minimo: due siti, una condizione
+
+**[LETTO]** La condizione va messa **esattamente dove gia' si esclude TRANSITO**,
+perche' li' e' uniforme sul blocco e non tocca il protocollo delle barriere (§C):
+
+| dove | riga attuale | cosa aggiungere |
+|---|---|---|
+| `sfratto_coop_scansiona` (**il nostro cammino**) | `:2130` `if (cm >= 0 && (cm & CACHE_ESPERTI_TRANSITO)) continue;` | `\|\| (residente && c.ultimo[slot] > barriera)` |
+| `cache_vittima`, ramo LRU (usato da `kern_prenota`) | `:1934`, stessa riga | idem |
+
+Sorgente della barriera: **un solo `uint64_t` sul device**, accanto a `epoca`
+(`.cuh:151`), scritto da `kern_decidi` **una volta per strato**, subito dopo
+`cache_promuovi` (`:2534` circa) e solo se `conta != 0`:
+`*c.epoca_barriera = *c.epoca;`.
+
+**Costo: zero traffico nuovo.** `c.ultimo[slot]` viene gia' caricato a `:2143`/`:2145`
+per costruire la chiave; la barriera e' uno scalare in registro. Nessuna allocazione
+per-slot, nessuna atomica, nessun confine host, nessun kernel nuovo.
+
+**Variante a costo di stato ZERO**, se non si vuole aggiungere un campo: `epoca`
+avanza di **1 per id servito** (`:2209-2211`), quindi «in uso in questo strato»
+≈ `c.ultimo[slot] > *c.epoca - n_id`. Una sottrazione. Meno preciso (protegge anche
+la coda dello strato precedente), ma chiuderebbe gia' il caso osservato.
+
+### 4.3 Due riparazioni PREREQUISITE, senza le quali la barriera non serve
+
+**[LETTO]** La barriera confronta `ultimo[]`. Se `ultimo[]` non e' aggiornato, la
+barriera non vede lo slot:
+
+1. **`cache_tocca` deve toccare a ogni interrogazione, non solo alla prima.**
+   Restano condizionati a `conta != 0`: **`:2576` (colpo)**, `:2606` (colpo via
+   transito) e **`:2656` (installazione)**. Il patch di oggi ha corretto solo `:2298`.
+   **Il commento del patch stesso (`:2288-2292`) argomenta che `conta` non deve
+   governare la manutenzione LRU — poi lo lascia governare in tre siti su quattro.**
+   Questa e', da sola, la correzione piu' economica e piu' probabile del caso
+   osservato: **una riga per sito, e il buco (ii) sparisce.**
+2. **`cache_promuovi` deve rinfrescare `ultimo[slot]` nel ramo di successo**
+   (`:2334-2341`), oggi lasciato a 0 dalla prenotazione (`:2850`). Senza questo ogni
+   esperto portato dal prefetch nasce sotto la barriera e viene sfrattato prima di
+   essere usato — che e' **la spiegazione piu' diretta di «i colpi non salgono»**.
+
+### 4.4 Cosa NON funziona come protezione
+
+**[LETTO]** *Far leggere `usato[]` alla scansione LRU* sembra la soluzione ovvia ed e'
+sbagliata: sotto `LRU=1` `usato` **non viene mai azzerato** (i tre azzeratori `:2016`,
+`:2049`, `:2347` sono in rami irraggiungibili), quindi a regime vale 1 ovunque e la
+scansione non troverebbe **nessuna** vittima. Usare `usato` come «in uso» richiede
+prima di dargli un azzeramento periodico — e a quel punto la barriera di epoca costa
+meno e non ha stato da mantenere.
+
+### 4.5 La rete di sicurezza esiste gia'
+
+**[LETTO]** Una barriera puo' svuotare la pozza dei candidati. Il precedente giusto e'
+il tetto sui transiti (`*c.transiti + n_mancanti > c.n_slot / 8`, `:2831`) e il ramo
+`vittima < 0` di `kern_decidi` (`:2643-2648`), che **conta `guasti` e serve lo slot 0**
+invece di deragliare. Quindi una barriera che non trova vittima **degrada in un
+contatore visibile**, non in una corruzione muta. Con 6 id per strato su 512 slot la
+barriera copre 6-12 slot: nessun rischio di fame.
+
+---
+
+## 5. E' la stessa corsa di «pubblica prima che i byte esistano»?
+
+**[LETTO] No: sono due problemi distinti, con una radice comune.**
+
+| | **A — sfratto di uno slot vivo** (questa nota) | **B — pubblicazione prima dei byte** (nota precedente) |
+|---|---|---|
+| che cosa succede | le tabelle si spostano **via** da un esperto che un consumatore deve ancora leggere; lo slab viene poi riscritto da una copia nuova | le tabelle dichiarano residente uno slot i cui byte **non sono ancora arrivati** |
+| chi lo provoca | `cache_vittima_par` / `cache_vittima` da `kern_decidi:2639` o da `kern_prenota:2751/2841` | `kern_decidi:2650-2655`, che scrive `chi/dove` prima che parta la copia |
+| chi lo subisce | la mmvq che sta leggendo `slot_out` | `kern_partiziona` (`:3423-3426`), `kern_acceptmoe` (`:3541-3542`) |
+| guardia esistente | **nessuna, su nessun cammino** | **parziale**: la prenotazione scrive `chi = k \| TRANSITO` (`:2846`) e i due lettori confrontano con `chiave_di` semplice ⇒ un transito **fallisce** il test ed e' trattato come non residente |
+| dove la guardia manca | ovunque | sul cammino **a DOMANDA**: `:2650` scrive la chiave **pulita**, senza TRANSITO |
+
+**[LETTO] La radice comune**: `dove[]`/`chi[]` portano **un solo** bit di ciclo di vita
+(`CACHE_ESPERTI_TRANSITO`, `:54` — «byte in volo», e solo per il prefetch) e **zero**
+bit sui lettori. Servirebbero due informazioni per slot:
+
+1. «i byte non sono ancora validi» -> estendere TRANSITO al cammino a domanda;
+2. «un lettore di questo forward lo sta ancora usando» -> la barriera di epoca di §4.
+
+**[IPOTESI] E ce n'e' un terzo, adiacente, che riguarda proprio il regime `DMA=1`.**
+Il passaggio di consegne fra `stream_pf` e lo stream di calcolo avviene con un
+**flag**, non con un evento: `kern_dma_atterra` (`:2428-2433`, `__threadfence()` +
+`atomicExch`) sullo stream di prefetch, letto da `cache_promuovi` (`:2323-2325`) sullo
+stream di calcolo. Ma `stream_pf` e' creato **`cudaStreamNonBlocking`** (`:1574`):
+**nessun ordinamento** con lo stream di calcolo. E `__threadfence()` ordina le
+scritture di **quel thread**, non quelle del **motore di copia** che ha eseguito le
+`cudaMemcpyAsync` (`:617-620`). L'intestazione del file rivendica proprio questa
+lezione — «il JOIN e' un EVENTO CUDA, non un flag volatile (la lezione del prefetch,
+audit 03)», `:3191-3193` — **ma e' stato convertito solo il fork: il prefetch DMA gira
+ancora sul flag.** Se l'ipotesi regge, con `DMA=1` un esperto puo' essere dichiarato
+residente con byte parziali: **non e' uno sfratto, ma si manifesta allo stesso modo**.
+
+---
+
+## RIASSUNTO (12 righe) — priorita' a 1 e 4
+
+1. **[Q1] SI', la scansione puo' sfrattare uno slot in uso: non c'e' nessun marchio di
+   «in uso» e nessuna esclusione.** L'unica esclusione vera in
+   `sfratto_coop_scansiona` e' `TRANSITO` (`:2130`), che vale solo per il prefetch.
+2. **`usato[]` non viene MAI letto dalla scansione LRU** (letto solo a `:1901`,
+   `:1991`, `:2048`, `:3425`): sotto `LRU=1` e' scritto e mai letto.
+3. L'unica difesa e' l'**ordine per `ultimo[]`**, cioe' una priorita', non
+   un'esclusione — e ha tre buchi letti nel codice.
+4. **Buco (ii), il peggiore**: lo sfratto azzera `ultimo[vittima] = 0` (`:2201`) e
+   l'installazione lo ripristina solo `if (conta)` (`:2656`). Un'installazione con
+   `conta == 0` lascia lo slot **minimo globale**: e' la vittima del buco successivo
+   **nella stessa chiamata di kernel, sullo stesso strato**.
+5. **Buco (iii)**: `cache_promuovi` ramo di successo (`:2334-2341`) non tocca
+   `ultimo`, azzerato alla prenotazione (`:2850`) ⇒ **ogni esperto del prefetch nasce
+   in fondo alla LRU**. E' la spiegazione piu' diretta di «i colpi peggiorano».
+6. **[Q2] Nessuno dei tre campi protegge l'uso corrente**: `usato` = seconda chance
+   dell'orologio (inerte con LRU), `installato` = strumentazione, `predetto` =
+   **prenotazione futura**, `vive-censurate` = istantanea host al dump.
+7. **[Q3] `SCUDO` protegge solo i PREDETTI**, e la protezione **cade nell'istante
+   dell'uso** (`cache_consuma_previsione:2270`). Non basta.
+8. **[Q3] Peggio: con `DMA=1`, `SCUDO=1` e' del tutto inerte** — l'effetto sulla
+   scansione e' gia' dato da `c.dma` (`:1945`, `:2142`) e l'uscita anticipata di
+   `kern_prenota` e' disabilitata da `!c.dma` (`:2700`).
+9. **[Q4] Invariante**: uno slot con `ultimo[] >= epoca d'inizio dello strato` non e'
+   sfrattabile. **Punto minimo: una condizione in piu' a `:2130` e `:1934`**, dove gia'
+   si esclude TRANSITO; sorgente = un `uint64_t` scritto da `kern_decidi` una volta per
+   strato. Costo: zero traffico nuovo, `ultimo[slot]` e' gia' caricato.
+10. **[Q4] Prerequisiti**: togliere il gate `conta` da `cache_tocca` a `:2576`, `:2606`
+    e **`:2656`** (il patch di oggi ha corretto solo `:2298`), e rinfrescare `ultimo`
+    nella promozione (`:2334-2341`). Da soli chiudono probabilmente il caso osservato.
+11. **[Q4] NON usare `usato[]` come «in uso»**: sotto LRU non viene mai azzerato,
+    varrebbe 1 ovunque e la scansione non troverebbe piu' nessuna vittima.
+12. **[Q5] Distinti.** A = sfratto di uno slot vivo, **nessuna guardia**; B = residenza
+    pubblicata prima dei byte, **guardata dal bit TRANSITO sul cammino prefetch e NON
+    guardata sul cammino a domanda** (`:2650` scrive la chiave pulita). Radice comune:
+    `chi/dove` hanno **un** bit di ciclo di vita e **zero** bit sui lettori.
+    **[IPOTESI]** terzo problema adiacente: il prefetch DMA consegna con un **flag**
+    (`:2428`, `:2323`) su uno stream `cudaStreamNonBlocking` (`:1574`), non con un
+    evento — la lezione citata a `:3191-3193` e' stata applicata solo al fork.

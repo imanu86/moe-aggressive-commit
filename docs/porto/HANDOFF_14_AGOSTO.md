@@ -893,3 +893,60 @@ Prossimo lavoro prefill prima di tornare al decode:
 
 Artifact valido:
 `D:\ds4_work\llama_run\b_ffn_superop_fixture6510_b8192_ub4096_r2.*`.
+
+## 22. Base long ctx150k corretta: staging UB2048, 116,1985 t/s
+
+Il benchmark richiesto sul prompt reale da circa 100k ha mostrato prima una
+trappola di banco importante. Il runner del profilo corto portava nel server
+completo sia `-ot blk\..*=CPU` sia `GGML_SCHED_OFFLOAD_PACCHETTI=1`. Questa
+combinazione e' valida soltanto come motore prefill isolato: il packetizer e'
+globale e investe anche il grafo DSpark/decode. Nel long spostava 6.846,95 MiB
+di densi target da CUDA a CPU e faceva esplodere il grafo decode da 5/45 a
+295/893 split.
+
+I numeri seguenti NON sono SOTA valide:
+
+| braccio prefill-only | prefill | uscita | verdetto |
+|---|---:|---|---|
+| sparse + staging + HC CUDA pin, UB12288 | - | OOM durante il primo grafo | scartato |
+| sparse + staging + HC CUDA pin, UB8192 | 181,58 t/s | gibberish, p1=0 | invalido |
+| dense + staging + HC CUDA pin, UB8192 | 128,35 t/s | stesso gibberish, p1=0 | invalido |
+| dense + staging, HC scheduler, UB8192 | 121,74 t/s | assert `GET_ROWS_Q` al decode | invalido |
+| dense + staging, HC scheduler, UB4096 | 132,65 t/s | stesso assert al decode | invalido |
+
+L'assert e' in `ggml_compute_forward_get_rows_q`, non nel MoE target. Il
+candidato praticamente unico e' `markov_w1` Q2_K di DSpark in
+`dflash.cpp`: l'indice `prev`, derivato da `inp_tokens`, arriva stale/corrotto
+nel trasporto misto prodotto dal packetizer. Il pin HC CUDA aggiunto durante
+l'audit produceva una deviazione numerica deterministica ed e' stato rimosso;
+`src/llama-context.cpp` e' tornato identico all'index. Block-sparse non e'
+stato assolto ne' condannato da questi long, perche' sparse e dense erano
+entrambi contaminati dal packetizer; resta non promosso per output long.
+
+Il braccio phase-safe usa densi target residenti su CUDA, packetizer spento,
+routed experts mapped, layer staging attivo, HC_FUSO=5 sul backend storico,
+FASI2, B=UB=2048, DSpark caricato, ctx150000 e 64 token di decode:
+
+| replica | prefill | decode breve | p1 | output |
+|---|---:|---:|---:|---|
+| R1 | 110,7005 t/s | 7,7703 t/s | 0,61702 | coerente, length |
+| R2 | 111,0928 t/s | 7,7747 t/s | 0,61702 | identico |
+| R3 | 126,8021 t/s | 8,3027 t/s | 0,61702 | identico |
+
+Media prefill **116,1985 t/s**, media decode breve **7,9492 t/s**. Gain
+**+25,9%** sulla vecchia run long valida da 92,30 t/s. Tutte le repliche:
+prompt 101.597, completion 64, finish `length`, 266 caratteri e SHA256
+`D556C4C30669464AB3E05C7F3037348EC063DEFA5558ADD51C0BAE731B722C31`.
+La terza replica e' un outlier veloce; spread 13,86%, quindi usare la media e
+non il best. La VRAM e' stretta: 341/362/343 MiB liberi a load e 0 MiB
+nominali alla transizione, ma tre run hanno chiuso senza OOM/divergenze.
+
+Artifact:
+`D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_resident*_f2_b2048.*`.
+
+Decisione: non fare altri sweep UB/HC/attention. L'ultimo braccio prefill e'
+la v2 macro del super-op, costruita sui MMQ Q8_1 Porto correnti e non sui
+kernel DwarfStar Q8_K/Q8_0 gia' bocciati. Deve ridurre grafi/split e
+materializzazioni con route-sort/quantizzazione condivisi e tail fused; un
+guadagno a una cifra non basta. Dopo questo unico cancello si passa al decode
+riusando il disegno phase-aware, senza flag globali che contaminino DSpark.

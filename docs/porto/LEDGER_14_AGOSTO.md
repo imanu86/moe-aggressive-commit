@@ -427,3 +427,32 @@ MMQ Q8_1 corrente, condividere route-sort e quantizzazione fra gate/up, fondere
 shared/add/HC e attaccare poi la seconda trave non-FFN (`k_bin_bcast` + concat,
 circa 14,9 s nel profilo). Obiettivo macro non abbandonato; il flag v1 resta
 default-off e non e' una configurazione promossa.
+
+## Long ctx150k: nuova base phase-safe da 116,1985 t/s
+
+Prompt reale 101.597 token, ctx150000, DS4+DSpark, FASI2. Il runner del
+profilo corto con `blk\..*=CPU` e packetizer globale e' risultato incompatibile
+con il server completo: sposta 6.846,95 MiB di densi CUDA su CPU e contamina il
+grafo draft. L'assert al primo decode e' `GET_ROWS_Q`; il candidato e'
+`markov_w1` Q2_K di DSpark con indice `prev` stale. I valori prefill 181,58,
+128,35, 121,74 e 132,65 t/s ottenuti con quel placement sono invalidi per
+gibberish/p1=0 oppure assert e non vanno promossi. UB12288 era OOM.
+
+Configurazione promossa: target dense CUDA residenti, routed mapped,
+packetizer 0, layer staging 1, block-sparse 0, HC_FUSO=5 senza pin CUDA,
+B=UB=2048, 64 token decode.
+
+| replica | prefill t/s | decode t/s | p1 | SHA output |
+|---|---:|---:|---:|---|
+| R1 | 110,7005 | 7,7703 | 0,61702 | `D556...C31` |
+| R2 | 111,0928 | 7,7747 | 0,61702 | `D556...C31` |
+| R3 | 126,8021 | 8,3027 | 0,61702 | `D556...C31` |
+
+Media **116,1985 t/s**, +25,9% su 92,30; spread 13,86%, quindi non usare il
+best 126,80 isolato. Output coerente e identico, finish length, zero errori o
+divergenze. Il pin HC CUDA sperimentale e' stato ritirato senza lasciare diff.
+Block-sparse resta non validato generativamente sul long.
+
+Ultimo braccio prefill prima del decode: super-op v2 sui MMQ Q8_1 Porto,
+route-sort/quant input condivisi e tail fused. Niente replica della v1 gia'
+bocciata e niente altri sweep di taglia.

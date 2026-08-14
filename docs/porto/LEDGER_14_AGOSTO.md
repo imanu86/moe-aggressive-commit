@@ -113,3 +113,53 @@ Nessun commit nuovo di questa fase e nessun push. Il runtime ha un worktree
 pregresso molto sporco; prima di committare, separare gli hunk di MASSA2,
 corsie e RIUSA_SLOT dalle modifiche estranee. Anche `HANDOFF_13_AGOSTO.md`,
 `LEDGER_13_AGOSTO.md` e `dopo_il_riavvio.ps1` erano gia' modificati.
+
+## Prefill layer-major: risultati del 14 agosto
+
+### Staging bulk per chunk — promosso
+
+Fixture 6.510 token, B8192/UB4096, stesso output SHA `C526531F...`:
+
+| configurazione | run | t/s |
+|---|---:|---:|
+| standard | A | 162,6134 |
+| `LAYER_STAGING=1` | B1 | 196,0796 |
+| stessa | B2 | 195,9432 |
+| stessa | B3 | 194,8275 |
+
+Media B **195,6168 t/s**, +20,30%. Il server divide ancora il prompt in
+2.598+4.096; il guadagno viene dalla copia compatta della banca completa dei
+256 esperti per layer/chunk, non ancora dalla vera inversione esterna.
+
+### Esecutore layer->tile — bocciato come implementazione
+
+Una sola decode sintetica da 6.013 token:
+
+| configurazione | t/s | delta |
+|---|---:|---:|
+| standard | 192,1177 | base |
+| vero layer-major, pageable | 139,6749 | -27,3% |
+
+Il prototipo completa tutti i 43 layer. Pinned (140,4588), CUDA Graph sul
+frammento (150,6279 contro 151,5333 a p20k) e D2H async (137,1090) non lo
+recuperano e sono stati rimossi.
+
+Profilo p4.100, 86 grafi: build 34,9 ms; alloc 7.655,6 ms; input 2.269,9 ms;
+compute 20.736,8 ms. Causa della regressione: allocazione scheduler e input
+ripetuti 43 x tile. Il prossimo braccio non e' un'altra micro-leva: e' un
+supergrafo per layer con tutte le tile, una allocazione/compute per layer e
+pesi condivisi. Tetto teorico del compute frammentato attuale: circa 198 t/s,
+quindi il target 500 richiede anche maschere descrittore/fuse e meno lavoro
+per tile.
+
+Artifact principali:
+
+- `a_layer_major_fixture6510_b8192_ub4096.*`;
+- `b_layer_major_fixture6510_b8192_ub4096{,_r2,_r3}.*`;
+- `a_layer_major_single_decode_p6013_b8192_ub4096.*`;
+- `b_layer_major_single_decode_p6013_b8192_ub4096.*`;
+- `diag_layer_major_dsprof_single_decode_p4100_b8192_ub4096.*`.
+
+Leve mantenute default-off: `LAYER_STAGING` (positiva) e
+`LAYER_EXECUTOR` (scaffold). Leve diagnostiche rimosse: pinned, async output,
+layer graphs.

@@ -364,3 +364,108 @@ soluzione diretta a trasporto, cache o prefill; resta da monitorare.
    prefill per ogni futuro test decode lungo.
 6. Prima del commit, separare rigorosamente gli hunk della sessione dalle
    modifiche pregresse del worktree.
+
+## 12. Aggiornamento: staging bulk e prototipo layer-major
+
+La direzione proposta dall'utente, "leggere i pesi una volta e farli bastare
+per tutto il prompt", e' stata implementata in due passi distinti.
+
+### 12.1 Staging bulk promosso
+
+`LLAMA_DSV4_PREFILL_LAYER_STAGING=1` copia in VRAM l'intera banca dei 256
+esperti di un layer (circa 1.729 MiB) e riusa lo slab compatto per tutti i
+matmul di quel layer. Sulla fixture reale da 6.510 token, il server ha ancora
+spezzato il prompt in 2.598 + 4.096 token: non e' quindi ancora l'inversione
+completa dei cicli, ma elimina le letture sparse zero-copy all'interno di ogni
+chunk.
+
+| braccio | t/s | verdetto |
+|---|---:|---|
+| A standard | 162,6134 | riferimento fixture |
+| B staging bulk 1 | 196,0796 | positivo |
+| B staging bulk 2 | 195,9432 | replica |
+| B staging bulk 3 | 194,8275 | replica |
+
+Media B **195,6168 t/s**, **+20,30%**, con lo stesso SHA output
+`C526531F...` e stesso contenuto. Questo e' il primo salto architetturale
+promosso; la leva resta default-off finche' non viene integrata e verificata
+sul percorso lungo.
+
+Artifact:
+
+- `a_layer_major_fixture6510_b8192_ub4096.*`;
+- `b_layer_major_fixture6510_b8192_ub4096.*`;
+- `b_layer_major_fixture6510_b8192_ub4096_r2.*`;
+- `b_layer_major_fixture6510_b8192_ub4096_r3.*`.
+
+### 12.2 Inversione vera dei cicli: corretta, ma meccanicamente lenta
+
+E' stato aggiunto un esecutore sperimentale separato,
+`LLAMA_DSV4_PREFILL_LAYER_EXECUTOR=1`, che fa davvero:
+
+```text
+for layer:
+    stage una volta la banca esperti
+    for tile del prompt:
+        esegui un solo layer
+```
+
+Il prototipo porta il residuo HC completo in un backing host pageable e
+rewind/replay delle viste KV DSV4 tra i layer. I primi crash hanno isolato due
+requisiti corretti nel codice definitivo del prototipo: conservare i token ID
+fino agli hash layer e non registrare l'input token dopo l'ultimo hash layer.
+Il percorso completa tutti i 43 layer senza errori.
+
+Braccio singolo sintetico da 6.013 token, una sola `llama_decode`:
+
+| braccio | t/s | tempo | verdetto |
+|---|---:|---:|---|
+| A normale | 192,1177 | 31,299 s | riferimento |
+| B layer-major vero | 139,6749 | 43,050 s | -27,3%, bocciato |
+
+Artifact: `a_layer_major_single_decode_p6013_b8192_ub4096.*` e
+`b_layer_major_single_decode_p6013_b8192_ub4096.*`.
+
+Tre tentativi di recupero sono stati falsificati e rimossi dal codice:
+
+- residuo host pinned: 140,4588 t/s, solo +0,56% sul B rotto;
+- CUDA Graph sul grafo frammentato a p20k: 150,6279 contro 151,5333 t/s;
+- copia D2H asincrona a p20k: 137,1090 t/s, -9,5%.
+
+Artifact: `b_layer_major_pinned_single_decode_p6013_b8192_ub4096.*`,
+`a_layer_major_nographs_single_decode_p20000_b32768_ub4096.*`,
+`b_layer_major_graphs_single_decode_p20000_b32768_ub4096.*`,
+`b_layer_major_asyncout_single_decode_p20000_b32768_ub4096.*`.
+
+### 12.3 Profilo che decide il prossimo disegno
+
+`DSPARK_PROF=1` su p4.100, due tile e 43 layer, misura 86 chiamate al grafo:
+
+```text
+build       34,9 ms
+alloc    7.655,6 ms
+input    2.269,9 ms
+compute 20.736,8 ms
+```
+
+Artifact: `diag_layer_major_dsprof_single_decode_p4100_b8192_ub4096.*`.
+
+Il collo non e' piu' la copia del residuo: sono `sched_reset/alloc` ripetuti e
+la ricostruzione di input/maschere per ogni mini-grafo. Anche eliminando tutto
+l'overhead non-compute, il frammento attuale avrebbe un tetto di circa 198
+t/s su questa fixture: la sola inversione dei cicli non basta a 500 t/s.
+
+Il prossimo braccio grande deve quindi essere un **supergrafo per layer**:
+tutte le tile del prompt nello stesso grafo, pesi condivisi e una sola
+`graph_compute`/allocazione per layer. In alternativa, una cache persistente
+di grafi gia' allocati per coppia layer/taglia, ma il supergrafo e' preferibile
+perche' riduce anche il costo di input. Le maschere CSA/HCA/LID devono poi
+diventare descrittori o essere preparate una volta per tile, non rimaterializzate
+43 volte.
+
+Stato delle leve dopo la pulizia:
+
+- `LLAMA_DSV4_PREFILL_LAYER_STAGING`: mantenuta, positiva;
+- `LLAMA_DSV4_PREFILL_LAYER_EXECUTOR`: mantenuta solo come scaffold
+  sperimentale e strumento di verifica, default-off;
+- pinned, async output e compatibilita' CUDA Graph: rimossi dopo i B negativi.

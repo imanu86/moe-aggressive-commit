@@ -259,3 +259,43 @@ Lifecycle DSpark: encoder e KV inject sono attivi nel prefill; solo il decoder
 MoE puo' essere lazy/file-backed fino a `DONE_PROMPT -> GENERATING`. Le 12 slot
 draft (circa 104 MiB, riuso quasi nullo) sono candidate, in una leva separata,
 a slab rotante per gli esperti CPU dei blocchi 1/2.
+
+## UB larga e Flash Attention: localizzato il lavoro inutile
+
+Fixture llama-bench p6.013, B8192, packetizer 0:
+
+| configurazione | t/s | FNV | verdetto |
+|---|---:|---|---|
+| A, UB6.013, FA normale | 199,6707 | `F38F5B791AE1047B` | controllo |
+| B, Q tile4.096 r1 | 198,2160 | uguale | neutro |
+| B, Q tile4.096 r2 | 198,4361 | uguale | neutro |
+| B, Q tile4.096 r3 | 197,8819 | uguale | neutro |
+
+Media B 198,1780, -0,75%. La UB6.013 senza patch resta comunque +6,2%
+rispetto alla base UB4.096 da 187,9865 t/s.
+
+Cancello server 20.728 token, UB12.288, packetizer30, Nsight:
+
+| configurazione | prefill | FA totale | output |
+|---|---:|---:|---|
+| A profilato | 123,2542 t/s | 65,6200 s | `<` |
+| B Q tile4.096 | 122,4207 t/s | 65,9476 s | `<` |
+
+Il B ha prodotto davvero 215 lanci q4.096 + 43 code q248, ma non ha ridotto
+FA. Verdetto -0,68%, nessuna replica.
+
+Spiegazione dal codice: `deepseek4.cpp` concatena lungo le chiavi
+`raw_k || csa/hca_k`; la maschera contiene quindi blocchi raw futuri `-inf`
+prima di blocchi compressi ancora validi. `fattn-common.cuh` calcola al piu'
+un `KV_max` di coda e non rappresenta buchi interni. Due sonde di correzione
+sono state fermate sul cancello corto:
+
+- prefisso ingenuo di K/V: 115,6021 t/s, FNV `9A63E7340709D5C5`, errato;
+- `raw_prefix || compressed_full` ricomposto per tile: 92,9294 t/s, FNV
+  `B873872E05D0C497`, troppo costoso e non bit-esatto.
+
+Entrambe rimosse; `src/llama-graph.cpp` e' tornato identico al commit runtime.
+La leva macro promossa ad audit e' un iteratore/descrittore block-sparse dentro
+Flash Attention: scansione per blocchi della maschera e salto di ogni blocco
+tutto `-inf`, senza materializzare K/V. Il tetto empirico da inseguire e'
+65,62 -> 34,27 s di FA sul profilo 20,7k.

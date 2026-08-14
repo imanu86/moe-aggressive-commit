@@ -624,3 +624,43 @@ decode file-backed/lazy; attivazione alla transizione
 104 MiB e hanno riuso quasi nullo: in una leva separata possono diventare slab
 rotante per gli esperti CPU dei blocchi DSpark 1/2. Non combinarla con il
 primo probe route, cosi' ogni verdetto resta interpretabile.
+
+## 15. Cancello macro-window: UB larga e anatomia della maschera DSV4
+
+Il controllo diretto p6.013 ha separato due leve che prima erano confuse:
+
+- UB fisica 4.096 corrente: 187,9865 t/s;
+- UB fisica 6.013, attenzione non tiled: 199,6707 t/s, +6,2%;
+- stessa UB6.013 con query FA tiled a 4.096: 198,2160 / 198,4361 /
+  197,8819, media 198,1780, -0,75% dal controllo diretto.
+
+Controllo e tre B hanno FNV `F38F5B791AE1047B` e la stessa top-8: il grafo
+piu' largo e' utile, ma affettare solo Q e' neutro. La differenza rispetto al
+vecchio FNV UB4.096 era dovuta alla UB fisica, non alla tile.
+
+Sul cancello server da 20.728 token, UB12.288 e Nsight, il singolo B query
+tiled ha dato 122,4207 t/s contro A profilato 123,2542 (-0,68%), entrambi con
+output `<`. Il gate era realmente attivo: 215 kernel FA q4.096 piu' 43 code
+q248. Il totale FA non e' sceso: 65,9476 s contro 65,6200 s.
+
+La causa e' ora letta nel grafo DSV4: CSA/HCA costruiscono
+`K_all = raw_k || compressed_k`. Il raw futuro mascherato e' quindi un buco
+interno prima della memoria compressa valida, non una coda eliminabile. Il
+kernel CUDA corrente trova solo un `KV_max` finale; deve attraversare il buco
+per raggiungere i compressi successivi. Accorciare ingenuamente il prefisso
+K/V e' semanticamente falso (115,6021 t/s, FNV diverso). Ricomporre per tile
+`raw_prefix || compressed_full` e la relativa maschera resta troppo costoso
+(92,9294 t/s, numerica diversa): entrambe le sonde sono bocciate e il sorgente
+e' stato ripristinato senza residui.
+
+Prossimo cancello macro: Flash Attention block-sparse default-off che scansioni
+la maschera per blocchi `FATTN_KQ_STRIDE` e salti qualunque blocco tutto
+`-inf`, anche se esistono blocchi validi successivi. Non materializzare ne'
+ricopiare K/V. Il premio massimo osservato e' la forbice FA 65,62 -> 34,27 s;
+va prima dimostrato sul profilo 20,7k, poi sulla fixture lunga.
+
+Artifact: `a_fattnqtile_ref_p6013_b8192_ub6013.*`,
+`b_fattnqtile4096_p6013_b8192_ub6013{,_r2,_r3}.*`,
+`b_fattnqtile4096_blkdensecpu_packet30_nodraft_ctx40k_ub12288.*`,
+`diag_fattnqkvprefix4096_p6013_b8192_ub6013.*` e
+`diag_fattnrawprefix_compfull4096_p6013_b8192_ub6013.*`.

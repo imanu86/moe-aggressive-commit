@@ -211,3 +211,51 @@ Artifact: `diag_layersplit_sync_p4100_b8192_ub4096.*`,
 `b_layermono_overlap_p6013_b8192_ub4096.*`,
 `b_layerdma_sync_p6013_b8192_ub4096.*`,
 `b_layerdma_sync_barrier_p6013_b8192_ub4096.*`.
+
+## Audit trasversale prefill/decode
+
+Audit read-only completato; nessuna build o run aggiuntiva.
+
+Contratto comune:
+
+- backing mmap/pageable -> ring pinned piccolo -> slab VRAM;
+- ownership per generazione e parita';
+- eventi distinti upload-ready/compute-done;
+- fallimento fail-closed e drain prima del riuso;
+- descrittori comuni, ma layout/policy differenti per risorsa e fase.
+
+Tree corrente: solo staging `layer_major` sincrono sul compute stream. Nessun
+percorso overlap/DMA del prototipo rimosso e' raggiungibile.
+
+Prefill promosso come prossimo cancello architetturale:
+
+- macro-window HC residente da 12.288 token (768 MiB F32);
+- attenzione tile 4.096;
+- FFN grouped expert-major 12.288;
+- ring pinned reale, slab VRAM, grafi/buffer persistenti;
+- fixture 20,7k: promozione a totale <=50 s; 500 t/s a <=41,4 s.
+
+Decode target, stima corretta:
+
+| copertura miss | solo DMA nascosto | miss trasformato in costo-hit (ottimistico) |
+|---:|---:|---:|
+| 59% | 17,909 t/s | 18,321 t/s |
+| 71% | 18,334 t/s | 18,857 t/s |
+| 90% | 19,052 t/s | 19,773 t/s |
+| 95% | 19,250 t/s | 20,030 t/s |
+| 100% | 19,453 t/s | 20,293 t/s |
+
+Il solo DMA non raggiunge 20: servono almeno altri 1,407 ms/token. La banca
+transiente B deve restare separata da MASSA2 A, senza ammissione/sfratto/LRU.
+
+Primo cancello decode: `LLAMA_DSPARK_ROUTE_PROBE=1`, osservativo. Forme
+compatibili: DSpark result norm `[4096,n]`, router target `[4096,256]`.
+Misurare recall top-6 specifico sui miss A, unici/layer, byte, lead e overhead;
+promuovere solo da 70% recall sui miss. Fallback: predictor intra-target
+esistente, storico circa 71% top-6. I primi tre layer hash vanno derivati
+esattamente dal token id.
+
+Lifecycle DSpark: encoder e KV inject sono attivi nel prefill; solo il decoder
+MoE puo' essere lazy/file-backed fino a `DONE_PROMPT -> GENERATING`. Le 12 slot
+draft (circa 104 MiB, riuso quasi nullo) sono candidate, in una leva separata,
+a slab rotante per gli esperti CPU dei blocchi 1/2.

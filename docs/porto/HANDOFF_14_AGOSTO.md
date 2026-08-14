@@ -549,3 +549,78 @@ selettive previste da router/drafter nel decode.
    lifecycle/residenza DSpark, motore comune di VRAM virtuale.
 5. Il decode resta alla base autorevole 16,0733 t/s finche' un singolo braccio
    macro non supera correttezza e throughput.
+
+## 14. Audit parallelo: motore comune e policy decode
+
+Tre audit read-only sul tree e sui log correnti hanno convergito sullo stesso
+contratto di residenza virtuale:
+
+1. backing pageable/mmap;
+2. ring pinned piccolo e fisso;
+3. slab VRAM posseduto dal motore;
+4. stato per generazione `EMPTY/FILLING/READY/IN_USE`;
+5. `upload_ready` e `compute_done` per ogni parita';
+6. drain o seal fail-closed su resize, abort e rollback.
+
+Nel tree corrente non esiste alcun overlap layer-major attivo: resta solo
+`ggml_cuda_cache_esperti_layer_major`, chiamato da `ggml-cuda.cu`, con la
+copia accodata sul medesimo compute stream. Il vecchio simbolo `layer_stage`
+apparteneva a un prototipo transitorio gia' rimosso.
+
+### 14.1 Prefill: macro-window residente, non prompt intero
+
+La hidden HC DSV4 F32 occupa 768 MiB per 12.288 token e circa 9,155 GiB per
+150k token. Il disegno attuabile sul banco Porto e' quindi una macro-window:
+
+- hidden HC 12.288 residente in VRAM;
+- attenzione fisica in tile da 4.096;
+- FFN grouped/expert-major sui 12.288 token;
+- staging routed e denso del layer seguente con vero ring pinned/copy engine;
+- buffer e grafo persistenti, senza roundtrip host del residuo e senza
+  `sched_reset`/allocazione per tile.
+
+Il cancello iniziale e' la fixture da circa 20,7k token. Un solo B viene
+promosso se mantiene l'output coerente, porta alloc+input sotto 1 s, routed
+MoE sotto 25 s, Flash Attention sotto 36 s e totale sotto 50 s (circa
+414 t/s). 500 t/s richiede non oltre 41,4 s; 1000 t/s non oltre 20,7 s.
+
+### 14.2 Decode target: cache A stabile piu' banca B transiente
+
+MASSA2 resta la cache persistente A. Le route previste devono alimentare una
+banca B ping-pong separata, con tag `(epoch, layer, expert, slot)`:
+
+- prima si filtrano gli hit gia' presenti in A;
+- B non ammette, non sfratta e non aggiorna LRU/massa di A;
+- il consumer risolve tre origini disgiunte: hit A, hit B pronto, miss base;
+- una previsione errata o tardiva decade nel percorso base e non puo' cambiare
+  l'output.
+
+Base: 62,214 ms/token; 39,9217 copie/token; 6,75 MiB per esperto; banda
+24,35 GiB/s. Il solo trasporto fisico vale circa 10,807 ms/token. Nasconderlo
+al 100% porta al massimo conservativo di 19,453 t/s, non a 20. Per superare
+20 servono anche almeno 1,407 ms/token di gestione miss/sincronizzazioni, o
+una copertura intorno al 95% che trasformi davvero i miss in costo-hit.
+
+Primo cancello decode, prima di implementare B:
+`LLAMA_DSPARK_ROUTE_PROBE=1`, solo osservativo. Il final hidden DSpark e i
+router target sono dimensionalmente compatibili (`4096 -> 256`), ma la
+compatibilita' semantica va misurata. Il probe deve riportare recall top-6 sui
+miss A, unici non residenti/layer, byte/ciclo, lead e overhead, senza copie o
+mutazioni cache. Promozione con recall sui miss almeno 70%, preferibilmente
+80%+, e non oltre 8 esperti/layer. Se fallisce, il fallback e' il predictor
+intra-target gia' presente in `deepseek4.cpp`, con recall storico circa 71%.
+
+### 14.3 DSpark durante il prefill e nel decode
+
+DSpark non e' completamente inutilizzato nel prefill. Per ogni ubatch target,
+`common_speculative_process` raccoglie i tap 41/42/43, esegue l'encoder draft
+e inietta il KV. Questo percorso usa encoder, `wkv`, norm e KV, ma non il
+decoder MoE completo. Caricare tutto solo al decode richiederebbe conservare o
+rigiocare circa 4,654 GiB di tap su un prompt da 101.676 token.
+
+La separazione corretta e': seed/KV residenti nel prefill; pesi esclusivamente
+decode file-backed/lazy; attivazione alla transizione
+`DONE_PROMPT -> GENERATING` (Porto `np=1`). Le 12 slot draft occupano circa
+104 MiB e hanno riuso quasi nullo: in una leva separata possono diventare slab
+rotante per gli esperti CPU dei blocchi DSpark 1/2. Non combinarla con il
+primo probe route, cosi' ogni verdetto resta interpretabile.

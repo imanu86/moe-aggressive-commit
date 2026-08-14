@@ -469,3 +469,83 @@ Stato delle leve dopo la pulizia:
 - `LLAMA_DSV4_PREFILL_LAYER_EXECUTOR`: mantenuta solo come scaffold
   sperimentale e strumento di verifica, default-off;
 - pinned, async output e compatibilita' CUDA Graph: rimossi dopo i B negativi.
+
+## 13. Aggiornamento pomeriggio: split di fase, barriera e trasporto reale
+
+Il grafo DSV4 layer-major e' stato separato, default-off, in tre forme:
+
+- parte 0: layer completo;
+- parte 1: sola attenzione/stato;
+- parte 2: solo FFN/MoE.
+
+La prima versione produceva NaN o divergenze non per il calcolo FFN, ma per
+una dipendenza asincrona nascosta: CSA/HCA/LID e le cache DSV4 hanno scritture
+laterali che non sono tutte antenate del residuo esportato. Una
+`tensor_get(residuo)` non garantisce che tali rami siano terminati. La barriera
+conservativa `ggml_backend_sched_synchronize()` dopo ogni grafo layer-major ha
+reso la fixture p4.100 bit-exact:
+
+| run | t/s | FNV logits | top-8 |
+|---|---:|---|---|
+| riferimento normale | 196,7489 | `FD9308B918867FCA` | riferimento |
+| split attn+FFN, UB4096/4096 | 91,3621 | `FD9308B918867FCA` | identico |
+
+Artifact: `diag_layersplit_reference_p4100_b8192_ub4096.*` e
+`diag_layersplit_sync_p4100_b8192_ub4096.*`.
+
+Il packetizer scheduler deve restare spento sul grafo ridotto: con
+`GGML_SCHED_OFFLOAD_PACCHETTI=1` le branche FFN ridotte non sono affidabili;
+con 0 il confronto del primo stadio FFN era bit-exact.
+
+Il singolo B macro-MoE (attenzione UB4096, FFN 6.013 token) e' stato
+chiaramente negativo: **82,742 t/s** contro A corrente **187,9865 t/s**
+(-56,0%), finito e stesso top-1 ma numerica diversa. Nessuna replica.
+Artifact: `b_layersplit_sync_p6013_b8192_ub4096_moe12288.*` e
+`a_current_packet0_p6013_b8192_ub4096.*`.
+
+### 13.1 Perche' il primo overlap "alla DwarfStar" non valeva
+
+E' stato provato un mono-slab: upload del layer L su stream separato mentre
+l'attenzione L gira sullo stream di calcolo. Il primo tentativo usava ancora
+`kern_layer_major_copia`, cioe' un kernel che legge `CUDA0_Mapped`: occupava
+gli stessi SM dell'attenzione. Ha ingaggiato 42/43 layer e fatto 145,001 t/s,
+ma con NaN nei logits; e' una sonda invalida, non evidenza prestazionale.
+
+Il secondo tentativo ha trasformato lo slab in SoA contiguo e usato tre
+`cudaMemcpyAsync`. Senza la barriera laterale ha riprodotto lo stesso identico
+FNV corrotto. Con la barriera e' finito senza NaN, stesso top-1, ma ha fatto
+solo **127,4757 t/s**, -32,2% contro la base corrente; nessuna replica.
+
+Artifact:
+
+- `b_layermono_overlap_p6013_b8192_ub4096.*` (invalido, NaN);
+- `b_layerdma_sync_p6013_b8192_ub4096.*` (invalido, NaN);
+- `b_layerdma_sync_barrier_p6013_b8192_ub4096.*` (finito, 127,4757 t/s).
+
+Il ramo overlap/SoA-DMA e' stato rimosso; resta la barriera di correttezza nel
+solo scaffold layer-major. La lezione trasversale e' importante: un puntatore
+UVA di `CUDA0_Mapped` non equivale al pinned-host staging di DwarfStar e
+`cudaMemcpyDefault` non garantisce automaticamente un percorso H2D economico
+su copy engine. Per simulare residenza serve distinguere esplicitamente:
+
+1. backing pageable/mmap;
+2. ring pinned posseduto da eventi;
+3. staging VRAM;
+4. stream di upload e wait su ogni stream consumatore;
+5. side-effect fence del modello, separata dalla disponibilita' dei pesi.
+
+Questa conoscenza e' riutilizzabile nel decode per esperti target, DSpark,
+densi e KV, ma la policy cambia: layer noto/full bank nel prefill; route
+selettive previste da router/drafter nel decode.
+
+### 13.2 Ripresa aggiornata
+
+1. Non ripetere macro-MoE, mono-slab kernel o SoA-DMA diretto da UVA.
+2. Prima di un altro full-model B, dimostrare con profilo che il trasporto usa
+   davvero il copy engine: mmap/pageable -> piccolo ring pinned -> VRAM.
+3. Sul prefill, eliminare il costo strutturale del driver: supergrafo per layer
+   o tile pipeline persistente, non un altro aumento UB.
+4. Tre audit decode read-only sono in corso: cache esperti selettiva,
+   lifecycle/residenza DSpark, motore comune di VRAM virtuale.
+5. Il decode resta alla base autorevole 16,0733 t/s finche' un singolo braccio
+   macro non supera correttezza e throughput.

@@ -163,3 +163,51 @@ Artifact principali:
 Leve mantenute default-off: `LAYER_STAGING` (positiva) e
 `LAYER_EXECUTOR` (scaffold). Leve diagnostiche rimosse: pinned, async output,
 layer graphs.
+
+## Split attenzione/FFN e barriera laterale
+
+Il grafo ridotto DSV4 ha mostrato che il residuo non domina tutte le scritture
+di stato. Senza fence, avanzare il replay cursor o iniziare il grafo seguente
+puo' correre con CSA/HCA/LID ancora in volo. La correzione conservativa e'
+`ggml_backend_sched_synchronize()` dopo ogni grafo layer-major.
+
+Fixture p4.100, B8192/UB4096, packetizer 0:
+
+| configurazione | t/s | FNV | verdetto |
+|---|---:|---|---|
+| normale | 196,7489 | `FD9308B918867FCA` | riferimento |
+| attn+FFN separati, stessa UB | 91,3621 | `FD9308B918867FCA` | corretto, troppo lento |
+
+Il B con FFN macro 6.013 e attenzione 4.096 ha fatto 82,742 t/s contro
+187,9865 della base p6.013: -56,0%, nessuna replica. Finito, stesso top-1, ma
+non promosso. Il roundtrip residuo host e due grafi per layer dominano.
+
+## Sonda di residenza virtuale: kernel/UVA/DMA
+
+Tre run distinguono meccanismo e correttezza:
+
+| run | t/s | output | verdetto |
+|---|---:|---|---|
+| mono-slab, copia-kernel su stream separato | 145,001 | NaN | invalido |
+| SoA + `cudaMemcpyAsync` da UVA, senza fence completa | 137,709 | stesso FNV corrotto | invalido |
+| SoA + `cudaMemcpyAsync` da UVA, con fence | 127,4757 | finito, top-1 223 | -32,2%, bocciato |
+
+Base corrente p6.013: 187,9865 t/s, FNV `15A8650CAED23461`.
+Il B finito ha FNV `5A2BCC784D1A2DEE`: la differenza numerica non cambia il
+verdetto prestazionale e non autorizza repliche.
+
+Conclusione: `CUDA0_Mapped`/UVA non e' il pinned staging ring di G39.
+La copia-kernel compete per gli SM; `cudaMemcpyDefault` dall'alias UVA non
+dimostra un H2D copy-engine economico. Ramo sperimentale rimosso. Restano:
+
+- barriera laterale nel layer-major;
+- `LAYER_STAGING` positivo per chunk;
+- `LAYER_EXECUTOR` come scaffold default-off;
+- necessita' di backing mmap/pageable + ring pinned + staging VRAM con eventi
+  di ownership, prima di parlare di overlap reale.
+
+Artifact: `diag_layersplit_sync_p4100_b8192_ub4096.*`,
+`b_layersplit_sync_p6013_b8192_ub4096_moe12288.*`,
+`b_layermono_overlap_p6013_b8192_ub4096.*`,
+`b_layerdma_sync_p6013_b8192_ub4096.*`,
+`b_layerdma_sync_barrier_p6013_b8192_ub4096.*`.

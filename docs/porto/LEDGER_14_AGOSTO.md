@@ -398,3 +398,32 @@ Nessun B sul routed isolato: il suo tetto e' circa 356 t/s. Prossimo cancello
 unico: tail completo sotto `LLAMA_DSV4_PREFILL_FFN_SUPEROP=1`, fixture
 ordinata e poi <=50 s / >=414 t/s sul prompt 20.728; tre run soltanto dopo il
 passaggio del cancello o entro il 4%.
+
+## Prefill: super-op FFN v1 eseguibile ma respinto
+
+Il primo port completo `LLAMA_DSV4_PREFILL_FFN_SUPEROP=1` e' stato collegato,
+riconfigurato e compilato. Due ostacoli tecnici trovati prima del test non sono
+misure: il layout CUDA di `block_q2_K` usa `dm` e lo scheduler contava gli
+ingressi di un nodo multi-source soltanto quando il split era gia' pieno. Il
+secondo problema e' stato corretto contando preventivamente le copie distinte,
+senza aumentare `GGML_SCHED_MAX_SPLIT_INPUTS`.
+
+Primo B valido sulla fixture storica da 6.698 token, B8.192/UB4.096:
+
+| configurazione | prefill | tempo | output |
+|---|---:|---:|---|
+| layer staging, grafo corrente | 194,8275 t/s | 34,379 s | riferimento |
+| super-op FFN v1 | 91,3253 t/s | 73,342 s | finito/coerente, diverso dal primo token |
+
+Delta **-53,1%**. Nessun NaN, ID invalido, fallback o errore CUDA; completion
+32/32 e `finish=length`. Il ramo e' chiaramente peggiore: nessuna replica e
+nessun run 20.728. Artifact:
+`b_ffn_superop_fixture6510_b8192_ub4096_r2.*`.
+
+Verdetto di codice: il disegno macro resta valido, ma il port expert-tile
+Q8_K/Q8_0 sostituisce i MMQ Porto gia' ottimizzati con kernel piu' lenti sulla
+RTX 3060. Non micro-ottimizzare questa versione. La v2 deve riusare il nucleo
+MMQ Q8_1 corrente, condividere route-sort e quantizzazione fra gate/up, fondere
+shared/add/HC e attaccare poi la seconda trave non-FFN (`k_bin_bcast` + concat,
+circa 14,9 s nel profilo). Obiettivo macro non abbandonato; il flag v1 resta
+default-off e non e' una configurazione promossa.

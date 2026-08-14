@@ -854,3 +854,42 @@ Primo cancello: fixture ordinata; poi 20.728 token con totale <=50 s
 resta entro il 4% si fanno tre run totali.
 
 Artifact decode: `D:\ds4_work\llama_run\b_banca_b_mass2_t473_d12_b1_valid3.*`.
+
+## 21. Super-op FFN v1: plumbing riuscito, kernel sbagliato per Porto
+
+Il super-op completo e' stato collegato sotto
+`LLAMA_DSV4_PREFILL_FFN_SUPEROP=1`, compilato e portato fino a una completion
+reale. Le prime cadute in reserve non sono benchmark: una era l'accesso
+DwarfStar `block_q2_K.d/dmin` invece del `dm` GGML, l'altra il FIXME dello
+scheduler che poteva passare da 29 a 31 ingressi prima del controllo. La
+correzione dello scheduler conta le nuove sorgenti incompatibili e apre il
+nuovo split prima dello sforamento; non alza il tetto statico.
+
+Il primo B valido e' pero' netto:
+
+```text
+fixture 6698 token, B8192, UB4096, layer staging
+A storico: 194,8275 t/s, 34,379 s
+B super-op v1: 91,3253 t/s, 73,342 s
+delta: -53,1%
+completion: 32/32, length; nessun NaN/ID invalido/fallback/CUDA error
+output: leggibile e coerente, ma diverge dal primo token
+```
+
+Nessuna replica e nessun macro run. Non confondere questo verdetto con la
+rinuncia al salto: e' bocciata l'implementazione expert-tile importata, non il
+disegno layer-streamed/fuso. Sulla 3060 i kernel custom Q8_K/Q8_0 sono molto
+piu' lenti dei MMQ Q8_1 gia' selezionati da llama.cpp.
+
+Prossimo lavoro prefill prima di tornare al decode:
+
+1. mantenere il plumbing default-off come scaffold diagnostico;
+2. sostituire il routed custom con una v2 costruita sul MMQ Porto, riusando una
+   sola classificazione/quantizzazione dell'input per gate e up;
+3. mantenere shared/add/HC come tail fuso, ma validarlo separatamente a freddo;
+4. eliminare poi la trave attention-prep `k_bin_bcast` + concat (~14,9 s),
+   necessaria insieme al tail per avvicinare 41,456 s / 500 t/s;
+5. un solo nuovo B dopo audit statico; tre run soltanto se positivo o entro 4%.
+
+Artifact valido:
+`D:\ds4_work\llama_run\b_ffn_superop_fixture6510_b8192_ub4096_r2.*`.

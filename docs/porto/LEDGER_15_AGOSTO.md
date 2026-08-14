@@ -8,6 +8,9 @@
 | Profilo CPU + packetizer phase-safe + bsparse | 20.749+64, ctx40k, UB12288 | crash al primo draft | `markov_w1`, poi diagnosticato `i01=-1` | **Bocciato, niente repliche** |
 | Diagnostica packetizer 1 | 6.720 token, ctx12k, UB8192 | crash | `markov_w1.weight`, secondo argmax resta -1 | packetizer-off nel draft non ripara hidden/KV prefill |
 | Profilo CPU + packetizer 0 + bsparse | 6.716 token effettivi, ctx12k, UB8192 | **259,39 t/s** prefill, poi crash; PC bloccato | stesso `markov_w1`, `i01=-1` | packetizer assolto; non rilanciare identico |
+| EXACT_DMA kernel-spin | warm-up target, nessuna richiesta | fermo al primo comando `seq=1 strato=0 miss=8`, poi `unspecified launch failure` | nessun output; nessun B t/s consumato | **Falsificato** |
+| EXACT_DMA memops64/runtime | warm-up target, nessuna richiesta | fermo al primo comando; query/sync runtime non fanno progredire la coda reale | microtest wait/write isolato verde, grafo reale bloccato | **Falsificato** |
+| EXACT_DMA memops64/Driver API, target graph off | warm-up target, nessuna richiesta | fermo al primo comando anche con `cuMemcpyHtoDAsync`/`cuStreamSynchronize` | microtest concorrente 8 MiB verde, grafo reale bloccato | **Falsificato e codice rimosso** |
 
 ## Evidenza diagnostica
 
@@ -30,3 +33,6 @@ hidden/KV DFlash prodotti durante il prefill full, non un indice host casuale.
   packetizer 0, UB2048/4096, completion >=32; niente wildcard CPU.
 - Priorità immediata: decode macro exact-demand DMA + riduzione gestione; il solo
   overlap DMA ha tetto 19,453 t/s e non basta.
+- Aggiornamento: exact-demand H2D con rendez-vous host interno al grafo reale e'
+  bocciato; non ripeterlo. Prossimo macro: super-op FFN decode interamente GPU,
+  expert-tile/fusione DwarfStar, trasporto FORK invariato nel primo sottocancello.

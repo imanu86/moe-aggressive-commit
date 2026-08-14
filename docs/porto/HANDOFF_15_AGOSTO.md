@@ -496,3 +496,72 @@ un secondo risparmio ortogonale.
    residenza virtuale, non wildcard `blk.*=CPU`.
 10. Non chiudere l'obiettivo a un risultato intermedio: successo solo con
     DS4+DSpark >=20 t/s medio su tre run, output corretto/coerente.
+
+## 18. Aggiornamento: exact-demand H2D esterno falsificato e rimosso
+
+Il prototipo `LLAMA_CACHE_ESPERTI_EXACT_DMA=1` e' stato implementato nel runtime,
+compilato e portato fino al warm-up target, ma **non ha mai raggiunto una
+richiesta di inferenza**. Non conta quindi come B prestazionale e non va
+riproposto nella stessa forma.
+
+Disegno provato:
+
+- `kern_decidi` e la lista esatta del FORK invariati;
+- mailbox mapped device->host con `(strato, esperto, slot A)`;
+- thread host dedicato;
+- vere H2D dalle alias host pinned di `CUDA0_Mapped` verso la slab A;
+- copy stream ad alta priorita';
+- prima versione con kernel-spin/segnale, poi memops64 del command processor;
+- CUDA graph target disabilitati nell'ultima versione, DSpark invariato.
+
+Correzioni statiche emerse prima/durante il cancello:
+
+1. gli strati a zero miss saltano legittimamente sequenze mailbox;
+2. `n_strati=64` e' capienza della tabella cache, non numero blocchi DS4; le
+   terne reali sono `blk.0..42`;
+3. il servizio deve essere pronto prima del warm-up;
+4. `cudaStreamQuery` non e' un flush WDDM sufficiente;
+5. RTX 3060/driver Porto espongono memops64 (`attr122=1`) ma non la vecchia
+   capability32 (`attr92=0`).
+
+Due microtest isolati sono riusciti:
+
+- `wait64` su uno stream e `write64` su un altro;
+- `wait64` concorrente con `cuMemcpyHtoDAsync` di 8 MiB + `write64`, stesso
+  contesto, entrambi i thread completati con codice 0.
+
+Nel grafo reale, invece, tutte le varianti si fermano al **primo comando**:
+
+```text
+cache-esperti: EXACT_DMA primo comando host seq=1 strato=0 miss=8
+```
+
+La variante kernel-spin scadeva con `unspecified launch failure`; la variante
+memops64, anche con sole Driver API calde e CUDA graph target spenti, restava
+bloccata senza avanzare oltre `seq=1`. Il ciclo nasce quindi dallo scheduling e
+dalle dipendenze multi-stream del grafo reale, non dalla disponibilita' del
+primitivo CUDA in isolamento. Ogni processo bloccato e' stato terminato subito;
+nessun output o numero t/s e' stato prodotto.
+
+Artifact diagnostici:
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\exactdma_smoke64_*.server.log
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\exactdma_memops64_smoke64_b1.server.log
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\exactdma_driver_smoke64_b1.server.log
+```
+
+Il codice `EXACT_DMA`, incluse alias host, mailbox, thread, memops, telemetria e
+gate graph, e' stato rimosso integralmente. Ricerca repo-wide senza risultati e
+build Release `llama-server` verde dopo la rimozione.
+
+### Nuova direzione decode macro
+
+Il prossimo braccio non deve inserire il host nel mezzo del grafo. Usare un
+**super-op FFN decode interamente GPU**, riusando scheduling expert-tile
+DwarfStar per IQ2_XXS gate/up + Q2_K down e la cache A MASSA2 corrente. Obiettivi
+del primo sottocancello: una sola quantizzazione input, gate+up fusi, SwiGLU
+senza materializzare gate/up, down e somma route ordinata, meno lanci e meno
+gestione; trasporto miss inizialmente invariato sul FORK SM. Solo dopo aver
+dimostrato correttezza e un risparmio macro si valuta un confine graphlet host
+esplicito, non un callback/rendez-vous interno al grafo monolitico.

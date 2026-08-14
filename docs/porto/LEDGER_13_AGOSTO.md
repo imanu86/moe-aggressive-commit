@@ -197,3 +197,116 @@ dei residenti (0,242 contro 0,060, fattore quattro buttato).
 **Da rimisurare a macchina fredda**: la SOTA (14,42 a caldo contro 14,74-14,79)
 e l'ottimo di capienza, perché tutte le tarature vecchie sono state fatte con
 la copia esposta all'84,5% e adesso la copertura è un parametro di progetto.
+
+---
+
+## 8. CORREZIONE DEL 22:31 — IL ROUTER NON È LA POLITICA GLOBALE
+
+Un run SOTA strumentato (`trace_global_sota_b1`) ha prodotto la sequenza route
+target completa al 99,54% e i 642 esiti DSpark. Il run è semanticamente
+identico a `r2_sota`: p1 `0,86604`, SHA `18353172D402`, domanda `222.912`, hit
+`122.361`, miss `100.551`. Il 14,09 t/s non va confrontato: è il costo della
+traccia, non una regressione della SOTA.
+
+Il replay separato train/test corregge la conclusione precedente:
+
+- il peso softmax del router **non migliora** la scelta globale su questa
+  sequenza; i migliori robusti usano coefficiente zero;
+- il segnale è la frequenza globale decaduta di ogni `(modello,strato,esperto)`;
+- vanno contati tutti i sei esperti route, non soltanto i quattro arrivati alla
+  cache dopo la partizione;
+- una route speculativa rifiutata resta domanda vera: il target l'ha verificata;
+- copiare soltanto se il candidato supera la vittima globale evita quasi tutte
+  le installazioni morte senza trasformare la VRAM in un LFU eterno.
+
+Configurazione robusta del simulatore: emivita `32-64` cicli, incremento `+1`,
+floor di ammissione `0,75`, margine candidato-vittima `0,50`, LRU come solo
+spareggio. Sul tratto dopo 50 cicli:
+
+```text
+SOTA:          hit 112061, copy 92791, zero      0, indice 46247,6 ms
+corsie fisse:  hit 104565, copy  4222, zero  96065, indice 36283,9 ms (-21,5%)
+corsie mobili: hit 132816, copy  1927, zero  70109, indice 30478,9 ms (-34,1%)
+```
+
+L'indice usa i costi sperimentali 0,079/0,403/0,274 ms ed è trasporto seriale
+equivalente, **non una previsione diretta dei t/s**.
+
+Anche il budget non è ben assegnato: la cache DSpark 32×8,69 MiB registra
+1.020 installazioni mai riusate su 1.023 censite. Il massimo teorico, spostando
+quasi tutto quel budget al target, è circa 489 slot target e vale un ulteriore
+2,4% sull'indice. Non farlo ancora: prima serve il minimo working set in volo
+del drafter, perché il suo contatore `domanda` sotto grafo è incompleto.
+
+Artifact:
+
+```text
+D:\ds4_work\llama_run\trace_global_sota_b1.routes.bin
+D:\ds4_work\llama_run\trace_global_sota_b1.accept.tsv
+D:\ds4_work\llama_run\trace_global_sota_b1.server.log
+```
+
+---
+
+## 9. 14 AGOSTO — MASSA2 STABILE, RUN 150K E B DI PARITÀ RESPINTO
+
+La simulazione globale è stata portata sul banco e scomposta in leve. La
+configurazione promossa conserva la politica di vittima `MASSA=2`, copia tutti
+i miss GPU (`MASSA_AMMISSIONE=0`) e non riordina il confine CPU/GPU
+(`MASSA_CORSIE=0`). Con `473` slot target e `12` draft:
+
+| braccio | run t/s | media | p1 | esito |
+|---|---|---:|---:|---|
+| `mass2_copyall_stablelane_t473_d12` | 16,04 / 16,11 / 16,07 | **16,0733** | 0,90025 | nuova base |
+| `mass2_stable_slotreuse_t473_d12` | 15,84 / 15,71 / 15,73 | 15,76 | 0,90025 | respinto |
+| `mass2_stable_nocopypar_t473_d12_b1` | 15,37055 | — | 0,90025 | respinto al primo B |
+
+La base ha output identico nei tre run, hit `77,9%`, miss/copie `47.906`
+(`22,1%`). `FORK_RIUSA_SLOT=1` perde il `1,95%` sulla media. La nuova leva
+`SALTA_COPIA_PARITA=1` perde il **4,37%** sulla media: è appena oltre la banda
+di varianza concordata e non va replicata. Il suo output è comunque identico
+byte per byte alla base (`SHA256 4FDCFADFBFE0...E0E50C376ADC65D`), con
+`713/792` token draft accettati; la regressione è prestazionale, non logica.
+
+Il banco corto termina sempre a `length=1200` dentro il CSS. Serve per t/s e
+riproducibilità, non come prova di consegna completa. La prova qualitativa resta
+NeuraForge da `6.147` token: stop naturale, HTML/CSS/JS completi, resa e
+validazione browser sane.
+
+### Attraversamento 101k -> 103k
+
+Il run `ctx150k_mass2_stable_f2_b1024` ha completato realmente:
+
+```text
+capacità effettiva: 150.016
+prompt: 101.676 token
+completion: 2.048 token
+contesto finale: 103.724
+prefill: 92,30 t/s
+decode medio: 9,69 t/s
+p1: 0,76501
+```
+
+`LLAMA_VRAM_A_FASI=2` libera 3.194 MiB nel prefill e ricrea la cache al decode
+(`473 -> 0 -> 473`). Nessun OOM, errore CUDA o divergenza replay. L'output è
+coerente ma troncato a `length`. `FASI=1` aveva invece OOM a 7.169 token.
+
+### Audit successivi
+
+- Pre-fill: il ring generico non è il primo bersaglio. Crescono soprattutto
+  maschere CSA/LID/HCA, `indexer_score` e i tre piani del fallback top-k.
+- Densi target CUDA0: `7.383,67 MiB`; phase-aware attention+shared+compressori
+  con staging layer-major libererebbe circa `6,345 GiB` netti, circa `6,7 GiB`
+  includendo output, al costo di circa `6,53 GiB` PCIe per passata (+9% sugli
+  esperti). Non aumentare il pin `CUDA0_Mapped` già vicino al limite osservato.
+- DSpark occupa circa 159 MiB CUDA + 2.224 MiB mapped + 4.458 MiB CPU ma non
+  serve nel prefill: primo candidato per load differito al decode.
+- Fixture: state target DSV4 completo; manca il draft nel wrapper `/slots`.
+  Prima test bundle a 6,5k, poi una sola fixture base 100.992 + suffix.
+- Kernel: candidati `FORK_COPIA_ILP=4`, MMVQ IQ2_XXS `rows_per_block=4` per le
+  passate mancanti e, più complessa, fusione gate/up. Prima misura economica:
+  `MASSA2 + FORK_BLOCCHI=4`, mai falsificata nel regime nuovo.
+
+Protocollo confermato: un solo B per leva; chiaramente peggiore -> codice;
+positivo o entro circa il 4% -> tre run totali identici e media. Niente ABBA,
+nessun push, Ledger e Handoff aggiornati e commit a scope esplicito.

@@ -1,0 +1,366 @@
+# HANDOFF — 14 agosto 2026
+
+Questo file continua `HANDOFF_13_AGOSTO.md`. Non sostituisce log e codice:
+per ogni numero, la fonte autoritativa resta l'artifact del relativo braccio.
+
+## 1. Obiettivo e metodo
+
+Obiettivo ancora aperto: **20 token/s sul banco DS4 + DSpark Porto**, con
+correttezza semantica verificata.
+
+Regole operative richieste dall'utente:
+
+- un solo B per leva; niente sequenze ABBA o sweep senza una domanda precisa;
+- se B e' chiaramente peggiore, si scarta e si torna al codice;
+- se il risultato cade entro circa il 4% della base, si eseguono tre run
+  identici totali e si usa la media;
+- SHA uguale non basta: controllare coerenza, completezza, finish reason,
+  acceptance e contatori; un cambio CPU/GPU puo' cambiare SHA legittimamente;
+- evitare polling del disco mentre vengono letti gli oltre 80 GiB di modello;
+- Ledger e Handoff vanno aggiornati e il lavoro va committato per scope, senza
+  includere modifiche estranee e senza push.
+
+## 2. Banco corto e nuova base
+
+Runner storico:
+
+```text
+C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\dopo_il_riavvio.ps1
+```
+
+Binario e modelli:
+
+```text
+D:\llama-overlap\build\bin\llama-server.exe
+C:\ds4-models\DS4-0731-IQ2XXS.gguf
+D:\ds4-models\DSpark-draft-Q2K.gguf
+```
+
+La base corta corrente usa target/draft `473/12`, `FORK=2`, `BLOCCHI=8`,
+CPU `K=2`, `ctx=10000`, `ub=64`, `t=7`, modello target IQ2_XXS e draft Q2_K.
+Le aggiunte esatte al blocco comune sono:
+
+```text
+LLAMA_CACHE_BOZZA_SLOT=12
+PORTO_SPEC_NMAX=2
+PORTO_SPEC_CONF_MIN=0.8
+LLAMA_OVERLAP_BATCH_MAX=3
+LLAMA_SPEC_CONF_ESENTA_POS0=1
+LLAMA_ACCEPTMOE=1
+LLAMA_ACCEPTMOE_ESATTE=1
+LLAMA_ACCEPTMOE_SOGLIA=0.75
+LLAMA_ACCEPTMOE_COMPATTA=1
+LLAMA_GRAPH_REUSE_PER_TAGLIA=1
+LLAMA_CACHE_ESPERTI_MASSA=2
+LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE=0
+LLAMA_CACHE_ESPERTI_MASSA_CORSIE=0
+```
+
+Tre repliche della nuova base:
+
+| tag | t/s | p1 | SHA output |
+|---|---:|---:|---|
+| `mass2_copyall_stablelane_t473_d12_b1` | 16,04 | 0,90025 | `4FDCFADF...` |
+| `mass2_copyall_stablelane_t473_d12_b2` | 16,11 | 0,90025 | `4FDCFADF...` |
+| `mass2_copyall_stablelane_t473_d12_b3` | 16,07 | 0,90025 | `4FDCFADF...` |
+
+**Media 16,0733 t/s**, range 0,44%. E' il riferimento da battere.
+
+Contatori identici nelle tre corse:
+
+```text
+domanda target 216.737
+hit 168.831 = 77,9%
+miss/copie 47.906 = 22,1%
+partizioni 55.169
+CPU 110.338
+zero-copy 0
+```
+
+La base precedente NMAX2/AcceptMoE senza MASSA2 era 15,87/15,85, media 15,86,
+con 60.951 miss e 401,98 GiB copiati. La politica globale ha quindi prodotto
+un guadagno reale di circa **+0,21 t/s / +1,35%**.
+
+## 3. Politica globale implementata
+
+La politica `MASSA=2` mantiene massa decaduta per `(strato, esperto)`, con
+emivita 64 cicli, unita' 4, floor 3 e margine vittima 2. La vittima e' la
+massa minima globale; LRU e' solo spareggio. Le colonne AcceptMoE compattate
+con peso zero non alimentano la massa.
+
+Sono state separate due decisioni che all'inizio erano accoppiate:
+
+- `LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE`: ammettere o mandare in zero-copy;
+- `LLAMA_CACHE_ESPERTI_MASSA_CORSIE`: riordinare le corsie CPU/GPU per massa.
+
+Il risultato vincente tiene `AMMISSIONE=0` e `CORSIE=0`: **la massa governa
+la residenza/sfratto, ma non cambia le corsie e non introduce la terza passata
+zero-copy**. Le versioni piu' aggressive hanno aumentato hit ma peggiorato il
+cammino critico.
+
+File toccati nel runtime:
+
+```text
+D:\llama-overlap\ggml\src\ggml-cuda\cache-esperti.cu
+D:\llama-overlap\ggml\src\ggml-cuda\cache-esperti.cuh
+D:\llama-overlap\ggml\src\ggml-cuda\ggml-cuda.cu
+```
+
+Il worktree era gia' molto sporco prima di questi cambi. Non fare `git add -A`.
+Le modifiche di questa fase non risultano ancora consolidate in un commit
+circoscritto: ispezionare diff e provenienza hunk per hunk.
+
+## 4. Bracci chiusi dopo la nuova base
+
+| leva | run | risultato | verdetto |
+|---|---|---:|---|
+| `SPIN=0` sulla base vecchia | 15,89 / 15,69 / 15,93 | media 15,84 | neutra |
+| MASSA2 + ammissione/zero-copy | `mass2_lanecold...` | 15,08 | regressione |
+| MASSA2 copy-all + corsie per massa | 15,62 / 15,61 / 15,35 | media 15,53 | regressione |
+| nuova base, corsie stabili | 16,04 / 16,11 / 16,07 | media 16,0733 | promossa |
+| `FORK_RIUSA_SLOT=1` | 15,84 / 15,71 / 15,73 | media 15,76 | bocciata |
+| `FORK_SALTA_COPIA_PARITA=1` | 15,37055 | singolo B | bocciata, non replicare |
+
+`FORK_RIUSA_SLOT` dimostra che i kernel apparentemente ridondanti lasciavano
+in realta' distanza utile alla copia asincrona: rimuoverli trasferisce il tempo
+al join. `SALTA_COPIA_PARITA` conserva `kern_decidi` ma elimina le due griglie
+di copia vuote; anche questa riduzione peggiora nettamente il risultato.
+
+Artifact dell'ultimo B, prodotto durante il cambio di permessi della task:
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\mass2_stable_nocopypar_t473_d12_b1.*
+```
+
+Il run ha mantenuto `p1=0,90025` e `713/792` token draft accettati. L'output
+corto e' identico byte per byte ai tre run base (`SHA256
+4FDCFADFBFE0D009C7FA826EA8AFE25A6707BF6D3A75296F3E0E50C376ADC65D`). La
+perdita e' `-4,37%` dalla media 16,0733: regressione prestazionale pura, non una
+traiettoria diversa.
+
+## 5. Qualita' dell'output
+
+La vecchia base NMAX2 e' stata validata con il prompt NeuraForge fino a stop
+naturale:
+
+```text
+ctx 8192
+prompt 74 token
+completion 6.147 token
+totale 6.221
+finish_reason stop
+15,91 t/s
+```
+
+L'output e' un HTML/CSS/JS completo e coerente; sono stati controllati anche
+rendering nel browser e comportamento del form. I run corti da 1.200 token
+sono coerenti ma si interrompono a meta' CSS e non bastano da soli come prova
+di completezza.
+
+Artifact:
+
+```text
+D:\ds4_work\llama_run\neuraforge_b2_ctx8192_full.*
+```
+
+## 6. Run reale a contesto lungo
+
+Obiettivo del test: `-c 150000`, prompt non ripetitivo gia' vicino a 101k,
+attraversamento dei gradini CSA/LID fra 101k e 103k, nuova base 16,07 e fasi
+prefill/decode separate.
+
+Il primo tentativo con `LLAMA_VRAM_A_FASI=1` ha lasciato la slab esperti in
+VRAM ed e' andato OOM al token di prompt 7.169 durante una crescita VMM.
+
+La configurazione corretta usa:
+
+```text
+LLAMA_VRAM_A_FASI=2
+LLAMA_VRAM_A_FASI_UB=64
+LLAMA_KV_RING=1
+LLAMA_KV_RING_VRAM_TOKEN=2048
+LLAMA_DSV4_INDEXER_FUSO=1
+LLAMA_DSV4_HC_FUSO=5
+-c 150000        # effettivo 150016
+-b 1024 -ub 1024
+--no-host
+--cache-ram 0
+```
+
+Risultato `ctx150k_mass2_stable_f2_b1024`:
+
+```text
+prompt 101.676 token
+completion 2.048 token
+totale 103.724 token
+finish_reason length
+prefill 92,30 t/s
+decode 9,69 t/s medio sui 2.048 token
+p1 0,76501
+SHA output 26D998D35538EB96ACF23F7724EE8122550568E8C20EE6E307C54F4617544225
+```
+
+Transizione VRAM riuscita:
+
+```text
+prefill: cache target 473 -> 0, -3.194 MiB, VRAM libera 3.353 MiB
+workspace decode -> prefill: 136,70 -> 1.144,24 MiB
+decode: cache target 0 -> 473, +3.194 MiB
+workspace prefill -> decode: 1.144,24 -> 136,70 MiB
+```
+
+Il run ha attraversato `102404` e `103000` assoluti. Intorno a 102404 il
+decode cumulativo era circa 10,1 t/s; a fine corsa 9,69. Nessun errore CUDA,
+OOM o divergenza replay.
+
+L'output contiene 4.267 caratteri di reasoning e 2.700 di risposta tecnica,
+entrambi coerenti. E' incompleto perche' il compito chiedeva 20 sezioni e il
+limite 2.048 e' stato raggiunto; non mostra degenerazione o ripetizione.
+
+Artifact:
+
+```text
+D:\ds4_work\llama_run\ctx150k_mass2_stable_f2_b1024.*
+```
+
+## 7. Prefill: inventario e direzione
+
+Il run lungo dimostra che 150k funziona, ma 92,3 t/s significa circa 18 minuti
+per 101k token. Il nuovo obiettivo parallelo e' un prefill dell'ordine di
+centinaia fino a circa 1.000 t/s.
+
+Collocazione pesi target misurata dal GGUF e dal log:
+
+| famiglia | collocazione | MiB |
+|---|---|---:|
+| attention | CUDA0 | 4.660,125 |
+| shared expert | CUDA0 | 1.096,500 |
+| compressori + indexer | CUDA0 | 929,295 |
+| output + norm | CUDA0 | 536,578 |
+| altri densi | CUDA0 | circa 161 |
+| totale densi target | CUDA0 | 7.383,67 |
+| embedding F16 | CUDA_Host | 1.010 |
+| routed experts | CUDA0_Mapped | 74.304 |
+
+DSpark resta caricato durante il prefill anche se non viene usato:
+
+```text
+CPU model       4.458,36 MiB
+CUDA0_Mapped    2.224,00 MiB
+CUDA0              159,49 MiB
+```
+
+Il primo guadagno phase-aware e' quindi differire il caricamento del drafter
+fino al decode.
+
+I buffer che crescono davvero con UB e contesto sono:
+
+- maschere CSA/LID/HCA;
+- `indexer_score`;
+- Q/output della Flash Attention;
+- intermedi MoE;
+- fallback top-k/argsort, che mantiene tre piani pieni nel CUDA pool.
+
+KV ring e cache esperti non crescono con UB. A UB4096, il fallback top-k puo'
+richiedere circa 1,72 GiB oltre allo score e al workspace.
+
+Ordine raccomandato:
+
+1. Provare `UB=2048` con `FASI=2`, `INDEXER_FUSO=1`, `HC_FUSO=5`, senza nuovo
+   codice, per misurare la curva reale.
+2. Produrre CSA/HCA direttamente in F16/descrittore compatto e fare top-k a
+   chunk con ausiliari limitati.
+3. Alla transizione, sincronizzare e liberare insieme CUDA graph e pool VMM;
+   il pool corrente mantiene l'high-water anche dopo `free()`.
+4. Per UB4096+, fondere/tile-izzare indexer + top-k senza score pieno.
+5. Solo se serve ancora VRAM, rendere phase-aware i densi: backing pageable o
+   mmap, piccolo doppio staging VRAM per layer, reload bulk prima del decode.
+
+Non aggiungere altro `CUDA0_Mapped`: sono gia' pinnati almeno 76,3 GiB e il
+limite osservato e' vicino. Attention + shared + compressori con staging
+layer-major libererebbero circa 6,345 GiB netti; includendo output si arriva a
+circa 6,7 GiB. Il traffico aggiunto e' 6,53 GiB per passata, circa il 9% dei
+72,56 GiB degli esperti. A UB4096 sono circa 18,5-23,6 s totali su 150k senza
+overlap: il compromesso e' promettente, ma PCIe e zero-copy condividono il
+collo di bottiglia.
+
+Il ring di attivazioni e' un abilitatore, non l'acceleratore principale. Il
+moltiplicatore deve venire da grouped/batched MoE: con 256 esperti e top-6,
+ogni esperto riceve in media circa 24 righe a UB1024, 96 a UB4096 e 192 a
+UB8192.
+
+## 8. Fixture KV per non rifare il prefill
+
+Lo state DSV4 FULL serializza gia':
+
+- raw/SWA, posizioni e seq-id;
+- cold CSA/HCA/LID;
+- anelli `kv` e `score` dei tre compressori;
+- il backing cold del KV ring; l'hot VRAM viene ricostruito con
+  `sync_ring_hot()`.
+
+Il difetto e' nell'involucro server: `/slots` salva solo `ctx_tgt`, non
+`ctx_dft`. La prompt cache RAM salva entrambi ma non e' persistente e a 150k
+rischia il paging.
+
+Patch minima raccomandata in `tools/server/server-context.cpp`:
+
+```text
+fixture.tgt.bin
+fixture.dft.bin
+fixture.json
+```
+
+Il manifest deve contenere hash dei due GGUF, token base, n_ctx, layout KV,
+rapporti CSA/HCA/LID, rope/compressione e versioni ABI dello state. In restore,
+target e draft sono entrambi obbligatori; su errore si puliscono context,
+token, checkpoint e speculative state.
+
+Cancello prima corto: fixture 6,5k, suffix token-array esplicito, 200 token di
+output; fresh e restore devono coincidere token per token e il prompt eval
+dopo restore deve essere soltanto il suffix. Poi costruire una sola fixture a
+100.992 token (multiplo di 128) e riusarla nei test decode lunghi.
+
+Non usare `/v1/chat/completions` per l'estensione della fixture: il template
+sposta i token di chiusura. Usare `/completion` con array token esplicito.
+
+## 9. Prossime leve decode, in ordine
+
+1. **MASSA2 + `FORK_BLOCCHI=4`**, singolo B. Il vecchio B4 era pessimo con
+   MASSA0, miss circa 48% e solo 5% copie finite; oggi i miss sono 22,1% e il
+   47,4% delle copie e' gia' finito al join. E' un regime diverso e il retune
+   non e' falsificato.
+2. **ILP di `kern_fj_copia`**, leva default-off
+   `LLAMA_CACHE_ESPERTI_FORK_COPIA_ILP=4`, lasciando BLOCCHI=8. Il riferimento
+   ha copia media 0,794 ms e 52,6% join ancora in corso; per meritare il banco
+   deve scendere circa a 0,752 ms o aumentare chiaramente la copertura.
+3. **MMVQ masked IQ2_XXS rows-per-block=4** soltanto nelle passate mancanti.
+   Oggi il clone usa 2 senza tuning dedicato; RPB4 dimezza `grid.x` e i blocchi
+   che escono dopo aver letto la maschera.
+4. **Fusione gate/up mancanti**: condividere quantizzazione Q8, maschera e
+   attivazione; piu' complessa, da affrontare solo dopo le leve isolate.
+
+Cancello di promozione per una micro-ottimizzazione: output/acceptance
+corretti e almeno circa **16,17 t/s** per un +0,1 reale; se il primo B cade
+entro la varianza, completare tre repliche identiche.
+
+## 10. Ricerca esterna
+
+Tenere controllati repo ufficiali, fork llama.cpp, DwarfStar/DSpark e ricerche
+GitHub mirate prima di inventare componenti grandi. Il nuovo repo ufficiale
+`deepseek-ai/deepseek-harness` e' stato esaminato: e' un harness agent/plugin
+in developer preview, non un runtime di inferenza, quindi non offre oggi una
+soluzione diretta a trasporto, cache o prefill; resta da monitorare.
+
+## 11. Ripresa immediata
+
+1. Leggere questo file, `HANDOFF_13_AGOSTO.md`, `LEDGER_14_AGOSTO.md`, poi
+   verificare codice/log correnti.
+2. Il B `FORK_SALTA_COPIA_PARITA=1` e' registrato e chiuso a 15,37055.
+3. Eseguire un solo B `MASSA2 + FORK_BLOCCHI=4` sulla base 16,0733.
+4. Se chiaramente peggiore, niente repliche: tornare al codice e implementare
+   ILP4 default-off.
+5. In parallelo, progettare prima la fixture target+draft; evita 20 minuti di
+   prefill per ogni futuro test decode lungo.
+6. Prima del commit, separare rigorosamente gli hunk della sessione dalle
+   modifiche pregresse del worktree.

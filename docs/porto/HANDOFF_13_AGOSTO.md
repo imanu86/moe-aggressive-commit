@@ -324,3 +324,170 @@ lo slot risparmiato.
    misura un'altra configurazione.
 5. **Codex non consegna** su questa macchina: l'11/8 quattro mandati e quattro
    consegne vuote. Usare `general-purpose`/`Explore`.
+
+---
+
+## 6. 22:31 — TRACCIA ESATTA E REPLAY DELLA RESIDENZA GLOBALE
+
+È stato fatto **un solo run strumentato**, sulla SOTA invariata (`448`, `K=2`,
+stesso `dopo_il_riavvio.ps1`). Le sole leve aggiunte scrivono la traccia:
+
+```text
+LLAMA_CACHE_ESPERTI_TRACCIA=D:\ds4_work\llama_run\trace_global_sota_b1.routes.bin
+LLAMA_CACHE_ESPERTI_TRACCIA_ACCEPT=D:\ds4_work\llama_run\trace_global_sota_b1.accept.tsv
+```
+
+Il run ha riprodotto il riferimento al singolo contatore e allo stesso output:
+
+```text
+14,09 t/s strumentato; p1=0,86604; SHA=18353172D402
+domanda=222.912; hit=122.361; miss=100.551
+DSpark=556 accettati / 642 verificati
+```
+
+Il 14,09 **non è un nuovo benchmark**: la diagnostica costa circa il 2,3%
+rispetto al 14,42 caldo. La cosa importante è SHA + contatori identici.
+
+La traccia contiene 55.470 righe route, cioè 221.880 delle 222.912 domande
+GPU (99,54%). Mancano 258 righe di route, pari a sei token-righe per 43
+strati, nelle chiamate di warmup/prompt fuori dal partizionatore overlap. Dopo
+50 cicli di riscaldamento, il replay LRU differisce dallo stato registrato di
+soli 197 hit su 204.852 domande (<0,10%).
+
+### Risultato
+
+Il criterio giusto non è «il più vecchio», né il peso istantaneo del router.
+È una **massa globale decaduta per (modello, strato, esperto)**, aggiornata su
+tutti e sei gli esperti instradati, inclusi quelli mandati alla CPU.
+
+Politica robusta emersa dal replay:
+
+```text
+massa: decadimento esponenziale, emivita 32-64 cicli di verifica
+domanda target certa: +1
+domanda della riga speculativa: +1 anche se poi rifiutata
+ammissione: massa candidato >= 0,75
+sfratto/copia: candidato >= vittima globale + 0,50
+altrimenti: zero-copy, nessuno sfratto
+vittima: massa minima globale; LRU soltanto come spareggio
+peso softmax del router: 0 nel migliore robusto
+```
+
+La riga DSpark rifiutata **non va sottratta**: la verifica del target ha davvero
+calcolato quegli esperti. L'esito di accettazione esplicito cambia il costo del
+replay di meno dello 0,3%; la domanda fisica contiene già l'informazione utile.
+
+Sul tratto dopo il warmup, usando i costi misurati 0,079/0,403/0,274 ms:
+
+| replay | hit | copie | zero-copy | costo trasporto | vs SOTA |
+|---|---:|---:|---:|---:|---:|
+| SOTA registrata | 112.061 | 92.791 | 0 | 46.247,6 ms | — |
+| corsie SOTA congelate | 104.565 | 4.222 | 96.065 | 36.283,9 ms | -21,5% |
+| corsie ricalcolate dalla residenza | 132.816 | 1.927 | 70.109 | 30.478,9 ms | -34,1% |
+
+La prima riga nuova è il limite conservativo: non cambia quali esperti fanno
+CPU/GPU. La seconda è la politica completa: i residenti meritevoli finiscono
+nelle quattro corsie GPU e i freddi nelle due CPU. Queste percentuali sono
+**costo di trasporto seriale equivalente, non t/s promessi**: fork, CPU e PCIe
+si sovrappongono, quindi il guadagno reale va misurato con un solo B.
+
+### Budget fra target e drafter
+
+La cache separata di DSpark ha 32 slot da 8,69 MiB. Nel run ha censito 1.023
+installazioni: 1.020 mai riusate e 3 riusate una volta. Non merita 278 MiB di
+residenza persistente; deve conservare soltanto il minimo insieme in volo e
+servire il resto in posto. Ridare quel budget al target porta la simulazione
+da 448 a un massimo teorico di 489 slot e riduce di un altro 2,4% il costo del
+trasporto della nuova politica. Prima va stabilito il minimo sicuro del
+working set DSpark: il suo contatore `domanda` sotto grafo è noto incompleto.
+
+### Stato del codice
+
+Il fork contiene ora diagnostica **spenta per default** per route e accept.
+Non è stata implementata la nuova politica. Il prossimo braccio sensato è uno
+solo: massa globale decaduta + ammissione contro la vittima, inizialmente con
+448/32 invariati; se B è buono si ripete B, poi si prova la redistribuzione del
+budget fra target e drafter.
+
+---
+
+## 7. 14 AGOSTO — BASE 16,0733, 150K VALIDATO E PROSSIMO BRACCIO
+
+Questa sezione sostituisce lo stato operativo del paragrafo precedente. La
+politica `MASSA=2` è stata implementata e poi separata in leve indipendenti. Il
+regime promosso usa massa globale per la vittima, **copy-all** e corsie stabili:
+
+```text
+slot target/draft: 473 / 12
+PORTO_SPEC_NMAX=2; PORTO_SPEC_CONF_MIN=0.8
+LLAMA_OVERLAP_BATCH_MAX=3
+LLAMA_SPEC_CONF_ESENTA_POS0=1
+LLAMA_ACCEPTMOE=1; LLAMA_ACCEPTMOE_ESATTE=1
+LLAMA_ACCEPTMOE_SOGLIA=0.75; LLAMA_ACCEPTMOE_COMPATTA=1
+LLAMA_GRAPH_REUSE_PER_TAGLIA=1
+LLAMA_CACHE_ESPERTI_MASSA=2
+LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE=0
+LLAMA_CACHE_ESPERTI_MASSA_CORSIE=0
+```
+
+Tre run corti identici: `16,04 / 16,11 / 16,07`, media **16,0733 t/s**.
+Tutti hanno `p1=0,90025`, output identico byte per byte, hit target `77,9%` e
+`47.906` miss/copie (`22,1%`). È la base corta autoritativa.
+
+Leve già chiuse sopra questa base:
+
+- `LLAMA_CACHE_ESPERTI_FORK_RIUSA_SLOT=1`: `15,84 / 15,71 / 15,73`, media
+  `15,76`; respinta. I kernel apparentemente ridondanti fornivano distanza utile
+  alla copia asincrona.
+- `LLAMA_CACHE_ESPERTI_SALTA_COPIA_PARITA=1`: un solo B, **15,37055 t/s**,
+  `p1=0,90025`, `713/792` draft accettati. Output corto identico byte per byte
+  alla base (`SHA256 4FDCFADF...ADC65D`), ma parete `-4,37%`: respinta, nessuna
+  replica. Artifact in
+  `C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\mass2_stable_nocopypar_t473_d12_b1.*`.
+
+### Contesto lungo realmente validato
+
+Capacità effettiva `150.016`, prompt `101.676` token, completamento `2.048`,
+contesto finale `103.724`: superati i gradini `101.380` e `102.404`.
+
+```text
+LLAMA_VRAM_A_FASI=2; batch/ubatch prefill=1024
+prefill: 92,30 t/s
+decode medio dei 2.048 token: 9,69 t/s
+cache target: 473 -> 0 nel prefill -> 473 nel decode
+p1=0,76501; zero OOM, divergenze replay o errori CUDA
+```
+
+L'output è coerente e non degenerato, ma termina a `length` prima delle 20
+sezioni richieste. `FASI=1` era OOM a 7.169 token; `FASI=2` libera 3.194 MiB.
+Artifact: `D:\ds4_work\llama_run\ctx150k_mass2_stable_f2_b1024.*`.
+
+### Due fronti separati
+
+- **Decode corto verso 20 t/s**: prossimo B economico non ancora falsificato,
+  una sola leva, è la vecchia combinazione `MASSA2 + FORK_BLOCCHI=4`. Se è
+  chiaramente negativa si torna al codice; se è positiva o entro circa il 4%,
+  si fanno tre run totali identici e si usa la media. Alternativa di codice:
+  `FORK_COPIA_ILP=4`, default-off, con target copia media `<=0,752 ms`.
+- **Prefill verso 1000 t/s**: i moltiplicatori VRAM principali sono maschere
+  CSA/LID/HCA, `indexer_score` e fallback top-k/argsort a tre piani. Prima di
+  un ring generico: maschere descrittore/F16, top-k chunked e rilascio congiunto
+  graph + pool; per `ub=4096`, indexer/top-k tiled e grouped MoE.
+
+Inventario denso target verificato: CUDA0 `7.383,67 MiB` = attention
+`4.660,125`, shared expert `1.096,5`, compressori+indexer `929,295`,
+output+norm `536,578`, resto circa `161`. Gli esperti routed sono già
+`74.304 MiB CUDA0_Mapped`; embedding F16 `1.010 MiB` è già `CUDA_Host`.
+Non aggiungere altro `CUDA0_Mapped`: il pin base è circa `76,3 GiB`. Per il
+prefill phase-aware usare backing pageable/mmap e piccolo staging VRAM. DSpark
+resta il primo candidato da caricare soltanto alla transizione decode.
+
+Per i test lunghi, lo state DSV4 target serializza già raw/SWA, CSA/HCA/LID,
+compressori e cold ring. `/slots` salva però soltanto `ctx_tgt`: patch minima
+nel server per bundle target+draft+manifest; validare prima a 6,5k, poi creare
+una sola fixture a circa 101k.
+
+Il worktree `D:\llama-overlap` è deliberatamente molto dirty. Preservare tutto;
+le modifiche di questa sessione sono intrecciate con lavoro preesistente nei
+file CUDA. Ogni commit deve essere costruito con path/hunk espliciti, mai con
+`git add -A`, e senza push.

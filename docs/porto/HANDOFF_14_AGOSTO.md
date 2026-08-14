@@ -790,3 +790,67 @@ zero NaN/fallback; replica solo dopo questo cancello.
 
 Artifact:
 `b_blocksparse_layerstaging_blkdensecpu_packet30_ctx40k_ub12288{,_r2,_r3}.*`.
+
+## 20. BANCA_B decode bocciata e super-op prefill materializzato
+
+Il B decode `LLAMA_CACHE_ESPERTI_BANCA_B=1` e' stato implementato con banca
+transiente separata 2x6, predictor target k=1, copie esplicite
+host-pinned -> VRAM, ownership CAS/epoch e B->A soltanto dopo una domanda
+reale. Due avvii preliminari non sono benchmark: hanno corretto due guardie di
+inizializzazione (registro cache da 64 contro modello da 43 layer; env target
+da ignorare sulla cache draft). Un terzo avvio ha localizzato la cattura CUDA
+Graph incompatibile col worker H2D; i graph sono quindi stati disabilitati
+solo sul runtime target con BANCA_B attiva. Il primo e unico B prestazionale
+valido e':
+
+```text
+tag: b_banca_b_mass2_t473_d12_b1_valid3
+1200 token, 12,38 t/s, p1=0,88525
+base: 16,0733 t/s, p1=0,90025
+delta: -23,0%
+output: HTML NeuraForge completo e coerente, ma diverge dalla base dopo 33 caratteri
+```
+
+Contatori finali:
+
+```text
+piani 20.000, candidati 120.000, filtro hit-A 54.675
+miss A 36.664, match predictor 12.343 = 33,7%
+join 11.627, ready 1.265, fallback-late 11.078
+B->A 1.265 = 3,5% dei miss A
+worker 3.647 job, 12.973 esperti, 85,515 GiB H2D
+publish-stale 1.366, invalidi/fallimenti host 0
+```
+
+Il ramo e' chiaramente peggiore e non va replicato. Il problema non e' un
+singolo microcosto: per salvare 8,34 GiB circa di copie a domanda ha generato
+85,5 GiB di traffico predittivo, quasi tutti i match arrivano tardi e il
+meccanismo richiede di perdere i CUDA Graph target. L'implementazione BANCA_B
+viene rimossa integralmente; conservare soltanto risultato e disegno nel
+ledger. Il prossimo braccio decode separato resta lo staging degli esperti CPU
+DSpark, ma da solo ha un tetto stimato di circa +9% e non va presentato come
+soluzione completa ai 20 t/s.
+
+Sul prefill sono stati materializzati, ma non ancora collegati ne' compilati,
+quattro file CUDA nuovi e inerti:
+
+- `ggml/src/ggml-cuda/dsv4-moe.cu/.cuh`: routed expert-major IQ2_XXS/Q2_K,
+  top-6, peso dopo down e somma deterministica route 0..5;
+- `ggml/src/ggml-cuda/dsv4-shared-hc.cu/.cuh`: shared Q8_0, add routed e
+  HC post/comb batch completo.
+
+Il routed op richiede 1,90175 GiB di scratch a UB12.288; shared+HC altri
+150 MiB riusabili. Sono stati chiusi i blocker grid.y>65.535, top-k strided
+(il plumbing deve inserire `ggml_cont`), accumulo atomico e ordine delle
+route. Q8_K/Q8_0 non sono bit-equivalenti al Q8_1 corrente: la fixture deve
+misurare drift, finitezza e completion, non assumere SHA identico.
+
+Il primo B ufficiale prefill deve collegare entrambi i nodi sotto un solo flag
+`LLAMA_DSV4_PREFILL_FFN_SUPEROP=1` e sostituire l'intero tail
+routed+shared+add+HC. Non consumare un run full-model sul solo routed: anche
+azzerandolo, col resto del profilo corrente il tetto resta circa 356 t/s.
+Primo cancello: fixture ordinata; poi 20.728 token con totale <=50 s
+(>=414 t/s), zero NaN/fallback/ID invalidi e output completo. Solo se passa o
+resta entro il 4% si fanno tre run totali.
+
+Artifact decode: `D:\ds4_work\llama_run\b_banca_b_mass2_t473_d12_b1_valid3.*`.

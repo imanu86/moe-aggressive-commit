@@ -364,3 +364,37 @@ Distanza da 500: 224,4935 t/s, fattore 1,815, +81,48%. Il tempo deve scendere
 da 75,236 a 41,456 s (-33,780). La sola copia/overlap non basta: prossimo B
 `LLAMA_DSV4_PREFILL_FFN_SUPEROP=1`, tail completo routed+shared+add+HC-post,
 cancello iniziale <=50 s / >=414 t/s e correttezza completa.
+
+## Decode: BANCA_B respinta al primo B valido
+
+`LLAMA_CACHE_ESPERTI_BANCA_B=1` ha chiuso un run completo da 1.200 token:
+
+| tag | t/s | p1 | output | verdetto |
+|---|---:|---:|---|---|
+| base MASSA2 stable 473+12 | 16,0733 | 0,90025 | stabile | riferimento |
+| `b_banca_b_mass2_t473_d12_b1_valid3` | 12,38 | 0,88525 | coerente, SHA diverso | -23,0%, respinto |
+
+La banca ha visto 36.664 miss A e 12.343 match (33,7%), ma soltanto 1.265
+erano pronti: 3,5% dei miss serviti B->A. Ha trasferito 85,515 GiB predittivi
+per evitare circa 8,34 GiB a domanda; 11.078 match sono caduti in
+fallback-late. Nessun invalido o fallimento host. La necessita' di disattivare
+i CUDA Graph target e il traffico dieci volte maggiore del risparmio chiudono
+il ramo. Nessuna replica; codice BANCA_B rimosso.
+
+I due avvii falliti prima del B non sono misure: hanno corretto la guardia
+64-slot-layer-registry/43-model-layer e l'esclusione della cache draft. Un
+terzo smoke ha corretto la compatibilita' CUDA Graph prima del run valido.
+
+## Prefill: sorgenti inerti del super-op completo
+
+Creati senza plumbing/build/run `dsv4-moe.cu/.cuh` e
+`dsv4-shared-hc.cu/.cuh`. Il primo implementa scheduling expert-major routed,
+Q8_K, peso post-down e somma ordinata; il secondo shared Q8_0 + add + HC batch.
+Scratch UB12.288: 1,90175 GiB routed + 150 MiB shared/HC. Il top-k strided
+richiede `ggml_cont`; Q8_K/Q8_0 sono una variante numerica da validare contro
+il percorso Q8_1 corrente.
+
+Nessun B sul routed isolato: il suo tetto e' circa 356 t/s. Prossimo cancello
+unico: tail completo sotto `LLAMA_DSV4_PREFILL_FFN_SUPEROP=1`, fixture
+ordinata e poi <=50 s / >=414 t/s sul prompt 20.728; tre run soltanto dopo il
+passaggio del cancello o entro il 4%.

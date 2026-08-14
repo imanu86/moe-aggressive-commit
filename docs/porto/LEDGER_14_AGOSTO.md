@@ -299,3 +299,49 @@ La leva macro promossa ad audit e' un iteratore/descrittore block-sparse dentro
 Flash Attention: scansione per blocchi della maschera e salto di ogni blocco
 tutto `-inf`, senza materializzare K/V. Il tetto empirico da inseguire e'
 65,62 -> 34,27 s di FA sul profilo 20,7k.
+
+## Maschere F16 input: micro-B rimosso
+
+| banco | repliche | media | delta | verdetto |
+|---|---|---:|---:|---|
+| corto UB6.013 | 198,8096 / 199,1358 / 197,7506 | 198,5653 | -0,55% | neutro |
+| macro UB12.288 | 123,8118 / 123,8210 / 123,9686 | 123,8671 | +0,50% | pagliuzza |
+
+FNV/top-8 e output corretti. Patch rimossa; nessun residuo runtime.
+
+## Decode: final hidden DSpark non predice i router target
+
+`diag_dspark_route_probe_mass2_t473_d12_r3`: 486/486 cicli, invalidi 0,
+102.249 miss A, 5.198 richiamati = **5,1% recall**. Throughput 16,04, p1
+0,90025, 47.906 copie, stesso output/SHA della base. Verdetto: bocciato senza
+repliche. Il probe era osservativo e viene rimosso dal runtime.
+
+Prossimo B decode: `LLAMA_CACHE_ESPERTI_BANCA_B=1`, predictor intra-target
+storico circa 71%, banca ping-pong separata 2x6 slot = 81 MiB. B non ammette e
+non sfratta: una domanda vera conserva la stessa vittima A e cambia soltanto la
+sorgente da mapped-host a B->A. Tetto stimato 18,33-18,86 t/s.
+
+Seconda trave decode separata: `LLAMA_DSPARK_STAGE_CPU_EXPERTS=1`, slab draft
+104,263 MiB riusata per blk.1/2, backing pageable `CUDA0_Staged` e ring pinned
+17,377 MiB. Non combinarla col primo B.
+
+## Flash Attention block-sparse: +53,95%
+
+Fixture UB6.013: **289,1010 t/s**, FNV `F38F5B791AE1047B` e top-8 identici;
+A densa 199,6707.
+
+Macro 20.728 token, UB12.288, packetizer30, tutti profilati Nsight:
+
+| replica | t/s | FA | scan bitmap | output |
+|---|---:|---:|---:|---|
+| B1 | 190,3274 | 6,8555 s | 0,0720 s | `<`, length |
+| B2 | 191,6210 | 6,8512 s | 0,0720 s | `<`, length |
+| B3 | 187,2925 | 6,8522 s | 0,0720 s | `<`, length |
+
+Media **189,7469 t/s**, spread 2,28%, +53,95% su A 123,2542. FA scende da
+65,6200 a circa 6,8530 s (-89,6%). Commit runtime `3014d3756`, cinque soli
+file Flash Attention, nessun push.
+
+Nuovo collo macro: `mul_mat_q` type16 34,711 s, type10 23,673 s, type8
+5,759 s; lightning indexer 4,805 s. Prossimo lavoro prefill: residenza virtuale
+e overlap/scheduling dei pesi routed, obiettivo ancora 500/1000 t/s.

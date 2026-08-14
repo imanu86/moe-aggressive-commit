@@ -664,3 +664,86 @@ Artifact: `a_fattnqtile_ref_p6013_b8192_ub6013.*`,
 `b_fattnqtile4096_blkdensecpu_packet30_nodraft_ctx40k_ub12288.*`,
 `diag_fattnqkvprefix4096_p6013_b8192_ub6013.*` e
 `diag_fattnrawprefix_compfull4096_p6013_b8192_ub6013.*`.
+
+## 16. Micro-B maschere F16 chiuso
+
+Il backport default-off della costruzione diretta F16 delle maschere CSA/HCA
+ha conservato FNV e top-8, ma non e' una trave. Sul corto UB6.013 ha dato
+198,8096 / 199,1358 / 197,7506 t/s, media 198,5653 (-0,55% dal controllo).
+Sul macro UB12.288 profilato ha dato 123,8118 / 123,8210 / 123,9686,
+media 123,8671 (+0,50% da A 123,2542). Il profilo non mostra una riduzione
+materiale del costo di conversione. La patch e' stata rimossa senza residui.
+
+Artifact: `b_maskf16input_p6013_b8192_ub6013{,_r2,_r3}.*` e
+`b_maskf16input_blkdensecpu_packet30_nodraft_ctx40k_ub12288{,_r2,_r3}.*`.
+
+## 17. Probe route DSpark bocciato
+
+Il probe osservativo `LLAMA_DSPARK_ROUTE_PROBE=1` ha applicato i quaranta
+router target learned al final hidden DSpark e ha misurato il recall top-6
+soltanto sui veri miss A, prima di AcceptMoE e della cache. Il run valido
+`diag_dspark_route_probe_mass2_t473_d12_r3` ha chiuso con:
+
+```text
+486/486 cicli completi, invalidi 0
+miss-A 102.249
+richiamati 5.198 = 5,1%
+predetti non residenti 140.105
+16,04 t/s, p1 0,90025
+47.906 copie target
+```
+
+Output e SHA sono identici alla base; il probe non ha mutato la cache. Il
+recall e' pero' molto sotto il cancello 70%: il final hidden DSpark non e' una
+feature utile per i router target per-layer. Nessuna replica. Le due corse
+precedenti non sono B: la prima aveva gli argomenti env slittati nella zavorra;
+la seconda ha localizzato un `ggml_new_f32` illegale nel ctx `no_alloc` ed e'
+stata corretta prima del run valido. Il codice diagnostico viene rimosso.
+
+Il percorso decode promosso a prossimo B usa invece il predictor target gia'
+presente (`cache_pf`, storico circa 71%) e una banca B separata ping-pong da
+81 MiB. B non partecipa a MASSA/LRU: solo una domanda reale copia B->A e
+mantiene identici vittima, ammissione e contatori A. Tetto stimato 18,33-18,86
+t/s; non basta da solo a 20 ma vale un salto potenziale 14-17%.
+
+Separatamente, gli esperti CPU DSpark blk.1/2 possono riusare la slab draft da
+104,263 MiB come residenza virtuale. Il disegno richiede un buft
+`CUDA0_Staged`, backing pageable e solo 17,377 MiB di ring pinned, non un
+offload standard della banca completa da 2.224 MiB per layer.
+
+## 18. Flash Attention block-sparse promosso
+
+Implementato default-off `LLAMA_CUDA_FATTN_BLOCK_SPARSE=1`, limitato al
+percorso Porto sm86 MMA F16 512x512. Una bitmap per Q-tile marca blocchi K da
+256 con almeno un valore visibile; il kernel conserva gli offset originali
+`raw || compressed` e salta solo blocchi interni tutti `-inf`. Nessuna
+ricomposizione o copia K/V. Il primo B assegna una intera output tile per CTA,
+evitando parziali/fixup vuoti.
+
+Cancello corto UB6.013:
+
+| configurazione | t/s | FNV/top-8 |
+|---|---:|---|
+| A densa | 199,6707 | `F38F5B791AE1047B` |
+| block-sparse | 289,1010 | identici |
+
+Sul macro 20.728 token, UB12.288, packetizer30, Nsight:
+
+| replica | prefill t/s | FA totale | scan bitmap | output |
+|---|---:|---:|---:|---|
+| B1 | 190,3274 | 6,8555 s | 0,0720 s | `<`, length |
+| B2 | 191,6210 | 6,8512 s | 0,0720 s | `<`, length |
+| B3 | 187,2925 | 6,8522 s | 0,0720 s | `<`, length |
+
+Media **189,7469 t/s**, spread 2,28%, **+53,95%** contro A 123,2542.
+Flash Attention scende da 65,6200 a circa 6,8530 s (-89,6%). Tutte le corse
+hanno prompt 20.728, completion 1, finish `length` e output `<`; la fixture
+corta e' bit-esatta. Commit runtime circoscritto: `3014d3756`.
+
+Artifact: `b_fattnblocksparse_p6013_b8192_ub6013.*` e
+`b_fattnblocksparse_blkdensecpu_packet30_nodraft_ctx40k_ub12288{,_r2,_r3}.*`.
+
+Il prefill resta sotto l'obiettivo 500/1000. Eliminata la trave FA, il profilo
+e' ora dominato da `mul_mat_q`: type16 34,711 s, type10 23,673 s e type8
+5,759 s. La prossima leva macro deve quindi simulare residenza/overlap dei
+pesi routed o cambiare il loro scheduling; non tornare alle micro-leve.

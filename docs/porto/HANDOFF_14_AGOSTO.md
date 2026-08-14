@@ -747,3 +747,46 @@ Il prefill resta sotto l'obiettivo 500/1000. Eliminata la trave FA, il profilo
 e' ora dominato da `mul_mat_q`: type16 34,711 s, type10 23,673 s e type8
 5,759 s. La prossima leva macro deve quindi simulare residenza/overlap dei
 pesi routed o cambiare il loro scheduling; non tornare alle micro-leve.
+
+## 19. Block-sparse piu' staging bulk: nuova base prefill 275,51 t/s
+
+La leva gia' implementata `LLAMA_DSV4_PREFILL_LAYER_STAGING=1` e' stata
+misurata come unico B sopra il block-sparse promosso. Copia l'intera banca dei
+256 esperti del layer nello slab VRAM e riusa lo staging per gate/up/down.
+
+| replica | prefill t/s | prompt ms | output |
+|---|---:|---:|---|
+| B1 | 271,4432 | 76.362,191 | `<`, length |
+| B2 | 275,4867 | 75.241,384 | `<`, length |
+| B3 | 279,5895 | 74.137,264 | `<`, length |
+
+Media **275,5065 t/s**, spread 2,96%, +45,20% contro block-sparse solo
+189,7469 e +123,53% contro il vecchio A 123,2542. Tutti i run hanno prompt
+20.728 e completion 1.
+
+Profilo B1:
+
+```text
+routed MMQ type16     9,9067 s   (prima 34,7111)
+routed MMQ type10     8,2280 s   (prima 23,6726)
+bulk layer copy       5,9786 s
+Flash Attention       6,9167 s
+bitmap scan           0,0725 s
+```
+
+La residenza era quindi la seconda trave. La nuova distanza da 500 e'
+224,4935 t/s: 75,236 s medi devono scendere a 41,456 s, cioe' -33,780 s.
+Nascondere la sola copia darebbe circa 294,5 t/s. Anche azzerando routed e
+copia restano circa 52,25 s sul profilo B1: serve recuperare almeno altri
+10,79 s fuori dal routed path.
+
+Prossimo unico B macro: `LLAMA_DSV4_PREFILL_FFN_SUPEROP=1`, default-off, che
+sostituisce l'intero tail FFN DSV4 (routed, shared, add e HC-post), con route
+sort/quantizzazione condivisi, gate+up expert-tile fuso, down con somma delle
+sei route nello stesso ordine e fusione shared/add/HC. Integrare la doppia
+parita' di staging nel super-op; una nuova leva di sola copia/overlap non ha il
+tetto per 500. Primo cancello: totale <=50 s (>=414 t/s), correttezza completa,
+zero NaN/fallback; replica solo dopo questo cancello.
+
+Artifact:
+`b_blocksparse_layerstaging_blkdensecpu_packet30_ctx40k_ub12288{,_r2,_r3}.*`.

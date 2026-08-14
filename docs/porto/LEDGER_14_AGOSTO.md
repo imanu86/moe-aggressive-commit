@@ -345,3 +345,22 @@ file Flash Attention, nessun push.
 Nuovo collo macro: `mul_mat_q` type16 34,711 s, type10 23,673 s, type8
 5,759 s; lightning indexer 4,805 s. Prossimo lavoro prefill: residenza virtuale
 e overlap/scheduling dei pesi routed, obiettivo ancora 500/1000 t/s.
+
+## Nuova base prefill: block-sparse + layer staging
+
+Unico B aggiuntivo `LLAMA_DSV4_PREFILL_LAYER_STAGING=1`:
+
+| replica | t/s | prompt ms | output |
+|---|---:|---:|---|
+| B1 | 271,4432 | 76.362,191 | `<`, length |
+| B2 | 275,4867 | 75.241,384 | `<`, length |
+| B3 | 279,5895 | 74.137,264 | `<`, length |
+
+Media **275,5065 t/s**, spread 2,96%, +45,20% sulla base block-sparse e
++123,53% sul vecchio A. Il profilo B1 porta routed MMQ da 58,384 a 18,135 s
+e aggiunge 5,979 s di `kern_layer_major_copia`; FA resta 6,917 s.
+
+Distanza da 500: 224,4935 t/s, fattore 1,815, +81,48%. Il tempo deve scendere
+da 75,236 a 41,456 s (-33,780). La sola copia/overlap non basta: prossimo B
+`LLAMA_DSV4_PREFILL_FFN_SUPEROP=1`, tail completo routed+shared+add+HC-post,
+cancello iniziale <=50 s / >=414 t/s e correttezza completa.

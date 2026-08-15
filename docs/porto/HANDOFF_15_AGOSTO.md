@@ -557,11 +557,88 @@ build Release `llama-server` verde dopo la rimozione.
 
 ### Nuova direzione decode macro
 
-Il prossimo braccio non deve inserire il host nel mezzo del grafo. Usare un
-**super-op FFN decode interamente GPU**, riusando scheduling expert-tile
-DwarfStar per IQ2_XXS gate/up + Q2_K down e la cache A MASSA2 corrente. Obiettivi
-del primo sottocancello: una sola quantizzazione input, gate+up fusi, SwiGLU
-senza materializzare gate/up, down e somma route ordinata, meno lanci e meno
-gestione; trasporto miss inizialmente invariato sul FORK SM. Solo dopo aver
-dimostrato correttezza e un risparmio macro si valuta un confine graphlet host
-esplicito, non un callback/rendez-vous interno al grafo monolitico.
+Questa indicazione e' stata superata dai due bracci della sezione seguente. Non
+riproporre ne' il whole-FFN/shared-overlap gia' bocciato, ne' il calcolo MMVQ
+diretto dai pesi mapped. Il prossimo candidato deve prima superare un audit
+matematico e risultare ortogonale alle famiglie gia' falsificate.
+
+## 19. Decode: whole-FFN e read-compute-install falsificati
+
+Prima correzione allo stato precedente: il whole-FFN/shared-overlap era gia'
+stato eseguito e respinto, come registrato in `HANDOFF_14_AGOSTO.md`,
+`LEDGER_14_AGOSTO.md` e nel commit documentale `09c0804`:
+
+- super-op combinato: **14,57 t/s**, p1 0,86752;
+- shared-overlap con parita' cache identica: **14,55 t/s**, p1 0,86752;
+- entrambi coerenti ma rispettivamente -9,35% e -9,48% dalla base;
+- codice `LLAMA_DSV4_DECODE_FFN_SUPEROP` rimosso, nessun commit runtime.
+
+E' stato poi implementato un unico braccio default-off
+`LLAMA_CACHE_ESPERTI_READ_COMPUTE_INSTALL=1` (RCI). Il disegno manteneva
+decisioni e slot MASSA2: gli hit usavano la slab; per ogni miss gate/up/down
+venivano calcolati direttamente dai pesi `CUDA0_Mapped` sul fork stream e gli
+stessi blocchi venivano contemporaneamente installati nella slab. Eventi
+persistenti univano gate/up prima di SwiGLU e down prima dell'output.
+
+La prima fixture, con caricamenti mapped fini a `uint16`, ha mostrato il costo
+del traffico PCIe non coalescente:
+
+```text
+b_rci_fixture64_r1: 11,65 t/s, p1=.92308, length, output coerente
+```
+
+Il kernel e' stato corretto per caricare l'intera riga quantizzata in burst
+coalescenti `uint4`, riusando la shared memory sia per il dot sia per
+l'installazione. La seconda fixture e' salita ma non abbastanza:
+
+```text
+b_rci_fixture64_r2_burst: 14,02 t/s, p1=.83333, length, output coerente
+```
+
+Poiche' le fixture corte ordinarie erano circa 13,19--13,20 t/s, il burst ha
+giustificato un solo B ufficiale da 1.200 token:
+
+```text
+b_rci_burst_mass2_t473_d12_b1
+14,97 t/s, 66,81 ms/token, p1=.84129
+652/775 draft accettati, finish=length
+SHA256 A1CCE79BEE08139B8EBC18D7F8526F2CC520B7AC78FA6DDB0AB345315FFD208C
+content_chars=1928, output NeuraForge HTML coerente
+```
+
+Rispetto alla base 16,0733 t/s e' **-6,86%**: chiaramente peggiore, quindi
+nessuna replica. Il run ha chiuso con installazioni bilanciate
+gate/up/down=53.825/53.825/53.825, zero ID invalidi; la domanda target ha avuto
+170.376 hit e 53.825 miss (76,0% hit), con traiettoria numerica diversa dalla
+base ma output semanticamente corretto.
+
+La premessa del disegno era sbagliata in un punto decisivo: la base non legge
+il miss due volte dal PCIe. `kern_fj_copia` legge una volta mapped->slab; MMVQ
+rilegge poi dalla VRAM locale. RCI sostituiva quindi un accesso VRAM economico
+con letture SM/UVA dal PCIe, contendendo anche il calcolo. I burst hanno
+recuperato 2,37 t/s sulla prima fixture, ma non possono correggere il limite
+strutturale.
+
+Tutto il codice RCI, incluse API, stato, kernel, eventi, flag e telemetria, e'
+stato rimosso. La ricerca repo-wide non trova simboli RCI e il target Release
+`ggml-cuda` compila dopo la pulizia. Nessun commit runtime per il braccio
+fallito.
+
+Artifact:
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\b_rci_fixture64_r1.*
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\b_rci_fixture64_r2_burst.*
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\b_rci_burst_mass2_t473_d12_b1.*
+```
+
+### Vincoli per il prossimo braccio decode
+
+- non ripetere rendez-vous host/exact-demand DMA interno al grafo;
+- non eseguire MMVQ direttamente dai pesi mapped;
+- non ripetere whole-FFN/shared-overlap o DSpark/BANCA_B predittiva;
+- lo split CPU/GPU per residenza e' gia' attivo nella base (`K=2`): prima di
+  proporne una variante leggere `build_moe_ffn_overlap`, i contatori di
+  `kern_partiziona` e i bracci storici K=2/K=3;
+- scegliere solo una leva con budget credibile di almeno 12,214 ms/token e
+  nessuna dipendenza da una seconda lettura PCIe inesistente.

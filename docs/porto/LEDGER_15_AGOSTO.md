@@ -11,6 +11,11 @@
 | EXACT_DMA kernel-spin | warm-up target, nessuna richiesta | fermo al primo comando `seq=1 strato=0 miss=8`, poi `unspecified launch failure` | nessun output; nessun B t/s consumato | **Falsificato** |
 | EXACT_DMA memops64/runtime | warm-up target, nessuna richiesta | fermo al primo comando; query/sync runtime non fanno progredire la coda reale | microtest wait/write isolato verde, grafo reale bloccato | **Falsificato** |
 | EXACT_DMA memops64/Driver API, target graph off | warm-up target, nessuna richiesta | fermo al primo comando anche con `cuMemcpyHtoDAsync`/`cuStreamSynchronize` | microtest concorrente 8 MiB verde, grafo reale bloccato | **Falsificato e codice rimosso** |
+| Decode whole-FFN combinato | 1.200 token | **14,57 t/s**, p1=.86752 | output coerente, length | **-9,35%, respinto; gia' in Ledger 14** |
+| Decode shared-overlap, cache base-parity | 1.200 token | **14,55 t/s**, p1=.86752 | output coerente, length | **-9,48%, respinto; codice rimosso** |
+| RCI mapped, fixture fine | 64 token | **11,65 t/s**, p1=.92308 | output coerente, length | caricamenti fini PCIe inefficaci |
+| RCI mapped, fixture burst `uint4` | 64 token | **14,02 t/s**, p1=.83333 | output coerente, length | recupera la coalescenza; ammesso al solo B |
+| RCI mapped burst, MASSA2 473+12 | 1.200 token | **14,97 t/s**, 66,81 ms/token, p1=.84129 | NeuraForge HTML coerente, length, zero ID invalidi | **-6,86%, respinto; nessuna replica, codice rimosso** |
 
 ## Evidenza diagnostica
 
@@ -31,8 +36,13 @@ hidden/KV DFlash prodotti durante il prefill full, non un indice host casuale.
 - Packetizer non è causa necessaria: con packetizer 0 il guasto resta.
 - Prossimo discriminatore prefill: block-sparse ON con densi residenti,
   packetizer 0, UB2048/4096, completion >=32; niente wildcard CPU.
-- Priorità immediata: decode macro exact-demand DMA + riduzione gestione; il solo
-  overlap DMA ha tetto 19,453 t/s e non basta.
+- Il solo overlap DMA ha tetto 19,453 t/s e non basta.
 - Aggiornamento: exact-demand H2D con rendez-vous host interno al grafo reale e'
-  bocciato; non ripeterlo. Prossimo macro: super-op FFN decode interamente GPU,
-  expert-tile/fusione DwarfStar, trasporto FORK invariato nel primo sottocancello.
+  bocciato; non ripeterlo.
+- Anche whole-FFN/shared-overlap (14,55--14,57) e RCI MMVQ diretto mapped
+  (14,97) sono bocciati e rimossi. La base copia ogni miss dal PCIe una sola
+  volta e poi calcola dalla slab VRAM: non esiste una seconda lettura PCIe da
+  fondere.
+- Lo split CPU/GPU per residenza e' gia' nella base a K=2. Il prossimo braccio
+  deve essere ortogonale alle famiglie gia' falsificate e dimostrare a priori
+  un budget vicino ai 12,214 ms/token necessari, non un altro incremento locale.

@@ -950,3 +950,80 @@ kernel DwarfStar Q8_K/Q8_0 gia' bocciati. Deve ridurre grafi/split e
 materializzazioni con route-sort/quantizzazione condivisi e tail fused; un
 guadagno a una cifra non basta. Dopo questo unico cancello si passa al decode
 riusando il disegno phase-aware, senza flag globali che contaminino DSpark.
+
+## 23. Decode FFN shared-overlap respinto e rimosso
+
+La nuova task ha verificato prima di agire accesso completo in scrittura a
+`D:\llama-overlap` e `D:\ds4_work`, query CIM e creazione di processi. Non
+sono state richieste autorizzazioni interattive. Il banco autorevole resta la
+base MASSA2 copy-all stable, target 473 + draft 12:
+
+```text
+16,04 / 16,11 / 16,07 t/s; media 16,0733
+p1=0,90025; output stabile; hit target 77,9%; copie 47.906
+```
+
+E' stato implementato un super-op decode default-off
+`LLAMA_DSV4_DECODE_FFN_SUPEROP=1`, mantenendo router, AcceptMoE, HC e DSpark
+fuori dal nodo. Il primo prototipo riusava i MMVQ Q8_1 Porto e cercava di
+coprire il fork con gate/up/down residenti e l'intero shared expert. Una
+fixture iniziale ha esposto una invalidazione del CUDA graph: la sonda
+temporale del fork interrogava un evento durante la cattura. Saltare la sola
+misura temporale durante capture ha reso la fixture completa; questo fix
+diagnostico e' stato poi rimosso insieme al ramo fallito.
+
+Risultati validi:
+
+| braccio | t/s | delta vs base | p1 | output |
+|---|---:|---:|---:|---|
+| prototipo combinato | 14,57 | -9,35% | 0,86752 | coerente, `length`, SHA `D79F...42E` |
+| shared-overlap con parita' base | 14,55 | -9,48% | 0,86752 | identico al prototipo |
+
+Il primo B incorporava accidentalmente due leve gia' sospette: riuso degli
+slot decisi al gate anche per up/down (equivalente al vecchio
+`FORK_RIUSA_SLOT=1`) e down spezzato in hit/miss. L'audit lo ha corretto prima
+del secondo B: stessa `assicura` di parita' della base per up e down, stesso
+unico down mascherato, stesso ordine gate/up/SwiGLU/down; l'unica differenza
+rimasta era lo shared FFN eseguito fra lavoro residente e join. La fixture da
+64 token e' rimasta deterministica (`13,19 t/s`, p1 `0,85714`, stesso SHA
+`6749...F34`) e il B lungo ha fatto 14,55: quindi il riordino shared non copre
+abbastanza da compensare il nuovo confine/fusione e il drift numerico. Nessuna
+replica dei due B chiaramente peggiori.
+
+Artifact:
+
+- `...\runs\b_decode_ffn_superop_fixture64_r1.*` (caduta capture, non misura);
+- `...\runs\b_decode_ffn_superop_fixture64_r2.*`;
+- `...\runs\b_decode_ffn_superop_mass2_t473_d12_b1.*`;
+- `...\runs\decode_shared_overlap_fixture64_r1.*`;
+- `...\runs\b_decode_shared_overlap_baseparity_t473_d12_b1.*`.
+
+Il super-op decode e' stato rimosso integralmente: zero simboli/flag/file
+residui e nessun commit runtime per una leva bocciata. Le modifiche prefill e
+il worktree dirty preesistente sono stati preservati.
+
+### Prossima trave decode
+
+Non fare altre varianti di scheduling locale shared/fork. La leva macro
+coerente con il risultato e con il disegno di residenza virtuale e' un motore
+miss expert-tile GPU-driven:
+
+1. la decisione MASSA2 e la vittima A restano identiche;
+2. un hit continua a leggere lo slab VRAM;
+3. un miss legge ciascun tile gate/up/down una sola volta dal mapped host,
+   lo usa immediatamente nel dot Q8_1 e nello stesso passaggio lo installa
+   nello slot scelto;
+4. doppio buffer di tile e gruppi di warp sovrappongono lettura PCIe e calcolo,
+   evitando l'attuale sequenza copia completa -> rilettura completa MMVQ;
+5. gate e up condividono quantizzazione dell'attivazione; down applica il peso
+   dopo il dot e la somma resta route 0..5 nell'ordine corrente;
+6. nessuna predizione, nessun nuovo traffico, nessuna variazione di admission
+   o di output: cambia soltanto il consumo del miss vero.
+
+Il solo DMA completamente nascosto porta il tetto conservativo a 19,453 t/s;
+per 20 servono ancora almeno 1,407 ms/token. Il motore tile deve quindi
+eliminare anche la gestione e la doppia lettura dei miss, non limitarsi a
+spostare il join. Primo cancello futuro: fixture read/compute/install contro il
+MMVQ corrente su un singolo layer, poi un solo B da 1.200 token; promozione
+soltanto con output coerente, cache/vittime identiche e >=19,5 t/s con una
+direzione misurabile oltre 20.

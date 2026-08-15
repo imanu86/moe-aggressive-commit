@@ -456,3 +456,30 @@ Block-sparse resta non validato generativamente sul long.
 Ultimo braccio prefill prima del decode: super-op v2 sui MMQ Q8_1 Porto,
 route-sort/quant input condivisi e tail fused. Niente replica della v1 gia'
 bocciata e niente altri sweep di taglia.
+
+## Decode: whole-FFN shared-overlap respinto
+
+Base: MASSA2 copy-all 473+12, **16,0733 t/s**, p1 **0,90025**.
+
+| braccio | t/s | p1 | output | verdetto |
+|---|---:|---:|---|---|
+| super-op combinato | 14,57 | 0,86752 | coerente, length, SHA `D79F...42E` | -9,35%, respinto |
+| shared-overlap, parita' cache identica alla base | 14,55 | 0,86752 | identico | -9,48%, respinto |
+
+Il primo prototipo combinava involontariamente riuso slot gate/up/down e down
+spezzato. Il secondo ha ripristinato `assicura` up/down e l'unico down della
+base, lasciando come sola leva lo shared FFN dentro la finestra del fork: il
+risultato non e' migliorato. Nessuna replica. Fixture 64 token coerenti e
+deterministiche; nessun NaN, fallback, errore CUDA o divergenza cache nel run
+valido. Il p1 piu' basso e il confine fuso aggiungono costo invece di produrre
+un salto.
+
+Codice e flag `LLAMA_DSV4_DECODE_FFN_SUPEROP` rimossi integralmente; nessun
+commit runtime. Artifact sotto `...\work\runs\b_decode_ffn_superop_*` e
+`...\work\runs\b_decode_shared_overlap_baseparity_t473_d12_b1.*`.
+
+Prossimo macro disegno decode: miss expert-tile GPU-driven, che legge ogni tile
+mapped una sola volta, calcola gate/up/down e contemporaneamente installa lo
+stesso tile nello slot MASSA2. Deve eliminare copia completa + rilettura MMVQ e
+almeno 1,407 ms/token di gestione oltre a nascondere il DMA; niente altre
+varianti locali shared/fork.

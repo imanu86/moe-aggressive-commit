@@ -16,6 +16,9 @@
 | RCI mapped, fixture fine | 64 token | **11,65 t/s**, p1=.92308 | output coerente, length | caricamenti fini PCIe inefficaci |
 | RCI mapped, fixture burst `uint4` | 64 token | **14,02 t/s**, p1=.83333 | output coerente, length | recupera la coalescenza; ammesso al solo B |
 | RCI mapped burst, MASSA2 473+12 | 1.200 token | **14,97 t/s**, 66,81 ms/token, p1=.84129 | NeuraForge HTML coerente, length, zero ID invalidi | **-6,86%, respinto; nessuna replica, codice rimosso** |
+| Diagnostica lane CPU K=2 | 64 token | **13,39 t/s**, p1=.77273; 6.708 assegnazioni CPU: 5.809 miss, 899 residenti | output coerente | solo **13,4%** del ramo CPU era gia' residente; lane adattiva non ha budget macro |
+| CPU FFN super-op v1 | 64 token | **12,60 t/s**, p1=.77273; worker CPU 2,073 ms/layer | output identico, stesso SHA della fixture | peggiore della fixture diagnostica; audit codice, niente B 1.200 |
+| CPU FFN super-op v1, accessi contigui | 64 token | **11,40 t/s**, p1=.77273; worker CPU 2,454 ms/layer | output identico, stesso SHA | chiaramente peggiore; **respinto e codice rimosso** |
 
 ## Evidenza diagnostica
 
@@ -46,3 +49,14 @@ hidden/KV DFlash prodotti durante il prefill full, non un indice host casuale.
 - Lo split CPU/GPU per residenza e' gia' nella base a K=2. Il prossimo braccio
   deve essere ortogonale alle famiglie gia' falsificate e dimostrare a priori
   un budget vicino ai 12,214 ms/token necessari, non un altro incremento locale.
+- La misura esatta dei tre MMID CPU isolati e' 414,022581 us gate + 414,022581 us
+  up + 141,364466 us down = **0,969410 ms/layer**. Il super-op manuale non ha
+  raggiunto quel tetto: ha perso blocking/scheduling del motore MMID esistente.
+  Non riscrivere di nuovo i dot CPU; preservare i kernel esistenti.
+- Candidato macro successivo: sostituire le due route CPU con una banca GPU
+  transiente **exact-demand device-only**, senza host rendez-vous e senza
+  inquinare A. A ogni row-layer la diagnostica vede due route CPU, in media
+  1,732 miss dopo il filtro residenti: circa 11,69 MiB, ~0,469 ms fisici a
+  24,35 GiB/s. Il cancello richiede ridurre il critical path di almeno
+  **0,700 ms/layer**; staging e calcolo transiente devono sovrapporsi al ramo
+  GPU delle quattro route residenti/miss.

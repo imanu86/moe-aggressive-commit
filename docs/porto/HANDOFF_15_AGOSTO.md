@@ -642,3 +642,96 @@ C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\ru
   `kern_partiziona` e i bracci storici K=2/K=3;
 - scegliere solo una leva con budget credibile di almeno 12,214 ms/token e
   nessuna dipendenza da una seconda lettura PCIe inesistente.
+
+## 20. Decode: diagnostica lane CPU e super-op CPU falsificato
+
+E' stata prima misurata la composizione reale della lane CPU K=2 con telemetria
+temporanea, poi rimossa:
+
+```text
+fixture diag_lane_cpu_mass2_64
+13,39 t/s, p1=.77273, output NeuraForge coerente
+partizioni=3.354, assegnazioni CPU=6.708, copie GPU=4.567
+CPU miss=5.809, transito=0, residenti=899, peso-zero=0
+```
+
+Solo il **13,4%** delle assegnazioni CPU era gia' residente in A. Anche
+spostandolo gratis sul ramo GPU, il massimo risparmio stimato e' ~0,24 ms/layer:
+insufficiente rispetto ai 0,700 ms/layer che servono per recuperare i 12,214
+ms/token mancanti. Una lane solo adattiva non e' la trave.
+
+Il microbench CPU con forme e quanti Porto esatti ha misurato:
+
+```text
+IQ2_XXS gate, 256 expert, 2 usati, 4096->2048: 414,022581 us
+IQ2_XXS up,   256 expert, 2 usati, 4096->2048: 414,022581 us
+Q2_K down,    256 expert, 2 usati, 2048->4096: 141,364466 us
+somma: 0,969410 ms/layer
+```
+
+E' stato quindi implementato un unico flag default-off
+`LLAMA_DSV4_CPU_FFN_SUPEROP=1`: quantizzazione Q8_K dell'input condivisa da
+gate/up, clamp e SwiGLU identici, mid quantizzato subito, down non pesato e tail
+ordinato invariato. La prima fixture era semanticamente esatta ma piu' lenta:
+
+```text
+fixture_cpu_ffn_super_mass2_64
+12,60 t/s, p1=.77273, length, 242 caratteri
+SHA E23927D45A1AAC205727E96ACF4D13F9E3040AE3186415915DE0948B23C4A663
+worker CPU: 2,073 ms/layer
+```
+
+L'audit ha trovato accessi down a passo `nth` e alternanza gate/up. La variante
+con range contigui e passate separate ha confermato, non risolto, il limite:
+
+```text
+fixture_cpu_ffn_super_locality_mass2_64
+11,40 t/s, p1=.77273, stesso output e stesso SHA
+worker CPU: 2,454 ms/layer
+```
+
+Verdetto: **respinto senza B da 1.200 e senza repliche**. La reimplementazione
+manuale perde blocking, work scheduling e comportamento cache del motore MMID
+esistente. Tutto il nuovo op/API/gate e' stato rimosso; ricerca repo-wide a zero
+e build Release `llama-server` verde. Non ripetere un altro fused dot CPU scritto
+a mano.
+
+Artifact:
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\diag_lane_cpu_mass2_64.*
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\fixture_cpu_ffn_super_mass2_64.*
+C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\fixture_cpu_ffn_super_locality_mass2_64.*
+```
+
+### Prossimo braccio macro: lane transiente GPU a domanda
+
+La strada rimasta con budget sufficiente non e' predittiva e non richiede il
+rendez-vous host gia' falsificato:
+
+1. mantenere A, MASSA2, decisioni e ramo GPU corrente invariati;
+2. filtrare le due route K=2: hit A letti da A, soli miss copiati in una banca
+   B transiente fissa, fuori da `dove/chi/LRU`;
+3. comando e ID restano device-side; copia mapped->B via kernel SM su stream
+   secondario, quindi nessun host spin/memop e puntatori B stabili;
+4. mentre B si riempie, il ramo GPU delle altre quattro route calcola come oggi;
+5. un consumer dipendente dal ramo GPU attende `upload_ready` solo se necessario
+   e usa gli stessi kernel MMVQ/ordine numerico, non un nuovo dot approssimato;
+6. output CPU-lane sostituito dal risultato B; somma/pesi/ordine restano identici.
+
+Budget dai contatori reali: due route CPU per row-layer, 86,6% miss = 1,732
+esperti da 6,75 MiB, cioe' ~11,69 MiB e **0,469 ms** fisici a 24,35 GiB/s.
+La base spende 1,756 ms/layer nel calcolo CPU; per 20 t/s va recuperato almeno
+0,700 ms/layer. Il braccio e' credibile solo se staging+MMVQ transiente hanno
+critical path <=1,056 ms/layer e si sovrappongono realmente al ramo GPU.
+
+Cancello prima del B da 1.200:
+
+- 2 slot per riga, massimo 6 a `n_tokens=3`, dedup sicuro; preflight VRAM;
+- zero scritture in A e contatori A identici alla base;
+- nessun host polling, graph pointer stabili, zero stale/overwrite;
+- byte B esatti = miss lane CPU * 6,75 MiB;
+- stessi ID, pesi post-down e ordine di somma; fixture output completo/coerente;
+- telemetria `stage`, `wait`, `MMVQ B` dimostra <=1,056 ms/layer;
+- se il cancello fallisce, niente run 1.200 e lettura del codice; se passa, un
+  solo B e due repliche aggiuntive solo se positivo o entro il 4%.

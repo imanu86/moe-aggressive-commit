@@ -19,6 +19,8 @@
 | Diagnostica lane CPU K=2 | 64 token | **13,39 t/s**, p1=.77273; 6.708 assegnazioni CPU: 5.809 miss, 899 residenti | output coerente | solo **13,4%** del ramo CPU era gia' residente; lane adattiva non ha budget macro |
 | CPU FFN super-op v1 | 64 token | **12,60 t/s**, p1=.77273; worker CPU 2,073 ms/layer | output identico, stesso SHA della fixture | peggiore della fixture diagnostica; audit codice, niente B 1.200 |
 | CPU FFN super-op v1, accessi contigui | 64 token | **11,40 t/s**, p1=.77273; worker CPU 2,454 ms/layer | output identico, stesso SHA | chiaramente peggiore; **respinto e codice rimosso** |
+| GPU lane B transiente, multi-stream smoke 1 | nessuna completion | errore CUDA `capturing stream has unjoined work` | nessun output | fork B aperto, consumer rimasto CPU; non conta come B |
+| GPU lane B transiente, multi-stream smoke 2 | nessuna completion | deadlock al primo decode dopo `cached n_tokens = 1` | nessun output | pin CUDA esplicito non risolve il ciclo WDDM/graph; **famiglia multi-stream respinta e rimossa** |
 
 ## Evidenza diagnostica
 
@@ -60,3 +62,9 @@ hidden/KV DFlash prodotti durante il prefill full, non un indice host casuale.
   24,35 GiB/s. Il cancello richiede ridurre il critical path di almeno
   **0,700 ms/layer**; staging e calcolo transiente devono sovrapporsi al ramo
   GPU delle quattro route residenti/miss.
+- Aggiornamento: la variante multi-stream e' falsificata da cattura non
+  ricongiunta e poi deadlock reale; non ripeterla, neppure con graph-off. Resta
+  distinto un solo sottocancello **single-stream**: copia esatta di 2 esperti
+  (~0,541 ms) seguita dagli MMVQ locali (~0,158 ms stimati), senza eventi o
+  stream esterni. Se il critical path misurato non batte 1,056 ms/layer, si
+  chiude anche la banca B exact-demand.

@@ -735,3 +735,54 @@ Cancello prima del B da 1.200:
 - telemetria `stage`, `wait`, `MMVQ B` dimostra <=1,056 ms/layer;
 - se il cancello fallisce, niente run 1.200 e lettura del codice; se passa, un
   solo B e due repliche aggiuntive solo se positivo o entro il 4%.
+
+## 21. Decode: banca B multi-stream falsificata prima del B
+
+Il disegno della sezione 20 e' stato implementato dietro un solo flag
+default-off `LLAMA_DSV4_TRANSIENT_GPU_LANE=1`:
+
+- sei slot B contigui dopo la slab A, +40,52 MiB, esclusi da
+  `n_slot/dove/chi/LRU/MASSA`;
+- la partizione device produceva i due ID K=2 e avviava mapped->B su uno stream
+  a priorita' bassa;
+- i nodi della lane avevano nome distinto `_overlap_transient`;
+- gate/up/down usavano gli stessi MMVQ su una vista ombra A+B e ID rimappati;
+- join solo al gate, contatori device per stage/wait/tail.
+
+Smoke 1, nessuna completion:
+
+```text
+fixture_transient_gpu_lane_mass2_64
+CUDA error: capturing stream has unjoined work
+cudaStreamEndCapture, ggml-cuda.cu:5247
+```
+
+Il log mostrava che la lane era rimasta sul backend CPU: la partizione aveva
+aperto il ramo B, ma nessun MMID CUDA lo chiudeva. E' stato aggiunto il pin
+esplicito dei soli nodi `_overlap_transient` a CUDA0.
+
+Smoke 2, ancora nessuna completion:
+
+```text
+fixture_transient_gpu_lane_mass2_64_r2
+load completo, richiesta avviata, cached n_tokens=1
+poi nessun progresso al primo decode; server terminato
+```
+
+Il pin ha rimosso l'errore immediato di cattura, ma il ciclo multi-stream reale
+non progredisce sotto WDDM/grafo. Non e' stato prodotto un t/s e non e' stato
+consumato un B da 1.200. Il codice intero (slot extra, stream/eventi, API,
+kernel, nomi/pin e telemetria) e' stato rimosso; ricerca repo-wide a zero e
+build Release `llama-server` verde.
+
+Verdetto: **non ripetere la banca B multi-stream**, nemmeno spegnendo i graph.
+Ricadrebbe nella stessa famiglia exact-demand/rendez-vous gia' falsificata.
+
+Resta un sottocancello architetturalmente distinto, privo della causa del
+deadlock: **B single-stream**. La partizione copia subito i due esperti esatti
+in B sul compute stream e la lane usa poi gli MMVQ invariati; nessun evento,
+nessun secondo stream, nessun host, CUDA graph statico. Budget teorico per
+row-layer: 2 x 6,75 MiB / 24,35 GiB/s = ~0,541 ms di copia, piu' ~0,158 ms per
+due hit-MMVQ, totale ~0,70 ms contro 1,756 ms CPU. Il cancello resta <=1,056
+ms/layer. Se la serializzazione col ramo GPU supera quel limite, chiudere anche
+questa famiglia senza B lungo.

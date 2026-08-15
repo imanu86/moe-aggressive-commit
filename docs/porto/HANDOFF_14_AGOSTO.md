@@ -1027,3 +1027,50 @@ spostare il join. Primo cancello futuro: fixture read/compute/install contro il
 MMVQ corrente su un singolo layer, poi un solo B da 1.200 token; promozione
 soltanto con output coerente, cache/vittime identiche e >=19,5 t/s con una
 direzione misurabile oltre 20.
+
+## 24. Decode: corsia transiente exact-demand single-stream respinta
+
+Dopo aver chiuso la variante multi-stream per lavoro non ricongiunto nella
+cattura CUDA, e' stato provato l'ultimo sottocancello realmente distinto: sei
+slot B fisici in coda allo slab A, esclusi da `dove/chi/LRU/MASSA`, con stage
+dei due ID del ramo CPU e gate/up/down MMVQ tutti ordinati dal compute stream.
+Nessuno stream o evento nuovo, nessuna predizione, nessuna modifica della
+cache A. Il codice era default-off sotto `LLAMA_DSV4_TRANSIENT_GPU_LANE=1`.
+
+Due avvii iniziali non sono misure: la prima guardia host imponeva
+erroneamente gate prima di up; la seconda ha dimostrato che seguire sullo host
+una sequenza destinata al replay CUDA e' intrinsecamente sbagliato. Lo stato
+di ordine e' stato eliminato; l'apertura del cronometro e' diventata un CAS
+device, mentre le dipendenze del grafo garantivano stage -> consumo.
+
+Fixture valida da 64 token:
+
+| configurazione | t/s | p1 | output | verdetto |
+|---|---:|---:|---|---|
+| base diagnostica corsia CPU | 13,39 | 0,77273 | coerente, length | riferimento |
+| B transiente single-stream | 11,37 | 0,88372 | coerente, length | **-15,1%, respinto** |
+
+Contatori B: 1.204 cicli, 6.278 ID, 41,383 GiB, stage **1,487 ms/ciclo**,
+tail GPU **0,993 ms/ciclo**, invalidi 0 e divergenze replay 0. Il ramo CPU
+base misurava 1,799 ms/lavoro: stage+tail vale 2,480 ms, quindi il B perde gia'
+prima di qualunque run lungo.
+
+La diagnosi corretta non e' banda bassa: 41,383 GiB / (1.204*1,487 ms) =
+circa **23,1 GiB/s**, vicino ai 24,35 GiB/s del microbench. E' il volume:
+la catena speculativa porta in media 6.278/1.204 = **5,21 esperti per
+strato/ciclo**, non i due della stima monoriga. Filtrare il solo 13,4% di hit
+della corsia CPU non puo' recuperare il divario; non fare varianti filtro/dedup
+come nuovi B di questa famiglia.
+
+Nessun B da 1.200 e nessuna replica, perche' il primo risultato valido e'
+chiaramente peggiore. Implementazione e flag rimossi integralmente, ricerca
+repo-wide a zero e build Release pulita. Artifact valido:
+`C:\Users\imanu\Documents\Codex\2026-08-13\c-users-imanu-source-repos-moe\work\runs\fixture_transient_gpu_single_mass2_64_r4.*`.
+
+La trave decode ancora aperta resta il motore miss expert-tile GPU-driven: e'
+diverso dallo stage bocciato perche' non materializza un esperto completo prima
+del dot. Deve consumare il miss vero tile per tile, calcolare e installare gli
+stessi byte in una sola passata, preservando decisione/vittima MASSA2 e ordine
+route. Il prossimo cancello e' un microfixture su un solo layer contro il MMVQ
+corrente; niente altro full-model finche' il tile path non dimostra un costo
+inferiore alla coppia copia-completa + MMVQ.

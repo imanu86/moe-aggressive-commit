@@ -483,3 +483,28 @@ mapped una sola volta, calcola gate/up/down e contemporaneamente installa lo
 stesso tile nello slot MASSA2. Deve eliminare copia completa + rilettura MMVQ e
 almeno 1,407 ms/token di gestione oltre a nascondere il DMA; niente altre
 varianti locali shared/fork.
+
+## Decode: staging transiente exact-demand single-stream respinto
+
+Ultimo sottocancello della famiglia staging completo: 6 slot B fuori dalla
+cache A; per ogni partizione K=2 copia dei relativi esperti nello slab e tre
+MMVQ GPU sullo stesso stream, senza eventi/stream aggiuntivi e senza cambiare
+ammissione o vittime MASSA2.
+
+| configurazione fixture 64 | t/s | p1 | esito |
+|---|---:|---:|---|
+| corsia CPU diagnostica | 13,39 | 0,77273 | base |
+| transiente GPU single-stream | 11,37 | 0,88372 | -15,1%, respinto |
+
+Il B valido ha chiuso 64/64, output coerente, zero ID invalidi e zero
+divergenze replay. Telemetria: 1.204 cicli, 6.278 ID, 41,383 GiB; stage
+1,487 ms/ciclo, tail 0,993, totale 2,480 contro 1,799 ms/lavoro CPU. Banda
+effettiva dello stage circa 23,1 GiB/s: il collo e' il volume speculativo
+(5,21 esperti/ciclo), non il kernel di copia. Nessun B 1.200, nessuna replica.
+Codice e flag rimossi; build Release pulita. Artifact:
+`...\runs\fixture_transient_gpu_single_mass2_64_r4.*`.
+
+Non continuare con filtro/dedup dello stesso stage completo. Il prossimo ramo
+macro distinto e' read/compute/install expert-tile su miss vero, prima su un
+solo layer: deve evitare la materializzazione completa e la successiva
+rilettura MMVQ, mantenendo cache/vittime/output invariati.

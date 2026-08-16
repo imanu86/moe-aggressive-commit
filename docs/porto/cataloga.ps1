@@ -20,7 +20,8 @@ function Ultimo([string]$pattern, [int]$grp = 1) {
 $chunks = @([regex]::Matches($txt, 'gen=(\d+) .*?chunk=([0-9.]+)') |
     Where-Object { [int]$_.Groups[1].Value -gt 300 } |
     ForEach-Object { [double]$_.Groups[2].Value } | Sort-Object)
-$regime = if ($chunks.Count) { $chunks[[int]($chunks.Count/2)] } else { $null }
+# BUG CORRETTO (16/8): $chunks[[int]($chunks.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+$regime = if ($chunks.Count) { $chunks[[math]::Floor(($chunks.Count-1)/2)] } else { $null }
 $gen    = Ultimo 'gen=(\d+) .*?chunk='
 $avg    = Ultimo 'avg=([0-9.]+) t/s'
 $wall   = Ultimo 'avg=[0-9.]+ t/s ([0-9.]+)s'

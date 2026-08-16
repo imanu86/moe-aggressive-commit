@@ -163,7 +163,8 @@ foreach ($p in $passi) {
       $q = if ($fase -eq 'PREFILL') { $s | Where-Object { [DateTime]::Parse($_.ora) -le $fineP } }
            else                     { $s | Where-Object { [DateTime]::Parse($_.ora) -gt $fineP } }
       if (-not $q) { continue }
-      function Med([string]$c) { $v = @($q | ForEach-Object { [double]$_.$c } | Sort-Object); if ($v.Count) { return $v[[int]($v.Count/2)] } else { return 0 } }
+      # BUG CORRETTO (16/8): $v[[int]($v.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+      function Med([string]$c) { $v = @($q | ForEach-Object { [double]$_.$c } | Sort-Object); if ($v.Count) { return $v[[math]::Floor(($v.Count-1)/2)] } else { return 0 } }
       $vmin = ($q | ForEach-Object { [int]$_.vram_libera } | Measure-Object -Minimum).Minimum
       $rmin = ($q | ForEach-Object { [int]$_.ram_libera_mib } | Measure-Object -Minimum).Minimum
       "    $fase> GPU $(Med 'gpu_util')%  $(Med 'clock_sm') MHz  $(Med 'watt') W | CPU $(Med 'cpu_core_eq') core/$NCORE | VRAM min $vmin MiB | RAM min $rmin MiB"

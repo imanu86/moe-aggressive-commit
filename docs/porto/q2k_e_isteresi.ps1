@@ -138,8 +138,13 @@ foreach ($b in $bracci) {
     if ($tg.Count -gt 6) {
         $n = $tg.Count; $ter = [int]($n/3)
         $u = $tg[(2*$ter)..($n-1)] | Sort-Object
+        # BUG CORRETTO (16/8): la mediana aveva il vizio pieno -- [int]($u.Count/2) col banker's rounding cade un passo
+        # sopra il centro per Count dispari 3,7,11,... (con Count=3 e' il MASSIMO), e qui con n=7 l'ultimo terzo HA 3
+        # campioni. I percentili avevano lo stesso vizio piu' uno peggiore: [int]($u.Count*9/10) poteva uscire dall'array
+        # (Count=3 -> indice 3) e stampare un campo vuoto. Convenzione adottata: rango piu' vicino ceil(p*m)-1, che a
+        # p=0,5 coincide esattamente con la mediana corretta [math]::Floor((m-1)/2) e non esce mai dai bordi. v. RUNBOOK par. 7.4
         "  tg_3s: {0} campioni, mediana ultimo terzo {1:N2}, p10 {2:N2}, p90 {3:N2}, min {4:N2}" -f `
-            $n, $u[[int]($u.Count/2)], $u[[int]($u.Count/10)], $u[[int]($u.Count*9/10)], $u[0] |
+            $n, $u[[math]::Floor(($u.Count-1)/2)], $u[[math]::Ceiling($u.Count/10)-1], $u[[math]::Ceiling($u.Count*9/10)-1], $u[0] |
             Out-File $out -Append -Encoding utf8
     }
 

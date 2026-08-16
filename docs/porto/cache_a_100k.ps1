@@ -106,7 +106,8 @@ foreach ($x in $bracci) {
           ForEach-Object { $_.Matches } | ForEach-Object { [double]$_.Groups[1].Value }
     if ($tg.Count -ge 9) {
         $n = $tg.Count; $q = [int]($n/3)
-        $p = { param($v) ($v | Sort-Object)[[int]($v.Count/2)] }
+        # BUG CORRETTO (16/8): [int]($v.Count/2) col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); qui e' il caso pieno, i terzi possono avere 3 campioni; v. RUNBOOK par. 7.4
+        $p = { param($v) ($v | Sort-Object)[[math]::Floor(($v.Count-1)/2)] }
         "  tg_3s {0} campioni -- mediane per terzo: {1:N2} / {2:N2} / {3:N2}" -f `
             $n, (& $p $tg[0..($q-1)]), (& $p $tg[$q..(2*$q-1)]), (& $p $tg[(2*$q)..($n-1)]) |
             Out-File $out -Append -Encoding utf8

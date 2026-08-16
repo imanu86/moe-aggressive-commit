@@ -220,12 +220,13 @@ if (Test-Path $camp) {
     $cpu = @($h | ForEach-Object { [double]$_.cpu_perf } | Sort-Object)
     $pw  = ($h | ForEach-Object { [double]$_.power_w } | Measure-Object -Average).Average
     Nota ("  hardware sotto carico (" + $h.Count + " campioni con util>50):")
-    Nota ("    SM mediano " + $sm[[int]($sm.Count/2)] + " MHz  (min " + $sm[0] + ", max " + $sm[-1] + ")   mem " + $mem[[int]($mem.Count/2)] + " MHz   potenza " + [math]::Round($pw,1) + " W")
+    # BUG CORRETTO (16/8): $a[[int]($a.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); vale per tutte le mediane qui sotto; v. RUNBOOK par. 7.3
+    Nota ("    SM mediano " + $sm[[math]::Floor(($sm.Count-1)/2)] + " MHz  (min " + $sm[0] + ", max " + $sm[-1] + ")   mem " + $mem[[math]::Floor(($mem.Count-1)/2)] + " MHz   potenza " + [math]::Round($pw,1) + " W")
     Nota ("    PCIe gen " + ($h[-1].pcie_gen) + " x" + ($h[-1].pcie_width) + "   throttle " + ($h[-1].throttle))
     $vu = @($h | ForEach-Object { [int]$_.vram_usata } | Sort-Object)
     $vl = @($h | ForEach-Object { [int]$_.vram_libera } | Sort-Object)
-    Nota ("    VRAM in decode: usata " + $vu[[int]($vu.Count/2)] + " MiB, libera " + $vl[[int]($vl.Count/2)] + " MiB   (512 slot -> 11801 usata / 315 libera)")
-    Nota ("    CPU prestazioni mediana " + $cpu[[int]($cpu.Count/2)] + " per cento  (100 = base 3,8 GHz, 120 = circa 4,55 GHz)")
+    Nota ("    VRAM in decode: usata " + $vu[[math]::Floor(($vu.Count-1)/2)] + " MiB, libera " + $vl[[math]::Floor(($vl.Count-1)/2)] + " MiB   (512 slot -> 11801 usata / 315 libera)")
+    Nota ("    CPU prestazioni mediana " + $cpu[[math]::Floor(($cpu.Count-1)/2)] + " per cento  (100 = base 3,8 GHz, 120 = circa 4,55 GHz)")
     $srv = @($h | ForEach-Object { [int]$_.server_vivi })
     $ram = @($h | ForEach-Object { [double]$_.ram_libera_gb } | Sort-Object)
     $max = ($srv | Measure-Object -Maximum).Maximum

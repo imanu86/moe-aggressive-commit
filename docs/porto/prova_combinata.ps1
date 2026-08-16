@@ -62,7 +62,8 @@ foreach ($r in ($dmon | Where-Object { $_ -notmatch '^#' -and $_.Trim() -ne '' }
     $c = ($r -split '\s+') | Where-Object { $_ -ne '' }
     if ($c.Count -ge 4) { $rx += [double]$c[1]; $tx += [double]$c[2]; $sm += [double]$c[3] }
 }
-function Med($a) { if ($a.Count) { ($a | Sort-Object)[[int]($a.Count/2)] } else { -1 } }
+# BUG CORRETTO (16/8): [int]($a.Count/2) col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+function Med($a) { if ($a.Count) { ($a | Sort-Object)[[math]::Floor(($a.Count-1)/2)] } else { -1 } }
 
 Receive-Job $job -Wait | Out-File "$tagf.banco.txt" -Encoding utf8
 Remove-Job $job -Force -EA SilentlyContinue

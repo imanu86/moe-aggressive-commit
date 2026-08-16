@@ -58,7 +58,8 @@ for ($i = 0; $i -lt 120; $i++) {
     if ($job.State -eq 'Completed') { break }
 }
 
-function Med($a) { if ($a.Count) { ($a | Sort-Object)[[int]($a.Count / 2)] } else { -1 } }
+# BUG CORRETTO (16/8): [int]($a.Count / 2) col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+function Med($a) { if ($a.Count) { ($a | Sort-Object)[[math]::Floor(($a.Count-1)/2)] } else { -1 } }
 
 $out = 'D:\ds4_work\llama_run\ncmoe41_esito.txt'
 @(

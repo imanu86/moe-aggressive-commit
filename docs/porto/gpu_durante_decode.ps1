@@ -78,7 +78,8 @@ while (-not $req.HasExited) {
 }
 $j = if (Test-Path "$R\gpu_decode.json") { Get-Content "$R\gpu_decode.json" -Raw | ConvertFrom-Json } else { $null }
 
-function med($v) { if ($v.Count -eq 0) { return 0 }; ($v | Sort-Object)[[int]($v.Count/2)] }
+# BUG CORRETTO (16/8): [int]($v.Count/2) col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+function med($v) { if ($v.Count -eq 0) { return 0 }; ($v | Sort-Object)[[math]::Floor(($v.Count-1)/2)] }
 "CAMPIONAMENTO DELLA GPU DURANTE IL DECODE ($($campioni.Count) campioni, ~0,7 s l'uno)" | Out-File $out -Encoding utf8
 if ($j -and $j.timings) {
     "  decode {0:N2} t/s   {1:N2} ms/token" -f $j.timings.predicted_per_second, $j.timings.predicted_per_token_ms |

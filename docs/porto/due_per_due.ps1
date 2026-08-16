@@ -201,7 +201,8 @@ foreach ($b in $bracci) {
   $vram = '-'
   if (Test-Path $camp) {
     $h = @(Import-Csv $camp | Where-Object { $_.util -match '^[0-9]+$' -and [int]$_.util -gt 50 })
-    if ($h.Count -gt 0) { $vu = @($h | ForEach-Object { [int]$_.vram_usata } | Sort-Object); $vram = $vu[[int]($vu.Count/2)] }
+    # BUG CORRETTO (16/8): $vu[[int]($vu.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.3
+    if ($h.Count -gt 0) { $vu = @($h | ForEach-Object { [int]$_.vram_usata } | Sort-Object); $vram = $vu[[math]::Floor(($vu.Count-1)/2)] }
   }
   Nota ("     t/s " + $ts + "   ciclo " + $ciclo + "   p1 " + $p1 + "   sync " + $syn + "   colpi " + $col + "%   VRAM " + $vram + "   SHA " + $sha)
   # SI SPEGNE QUI, DOPO aver salvato. Riordinando questo file per salvare prima

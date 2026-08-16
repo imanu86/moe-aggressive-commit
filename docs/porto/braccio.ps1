@@ -351,7 +351,8 @@ $chunks = @(Select-String -LiteralPath $srvLog -Pattern 'gen=(\d+) decoding chun
     ForEach-Object { $_.Matches } |
     Where-Object { [int]$_.Groups[1].Value -gt 300 } |
     ForEach-Object { [double]$_.Groups[2].Value } | Sort-Object)
-$regime = if ($chunks.Count) { $chunks[[int]($chunks.Count/2)] } else { $null }
+# BUG CORRETTO (16/8): $chunks[[int]($chunks.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+$regime = if ($chunks.Count) { $chunks[[math]::Floor(($chunks.Count-1)/2)] } else { $null }
 $evict  = @(Select-String -LiteralPath $srvLog -Pattern 'evict_backbone=(\d+)' -AllMatches |
     ForEach-Object { $_.Matches } | ForEach-Object { [int]$_.Groups[1].Value } |
     Measure-Object -Maximum).Maximum

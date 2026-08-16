@@ -58,9 +58,15 @@ foreach ($x in $bracci) {
     $tg = Select-String -Path $log -Pattern 'tg_3s = *([0-9.]+)' -AllMatches |
           ForEach-Object { $_.Matches } | ForEach-Object { [double]$_.Groups[1].Value }
     if ($tg.Count -ge 4) {
-        $u = ($tg[[int]($tg.Count/2)..($tg.Count-1)] | Sort-Object)
+        # BUG CORRETTO (16/8): qui le due espressioni NON sono la stessa cosa e non prendono la stessa correzione.
+        # [int]($tg.Count/2) e' l'INIZIO della fetta "seconda meta'", non una mediana: col banker's rounding il confine
+        # ballava fra i Count dispari (5 -> 2, il campione centrale dentro; 7 -> 4, il centrale fuori). Floor lo rende
+        # deterministico -- la finestra include sempre il centrale e non si restringe mai sotto la meta'; sui Count pari
+        # non cambia nulla. La seconda invece e' il bug pieno: [int]($u.Count/2) cade un passo sopra il centro per Count
+        # 3,7,11,... (con Count=3 e' il MASSIMO), e qui $u puo' avere 3 campioni. v. RUNBOOK par. 7.4
+        $u = ($tg[[math]::Floor($tg.Count/2)..($tg.Count-1)] | Sort-Object)
         "  tg_3s seconda meta': mediana {0:N2} ({1} campioni, min {2:N2} max {3:N2})" -f `
-            $u[[int]($u.Count/2)], $u.Count, $u[0], $u[-1] | Out-File $out -Append -Encoding utf8
+            $u[[math]::Floor(($u.Count-1)/2)], $u.Count, $u[0], $u[-1] | Out-File $out -Append -Encoding utf8
     }
     if (-not $srv.HasExited) { $srv.Kill() }
     Start-Sleep 8

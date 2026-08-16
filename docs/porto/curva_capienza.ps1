@@ -157,9 +157,10 @@ foreach ($SLOT in @('448','339','256','512')) {
   if (Test-Path $camp) {
     $h = @(Import-Csv $camp | Where-Object { $_.util -match '^[0-9]+$' -and [int]$_.util -gt 50 })
     if ($h.Count -gt 0) {
-      $vu = @($h | ForEach-Object { [int]$_.vram_usata } | Sort-Object); $vram = $vu[[int]($vu.Count/2)]
-      $vl = @($h | ForEach-Object { [int]$_.vram_libera } | Sort-Object); $vlib = $vl[[int]($vl.Count/2)]
-      $cp = @($h | ForEach-Object { [double]$_.cpu_perf } | Sort-Object); $cpu = $cp[[int]($cp.Count/2)]
+      # BUG CORRETTO (16/8): $a[[int]($a.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); vale per le tre mediane qui sotto; v. RUNBOOK par. 7.3
+      $vu = @($h | ForEach-Object { [int]$_.vram_usata } | Sort-Object); $vram = $vu[[math]::Floor(($vu.Count-1)/2)]
+      $vl = @($h | ForEach-Object { [int]$_.vram_libera } | Sort-Object); $vlib = $vl[[math]::Floor(($vl.Count-1)/2)]
+      $cp = @($h | ForEach-Object { [double]$_.cpu_perf } | Sort-Object); $cpu = $cp[[math]::Floor(($cp.Count-1)/2)]
       $srvmax = (@($h | ForEach-Object { [int]$_.server }) | Measure-Object -Maximum).Maximum
     }
   }

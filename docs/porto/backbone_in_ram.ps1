@@ -70,7 +70,8 @@ foreach ($ngl in @(32, 22, 12)) {
 
     $log = Get-ChildItem "$base\*$tag*.server.log" -EA SilentlyContinue | Select-Object -Last 1
     $ev  = if ($log) { (Select-String -Path $log.FullName -Pattern '        eval time' | Select-Object -Last 1).Line }
-    $vm  = if ($vram.Count) { ($vram | Sort-Object)[[int]($vram.Count/2)] } else { -1 }
+    # BUG CORRETTO (16/8): [int]($vram.Count/2) col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.3
+    $vm  = if ($vram.Count) { ($vram | Sort-Object)[[math]::Floor(($vram.Count-1)/2)] } else { -1 }
 
     "  VRAM $vm MiB" | Out-File $esiti -Append -Encoding utf8
     "  $ev"          | Out-File $esiti -Append -Encoding utf8

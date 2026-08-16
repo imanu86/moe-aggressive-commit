@@ -2240,3 +2240,353 @@ Stato macchina a fine banco (2026-08-16 21:00 circa): processi_llama = 0. Nessun
 `nvidia-smi` oltre l'unica di preflight (20:45:44). Chiusura pulita su tutte e tre le repliche
 (`ctrl-c`, mai `RISERVA Stop-Process`). Nessun commit git eseguito. Nessuna build avviata. Nessuna
 modifica a file diversi da questo ledger.
+
+---
+
+## Sweep L0, manopola conf_min (soglia di confidenza del drafter) — conf07/conf09 — ENTRAMBI RESPINTI, resta conf_min=0.80
+
+Turno nuovo, contesto fresco (rotazione preventiva, non per guasti). Preflight completo di SS1
+rieseguito per intero (nessuna verifica precedente riusata per assunzione). Mandato: due punti,
+tre repliche ciascuno, n_max=3 fissato (vincitore dello sweep precedente), sweep sulla soglia di
+confidenza del drafter conf_min attorno al valore corrente 0.80.
+
+### FASE 1 — Scoperta del meccanismo (conf_min: come raggiunge il motore)
+
+Letti per intero `run_porto_hot.ps1` (runner B) e `dopo_il_riavvio.ps1` (runner A, riscontro),
+poi il codice sorgente C++ per verificare, non assumere.
+
+**Il motore legge `params.speculative.draft.conf_min` esclusivamente da:**
+1. l'argomento CLI `--spec-draft-conf-min <valore>` (`common/arg.cpp:3776-3783`, handler
+   `params.speculative.draft.conf_min = std::stof(value)`), oppure
+2. in sua assenza, la variabile d'ambiente `LLAMA_ARG_SPEC_DRAFT_CONF_MIN` (registrata via
+   `.set_env(...)`, meccanismo standard llama.cpp).
+
+**Verificato in `common/arg.cpp` righe 627-684**: il parser applica prima tutti i valori da ENV
+per ogni opzione, poi scorre gli argomenti effettivi della riga di comando e li applica sempre
+per ultimo — con un warning esplicito quando l'argomento CLI sovrascrive un valore da ENV
+(`"warn: %s environment variable is set, but will be overwritten by command line argument %s"`,
+riga 683). **L'argomento CLI ha quindi sempre precedenza quando presente sulla riga di comando.**
+
+**Nel runner B (`run_porto_hot.ps1`), riga 118 (prima della modifica), l'argomento era
+hardcoded**: `'--spec-draft-conf-min', '0.8'` — stringa letterale fissa nell'array
+`$argsServer`, non derivata da nessun parametro dello script ne' da `-Extra`.
+
+**La variabile `$env:PORTO_SPEC_CONF_MIN`** (impostata a riga 64 del runner B, sovrascrivibile
+con `-Extra`) **non e' letta da nessun codice C++** — grep esplicito su tutto l'albero
+`D:\llama-overlap` per la stringa `PORTO_SPEC_CONF_MIN`: zero occorrenze. E' una variabile
+fantasma. Nel runner A invece funziona, perche' li' viene tradotta a mano in
+`--spec-draft-conf-min` (righe 149-151 di `dopo_il_riavvio.ps1`):
+```powershell
+if ($env:PORTO_SPEC_CONF_MIN -match '^(?:\d+(?:\.\d*)?|\.\d+)$') {
+  $a += @('--spec-draft-conf-min', $env:PORTO_SPEC_CONF_MIN)
+}
+```
+Nel runner B questa traduzione non esiste: l'argomento CLI e' scritto fisso nell'array.
+
+**Conclusione**: hardcode confermato nel runner B, non ambiguo. Anche tentare
+`LLAMA_ARG_SPEC_DRAFT_CONF_MIN` via `-Extra` non avrebbe funzionato: il runner passa sempre
+l'argomento esplicito `--spec-draft-conf-min`, che vince sempre sulla ENV per il meccanismo
+verificato sopra. Come da mandato, autorizzata l'aggiunta di un parametro `-SpecConf`.
+
+### Modifica al runner B (autorizzata dal mandato)
+
+Aggiunto il parametro `[string] $SpecConf = '0.80'` al param block (dopo `$SpecNmax`), e
+sostituito l'hardcode `'--spec-draft-conf-min', '0.8'` con `'--spec-draft-conf-min', $SpecConf`
+nell'array `$argsServer`. Tipo `string` (non `double`) per lo stesso motivo gia' noto dal
+runner A: un binding a un parametro `[double]` rischierebbe la formattazione con virgola della
+cultura di sistema (`it-IT`) quando riconvertito a stringa. **Verificato empiricamente prima di
+qualunque lancio** (test isolato `Test-Param([string]$X) { ... }` chiamato con `-X 0.70` non
+quotato su una shell con `Get-Culture` = `it-IT`): il literal numerico del linguaggio PowerShell
+mantiene il punto anche senza quote esplicite. Nei comandi reali, comunque, il valore e' sempre
+stato passato quotato (`-SpecConf '0.70'` / `'0.90'`) per la massima esplicitezza.
+
+Sintassi del file verificata con `[System.Management.Automation.Language.Parser]::ParseFile`
+dopo la modifica: zero errori di parsing.
+
+Diff salvato in
+`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\runner_specconf.patch`:
+```diff
+@@ -8,7 +8,8 @@ param(
+     [bool] $HardwareProbe = $false,
+     [int] $ClockKeeperBlocks = 0,
+     [string] $ServerPath = 'D:\llama-overlap\build\bin\llama-server.exe',
+-    [int] $SpecNmax = 2
++    [int] $SpecNmax = 2,
++    [string] $SpecConf = '0.80'
+ )
+ 
+ $ErrorActionPreference = 'Stop'
+@@ -115,7 +116,7 @@ $argsServer = @(
+     '-ngld', '99', '--spec-draft-n-max', "$SpecNmax", '--spec-draft-ubatch-size', '16', '-otd', $otd,
+     '-c', '10000', '-ub', '64', '-np', '1', '-ngl', '99', '-ot', $ot,
+     '-t', '7', '--no-mmap', '-lv', '4', '--host', '127.0.0.1', '--port', "$port",
+-    '--spec-draft-conf-min', '0.8', '--cache-ram', '8192', '--ctx-checkpoints', '32'
++    '--spec-draft-conf-min', $SpecConf, '--cache-ram', '8192', '--ctx-checkpoints', '32'
+ )
+```
+Nessun'altra riga del runner toccata. Nessuna altra modifica a file diversi da questo ledger e
+dal runner autorizzato.
+
+### Preflight (SS1 del runbook, eseguito per intero)
+
+```text
+data/ora         = 2026-08-17 00:21:32
+uptime_min       = 2879,9  (macchina non appena riavviata: nessun lancio a freddo SS2 richiesto)
+processi llama   = 0
+porta 8000 (UI)  = nessun processo in ascolto (non toccata)
+ram_libera_gb    = 89,3
+gpu a riposo     = NVIDIA GeForce RTX 3060, SM 210 MHz, mem 405 MHz, 12,55 W, vram_usata 365 MiB,
+                    vram_libera 11751 MiB, PCIe gen1 x16 a riposo (risparmio energetico, non un
+                    cancello: solo width=16 e' controllato dal runbook, PASSATO), throttle 0x1
+porte 8099/8100  = entrambe libere
+disco_c_gb       = 50,8      disco_d_gb = 120,4
+sha_llama_server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (invariato)
+sha_ggml_cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (invariato)
+sha_jprompt      = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9  (Length=252, coincide)
+```
+
+Unica invocazione di `nvidia-smi` di preflight, come da regola vitale del mandato. Riferimento
+letto dal ledger di questa sessione (non da un commento in uno script, SS8.4): n_max=3 mediana
+16,34 t/s (`nmax3fix_graphs_b1200_r{1,2,3}_20260816`, p1 .90281, mean len 2,80, conf_min=0.80),
+sezione sopra in questo stesso file.
+
+### Punto 1 — conf07: n_max=3, conf_min=0.70
+
+```text
+tag R1/R2/R3   = conf07_graphs_b1200_r{1,2,3}_20260817
+runner         = B (run_porto_hot.ps1, modificato come sopra)
+banco          = B1200
+ripetizioni    = 3 (incatenate senza QUIETE, come da mandato: verificata solo chiusura pulita
+                  fra una replica e l'altra — processi llama=0 — nessuna nvidia-smi aggiuntiva)
+leva variata   = -SpecConf 0.70 (unica leva rispetto al riferimento conf_min=0.80)
+comando esatto (R1/R2/R3, identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 3 -SpecConf '0.70' -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+**CANCELLO CRUCIALE: riga del motore, valore EFFETTIVO (tutte e tre PASSATO)**
+
+```text
+R1: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.70
+R2: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.70
+R3: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.70
+```
+
+**Altri cancelli (passati su tutte e tre)**
+
+| cancello | atteso | R1 | R2 | R3 |
+|---|---|---|---|---|
+| manifesto `GGML_CUDA_DISABLE_GRAPHS` | `<spento>(D)` | `<spento>(D)` | `<spento>(D)` | `<spento>(D)` |
+| righe `sched-profilo` | 0 | 0 | 0 | 0 |
+| `GGML_CUDA_GRAPH_STATS` | `0(D)` | `0(D)` | (non ristampato, manifesto invariato) | (idem) |
+| riga `cache-esperti` | identica al riferimento | identica (verbatim sotto) | identica | identica |
+| `finish_reason` | `length` | `length` | `length` | `length` |
+| GGML_ASSERT / CUDA error / invalid index | assenti | assenti (0 match) | assenti (0 match) | assenti (0 match) |
+| divergenze | tutte a zero | `taglia=0 ids=0 out=0 GRIGLIA-corta=0` | idem | idem |
+| MORTO / RICHIESTA FALLITA / CONTESA | assenti | assenti | assenti | assenti |
+| chiusura | `ctrl-c` | `ctrl-c` | `ctrl-c` | `ctrl-c` |
+| build | `10093 (3014d3756)` | invariato | invariato | invariato |
+
+Riga cache-esperti (identica sulle tre repliche, verbatim, identica a tutti i banchi B1200 della
+sessione):
+```text
+cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+```
+`sfratto_par=1` confermato anche dal manifesto (`LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E)`).
+
+**Dati per replica** (valuta non-parity: cambiare conf_min cambia legittimamente traiettoria,
+SHA e p1 — non sono cancelli):
+
+|                        | R1                 | R2                 | R3                 |
+|---|---|---|---|
+| eval t/s               | 15,41              | 15,46              | 15,47              |
+| ms/token                | 64,89              | 64,68              | 64,63              |
+| prompt t/s             | 21,71              | 21,27              | 22,13              |
+| wall_ms (richiesta)    | 81.091,2           | 80.905,8           | 80.730,3           |
+| p1                      | 0.82614 (727/880)  | 0.82614 (727/880)  | 0.82614 (727/880)  |
+| **mean len accettata**  | **2,54**           | **2,54**           | **2,54**           |
+| copie/buchi             | domanda 289224, colpi 200745 (69,4%), buchi 88479, miss 30,6% | idem | idem |
+| SHA output              | `E00220D5A83F1DD84FF24620AED2B12D55CBA12D1E500878AEE8B28CEA0EC9DA` (identico sulle tre) | | |
+| content_chars           | 2956               | 2956               | 2956               |
+| finish_reason           | length             | length             | length             |
+
+Le tre repliche sono bit-identiche fra loro (SHA, p1, mean len, copie/buchi) — coerente con la
+determinatezza del decode (temperature=0) gia' osservata su tutti i banchi B1200 precedenti.
+
+**MEDIANA e VERDETTO — conf07**
+
+```text
+valori ordinati  : 15,41 / 15,46 / 15,47
+MEDIANA          : 15,46   (elemento centrale, v[1] su array ordinato a 3)
+media            : 15,45
+spread max-min   : 0,39 %   (banco stabile, ben sotto la soglia del 5%)
+
+riferimento n_max=3 conf_min=0.80 (nmax3fix_graphs, ledger sopra) = 16,34 t/s
+delta mediana vs riferimento = -5,39 %
+```
+
+**-5,39% e' sotto la soglia del -3%: RESPINTO.** Non e' "molto male" (sotto -8%), quindi si
+procede regolarmente con conf09 come da mandato ("le due direzioni sono indipendenti").
+
+Rispetto al riferimento (p1 .90281, mean len 2,80): a soglia piu' bassa (0.70) il drafter viene
+troncato meno spesso per bassa confidenza, ma p1 CROLLA a 0.82614 e mean len scende a 2,54 —
+il drafter propone blocchi piu' lunghi che il verificatore poi rigetta piu' spesso. Le domande
+alla cache esperti salgono (275.477 -> 289.224, +5,0%) e le copie pure (80.076 -> 88.479,
++10,5%): piu' lavoro speculativo sprecato, senza compenso.
+
+### Punto 2 — conf09: n_max=3, conf_min=0.90
+
+```text
+tag R1/R2/R3   = conf09_graphs_b1200_r{1,2,3}_20260817
+runner         = B (run_porto_hot.ps1, modificato come sopra)
+banco          = B1200
+ripetizioni    = 3 (incatenate senza QUIETE, come da mandato: verificata solo chiusura pulita)
+leva variata   = -SpecConf 0.90 (unica leva rispetto al riferimento conf_min=0.80)
+comando esatto (R1/R2/R3, identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 3 -SpecConf '0.90' -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+**CANCELLO CRUCIALE: riga del motore, valore EFFETTIVO (tutte e tre PASSATO)**
+
+```text
+R1: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.90
+R2: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.90
+R3: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.90
+```
+
+**Altri cancelli (passati su tutte e tre)**
+
+| cancello | atteso | R1 | R2 | R3 |
+|---|---|---|---|---|
+| manifesto `GGML_CUDA_DISABLE_GRAPHS` | `<spento>(D)` | `<spento>(D)` | `<spento>(D)` | `<spento>(D)` |
+| righe `sched-profilo` | 0 | 0 | 0 | 0 |
+| `GGML_CUDA_GRAPH_STATS` | `0(D)` | `0(D)` | (manifesto invariato) | `0(D)` |
+| riga `cache-esperti` | identica al riferimento | identica (verbatim sotto) | identica | identica |
+| `finish_reason` | `length` | `length` | `length` | `length` |
+| GGML_ASSERT / CUDA error / invalid index | assenti | assenti (0 match) | assenti (0 match) | assenti (0 match) |
+| divergenze | tutte a zero | `taglia=0 ids=0 out=0 GRIGLIA-corta=0` | (non ristampato) | idem |
+| MORTO / RICHIESTA FALLITA / CONTESA | assenti | assenti | assenti | assenti |
+| chiusura | `ctrl-c` | `ctrl-c` | `ctrl-c` | `ctrl-c` |
+| build | `10093 (3014d3756)` | invariato | invariato | invariato |
+
+Riga cache-esperti (identica sulle tre repliche, e identica a quella di conf07 sopra):
+```text
+cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+```
+
+**Dati per replica**:
+
+|                        | R1                 | R2                 | R3                 |
+|---|---|---|---|
+| eval t/s               | 15,50              | 15,47              | 15,43              |
+| ms/token                | 64,53              | 64,63              | 64,81              |
+| prompt t/s             | 21,37              | 21,73              | 21,77              |
+| wall_ms (richiesta)    | 80.705,0           | 80.771,2           | 80.991,6           |
+| p1                      | 0.87763 (710/809)  | 0.87763 (710/809)  | 0.87763 (710/809)  |
+| **mean len accettata**  | **2,45**           | **2,45**           | **2,45**           |
+| copie/buchi             | domanda 259485, colpi 186990 (72,1%), buchi 72495, miss 27,9% | idem | idem |
+| SHA output              | `4EA0FACE4282CF56040C8E634CFF2A2852FC29268D3F58DA713F8E19F346F618` (identico sulle tre) | | |
+| content_chars           | 3332               | 3332               | 3332               |
+| finish_reason           | length             | length             | length             |
+
+Le tre repliche sono bit-identiche fra loro.
+
+**MEDIANA e VERDETTO — conf09**
+
+```text
+valori ordinati  : 15,43 / 15,47 / 15,50
+MEDIANA          : 15,47   (elemento centrale, v[1] su array ordinato a 3)
+media            : 15,47
+spread max-min   : 0,45 %   (banco stabile, ben sotto la soglia del 5%)
+
+riferimento n_max=3 conf_min=0.80 (nmax3fix_graphs, ledger sopra) = 16,34 t/s
+delta mediana vs riferimento = -5,32 %
+```
+
+**-5,32% e' sotto la soglia del -3%: RESPINTO.**
+
+Rispetto al riferimento (p1 .90281, mean len 2,80): a soglia piu' alta (0.90) il drafter viene
+troncato piu' spesso per bassa confidenza (esattamente l'effetto atteso), mean len scende a
+2,45 (il blocco proposto e' piu' corto in media) e p1 sale rispetto a conf07 (0.87763 contro
+0.82614) ma resta comunque sotto il riferimento (.90281). Le domande alla cache esperti CALANO
+rispetto al riferimento (275.477 -> 259.485, -5,8%) e anche le copie (80.076 -> 72.495, -9,5%) —
+meno lavoro speculativo sprecato, ma il blocco piu' corto vale meno per token generato: il
+guadagno di efficienza per domanda non compensa la perdita di lunghezza accettata.
+
+### Confronto riassuntivo dello sweep conf_min (n_max=3 fissato, tutti a pari strumentazione)
+
+| conf_min | mediana t/s | delta vs 0.80 | p1 | mean len | domande/copie |
+|---:|---:|---:|---|---:|---|
+| 0,70 (`conf07_graphs`, questo banco) | 15,46 | -5,39% | 0,82614 | 2,54 | 289.224 / 88.479 |
+| 0,80 (`nmax3fix_graphs`, riferimento) | 16,34 | —      | 0,90281 | 2,80 | 275.477 / 80.076 |
+| 0,90 (`conf09_graphs`, questo banco) | 15,47 | -5,32% | 0,87763 | 2,45 | 259.485 / 72.495 |
+
+**Entrambe le direzioni sono RESPINTE.** La curva ha un massimo netto a conf_min=0.80: sia
+abbassare la soglia (piu' token bozzati proposti, ma verificati con successo meno spesso) sia
+alzarla (blocchi piu' corti e piu' sicuri, ma troppo corti per ripagare l'overhead di
+verifica) peggiorano il throughput di circa il 5,3-5,4%. Il valore attuale (0.80) e' gia' vicino
+o coincidente con l'ottimo locale per questa manopola, alla risoluzione di 0,10 qui testata.
+Nessun punto ulteriore proposto: il mandato prevede un nuovo campione solo per un punto sopra
++3%, e nessuno dei due lo e'.
+
+### ENV completo (manifesto, identico su tutti e sei i bracci — regola vitale del mandato)
+
+Verificato per confronto letterale (dopo normalizzazione del timestamp per riga, che varia
+naturalmente run per run): il manifesto e' **carattere per carattere identico** su tutte e tre
+le repliche di conf07, su tutte e tre le repliche di conf09, e **fra conf07 e conf09** — coerente
+con quanto gia' osservato per `-SpecNmax` nel banco precedente: `conf_min` non e' tracciata nel
+manifesto, solo nella riga del motore (cancello cruciale sopra) e negli argomenti CLI del server.
+
+```text
+server_manif: manifesto: E=ambiente D=difetto; LLAMA_MANIFESTO=1(D)
+server_manif: manifesto/cache: LLAMA_CACHE_BOZZA_BATTITO=60(D) LLAMA_CACHE_BOZZA_SLOT=12(E) LLAMA_CACHE_ESPERTI_BATCH=8(E) LLAMA_CACHE_ESPERTI_BATTITO=45(E) LLAMA_CACHE_ESPERTI_CODA_MAX=0(E) LLAMA_CACHE_ESPERTI_CURA=0(E) LLAMA_CACHE_ESPERTI_FORK=2(E) LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8(E) LLAMA_CACHE_ESPERTI_LRU=1(E) LLAMA_CACHE_ESPERTI_MASSA=2(E) LLAMA_CACHE_ESPERTI_PF_TUTTI=1(D) LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0(E) LLAMA_CACHE_ESPERTI_SCUDO=0(E) LLAMA_CACHE_ESPERTI_SLOT=473(E) LLAMA_CACHE_ESPERTI_SPIN=256(D) LLAMA_CACHE_ESPERTI_W=0(E) LLAMA_CACHE_ORACOLO=<spento>(D)
+server_manif: manifesto/spec: LLAMA_ACCEPTMOE=1(E) LLAMA_ACCEPTMOE_BATCH_MAX=8(D) LLAMA_ACCEPTMOE_COMPATTA=1(E) LLAMA_ACCEPTMOE_ESATTE=1(E) LLAMA_ACCEPTMOE_SOGLIA=0.75(E) LLAMA_ACCEPTMOE_SPIA=0(D) LLAMA_CKPT_CRONO=0(E) LLAMA_SPEC_CONF_ESENTA_POS0=1(E) LLAMA_SPEC_DRAFT_TOPK=1(E)
+server_manif: manifesto/compute: LLAMA_DSV4_HC_FUSO=5(E) LLAMA_MAPPED_IBRIDO=1(E) LLAMA_MAPPED_IBRIDO_SOGLIA=2(E) LLAMA_OVERLAP_ASYNC=1(E) LLAMA_OVERLAP_CERCA_CPU=0(D) LLAMA_OVERLAP_BATCH_MAX=3(E) LLAMA_OVERLAP_GRIGLIA_VARIABILE=0(E) LLAMA_OVERLAP_K=2(E) LLAMA_OVERLAP_PIN=1(E) LLAMA_OVERLAP_SPIN=2000000(D) LLAMA_OVERLAP_VERIFICA=0(D)
+server_manif: manifesto/kv: LLAMA_KV_POSMIN_VERO=0(D) LLAMA_KV_RING=1(E) LLAMA_KV_RING_VRAM_TOKEN=2048(E) LLAMA_KV_RING_VRAM_TRACE=0(D) LLAMA_KV_ROLLBACK_MARGINE=4(D) LLAMA_KV_ROLLBACK_PARZIALE=1(E) LLAMA_KV_ROLLBACK_SOLO_ANELLO=0(E)
+server_manif: manifesto/orfane: LLAMA_RING=0(D) LLAMA_RING_BATTITO=60(D) LLAMA_RING_PROFONDITA=380(D)
+server_manif: manifesto/vram: LLAMA_VRAM_A_FASI=0(E) LLAMA_VRAM_A_FASI_CALDO=0(D) LLAMA_VRAM_A_FASI_MARGINE=0(D) LLAMA_VRAM_A_FASI_MIN=0(D) LLAMA_VRAM_A_FASI_SLOT=0(D) LLAMA_VRAM_A_FASI_SLOT_MAX=1024(D) LLAMA_VRAM_A_FASI_UB=64(D) LLAMA_VRAM_ZAVORRA=0(E)
+server_manif: manifesto/orfane: LLAMA_REAP=0(D) LLAMA_REAP_AMMISSIONE=1.0(D) LLAMA_REAP_DECADIMENTO=1.0(D) LLAMA_REAP_DECADIMENTO_BUSSATE=0.90(D) LLAMA_REAP_DUMP=<spento>(D) LLAMA_REAP_ISTERESI=1(D) LLAMA_REAP_LOCK=0(D) LLAMA_REAP_MARGINE=1.25(D) LLAMA_REAP_MAX_SCAMBI=64(D) LLAMA_REAP_PERIODO=12900(D) LLAMA_REAP_PESO=ripida(D) LLAMA_REAP_PREFETCH=0(D) LLAMA_REAP_PROF=0(D) LLAMA_REAP_SOGLIA=3(D) LLAMA_REAP_THREADS=8(D) LLAMA_REAP_TOPK=2400(D)
+server_manif: manifesto/vram: LLAMA_REAP_WS_MIN_GB=0(D)
+server_manif: manifesto/diag: LLAMA_DEBUG_DUMP=<spento>(D) LLAMA_DEBUG_FILTER=<tutto>(D) LLAMA_DFLASH_SINKHORN_ITERS=<gguf>(D) LLAMA_DSV4_SINKHORN_ITERS=<gguf>(D) LLAMA_STREAM_GC=60(D) LLAMA_STREAM_MAX_MB=4(D) LLAMA_STREAM_TTL=300(D)
+server_manif: manifesto/cache: LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E) LLAMA_CACHE_ESPERTI_DMA=0(D) LLAMA_CACHE_ESPERTI_DOMANDA_DMA=0(D) LLAMA_CACHE_ESPERTI_FORK_ESATTO=0(D) LLAMA_CACHE_ESPERTI_FORK_DOWN_TARDI=0(D) LLAMA_CACHE_ESPERTI_FORK_STADI=0(D) LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0(E) LLAMA_CACHE_ESPERTI_FORK_PRIORITA=0(D) LLAMA_CACHE_ESPERTI_FORK_SERIALE=0(D) LLAMA_CACHE_ESPERTI_FATE=0(D)
+server_manif: manifesto/compute: LLAMA_OVERLAP_JOIN_ASYNC=0(E) LLAMA_OVERLAP_FINESTRA=0(D) LLAMA_DSV4_INDEXER_FUSO=0(E) LLAMA_DSV4_TOPK_FUSO=0(D) LLAMA_GRAPH_REUSE_DISABLE=0(D) LLAMA_GRAPH_REUSE_PER_TAGLIA=1(E) LLAMA_MMQ_X_IDS=<spento>(D) GGML_SCHED_PROFILO=0(E) GGML_CUDA_GRAPH_OPT=0(E)
+server_manif: manifesto/diag: GGML_CUDA_GRAPH_STATS=0(D)
+server_manif: manifesto/compute: GGML_CUDA_DISABLE_GRAPHS=<spento>(D) GGML_OP_OFFLOAD_MIN_BATCH=<spento>(D) GGML_CPU_MMID_REUSE_SRC1=0(D)
+server_manif: manifesto/diag: GGML_BACKEND_PATH=<spento>(D) GGML_BACKTRACE_LLDB=<spento>(D) GGML_CPU_DISABLE_FUSION=<spento>(D) GGML_CUDA_ALLREDUCE=<spento>(D) GGML_CUDA_CUBLAS_COMPUTE_TYPE=<spento>(D) GGML_CUDA_DISABLE_FUSION=<spento>(D) GGML_CUDA_ENABLE_UNIFIED_MEMORY=<spento>(D) GGML_CUDA_NO_PINNED=<spento>(D) GGML_CUDA_P2P=<spento>(D) GGML_CUDA_PDL=<spento>(D) GGML_CUDA_REGISTER_HOST=<spento>(D) GGML_DISABLE_VULKAN=<spento>(D) GGML_KLEIDIAI_CHUNK_MULTIPLIER=<spento>(D) GGML_KLEIDIAI_SME=<spento>(D) GGML_META_DEBUG=<spento>(D) GGML_NO_BACKTRACE=<spento>(D) GGML_SCHED_DEBUG=<spento>(D) GGML_SCHED_DEBUG_INFO=<spento>(D) GGML_SCHED_DEBUG_REALLOC=<spento>(D) GGML_TOTAL_THREADS=<spento>(D) LLAMA_APP_CMD=<spento>(D) LLAMA_ATTN_ROT_DISABLE=<spento>(D) LLAMA_BATCH_DEBUG=<spento>(D) LLAMA_CACHE=<spento>(D) LLAMA_DSV4_COMPRESS_DEBUG=<spento>(D) LLAMA_GRAPH_INPUT_DEBUG=<spento>(D) LLAMA_GRAPH_RESULT_DEBUG=<spento>(D) LLAMA_KV_CACHE_DEBUG=<spento>(D) LLAMA_MANIFESTO=<spento>(D) LLAMA_MEDIA_MARKER=<spento>(D) LLAMA_SERVER_CHILD_MODE=<spento>(D) LLAMA_SERVER_ROUTER_PORT=<spento>(D) LLAMA_SERVER_SLOTS_DEBUG=<spento>(D) LLAMA_TRACE=<spento>(D)
+```
+
+Leve fuori dal manifesto, verificate solo sulla riga del motore e sugli argv (non stampate da
+nessun manifesto — motivo dichiarato di questo intero banco, SS4.2 del runbook):
+`--spec-draft-n-max 3`, `--spec-draft-conf-min 0.70|0.90`.
+
+```text
+SHA llama-server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (invariato)
+SHA ggml-cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (invariato)
+build            = build 10093 (3014d3756) with MSVC 19.44.35227.0
+snapshot         = porto_hot_snapshot = 0 su tutte e sei le repliche
+server vivi max  = 1 per replica
+esito complessivo = ENTRAMBI I PUNTI RESPINTI. conf_min=0.80 (gia' in uso) resta il valore
+                    migliore fra i tre testati per questa manopola a n_max=3.
+percorsi file    = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\conf07_graphs_b1200_r{1,2,3}_20260817.server.log
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\conf07_graphs_b1200_r{1,2,3}_20260817.summary.json
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\conf09_graphs_b1200_r{1,2,3}_20260817.server.log
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\conf09_graphs_b1200_r{1,2,3}_20260817.summary.json
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\runner_specconf.patch
+```
+
+### Postflight e stato macchina a fine banco
+
+```text
+POSTFLIGHT (subito dopo l'ultimo shutdown): ram_libera=88,8 GB | vram_usata=365 MiB, vram_libera=11751 MiB | clock SM=210 MHz | potenza=12,78 W | processi_llama=0
+```
+
+Tutte e sei le repliche lanciate come task in background del tool (non processi Windows staccati
+via WMI), seguite tramite notifica di completamento e file su disco, senza polling attivo ne'
+`nvidia-smi` addizionali durante l'esecuzione (coerente con la regola vitale del mandato — la
+sola `nvidia-smi` di preflight e la sola di postflight, due invocazioni totali in tutta la
+sessione). Chiusura pulita (`ctrl-c`, mai `RISERVA Stop-Process`) su tutte e sei le repliche.
+Nessuna QUIETE di 300 s fra i sei bracci (autorizzata dal mandato: "incatena senza quiete, solo
+verifica chiusura pulita"); verificato `processi llama = 0` prima di ogni lancio successivo.
+Nessun commit git eseguito. Nessuna build avviata. `D:\llama-overlap` non toccato in scrittura.
+Nessun invito a `codex`. Uniche modifiche a file diversi da questo ledger: il runner B
+(`run_porto_hot.ps1`, diff sopra e in `runner_specconf.patch`), autorizzato esplicitamente dal
+mandato per la Fase 1.

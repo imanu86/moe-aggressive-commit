@@ -559,6 +559,385 @@ Nessun commit git eseguito. Nessuna build avviata da questo esecutore. Banco fin
 
 ---
 
+## Censimento split (Fase 1 macro-v2) — split_census_b160_r1_20260816 — CANCELLI PASSATI, COMPITO PRINCIPALE NON ESEGUIBILE
+
+Braccio diagnostico richiesto per censire i blocchi `## SPLIT #` dei grafi di decode. Binario
+originale `D:\llama-overlap`, B160, singola replica.
+
+```text
+tag              = split_census_b160_r1_20260816
+data/ora         = lancio 18:46:53 -> fine 18:49:20
+runner           = B (run_porto_hot.ps1), binario originale (nessun -ServerPath)
+banco            = B160
+ripetizioni      = 1 (come da mandato: braccio diagnostico, singola replica)
+comando esatto   = & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag 'split_census_b160_r1_20260816' -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot 0 -Extra 'GGML_SCHED_PROFILO=0;GGML_SCHED_DEBUG_INFO=1;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+### Cancelli minimi
+
+| cancello | atteso | ottenuto | esito |
+|---|---|---|---|
+| manifesto GGML_CUDA_DISABLE_GRAPHS | `<spento>(D)` | `<spento>(D)` | PASSATO |
+| p1 | .77670 | 0.77670 (80 accepted / 103 generated) | PASSATO |
+| SHA output | 991AF3E1... | AD3D3770... (raw diverso) | PASSATO dopo verifica -- vedi sotto |
+
+**Verifica SHA** (stesso pattern gia' visto due volte in questa sessione): raw diverso per BOM UTF-8
+(`AD3D3770...`, 88 byte, inizia `EF BB BF`) contro lo storico senza BOM (`991AF3E1...`, 85 byte).
+Dopo rimozione BOM e CR: **stesso SHA256 normalizzato** (`E31819614C78D59B25CA108848CA3AA8C9CF3088EE49D2C28E8C7B6202F69C15`),
+stessa lunghezza (84 byte). Confermato indipendentemente, non solo assunto: stesso testo.
+
+t/s (dato grezzo, **diagnostico, non confrontabile** -- come da mandato, il debug scheduler rallenta):
+eval 12,64 t/s, ms/token 79,11, wall_ms 15.900,1, prompt t/s 21,53, finish_reason length.
+
+### COMPITO PRINCIPALE (censimento split): NON ESEGUIBILE con questa configurazione -- causa trovata sul codice sorgente
+
+Nessun blocco `## SPLIT #` presente nel log (`split_census_b160_r1_20260816.server.log`, 53.435
+byte, 549 righe). Non e' un problema di pattern di ricerca: **il dato non e' stato prodotto**.
+
+**Causa verificata leggendo `D:\llama-overlap\ggml\src\ggml-backend.cpp`:**
+
+```cpp
+// riga 1666-1668 -- la funzione che stampa i blocchi "## SPLIT #" e' chiamata SOLO se sched->debug e' vero
+if (sched->debug) {
+    ggml_backend_sched_print_assignments(sched, graph);
+}
+
+// riga 2445-2446 -- sched->debug dipende ESCLUSIVAMENTE da GGML_SCHED_DEBUG, non da GGML_SCHED_DEBUG_INFO
+const char * GGML_SCHED_DEBUG = getenv("GGML_SCHED_DEBUG");
+sched->debug = GGML_SCHED_DEBUG ? atoi(GGML_SCHED_DEBUG) : 0;
+
+// righe 1182-1188 -- GGML_SCHED_DEBUG_INFO controlla SOLO il LIVELLO di log (INFO vs DEBUG)
+// della stampa, una volta che questa gia' avviene -- non se avviene
+static bool ggml_sched_debug_info(void) {
+    static const bool v = [] {
+        const char * e = getenv("GGML_SCHED_DEBUG_INFO");
+        return e && *e && *e != '0';
+    }();
+    return v;
+}
+```
+
+Il commento del codice stesso (righe 1162-1167, dell'autore del progetto) conferma l'intento della
+variabile: *"Con GGML_SCHED_DEBUG_INFO=1 la stessa stampa esce a livello INFO"* -- cioe'
+`GGML_SCHED_DEBUG_INFO` presuppone che la stampa sia gia' abilitata da altrove (`GGML_SCHED_DEBUG`),
+e serve solo a farla passare il filtro di verbosita' del server. Impostare solo
+`GGML_SCHED_DEBUG_INFO=1` (come da `-Extra` del mandato) senza `GGML_SCHED_DEBUG>=1` non produce
+alcuna riga `## SPLIT #`: verificato nel manifesto di questo run,
+`GGML_SCHED_DEBUG=<spento>(D) GGML_SCHED_DEBUG_INFO=1(E)` -- la prima e' rimasta al default.
+
+**Di conseguenza, i punti (a)-(d) del compito principale (split/grafo, breakdown backend/op di testa,
+top 5 pattern, lane CPU K2 vs altri forzati) non sono stati eseguiti**: non c'e' materiale nel log da
+cui estrarli. Coerentemente con la disciplina di questa sessione (non improvvisare una correzione e
+rilanciare di propria iniziativa quando una variabile d'ambiente non produce l'effetto atteso per un
+motivo tecnico preciso), questo esecutore si ferma qui e segnala, senza lanciare una replica
+aggiuntiva con `GGML_SCHED_DEBUG` aggiunto.
+
+percorsi file:
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_b160_r1_20260816.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_b160_r1_20260816.summary.json
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_b160_r1_20260816.r1.output.txt
+D:\llama-overlap\ggml\src\ggml-backend.cpp  (righe 1162-1228, 2443-2448 -- riferimento del codice)
+```
+
+Stato macchina a fine banco (2026-08-16 18:49 circa): processi_llama = 0, RAM libera = 88,1 GB
+(92.386.584 KB). Nessuna invocazione di nvidia-smi in questa sesta parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita (`ctrl-c`). Nessun
+commit git eseguito. Nessuna build avviata da questo esecutore. Nessuna replica aggiuntiva lanciata.
+
+---
+
+## Censimento split (Fase 1 macro-v2) — split_census_b160_r2_20260816 — CANCELLI PASSATI, censimento eseguito
+
+Correzione confermata dal coordinatore: `GGML_SCHED_DEBUG=1` aggiunto accanto a
+`GGML_SCHED_DEBUG_INFO=1`. Verificato che questo abilita davvero la stampa (3.973 righe `## SPLIT #`
+trovate, contro 0 nel tentativo precedente).
+
+```text
+tag              = split_census_b160_r2_20260816
+data/ora         = lancio 18:53:49 -> fine 18:56:13
+runner           = B (run_porto_hot.ps1), binario originale (nessun -ServerPath)
+banco            = B160
+ripetizioni      = 1
+comando esatto   = & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag 'split_census_b160_r2_20260816' -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot 0 -Extra 'GGML_SCHED_PROFILO=0;GGML_SCHED_DEBUG_INFO=1;GGML_SCHED_DEBUG=1;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+### Cancelli minimi
+
+| cancello | atteso | ottenuto | esito |
+|---|---|---|---|
+| manifesto GGML_CUDA_DISABLE_GRAPHS | `<spento>(D)` | `<spento>(D)` | PASSATO |
+| manifesto debug | -- | `GGML_SCHED_DEBUG=1(E) GGML_SCHED_DEBUG_INFO=1(E)` | entrambe attive, confermato |
+| p1 | .77670 | 0.77670 (80/103) | PASSATO |
+| SHA output | 991AF3E1... (equiv. normalizzato) | AD3D3770... (identico a R1, gia' verificato equivalente) | PASSATO |
+
+t/s (dato grezzo, **diagnostico, non confrontabile**): eval 13,23 t/s, wall_ms 15.274,1. Log:
+236.826 byte, 4.522 righe, 3.973 blocchi `## SPLIT #`. Nessun errore/assert.
+
+### Metodologia di esclusione warm-up/prefill
+
+I 3.973 blocchi si raggruppano in 294 "grafi" (ogni sequenza riparte da `## SPLIT #0`). I primi 9
+grafi (split-count 45,45,5,45,45,5,45,5,131) sono concentrati in una finestra di **36 millisecondi**
+all'avvio (timestamp da `1.33.847.902` a `1.33.883.720`), seguiti da un **salto di ~18 secondi**
+prima che il grafo #10 (in ordine di apparizione) riprenda a `1.51.488.818`. Questo e' il segnale piu'
+netto disponibile nel log per separare warm-up/graph-capture da calcolo reale: i 9 grafi iniziali sono
+esclusi, i restanti **285 grafi** sono trattati come "fase decode" (nota: questo include
+verosimilmente anche l'unica passata di prefill del prompt da 68 token, che non si distingue
+nettamente dal resto per timing -- vedi discrepanza con l'atteso, sotto).
+
+### (a) Split per grafo: media e distribuzione
+
+```text
+totale split (fase decode) = 3.602   su 285 grafi
+media split/grafo           = 12,639
+```
+
+| split/grafo | grafi | % |
+|---:|---:|---:|
+| 1 | 170 | 59,6% |
+| 10 | 80 | 28,1% |
+| 131 | 19 | 6,7% |
+| 8 | 6 | 2,1% |
+| 6 | 5 | 1,8% |
+| 5 | 4 | 1,4% |
+| 45 | 1 | 0,4% |
+
+**Discrepanza onestamente segnalata**: la media osservata (12,639) NON e' vicina ai ~35,6 attesi dal
+profiler (misurato su B1200, 1.951 grafi, regime stazionario di decode lungo). Possibili letture, **non
+verificate**: (i) B160 (160 token) ha un peso proporzionalmente maggiore di transitori
+iniziali/steady-state-non-ancora-raggiunto rispetto a B1200; (ii) il conteggio "split/grafo" del
+profiler potrebbe aggregare una popolazione di grafi diversa da quella censita qui (es. solo i grafi
+"principali" del target, escludendo i piccoli ausiliari da 1 split); (iii) il grafo residuo da 45
+split fra i "decode" potrebbe essere mal classificato (coda del warm-up, soglia dei 9 grafi
+imperfetta). Nessuna di queste e' stata verificata: si registra il fatto, non si forza una
+spiegazione.
+
+### (b) Breakdown per backend
+
+| backend | split | % |
+|---|---:|---:|
+| CUDA0 | 2.322 | 64,46% |
+| CPU | 1.280 | 35,54% |
+| **totale** | **3.602** | **100%** |
+
+**Breakdown per "op di testa dello split" (nome del primo nodo): NON DISPONIBILE.** Verificato sul
+codice sorgente (`D:\llama-overlap\ggml\src\ggml-backend.cpp`, riga 1211): i nomi dei nodi/operazioni
+sono stampati solo se `sched->debug > 1`; con `GGML_SCHED_DEBUG=1`, `sched->debug == 1`, quindi quella
+condizione e' falsa e nessun nome di nodo esce nel log. Solo backend e numero di input per split sono
+disponibili a questo livello. Alzare a `GGML_SCHED_DEBUG=2` produrrebbe anche il dump per-nodo di ogni
+grafo (log ordini di grandezza piu' grande) -- non tentato in questo braccio, in attesa di indicazioni.
+
+### (c) I 5 pattern di split più frequenti (firma = sequenza backend per grafo)
+
+Pattern unici totali nella fase decode: 7. I primi 5 coprono 280/285 grafi (98,2%).
+
+| # | grafi | % | n. split | firma backend |
+|---:|---:|---:|---:|---|
+| 1 | 170 | 59,6% | 1 | `CUDA0` |
+| 2 | 80 | 28,1% | 10 | `CPU,CUDA0` ripetuto 5 volte |
+| 3 | 19 | 6,7% | 131 | `CPU,CUDA0,CUDA0` ripetuto ~43-44 volte |
+| 4 | 6 | 2,1% | 8 | `CPU,CUDA0` ripetuto 4 volte |
+| 5 | 5 | 1,8% | 6 | `CPU,CUDA0` ripetuto 3 volte |
+
+Esempi verbatim (una riga per pattern, la testata del primo split):
+
+```text
+#1 (1 split, CUDA0):     ## SPLIT #0: CUDA0 # 1 inputs                          [ts 1.55.556.208]
+#2 (10 split, inizio):   ## SPLIT #0: CPU # 0 inputs                            [ts 1.51.846.365]
+                         ## SPLIT #1: CUDA0 # 5 inputs                          [ts 1.51.846.369]
+                         ## SPLIT #2: CPU # 2 inputs                            [ts 1.51.846.370]
+                         ## SPLIT #3: CUDA0 # 1 inputs                          [ts 1.51.846.371]
+                         ## SPLIT #4: CPU # 2 inputs                            [ts 1.51.846.371]
+#3 (131 split, inizio):  ## SPLIT #0: CPU # 0 inputs                            [ts 1.55.298.163]
+                         ## SPLIT #1: CUDA0 # 5 inputs                          [ts 1.55.298.166]
+                         ## SPLIT #2: CUDA0 # 0 inputs                          [ts 1.55.298.166]
+                         ## SPLIT #3: CPU # 2 inputs                            [ts 1.55.298.168]
+                         ## SPLIT #4: CUDA0 # 1 inputs                          [ts 1.55.298.169]
+#4 (8 split, inizio):    ## SPLIT #0: CPU # 0 inputs                            [ts 1.51.488.818]
+                         ## SPLIT #1: CUDA0 # 5 inputs                          [ts 1.51.488.821]
+#5 (6 split, inizio):    ## SPLIT #0: CPU # 0 inputs                            [ts 1.51.489.177]
+                         ## SPLIT #1: CUDA0 # 5 inputs                          [ts 1.51.489.179]
+```
+
+### (d) Split CPU per grafo: lane K2 vs altri forzati CPU
+
+| split CPU/grafo | grafi |
+|---:|---:|
+| 0 | 170 |
+| 1 | 5 |
+| 3 | 5 |
+| 4 | 6 |
+| 5 | 80 |
+| 44 | 19 |
+
+**Non e' possibile attribuire con certezza** quali split CPU appartengano alla lane K2 (route
+esperti su CPU, `LLAMA_OVERLAP_K=2`) e quali siano forzati CPU per altri motivi (es. `GET_ROWS` sui
+k-quant): questo richiederebbe i nomi delle operazioni, non disponibili a `GGML_SCHED_DEBUG=1` (vedi
+punto b). Osservazione grezza, **non un'attribuzione verificata**: nei grafi da 10 split (il gruppo
+piu' numeroso dopo i CUDA-only, 80 grafi = il numero piu' vicino ai ~80 round di decode attesi da
+160 token / mean-len 2,01) il pattern alterna esattamente CPU e CUDA0 cinque volte, un conteggio
+compatibile con -- ma non a dimostrazione di -- l'ipotesi K2. Da verificare con `GGML_SCHED_DEBUG=2`
+se richiesto.
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_b160_r2_20260816.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_b160_r2_20260816.summary.json
+C:\Users\imanu\AppData\Local\Temp\claude\C--Users-imanu-source-repos-moe-aggressive-commit\4b4c0194-0c4f-4f6b-8e2c-cb939d8d7daa\scratchpad\parse_splits3.py  (script di aggregazione usato)
+```
+
+Stato macchina a fine banco (2026-08-16 18:57 circa): processi_llama = 0, RAM libera = 88,1 GB
+(92.335.556 KB). Nessuna invocazione di nvidia-smi in questa settima parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita (`ctrl-c`). Nessun
+commit git eseguito. Nessuna build avviata da questo esecutore. Nessuna replica aggiuntiva lanciata.
+
+---
+
+## Attribuzione per-operazione (Fase 1 macro-v2, finale) — split_census_debug2_b20_r1_20260816 — VERDETTO
+
+Ultimo braccio diagnostico della catena. `GGML_SCHED_DEBUG=2` (oltre a `GGML_SCHED_DEBUG_INFO=1`)
+per ottenere i nomi di op e tensori dei nodi, non solo le testate degli split. B20 (20 token, non
+160) per contenere la dimensione del log, che con debug=2 esplode: 11.984.259 byte per soli 20 token,
+contro 236.826 byte per 160 token a debug=1.
+
+```text
+tag              = split_census_debug2_b20_r1_20260816
+data/ora         = lancio 19:04:18 -> fine 19:07:12
+runner           = B (run_porto_hot.ps1), binario originale (nessun -ServerPath)
+banco            = B20
+ripetizioni      = 1
+comando esatto   = & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag 'split_census_debug2_b20_r1_20260816' -MaxTokens 20 -Repetitions 1 -PortoHotSnapshot 0 -Extra 'GGML_SCHED_PROFILO=0;GGML_SCHED_DEBUG=2;GGML_SCHED_DEBUG_INFO=1;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+### Cancelli minimi
+
+| cancello | atteso | ottenuto |
+|---|---|---|
+| manifesto GGML_CUDA_DISABLE_GRAPHS | `<spento>(D)` | `<spento>(D)` -- PASSATO |
+| manifesto debug | -- | `GGML_SCHED_DEBUG=2(E) GGML_SCHED_DEBUG_INFO=1(E)` -- entrambe attive |
+| p1 | nessun vincolo (B20 senza firma nota) | 0.57143 (8 accepted / 14 generated), mean len 1,73 -- solo registrato |
+| SHA output | nessun vincolo | CF45FBFB944507BD41CA6B14D7C8B5A556597435DFD7AA546349F0069E6ADD17 -- solo registrato |
+
+**t/s non riportato**, nemmeno come dato grezzo, come esplicitamente richiesto dal mandato (il
+livello di debug 2 distorce il tempo di esecuzione). Nessun errore/assert.
+
+### Metodologia
+
+1.061 blocchi `## SPLIT #`, 105.368 righe `node #...` (nomi op/tensore). Raggruppati in 74 grafi.
+Stesso criterio di esclusione warm-up gia' usato nel censimento precedente (salto temporale netto):
+i primi 9 grafi (stesso identico pattern di split-count del run precedente: 45,45,5,45,45,5,45,5,131)
+occupano stavolta ~1 minuto e 20 secondi (il logging a debug=2 rallenta molto anche il warm-up
+stesso), seguiti da un gap di ~17,5 secondi prima che il grafo #10 (in ordine di apparizione) riprenda.
+**65 grafi decode** analizzati.
+
+### (2) Aggregazione op-nome sul primo nodo di ogni split CPU (tutte le famiglie insieme)
+
+234 split CPU nella fase decode, con almeno un nodo estratto:
+
+| op | conteggio | % |
+|---|---:|---:|
+| MUL_MAT_ID | 175 | 74,8% |
+| GET_ROWS | 59 | 25,2% |
+
+Tensori (nome del primo nodo, normalizzato togliendo il suffisso numerico di layer):
+
+| tensore | conteggio |
+|---|---:|
+| ffn_moe_gate_overlap | 129 |
+| ffn_moe_gate-N | 46 |
+| inp_noise_embd | 23 |
+| node_500 | 18 |
+| node_510 | 12 |
+| embd | 6 |
+
+### (3) Le due famiglie di grafi
+
+**Famiglia A -- grafi grandi, 131 split** (3 nel decode di questo B20; nel censimento B160
+precedente erano 19/285 = 6,7%). 44 split CPU/grafo. Sequenza (verificata su tutti i 3 esempi):
+
+```text
+split #0  : GET_ROWS   embd                    <- lookup embedding, una volta per grafo
+split #3  : MUL_MAT_ID ffn_moe_gate_overlap    <- poi ripetuto ogni 3 split fino al #129
+split #6  : MUL_MAT_ID ffn_moe_gate_overlap
+split #9  : MUL_MAT_ID ffn_moe_gate_overlap
+...
+split #129: MUL_MAT_ID ffn_moe_gate_overlap    (43 ripetizioni totali per grafo)
+```
+
+Aggregato sui 3 grafi: `MUL_MAT_ID`=129 (43/grafo), `GET_ROWS`=3 (1/grafo). **Il nome del tensore
+stesso -- `ffn_moe_gate_overlap` -- e' la prova diretta**: non serve inferire, la lane e' nominata
+esplicitamente "overlap" nel codice. Risposta al punto 3(a) del mandato: **si', sono le route esperti
+della lane K2** (gate MoE della cache-esperti, ramo overlap), non altro.
+
+**Famiglia B -- grafi da 10 split** (12 nel decode di questo B20; nel censimento B160 precedente
+erano gli 80/285 = 28,1%, il gruppo piu' numeroso dopo i CUDA-only). 5 split CPU/grafo, sempre la
+stessa sequenza:
+
+```text
+split #0: GET_ROWS   inp_noise_embd
+split #2: MUL_MAT_ID ffn_moe_gate-1     <- SENZA suffisso _overlap: gate normale, non lane K2
+split #4: MUL_MAT_ID ffn_moe_gate-2
+split #6: GET_ROWS   node_500
+split #8: GET_ROWS   node_510
+```
+
+Aggregato sui 12 grafi: `GET_ROWS`=36 (3/grafo), `MUL_MAT_ID`=24 (2/grafo). Risposta al punto 3(b) del
+mandato: il sospetto "GET_ROWS su markov_w1/k-quant" **non e' confermato per nome** (nessun tensore
+si chiama `markov_w1` in questo estratto; compaiono invece `inp_noise_embd`, `node_500`, `node_510`),
+ma la lettura strutturale e' compatibile: due gate MoE **senza** overlap (`ffn_moe_gate-1`,
+`ffn_moe_gate-2`, coerenti con un modello a pochi strati) piu' tre `GET_ROWS`, uno dei quali
+(`inp_noise_embd`) suggerisce fortemente un input specifico del drafter (rumore/embedding di
+innesco), non del target.
+
+### (4) Caratteristiche distintive fra le due famiglie -- verdetto sull'ipotesi 131=target+K2, 10=drafter
+
+| caratteristica | Famiglia A (131 split) | Famiglia B (10 split) |
+|---|---:|---:|
+| split CPU/grafo | 44 | 5 |
+| nodi totali estratti (esempio) | 5.879 | 304 |
+| totale input dichiarati (somma split) | 234 | 16 |
+| tensori `hc_mixes/hc_pre/hc_post/hc_comb` | 86 occorrenze ciascuno | 6 occorrenze ciascuno |
+| tensori `ffn_moe_*_overlap` (gate/up/swiglu/down) | 86 occorrenze ciascuno | assenti |
+| tensori attention (`qr`,`q_norm`,`q_pe`,`kv_pe`,`attn_derope`,...) | presenti, alto conteggio | presenti, 3 occorrenze ciascuno |
+| tensori `csa_state_compress` / `lid_state_compress` | 84 occorrenze ciascuno | assenti |
+
+**Verdetto**: l'ipotesi del mandato e' **confermata dall'evidenza dei nomi dei tensori**, non solo
+dal conteggio split:
+- **Famiglia A (131 split) = grafo del modello TARGET con la lane overlap (K2) attiva** -- i tensori
+  `ffn_moe_gate_overlap`, `ffn_moe_upc_overlap`, `ffn_moe_swiglu_overl`, `ffn_moe_down_overlap`
+  compaiono esattamente 86 volte ciascuno (verosimilmente una volta per strato con MoE attivo), e
+  sono nominati esplicitamente "overlap" nel codice stesso -- non e' un'inferenza, e' il nome del
+  tensore. Le dimensioni (5.879 nodi, 234 input dichiarati) sono coerenti con un forward pass
+  completo del modello grande.
+- **Famiglia B (10 split) = grafo del DRAFTER** -- struttura enormemente piu' piccola (304 nodi
+  contro 5.879), nessun tensore con suffisso `_overlap`, gate MoE numerati solo `-1`/`-2` (pochi
+  strati, coerente con un drafter leggero), e l'input distintivo `inp_noise_embd` che non compare
+  affatto nella famiglia A. Questo e' coerente con quanto gia' noto sul drafter DSpark/Markov
+  (memoria del progetto: pochi strati DSV4, testa Markov).
+
+Questa e' un'attribuzione basata su evidenza diretta (nomi dei tensori nel log), non una congettura:
+il grado di confidenza e' alto per la distinzione A=target/overlap vs B=drafter/non-overlap; e' piu'
+debole per l'identificazione puntuale di `node_500`/`node_510` (nomi generici, non descrittivi) e per
+il dettaglio esatto della "catena DFlash" menzionata nel mandato, che non compare per nome in
+questo estratto.
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_debug2_b20_r1_20260816.server.log  (11.984.259 byte)
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\split_census_debug2_b20_r1_20260816.summary.json
+C:\Users\imanu\AppData\Local\Temp\claude\C--Users-imanu-source-repos-moe-aggressive-commit\4b4c0194-0c4f-4f6b-8e2c-cb939d8d7daa\scratchpad\parse_splits_debug2b.py  (script di aggregazione usato)
+```
+
+Stato macchina a fine banco (2026-08-16 19:08 circa): processi_llama = 0, RAM libera = 87,9 GB
+(92.211.744 KB). Nessuna invocazione di nvidia-smi in questa ottava parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita (`ctrl-c`). Nessun
+commit git eseguito. Nessuna build avviata da questo esecutore. Nessuna replica aggiuntiva lanciata.
+Ultimo braccio diagnostico della catena, come dichiarato dal mandato.
+
+---
+
 ## Retrofit — variabili complete dei banchi truth_clean/truth_clean2
 
 Ricostruzione a posteriori dell'ambiente **effettivo** dei run di stasera, ottenuta unendo

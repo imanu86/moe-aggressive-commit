@@ -979,13 +979,29 @@ La mediana di tre numeri è **il valore centrale dopo l'ordinamento**, non la me
 $s = Get-Content 'C:\...\work\runs\<tag>.summary.json' -Raw | ConvertFrom-Json
 $v = @($s.results | ForEach-Object { [double]$_.eval_tps } | Sort-Object)
 Write-Output ("valori ordinati : " + ($v -join ' / '))
-Write-Output ("MEDIANA         : " + $v[[int]($v.Count/2)])
+Write-Output ("MEDIANA         : " + $v[[math]::Floor(($v.Count-1)/2)])
 Write-Output ("media           : " + [math]::Round(($v | Measure-Object -Average).Average, 4))
 Write-Output ("spread max-min  : " + [math]::Round((($v[-1] - $v[0]) / $v[0]) * 100, 2) + " %")
 ```
 
 Se le tre ripetizioni sono in file `.summary.json` diversi (un file per ripetizione),
 raccogli i tre `eval_tps` a mano nella stessa lista e applica la stessa formula.
+
+**BUG CORRETTO (16/8)** — la formula precedente, `$v[[int]($v.Count/2)]`, su un array di
+**3** elementi restituiva il **MASSIMO**, non il centro. Causa: PowerShell 5.1 arrotonda
+`[int]` con banker's rounding (round-half-to-even): con `Count=3`, `Count/2` fa `1.5`, e
+`[int](1.5) = 2` (arrotonda al pari), non `1`. Quindi `$v[2]` = il massimo dell'array
+ordinato, non `$v[1]` = il centro. Verificato con test locale: `[int](1.5) = 2`,
+`[int](0.5) = 0`, `[int](2.5) = 2`; su `$v = @(13.44, 13.49, 13.50)` la vecchia formula dava
+`13.5` (il massimo), quella nuova dà `13.49` (il centro vero). La forma corretta,
+`[math]::Floor(($v.Count-1)/2)`, vale per **conteggi dispari**, il caso standard del
+progetto (§6.2: 1 o 3 ripetizioni).
+
+**AVVERTENZA** — le mediane storiche di questo progetto calcolate con la vecchia formula
+possono essere in realtà il **massimo** della tripletta, non il valore centrale. Non è stata
+fatta una verifica retroattiva di tutte le mediane storiche del progetto: se un mandato si
+appoggia a un valore «mediana» registrato prima del 16/8, ricalcolare dai tre `eval_tps`
+grezzi prima di usarlo come riferimento.
 
 **Il verdetto primario è la MEDIANA.** La media si riporta accanto, come informazione. Se
 `spread max-min` supera il **5%**, scrivilo esplicitamente nel verbale: il braccio è
@@ -1080,6 +1096,12 @@ confrontabile.
 
 **Ogni** output prodotto va catalogato con il suo tag. Nessun run resta fuori, nemmeno
 quelli falliti (un crash è un'informazione).
+
+**REGOLA UTENTE — ripetuta più volte, finora mai applicata: ogni voce di ledger registra
+TUTTE le variabili usate dal run — l'ambiente completo effettivo, comprese quelle ai valori
+di default — non solo quelle cambiate rispetto al riferimento. Una variabile non registrata
+è una variabile che prima o poi verrà persa (è già successo due volte: SFRATTO_PAR il 12/8,
+GGML_SCHED_PROFILO il 16/8).**
 
 Riga di ledger, campi obbligatori:
 

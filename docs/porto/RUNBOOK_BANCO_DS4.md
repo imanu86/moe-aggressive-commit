@@ -962,8 +962,8 @@ $car = @($hw | Where-Object { $_.util -match '^[0-9]+$' -and [int]$_.util -gt 50
 $sm  = @($car | ForEach-Object { [int]$_.sm_mhz }   | Sort-Object)
 $pw  = @($car | ForEach-Object { [double]$_.power_w } | Sort-Object)
 Write-Output ("campioni util>50 : " + $car.Count)
-Write-Output ("SM mediano       : " + $sm[[int]($sm.Count/2)] + " MHz (min " + $sm[0] + ", max " + $sm[-1] + ")")
-Write-Output ("potenza mediana  : " + $pw[[int]($pw.Count/2)] + " W")
+Write-Output ("SM mediano       : " + $sm[[math]::Floor(($sm.Count-1)/2)] + " MHz (min " + $sm[0] + ", max " + $sm[-1] + ")")
+Write-Output ("potenza mediana  : " + $pw[[math]::Floor(($pw.Count-1)/2)] + " W")
 Write-Output ("throttle finale  : " + $car[-1].throttle)
 Write-Output ("server vivi max  : " + (($car | ForEach-Object { [int]$_.server_vivi } | Measure-Object -Maximum).Maximum))
 Write-Output ("RAM libera min   : " + (($car | ForEach-Object { [double]$_.ram_libera_gb } | Measure-Object -Minimum).Minimum) + " GB")
@@ -974,6 +974,13 @@ PCIe **Gen4 x16**, `throttle` = `0x0000000000000000` sotto carico. Nel regime an
 16/8: SM ~**780 MHz**, potenza ~**50-56 W**, PCIe ancora Gen4 x16, nessun throttle termico.
 
 `server vivi max` deve essere **1**. Se è 2, la misura non vale.
+
+**BUG CORRETTO (16/8)** — anche qui le formule precedenti, `$sm[[int]($sm.Count/2)]` e
+`$pw[[int]($pw.Count/2)]`, sbagliavano per il banker's rounding di `[int]` (stessa causa
+spiegata in §7.4). Portata misurata: l'indice cade **un passo sopra il centro** per i
+conteggi dispari 3, 7, 11, … (`Count ≡ 3 mod 4`); con **3 campioni** quel passo è proprio
+il **MASSIMO**; per 5, 9, 13, … era per caso corretto. Su telemetrie lunghe (centinaia di
+campioni) l'errore storico è quindi lieve; il caso velenoso sono i conteggi piccoli.
 
 ### 7.4 Come si calcola la mediana di 3 ripetizioni
 

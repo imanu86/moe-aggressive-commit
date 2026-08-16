@@ -181,7 +181,8 @@ $csv = Join-Path $run "$tag.telemetria.csv"
 if (Test-Path $csv) {
   $s = Import-Csv $csv | Where-Object { $_.cpu_core_eq -ne '' }
   if ($s) {
-    function Med([string]$c) { $v = @($s | ForEach-Object { [double]$_.$c } | Sort-Object); if ($v.Count) { return $v[[int]($v.Count/2)] } else { return 0 } }
+    # BUG CORRETTO (16/8): $v[[int]($v.Count/2)] col banker's rounding cadeva un passo sopra il centro per Count dispari 3,7,11,... (con Count=3 era il MASSIMO); v. RUNBOOK par. 7.4
+    function Med([string]$c) { $v = @($s | ForEach-Object { [double]$_.$c } | Sort-Object); if ($v.Count) { return $v[[math]::Floor(($v.Count-1)/2)] } else { return 0 } }
     "  TELEMETRIA (mediana su tutta la corsa): GPU $(Med 'gpu_util')%  $(Med 'clock_sm') MHz  $(Med 'watt') W | CPU $(Med 'cpu_core_eq') core"
     "  VRAM libera minima: $(($s | ForEach-Object { [int]$_.vram_libera } | Measure-Object -Minimum).Minimum) MiB   |   RAM libera minima: $(($s | ForEach-Object { [int]$_.ram_libera_mib } | Measure-Object -Minimum).Minimum) MiB"
   }

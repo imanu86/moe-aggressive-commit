@@ -159,3 +159,618 @@ Stato macchina a fine banco (2026-08-16 16:45:23): processi_llama = 0, RAM liber
 Nessuna invocazione di nvidia-smi in questa seconda parte del banco (unica invocazione dell'intera
 sessione resta quella di preflight, 16:15 circa). Chiusura pulita su tutte e tre le repliche
 (`ctrl-c`, mai `RISERVA Stop-Process`). Nessun commit git eseguito.
+
+---
+
+## truth_graphs_b1200_r1/r2/r3_20260816 — CUDA graph riaccesi: buco trovato — PROMOSSA
+
+Il coordinatore ha segnalato una seconda variabile mancante: `GGML_CUDA_DISABLE_GRAPHS=0`, presente
+in `-Extra` in ogni banco della serata precedente (compreso `truth_clean2`), **disabilitava** i
+CUDA graph. Causa: il cancello nel codice è sulla **presenza** della variabile d'ambiente, non sul
+suo valore.
+
+**Verificato indipendentemente da questo esecutore**, leggendo `D:\llama-overlap\ggml\src\ggml-cuda\common.cuh`,
+righe 1265-1268:
+```cpp
+bool is_enabled() const {
+    static const bool disable_cuda_graphs_due_to_env = (getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr);
+    return !(disable_due_to_gpu_arch || disable_cuda_graphs_due_to_env);
+}
+```
+`getenv(...) != nullptr` è vero indipendentemente dal valore della stringa puntata: impostare
+`GGML_CUDA_DISABLE_GRAPHS=0` rende comunque `getenv` non-null, quindi `disable_cuda_graphs_due_to_env
+= true` e i grafi restano disattivati. Confermata la causa, non solo assunta.
+
+**Preflight aggiuntivo eseguito** (richiesto dal coordinatore, un altro agente stava compilando su
+`D:\llama-subtract`): trovati 9 processi di compilazione attivi (cmake, ninja, 7x nvcc.exe, avviati
+17:42-17:46). Atteso con polling attivo la loro sparizione: terminati dopo un solo check
+(~30 s, riscontrato alle 17:48:02). Verificato stato pulito (0 processi compilazione, 0 processi
+llama, RAM 87,6 GB) prima di procedere.
+
+**Deviazione dal mandato originale, confermata dal coordinatore per questo banco**: nessuna QUIETE
+fissa fra le repliche, sostituita da verifica di stato (processi=0, chiusura ctrl-c, RAM libera) e
+lancio immediato, come già per `truth_clean2`.
+
+**Nota sulla stringa `-Extra` fornita**: rispetto a `truth_clean2`, il testo del mandato descriveva
+l'intenzione come "comando identico, rimuovi SOLO `GGML_CUDA_DISABLE_GRAPHS`", ma la stringa
+`-Extra` fornita letteralmente omette anche `GGML_CUDA_GRAPH_STATS=0`. Eseguito il comando
+esattamente come scritto (nessuna correzione di iniziativa). Verificato dal manifesto che questo non
+ha creato un problema: `GGML_CUDA_GRAPH_STATS=0(D)` — il valore di default per questa variabile è
+già spento anche senza impostarla esplicitamente, quindi la regola "va spento in ogni banco di
+certificazione" (runbook §4.4) resta rispettata.
+
+```text
+tag R1           = truth_graphs_b1200_r1_20260816
+tag R2           = truth_graphs_b1200_r2_20260816
+tag R3           = truth_graphs_b1200_r3_20260816
+data/ora         = R1 lancio 17:48:24 -> R2 lancio 17:53:05 -> R3 lancio 17:57:05 -> fine 18:01:13
+runner           = B (run_porto_hot.ps1)
+banco            = B1200
+ripetizioni      = 3 (R1, R2, R3), tutte passano il cancello
+leva variata     = GGML_CUDA_DISABLE_GRAPHS rimossa completamente da -Extra (non 0, ASSENTE)
+comando esatto (R1, R2 e R3 identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -Extra 'GGML_SCHED_PROFILO=0;LLAMA_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+
+riga cache-esperti (identica sulle tre repliche, verbatim) =
+  cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+
+                    R1              R2              R3
+GGML_CUDA_DISABLE_GRAPHS  <spento>(D)     <spento>(D)     <spento>(D)   -- CANCELLO PASSATO su tutte e tre (atteso <spento>(D), non 0(E))
+righe sched-profilo 0               0               0            -- CANCELLO PASSATO su tutte e tre (atteso 0)
+eval t/s            15,30           15,84           15,71
+ms/token            65,38           63,13           63,67
+prompt t/s          16,29           21,25           19,11
+wall_ms             82.755          79.037,2        80.045,9
+p1                  0.90025 (713/792)  0.90025 (713/792)  0.90025 (713/792)   -- COINCIDE con l'atteso su tutte e tre
+copie/buchi         216737/168831/47906  216737/168831/47906  216737/168831/47906  -- COINCIDE con l'atteso su tutte e tre
+finish_reason       length          length          length
+SHA output          4FDCFADFBFE0D009C7FA826EA8AFE25A6707BF6D3A75296F3E0E50C376ADC65D  (le tre repliche, identico)
+content_chars       3572            3572            3572
+divergenze          taglia=0 ids=0 out=0 GRIGLIA-corta=0 su tutte e tre, nessun GGML_ASSERT/CUDA error
+chiusura            ctrl-c          ctrl-c          ctrl-c       -- pulita su tutte e tre
+
+MEDIANA eval t/s     = 15,71    (valori ordinati 15,30 / 15,71 / 15,84 -- elemento centrale vero, v[1])
+media eval t/s       = 15,6167
+spread max-min       = 3,53 %   -- sotto la soglia del 5% (non "rumoroso" per lo standard del runbook, ma piu' alto del banco precedente 0,45%)
+MEDIANA ms/token      = 63,67   (valori ordinati 63,13 / 63,67 / 65,38)
+
+build            = build 10093 (3014d3756) with MSVC 19.44.35227.0  (invariato)
+SHA llama-server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (invariato)
+SHA ggml-cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (invariato)
+snapshot         = porto_hot_snapshot = 0 su tutte e tre repliche
+server vivi max  = 1 per replica
+esito            = PROMOSSO: 3/3 repliche passano il cancello completo (grafi accesi via manifesto,
+                    sched-profilo=0, p1, copie, SHA). MEDIANA = 15,71 t/s.
+percorsi file    = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\truth_graphs_b1200_r{1,2,3}_20260816.server.log
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\truth_graphs_b1200_r{1,2,3}_20260816.summary.json
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\truth_graphs_b1200_r{1,2,3}_20260816.r1.output.txt
+```
+
+### ENV COMPLETO (tutte le variabili, non solo quelle cambiate -- nuova regola del coordinatore)
+
+Catturato integralmente da `truth_graphs_b1200_r1_20260816.server.log` (tutte le righe
+`server_manif:`; R2 e R3 identiche, stesso comando):
+
+```text
+server_manif: manifesto: E=ambiente D=difetto; LLAMA_MANIFESTO=1(D)
+server_manif: manifesto/cache: LLAMA_CACHE_BOZZA_BATTITO=60(D) LLAMA_CACHE_BOZZA_SLOT=12(E) LLAMA_CACHE_ESPERTI_BATCH=8(E) LLAMA_CACHE_ESPERTI_BATTITO=45(E) LLAMA_CACHE_ESPERTI_CODA_MAX=0(E) LLAMA_CACHE_ESPERTI_CURA=0(E) LLAMA_CACHE_ESPERTI_FORK=2(E) LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8(E) LLAMA_CACHE_ESPERTI_LRU=1(E) LLAMA_CACHE_ESPERTI_MASSA=2(E) LLAMA_CACHE_ESPERTI_PF_TUTTI=1(D) LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0(E) LLAMA_CACHE_ESPERTI_SCUDO=0(E) LLAMA_CACHE_ESPERTI_SLOT=473(E) LLAMA_CACHE_ESPERTI_SPIN=256(D) LLAMA_CACHE_ESPERTI_W=0(E) LLAMA_CACHE_ORACOLO=<spento>(D)
+server_manif: manifesto/spec: LLAMA_ACCEPTMOE=1(E) LLAMA_ACCEPTMOE_BATCH_MAX=8(D) LLAMA_ACCEPTMOE_COMPATTA=1(E) LLAMA_ACCEPTMOE_ESATTE=1(E) LLAMA_ACCEPTMOE_SOGLIA=0.75(E) LLAMA_ACCEPTMOE_SPIA=0(D) LLAMA_CKPT_CRONO=0(E) LLAMA_SPEC_CONF_ESENTA_POS0=1(E) LLAMA_SPEC_DRAFT_TOPK=1(E)
+server_manif: manifesto/compute: LLAMA_DSV4_HC_FUSO=5(E) LLAMA_MAPPED_IBRIDO=1(E) LLAMA_MAPPED_IBRIDO_SOGLIA=2(E) LLAMA_OVERLAP_ASYNC=1(E) LLAMA_OVERLAP_CERCA_CPU=0(D) LLAMA_OVERLAP_BATCH_MAX=3(E) LLAMA_OVERLAP_GRIGLIA_VARIABILE=0(E) LLAMA_OVERLAP_K=2(E) LLAMA_OVERLAP_PIN=1(E) LLAMA_OVERLAP_SPIN=2000000(D) LLAMA_OVERLAP_VERIFICA=0(D)
+server_manif: manifesto/kv: LLAMA_KV_POSMIN_VERO=0(D) LLAMA_KV_RING=1(E) LLAMA_KV_RING_VRAM_TOKEN=2048(E) LLAMA_KV_RING_VRAM_TRACE=0(D) LLAMA_KV_ROLLBACK_MARGINE=4(D) LLAMA_KV_ROLLBACK_PARZIALE=1(E) LLAMA_KV_ROLLBACK_SOLO_ANELLO=0(E)
+server_manif: manifesto/orfane: LLAMA_RING=0(D) LLAMA_RING_BATTITO=60(D) LLAMA_RING_PROFONDITA=380(D)
+server_manif: manifesto/vram: LLAMA_VRAM_A_FASI=0(E) LLAMA_VRAM_A_FASI_CALDO=0(D) LLAMA_VRAM_A_FASI_MARGINE=0(D) LLAMA_VRAM_A_FASI_MIN=0(D) LLAMA_VRAM_A_FASI_SLOT=0(D) LLAMA_VRAM_A_FASI_SLOT_MAX=1024(D) LLAMA_VRAM_A_FASI_UB=64(D) LLAMA_VRAM_ZAVORRA=0(E)
+server_manif: manifesto/orfane: LLAMA_REAP=0(D) LLAMA_REAP_AMMISSIONE=1.0(D) LLAMA_REAP_DECADIMENTO=1.0(D) LLAMA_REAP_DECADIMENTO_BUSSATE=0.90(D) LLAMA_REAP_DUMP=<spento>(D) LLAMA_REAP_ISTERESI=1(D) LLAMA_REAP_LOCK=0(D) LLAMA_REAP_MARGINE=1.25(D) LLAMA_REAP_MAX_SCAMBI=64(D) LLAMA_REAP_PERIODO=12900(D) LLAMA_REAP_PESO=ripida(D) LLAMA_REAP_PREFETCH=0(D) LLAMA_REAP_PROF=0(D) LLAMA_REAP_SOGLIA=3(D) LLAMA_REAP_THREADS=8(D) LLAMA_REAP_TOPK=2400(D)
+server_manif: manifesto/vram: LLAMA_REAP_WS_MIN_GB=0(D)
+server_manif: manifesto/diag: LLAMA_DEBUG_DUMP=<spento>(D) LLAMA_DEBUG_FILTER=<tutto>(D) LLAMA_DFLASH_SINKHORN_ITERS=<gguf>(D) LLAMA_DSV4_SINKHORN_ITERS=<gguf>(D) LLAMA_STREAM_GC=60(D) LLAMA_STREAM_MAX_MB=4(D) LLAMA_STREAM_TTL=300(D)
+server_manif: manifesto/cache: LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E) LLAMA_CACHE_ESPERTI_DMA=0(D) LLAMA_CACHE_ESPERTI_DOMANDA_DMA=0(D) LLAMA_CACHE_ESPERTI_FORK_ESATTO=0(D) LLAMA_CACHE_ESPERTI_FORK_DOWN_TARDI=0(D) LLAMA_CACHE_ESPERTI_FORK_STADI=0(D) LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0(E) LLAMA_CACHE_ESPERTI_FORK_PRIORITA=0(D) LLAMA_CACHE_ESPERTI_FORK_SERIALE=0(D) LLAMA_CACHE_ESPERTI_FATE=0(D)
+server_manif: manifesto/compute: LLAMA_OVERLAP_JOIN_ASYNC=0(E) LLAMA_OVERLAP_FINESTRA=0(D) LLAMA_DSV4_INDEXER_FUSO=0(E) LLAMA_DSV4_TOPK_FUSO=0(D) LLAMA_GRAPH_REUSE_DISABLE=0(D) LLAMA_GRAPH_REUSE_PER_TAGLIA=1(E) LLAMA_MMQ_X_IDS=<spento>(D) GGML_SCHED_PROFILO=0(E) GGML_CUDA_GRAPH_OPT=0(E)
+server_manif: manifesto/diag: GGML_CUDA_GRAPH_STATS=0(D)
+server_manif: manifesto/compute: GGML_CUDA_DISABLE_GRAPHS=<spento>(D) GGML_OP_OFFLOAD_MIN_BATCH=<spento>(D) GGML_CPU_MMID_REUSE_SRC1=0(D)
+server_manif: manifesto/diag: GGML_BACKEND_PATH=<spento>(D) GGML_BACKTRACE_LLDB=<spento>(D) GGML_CPU_DISABLE_FUSION=<spento>(D) GGML_CUDA_ALLREDUCE=<spento>(D) GGML_CUDA_CUBLAS_COMPUTE_TYPE=<spento>(D) GGML_CUDA_DISABLE_FUSION=<spento>(D) GGML_CUDA_ENABLE_UNIFIED_MEMORY=<spento>(D) GGML_CUDA_NO_PINNED=<spento>(D) GGML_CUDA_P2P=<spento>(D) GGML_CUDA_PDL=<spento>(D) GGML_CUDA_REGISTER_HOST=<spento>(D) GGML_DISABLE_VULKAN=<spento>(D) GGML_KLEIDIAI_CHUNK_MULTIPLIER=<spento>(D) GGML_KLEIDIAI_SME=<spento>(D) GGML_META_DEBUG=<spento>(D) GGML_NO_BACKTRACE=<spento>(D) GGML_SCHED_DEBUG=<spento>(D) GGML_SCHED_DEBUG_INFO=<spento>(D) GGML_SCHED_DEBUG_REALLOC=<spento>(D) GGML_TOTAL_THREADS=<spento>(D) LLAMA_APP_CMD=<spento>(D) LLAMA_ATTN_ROT_DISABLE=<spento>(D) LLAMA_BATCH_DEBUG=<spento>(D) LLAMA_CACHE=<spento>(D) LLAMA_DSV4_COMPRESS_DEBUG=<spento>(D) LLAMA_GRAPH_INPUT_DEBUG=<spento>(D) LLAMA_GRAPH_RESULT_DEBUG=<spento>(D) LLAMA_KV_CACHE_DEBUG=<spento>(D) LLAMA_MANIFESTO=<spento>(D) LLAMA_MEDIA_MARKER=<spento>(D) LLAMA_SERVER_CHILD_MODE=<spento>(D) LLAMA_SERVER_ROUTER_PORT=<spento>(D) LLAMA_SERVER_SLOTS_DEBUG=<spento>(D) LLAMA_TRACE=<spento>(D)
+```
+
+### Confronti (con avvertenza esplicita sulla strumentazione)
+
+- **vs `truth_clean2` (stessa strumentazione: profiler OFF, sched-profilo=0 su entrambi; unica
+  differenza i CUDA graph)**: mediana 15,71 contro 13,49 -- delta **+16,46%**. Questo confronto
+  RISPETTA la regola di pari strumentazione (runbook §4.4/§8.2): stesso p1, stesse copie, stesso
+  SHA su entrambi i banchi, quindi stessa traiettoria -- la differenza è imputabile solo ai grafi
+  CUDA.
+- **vs SOTA storica (runbook §12.1, profiler ACCESO, 16,04-16,11-16,07, media 16,0733)**: NON è un
+  confronto a pari strumentazione (quella storica ha il profiler ON, questa ha sched-profilo=0) --
+  non viene fatto qui come verdetto. Riportato solo come dato grezzo: mediana di questo banco
+  (15,71) è a circa 2,3 punti percentuali sotto la media storica, ma i due numeri non sono
+  direttamente sottraibili per la regola di pari strumentazione.
+
+Stato macchina a fine banco (2026-08-16 18:01:13): processi_llama = 0, RAM libera = 87,8 GB.
+Nessuna invocazione di nvidia-smi in questa terza parte del banco (unica invocazione dell'intera
+sessione resta quella di preflight, 16:15 circa). Chiusura pulita su tutte e tre le repliche
+(`ctrl-c`, mai `RISERVA Stop-Process`). Nessun commit git eseguito. Nessuna build avviata da questo
+esecutore (la compilazione trovata al preflight apparteneva a un altro agente, su un albero diverso,
+ed è terminata prima del lancio di R1).
+
+---
+
+## subtract_graphs_b1200_r1/r2/r3_20260816 — Fase 0, attribuzione del residuo (binario "sottrazione") — PROMOSSA, nessuna divergenza
+
+Banco richiesto dal coordinatore per isolare il costo (se esiste) del codice sperimentale del
+15-16/8 (EXPERT_REUSE, fusione GATE_UP, check per-nodo): stesso comando di `truth_graphs` (grafi
+CUDA accesi, `GGML_CUDA_DISABLE_GRAPHS` assente dall'ambiente) ma puntato su un binario compilato
+**senza** quel codice, tramite `-ServerPath`.
+
+### Verifica identità del binario (richiesta esplicitamente dal mandato, eseguita prima e durante)
+
+**Prima del banco** (hash della DLL, che è dove sta il codice: l'exe è un launcher sottile):
+```text
+file       : D:\llama-subtract\build\bin\ggml-cuda.dll
+lunghezza  : 212.806.144 byte  (atteso 212.806.144, coincide)
+delta vs originale (D:\llama-overlap, 213.380.608 byte) : 574.464 byte  (atteso 574.464, coincide esattamente)
+SHA256     : 00A914B9C2192A5F71D3B61E923AB16F3E1CE6E0582215D122E393E6827A2962
+atteso     : 00A914B9C2192A5F71D3B61E923AB16F3E1CE6E0582215D122E393E6827A2962
+coincide   : True
+exe        : D:\llama-subtract\build\bin\llama-server.exe, 10.752 byte (launcher sottile, coerente col pattern gia' visto su D:\llama-overlap)
+```
+
+**Durante ciascuna replica** (a server pronto, `(Get-Process llama-server).Path`):
+```text
+R1 (PID 10180) : D:\llama-subtract\build\bin\llama-server.exe  -- coincide
+R2             : D:\llama-subtract\build\bin\llama-server.exe  -- coincide
+R3             : D:\llama-subtract\build\bin\llama-server.exe  -- coincide
+```
+
+**Preflight aggiuntivo**: nessun processo di compilazione residuo (verificato prima del banco,
+0 processi cl/nvcc/ninja/cmake/MSBuild — la compilazione vista nel banco precedente, che
+presumibilmente produceva proprio questo binario, era già terminata).
+
+**Policy di divergenza per questo banco (diversa dagli altri, dichiarata dal mandato)**: se
+p1/copie/SHA fossero divergenti, la regola era completare comunque la replica e segnalare, non
+fermarsi -- la divergenza stessa sarebbe stata un risultato (il codice rimosso non sarebbe stato
+neutro sulla traiettoria). **Non si è verificata alcuna divergenza**: tutte e tre le repliche
+hanno p1/copie/SHA identici allo storico, quindi questa policy non è stata esercitata.
+
+```text
+tag R1           = subtract_graphs_b1200_r1_20260816
+tag R2           = subtract_graphs_b1200_r2_20260816
+tag R3           = subtract_graphs_b1200_r3_20260816
+data/ora         = R1 lancio 18:10:24 -> R2 lancio 18:14:28 -> R3 lancio 18:20:31 -> fine 18:24:33
+runner           = B (run_porto_hot.ps1) con -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+banco            = B1200
+ripetizioni      = 3 (R1, R2, R3), tutte passano il cancello, nessuna divergenza
+leva variata     = binario (codice sperimentale del 15-16/8 rimosso), grafi CUDA accesi come in truth_graphs
+comando esatto (R1, R2 e R3 identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe' -Extra 'GGML_SCHED_PROFILO=0;LLAMA_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+
+riga cache-esperti (identica sulle tre repliche, verbatim, identica anche a truth_graphs) =
+  cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+
+                    R1              R2              R3
+GGML_CUDA_DISABLE_GRAPHS  <spento>(D)     <spento>(D)     <spento>(D)   -- CANCELLO PASSATO su tutte e tre
+righe sched-profilo 0               0               0            -- CANCELLO PASSATO su tutte e tre
+eval t/s            15,69           15,52           15,86
+ms/token             63,73           64,43           63,03
+prompt t/s           23,22           21,33           22,25
+wall_ms             79.474,1        80.580,7        78.778,6
+p1                  0.90025 (713/792)  0.90025 (713/792)  0.90025 (713/792)   -- COINCIDE con lo storico su tutte e tre, NESSUNA DIVERGENZA
+copie/buchi         216737/168831/47906  216737/168831/47906  216737/168831/47906  -- COINCIDE con lo storico su tutte e tre
+finish_reason       length          length          length
+SHA output          4FDCFADFBFE0D009C7FA826EA8AFE25A6707BF6D3A75296F3E0E50C376ADC65D  (le tre repliche, identico allo storico)
+content_chars       3572            3572            3572
+divergenze          taglia=0 ids=0 out=0 GRIGLIA-corta=0 su tutte e tre, nessun GGML_ASSERT/CUDA error
+chiusura            ctrl-c          ctrl-c          ctrl-c       -- pulita su tutte e tre
+percorso processo   D:\llama-subtract\build\bin\llama-server.exe -- coincide su tutte e tre (verificato a server pronto)
+
+MEDIANA eval t/s     = 15,69    (valori ordinati 15,52 / 15,69 / 15,86 -- elemento centrale vero, v[1])
+media eval t/s       = 15,69    (coincide numericamente con la mediana in questo caso)
+spread max-min       = 2,19 %   -- sotto la soglia del 5% (non "rumoroso")
+MEDIANA ms/token      = 63,73   (valori ordinati 63,03 / 63,73 / 64,43)
+
+build            = build 10093 (3014d3756) with MSVC 19.44.35227.0  (invariato: stessa base, differisce solo il codice sperimentale sottratto)
+snapshot         = porto_hot_snapshot = 0 su tutte e tre repliche
+server vivi max  = 1 per replica
+esito            = PROMOSSO: 3/3 repliche passano tutti i cancelli (grafi accesi, sched-profilo=0,
+                    p1, copie, SHA, DLL, percorso processo). MEDIANA = 15,69 t/s. Nessuna
+                    divergenza rilevata rispetto allo storico.
+percorsi file    = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\subtract_graphs_b1200_r{1,2,3}_20260816.server.log
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\subtract_graphs_b1200_r{1,2,3}_20260816.summary.json
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\subtract_graphs_b1200_r{1,2,3}_20260816.r1.output.txt
+```
+
+### ENV COMPLETO (identico a `truth_graphs`, nessuna riga aggiuntiva -- nuova regola, verificato non solo assunto)
+
+Confrontate le righe `server_manif:` di `subtract_graphs_b1200_r1_20260816.server.log` con quelle
+già trascritte per `truth_graphs_b1200_r1_20260816.server.log` (sezione precedente di questo
+ledger): stesse variabili, stessi valori, incluso `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` e
+`GGML_CUDA_GRAPH_STATS=0(D)`. Non ripetute qui per esteso per evitare duplicazione: vedi la sezione
+`truth_graphs` sopra per il testo completo verbatim.
+
+### INTERPRETAZIONE (richiesta esplicitamente dal mandato, accanto alla mediana)
+
+```text
+riferimento (truth_graphs, stesso regime, grafi accesi, profiler spento) = 15,71 t/s
+questo banco (subtract_graphs, stesso regime, codice sperimentale rimosso) = 15,69 t/s
+delta = -0,13 %
+```
+**Dentro la banda ±3% dichiarata dal mandato**: il codice sperimentale del 15-16/8 (EXPERT_REUSE,
+fusione GATE_UP, check per-nodo) risulta **gratis** in questo regime -- il piccolo residuo
+osservato (-0,13%) è compatibile con la deriva/rumore del banco (lo spread interno di questo stesso
+banco, 2,19%, è già più grande del delta osservato fra i due banchi). Non si può concludere che il
+codice sperimentale sia la causa del gap fra 15,71/15,69 (grafi accesi, entrambi) e la SOTA storica
+16,04-16,11-16,07 (profiler acceso, non a pari strumentazione con questi due banchi) -- quel gap
+resta un residuo non attribuito da questa fase 0.
+
+Stato macchina a fine banco (2026-08-16 18:24:33): processi_llama = 0, RAM libera = 87,3 GB.
+Nessuna invocazione di nvidia-smi in questa quarta parte del banco (unica invocazione dell'intera
+sessione resta quella di preflight, 16:15 circa). Chiusura pulita su tutte e tre le repliche
+(`ctrl-c`, mai `RISERVA Stop-Process`). Nessun commit git eseguito. Nessuna build avviata da questo
+esecutore (il binario "sottrazione" era già compilato, come dichiarato dal mandato).
+
+---
+
+## profile_graphs_b1200_r1/r2/r3_20260816 — banco finale della serata: confronto a pari strumentazione + tabella di profilo — PROMOSSA
+
+Binario ORIGINALE di `D:\llama-overlap` (nessun `-ServerPath`, già identificato per SHA256 nel
+preflight iniziale). Obiettivo duplice: (1) chiudere il capitolo regressione con un confronto alla
+storica a **pari strumentazione** (profiler acceso su entrambi i lati, invece dei confronti a
+strumentazione diversa fatti finora); (2) estrarre la scomposizione del profiler per grafo e per
+worker come fondamento della Fase 1 del macro-v2.
+
+**Cancello con un punto INVERTITO rispetto a tutti i banchi precedenti della serata**: qui le righe
+`sched-profilo` DEVONO essere **> 0** (profiler acceso, come nella storica), non 0. Applicato
+correttamente: verificato `> 0` su tutte e tre le repliche, non `= 0`.
+
+```text
+tag R1           = profile_graphs_b1200_r1_20260816
+tag R2           = profile_graphs_b1200_r2_20260816
+tag R3           = profile_graphs_b1200_r3_20260816
+data/ora         = R1 lancio 18:28:16 -> R2 lancio 18:32:36 -> R3 lancio 18:36:30 -> fine 18:40:34
+runner           = B (run_porto_hot.ps1), binario originale D:\llama-overlap (nessun -ServerPath)
+banco            = B1200
+ripetizioni      = 3 (R1, R2, R3), tutte passano il cancello (con il punto (b) invertito)
+leva variata     = GGML_SCHED_PROFILO=1 (acceso, non spento); GGML_CUDA_DISABLE_GRAPHS assente (grafi accesi, come in truth_graphs/subtract_graphs); nessuna LLAMA_SCHED_PROFILO (variabile inesistente, correttamente omessa)
+comando esatto (R1, R2 e R3 identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -Extra 'GGML_SCHED_PROFILO=1;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+
+riga cache-esperti (identica sulle tre repliche, verbatim, identica a tutti i banchi precedenti) =
+  cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+
+                    R1              R2              R3
+GGML_CUDA_DISABLE_GRAPHS  <spento>(D)     <spento>(D)     <spento>(D)   -- CANCELLO PASSATO (grafi accesi)
+righe sched-profilo 41              41              41           -- CANCELLO PASSATO (>0 richiesto stavolta, non =0)
+eval t/s            15,86           16,00           15,94
+ms/token             63,07           62,49           62,74
+prompt t/s           21,18           22,23           21,36
+wall_ms             78.976,8        78.125,6        78.551,7
+p1                  0.90025 (713/792)  0.90025 (713/792)  0.90025 (713/792)   -- COINCIDE con l'atteso su tutte e tre
+copie/buchi         216737/168831/47906  216737/168831/47906  216737/168831/47906  -- COINCIDE con l'atteso su tutte e tre
+finish_reason       length          length          length
+SHA output          4FDCFADFBFE0D009C7FA826EA8AFE25A6707BF6D3A75296F3E0E50C376ADC65D  (le tre repliche, identico)
+content_chars       3572            3572            3572
+divergenze          taglia=0 ids=0 out=0 GRIGLIA-corta=0 su tutte e tre, nessun GGML_ASSERT/CUDA error
+chiusura            ctrl-c          ctrl-c          ctrl-c       -- pulita su tutte e tre
+
+MEDIANA eval t/s     = 15,94    (valori ordinati 15,86 / 15,94 / 16,00 -- elemento centrale vero, v[1])
+media eval t/s       = 15,9333
+spread max-min       = 0,88 %   -- il piu' basso spread della serata, banco molto stabile
+MEDIANA ms/token      = 62,74   (valori ordinati 62,49 / 62,74 / 63,07)
+
+build            = build 10093 (3014d3756) with MSVC 19.44.35227.0  (invariato)
+SHA llama-server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (invariato, verificato nel preflight iniziale della sessione)
+SHA ggml-cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (invariato)
+snapshot         = porto_hot_snapshot = 0 su tutte e tre repliche
+server vivi max  = 1 per replica
+esito            = PROMOSSO: 3/3 repliche passano il cancello completo (grafi accesi, sched-profilo
+                    ACCESO come richiesto, p1, copie, SHA). MEDIANA = 15,94 t/s.
+percorsi file    = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\profile_graphs_b1200_r{1,2,3}_20260816.server.log
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\profile_graphs_b1200_r{1,2,3}_20260816.summary.json
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\profile_graphs_b1200_r{1,2,3}_20260816.r1.output.txt
+```
+
+### CONFRONTO A PARI STRUMENTAZIONE CON LA STORICA (chiude il capitolo regressione)
+
+```text
+storica (RUNBOOK SS12.1)     : 16,04 / 16,11 / 16,07 t/s   media 16,0733   profiler ACCESO
+questo banco                 : 15,86 / 16,00 / 15,94 t/s   media 15,9333   mediana 15,94   profiler ACCESO
+
+delta mediana (15,94) vs media storica (16,0733)  = -0,829 %
+delta media   (15,9333) vs media storica (16,0733) = -0,871 %
+```
+**Entrambi i delta sono sotto la soglia del 3% (RUNBOOK SS8.3): "non distingue: dentro la deriva di
+banco".** Questo è il **primo confronto della serata a pari strumentazione reale** (profiler acceso
+su entrambi i lati) -- tutti i confronti precedenti (12,12 / 13,49 / 15,71 / 15,69 contro 16,0733)
+erano fra strumentazioni diverse (profiler spento contro storica con profiler acceso) e quindi non
+validi per giudicare la regressione. A pari strumentazione, il gap è **sostanzialmente chiuso**: la
+causa della "regressione del 13-14%" della sessione precedente e dei 12,12-13,49 t/s misurati stasera
+prima di questo banco era interamente (o quasi) il bug `GGML_CUDA_DISABLE_GRAPHS` (presenza-vs-valore,
+vedi sezione `truth_graphs` sopra), non una regressione strutturale del codice.
+
+### TABELLA DI PROFILO (il valore principale del banco, fondamento Fase 1 macro-v2)
+
+Estratta da `profile_graphs_b1200_r1_20260816.server.log` (R2/R3 non ri-estratte per esteso, come
+da mandato "estrai da UNA replica"; il conteggio grafi/lavori è identico su tutte e tre le repliche
+per costruzione, essendo lo stesso carico deterministico).
+
+**Formato scoperto e verificato in questa sessione**: le righe `sched-profilo:` sono medie
+cumulative stampate ogni 50 grafi; l'ultima (al numero di grafi piu' alto) e' la piu' convergente e
+coincide esattamente col conteggio storico. Le righe `sched-profilo-finale:` riportano le statistiche
+worker; ne compaiono due per corsa (una intermedia, una finale) -- si usa l'ultima (lavori piu' alto).
+
+**Per grafo** (riga raw: `sched-profilo: 1951 grafi, 35.6 split/grafo, per grafo: ingressi 3.770 ms
+(di cui sync 2.839), calc CPU 1.375 ms, calc altri 4.253 ms, dispatch 0.188 ms, sched-sync 0.120 ms
+(0.750 chiamate/grafo)`):
+
+| metrica | oggi (profile_graphs R1) | storico | delta |
+|---|---:|---:|---:|
+| n. grafi | 1.951 | 1.951 | identico |
+| split/grafo | 35,6 | 35,6 | identico |
+| ingressi ms/grafo | 3,770 | 3,692 | +2,1% |
+| di cui sync ms/grafo | 2,839 | 2,741 | +3,6% |
+| calc CPU ms/grafo | 1,375 | 1,358 | +1,3% |
+| calc altri ms/grafo | 4,253 | 4,080 | +4,2% |
+| dispatch ms/grafo | 0,188 | 0,193 | -2,6% |
+| sched-sync ms/grafo | 0,120 | 0,133 | -9,8% |
+
+**Per worker** (riga raw: `sched-profilo-finale: worker 20941 lavori, per lavoro: evento 0.883 ms,
+calcolo 1.807 ms, attesa-lavoro 1.070 ms, join 2.670 ms (1.000 join/lavoro)`):
+
+| metrica | oggi (profile_graphs R1) | storico | delta |
+|---|---:|---:|---:|
+| n. lavori | 20.941 | 20.941 | identico |
+| evento ms/lavoro | 0,883 | 0,878 | +0,6% |
+| calcolo CPU ms/lavoro | 1,807 | 1,772 | +2,0% |
+| attesa-lavoro ms/lavoro | 1,070 | 1,063 | +0,7% |
+| join ms/lavoro | 2,670 | 2,631 | +1,5% |
+
+**Lettura**: accordo eccellente su tutta la linea, tutti i delta sotto il 10% (la maggior parte sotto
+il 5%), i due conteggi strutturali (n. grafi, split/grafo, n. lavori) identici carattere per
+carattere allo storico. Il profilo di oggi riproduce fedelmente quello storico -- ulteriore conferma
+indipendente, a livello di composizione del costo per grafo/worker (non solo di t/s aggregato), che
+il gap era il bug dei CUDA graph e non una deriva strutturale del codice.
+
+### ENV COMPLETO (nuova regola, tutte le variabili non solo quelle cambiate)
+
+Coincide con l'ENV di `truth_graphs`/`subtract_graphs` per tutte le righe eccetto due, che qui
+cambiano deliberatamente:
+```text
+server_manif: manifesto/compute: ... GGML_SCHED_PROFILO=1(E) GGML_CUDA_GRAPH_OPT=0(E)   [era =0(E) negli altri banchi]
+server_manif: manifesto/compute: GGML_CUDA_DISABLE_GRAPHS=<spento>(D) ...               [identico agli altri due banchi con grafi accesi]
+```
+Tutte le altre righe manifesto (cache, spec, kv, orfane, vram, reap, diag) sono identiche a quelle
+già trascritte per esteso nella sezione `truth_graphs` sopra -- non ripetute per evitare duplicazione.
+
+### Anomalia osservata durante il postflight (da riportare, non spiegata)
+
+Un comando PowerShell di post-elaborazione (verifica processi/RAM + calcolo mediana con divisioni
+aritmetiche `[math]::Round((...)/(...) * 100, N)`) ha prodotto l'errore
+`Remove-Item on system path '/' is blocked. This path is protected from removal.` Il comando **non
+conteneva alcun `Remove-Item`** -- solo `Get-Process`, `Get-CimInstance`, `Write-Output`, `Get-Date`
+e aritmetica con l'operatore `/`. Il blocco ha impedito l'esecuzione (nessun output, nessun effetto):
+non risulta alcuna cancellazione avvenuta. La misura R3 era già completa e al sicuro in quel momento
+(summary.json già scritto, confermato dal monitor prima dell'anomalia). Non spiegata la causa;
+plausibile un falso positivo di un livello di sicurezza sugli operatori `/` nel testo del comando.
+Non ripetuto il comando originale: rifatti gli stessi controlli con un comando PowerShell minimale
+(solo `Get-Process`/`Get-CimInstance`, senza aritmetica) e i calcoli di mediana/delta con Python
+(tool Bash), entrambi riusciti senza anomalie. Nessun impatto sui dati del banco.
+
+Stato macchina a fine banco (2026-08-16 18:40:34 circa): processi_llama = 0, RAM libera = 87,9 GB
+(92.191.744 KB, verificato con comando minimale dopo l'anomalia). Nessuna invocazione di nvidia-smi
+in questa quinta parte del banco (unica invocazione dell'intera sessione resta quella di preflight,
+16:15 circa). Chiusura pulita su tutte e tre le repliche (`ctrl-c`, mai `RISERVA Stop-Process`).
+Nessun commit git eseguito. Nessuna build avviata da questo esecutore. Banco finale della serata.
+
+---
+
+## Retrofit — variabili complete dei banchi truth_clean/truth_clean2
+
+Ricostruzione a posteriori dell'ambiente **effettivo** dei run di stasera, ottenuta unendo
+il runner (`run_porto_hot.ps1`, letto per intero) e il manifesto stampato nel log del server.
+Sola lettura: nessun run, nessuna build, nessun commit.
+
+### Fonti
+
+```text
+runner       = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1
+log stasera  = ...\work\runs\truth_clean2_b1200_r{1,2,3}_20260816.server.log
+log SOTA     = D:\ds4_work\llama_run\mass2_copyall_stablelane_t473_d12_b1.server.log
+runner SOTA  = C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\dopo_il_riavvio.ps1
+               (dichiarato "runner storico" in docs\porto\HANDOFF_14_AGOSTO.md:25-57; la porta
+                8099 del log SOTA e la terna di uscite <tag>.server.log/.hw.csv/.output.html
+                corrispondono a quello script e a nessun altro in D:\ds4_work\llama_run)
+```
+
+### Ambiente impostato dal runner (run_porto_hot.ps1:37-82)
+
+```text
+LLAMA_CACHE_BOZZA_SLOT=12                      LLAMA_ACCEPTMOE=1
+LLAMA_CACHE_ESPERTI_BATCH=8                    LLAMA_ACCEPTMOE_ESATTE=1
+LLAMA_CACHE_ESPERTI_BATTITO=45                 LLAMA_ACCEPTMOE_SOGLIA=0.75
+LLAMA_CACHE_ESPERTI_CODA_MAX=0                 LLAMA_ACCEPTMOE_COMPATTA=1
+LLAMA_CACHE_ESPERTI_CURA=0                     LLAMA_CKPT_CRONO=0
+LLAMA_CACHE_ESPERTI_SCUDO=0                    LLAMA_SPEC_CONF_ESENTA_POS0=1
+LLAMA_CACHE_ESPERTI_MASSA=2                    LLAMA_SPEC_DRAFT_TOPK=1
+LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE=0         PORTO_SPEC_NMAX=2
+LLAMA_CACHE_ESPERTI_MASSA_CORSIE=0             PORTO_SPEC_CONF_MIN=0.8
+LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0          LLAMA_MAPPED_IBRIDO=1
+LLAMA_CACHE_ESPERTI_LRU=1                      LLAMA_MAPPED_IBRIDO_SOGLIA=2
+LLAMA_CACHE_ESPERTI_W=0                        LLAMA_OVERLAP_ASYNC=1
+LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1              LLAMA_OVERLAP_K=2
+LLAMA_CACHE_ESPERTI_SLOT=473                   LLAMA_OVERLAP_BATCH_MAX=3
+LLAMA_CACHE_ESPERTI_FORK=2                     LLAMA_OVERLAP_GRIGLIA_VARIABILE=0
+LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8             LLAMA_OVERLAP_PIN=1
+LLAMA_CACHE_ESPERTI_FORK_RIUSA_SLOT=0          LLAMA_OVERLAP_JOIN_ASYNC=0
+LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0  LLAMA_KV_RING=1
+LLAMA_VRAM_A_FASI=0                            LLAMA_KV_RING_VRAM_TOKEN=2048
+LLAMA_VRAM_ZAVORRA=0                           LLAMA_KV_ROLLBACK_PARZIALE=1
+LLAMA_DSV4_INDEXER_FUSO=0                      LLAMA_KV_ROLLBACK_SOLO_ANELLO=0
+LLAMA_DSV4_HC_FUSO=5                           LLAMA_GRAPH_REUSE_PER_TAGLIA=1
+GGML_CUDA_GRAPH_OPT=0                          GGML_SCHED_PROFILO=1  (poi sovrascritta da -Extra)
+```
+
+Il runner **non** imposta affatto: `GGML_CUDA_DISABLE_GRAPHS`, `GGML_CUDA_GRAPH_STATS`,
+`LLAMA_OVERLAP_FINESTRA`, `LLAMA_CACHE_ESPERTI_SPIN`, `LLAMA_CACHE_ESPERTI_PF_TUTTI`,
+`LLAMA_CACHE_ESPERTI_DMA`, `LLAMA_CACHE_ORACOLO`, `LLAMA_GRAPH_REUSE_DISABLE`,
+`LLAMA_DSV4_TOPK_FUSO`, `GGML_OP_OFFLOAD_MIN_BATCH`. Tutte queste restano al difetto —
+che nel log si legge come `(D)` — **tranne** quelle riportate dentro `-Extra`.
+
+`-Extra` (run_porto_hot.ps1:84-90) applica le coppie `NOME=VALORE` separate da `;`
+**dopo** il blocco comune, quindi sovrascrive. `-Extra` di truth_clean2:
+
+```text
+LLAMA_SCHED_PROFILO=0        (variabile INESISTENTE: nessun codice la legge, no-op)
+GGML_CUDA_GRAPH_STATS=0
+LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0
+LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0
+LLAMA_DSV4_DECODE_GATE_UP_FUSO=0
+LLAMA_DSV4_DECODE_EXPERT_REUSE=0
+LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0
+GGML_CUDA_DISABLE_GRAPHS=0   <-- NON e' un no-op: vedi sezione successiva
+GGML_SCHED_PROFILO=0
+```
+
+(truth_clean, il primo run, aveva lo stesso `-Extra` **senza** `GGML_SCHED_PROFILO=0` finale:
+il profiler e' quindi rimasto ACCESO a 1 e il run vale 12,82 t/s. `LLAMA_SCHED_PROFILO=0` era
+un refuso e non spegne nulla.)
+
+### Argomenti del server (run_porto_hot.ps1:112-118)
+
+```text
+-m C:/ds4-models/DS4-0731-IQ2XXS.gguf   -md D:/ds4-models/DSpark-draft-Q2K.gguf
+--spec-type draft-dspark  --fit off  -ngld 99  --spec-draft-n-max 2
+--spec-draft-ubatch-size 16  --spec-draft-conf-min 0.8
+-otd 'blk\.0\.ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped,ffn_(gate|up|down)_exps\.weight=CPU'
+-ot  'ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped'
+-c 10000  -ub 64  -np 1  -ngl 99  -t 7  --no-mmap  -lv 4
+--host 127.0.0.1  --port 8100  --cache-ram 8192  --ctx-checkpoints 32
+```
+
+Nessun `--seed` e nessun `-b` in nessuno dei due banchi: `n_batch` resta 2048 per difetto,
+il campionamento e' `temperature=0`. Il runner SOTA non passa `--cache-ram`/`--ctx-checkpoints`,
+ma il log prova che i valori efficaci sono gli stessi (8192 MiB / max 32): sono i difetti.
+
+---
+
+## Diff variabili vs SOTA 14/8
+
+Metodo: estratte le righe 1-465 (dall'inizio fino a `listening on`) dei due log, tolto il
+timbro temporale, e diffate riga per riga. Il diff completo e' di **49 righe** e non contiene
+nessuna altra differenza oltre a quelle in tabella.
+
+### Tabella
+
+| variabile / parametro | log SOTA 14/8 | lanciatore SOTA (`dopo_il_riavvio.ps1`) | `dopo_il_riavvio.ps1` (stato odierno) | banco stasera (runner + `-Extra`) | esito |
+|---|---|---|---|---|---|
+| `GGML_CUDA_DISABLE_GRAPHS` | `<spento>` (D) | non impostata | non impostata | **`0` (E)** | **DIVERSA — decisiva** |
+| `GGML_SCHED_PROFILO` | `1` (E) | `'1'` (riga 129) | `'1'` (riga 129) | `1` poi **`0`** via `-Extra` | **DIVERSA** (sfavorisce la SOTA) |
+| `GGML_CUDA_GRAPH_STATS` | `0` (D) | non impostata | non impostata | `0` (E) | stesso valore, no-op (gate `atoi != 0`) |
+| `LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA` | `0` (D) | non impostata | non impostata | `0` (E) | stesso valore, no-op (gate `atoi != 0`) |
+| **build del binario** | **95 (`963a2cfca`)** | — | — | **10093 (`3014d3756`)** | **DIVERSA — seconda variabile** |
+| `LLAMA_CACHE_ESPERTI_FORK` | `2` (E) | `'2'` (riga 116) | `'2'` | `2` (E) | identica |
+| `LLAMA_CACHE_ESPERTI_FORK_BLOCCHI` | `8` (E) | `'8'` (riga 116) | `'8'` | `8` (E) | identica |
+| `LLAMA_CACHE_ESPERTI_SFRATTO_PAR` | `1` (E) | `'1'` (riga 114) | `'1'` | `1` (E) | identica |
+| `LLAMA_OVERLAP_JOIN_ASYNC` | `0` (E) | `'0'` (riga 122) | `'0'` | `0` (E) | identica |
+| `LLAMA_OVERLAP_ASYNC` | `1` (E) | `'1'` | `'1'` | `1` (E) | identica |
+| `LLAMA_OVERLAP_K` | `2` (E) | `'2'` | `'2'` | `2` (E) | identica |
+| `LLAMA_OVERLAP_FINESTRA` | `0` (D) | non impostata | non impostata | `0` (D) | identica |
+| `LLAMA_OVERLAP_BATCH_MAX` | `3` (E) | `'2'` poi `3` via EXTRA | `'2'` | `3` (E) | identica nel log |
+| `LLAMA_OVERLAP_PIN` / `_GRIGLIA_VARIABILE` / `_SPIN` / `_VERIFICA` / `_CERCA_CPU` | 1 / 0 / 2000000 / 0 / 0 | idem | idem | 1 / 0 / 2000000 / 0 / 0 | identiche |
+| `LLAMA_SPEC_DRAFT_TOPK` | `1` (E) | `'1'` (riga 118) | `'1'` | `1` (E) | identica |
+| `PORTO_SPEC_NMAX` (`--spec-draft-n-max`) | `n_max=2` nel log | via env | via env | `2` | identica |
+| `PORTO_SPEC_CONF_MIN` (`--spec-draft-conf-min`) | `conf_min=0.80` nel log | via env | via env | `0.8` | identica |
+| `LLAMA_ACCEPTMOE` / `_ESATTE` / `_SOGLIA` / `_COMPATTA` / `_BATCH_MAX` / `_SPIA` | 1 / 1 / 0.75 / 1 / 8 / 0 | `'0'` poi 1 via EXTRA | `'0'` | 1 / 1 / 0.75 / 1 / 8 / 0 | identiche nel log |
+| `LLAMA_CACHE_ESPERTI_MASSA` | `2` (E) | `'0'` poi 2 via EXTRA | `'0'` | `2` (E) | identica nel log |
+| `MASSA_AMMISSIONE` / `MASSA_CORSIE` (copy-all / corsie stabili) | `ammissione=0, corsie=0` | via EXTRA | non impostate | `ammissione=0, corsie=0` | identiche |
+| `LLAMA_CACHE_ESPERTI_SLOT` | `473` (E) | arg 2 = `473` | difetto `'512'` | `473` (E) | identica |
+| `LLAMA_CACHE_BOZZA_SLOT` | `12` (E) | `'32'` poi 12 via EXTRA | `'32'` | `12` (E) | identica nel log |
+| `LLAMA_CACHE_ESPERTI_SPIN` / `PF_TUTTI` / `CURA` / `SCUDO` / `LRU` / `W` / `CODA_MAX` / `PREFETCH_FILTRO` / `BATCH` / `BATTITO` | 256 / 1 / 0 / 0 / 1 / 0 / 0 / 0 / 8 / 45 | idem | idem | 256 / 1 / 0 / 0 / 1 / 0 / 0 / 0 / 8 / 45 | identiche |
+| `LLAMA_CACHE_ESPERTI_DMA` / `DOMANDA_DMA` / `FATE` / `FORK_ESATTO` / `FORK_DOWN_TARDI` / `FORK_STADI` / `FORK_PRIORITA` / `FORK_SERIALE` | tutte `0` (D) | non impostate | non impostate | tutte `0` (D) | identiche |
+| `LLAMA_DSV4_HC_FUSO` / `INDEXER_FUSO` / `TOPK_FUSO` | 5 / 0 / 0 | idem | idem | 5 / 0 / 0 | identiche |
+| `LLAMA_GRAPH_REUSE_PER_TAGLIA` / `_DISABLE` | 1 / 0 | via EXTRA / non impostata | — | 1 / 0 | identiche |
+| `LLAMA_KV_RING` / `_VRAM_TOKEN` / `ROLLBACK_PARZIALE` / `ROLLBACK_SOLO_ANELLO` / `POSMIN_VERO` / `ROLLBACK_MARGINE` | 1 / 2048 / 1 / 0 / 0 / 4 | idem | idem | 1 / 2048 / 1 / 0 / 0 / 4 | identiche |
+| `LLAMA_MAPPED_IBRIDO` / `_SOGLIA` | 1 / 2 | idem | idem | 1 / 2 | identiche |
+| `LLAMA_VRAM_A_FASI` / `LLAMA_VRAM_ZAVORRA` | 0 / 0 | idem | idem | 0 / 0 | identiche |
+| `GGML_CUDA_GRAPH_OPT` | `0` (E) | `'0'` (riga 126) | `'0'` | `0` (E) | identica (e no-op: gate `== 1`) |
+| `LLAMA_CKPT_CRONO` / `LLAMA_SPEC_CONF_ESENTA_POS0` | 0 / 1 | via EXTRA | 0 / 0 | 0 / 1 | identiche nel log |
+| `LLAMA_REAP*`, `LLAMA_RING*`, `LLAMA_STREAM*`, `GGML_*` diagnostiche | tutte a difetto | — | — | tutte a difetto | identiche |
+| thread (`-t`) | `n_threads = 7 / 16` | `-t 7` | `-t 7` | `-t 7` | identici |
+| `n_batch` / `n_ubatch` / `n_ctx` | 2048 / 64 / 10240 | `-ub 64 -c 10000` | idem | `-ub 64 -c 10000` | identici |
+| draft: `n_max` / `n_min` / `p_min` / `conf_min` / `block_size` / `n_extract` / ubatch | 2 / 0 / 0.00 / 0.80 / 5 / 3 / 16 | idem | idem | **identici** | identici |
+| `--cache-ram` / `--ctx-checkpoints` | 8192 / 32 (difetto) | non passati | non passati | 8192 / 32 (espliciti) | identici |
+| seed | non passato | non passato | non passato | non passato | identico (`temperature=0`) |
+| porta | 8099 | `$PORTA = 8099` | 8099 | 8100 | irrilevante |
+
+### La leva decisiva: `GGML_CUDA_DISABLE_GRAPHS=0` **spegne** i CUDA graph
+
+Verificato nel sorgente, non dedotto —
+`D:\llama-overlap\ggml\src\ggml-cuda\common.cuh:1266`:
+
+```cpp
+static const bool disable_cuda_graphs_due_to_env = (getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr);
+return !(disable_due_to_gpu_arch || disable_cuda_graphs_due_to_env);
+```
+
+Il cancello e' sulla **presenza** della variabile (`!= nullptr`), non sul suo valore: scriverla
+a `0` la definisce, e i grafi vengono **disabilitati**. La trappola era gia' documentata in casa
+(`docs\porto\lettura\02-grafo-e-modello.md:525-526` e `:705-706`), ed e' il comportamento opposto
+a quello della cugina `GGML_CUDA_GRAPH_OPT`, che invece e' `atoi(env) == 1`.
+
+Tutti e tre i run di stasera (r1/r2/r3) e anche `truth_clean` hanno `GGML_CUDA_DISABLE_GRAPHS=0(E)`:
+hanno girato **senza CUDA graph**. La SOTA del 14/8 ha `<spento>(D)`, cioe' con i grafi accesi.
+
+### Prova che il lavoro e' identico e a cambiare e' solo il costo di lancio
+
+| grandezza | SOTA 14/8 b1 | stasera truth_clean2 r1 |
+|---|---|---|
+| domanda / colpi / buchi (finale) | 216.737 / 168.831 (77,9%) / 47.906 | **216.737 / 168.831 (77,9%) / 47.906** |
+| copie / zero-copy / CPU / partizioni | 47.906 / 0 / 110.338 / 55.169 | **47.906 / 0 / 110.338 / 55.169** |
+| draft acceptance | 0,90025 (713/792), mean len 2,47 | **0,90025 (713/792), mean len 2,47** |
+| SHA256 dell'uscita | `4FDCFADF...C65D` (3578 byte) | **`4FDCFADF...C65D` (3578 byte)** |
+| graph nodes / splits (bs=1) | 11.791 / 45 | **11.791 / 45** |
+| eval | 74.804,71 ms / 1200 tok = 62,34 ms/tok = **16,04 t/s** | 88.972,26 ms / 1200 tok = 74,14 ms/tok = **13,49 t/s** |
+
+Stessa domanda, stessi colpi, stesse copie, stessa bozza, stessa uscita byte per byte, stesso
+grafo — e **+11,80 ms per token**. Su 11.791 nodi per token fa **circa 1,0 us di sovraccarico per
+nodo**, che e' esattamente l'ordine di grandezza di un lancio di kernel individuale su WDDM
+contro il replay di un grafo catturato. Il precedente in casa: `CACHE_ESPERTI_MISURE.txt:28`
+misura 8,04 verso 3,99 t/s spegnendo i grafi in un altro regime.
+
+### La seconda variabile: il binario NON e' lo stesso
+
+```text
+SOTA 14/8   : build 95    (963a2cfca) with MSVC 19.44.35227.0
+stasera     : build 10093 (3014d3756) with MSVC 19.44.35227.0
+```
+
+`D:\llama-overlap\build\bin\llama-server.exe` risulta riscritto il **2026-08-16 alle 02:30**,
+cioe' dopo la SOTA. Nel diff dei log si vedono due altre impronte dello stesso fatto:
+la riga `cache-esperti: FORK/JOIN acceso` e' emessa **prima** di `warming up` nella SOTA e
+**dopo** stasera (ordine del codice cambiato), e la VRAM libera al carico della bozza passa
+da 389 a 495 MiB (e da 216,78 a 323,00 MiB dopo). Quindi il gap 16,04 verso 13,49 ha **due**
+candidati, non uno; la variabile d'ambiente e' il candidato piu' probabile per taglia
+dell'effetto, ma l'attribuzione va fatta con un A/B che tolga `GGML_CUDA_DISABLE_GRAPHS`
+dall'`-Extra` **a binario fermo**.
+
+### Nota sul `FORK` e la bit-esattezza — la premessa non e' violata
+
+Il fatto delicato ipotizzato dal coordinatore non si verifica: `LLAMA_CACHE_ESPERTI_FORK=2(E)`
+e `LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8(E)` compaiono in **entrambi** i log, e in entrambi la riga
+`cache-esperti: FORK/JOIN acceso (livello 2, blocchi copia 8, esatto 0: ...)` e' presente. Non
+c'e' nessun run con FORK0 stasera, quindi lo SHA identico non falsifica la non-bit-esattezza
+del FORK.
+
+C'e' pero' un fatto vicino che va registrato: lo **stesso SHA d'uscita** (`4FDCFADF...`, 3578
+byte) e gli **stessi contatori della cache** al singolo evento si ottengono su **due build
+diverse** (95 e 10093). O le modifiche fra le due build non toccano l'aritmetica, oppure una
+delle due premesse su cosa il binario e' autorizzato a cambiare va rivista. Non risolto qui:
+segnalato.
+
+### Verifica sulle repliche
+
+| run | `GGML_CUDA_DISABLE_GRAPHS` | `GGML_SCHED_PROFILO` | t/s |
+|---|---|---|---:|
+| `truth_clean_b1200_r1` | `0(E)` grafi spenti | `1(E)` acceso | 12,82 |
+| `truth_clean2_b1200_r1` | `0(E)` grafi spenti | `0(E)` spento | 13,49 |
+| `truth_clean2_b1200_r2` | `0(E)` grafi spenti | `0(E)` spento | 13,44 |
+| `truth_clean2_b1200_r3` | `0(E)` grafi spenti | `0(E)` spento | 13,50 |
+| `mass2_copyall_stablelane_t473_d12_b1` (14/8) | `<spento>(D)` grafi ACCESI | `1(E)` acceso | 16,04 |
+
+A pari strumentazione (profiler ACCESO in tutti e due) il confronto e' **16,04 contro 12,82**,
+cioe' -20,1%: la sonda non spiega niente, anzi la SOTA la pagava e andava comunque piu' forte.

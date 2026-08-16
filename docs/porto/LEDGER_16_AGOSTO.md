@@ -938,6 +938,440 @@ Ultimo braccio diagnostico della catena, come dichiarato dal mandato.
 
 ---
 
+## Banco F2-A — leva GGML_SCHED_EVENT_JOIN — f2a_on_diag_b160_r1_20260816 — FERMATO AL CANCELLO (N=0)
+
+Prima leva di **codice** (non solo diagnostica) testata in questa sessione, su un secondo binario
+"sottrazione" (`D:\llama-subtract`) con una nuova `ggml-base.dll` che introduce
+`GGML_SCHED_EVENT_JOIN` (default 0, letta con `atoi`).
+
+### Preflight -- verifica dei tre hash (richiesta esplicitamente dal mandato)
+
+| file | atteso | ottenuto | esito |
+|---|---|---|---|
+| llama-server.exe | `88991BB4...` | `88991BB4556DAF793E504C9CDC7EE5BC699CCC7F6E6B7DBB016F81BA7717D6C7` | coincide |
+| ggml-cuda.dll | `00A914B9...` | `00A914B9C2192A5F71D3B61E923AB16F3E1CE6E0582215D122E393E6827A2962` | coincide (= sottrazione gia' nota, invariata) |
+| ggml-base.dll | `6FBF3E8154EFC480493D68CAF2C9F2C526FF83E364B6F16F3847785B3D9F70A9` | idem | coincide -- NUOVO file, timestamp 19:34:45 (ricompilato dopo il banco precedente) |
+
+Verificato inoltre che `GGML_SCHED_EVENT_JOIN` non compare in nessun documento sotto `docs\porto\`
+(grep sul nome esatto e su varianti "evento/join"): nessuna prova che sia una famiglia gia' chiusa o
+respinta (runbook SS10.4 punto 9). Non e' una verifica esaustiva della storia del progetto -- solo
+un controllo sui documenti effettivamente disponibili in questa sessione.
+
+```text
+tag              = f2a_on_diag_b160_r1_20260816
+data/ora         = lancio 19:41:07 -> fine 19:46:21 (caricamento insolitamente lento, ~4,5 min,
+                    coerente con cache filesystem fredda sulla ggml-base.dll appena compilata --
+                    nessun errore, solo piu' lento del tipico 1-2 min)
+runner           = B (run_porto_hot.ps1), -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+banco            = B160
+ripetizioni      = 1 (diagnostico)
+comando esatto   = & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag 'f2a_on_diag_b160_r1_20260816' -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot 0 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe' -Extra 'GGML_SCHED_EVENT_JOIN=1;GGML_SCHED_PROFILO=1;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+### Cancelli generali (tutti passati)
+
+manifesto `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` -- PASSATO. Manifesto conferma
+`GGML_SCHED_PROFILO=1(E)` -- profiler ACCESO come richiesto per il diagnostico. Nessun
+`GGML_ASSERT`/`CUDA error`/divergenza. Chiusura pulita (`shutdown=ctrl-c` nel log del runner). t/s
+non e' un verdetto qui (non riportato come dato di merito, per esplicita istruzione del mandato).
+
+### CANCELLO PRINCIPALE -- riga `sched-event-join`: N=0, FERMATO
+
+Tutte e quattro le occorrenze della riga (stampata piu' volte durante la corsa, non solo allo
+shutdown come atteso dal mandato -- correzione fattuale rispetto alla descrizione del mandato,
+segnalata qui) mostrano **confini a evento = 0**:
+
+```text
+sched-event-join: confini a evento 0, confini a blocco host 256
+sched-event-join: confini a evento 0, confini a blocco host 268
+sched-event-join: confini a evento 0, confini a blocco host 11626
+sched-event-join: confini a evento 0, confini a blocco host 11626
+```
+
+Riga `sched-profilo` finale completa, **non parsata posizionalmente** (i due campi nuovi in coda
+sono letti dall'etichetta esplicita `| confini evento/blocco N/M`, non da una posizione fissa):
+
+```text
+sched-profilo: 301 grafi, 35.1 split/grafo, per grafo: ingressi 7.523 ms (di cui sync 5.570), calc CPU 1.298 ms, calc altri 16.344 ms, dispatch 0.220 ms, sched-sync 0.118 ms (0.751 chiamate/grafo) | confini evento/blocco 0/10506
+```
+
+`N=0` in ogni occorrenza (le quattro righe `sched-event-join` e la coda della riga `sched-profilo`,
+quest'ultima con `M=10506`, leggermente diverso dagli `M` delle righe `sched-event-join` perche'
+sono snapshot presi in momenti diversi della corsa -- `M` cresce nel tempo, `N` resta a zero in ogni
+snapshot). **Per mandato: N==0 => FERMA TUTTO.** Nessun braccio successivo (B1200 OFF/ON) eseguito.
+
+**Interpretazione non richiesta ma disponibile**: `GGML_SCHED_EVENT_JOIN=1` non ha prodotto un solo
+confine a evento in tutta la corsa (301 grafi, 160 token) -- la leva, cosi' come impostata ed
+eseguita, e' risultata **completamente inerte** su questo banco: zero effetto osservabile sul
+meccanismo che dovrebbe attivare. Non e' stato investigato il motivo (fuori mandato per questo
+braccio, che chiede di fermarsi qui).
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\f2a_on_diag_b160_r1_20260816.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\f2a_on_diag_b160_r1_20260816.summary.json
+```
+
+Stato macchina a fine banco (2026-08-16 19:46 circa): processi_llama = 0, RAM libera = 88,0 GB
+(92.297.028 KB). Nessuna invocazione di nvidia-smi in questa nona parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita (`ctrl-c`). Nessun
+commit git eseguito. Nessuna build avviata da questo esecutore. Nessuna replica aggiuntiva lanciata
+(fermato al cancello come da mandato, prima di B1200 OFF/ON).
+
+---
+
+## Banco L0 — ri-taratura n_max=3 — nmax3_graphs_b1200_r1_20260816 — FERMATO AL CANCELLO (leva inerte)
+
+Test parametrico (non solo diagnostico) sulla speculazione: il verdetto storico "NMAX3-5 peggiora"
+potrebbe essere stato misurato nel regime con i grafi CUDA rotti (bug scoperto in questa sessione,
+banco `truth_graphs`), quindi da ri-testare nel regime corretto.
+
+### Ricerca del nome esatto della variabile (richiesta esplicitamente, "non tirare a indovinare")
+
+Trovato **non ambiguamente** in entrambi i file indicati dal mandato, indipendentemente l'uno
+dall'altro:
+
+```text
+docs\porto\dopo_il_riavvio.ps1  riga 143:
+  $NMAX = if ($env:PORTO_SPEC_NMAX -match '^\d+$') { [int]$env:PORTO_SPEC_NMAX } else { 1 }
+  (poi passato al binario come --spec-draft-n-max)
+
+run_porto_hot.ps1  riga 62:
+  $env:PORTO_SPEC_NMAX = '2'   (default SOTA)
+```
+
+Variabile: **`PORTO_SPEC_NMAX`**. Coincide con quanto gia' letto nel runbook SS3.2.
+
+```text
+tag              = nmax3_graphs_b1200_r1_20260816
+data/ora         = lancio 19:50:53 -> fine 19:54:56
+runner           = B (run_porto_hot.ps1), binario originale (nessun -ServerPath)
+banco            = B1200
+ripetizioni      = 1 (fermato prima di R2/R3)
+comando esatto   = & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag 'nmax3_graphs_b1200_r1_20260816' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -Extra 'GGML_SCHED_PROFILO=0;PORTO_SPEC_NMAX=3;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+### CANCELLO (a) FALLITO: n_max effettivo = 2, non 3
+
+```text
+1.49.836.710 I common_speculative_impl_draft_dflash: - n_max=2, n_min=0, p_min=0.00, conf_min=0.80
+```
+
+Nessuna riga manifesto con `PORTO_SPEC_NMAX` trovata nel log. Il valore effettivamente usato dal
+motore di speculazione e' rimasto **2** (il default SOTA impostato da `run_porto_hot.ps1`), non 3
+come da `-Extra`.
+
+**Evidenza comportamentale indipendente, multipla, che conferma la lettura del log** (il mandato
+stesso avvertiva che una speculazione diversa avrebbe legittimamente cambiato traiettoria e p1 --
+qui invece nulla e' cambiato):
+
+| campo | ottenuto (nmax3, atteso diverso) | storico n_max=2 | coincide? |
+|---|---|---|---|
+| SHA output | `4FDCFADFBFE0D009C7FA826EA8AFE25A6707BF6D3A75296F3E0E50C376ADC65D` | stesso | SI', bit-per-bit |
+| p1 | 0.90025 (713 accepted / 792 generated) | 0.90025 (713/792) | SI', identico |
+| mean len accettata | 2,47 | 2,47 | SI', identico |
+| copie/buchi | domanda 216737, colpi 168831, buchi 47906 | stessi | SI', identico |
+
+Se `PORTO_SPEC_NMAX=3` avesse avuto effetto, questi quattro valori sarebbero quasi certamente
+cambiati (piu' token speculativi per ciclo = piu' route, come previsto esplicitamente dal mandato).
+Sono rimasti identici in ogni cifra: prova convergente, non solo la singola riga di log, che la leva
+e' rimasta inerte.
+
+### Altri cancelli (passati, per completezza)
+
+manifesto `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` -- PASSATO. Righe `sched-profilo` = 0 -- PASSATO.
+Salute: `finish_reason=length`, nessun `GGML_ASSERT`/`CUDA error`/NaN anomalo (l'unica occorrenza di
+`-inf` e' il bias del token EOS, comportamento normale e atteso, non un errore). Chiusura pulita
+(`ctrl-c`). eval 16,02 t/s, ms/token 62,44 (dato grezzo, la leva non era davvero attiva quindi non e'
+un punto dati per il verdetto n_max=3).
+
+**Fermato qui per disciplina di sessione** (non improvviso una correzione e non rilancio con un nome
+di variabile diverso di mia iniziativa): nessuna R2/R3 eseguita, nessun verdetto sul merito di
+n_max=3 possibile con questo dato -- il banco non ha misurato quello che doveva misurare.
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax3_graphs_b1200_r1_20260816.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax3_graphs_b1200_r1_20260816.summary.json
+```
+
+Stato macchina a fine banco (2026-08-16 19:55 circa): processi_llama = 0, RAM libera = 88,0 GB
+(92.312.776 KB). Nessuna invocazione di nvidia-smi in questa decima parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita (`ctrl-c`). Nessun
+commit git eseguito. Nessuna build avviata da questo esecutore. Nessuna replica aggiuntiva lanciata.
+
+---
+
+## Banco F2-B — leva LLAMA_OVERLAP_JOIN_ASYNC — coppia diagnostica B160 OFF/ON — FERMATO (segnale primario non osservabile)
+
+F2-A (eventi, `GGML_SCHED_EVENT_JOIN`) era morta per costruzione (N=0, banco precedente). Nuova leva
+gia' esistente nella configurazione SOTA (`LLAMA_OVERLAP_JOIN_ASYNC`, default 0), verificata sul
+codice sorgente prima del lancio (`D:\llama-overlap\ggml\src\ggml-backend.cpp`):
+
+```cpp
+// righe 1923-1925 -- lettura corretta sul VALORE, non solo sulla presenza
+static const bool v = [] {
+    const char * e = getenv("LLAMA_OVERLAP_JOIN_ASYNC");
+    return e && *e && *e != '0';
+}();
+
+// riga 2025 -- richiede anche l'overlap generale attivo (gia' vero nel default SOTA)
+const bool join_async = overlap && ggml_sched_overlap_join_async_attivo();
+
+// righe 2115-2139 -- se join_async e le altre condizioni sono vere, copia asincrona
+// invece di attesa/sync esplicita; incrementa prof.n_join_async SOLO se profilo attivo
+```
+
+```text
+tag OFF          = joinasync_off_b160_r1_20260816
+tag ON           = joinasync_on_b160_r1_20260816
+data/ora         = OFF lancio 19:57:38 -> ON lancio 20:02:18 -> fine 20:05:07
+runner           = B (run_porto_hot.ps1), binario originale (nessun -ServerPath)
+banco            = B160, diagnostico, profiler ACCESO su entrambi
+comando OFF      = -Extra 'GGML_SCHED_PROFILO=1;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'   (JOIN_ASYNC assente = default 0)
+comando ON       = come sopra + 'LLAMA_OVERLAP_JOIN_ASYNC=1;...'
+```
+
+### Cancelli generali (passati su entrambi)
+
+manifesto `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` -- PASSATO su entrambi. Manifesto conferma
+`LLAMA_OVERLAP_JOIN_ASYNC=0(E)` (OFF) e `=1(E)` (ON) -- la leva raggiunge correttamente il
+processo in entrambi i casi (a differenza di F2-A). Nessun errore/assert. Chiusura pulita
+(`ctrl-c`) su entrambi. p1/SHA identici fra OFF e ON e identici allo storico B160
+(0.77670, 80/103, mean len 2,01, SHA `AD3D3770...`) -- atteso per una leva di puro meccanismo di
+trasporto, non di traiettoria.
+
+### SEGNALE PRIMARIO RICHIESTO NON OSSERVABILE: "copie join-async"
+
+La sonda specifica richiesta (`ggml_sched_profilo_stampa`, righe 1880-1892 di `ggml-backend.cpp`,
+riga `sched-profilo: worker N lavori/grafo ... | copie join-async X`) **non e' comparsa in nessuno
+dei due log** (OFF ne' ON), nonostante il manifesto confermi la leva attiva in ON. Verificato che
+NON e' un problema di ricerca: e' assente anche cercando il prefisso esatto `^sched-profilo: worker`.
+
+**Piu' rilevante**: questa stessa riga non e' comparsa **in nessun log di questa intera sessione**,
+incluso il banco `profile_graphs_b1200_r1_20260816` (profiler pienamente attivo, 1.951 grafi, la
+stampa per-grafo `sched-profilo: N grafi...` funzionava perfettamente li'). L'unica riga worker
+osservata ovunque in sessione e' l'ALTRA, distinta, `sched-profilo-finale: worker N lavori...`
+(da `ggml_backend_sched_free`, righe 2519-2525), che non contiene il campo "copie join-async".
+
+Verificato inoltre nel codice (righe 2386-2389, 2458-2460) che `sched->worker` nasce **pigro** (al
+primo lavoro spedito dal ramo CPU dell'overlap generale, non specificamente da JOIN_ASYNC) e che
+la sua esistenza e' confermata indirettamente dal fatto che la riga `sched-profilo-finale: worker...`
+appare in entrambi i log (86 lavori iniziali, poi 3.440 finali, identico OFF e ON) -- quindi il
+worker ESISTE in entrambi i casi, ma il ramo di stampa con "copie join-async" non si attiva
+comunque. Causa non identificata con certezza: non ulteriormente investigata per restare dentro il
+perimetro del banco (verifica, non debug del codice).
+
+### Segnali indiretti disponibili (non sostituiscono il cancello mancante)
+
+| metrica (per-grafo, ultima riga, 301 grafi) | OFF | ON | delta |
+|---|---:|---:|---:|
+| ingressi ms/grafo | 7,519 | 7,188 | -4,4% |
+| di cui sync ms/grafo | 5,581 | 5,237 | -6,2% |
+| calc CPU ms/grafo | 1,280 | 1,285 | +0,4% |
+| calc altri ms/grafo | 14,792 | 14,857 | +0,4% |
+
+| metrica worker (`sched-profilo-finale`, 3.440 lavori) | OFF | ON | delta |
+|---|---:|---:|---:|
+| evento ms/lavoro | 0,892 | 0,899 | +0,8% |
+| calcolo ms/lavoro | 1,585 | 1,573 | -0,8% |
+| attesa-lavoro ms/lavoro | 1,929 | 1,924 | -0,3% |
+| join ms/lavoro | 2,435 | 2,430 | -0,2% |
+
+| t/s (dato grezzo, B160 diagnostico) | OFF | ON |
+|---|---:|---:|
+| eval t/s | 13,24 | 13,26 |
+
+Lettura onesta: il tempo di `sync` per-grafo scende del 6,2% con la leva accesa (unico delta sopra
+il rumore visivo), ma il campo `join` nella riga worker resta sostanzialmente invariato e il t/s
+aggregato non si muove in modo apprezzabile su un banco B160 di 160 token. Non e' una prova ne' a
+favore ne' contro l'efficacia della leva: e' un indizio debole, senza la conferma diretta del
+contatore richiesto.
+
+### Decisione: fermato prima di B1200 OFF/ON
+
+Coerentemente con la disciplina di sessione (fermarsi quando un cancello di verifica non si
+comporta come documentato, invece di procedere su un'ipotesi non confermata), **non sono stati
+lanciati i bracci B1200 OFF x3 / ON x3** previsti come passi successivi del mandato. Il segnale
+richiesto per decidere se procedere non e' disponibile con gli strumenti di log usati finora.
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\joinasync_off_b160_r1_20260816.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\joinasync_on_b160_r1_20260816.server.log
+```
+
+Stato macchina a fine banco (2026-08-16 20:05 circa): processi_llama = 0, RAM libera = 87,9 GB
+(92.222.016 KB). Nessuna invocazione di nvidia-smi in questa undicesima parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita (`ctrl-c`) su
+entrambe le repliche. Nessun commit git eseguito. Nessuna build avviata da questo esecutore.
+
+---
+
+## Mandato n.2 — fix del runner per NMAX3, modifica autorizzata esplicitamente — DOCUMENTAZIONE DELLA MODIFICA
+
+**Autorizzazione**: il divieto assoluto originale "non modificare nessun file oltre al ledger
+indicato" e' stato **esplicitamente e consapevolmente sospeso dal coordinatore, limitatamente a
+UN solo file** (`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1`),
+per la sola modifica descritta qui sotto. Ogni altro file resta sotto il divieto originale. Il
+conflitto era stato segnalato esplicitamente da questo esecutore prima di qualunque azione; la
+sospensione e' arrivata come messaggio dedicato, nominando il file esatto e la modifica esatta.
+
+### Diagnosi (sotto-fase 1 del mandato n.2) -- CORREZIONE all'ipotesi del mandato
+
+Il mandato ipotizzava un problema di **ordine** fra la riga 62 (`$env:PORTO_SPEC_NMAX = '2'`) e
+l'applicazione di `-Extra`. **Non e' quello il problema.** Lettura completa del file:
+
+- Il blocco `-Extra` (righe 84-90 originali) usa `[Environment]::SetEnvironmentVariable($Matches[1], $Matches[2])`
+  senza scope esplicito (= scope Processo per difetto in .NET), quindi **sovrascrive correttamente**
+  qualunque `$env:X` impostato prima, incluso `PORTO_SPEC_NMAX` alla riga 62. L'ordine, di per se',
+  non era il difetto.
+- **Il vero difetto era alla riga 114 originale**: l'argomento CLI del binario e' costruito con un
+  **letterale hardcoded indipendente**, non con la variabile d'ambiente:
+  ```powershell
+  '-ngld', '99', '--spec-draft-n-max', '2', '--spec-draft-ubatch-size', '16', '-otd', $otd,
+  ```
+  `$env:PORTO_SPEC_NMAX` non viene letto **da nessuna parte** in questo file per costruire
+  `$argsServer`: e' impostato alla riga 62 e mai piu' consultato. E' per questo che nessuna
+  combinazione di variabili d'ambiente via `-Extra` avrebbe mai potuto funzionare (a differenza
+  del runner A, `dopo_il_riavvio.ps1`, che LEGGE `$env:PORTO_SPEC_NMAX` per costruire il suo
+  argomento CLI -- i due runner si comportano diversamente su questo punto).
+
+### Modifica applicata (minima, comportamento invariato quando non specificato)
+
+Nuovo parametro `-SpecNmax` (default `2`, identico al valore precedente), che sostituisce **sia**
+l'assegnazione della riga 62 (per coerenza del manifesto/env) **sia** -- il fix vero -- il
+letterale hardcoded della riga 114:
+
+```powershell
+# param block: aggiunta riga finale
+    [string] $ServerPath = 'D:\llama-overlap\build\bin\llama-server.exe',
+    [int] $SpecNmax = 2
+)
+
+# riga ~62 (era $env:PORTO_SPEC_NMAX = '2')
+$env:PORTO_SPEC_NMAX = "$SpecNmax"
+
+# riga ~114 (era '--spec-draft-n-max', '2', ...) -- QUESTO e' il fix che conta
+'-ngld', '99', '--spec-draft-n-max', "$SpecNmax", '--spec-draft-ubatch-size', '16', '-otd', $otd,
+```
+
+Verificato dopo la modifica: `[System.Management.Automation.Language.Parser]::ParseFile(...)`
+sul file modificato -- **sintassi OK, zero errori di parsing**. Nessun'altra riga toccata.
+Comportamento per tutti i bracci precedenti di questa sessione (che non passavano `-SpecNmax`)
+**invariato**, perche' il default resta `2` in entrambi i punti.
+
+Diff salvato in:
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\runner_specnmax.patch
+```
+(la cartella non e' sotto controllo versione git; diff in formato unified scritto a mano dal
+confronto diretto fra il contenuto letto prima e dopo le tre modifiche puntuali).
+
+---
+
+## Banco L0 corretto — nmax3fix_graphs_b1200_r1/r2/r3_20260816 — PROMOSSO: L0 PAGA (+4,01%)
+
+Rilancio con il runner corretto (`-SpecNmax 3`). Cancello nuovo obbligatorio per ogni replica: la
+riga del **motore** (`common_speculative_impl_draft_dflash`), non l'intenzione.
+
+```text
+tag R1/R2/R3     = nmax3fix_graphs_b1200_r{1,2,3}_20260816
+data/ora         = R1 lancio 20:11:44 -> R2 lancio 20:19:03 -> R3 lancio 20:23:00 -> fine 20:27:05
+runner           = run_porto_hot.ps1 MODIFICATO (vedi sezione precedente), binario originale
+banco            = B1200
+comando esatto (R1/R2/R3, identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 3 -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+  (PORTO_SPEC_NMAX non piu' presente in -Extra: ora inutile, il parametro -SpecNmax lo sostituisce)
+```
+
+### CANCELLO CRUCIALE: riga del motore, valore effettivo (tutte e tre PASSATO)
+
+```text
+R1: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.80
+R2: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.80
+R3: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.80
+```
+
+**Il fix funziona**: a differenza del tentativo precedente (log del motore fermo a `n_max=2`
+nonostante l'intenzione), qui il motore riceve davvero `n_max=3`.
+
+### Altri cancelli (passati su tutte e tre)
+
+manifesto `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` -- PASSATO. Righe `sched-profilo` = 0 su tutte --
+PASSATO. Salute: nessun `GGML_ASSERT`/`CUDA error`/`invalid index`, `finish_reason=length` su
+tutte, chiusura pulita (`ctrl-c`) su tutte.
+
+### Dati per replica (valuta nuova, nessun vincolo di parita' SHA come da mandato)
+
+|                    | R1                | R2                | R3                |
+|---|---|---|---|
+| eval t/s           | 16,31              | 16,34              | 16,34              |
+| p1                 | 0.90281 (771/854)  | 0.90281 (771/854)  | 0.90281 (771/854)  |
+| **mean len accettata** | **2,80**       | **2,80**           | **2,80**           |
+| copie/buchi        | domanda 275477, colpi 195401 (70,9%), buchi 80076 | idem | idem |
+| SHA output         | `1EDA23452DE9292C817EAF47532724A409DD2FFE3B3EF9E165ED887BA4169089` (identico sulle tre) | | |
+| content_chars      | 3782               | 3782               | 3782               |
+| finish_reason      | length             | length             | length              |
+
+Le tre repliche sono **bit-identiche fra loro** (SHA, p1, mean len, copie/buchi) -- coerente con la
+determinatezza del decode (temperature=0), come gia' osservato in tutti i banchi B1200 di questa
+sessione. Lunghezza media accettata **2,80**, contro il riferimento storico n_max=2 **2,47**:
+**+13,36%**, esattamente il tipo di cambiamento previsto e legittimo per una speculazione diversa
+(il drafter ora puo' proporre fino a 3 token, il target ne accetta di piu' per round quando la
+proposta e' buona). Copie/buchi salgono da 216.737/47.906 (n_max=2) a 275.477/80.076 (n_max=3):
++27,1% di domande, +67,2% di copie -- come previsto dal mandato, non un errore: piu' token
+speculativi verificati per ciclo significa piu' route esperti da calcolare, anche per i token poi
+scartati.
+
+### MEDIANA e VERDETTO
+
+```text
+valori ordinati  : 16,31 / 16,34 / 16,34
+MEDIANA          : 16,34   (elemento centrale vero, v[1])
+media            : 16,33
+spread max-min   : 0,18 %   (banco molto stabile)
+
+riferimento (truth_graphs, stesso binario e regime) = 15,71 t/s
+delta mediana vs riferimento = +4,01 %
+delta media vs riferimento   = +3,95 %
+```
+
+**+4,01% e' SOPRA la soglia del +3%.** Per il mandato: **"L0 paga e domani si sweepa (n_max=4,
+conf)"**. Il verdetto storico "NMAX3-5 peggiora" **non regge** nel regime corretto (grafi CUDA
+riparati, banco `truth_graphs`): con il costo fisso per ciclo crollato, l'ottimo di n_max si e'
+davvero spostato, come ipotizzato dal coordinatore.
+
+### Nota richiesta dal mandato: il run "nmax3" inerte come replica truth_graphs
+
+Il tentativo precedente (`nmax3_graphs_b1200_r1_20260816`, sezione precedente di questo ledger,
+16,02 t/s) aveva la leva NMAX inerte (motore fermo a `n_max=2`) mentre tutti gli altri parametri
+(profiler spento, grafi accesi, binario originale) coincidevano esattamente con `truth_graphs`. Va
+quindi registrato **come una replica extra della configurazione `truth_graphs`**, non come un punto
+dati per n_max: aggiungendolo alle tre repliche gia' note di quel banco (15,71/15,84/15,86 --
+mediana 15,71), la nuova quaterna e' 15,71/15,84/15,86/16,02, mediana fra i due centrali
+15,84 (a 4 valori la "mediana" e' la media dei due centrali: (15,84+15,86)/2 = 15,85 -- non
+ricalcolata formalmente qui, riportata solo come nota, il riferimento ufficiale per questo banco
+resta la mediana di 3 gia' promossa, 15,71).
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax3fix_graphs_b1200_r{1,2,3}_20260816.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax3fix_graphs_b1200_r{1,2,3}_20260816.summary.json
+```
+
+Stato macchina a fine banco (2026-08-16 20:27 circa): processi_llama = 0, RAM libera = 87,8 GB
+(92.064.868 KB). Nessuna invocazione di nvidia-smi in questa tredicesima parte (unica invocazione
+dell'intera sessione resta quella di preflight, 16:15 circa). Chiusura pulita su tutte e tre le
+repliche (`ctrl-c`). Nessun commit git eseguito. Nessuna build avviata da questo esecutore
+(solo la modifica dello script runner, documentata sopra e autorizzata esplicitamente).
+
+---
+
 ## Retrofit — variabili complete dei banchi truth_clean/truth_clean2
 
 Ricostruzione a posteriori dell'ambiente **effettivo** dei run di stasera, ottenuta unendo

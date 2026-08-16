@@ -21,6 +21,13 @@
 | CPU FFN super-op v1, accessi contigui | 64 token | **11,40 t/s**, p1=.77273; worker CPU 2,454 ms/layer | output identico, stesso SHA | chiaramente peggiore; **respinto e codice rimosso** |
 | GPU lane B transiente, multi-stream smoke 1 | nessuna completion | errore CUDA `capturing stream has unjoined work` | nessun output | fork B aperto, consumer rimasto CPU; non conta come B |
 | GPU lane B transiente, multi-stream smoke 2 | nessuna completion | deadlock al primo decode dopo `cached n_tokens = 1` | nessun output | pin CUDA esplicito non risolve il ciclo WDDM/graph; **famiglia multi-stream respinta e rimossa** |
+| GPU lane B transiente, single-stream | 64 token | **11,37 t/s**, p1=.88372; stage 1,487 ms/ciclo, tail 0,993 ms/ciclo | output coerente, length, invalidi=0 | **-15,1%, respinto; codice rimosso** |
+| Decode VRES graphlet, GPU-only K=0 fixture | 64 token | **12,10 t/s**, p1=.87805 | output coerente, length | cancello correttezza superato; ammesso al solo B GPU-only |
+| Decode VRES graphlet, GPU-only K=0 | 1.200 token | **12,83 t/s**, p1=.78025 | output coerente, length | circa **+8%** contro il riferimento GPU-only storico; guadagno reale ma non batte la base K=2 |
+| Decode VRES graphlet, K=2 fixture r3 | 64 token | **12,68 t/s**, p1=.80952 | output coerente, stesso SHA della reference K=2 | corretto dopo gestione del sentinel route `-1` |
+| Decode VRES graphlet, MASSA2 K=2 | 1.200 token | **14,03 t/s**, p1=.87391; miss 21,8%; 312,87 GiB H2D | NeuraForge HTML coerente, length, zero errori/divergenze | **-12,7%, respinto; nessuna replica** |
+| Decode TILE GPU-driven, layer 3 | 64 token | **10,15 t/s**, p1=.77273; 87 miss unici su 99 route-miss | `length`, stesso SHA K=2; install gate/up/down=87/87/87 | corretto e deduplicato, ma costo gia' fuori budget |
+| Decode TILE GPU-driven, tutti i layer | 64 token | **10,45 t/s**, p1=.80952; 3.815 miss unici, circa 25,15 GiB mapped | `length`, stesso SHA K=2; install gate/up/down=3.815/3.815/3.815, zero errori/divergenze | **-35,0% dalla base; respinto, niente B 1.200** |
 
 ## Evidenza diagnostica
 
@@ -68,3 +75,219 @@ hidden/KV DFlash prodotti durante il prefill full, non un indice host casuale.
   (~0,541 ms) seguita dagli MMVQ locali (~0,158 ms stimati), senza eventi o
   stream esterni. Se il critical path misurato non batte 1,056 ms/layer, si
   chiude anche la banca B exact-demand.
+- Aggiornamento conclusivo: anche il single-stream e' chiuso a 11,37 t/s. Il
+  successivo VRES graphlet ha dimostrato un +8% pulito a K=0, ma con K=2 scende
+  a 14,03: il confine host sincrono impedisce al scheduler di comporre la lane
+  CPU col ramo CUDA. Non cercare varianti locali dello stesso graphlet/H2D.
+- Aggiornamento conclusivo TILE: il WIP e' stato completato, isolato dal vecchio
+  VRES, compilato Release e verificato prima su layer 3 e poi su tutti i layer.
+  La correzione essenziale deduplica i miss tra token speculativi usando la
+  lista device dei soli miss unici: nessuna rilettura/installazione concorrente
+  dello stesso esperto; route `-1`, MASSA2, K=2, pesi e ordine restano invariati.
+  Entrambe le fixture sono bit-identiche alla reference K=2, ma il full TILE fa
+  solo **10,45 t/s**. I 3.815 tile da 6,75 MiB valgono circa **25,15 GiB** letti
+  via SM/UVA in 6,127 s: tetto end-to-end circa **4,10 GiB/s**. Per 20 t/s gli
+  stessi byte richiederebbero almeno 7,86 GiB/s prima ancora del compute. Il
+  meccanismo GPU-driven mapped read/compute/install e' quindi falsificato nel
+  regime Porto; niente B 1.200 e niente varianti locali di griglia/coalescenza.
+
+## Planner globale target+DSpark e trasporto persistente (15 agosto, sera)
+
+Questo braccio e' distinto da FIDDLER/K dinamico/prefetch locale: un piano
+globale dell'intero ciclo speculativo assegna in anticipo `(layer, expert,
+slot, release, deadline)`. Le vittime `-1` sono libere a inizio ciclo; le altre
+vengono sovrascritte solo dopo il `down` dell'ultimo layer che le legge. Il
+trasporto usa uno stream persistente dedicato e gli eventi vengono accodati dal
+backend **fuori** dalla cattura dei circa 45 sottografi CUDA target. DSpark e i
+CUDA Graph target restano attivi; nessun callback o rendez-vous host per layer.
+
+| Braccio | Risultato | Correttezza / contatori | Verdetto |
+|---|---:|---|---|
+| Reference normalizzata CESTRC2, B160 | **9,96 t/s**, p1=.81443 | SHA `EFC752C5...` | clock contingente basso; riferimento del microcancello |
+| Piano sincrono, B160 | **8,39 t/s** | stesso SHA/p1; 80/80, 6.806 copie verificate byte per byte | corretto ma seriale |
+| Async con target graph spenti, B160 | **9,03 t/s** | stesso SHA/p1; 80/80, zero miss/divergenze | trasporto corretto, costo graph-off dominante |
+| Async persistente fuori cattura, target graph attivi, B160 | **10,11 t/s** | stesso SHA/p1; 80/80, zero miss/divergenze | **+1,5%** sul riferimento breve |
+| Reference normalizzata CESTRC2, B1200 | **11,38 t/s**, p1=.88010 | SHA `1A210205...`; 690 accettati | riferimento lungo a clock contingente |
+| Async persistente, tail decode 509 cicli, B1200 | **11,49 t/s**, p1=.88010 | stesso SHA; 509/509, 43.244 copie, 222.396/222.396 hit allineati, zero miss/divergenze | **+0,97%, valido ma non macro** |
+
+La traccia lunga contiene 514 cicli completi, di cui 5 preliminari
+warm-up/prompt. Il decode corretto e' la coda da `1200 - 690 - 1 = 509` cicli;
+usare tutti i 514 lascia il replay disarmato (`0/55986`) e non misura il piano.
+Il piano tail509 ha working set medio 272,13 slot (max 401) su 473, 84,19 copie
+per ciclo e riduce offline i miss unici da 52.421 a 37.157 (-29,12%), ma il
+guadagno end-to-end resta circa un punto percentuale.
+
+**Decisione:** infrastruttura e semantica del planner/trasportatore sono
+promosse (parita' esatta e zero deadline miss), ma il planner oracle da solo
+non e' il macro-guadagno necessario per 20 t/s. Non iterare altre politiche
+locali di release/K/lane. Il fronte principale passa al macro-kernel decode v2
+che preserva la MMQ/MMVQ Porto e fonde il contorno (route/partizione,
+quantizzazione, maschere, dispatch e code/tail); il planner resta sotto come
+fornitore di residenza. I valori 9--11 t/s non sostituiscono la SOTA 16,0733:
+sono stati raccolti con clock GPU contingente inferiore e servono come A/B
+relativo sullo stesso binario/banco.
+
+## Macro-kernel decode v2: planner -> slot diretto
+
+Il primo sottocancello ha rimosso il lookup reattivo `kern_decidi` dal ramo
+K0: il planner precarica il ciclo zero al confine caldo prompt/decode, assegna
+gli slot esatti e la partizione passa gli slot direttamente alla MMVQ Porto.
+Il cambio di fase entra nell'identita' dei CUDA Graph, quindi il grafo del
+prompt non puo' essere riusato per errore nel decode. Questo braccio non e'
+`FORK_RIUSA_SLOT`: ownership e generazioni provengono dal calendario globale.
+
+| Braccio | Risultato | Correttezza / contatori | Verdetto |
+|---|---:|---|---|
+| Calendario Q9 lungo, K0 | **11,50 t/s**, p1=.84036 | stesso SHA del K0 lungo, 658 accettati / 783 generati, zero divergenze | valido; circa +31% sul K0, ma solo circa +1% sulla base K2 contingente |
+| Calendario Q8 burst | picco apparente non valido | output corrotto alla prima pressione del trasporto | falsificato; nessuna promozione |
+| Slot diretto, Q8, B160 | **10,22 t/s**, p1=.80583 | SHA `EE1E260F...`, 7.740/7.740 route, 78/78 cicli, 19.787 copie, zero guasti/divergenze | corretto, ma sotto il calendario standard breve da 10,54 t/s |
+| Slot diretto + maschera compact, Q8, B160 | **10,22 t/s**, p1=.80583 | stesso SHA; 7.740/7.740 route, 78/78 cicli, zero guasti/divergenze | nessun recupero: le colonne compact nulle non erano il collo |
+
+Due bring-up precedenti non sono misure: attivare gli slot diretti durante il
+prompt lasciava il calendario disarmato e produceva 45.408 lookup invalidi;
+usare solo 76 cicli ometteva il primo ciclo decode a un token. Il piano corretto
+contiene tutti i 77 cicli piu' drain e viene attivato soltanto dopo il restore
+hot target+draft+slab.
+
+**Decisione:** l'infrastruttura planner -> ownership -> slot -> MMVQ e' corretta,
+ma il solo bypass del lookup non e' un macro-guadagno. La maschera compact non
+va inseguita con altri microtuning. Per il prossimo v2 bisogna misurare e fondere
+un contorno piu' ampio della MMVQ esistente (route/sort, quantizzazione,
+dispatch e tail), mantenendo il planner come residenza e senza riscrivere i dot
+Porto. Nessun risultato di questa sezione sostituisce la SOTA 16,0733 o dimostra
+20 t/s.
+
+## Macro-v2: gate+up cache-aware e riuso expert-major tra token
+
+Il profilo invasivo K0/calendario, con graph spenti, misura per layer target
+`gate -> up -> GLU -> down` = **1,9256 ms**. Le tre MMVQ mascherate valgono
+**1,4816 ms/layer**, mentre clamp/GLU/dispatch/tail valgono solo
+**0,4440 ms/layer**. Il profilo non e' una misura t/s, ma fissa il budget:
+per arrivare da 16,0733 a 20 t/s servono circa **0,284 ms/layer**.
+
+E' stata implementata dietro `LLAMA_DSV4_DECODE_GATE_UP_FUSO=1` una fusione
+cache-aware che riconosce i due MMID, conserva slot e maschere del planner,
+chiama la MMVQ Porto esistente in un solo passaggio e scrive direttamente il
+GLU. Il braccio B160 e' bit-identico alla reference slot-diretto:
+
+| Braccio | Risultato | Correttezza / contatori | Verdetto |
+|---|---:|---|---|
+| Slot diretto compact, B160 | **10,22 t/s**, 97,83 ms/token | SHA `EE1E260F...`, p1=.80583 | reference contingente |
+| Slot diretto + gate/up fuso, B160 | **10,37 t/s**, 96,40 ms/token | stesso SHA/p1; planner 7.740/7.740, trasporto 78/78, zero divergenze | **+1,47%, corretto ma respinto** |
+
+Il recupero e' solo **1,43 ms/token**, circa **0,033 ms/layer**: dimostra che
+launch, clamp e GLU non contengono il guadagno macro richiesto. La leva resta
+spenta di default e non merita un B lungo.
+
+Il cancello offline successivo usa la coda lunga esistente da 509 cicli e non
+aggiunge sonde al runtime. Con K0/AcceptMoE compact ci sono 291.000 occorrenze
+di route contro 222.644 esperti unici per `(ciclo, layer)`: **68.356 duplicati,
+23,490%** di letture-peso idealmente eliminabili. La riduzione e' 20,198% nei
+cicli a due token e 26,060% nei cicli a tre token; 19.834/21.887 gruppi-layer
+presentano almeno un riuso. Applicata ottimisticamente alle MMVQ profilate, la
+forbice massima e' circa **0,348 ms/layer**, quindi supera di poco il cancello
+0,284 e giustifica un solo microbraccio.
+
+Questo fronte non e' il TILE GPU-driven falsificato: TILE deduplicava e leggeva
+via SM/UVA soltanto i miss da installare. Qui gli esperti sono gia' residenti
+nella slab e si vuole riusare una riga quantizzata tra input diversi nello
+stesso kernel. L'idea, pero', non e' nuova nell'altro runtime: `ds4_cuda.cu`
+contiene `glm_routed_moe_gateup_tok2_reuse_kernel`, attivo nel verify a due token,
+che mantiene la riduzione nativa e valuta due input con un solo caricamento dei
+pesi gate/up. Il port corretto deve quindi riusare quella conoscenza sul runtime
+llama corrente, estenderla a n=3 e al down, e preservare i dot Q8_1 Porto; non
+riscrivere una nuova aritmetica Q8_K/Q8_0.
+
+Primo port sperimentale, dietro `LLAMA_DSV4_DECODE_EXPERT_REUSE=1`: build
+Release Windows riuscita, ma nessuna misura t/s valida. Al primo forward decode,
+subito dopo l'attivazione della fusione gate/up, il server termina con:
+
+```text
+D:\llama-overlap\ggml\src\ggml-cpu\ops.cpp:4823:
+GGML_ASSERT(i01 >= 0 && i01 < ne01) failed
+```
+
+Il banco aveva profilo/sonde spenti, graph attivi, K0, Q8, slot diretti e piano
+77+drain. Prompt 21,02 t/s; il crash arriva prima di qualsiasi riga `eval time`,
+quindi **non esiste un decode t/s da riportare**. La nuova leva resta spenta e
+non va combinata con altri bracci. Prima di un eventuale secondo tentativo va
+isolata separatamente su gate/up IQ2_XXS e down Q2_K, confrontando direttamente
+l'uscita MMID prima del router; non diagnosticare dal successivo GET_ROWS CPU.
+La SOTA resta 16,0733 t/s e l'ultimo B160 valido resta 10,37 t/s nel regime di
+clock contingente, non confrontabile in assoluto con la SOTA.
+
+## Rettifica 16 agosto - il record da 16,07 non e' riprodotto dal binario corrente
+
+Questa sezione e' piu recente e sostituisce l'ultima frase sopra. Il record
+16,0733 resta una misura storica certificata, ma **non** e' la baseline
+operativa corrente.
+
+### Banco lungo K2, stesso output del record
+
+| run | snapshot | profiler | t/s | p1 | correttezza |
+|---|---:|---:|---:|---:|---|
+| storico `mass2_copyall_stablelane_t473_d12_b1` | no | on | **16,04** | .90025 | 713/792, 47.906 copie, SHA file `4FDCFADF...` |
+| `sota_k2_current_codegen_b1200_r1_20260816` | si | off | **9,87** | .85316 | traiettoria diversa |
+| `sota_k2_no_hot_snapshot_b1200_r1_20260816` | no | off | **10,54** | .90025 | testo normalizzato identico allo storico |
+| `sota_k2_no_hot_profile_diag_b1200_r1_20260816` | no | on | **10,53** | .90025 | stesso testo e contatori |
+| `sota_k2_calendar_scan_gated_b1200_r1_20260816` | no | on | **10,53** | .90025 | gate scansione calendario neutro |
+
+Il testo storico e quello nuovo hanno entrambi 3.571 caratteri dopo rimozione
+CR e trim finale e sono uguali case-sensitive. Accessi target 216.737, hit
+168.831 (77,9%), miss/copie 47.906; 486 cicli DSpark, 713/792 e mean len 2,47.
+
+### Localizzazione quantitativa
+
+Profiler a 1.951 grafi, 35,6 split/grafo:
+
+| ms/grafo | storico | corrente | delta |
+|---|---:|---:|---:|
+| ingressi | 3,692 | 6,022 | +2,330 |
+| sync | 2,741 | 5,120 | +2,379 |
+| CPU | 1,358 | 1,655 | +.297 |
+| **altri backend / graph_compute_async** | **4,080** | **22,318** | **+18,238** |
+| dispatch | .193 | .308 | +.115 |
+| sched-sync | .133 | .238 | +.105 |
+
+Il delta `calc altri` vale ~35,58 s su 1.951 grafi e spiega quasi tutta la
+regressione 74.804,71 -> 113.997,15 ms. Il join worker migliora 2,631 -> 2,495
+ms/lavoro; CPU worker 1,772 -> 1,885. DSpark passa 14,12 -> 21,54
+ms/chiamata e spiega solo ~3,4 s.
+
+**Verdetto:** prima di 20, bisect di `ggml_cuda_graph_compute_one`/replay CUDA
+con output storico fisso. Cancello: `calc altri <=5 ms/grafo`, p1=.90025,
+47.906 copie, testo identico, >=15,8 t/s. Il profiler on/off nel binario
+corrente vale 10,53/10,54, quindi qui misura il difetto ma non lo causa.
+
+### Rettifica macro expert-reuse
+
+I primi B20/crash omettevano `LLAMA_CACHE_ESPERTI_CALENDARIO_K0=1` pur usando
+slot diretti: expert-id venivano interpretati come slot. Sono contaminati e non
+sono una prova contro il kernel.
+
+Banco corretto K0 + slot diretti + Q8 77+drain:
+
+| run | t/s | esito |
+|---|---:|---|
+| no-dedup, dot nativo, zero-dst | **10,38** | p1=.80583, SHA `EE1E260F...`, 7.740/7.740, 78/78, bit-esatto |
+| dedup globale multi | 7,71 | p1=.16197, errato |
+| dedup globale dot nativo | 7,39 | stesso output errato |
+| owner DS4 8 warp | 7,71 | stesso output errato |
+| logical owner | 5,50 | p1=.00417, errato |
+| stessa corsia nativo | 6,96 | acceptance .13014, divergenza ciclo19 |
+| stessa corsia multi | 7,18 | stesso output errato |
+
+Il no-dedup prova topologia, indirizzo slot, fusione e dot. Il difetto e'
+nell'adozione owner/mate. Stessa-corsia copre solo 3.240/41.987 route = 7,7167%
+e non ha ceiling sufficiente per 20: ramo sospeso finche' non torna il 16.
+
+### Fix infrastrutturali neutri
+
+- `kern_partiziona<planner_trace>` separa a compile time fast e strumentato:
+  9,84 vs 9,87 nello snapshot-on, nessun recupero materiale.
+- scansione confini calendario gated da async/slot-diretti: `calc altri`
+  22,318 -> 22,014 ms/grafo, neutra.
+- runner aggiunge `-PortoHotSnapshot 0|1`; il record va riprodotto con 0.
+
+Nessun commit, push o WSL. Handoff dettagliato aggiornato nella sezione 18 di
+`HANDOFF_NUOVA_CHAT_15_AGOSTO_NOTTE.md`.

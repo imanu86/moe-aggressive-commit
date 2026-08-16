@@ -34,7 +34,8 @@ $PORTA = 8099
 $OTD  = 'blk\.0\.ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped,ffn_(gate|up|down)_exps\.weight=CPU'
 $REL  = Join-Path $run 'dopo_il_riavvio.txt'
 $msg  = [IO.File]::ReadAllText((Join-Path $run 'jprompt.txt'), [Text.Encoding]::UTF8)
-$body = @{ messages = @(@{ role='user'; content=$msg }); max_tokens = 1200; temperature = 0; stream = $false } | ConvertTo-Json -Compress -Depth 5
+$MAXTOK = if ($args.Count -gt 4 -and [string]$args[4] -match '^\d+$') { [int]$args[4] } else { 1200 }
+$body = @{ messages = @(@{ role='user'; content=$msg }); max_tokens = $MAXTOK; temperature = 0; stream = $false } | ConvertTo-Json -Compress -Depth 5
 function Nota([string]$t) { $t | Tee-Object -FilePath $REL -Append }
 
 # CHIUSURA PULITA -- l'idioma e' in casa da sempre, in 31 script di questa
@@ -134,15 +135,20 @@ if ($EXTRA) {
     }
   }
 }
+$MD = if ($env:PORTO_DRAFT_MODEL) { $env:PORTO_DRAFT_MODEL } else { $MD }
 $up = [math]::Round(((Get-Date)-(Get-CimInstance Win32_OperatingSystem).LastBootUpTime).TotalMinutes,1)
 Nota ""
 Nota ("=== " + $tag + "  " + [DateTime]::Now.ToString('HH:mm') + "   (uptime " + $up + " min)  SLOT=" + $SLOT + "  -- confronto con j_rif delle 05:10 ===")
 
+$NMAX = if ($env:PORTO_SPEC_NMAX -match '^\d+$') { [int]$env:PORTO_SPEC_NMAX } else { 1 }
 $a = @('-m', 'C:/ds4-models/DS4-0731-IQ2XXS.gguf', '-md', $MD, '--spec-type', 'draft-dspark', '--fit', 'off',
-  '-ngld', '99', '--spec-draft-n-max', '1', '--spec-draft-ubatch-size', '16', '-otd', $OTD,
+  '-ngld', '99', '--spec-draft-n-max', "$NMAX", '--spec-draft-ubatch-size', '16', '-otd', $OTD,
   '-c', '10000', '-ub', '64', '-np', '1', '-ngl', '99',
   '-ot', 'ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped', '-t', '7', '--no-mmap',
   '-lv', '4', '--host', '127.0.0.1', '--port', "$PORTA")
+if ($env:PORTO_SPEC_CONF_MIN -match '^(?:\d+(?:\.\d*)?|\.\d+)$') {
+  $a += @('--spec-draft-conf-min', $env:PORTO_SPEC_CONF_MIN)
+}
 $proc = Start-Process -FilePath $bin -ArgumentList $a -WindowStyle Hidden -PassThru `
   -RedirectStandardError (Join-Path $run "$tag.server.log") -RedirectStandardOutput (Join-Path $run "$tag.server.out")
 

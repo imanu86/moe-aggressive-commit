@@ -11,9 +11,12 @@ una SOTA end-to-end.
 Questo documento completa `HANDOFF_13_AGOSTO.md`, `LEDGER_13_AGOSTO.md`,
 `HANDOFF_14_AGOSTO.md` e `LEDGER_14_AGOSTO.md`. Per numeri, errori e modifiche,
 **log e codice correnti restano l'autorità**. La task sorgente era
-`019ffc23-6976-7d83-aff4-ba9ede2a8822`; la continuazione che ha prodotto questo
-file ha perso l'elevazione dopo il riavvio della chat e non può più scrivere in
-`D:\llama-overlap` o `D:\ds4_work`.
+`019ffc23-6976-7d83-aff4-ba9ede2a8822`. Una continuazione intermedia aveva perso
+l'elevazione dopo il riavvio della chat. La continuazione successiva ha invece
+verificato scrittura piena in `D:\llama-overlap` e `D:\ds4_work`, ha compilato
+Release e ha avviato benchmark reali. La perdita successiva del controllo remoto
+dell'app e' quindi un problema separato dai privilegi filesystem/processi. Ogni
+nuova task deve comunque ripetere il controllo di accesso come prima azione.
 
 ## 1. Regole operative dell'utente
 
@@ -786,3 +789,25 @@ row-layer: 2 x 6,75 MiB / 24,35 GiB/s = ~0,541 ms di copia, piu' ~0,158 ms per
 due hit-MMVQ, totale ~0,70 ms contro 1,756 ms CPU. Il cancello resta <=1,056
 ms/layer. Se la serializzazione col ramo GPU supera quel limite, chiudere anche
 questa famiglia senza B lungo.
+
+## 22. Addendum 15 agosto: chiusura del percorso TILE GPU-driven
+
+Per lo stato operativo completo e autorevole vedere la sezione 21 di
+`HANDOFF_NUOVA_CHAT_15_AGOSTO.md`. In sintesi, il WIP expert-tile e' stato
+completato e compilato Release dietro flag default-off, correggendo la
+duplicazione dei miss tra token speculativi e aggiungendo contatori separati di
+miss unici/installazioni.
+
+Le due fixture64 sono semanticamente esatte e bit-identiche alla reference K=2:
+
+```text
+solo layer 3 : 10,15 t/s, 87 miss unici, install 87/87/87
+tutti i layer: 10,45 t/s, 3.815 miss unici, install 3.815/3.815/3.815
+SHA output   : E23927D45A1AAC205727E96ACF4D13F9E3040AE3186415915DE0948B23C4A663
+```
+
+Il full TILE muove circa 25,15 GiB via letture SM/UVA in 6,127 s di decode,
+ossia non piu' di circa 4,10 GiB/s end-to-end; 20 t/s richiederebbero almeno
+7,86 GiB/s prima del compute. **Famiglia respinta senza B 1.200**. Non ripetere
+varianti locali dello stesso mapped read GPU-driven. Base decode invariata a
+16,0733 t/s, obiettivo 20 t/s ancora aperto, nessun commit eseguito.

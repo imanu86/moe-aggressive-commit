@@ -421,8 +421,12 @@ Questo è il comando canonico da cui partire, copiato dalla fonte autoritativa:
 & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' `
   -Tag 'rif_b1200_r1_20260816' `
   -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 `
-  -Extra 'LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;GGML_CUDA_DISABLE_GRAPHS=0;GGML_SCHED_PROFILO=0'
+  -Extra 'LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;GGML_SCHED_PROFILO=0'
 ```
+
+**`GGML_CUDA_DISABLE_GRAPHS` rimossa (16/8) da questo comando canonico**: non è un interruttore
+a valore, è un cancello **a presenza** — vedi §10.4 punto 14. Impostarla, a qualunque valore
+compreso `=0`, disabilita i CUDA graph.
 
 ### 3.4 Attesa della readiness
 
@@ -1227,6 +1231,13 @@ Dopo una sessione: nessun ripristino è previsto. **Non si cancellano artefatti*
 11. **Mai usare WSL.** Tutto è Windows nativo.
 12. **Mai fare commit o push** senza richiesta esplicita.
 13. **Mai far girare agenti che leggono file grandi durante una misura.**
+14. **`GGML_CUDA_DISABLE_GRAPHS` è un cancello A PRESENZA: non va MAI impostata, nemmeno a
+    0, se si vogliono i grafi accesi.** Verificato nel codice
+    (`ggml-cuda/common.cuh:1266`): `getenv("GGML_CUDA_DISABLE_GRAPHS") != nullptr` — controlla
+    se la variabile **esiste** nell'ambiente, non il suo valore. Impostarla a `=0` la
+    disabilita esattamente come `=1`. Verifica obbligatoria nel manifesto del log: la riga
+    deve dire `<spento>(D)`. Questa trappola ha nascosto **~2,5 t/s per due giorni**: tutti i
+    banchi del 15-16/8 giravano senza grafi.
 
 ---
 

@@ -1587,3 +1587,656 @@ segnalato.
 
 A pari strumentazione (profiler ACCESO in tutti e due) il confronto e' **16,04 contro 12,82**,
 cioe' -20,1%: la sonda non spiega niente, anzi la SOTA la pagava e andava comunque piu' forte.
+
+---
+
+## Cancello lungo L0 — certificazione n_max=3 sul banco ctx150k (neuraforge prefill)
+
+Nuovo mandato: le leve grosse (n_max=3, gia' promossa sul banco corto B1200 con +4,01%) si
+certificano anche sul prompt lungo (regola dell'utente), non solo sul banco corto. Riferimento
+storico della base lunga: `sota100k_ctx150k_densefa_stage_hc5_resident*` — prefill 116,1985 t/s
+(mediana 111,09), decode 7,9492 t/s, p1 .61702 (RUNBOOK SS12.5).
+
+### FASE 1 — Ricognizione (riassunto; dettaglio gia' riportato al coordinatore in chat)
+
+Lanciatore identificato: `C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1`
+(non `docs\porto\prefill_100k.ps1`, che e' un braccio diverso: ctx 104k, tag fisso `p100k`,
+n_max hardcoded `1`, shutdown sempre `Stop-Process -Force`). Confermato con la sola copia
+esistente sul disco (nessun'altra versione trovata sotto `C:\Users\imanu\Documents\Codex`).
+
+Tre fatti verificati leggendo il file per intero e i log storici, non assunti:
+1. **n_max era un letterale hardcoded**, riga 191 originale: `'--spec-draft-n-max', '2'`, nessuna
+   lettura di `$env:PORTO_SPEC_NMAX` da nessuna parte nel file. Log storico
+   (`sota100k_ctx150k_densefa_stage_hc5_resident_f2_b2048.server.log`) conferma
+   `common_speculative_impl_draft_dflash: - n_max=2` -- coerente col letterale.
+2. **Wildcard `blk\..*=CPU` presente nel codice** (righe 25-29 originali), attivata da
+   `$BlockDenseCpu`, il cui **default era `1` (ATTIVO)**. Verificato sul summary storico
+   (UTF-16LE) che il run che ha prodotto la baseline citata dal mandato dichiara esplicitamente
+   `block-dense-cpu=0`: la wildcard vietata (RUNBOOK SS10.4.1) NON era in uso in quel run, ma
+   SOLO perche' invocato con l'override esplicito -- coi soli default, lo stesso script
+   l'avrebbe attivata. Nessuna riga `CPU model buffer` diffusa nel log storico (solo 4
+   occorrenze totali di righe buffer/tensor, tutte `CUDA0_Mapped`), coerente con l'assenza.
+3. **Lo script attuale non e' bit-per-bit quello che ha prodotto la baseline storica**: il tag
+   interno che il codice ATTUALE costruirebbe e' `sota_ctx${Context}_...` (parametrico), ma i
+   file storici sul disco si chiamano `sota100k_ctx150k_..._f2_b2048` (letterale) -- lo script e'
+   stato generalizzato dopo quella corsa. n_max=2 resta comunque coerente fra le due versioni
+   (verificato sul log), ma non e' garantito che ogni altra riga sia rimasta identica. Segnalato
+   al coordinatore, nessuna azione richiesta oltre alla segnalazione.
+4. Meccanismo di stop gia' `ctrl-c` pulito (funzione `Stop-Clean`, fallback a `Stop-Process -Force`
+   solo dopo 60 s con anomalia implicita) -- log storico conferma `shutdown: ctrl-c`. Nessuna
+   modifica necessaria qui.
+
+### Autorizzazione esplicita e dedicata (ricevuta dal coordinatore, stesso pattern di `run_porto_hot` di ieri notte)
+
+Il divieto di modifica e' stato sospeso **per un solo file**,
+`C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1`, per
+**due modifiche esatte, nominate dal coordinatore**:
+1. Riga 191: sostituire il letterale `'--spec-draft-n-max', '2'` con un parametro `-SpecNmax`
+   (default 2) nel blocco `param()` -- stesso pattern usato per `run_porto_hot.ps1`.
+2. Default di sicurezza: `$BlockDenseCpu` da default `1` a default `0` -- "uno script il cui
+   DEFAULT attiva la wildcard vietata... e' una mina, e va disinnescata ora" (testuale dal
+   coordinatore).
+
+### Modifiche applicate (verificate: nessun'altra riga toccata)
+
+Verificato **prima** della modifica (rilettura del file) e **dopo** (rilettura integrale delle
+269 righe, confrontata riga per riga con la lettura originale): solo tre righe cambiate, tutte
+dentro il perimetro autorizzato.
+
+```powershell
+# blocco param() -- era:
+    [string] $RunLabel = 'pin',
+    [ValidateSet(0, 1)]
+    [int] $BlockDenseCpu = 1,
+    [int] $Packetizer = -1,
+    [int] $PrefixChars = 0,
+    [int] $Context = 150000,
+    [int] $MaxTokens = 64
+)
+# ora:
+    [string] $RunLabel = 'pin',
+    [ValidateSet(0, 1)]
+    [int] $BlockDenseCpu = 0,
+    [int] $Packetizer = -1,
+    [int] $PrefixChars = 0,
+    [int] $Context = 150000,
+    [int] $MaxTokens = 64,
+    [int] $SpecNmax = 2
+)
+
+# riga ~191 -- era: '-ngld', '99', '--spec-draft-n-max', '2', '--spec-draft-conf-min', '0.8',
+# ora:              '-ngld', '99', '--spec-draft-n-max', "$SpecNmax", '--spec-draft-conf-min', '0.8',
+```
+
+Verifica sintattica dopo la modifica: `[System.Management.Automation.Language.Parser]::ParseFile(...)`
+-- **sintassi OK, zero errori di parsing**.
+
+Diff reale (non scritto a mano: generato con `git diff --no-index` fra una copia del contenuto
+originale, ricostruita dalla lettura fatta prima di modificare, e il file modificato) salvato in:
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\sota100k_specnmax.patch
+```
+
+Comportamento per chi invoca lo script senza `-BlockDenseCpu`/`-SpecNmax`: **cambiato
+deliberatamente** rispetto a prima (era: wildcard attiva di default, n_max=2 fisso; ora: wildcard
+spenta di default, n_max=2 di default ma sostituibile) -- e' esattamente l'effetto voluto
+dall'autorizzazione (disinnescare la mina di default, parametrizzare n_max).
+
+### Anomalia: primo tentativo di `longgate_nmax2_r1` ucciso dal timeout del tool (non un guasto)
+
+Primo lancio (come task PowerShell del tool, in foreground rispetto allo strumento) partito
+21:16:09: shape 12288 fallita per OOM dopo **37 minuti** (`graph_reserve: failed to allocate
+compute buffers` -> `failed to initialize the context` -> `failed to create context`), shutdown
+`ctrl-c` **pulito** registrato -- comportamento sano, coerente con "i fallimenti OOM in sequenza
+sono attesi" del mandato. Passato al tentativo con shape 8192 (21:53:07); dopo altri ~20 minuti
+il task e' stato **ucciso** (status "killed", non da questo esecutore, nessun `TaskStop` chiamato)
+-- diagnosi: limite di tempo massimo sui task del tool eseguiti in foreground/background rispetto
+allo strumento stesso (osservato empiricamente attorno ai 55-60 minuti), non un guasto del
+lanciatore ne' della macchina. **Verificato subito dopo**: zero processi `llama-server`/`llama-cli`
+residui, porta 8099 libera, RAM 90,1 GB -- nessun danno, nessun residuo pericoloso. Nessun segno
+di `GET_ROWS_Q`/`i01=-1`/`GGML_ASSERT`/`CUDA error` in tutto l'output raccolto.
+
+### Procedura aggiornata, autorizzata dal coordinatore: salto delle shape condannate + lancio staccato
+
+1. **Salto delle shape che sappiamo gia' fallire**: `-StartBatch` esiste gia' come parametro
+   dello script (default 12288, `ValidateSet(1024, 2048, 4096, 8192, 12288)`) -- verificato
+   sulla lettura del file, **nessuna modifica aggiuntiva necessaria**. Passando `-StartBatch 2048`
+   il ciclo `foreach ($shape in $shapes)` filtra a `Batch -le 2048`, quindi prova direttamente
+   2048 (la shape che nella baseline storica aveva successo).
+2. **Lancio staccato**: processo avviato **non come figlio** del tool, con
+   `Invoke-CimMethod -ClassName Win32_Process -MethodName Create -Arguments @{CommandLine=...}`,
+   cosi' sopravvive a qualunque timeout del tool. Da quel momento in poi seguito **solo tramite i
+   file su disco**, con chiamate brevi (secondi) ogni 90 s, cercando il segnale di fine
+   (`DONE tag=...`) o errori critici (`GET_ROWS_Q`, `i01=-1`, `GGML_ASSERT`, `CUDA error`).
+
+### `longgate_nmax2_r1` -- riancoraggio del riferimento -- PROMOSSO (SHA identico allo storico)
+
+```text
+tag              = longgate_nmax2_r1
+tag interno file = sota_ctx150000_densefa_stage_hc5_resident_f2_b2048  (nome diverso dal summary,
+                    vedi FASE 1: lo script attuale usa un pattern parametrico per i file di log)
+lancio           = staccato, Win32_Process.Create, PID 15016, avviato 22:20:05
+comando esatto   = powershell -NoProfile -ExecutionPolicy Bypass -Command "& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel resident -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 -MaxTokens 64 -SpecNmax 2 *> '...\longgate_nmax2_r1.launcher.out'"
+```
+
+**Cancelli**:
+
+| cancello | atteso | ottenuto | esito |
+|---|---|---|---|
+| riga motore | `n_max=2` | `common_speculative_impl_draft_dflash: - n_max=2, n_min=0, p_min=0.00, conf_min=0.80` | PASSATO |
+| manifesto graphs | `<spento>(D)` | `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` | PASSATO |
+| sched-profilo | richiesto 0 | **259 righe**, manifesto `GGML_SCHED_PROFILO=1(E)` | **NON conforme al cancello letterale -- vedi nota sotto** |
+| salute | 0 assert/CUDA-error/GET_ROWS_Q/i01=-1 | 0 trovati | PASSATO |
+| shutdown | pulito | `ctrl-c` | PASSATO |
+| processi post-braccio | 0 | 0 (verificato) | PASSATO |
+
+**Nota onesta sul profiler**: questo lanciatore imposta `GGML_SCHED_PROFILO='1'` dentro
+`Set-SotaEnvironment` (riga propria dello script) e **non offre un meccanismo `-Extra`** per
+sovrascriverlo dall'esterno (a differenza di `run_porto_hot.ps1`) -- non e' stato spento perche'
+il mandato non ha autorizzato una terza modifica al file. **Verificato pero' che e' strutturale,
+non un difetto introdotto ora**: il log storico backuppato
+(`sota100k_ctx150k_densefa_stage_hc5_resident_f2_b2048.server.log`, pre-lancio) ha **260** righe
+`sched-profilo` con lo stesso manifesto -- praticamente identico. Per la regola del runbook
+SS4.4/SS8.2 ("confrontabili solo se stesso verdetto sul profiler, entrambi 0 o entrambi >0"), il
+confronto fra `longgate_nmax2_r1` e la baseline storica, e fra `longgate_nmax2_r1` e
+`longgate_nmax3_r1` (stesso lanciatore), **resta valido a pari strumentazione** perche' tutti i
+lati hanno il profiler ACCESO allo stesso modo.
+
+**Riga cache-esperti VERBATIM** (identica in entrambe le occorrenze del log, prefill e decode):
+```text
+cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+```
+**Nota onesta**: il mandato anticipava "a ctx150k gli slot saranno MENO di 473". Osservato invece
+**473 slot pieni**, identici al banco corto -- non forzato per farlo combaciare con l'attesa.
+Spiegazione plausibile (non verificata a fondo): `LLAMA_VRAM_A_FASI=2` rialloca la cache esperti
+**dopo** aver liberato il buffer di calcolo del prefill (vedi `vram-a-fasi: fase=decode ... cache
+0 -> 473 slot (+473, +3194 MiB) ... VRAM libera 0 MiB`), quindi in fase di decode non c'e'
+contesa con il buffer di prefill e la capienza piena e' raggiungibile.
+
+**Metriche**:
+
+| campo | valore |
+|---|---|
+| decode t/s | **8,26** (8.258661271007797 preciso) |
+| prefill t/s | 124,14 (124.14278661695427 preciso) |
+| p1 | 0.61702 (29 accepted / 47 generated) |
+| **mean len accettata** | **1,85** |
+| copie/buchi (ultima riga, totale) | domanda 14672 (colpi 9681 = 66,0%, buchi 4991, miss 34,0%, in ritardo 0 = 0,0%) |
+| finish_reason | length |
+| output chars | 266 |
+| SHA output | `D556C4C30669464AB3E05C7F3037348EC063DEFA5558ADD51C0BAE731B722C31` |
+| usage | prompt=101597, completion=64, total=101661 |
+
+**Confronto con la baseline storica** (RUNBOOK SS12.5, media di 3 repliche: prefill 116,1985 t/s
+-- 110,70/111,09/126,80 -- mediana 111,09; decode 7,9492 t/s; p1 .61702):
+
+```text
+SHA output      : IDENTICO byte per byte (D556C4C3...) -- stessa traiettoria esatta
+p1               : IDENTICO (0.61702)
+prefill          : 124,14 t/s -- dentro il range delle tre repliche storiche (110,70-126,80)
+decode           : 8,26 t/s -- sopra la media storica (7,9492), dentro la variabilita' plausibile
+                    di UNA sola replica contro una media di tre
+```
+
+**Esito**: PROMOSSO come riancoraggio del riferimento. Nonostante le differenze strutturali
+trovate in Fase 1 (script generalizzato, naming dei file cambiato), la configurazione EFFETTIVA
+(dopo le due modifiche autorizzate) riproduce **esattamente** la baseline storica: stesso SHA di
+output, stesso p1. Le due modifiche al file non hanno alterato il comportamento quando i
+parametri passati coincidono con quelli storici.
+
+Backup di sicurezza fatti prima che i lanci successivi sovrascrivessero i file (stesso tag
+interno per ogni `RunLabel=resident`, indipendentemente da `SpecNmax`):
+```text
+D:\ds4_work\llama_run\backup_baseline_ctx150k_pre_longgate\   (i 15 file storici originali, pre-sessione)
+D:\ds4_work\llama_run\backup_longgate_nmax2_r1\               (i file di questo braccio, pre-nmax3)
+```
+
+Percorsi file di questo braccio (posizione originale, prima di essere sovrascritti da nmax3):
+```text
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_resident_f2_b2048.server.log  (backup)
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_resident_f2_b2048.output.txt  (backup)
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_resident_f2_b2048.response.json  (backup)
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_resident.summary.txt  (backup)
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\longgate_nmax2_r1.launcher.out  (originale, non sovrascritto)
+```
+
+### `longgate_nmax3_r1` -- PROMOSSO (cancelli passati)
+
+Stesso lancio staccato (Win32_Process.Create, PID 9516, avviato 22:40:38), comando identico a
+`longgate_nmax2_r1` salvo `-SpecNmax 3`. Backup fatto **subito dopo** il completamento (stesso
+tag interno di nmax2, sovrascriverebbe altrimenti al lancio successivo).
+
+```text
+comando esatto   = powershell -NoProfile -ExecutionPolicy Bypass -Command "& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel resident -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 -MaxTokens 64 -SpecNmax 3 *> '...\longgate_nmax3_r1.launcher.out'"
+caricamento      = shape 2048 diretta, riuscito in 2 min, free VRAM=487 MiB
+richiesta        = 22:42:38 -> completa in 13,76 min
+```
+
+**Cancelli**:
+
+| cancello | atteso | ottenuto | esito |
+|---|---|---|---|
+| riga motore | `n_max=3` | `common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.80` | PASSATO |
+| manifesto graphs | `<spento>(D)` | `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` | PASSATO |
+| sched-profilo | -- | `GGML_SCHED_PROFILO=1(E)` -- stesso stato di nmax2_r1 e della baseline storica | pari strumentazione OK |
+| salute | 0 assert/CUDA-error/GET_ROWS_Q/i01=-1 | 0 trovati | PASSATO |
+| shutdown | pulito | `ctrl-c` | PASSATO |
+| processi post-braccio | 0 | 0 (verificato) | PASSATO |
+
+**Riga cache-esperti VERBATIM** (identica a `longgate_nmax2_r1`, entrambe le occorrenze):
+```text
+cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+```
+
+**Metriche**:
+
+| campo | valore |
+|---|---|
+| decode t/s | **10,09** (10.086105396964681 preciso) |
+| prefill t/s | 124,11 (124.11085870147866 preciso) |
+| p1 | 0.88095 (37 accepted / 42 generated) |
+| **mean len accettata** | **2,48** |
+| copie/buchi (ultima riga, totale) | domanda 15468 (colpi 9705 = 62,7%, buchi 5763, miss 37,3%, in ritardo 0 = 0,0%) |
+| finish_reason | length |
+| output chars | 282 |
+| SHA output | `5E51A3D056195F3386E0B3EDBEBDFC4CD03FE30E5FA785F74E3390E17A38BA44` (diverso da nmax2 -- atteso, non e' un cancello) |
+| usage | prompt=101597, completion=64, total=101661 |
+
+### Confronto R1 vs R1 (una sola replica per lato finora) -- delta grande, richiede r2 per conferma
+
+```text
+                    nmax2_r1         nmax3_r1         delta
+decode t/s          8,26             10,09            +22,15 %
+prefill t/s         124,14           124,11            -0,02 %  (invariato, atteso: n_max non tocca il prefill)
+p1                  0.61702          0.88095           +42,8 % relativo (base campionaria piccola: 47 vs 42 generated)
+mean len             1,85             2,48             +34,1 %
+copie/buchi          14672/9681/4991  15468/9705/5763   +5,4% domande, +15,5% buchi
+```
+
+**+22,15% e' ben sopra la soglia del +5%** che il mandato usa per richiedere una seconda replica
+di conferma per ENTRAMBI i lati (la stessa regola vale anche nel caso opposto, dentro ±3%: qui
+non si applica, il delta e' grande). Il salto di p1 (.617 -> .881) e' molto piu' marcato di
+quanto osservato sul banco corto B1200 (dove n_max=3 manteneva p1 sostanzialmente pari a n_max=2:
+.90025 -> .90281) -- **non interpretato oltre con un solo campione per lato**: la base
+campionaria e' piccola (completion=64 token, 42-47 eventi di draft), quindi il rumore statistico
+puo' essere rilevante. Procedo con le repliche r2 di entrambi come richiesto dal mandato prima di
+trarre un verdetto.
+
+### `longgate_nmax2_r2` -- PROMOSSO, bit-esatto rispetto a nmax2_r1
+
+Lancio staccato, PID 9280, `-RunLabel resident_r2` (per non sovrascrivere r1 durante il lancio;
+backup fatto comunque subito dopo, dato che nmax3_r2 riusera' lo stesso RunLabel). Comando identico
+a `longgate_nmax2_r1` salvo `-RunLabel resident_r2`.
+
+**Cancelli**: motore `n_max=2` (`common_speculative_impl_draft_dflash: - n_max=2, n_min=0,
+p_min=0.00, conf_min=0.80`) PASSATO; `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` PASSATO;
+`GGML_SCHED_PROFILO=1(E)` (stesso stato di tutti i bracci precedenti, pari strumentazione OK);
+0 errori/assert; `shutdown: ctrl-c`; 0 processi post-braccio.
+
+Riga cache-esperti VERBATIM: identica a tutti i bracci precedenti (473 slot, stessa stringa
+integrale).
+
+**Metriche e confronto con `longgate_nmax2_r1`**:
+
+| campo | nmax2_r1 | nmax2_r2 | note |
+|---|---:|---:|---|
+| decode t/s | 8,26 | **8,35** | |
+| prefill t/s | 124,14 | 120,96 | |
+| p1 | 0.61702 (29/47) | 0.61702 (29/47) | **identico** |
+| mean len | 1,85 | 1,85 | **identico** |
+| copie/buchi | 14672/9681/4991 | 14672/9681/4991 | **identico** |
+| SHA output | `D556C4C3...` | `D556C4C3...` | **identico, bit-esatto** |
+
+Le due repliche sono bit-esatte su ogni campo tranne il timing (decode/prefill t/s, che e'
+l'unica cosa che puo' legittimamente variare per rumore di misura fra ripetizioni con lo stesso
+carico deterministico). MEDIANA nmax2 (2 repliche, media dei due centrali) = **(8,26+8,35)/2 =
+8,305 t/s**.
+
+### `longgate_nmax3_r2` -- PROMOSSO, bit-esatto rispetto a nmax3_r1
+
+Lancio staccato, PID 13624, comando identico a `longgate_nmax3_r1` salvo `-RunLabel resident_r2`.
+Backup fatto subito dopo.
+
+**Cancelli**: motore `n_max=3` (`common_speculative_impl_draft_dflash: - n_max=3, n_min=0,
+p_min=0.00, conf_min=0.80`) PASSATO; `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` PASSATO;
+`GGML_SCHED_PROFILO=1(E)` (pari strumentazione con tutti gli altri bracci); 0 errori/assert;
+`shutdown: ctrl-c`; 0 processi post-braccio. Riga cache-esperti VERBATIM identica (473 slot).
+
+**Metriche e confronto con `longgate_nmax3_r1`**:
+
+| campo | nmax3_r1 | nmax3_r2 | note |
+|---|---:|---:|---|
+| decode t/s | 10,09 | **10,00** | |
+| prefill t/s | 124,11 | 122,25 | |
+| p1 | 0.88095 (37/42) | 0.88095 (37/42) | **identico** |
+| mean len | 2,48 | 2,48 | **identico** |
+| copie/buchi | 15468/9705/5763 | 15468/9705/5763 | **identico** |
+| SHA output | `5E51A3D0...` | `5E51A3D0...` | **identico, bit-esatto** |
+
+**Determinismo confermato su entrambi i lati**: sia nmax2 (r1/r2 bit-esatte) sia nmax3 (r1/r2
+bit-esatte) sono completamente deterministici a parita' di n_max su questo banco -- il salto di
+p1 fra i due lati (.617 -> .881) **non e' rumore campionario**, e' un effetto riproducibile legato
+alla profondita' di speculazione. MEDIANA nmax3 (2 repliche, media dei due) = **(10,09+10,00)/2 =
+10,045 t/s**.
+
+### VERDETTO PROVVISORIO dopo le r2 (prima della coppia m256)
+
+```text
+MEDIANA nmax2 (r1=8,26 / r2=8,35)   = 8,305 t/s
+MEDIANA nmax3 (r1=10,09 / r2=10,00) = 10,045 t/s
+delta = (10,045-8,305)/8,305 = +20,95 %
+```
+
+**Le repliche NON hanno ribaltato il quadro**: il delta resta a **+20,95%**, anzi confermato con
+determinismo bit-esatto su entrambi i lati (stesso SHA/p1/mean-len fra r1 e r2 per ciascun n_max).
+Per l'istruzione del coordinatore ("se le r2 ribaltano il quadro sotto il 5%, fermati; altrimenti
+procedi con la coppia -MaxTokens 256"): **procedo con la coppia m256** per allargare la base
+campionaria (64 -> 256 token di completion) prima del verdetto finale.
+
+### `longgate_nmax2_m256_r1` / `longgate_nmax3_m256_r1` -- coppia finale, base 4x piu' larga
+
+`-RunLabel resident_m256`, `-MaxTokens 256` (invece di 64), altrimenti comandi identici alle
+rispettive r1. Lancio staccato: nmax2 PID 15268 (23:37:37), nmax3 PID 960 (a seguire).
+
+**`longgate_nmax2_m256_r1`**:
+
+| cancello | ottenuto | esito |
+|---|---|---|
+| riga motore | `n_max=2, n_min=0, p_min=0.00, conf_min=0.80` | PASSATO |
+| manifesto graphs | `<spento>(D)` | PASSATO |
+| sched-profilo | `GGML_SCHED_PROFILO=1(E)` (pari a tutti gli altri bracci) | pari strumentazione OK |
+| salute | 0 assert/CUDA-error/GET_ROWS_Q/i01=-1 | PASSATO |
+| shutdown | `ctrl-c` | PASSATO |
+| cache-esperti | 473 slot, riga identica | -- |
+
+| campo | valore |
+|---|---|
+| decode t/s | **8,94** (8.944116010215717 preciso) |
+| prefill t/s | 122,27 |
+| p1 | 0.64972 (115 accepted / 177 generated) |
+| mean len | 1,83 |
+| copie/buchi (finale) | domanda 54384 (colpi 37302 = 68,6%, buchi 17082, miss 31,4%) |
+| SHA output | `7F9A1B9D59C0FDCF809475E02F6FE66E12DA4DD919FE9B4D4F9F91599112BBC28` |
+| completion | 256 token, finish=length, 1138 caratteri |
+
+Nota: con base 4x piu' larga (177 vs 47 eventi di draft), p1 converge leggermente piu' in alto
+(.650 contro .617 a 64 token) ma resta nello stesso ordine di grandezza -- coerente, non
+contraddittorio.
+
+**`longgate_nmax3_m256_r1`**:
+
+| cancello | ottenuto | esito |
+|---|---|---|
+| riga motore | `n_max=3, n_min=0, p_min=0.00, conf_min=0.80` | PASSATO |
+| manifesto graphs | `<spento>(D)` | PASSATO |
+| sched-profilo | `GGML_SCHED_PROFILO=1(E)` (pari a tutti gli altri bracci) | pari strumentazione OK |
+| salute | 0 assert/CUDA-error/GET_ROWS_Q/i01=-1 | PASSATO |
+| shutdown | `ctrl-c` | PASSATO |
+| cache-esperti | 473 slot, riga identica | -- |
+
+| campo | valore |
+|---|---|
+| decode t/s | **9,06** (9.056177236180645 preciso) |
+| prefill t/s | 120,99 |
+| p1 | 0.71264 (124 accepted / 174 generated) |
+| mean len | 1,95 |
+| copie/buchi (finale) | domanda 57616 (colpi 38540 = 66,9%, buchi 19076, miss 33,1%) |
+| SHA output | `86ADC2E5FC5B7BF2AB08DC79DD1CF5347E269BDD6C3C4D10CADE8C96BCF99F3B` |
+| completion | 256 token, finish=length, 1173 caratteri |
+
+### VERDETTO FINALE -- scoperta cruciale: il delta crolla con la base campionaria piu' larga
+
+```text
+                     nmax2            nmax3            delta
+base 64 (mediana 2 repliche)   8,305 t/s        10,045 t/s       +20,95 %
+base 256 (1 replica ciascuno)  8,94 t/s          9,06 t/s        **+1,34 %**
+```
+
+**Il vantaggio di n_max=3 sul banco lungo NON e' quello che sembrava dopo le sole r1/r2 a 64
+token.** Quando la base campionaria del decode passa da 64 a 256 token (4x), il delta **crolla da
++20,95% a +1,34%** -- ben **dentro** la soglia del 3% che il runbook (SS8.3) classifica come "non
+distingue: dentro la deriva di banco". Il grande vantaggio osservato a 64 token (peraltro
+bit-esatto e riproducibile su due repliche per lato -- non era rumore di misura in senso stretto)
+era un **artefatto del segmento specifico dei primi 64 token generati**, non un effetto stabile
+della profondita' di speculazione a contesto lungo.
+
+**Confronto con il banco corto B1200** (dove n_max=3 vale +4,01%, promosso stanotte): sul banco
+lungo, con la misura piu' affidabile disponibile (256 token), il delta e' **+1,34%** -- piu'
+debole del banco corto e dentro la banda di rumore. **Il vantaggio non trasferisce in modo
+riproducibile e affidabile sul prompt lungo**: ne' si inverte (resta leggermente positivo), ne'
+si conferma con la stessa forza del banco corto -- si **affievolisce fino a diventare
+indistinguibile dal rumore**.
+
+### Tabella completa di tutti i bracci lunghi
+
+| tag | n_max | tokens | decode t/s | prefill t/s | p1 (acc/gen) | mean len | SHA output |
+|---|---:|---:|---:|---:|---|---:|---|
+| baseline storica (RUNBOOK SS12.5, media 3 rep.) | 2 | 64 | 7,9492 | 116,1985 | .61702 | -- | `D556C4C3...` |
+| `longgate_nmax2_r1` | 2 | 64 | 8,26 | 124,14 | .61702 (29/47) | 1,85 | `D556C4C3...` |
+| `longgate_nmax2_r2` | 2 | 64 | 8,35 | 120,96 | .61702 (29/47) | 1,85 | `D556C4C3...` |
+| `longgate_nmax3_r1` | 3 | 64 | 10,09 | 124,11 | .88095 (37/42) | 2,48 | `5E51A3D0...` |
+| `longgate_nmax3_r2` | 3 | 64 | 10,00 | 122,25 | .88095 (37/42) | 2,48 | `5E51A3D0...` |
+| `longgate_nmax2_m256_r1` | 2 | 256 | 8,94 | 122,27 | .64972 (115/177) | 1,83 | `7F9A1B9D...` |
+| `longgate_nmax3_m256_r1` | 3 | 256 | 9,06 | 120,99 | .71264 (124/174) | 1,95 | `86ADC2E5...` |
+
+Riga cache-esperti VERBATIM: **identica su tutti i sette bracci** (473 slot, stessa stringa
+integrale) -- nessuna riduzione di slot osservata a ctx150k, diversamente da quanto anticipato dal
+mandato (spiegazione plausibile: `LLAMA_VRAM_A_FASI=2` rialloca la cache esperti a piena capienza
+dopo la fase di prefill, quando il buffer di calcolo prefill e' gia' stato liberato).
+
+### Riepilogo backup fatti durante questo banco (nessun artefatto perso)
+
+```text
+D:\ds4_work\llama_run\backup_baseline_ctx150k_pre_longgate\   (15 file storici originali)
+D:\ds4_work\llama_run\backup_longgate_nmax2_r1\
+D:\ds4_work\llama_run\backup_longgate_nmax3_r1\
+D:\ds4_work\llama_run\backup_longgate_nmax2_r2\
+D:\ds4_work\llama_run\backup_longgate_nmax3_r2\
+D:\ds4_work\llama_run\backup_longgate_nmax2_m256_r1\
+D:\ds4_work\llama_run\backup_longgate_nmax3_m256_r1\
+```
+
+Stato macchina a fine catena (2026-08-17 00:11 circa): processi_llama = 0, RAM libera 89,4 GB.
+Tutti i lanci di questa catena sono stati fatti come processi **staccati**
+(`Invoke-CimMethod`/`Win32_Process.Create`), seguiti solo tramite i file su disco, per
+sopravvivere al limite di tempo del tool osservato sul primo tentativo (~55-60 min). Chiusura
+pulita (`ctrl-c`, mai `RISERVA Stop-Process`) su tutti i sei bracci completati con successo.
+Nessun commit git eseguito. Uniche modifiche a file diversi dal ledger: le due autorizzate
+esplicitamente su `sota100k_ctx150k.ps1` (diff in
+`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\sota100k_specnmax.patch`).
+
+---
+
+## Sweep L0, punto n_max=4 — nmax4_graphs_b1200_r1/r2/r3_20260816 — RESPINTO: la curva ha girato, resta n_max=3
+
+Prossimo punto del sweep annunciato dal banco `nmax3fix_graphs` ("L0 paga e domani si sweepa
+n_max=4"). Turno nuovo, contesto fresco: preflight completo di §1 rieseguito per intero
+all'inizio di questa sessione (nessuna delle verifiche precedenti riusata per assunzione).
+
+### Preflight (§1 del runbook, eseguito per intero)
+
+```text
+data/ora         = 2026-08-16 20:45:44
+uptime_min       = 2663,2  (macchina non appena riavviata: nessun lancio a freddo §2 richiesto)
+processi llama   = 0
+porta 8000 (UI)  = nessun processo in ascolto (non toccata)
+ram_libera_gb    = 87,5
+gpu a riposo     = NVIDIA GeForce RTX 3060, SM 210 MHz, mem 405 MHz, 12,99 W, vram_usata 584 MiB,
+                    vram_libera 11532 MiB, PCIe gen1 x16 a riposo (risparmio energetico, non un
+                    cancello: solo width=16 e' controllato dal runbook, PASSATO)
+porte 8099/8100  = entrambe libere
+disco_c_gb       = 48,4      disco_d_gb = 120,4
+sha_llama_server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485
+sha_ggml_cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330
+sha_jprompt      = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9  (Length=252, coincide)
+```
+
+Unica invocazione di `nvidia-smi` di tutta la sessione, come da regola vitale del mandato: quella
+di preflight sopra. Verificato anche il codice del runner (`run_porto_hot.ps1`, letto per intero)
+prima di lanciare: il parametro `-SpecNmax` (default 2) esiste davvero, imposta sia
+`$env:PORTO_SPEC_NMAX` sia — il punto che conta, dal fix del mandato n.2 della sessione precedente —
+l'argomento CLI `--spec-draft-n-max "$SpecNmax"` passato al binario.
+
+### Anomalia iniziale (recuperata, nessun impatto sulla misura)
+
+Il primissimo tentativo di lancio di R1 e' fallito con `PSSecurityException: L'esecuzione di
+script e' disabilitata` — causato dall'aver invocato `powershell.exe` da dentro il tool Bash
+(Git Bash), che ha una execution policy di sistema diversa da quella della shell PowerShell
+primaria di questa sessione (verificata poi: scope Process = `Bypass`). L'errore e' avvenuto al
+caricamento dello script, **prima** di qualunque avvio di `llama-server.exe`: nessun processo mai
+avviato, nessun ripristino necessario. Rilanciato con lo strumento PowerShell corretto,
+riuscito al primo colpo. Non e' un'anomalia del banco o della macchina.
+
+```text
+tag R1/R2/R3     = nmax4_graphs_b1200_r{1,2,3}_20260816
+data/ora         = R1 lancio 20:47:14 -> R2 lancio 20:52:08 -> R3 lancio 20:56:24 -> fine 20:59:56
+runner           = B (run_porto_hot.ps1), binario originale D:\llama-overlap (nessun -ServerPath)
+banco            = B1200
+ripetizioni      = 3 (incatenate senza QUIETE fissa, come da mandato: verificata solo la chiusura
+                    pulita — processi llama=0 — fra una replica e l'altra, nessuna nvidia-smi
+                    aggiuntiva)
+leva variata     = -SpecNmax 4 (n_max del motore di speculazione, unica leva rispetto al
+                    riferimento n_max=3)
+comando esatto (R1/R2/R3, identici salvo -Tag) =
+  & 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 4 -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+### CANCELLO CRUCIALE (a): riga del motore, valore EFFETTIVO (tutte e tre PASSATO)
+
+```text
+R1: common_speculative_impl_draft_dflash: - n_max=4, n_min=0, p_min=0.00, conf_min=0.80
+R2: common_speculative_impl_draft_dflash: - n_max=4, n_min=0, p_min=0.00, conf_min=0.80
+R3: common_speculative_impl_draft_dflash: - n_max=4, n_min=0, p_min=0.00, conf_min=0.80
+```
+
+### Altri cancelli (b, c, d — passati su tutte e tre)
+
+| cancello | atteso | R1 | R2 | R3 |
+|---|---|---|---|---|
+| (b) manifesto `GGML_CUDA_DISABLE_GRAPHS` | `<spento>(D)` | `<spento>(D)` | `<spento>(D)` | `<spento>(D)` |
+| (c) righe `sched-profilo` | 0 | 0 | 0 | 0 |
+| (d) `finish_reason` | `length` | `length` | `length` | `length` |
+| (d) GGML_ASSERT / CUDA error / invalid index | assenti | assenti | assenti | assenti |
+| (d) divergenze | tutte a zero | `taglia=0 ids=0 out=0 GRIGLIA-corta=0` | idem | idem |
+| (d) MORTO / RICHIESTA FALLITA / CONTESA | assenti | assenti | assenti | assenti |
+| riga `cache-esperti` | identica al riferimento | identica (verbatim sotto) | identica | identica |
+| chiusura | `ctrl-c` | `ctrl-c` | `ctrl-c` | `ctrl-c` |
+
+Riga cache-esperti (identica sulle tre repliche, verbatim, identica a tutti i banchi B1200 di
+questa serie):
+```text
+cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+```
+`sfratto_par=1` confermato anche dal manifesto (`LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E)`).
+`build 10093 (3014d3756) with MSVC 19.44.35227.0` su tutte e tre, invariato.
+
+### Dati per replica (valuta non-parity: cambiare n_max cambia legittimamente traiettoria/SHA/p1, non sono cancelli)
+
+|                        | R1                 | R2                 | R3                 |
+|---|---|---|---|
+| eval t/s               | 13,54              | 13,70              | 13,71              |
+| ms/token               | 73,88              | 72,98              | 72,92              |
+| prompt t/s             | 22,01              | 19,52              | 20,67              |
+| wall_ms (richiesta)    | 91.828,9           | 91.203,9           | 90.873,1           |
+| p1                     | 0.79955 (706/883)  | 0.79955 (706/883)  | 0.79955 (706/883)  |
+| **mean len accettata** | **2,43**           | **2,43**           | **2,43**           |
+| copie/buchi            | domanda 284301, colpi 200559 (70,5%), buchi 83742 | idem | idem |
+| SHA output             | `D56BBF5010861E9DA187BA32A8CECDA557742BC743BDE3929F1ABF8B845C6535` (identico sulle tre) | | |
+| content_chars          | 2292               | 2292               | 2292               |
+| finish_reason          | length             | length             | length             |
+
+Le tre repliche sono **bit-identiche fra loro** (SHA, p1, mean len, copie/buchi), coerente con la
+determinatezza del decode (temperature=0) gia' osservata su tutti i banchi B1200 di questa
+sessione.
+
+**Il quadro rispetto a n_max=3 e' coerente e negativo su tutta la linea**: p1 crolla da 0,90281
+(n_max=3) a **0,79955** (n_max=4), mean len accettata scende da 2,80 a **2,43** — il drafter perde
+precisione oltre 3 token proposti, non ne guadagna. Le domande alla cache esperti salgono
+ulteriormente (275.477 -> 284.301, +3,2%) e le copie pure (80.076 -> 83.742, +4,6%), mentre il
+tasso di colpi peggiora leggermente (70,9% -> 70,5%): piu' lavoro speculativo sprecato *e* piu'
+trasporto da pagare, la doppia penalita' gia' vista fra n_max=2 e n_max=3 ma qui senza il
+compenso di un'accettazione migliore.
+
+### MEDIANA e VERDETTO
+
+```text
+valori ordinati  : 13,54 / 13,70 / 13,71
+MEDIANA          : 13,70   (elemento centrale vero, v[1] su array ordinato a 3 -- non [int](Count/2))
+media            : 13,65
+spread max-min   : 1,26 %   (banco stabile, ben sotto la soglia del 5%)
+
+riferimento n_max=3 (nmax3fix_graphs, stesso binario e regime, ledger sopra) = 16,34 t/s
+delta mediana vs n_max=3 = -16,16 %
+
+riferimento n_max=2 (truth_graphs, stesso binario e regime, ledger sopra)    = 15,71 t/s
+delta mediana vs n_max=2 = -12,79 %
+```
+
+**-16,16% e' ben SOTTO la soglia del -3%.** Per il mandato: **"sotto −3% → la curva ha girato,
+resta n_max=3."** n_max=4 e' anche peggiore di n_max=2 (-12,79%), quindi non e' nemmeno un
+ripiegamento verso il vecchio ottimo: la curva ha un massimo netto a n_max=3 e scende bruscamente
+oltre quel punto. Non si segnala n_max=5 come prossimo campione: il mandato non lo richiede in
+questo ramo del verdetto (solo nel caso "sopra +3%").
+
+### ENV COMPLETO (tutte le variabili, non solo quelle cambiate — regola vitale del mandato)
+
+Catturato integralmente da `nmax4_graphs_b1200_r1_20260816.server.log` (tutte le righe
+`server_manif:`; R2 e R3 verificate identiche riga per riga, stesso comando salvo `-Tag`).
+**Coincide esattamente** con l'ENV gia' trascritto per esteso nella sezione `truth_graphs` sopra
+(nessuna riga manifesto porta `PORTO_SPEC_NMAX` o `SpecNmax` — coerente con quanto gia' osservato
+nel banco `nmax3_graphs_b1200_r1`: quella leva non e' tracciata nel manifesto, solo nella riga del
+motore e negli argomenti CLI del server):
+
+```text
+server_manif: manifesto: E=ambiente D=difetto; LLAMA_MANIFESTO=1(D)
+server_manif: manifesto/cache: LLAMA_CACHE_BOZZA_BATTITO=60(D) LLAMA_CACHE_BOZZA_SLOT=12(E) LLAMA_CACHE_ESPERTI_BATCH=8(E) LLAMA_CACHE_ESPERTI_BATTITO=45(E) LLAMA_CACHE_ESPERTI_CODA_MAX=0(E) LLAMA_CACHE_ESPERTI_CURA=0(E) LLAMA_CACHE_ESPERTI_FORK=2(E) LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8(E) LLAMA_CACHE_ESPERTI_LRU=1(E) LLAMA_CACHE_ESPERTI_MASSA=2(E) LLAMA_CACHE_ESPERTI_PF_TUTTI=1(D) LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0(E) LLAMA_CACHE_ESPERTI_SCUDO=0(E) LLAMA_CACHE_ESPERTI_SLOT=473(E) LLAMA_CACHE_ESPERTI_SPIN=256(D) LLAMA_CACHE_ESPERTI_W=0(E) LLAMA_CACHE_ORACOLO=<spento>(D)
+server_manif: manifesto/spec: LLAMA_ACCEPTMOE=1(E) LLAMA_ACCEPTMOE_BATCH_MAX=8(D) LLAMA_ACCEPTMOE_COMPATTA=1(E) LLAMA_ACCEPTMOE_ESATTE=1(E) LLAMA_ACCEPTMOE_SOGLIA=0.75(E) LLAMA_ACCEPTMOE_SPIA=0(D) LLAMA_CKPT_CRONO=0(E) LLAMA_SPEC_CONF_ESENTA_POS0=1(E) LLAMA_SPEC_DRAFT_TOPK=1(E)
+server_manif: manifesto/compute: LLAMA_DSV4_HC_FUSO=5(E) LLAMA_MAPPED_IBRIDO=1(E) LLAMA_MAPPED_IBRIDO_SOGLIA=2(E) LLAMA_OVERLAP_ASYNC=1(E) LLAMA_OVERLAP_CERCA_CPU=0(D) LLAMA_OVERLAP_BATCH_MAX=3(E) LLAMA_OVERLAP_GRIGLIA_VARIABILE=0(E) LLAMA_OVERLAP_K=2(E) LLAMA_OVERLAP_PIN=1(E) LLAMA_OVERLAP_SPIN=2000000(D) LLAMA_OVERLAP_VERIFICA=0(D)
+server_manif: manifesto/kv: LLAMA_KV_POSMIN_VERO=0(D) LLAMA_KV_RING=1(E) LLAMA_KV_RING_VRAM_TOKEN=2048(E) LLAMA_KV_RING_VRAM_TRACE=0(D) LLAMA_KV_ROLLBACK_MARGINE=4(D) LLAMA_KV_ROLLBACK_PARZIALE=1(E) LLAMA_KV_ROLLBACK_SOLO_ANELLO=0(E)
+server_manif: manifesto/orfane: LLAMA_RING=0(D) LLAMA_RING_BATTITO=60(D) LLAMA_RING_PROFONDITA=380(D)
+server_manif: manifesto/vram: LLAMA_VRAM_A_FASI=0(E) LLAMA_VRAM_A_FASI_CALDO=0(D) LLAMA_VRAM_A_FASI_MARGINE=0(D) LLAMA_VRAM_A_FASI_MIN=0(D) LLAMA_VRAM_A_FASI_SLOT=0(D) LLAMA_VRAM_A_FASI_SLOT_MAX=1024(D) LLAMA_VRAM_A_FASI_UB=64(D) LLAMA_VRAM_ZAVORRA=0(E)
+server_manif: manifesto/orfane: LLAMA_REAP=0(D) LLAMA_REAP_AMMISSIONE=1.0(D) LLAMA_REAP_DECADIMENTO=1.0(D) LLAMA_REAP_DECADIMENTO_BUSSATE=0.90(D) LLAMA_REAP_DUMP=<spento>(D) LLAMA_REAP_ISTERESI=1(D) LLAMA_REAP_LOCK=0(D) LLAMA_REAP_MARGINE=1.25(D) LLAMA_REAP_MAX_SCAMBI=64(D) LLAMA_REAP_PERIODO=12900(D) LLAMA_REAP_PESO=ripida(D) LLAMA_REAP_PREFETCH=0(D) LLAMA_REAP_PROF=0(D) LLAMA_REAP_SOGLIA=3(D) LLAMA_REAP_THREADS=8(D) LLAMA_REAP_TOPK=2400(D)
+server_manif: manifesto/vram: LLAMA_REAP_WS_MIN_GB=0(D)
+server_manif: manifesto/diag: LLAMA_DEBUG_DUMP=<spento>(D) LLAMA_DEBUG_FILTER=<tutto>(D) LLAMA_DFLASH_SINKHORN_ITERS=<gguf>(D) LLAMA_DSV4_SINKHORN_ITERS=<gguf>(D) LLAMA_STREAM_GC=60(D) LLAMA_STREAM_MAX_MB=4(D) LLAMA_STREAM_TTL=300(D)
+server_manif: manifesto/cache: LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E) LLAMA_CACHE_ESPERTI_DMA=0(D) LLAMA_CACHE_ESPERTI_DOMANDA_DMA=0(D) LLAMA_CACHE_ESPERTI_FORK_ESATTO=0(D) LLAMA_CACHE_ESPERTI_FORK_DOWN_TARDI=0(D) LLAMA_CACHE_ESPERTI_FORK_STADI=0(D) LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0(E) LLAMA_CACHE_ESPERTI_FORK_PRIORITA=0(D) LLAMA_CACHE_ESPERTI_FORK_SERIALE=0(D) LLAMA_CACHE_ESPERTI_FATE=0(D)
+server_manif: manifesto/compute: LLAMA_OVERLAP_JOIN_ASYNC=0(E) LLAMA_OVERLAP_FINESTRA=0(D) LLAMA_DSV4_INDEXER_FUSO=0(E) LLAMA_DSV4_TOPK_FUSO=0(D) LLAMA_GRAPH_REUSE_DISABLE=0(D) LLAMA_GRAPH_REUSE_PER_TAGLIA=1(E) LLAMA_MMQ_X_IDS=<spento>(D) GGML_SCHED_PROFILO=0(E) GGML_CUDA_GRAPH_OPT=0(E)
+server_manif: manifesto/diag: GGML_CUDA_GRAPH_STATS=0(D)
+server_manif: manifesto/compute: GGML_CUDA_DISABLE_GRAPHS=<spento>(D) GGML_OP_OFFLOAD_MIN_BATCH=<spento>(D) GGML_CPU_MMID_REUSE_SRC1=0(D)
+server_manif: manifesto/diag: GGML_BACKEND_PATH=<spento>(D) GGML_BACKTRACE_LLDB=<spento>(D) GGML_CPU_DISABLE_FUSION=<spento>(D) GGML_CUDA_ALLREDUCE=<spento>(D) GGML_CUDA_CUBLAS_COMPUTE_TYPE=<spento>(D) GGML_CUDA_DISABLE_FUSION=<spento>(D) GGML_CUDA_ENABLE_UNIFIED_MEMORY=<spento>(D) GGML_CUDA_NO_PINNED=<spento>(D) GGML_CUDA_P2P=<spento>(D) GGML_CUDA_PDL=<spento>(D) GGML_CUDA_REGISTER_HOST=<spento>(D) GGML_DISABLE_VULKAN=<spento>(D) GGML_KLEIDIAI_CHUNK_MULTIPLIER=<spento>(D) GGML_KLEIDIAI_SME=<spento>(D) GGML_META_DEBUG=<spento>(D) GGML_NO_BACKTRACE=<spento>(D) GGML_SCHED_DEBUG=<spento>(D) GGML_SCHED_DEBUG_INFO=<spento>(D) GGML_SCHED_DEBUG_REALLOC=<spento>(D) GGML_TOTAL_THREADS=<spento>(D) LLAMA_APP_CMD=<spento>(D) LLAMA_ATTN_ROT_DISABLE=<spento>(D) LLAMA_BATCH_DEBUG=<spento>(D) LLAMA_CACHE=<spento>(D) LLAMA_DSV4_COMPRESS_DEBUG=<spento>(D) LLAMA_GRAPH_INPUT_DEBUG=<spento>(D) LLAMA_GRAPH_RESULT_DEBUG=<spento>(D) LLAMA_KV_CACHE_DEBUG=<spento>(D) LLAMA_MANIFESTO=<spento>(D) LLAMA_MEDIA_MARKER=<spento>(D) LLAMA_SERVER_CHILD_MODE=<spento>(D) LLAMA_SERVER_ROUTER_PORT=<spento>(D) LLAMA_SERVER_SLOTS_DEBUG=<spento>(D) LLAMA_TRACE=<spento>(D)
+```
+
+```text
+SHA llama-server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (invariato, verificato in preflight)
+SHA ggml-cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (invariato)
+build            = build 10093 (3014d3756) with MSVC 19.44.35227.0
+snapshot         = porto_hot_snapshot = 0 su tutte e tre repliche
+server vivi max  = 1 per replica
+esito            = RESPINTO: 3/3 repliche passano tutti i cancelli di identita' e salute, ma il
+                    valore di merito e' ben sotto la soglia del mandato. MEDIANA = 13,70 t/s,
+                    -16,16% vs n_max=3 (16,34), -12,79% vs n_max=2 (15,71). VERDETTO: la curva ha
+                    girato, resta n_max=3 come punto migliore dello sweep L0.
+percorsi file    = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax4_graphs_b1200_r{1,2,3}_20260816.server.log
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax4_graphs_b1200_r{1,2,3}_20260816.summary.json
+                    C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\nmax4_graphs_b1200_r{1,2,3}_20260816.r1.output.txt
+```
+
+### Confronto riassuntivo dello sweep L0 (tutti a pari strumentazione: profiler spento, grafi accesi, binario originale)
+
+| n_max | mediana t/s | delta vs n_max=2 | p1 | mean len | domande/copie |
+|---:|---:|---:|---|---:|---|
+| 2 (`truth_graphs`)     | 15,71 | —      | 0,90025 | 2,47 | 216.737 / 47.906 |
+| 3 (`nmax3fix_graphs`)  | 16,34 | +4,01% | 0,90281 | 2,80 | 275.477 / 80.076 |
+| 4 (`nmax4_graphs`, questo banco) | 13,70 | -12,79% | 0,79955 | 2,43 | 284.301 / 83.742 |
+
+Lo sweep L0 ha un massimo netto a **n_max=3**: sale da 2 a 3, poi crolla bruscamente a 4. La causa
+visibile nei dati e' che a n_max=4 il tasso di accettazione della bozza (p1) cede prima ancora
+della lunghezza media accettata (mean len scende insieme a p1, non sale): il drafter smette di
+essere affidabile oltre 3 token proposti, quindi il costo extra di verifica (piu' domande, piu'
+copie) non viene ripagato da piu' accettazioni. Nessun ulteriore punto (n_max=5) segnalato, come
+da mandato per questo ramo del verdetto.
+
+Stato macchina a fine banco (2026-08-16 21:00 circa): processi_llama = 0. Nessuna invocazione di
+`nvidia-smi` oltre l'unica di preflight (20:45:44). Chiusura pulita su tutte e tre le repliche
+(`ctrl-c`, mai `RISERVA Stop-Process`). Nessun commit git eseguito. Nessuna build avviata. Nessuna
+modifica a file diversi da questo ledger.

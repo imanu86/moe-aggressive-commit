@@ -741,6 +741,11 @@ combinano mai due leve sperimentali nello stesso braccio.
 | il primo colpo è positivo, oppure entro ±4% | **3 in totale**, e si usa la **MEDIANA** |
 | verdetto primario da promuovere | **3 repliche**, mediana, con i controlli di §8 |
 
+**AGGIORNATO (17/8) — vedi §8.7 PROTOCOLLO B-FIRST.** Questa tabella resta valida come
+riferimento sul *numero* di repliche, ma l'ordine e il *quando* farle sono ridefiniti da
+§8.7: un primo colpo (braccio B) **sotto +3%** non fa più le 3 repliche di questa riga — va
+subito in **PARCHEGGIO** (§8.8). Dove le due sezioni non concordano, **vince §8.7**.
+
 Non fare ABBA. Non fare sweep di parametri.
 
 ### 6.3 Richiesta HTTP fatta a mano — solo se il runner non è utilizzabile
@@ -1057,6 +1062,12 @@ else { Write-Output 'DIFFERENZA APPREZZABILE (verificare gli altri cancelli)' }
 
 **Non si promuove mai un +1% o un +1,47%**: sono dentro la deriva.
 
+**AGGIORNATO (17/8) — vedi §8.7 PROTOCOLLO B-FIRST.** Il flusso operativo ora è: braccio B
+(1 replica) contro il riferimento; **sotto +3%** → PARCHEGGIO diretto (§8.8), niente braccio
+di controllo; **sopra +3%** → 3 repliche di B, poi il braccio di controllo A rifatto nella
+stessa sessione (mai un riferimento stantio). La tabella qui sopra resta valida per leggere
+un **singolo** delta; il *seguito* (3-4% vs >4%, quando fare A) è ridefinito da §8.7.
+
 ### 8.4 Cancello 4 — il riferimento si legge dal log
 
 Il valore di riferimento con cui confronti deve venire da un `.server.log` o
@@ -1083,6 +1094,79 @@ Lo SHA da solo non basta. Per ogni candidato registrare:
 `t/s`, `ms/token`, `p1` e accepted/generated, SHA e lunghezza dell'output, `finish_reason`,
 copie/buchi, divergenze, ID invalidi, NaN/Inf, assert, stato profilo/sonde dichiarato
 esplicitamente, clock/potenza.
+
+### 8.7 PROTOCOLLO B-FIRST — sostituisce l'ordine dei bracci precedente (dettato utente, 17/8)
+
+**Disambiguazione preliminare, obbligatoria prima di usare questa sezione**: qui "braccio A"
+e "braccio B" indicano il **ruolo nel confronto** (A = controllo/leva spenta, B = leva
+accesa), **non** i Runner A/B di §2/§3. Il braccio B si lancia con il Runner B (§3, con la
+leva impostata via `-Extra`); il braccio A di questo protocollo è la **stessa configurazione
+di riferimento**, anch'essa lanciata con il Runner B (leva spenta/di default) — **non** il
+Runner A cold-start di §2, che resta riservato al primo braccio di sessione.
+
+Questo protocollo **sostituisce** l'ordine implicito in §6.1 punto 2 e la tabella di §6.2, e
+ridefinisce il flusso di §8.3 (vedi le note aggiunte lì). Dove questa sezione e quelle
+contraddicono, **vince questa**.
+
+**Il flusso:**
+
+1. **Ogni banco parte SEMPRE dal braccio B** (leva accesa), **1 replica**, confrontato contro
+   il riferimento noto (letto dal log, §8.4 — mai da un documento).
+2. **B sotto +3%** (cancello di §8.3) → **niente braccio di controllo A**. La leva va in
+   **PARCHEGGIO** (§8.8) con il suo unico numero (1 replica), e si passa alla leva successiva.
+   Non si fanno le 3 repliche che la vecchia tabella di §6.2 avrebbe richiesto per un colpo
+   "entro ±4%".
+3. **B sopra +3%** → si completano le **3 repliche di B** (stesso processo, §8.9), mediana.
+   **Poi**, e solo poi, il **braccio di controllo A**, con la baseline **rifatta nella stessa
+   sessione** — mai un riferimento stantio letto da un log di un'altra sessione (§8.4/§8.5).
+   Il verdetto è **B vs A della stessa sessione**, non B contro uno storico: elimina i falsi
+   positivi da deriva del banco (2-3%, §8.3) che un confronto contro un riferimento vecchio
+   non può distinguere da un guadagno vero.
+4. **Leve commutabili a caldo per-richiesta** (es. `porto_hot_snapshot`, §5.2): si fanno **4
+   bracci con UN solo caricamento del server** — 3 richieste con B acceso, poi 1 con A (leva
+   spenta), stesso processo, via `-PortoHotSequence` o il campo JSON pertinente. Resta
+   **B-first**: le 3 di B prima, la 1 di A dopo, mai intercalate.
+   **Leve lette a init del processo** (la maggioranza, tabella di §5.3): niente hot-switch
+   possibile — si riavvia per B (3 repliche), poi si riavvia per A. **Vale comunque B-first**:
+   B prima, A dopo, mai il contrario.
+   **Prima di ogni banco**, verificare nel sorgente **il momento** in cui la leva viene letta
+   (init vs per-chiamata/richiesta) con un `grep` mirato sul nome esatto della variabile —
+   **non un'assunzione dal nome**. Se il grep non chiarisce, trattarla come "a init" (il caso
+   più conservativo, richiede il riavvio fra B e A).
+
+### 8.8 PARCHEGGIO LEVE
+
+Elenco **distinto dalle famiglie falsificate** (§10.4 punto 9: quelle sono chiuse e non si
+riaprono senza segnalare prima). Una leva qui **resta candidata**: non è stata giudicata
+dannosa, solo insufficiente **da sola** sotto la soglia del 3% del suo primo colpo B. Prima di
+riprovarla da sola, verificare se è già stata **composta** con un'altra leva parcheggiata o
+promossa: se sì, il numero da battere è quello della composizione, non quello isolato qui
+sotto.
+
+| leva | risultato B (1 replica) | note |
+|---|---|---|
+| gate+up fuso | +1,47% | stesso numero già citato in §8.3 come esempio di "non promuovere mai" |
+| `JOIN_ASYNC` | copertura parziale ~20-25% | non basta da sola; vedi anche il banco F2-B (17/8, ledger del giorno) |
+| L2-A, kernel `GET_ROWS` k-quant | — | parcheggiata, nessun numero registrato qui ancora |
+
+Aggiungere una riga per ogni nuova leva parcheggiata, stesso schema: leva, risultato B, note.
+
+### 8.9 Protocollo repliche-in-processo (dettato utente, 17/8)
+
+**Un braccio = un processo server, `-Repetitions 3`** (§3.1: "numero di richieste nello
+**stesso** processo server"). Le 3 repliche di un braccio sono richieste **sequenziali allo
+stesso processo**, non processi separati. Motivo: isola la variabile sotto test (la leva) dal
+rumore di caricamento/allocazione che un riavvio del processo introdurrebbe a ogni replica.
+
+**Nota di onestà**: i banchi promossi di questa sessione (`truth_clean2`, `nmax3fix_graphs`,
+`conf07_graphs`, `conf09_graphs`) hanno invece usato **tre `-Tag` distinti con
+`-Repetitions 1` ciascuno** (tre processi separati, uno per replica) — è la prassi
+**precedente** a questa regola, non un precedente a suo favore. Da questa regola in avanti si
+usa un solo processo con `-Repetitions 3`.
+
+Vale anche per il confronto B-vs-A di §8.7 punto 3: **stesso schema per ciascuno dei due**
+(3 repliche interne allo stesso processo), **processo diverso fra B e A** (sono due
+configurazioni diverse, richiedono due riavvii, salvo il caso hot-switch del punto 4).
 
 ---
 

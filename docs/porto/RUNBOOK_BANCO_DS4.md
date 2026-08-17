@@ -802,6 +802,11 @@ Come si ottiene, per runner:
 fatto 16,04 / 16,11 / 16,07. Il campionamento a **1 s** del runner B è invece invasivo:
 misurato, porta un B160 da 12,34 a 10,40 t/s.
 
+**AGGIORNATO (17/8) — vedi §6.8 TELEMETRIA STANDARD.** La riga della tabella sopra "B senza
+`-HardwareProbe` → nessuno → serve lo spot-check di §6.5" non è più il default: ora si usa
+sempre `sample_hw.ps1` a 0,5 Hz (§6.8), su entrambi i runner. Lo spot-check di §6.5 resta un
+ripiego per diagnostica rapida, non più il caso normale nei bracci di certificazione.
+
 ### 6.5 Spot-check hardware quando non c'è polling continuo
 
 Quando si usa il runner B **senza** `-HardwareProbe` (cioè in ogni braccio di
@@ -859,6 +864,38 @@ Durante un braccio, sulla stessa macchina:
 Il runner A rileva la contesa da solo e stampa
 `*** CONTESA: piu' di un server durante la corsa, la misura NON vale ***`. Se compare, la
 misura si butta.
+
+### 6.8 TELEMETRIA STANDARD — sostituisce la restrizione al polling nei banchi finali (dettato utente, 17/8)
+
+**SOSTITUISCE**, come default, la restrizione di §6.4 (Runner B con `-HardwareProbe`: "solo
+in probe dedicato, mai nel braccio di certificazione") e la logica di §6.5 (spot-check invece
+di polling continuo). Quella restrizione nasceva dal costo del **sampling ad alta frequenza**
+(1 s, misurato in §6.4: B160 da 12,34 a 10,40 t/s) nell'era anomala del 15-16/8 — non dal
+polling in sé. La SOTA storica certificata (§12.1,
+`mass2_copyall_stablelane_t473_d12_b1/b2/b3`, 16,04/16,11/16,07 t/s) girava **con** `.hw.csv`
+attivo a **3 s** (Runner A, automatico). Un campionatore leggero e uniforme applicato **su
+entrambi i lati di ogni confronto** è quindi la strumentazione storicamente fedele, non una
+deviazione da essa.
+
+**Regola**: ogni braccio (Runner A o B, certificazione o diagnostica) **DEVE** avere
+`<tag>.hw.csv` e `<tag>.cpu.csv`, campionati a **0,5 Hz** (ogni 2 secondi), prodotti da:
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\sample_hw.ps1 -Tag <tag> -OutDir <cartella artefatti del runner in uso>
+```
+
+Si avvia **prima** della richiesta (dopo che `/health` risponde), e si ferma da solo alla
+fine del processo `llama-server`, oppure prima creando il file sentinella
+`<OutDir>\<tag>.stop`. Resta **vietato** il sampling **oltre 1 Hz**: è il costo misurato in
+§6.4 a essere vietato, non il polling in sé — lo script rifiuta da solo un `-IntervalSeconds`
+sotto 1.
+
+**Nel ledger** (§9.2), oltre ai campi già obbligatori, riportare da `<tag>.hw.csv`: VRAM di
+picco e VRAM media, regime di clock (minimo e mediana durante il decode — mediana con la
+formula corretta di §7.4, non quella difettosa), potenza media; da `<tag>.cpu.csv`: CPU%
+media.
+
+**Cancello 2 di §8.2 aggiornato**: vedi nota lì.
 
 ---
 
@@ -1039,6 +1076,11 @@ Tutta la checklist §4.9 spuntata su **entrambi** i lati del confronto.
 `righe sched-profilo` con lo stesso verdetto (entrambi 0 o entrambi > 0) sui due lati.
 `GGML_CUDA_GRAPH_STATS` spento su entrambi. Stesso stato di polling hardware su entrambi
 (o entrambi senza `-HardwareProbe`, o entrambi con). Stesso `porto_hot_snapshot`.
+
+**AGGIORNATO (17/8) — vedi §6.8 TELEMETRIA STANDARD.** "Stesso stato di polling hardware" ora
+significa di norma **entrambi con `sample_hw.ps1` attivo a 0,5 Hz**, non più "entrambi senza
+`-HardwareProbe`". Il polling interno del Runner B (`-HardwareProbe`, 1 Hz) resta comunque
+vietato in certificazione (§6.4): non è quello che questo cancello richiede.
 
 ### 8.3 Cancello 3 — soglia del 3%
 

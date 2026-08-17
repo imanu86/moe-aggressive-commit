@@ -4084,3 +4084,324 @@ commit     : NESSUNO eseguito dall'esecutore 13 (questa voce di ledger e' stata 
 
 percorsi file: [non forniti in questo rapporto] -- tag noti: `tov01_a`, `tov01_aprime2`,
 `tov01_b`.
+
+---
+
+# QUATTORDICESIMO TURNO — collaudo sentinella/impronta (fix su impronta.ps1) + banco v0.2 `inv_tov`: PARCHEGGIO, la composizione converge esattamente su A'' (0,00%), non su A (-5,67%)
+
+Mandato: (1) collaudare `sentinella.ps1` sul dll dell'invecchiamento (`E83A87ED...`); (2) collaudare
+`impronta.ps1` per classificare `LLAMA_CACHE_ESPERTI_USATO_INVECCHIA=1` da sola; (3) banco v0.2 —
+composizione delle quattro leve (`USATO_INVECCHIA` + `TRASPORTO_ONLINE` + `CACHE_ESPERTI_W` +
+`FORK_COMPONI`) su B1200 warm-restore, tag `inv_tov`; (4) verdetto a tre confronti contro B v0.1
+(14,96), A'' (15,47), A (16,40). Letti integralmente prima di lanciare: `NOTE_IMPLEMENTAZIONE.md`
+SS10-SS11, `STRUMENTI_README.md`, `RUNBOOK_BANCO_DS4.md` SS6.9/REGOLA ZERO/SS10, e i due script
+`sentinella.ps1`/`impronta.ps1` per intero.
+
+## Preflight
+
+Nessun processo llama attivo, porte 8099-8102 libere, porta 8000 (UI) senza listener, GPU a riposo
+(210 MHz, 504 MiB usati, 11612 MiB liberi, PCIe Gen1x16 -- link degradato rispetto al Gen4 storico ma
+**non e' un campo bloccante del preflight RUNBOOK SS1.3**, solo `memory.used`/`memory.free`/
+`pcie.link.width.current` lo sono, e quello e' a 16 come atteso), RAM libera 87,7-87,8 GB, disco D:
+119,7 GB liberi. SHA binari `D:\llama-subtract\build\bin\` verificati PRIMA e DOPO l'intero turno,
+**invarianti**:
+
+```text
+ggml-cuda.dll          E83A87ED55C75C50FDB19ACFA792483BA16FDC5BB633A3DA301C86A5A28510FF
+llama-server.exe       8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901B22F43465B7FB1CD
+llama-server-impl.dll  91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29
+```
+
+Combaciano carattere per carattere coi prefissi dati dal mandato (dll dell'invecchiamento) e con
+SS11.7 di `NOTE_IMPLEMENTAZIONE.md`. `jprompt.txt` SHA `C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7
+E916D8A4DF1ED56A9090A9`, combacia col valore scolpito in entrambi gli script.
+
+## 1. Collaudo sentinella -- FONDATA, zero difetti, nessun fix necessario
+
+```text
+comando  = .\sentinella.ps1 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+           -Etichetta 'fondazione dll invecchiamento'
+tag      = sentinella_b64_r1_20260817_164646
+caricamento = 120,4 s   chiusura = ctrl-c   processi residui = 0
+t/s = 14,93   p1 = 0,88636   SHA output = 99E982C1DA01A1BC1F88F8D85CB7CA18BF43563AF0D85ECF966F73C1
+              234E5924
+cache-esperti = 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0,
+                spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1,
+                cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+divergenze = tutte a zero (2 occorrenze, entrambe taglia=0 ids=0 out=0 GRIGLIA-corta=0)
+VERDETTO = FONDATA (prima corsa in assoluto, genealogia fondata)
+genealogia = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\
+             strumenti\sentinella_genealogia.jsonl
+```
+
+Lo script ha funzionato al primo lancio reale senza bisogno di alcun fix: preflight leggero,
+caricamento, richiesta, chiusura ctrl-c, verifica 0 processi residui e scrittura della genealogia
+sono filati lineari. Nessuna delle 7 fragilita' dichiarate nel README si e' manifestata su questo
+collaudo.
+
+## 2. Collaudo impronta -- BUG TROVATO E CORRETTO, poi riclassificazione corretta = STESSA_TRAIETTORIA
+
+### 2.1 Fondazione del canonico (leve spente)
+
+```text
+comando = .\impronta.ps1 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe' -Etichetta 'canonico'
+tag     = impronta_canonico_b64_r1_20260817_164953
+caricamento = 131,3 s   chiusura = ctrl-c   processi residui = 0
+t/s = 14,95   p1 = 0,88636   SHA output = 99E982C1DA01A1BC1F88F8D85CB7CA18BF43563AF0D85ECF966F73C1
+              234E5924   (identico byte-per-byte alla sentinella: stessa config, stesso 64-token, buon
+              controllo incrociato fra i due strumenti)
+CANONICO FONDATO: impronta_canonico.txt + impronta_canonico.meta.json
+IMPRONTA|impronta_canonico_b64_r1_20260817_164953|99E982C1|0.88636|STESSA_TRAIETTORIA
+```
+
+### 2.2 Prima corsa con la leva -- SPOSTATA, ma CONTRADDITTORIA (SHA identico al canonico!)
+
+```text
+comando = .\impronta.ps1 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+          -Extra 'LLAMA_CACHE_ESPERTI_USATO_INVECCHIA=1' -Etichetta 'invecchiamento solo'
+tag     = impronta_invecchiamento_solo_b64_r1_20260817_165245
+t/s = 14,83   p1 = 0,88636   SHA output = 99E982C1DA01A1BC1F88F8D85CB7CA18BF43563AF0D85ECF966F73C1
+              234E5924   <-- IDENTICO al canonico
+VERDETTO (script originale) = SPOSTATA (divergenza al carattere 235, p1 0.88636 vs canonico 0.88636)
+```
+
+**Contraddizione rilevata sul posto**: lo SHA output stampato da questa corsa e' char-per-char
+uguale a quello del canonico, eppure il verdetto interno dice SPOSTATA con una "divergenza" al
+carattere 235. Impossibile se il contenuto e' davvero identico (collisione SHA256 esclusa).
+
+### 2.3 Diagnosi -- confermata offline, senza sprecare un altro riavvio server
+
+Confronto byte-per-byte dei tre file su disco (`impronta_canonico.txt`, l'`.output.txt` della corsa
+2.1 e quello della corsa 2.2): **IDENTICI, 241 byte ciascuno** (`diff` = nessuna differenza).
+Analisi esadecimale di `impronta_canonico.txt`: **un solo** byte `0x0a` e **un solo** byte `0x0d` in
+tutto il file, adiacenti, **esclusivamente in coda** (`...JS,\r\n`) -- il testo generato dal modello
+a 64 token non contiene alcun ritorno a capo proprio (si ferma a meta' di un blocco `<head>`).
+Ricostruzione aritmetica: il canonico riletto da disco ha 237 caratteri .NET (dopo rimozione del
+BOM), termina con `\r\n`; senza quel CRLF finale sono 235 caratteri, e lo SHA256 ricalcolato torna
+**esattamente** `99E982C1...` -- il valore atteso. **Causa**: `Set-Content -Encoding UTF8` in
+PowerShell 5.1 aggiunge *sempre* un terminatore di riga finale quando scrive una stringa, anche se
+l'originale non lo aveva. Lo script confrontava `$content` in memoria (senza quel CRLF) contro
+`$canonicoTesto` riletto da file (con quel CRLF aggiunto): falso SPOSTATA anche a testo realmente
+identico, ogni volta che il testo generato non termina gia' di suo con un ritorno a capo.
+
+### 2.4 Fix applicato a `impronta.ps1`
+
+File: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\strumenti\
+impronta.ps1`. Nel ramo di confronto col canonico, lo SHA di riferimento ora si legge **prima di
+tutto** da `impronta_canonico.meta.json` (campo `sha_output`, scritto in memoria durante la corsa
+che fonda il canonico -- mai passato da un file di testo, quindi mai affetto dal problema). Fallback
+al ricalcolo dal testo solo se il meta manca, con normalizzazione esplicita di un singolo CRLF/LF
+finale. Sintassi verificata con il parser di PowerShell (`[System.Management.Automation.Language.
+Parser]::ParseFile`, zero errori) prima di rilanciare. Nessun'altra riga toccata; `sentinella.ps1`
+non e' affetto (confronta sempre SHA calcolati in memoria, mai riletti da file).
+
+### 2.5 Ricorsa con lo script corretto -- riga IMPRONTA verbatim definitiva
+
+```text
+comando = .\impronta.ps1 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+          -Extra 'LLAMA_CACHE_ESPERTI_USATO_INVECCHIA=1' -Etichetta 'invecchiamento solo fix'
+tag     = impronta_invecchiamento_solo_fix_b64_r1_20260817_170233
+caricamento = 115,3 s   chiusura = ctrl-c   processi residui = 0
+t/s = 14,85   p1 = 0,88636   SHA output = 99E982C1DA01A1BC1F88F8D85CB7CA18BF43563AF0D85ECF966F73C1
+              234E5924
+```
+
+**IMPRONTA|impronta_invecchiamento_solo_fix_b64_r1_20260817_170233|99E982C1|0.88636|STESSA_TRAIETTORIA**
+
+Verdetto corretto e coerente: **STESSA TRAIETTORIA**. Il mandato considerava questo l'esito
+"ancora meglio" rispetto al possibile SPOSTATA. Nota di merito per il meccanismo: la spazzata e'
+verificata **attiva** su questo stesso carico (log della corsa 2.5) --
+`usato invecchia -> freddi=464/473 (98.1%), spazzate=721, vittime domanda=6444 prefetch=0` -- quindi
+non e' "STESSA TRAIETTORIA per irraggiungibilita'" ma perche' il canale di rischio (`kern_partiziona`,
+l'ordine della lane CPU) non ha ancora prodotto una divergenza osservabile a 64 token con
+`TRASPORTO_ONLINE=0` in questo collaudo.
+
+## 3. Banco v0.2 -- `inv_tov`, B1200 warm-restore, le quattro leve composte
+
+### 3.1 Comando e ambiente completo
+
+```text
+comando = & run_porto_hot.ps1 -Tag 'inv_tov' -MaxTokens 1200 -Repetitions 4 -PortoHotSnapshot $true
+          -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe' -Extra
+          'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+          LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+          LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+          LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;
+          LLAMA_CACHE_ESPERTI_USATO_INVECCHIA=1;LLAMA_TRASPORTO_ONLINE=1;LLAMA_CACHE_ESPERTI_W=1;
+          LLAMA_CACHE_ESPERTI_FORK_COMPONI=1'
+banco   = B1200   ripetizioni = 4 (r1 cattura/warm-up fuori verdetto, verdetto = mediana r2-r4)
+leva variata = COMPOSIZIONE di quattro (unica corsa che le combina tutte in questa forma, per
+          mandato esplicito -- non e' una violazione di RUNBOOK SS6.1 "una leva per braccio", e' il
+          punto stesso del banco v0.2, coerente col precedente B del turno 13 che gia' componeva tre)
+env runner (default RUNBOOK SS3.2, invariato) = LLAMA_CACHE_BOZZA_SLOT=12 LLAMA_CACHE_ESPERTI_BATCH=8
+          LLAMA_CACHE_ESPERTI_BATTITO=45 LLAMA_CACHE_ESPERTI_CODA_MAX=0 LLAMA_CACHE_ESPERTI_CURA=0
+          LLAMA_CACHE_ESPERTI_SCUDO=0 LLAMA_CACHE_ESPERTI_MASSA=2 LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE=0
+          LLAMA_CACHE_ESPERTI_MASSA_CORSIE=0 LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0 LLAMA_CACHE_ESPERTI_LRU=1
+          LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1 LLAMA_CACHE_ESPERTI_SLOT=473 LLAMA_CACHE_ESPERTI_FORK=2
+          LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8 LLAMA_CACHE_ESPERTI_FORK_RIUSA_SLOT=0
+          LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0 LLAMA_ACCEPTMOE=1 LLAMA_ACCEPTMOE_ESATTE=1
+          LLAMA_ACCEPTMOE_SOGLIA=0.75 LLAMA_ACCEPTMOE_COMPATTA=1 LLAMA_CKPT_CRONO=0
+          LLAMA_SPEC_CONF_ESENTA_POS0=1 LLAMA_SPEC_DRAFT_TOPK=1 PORTO_SPEC_NMAX=3 PORTO_SPEC_CONF_MIN=0.8
+          LLAMA_MAPPED_IBRIDO=1 LLAMA_MAPPED_IBRIDO_SOGLIA=2 LLAMA_OVERLAP_ASYNC=1 LLAMA_OVERLAP_K=2
+          LLAMA_OVERLAP_BATCH_MAX=3 LLAMA_OVERLAP_GRIGLIA_VARIABILE=0 LLAMA_OVERLAP_PIN=1
+          LLAMA_OVERLAP_JOIN_ASYNC=0 LLAMA_KV_RING=1 LLAMA_KV_RING_VRAM_TOKEN=2048
+          LLAMA_KV_ROLLBACK_PARZIALE=1 LLAMA_KV_ROLLBACK_SOLO_ANELLO=0 LLAMA_VRAM_A_FASI=0
+          LLAMA_DSV4_INDEXER_FUSO=0 LLAMA_DSV4_HC_FUSO=5 LLAMA_GRAPH_REUSE_PER_TAGLIA=1
+          GGML_CUDA_GRAPH_OPT=0 LLAMA_VRAM_ZAVORRA=0 (GGML_SCHED_PROFILO default=1 del runner,
+          SOVRASCRITTO a 0 da -Extra) -- GGML_CUDA_DISABLE_GRAPHS mai impostata (grafi accesi)
+telemetria = sample_hw.ps1 -Tag inv_tov -OutDir .../work/runs, avviata dopo /health 200 (110 s di
+          caricamento), fermata da sola a fine processo (136 campioni, 0,5 Hz)
+```
+
+### 3.2 Verifica d'identita' -- PASSATA su tutti i punti
+
+```text
+[x] riga cache-esperti identica al riferimento: 473 slot..., sfratto_par=1 (char per char)
+[x] build 10093 (3014d3756); SHA binari invarianti pre/post corsa (vedi preflight sopra)
+[x] righe sched-profilo = 0 -> profiler SPENTO
+[x] GGML_CUDA_GRAPH_STATS=0(D) spento; GGML_CUDA_DISABLE_GRAPHS=<spento>(D) -> grafi ACCESI
+[x] zero GGML_ASSERT / CUDA error / invalid index / nan / inf; divergenze SEMPRE
+    taglia=0 ids=0 out=0 GRIGLIA-corta=0 (tutte le occorrenze nel log)
+[x] "listening on" una volta sola, "all slots are idle" x5 (1 avvio + 4 richieste) -> un solo
+    processo, quattro richieste completate
+[x] SHA binari post-corsa ri-verificati identici al preflight
+[ ] SHA output identico fra le 4 richieste -- NO, 4 SHA diversi (atteso e dichiarato dal mandato:
+    il trasporto asincrono rompe il determinismo del restore, stesso fenomeno del v0.1/turno 13)
+[ ] p1 identico fra le 4 richieste (cancello atteso in regime CON RESTORE, RUNBOOK SS8.9.5) -- NO,
+    varia 0,817-0,872: STESSA causa del punto sopra (non-determinismo del trasporto), non un
+    guasto separato del restore
+controllo di coerenza testo (RUNBOOK SS4.10, campionato su r2/r3/r4: inizio+fine r2, inizio+fine r4,
+    finestra centrale r3) = lingua sana SI, nessun loop/ripetizione patologica SI (nessuna), pertinenza
+    al prompt SI (landing page HTML/CSS cyberpunk "NeuraForge", codice ben formato in tutti i
+    campioni), degradazione progressiva NO
+```
+
+### 3.3 Tabella per richiesta
+
+| rep | eval t/s | prompt t/s | p1 | SHA output (16) | finish | content_chars |
+|---|---:|---:|---|---|---|---:|
+| r1 (cattura) | 14,69 | 22,03 | 0,85490 | 361B6527127775BD | length | 2602 |
+| r2 | 14,73 | 9,08 | 0,81724 | 5872C9ADFFA78C1E | length | 3488 |
+| r3 | 15,47 | 9,17 | 0,84721 | 12C8163A88917B4A | length | 3710 |
+| r4 | 15,56 | 9,13 | 0,87176 | B2DF4225C47595CD | length | 3627 |
+
+**MEDIANA VERDETTO (r2-r4) = 15,47 t/s.** p1 fuori banda 2sigma [0,8825;0,9231] (centro 0,90281) su
+**tutte** e quattro le richieste, inclusa la piu' alta (r4 0,87176) -- stesso quadro del v0.1 di ieri,
+coerente con l'apparato `W=1`+`FORK_COMPONI=1` gia' imputato allora.
+
+### 3.4 Testimone trasporto-online (verbatim, ultima riga cumulativa del processo, fine r4)
+
+```text
+cache-esperti: trasporto-online -> d=1, budget=24, previsti=111062, prenotati=45624, emesse
+  motore=45624 (300.74 GiB), in tempo=4900, tardive=12829, sfratti=45227, sorpassate=12829,
+  id fuori range=0, in volo max=16 (tetto 255), confini=115757, senza basi=0,
+  rifiutate_pressione=0, sorgente=pinnata, banda H2D=9.59 GiB/s (campioni=32989, saltati=20)
+```
+
+Aritmetica di verifica: tentativi totali = prenotati + rifiutate_pressione = 45624 + 0 = 45624.
+**Frazione respinta dal veto = 0,00%** (era 71.316/71.872 = 99,23% ieri) -- **CROLLO TOTALE**, oltre
+l'attesa "sotto il 30%". `sfratti/prenotati` = 45227/45624 = **99,13%** -- resta altissimo,
+paragonabile al 95,4% del dodicesimo turno (apparato sporco). `prenotati` 556->45.624 (+82x),
+`in tempo` 48->4.900 (+102x), `emesse` 3,67->300,74 GiB (+82x): il motore, sbloccato, **lavora
+davvero** -- ma quasi tutto cio' che prenota viene comunque sfrattato prima di diventare utile.
+
+### 3.5 Testimone usato invecchia (verbatim, ultima riga cumulativa)
+
+```text
+cache-esperti: usato invecchia -> freddi=463/473 (97.9%), spazzate=31419, vittime domanda=336354
+  prefetch=45624
+```
+
+`freddi` 97,9% -- ben dentro "centinaia" atteso da SS11.6. `spazzate/(vittime domanda+prefetch)` =
+31419/381978 = **8,23%** -- "«1" rispettato: la leva non e' degenerata a costo O(n_slot) per ogni
+sfratto.
+
+### 3.6 Byte a domanda -- la tesi resta NON pagata
+
+```text
+cache-esperti: byte a domanda (stream calcolo) 2218.27 GiB, in prefetch (stream DMA) 0.00 GiB
+```
+
+Contro i riferimenti dati dal mandato: vs B v0.1 (2210 GiB) = **+0,37%**; vs 2176 GiB = **+1,94%**.
+**Sale, non scende**, esattamente come ieri (+1,58% su B v0.1). Il testimone indiretto della tesi del
+trasporto (togliere byte dal canale reattivo) non e' verificato in nessuna delle due iterazioni.
+
+### 3.7 Copie/buchi (cumulativo 4800 token generati, ultima riga)
+
+```text
+cache-esperti: domanda 1117724 (colpi 781378 = 69.9%, buchi 336346, miss 30.1%, in ritardo
+  12829 = 0.0% dei prenotati)
+```
+
+Hit-rate 69,9%, sotto il 77,9% storico SOTA -- coerente col regime gia' degradato dall'apparato.
+
+### 3.8 Telemetria (`inv_tov.hw.csv`/`inv_tov.cpu.csv`, 136 campioni a 0,5 Hz, 131 "busy" util>30%)
+
+```text
+clock SM   min(busy)=1935 MHz  mediana(busy)=1935 MHz  max(busy)=1942 MHz  -- NESSUN THROTTLE
+potenza    media(busy)=102,64 W  (range 80,99-117,89 W)
+VRAM       picco=11.911 MiB   media(busy)=11.908,4 MiB
+CPU%       media=56,2%   massimo=83,0%
+```
+
+Clock sempre sopra la soglia di allarme 1500 MHz: il risultato non e' confondato da throttling
+termico/di potenza.
+
+## 4. I tre delta e il verdetto
+
+```text
+inv_tov (15,47)  vs  B v0.1  (14,96)  :  +3,41 %   (la composizione con invecchiamento batte v0.1)
+inv_tov (15,47)  vs  A''     (15,47)  :   0,00 %   (converge ESATTAMENTE sul solo apparato ripulito)
+inv_tov (15,47)  vs  A       (16,40)  :  -5,67 %   (la BARRA di promozione, non raggiunta)
+```
+
+**Osservazione non richiesta esplicitamente dal mandato ma rilevante [D]**: 15,47 e' lo STESSO numero,
+alla seconda cifra decimale, del braccio A'' del turno 13 (apparato ripulito, trasporto SPENTO). Il
+motore di trasporto, ora completamente sbloccato dal veto (rifiutate_pressione 99,2%->0%, emesse
++82x, in tempo +102x), sposta il numero da B v0.1 (14,96, che era -3,30% sotto A'') fino a **pareggiare
+esattamente** il costo del solo apparato -- ne' sopra ne' sotto. Il canale `sfratti/prenotati` resta
+al 99,13% (era 95,4% col legacy sporco, 99,2% di rifiuti col veto v0.1): sembra indicare che il vero
+collo non era (solo) l'etichetta "niente slot freddi" del reperto SS10.3, ma una **competizione
+strutturale** fra il trasporto speculativo e lo sfratto a domanda per gli stessi slot appena
+raffreddati -- lo sfratto a domanda, sincrono, vince quasi sempre la corsa. Ipotesi per un turno
+futuro, non verificata sul codice in questa sessione.
+
+**Soglia del mandato**: inv_tov >= A-3% = 16,40 x 0,97 = **15,908**. Misurato 15,47 < 15,908:
+**soglia NON superata**.
+
+## VERDETTO -- UN braccio, nessuna seconda replica. PARCHEGGIO coi numeri.
+
+Come da mandato ("Se inv_tov >= 16,40-3% -> seconda replica B ...; altrimenti UN braccio e stop: la
+campagna trasporto va a PARCHEGGIO coi numeri -- questa era l'ultima iterazione autorizzata"): la
+soglia non e' superata, quindi **nessuna seconda replica**. La campagna trasporto online (v0 turno 12,
+v0.1 turno 13, v0.2/composizione turno 14) si ferma qui. La leva di invecchiamento **ha fatto esattamente
+cio' che doveva** (crollo del veto, motore sbloccato, meccanismo verificato attivo sia nel collaudo
+impronta sia nel banco vero) ma il guadagno che sblocca non supera il costo dell'apparato che lo ospita
+(`W=1`+`FORK_COMPONI=1`): il numero composto resta fermo sul livello del solo apparato (A'', 0,00% di
+delta), sotto il riferimento V0 puro di -5,67%.
+
+## Stato macchina e postflight
+
+```text
+processi_llama = 0 (verificato dal runner: shutdown=ctrl-c, chiusura pulita)
+vram (fine sessione) = 504-841 MiB usati (ultimi campioni telemetria), tornata a riposo 210 MHz
+porte 8099/8100/8101/8102 = libere prima di ogni lancio (verificato ad ogni step)
+chiusura di tutti i cinque processi server della sessione (sentinella x1, impronta x3, runner B x1) =
+  ctrl-c pulita, 0 processi residui riportato da ogni script
+commit = NESSUNO eseguito (per mandato: "Ledger in append, NESSUN commit")
+```
+
+## Percorsi file
+
+```text
+strumenti (fix applicato) : C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\
+                             work\strumenti\impronta.ps1
+genealogia sentinella      : C:\...\work\strumenti\sentinella_genealogia.jsonl
+canonico impronta          : C:\...\work\strumenti\impronta_canonico.txt (+ .meta.json)
+log collaudi               : C:\...\work\strumenti\log\sentinella_b64_r1_20260817_164646.*
+                              C:\...\work\strumenti\log\impronta_canonico_b64_r1_20260817_164953.*
+                              C:\...\work\strumenti\log\impronta_invecchiamento_solo_b64_r1_20260817_165245.*
+                              C:\...\work\strumenti\log\impronta_invecchiamento_solo_fix_b64_r1_20260817_170233.*
+banco v0.2 (tag inv_tov)   : C:\...\work\runs\inv_tov.server.log / .server.out / .summary.json /
+                              .hw.csv / .cpu.csv / .r1-r4.output.txt / .r1-r4.response.json
+```

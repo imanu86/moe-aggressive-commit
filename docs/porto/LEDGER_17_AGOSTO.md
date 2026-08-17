@@ -1334,3 +1334,401 @@ NESSUN commit eseguito. Percorsi completi di tutti gli artefatti (log/summary/ou
 hw.csv/cpu.csv, entrambi i bracci) in `D:\ds4_work\llama_run\` con tag `kvlong_cms32_20260817`* e
 `kvlong_base_20260817`*; diff in `C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\
 runs\sota100k_kvreuse.patch` e `sota100k_kvreuse_ctxcheckpointminstep.patch`.
+
+---
+
+# SETTIMA RIPRESA — binario nuovo D:\llama-subtract: V0/V1/FIX-1/SONDA (le tre patch A/B/C)
+
+Esecutore: settimo turno, contesto fresco. Mandato del coordinatore: certificare sul banco il
+binario nuovo `D:\llama-subtract\build\bin\llama-server.exe` (patch A adaptive-K v0, B fix-1
+checkpoint fine-prompt, C fix cattura K=0 — vedi `D:\ds4_work\design\impl\NOTE_IMPLEMENTAZIONE.md`)
+su quattro bracci in ordine: V0 (non-regressione, leve nuove spente), V1 (il braccio decisivo del
+fix cattura, `LLAMA_OVERLAP_K=0` con grafi accesi), FIX-1 (meccanismo del checkpoint di fine
+prompt), SONDA adaptive-K (osservativa).
+
+**Correzione di protocollo ricevuta a metà sessione (vince sul runbook)**: la QUIETE di 300 s fra
+bracci (RUNBOOK §6.6) è **abolita** — con chiusura pulita verificata (0 processi llama residui,
+VRAM tornata al livello di riposo) si incatena subito il braccio successivo, nessuna attesa a
+tempo. Applicato dalla transizione V0→V1 in poi.
+
+## Preflight
+
+```text
+data/ora        = 2026-08-17 08:11:19
+uptime_min      = 3349,7 (~55,8h, nessun riavvio recente)
+processi llama  = 0
+porta 8000 (UI) = nessun listener (non toccata)
+porta 8099      = libera
+porta 8100      = libera
+nvidia-smi (UNICA invocazione di preflight) =
+  NVIDIA GeForce RTX 3060, sm=210MHz, mem=405MHz, power=12.57W, used=305MiB, free=11811MiB,
+  pcie_gen=1 (a riposo), pcie_width=16, throttle=0x0000000000000001
+ram_libera_gb   = 88.4 GB
+disco_c_gb      = 49.3 GB liberi
+disco_d_gb      = 119.7 GB liberi
+sha_llama_server= 8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901B22F43465B7FB1CD  (NUOVO binario)
+sha_ggml_cuda   = 1E2037EDAB78CB9C09D4503C9913A9357C4B713AED3D37C9A4118768A04D4177  (NUOVO binario)
+sha_llama_impl  = 91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29  (NUOVO — FIX-1 vive qui)
+sha_jprompt     = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9 (252 byte) -- PASSATO
+build           = build 10093 (3014d3756) -- stesso numero upstream, gli SHA sopra sono l'identita' vera
+```
+
+Tutti e tre gli hash **coincidono esattamente** con le impronte dichiarate dal mandato e con quelle
+registrate in `NOTE_IMPLEMENTAZIONE.md` §6.1 dopo la build (`exit 0`, 13,4 s). Cancello 1.7-1.8
+PASSATO.
+
+## Verifica lettori PRIMA di lanciare (regola vitale, grep sul codice di `D:\llama-subtract`)
+
+```text
+cache-esperti.cu:2206-2209   K_ADATTIVO senza scadenza_ep -> cache_leva_rifiutata("K_ADATTIVO",
+                              "richiede CALENDARIO_TRACE + CALENDARIO_PIANO validi...")
+cache-esperti.cu:1136-1139   cache_calendario_trasporto_carica: LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO
+                              assente/vuota -> return false SILENZIOSO (nessun log)
+cache-esperti.cu:1050-1051   cache_calendario_carica: LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE
+cache-esperti.cu:455-470     cache_leva_rifiutata: senza LLAMA_CACHE_ESPERTI_STRICT=0 esplicito,
+                              stampa e poi exit(1) -- FATALE DI DIFETTO, non un avviso
+cache-esperti.cu:7074/7162   righe di dump "adaptive-K ->" e "fork cronometro ->" (mis_saltati)
+server-context.cpp:3810-3820 LLAMA_CTXCP_PROMPT_END: leggo il cancello a valore, near_prompt_end
+                              gia' calcolato, SRV_WRN una sola volta se acceso
+```
+
+**Scoperta rilevante prima di lanciare la SONDA**: nessun piano PORTCAL1 compatibile con questo
+carico (B1200, warm-restore, K=2, `CALENDARIO_K0=0`) esiste sul disco. L'unico piano trovato
+(`macro_v2_current_codegen_calendar_k0_tail77_q8_drain_b160_r1_20260815.portcal`, in
+`...\work\runs\`) e' stato costruito per il carico **B160 con K0/SLOT_DIRETTI** (`--lane k0
+--tail-cycles 77 --copy-quanta 8 --drain-cycle`), un regime diverso e incompatibile col mandato di
+oggi (che impone esplicitamente `CALENDARIO_K0=0` su tutti e 4 i bracci). Usarlo avrebbe introdotto
+una variabile sperimentale non autorizzata. Deciso di lanciare comunque la SONDA cosi' come
+letteralmente specificata dal mandato (sola `LLAMA_CACHE_ESPERTI_K_ADATTIVO=1`) per verificare
+empiricamente l'esito, non dedurlo soltanto dal codice.
+
+---
+
+## Braccio 1/4 — V0 (`v0_k2_subtract`) — non-regressione, leve nuove spente
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'v0_k2_subtract' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15'
+protocollo = warm-restore (1 processo, cattura r1 fuori verdetto, mediana r2-r4)
+telemetria = work\sample_hw.ps1 -Tag v0_k2_subtract -OutDir <runs> -IntervalSeconds 2
+```
+
+| richiesta | ruolo | eval t/s | p1 | SHA output | content_chars |
+|---|---|---:|---|---|---:|
+| r1 | cattura | 16,87 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r2 | verdetto | 17,07 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r3 | verdetto | 17,05 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r4 | verdetto | 17,06 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+
+```text
+valori ordinati (r2,r3,r4) : 17,05 / 17,06 / 17,07
+MEDIANA                    : 17,06
+spread max-min              : 0,12 %
+
+vs riferimento 16,86 (warm_anchor_restore_b1200_20260817, binario vecchio) : +1,19 %
+  -> NON DISTINGUE (dentro banda ±3%): non-regressione confermata
+```
+
+**Righe testimone (verbatim)**:
+
+```text
+cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0,
+  spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0,
+  scudo=0, sfratto_par=1, dma=0, dma_strato=0                              <- identica al riferimento
+manifesto: GGML_CUDA_DISABLE_GRAPHS=<spento>(D)                            <- grafi ACCESI
+manifesto: LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E)
+righe sched-profilo = 0
+motore: common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.80
+porto-hot: cattura n_tokens=64, coda=4, mask=15, target=0.009 MiB, draft=0.002 MiB, numero=1  (r1)
+porto-hot: ripristino n_tokens=64, mask=15, ..., numero=1/2/3                                  (r2/r3/r4)
+cache-esperti: FORK/JOIN acceso (livello 2, blocchi copia 8, esatto 0: no, a un token il MoE
+  mascherato (come oggi))
+cache-esperti: fork cronometro -> lanci=7793, campioni=121, saltati in cattura=5380, durata media
+  della copia=0.941 ms                                          <- mis_saltati>0 anche a K=2 (nota
+                                                                     NOTE_IMPLEMENTAZIONE SS5.8: puo'
+                                                                     legittimamente essere 0 qui; e'
+                                                                     >0, ancora meglio)
+cache-esperti: domanda 1099385 (colpi 780122 = 71.0%, buchi 319263, miss 29.0%, in ritardo 0)
+CANCELLO 1 di A (leva spenta -> nessuna riga "adaptive-K"): ASSENTE, come atteso -- PASSATO
+```
+
+**Cancelli**: riga cache-esperti identica -- PASSATO. `sfratto_par=1` -- PASSATO. `GGML_CUDA_
+DISABLE_GRAPHS=<spento>(D)` -- PASSATO. `sched-profilo`=0 su entrambi i lati del confronto (anche
+il riferimento 16,86 aveva 0 righe) -- PASSATO. `GGML_CUDA_GRAPH_STATS=0(D)` -- PASSATO. p1
+identico -- PASSATO. Zero `GGML_ASSERT`/`CUDA error`/divergenze/`CONTESA` -- PASSATO. Nessuna riga
+"adaptive-K" -- PASSATO (cancello 1 di A). Chiusura: `ctrl-c`, nessuna `RISERVA`. SHA output r2
+verificato via `Get-FileHash`: `1EDA23452DE9292C817EAF47532724A409DD2FFE3B3EF9E165ED887BA4169089`
+(3788 byte, 3784 caratteri raw) -- identico allo storico.
+
+**Controllo di coerenza testuale** (r2, banco lungo in token ma corto in caratteri: 3782,
+letto per intero): apre in italiano corretto ("Ecco il codice HTML completo..."), HTML/CSS
+cyberpunk neon pertinente al prompt NeuraForge, si interrompe a meta' di una dichiarazione CSS per
+esaurimento budget. Lingua sana=si, loop/ripetizioni=no, pertinenza=si, degradazione=no.
+
+**Telemetria** (`v0_k2_subtract.hw.csv`, 124 campioni/2s, 119 busy util>30%):
+SM mediano 1927 MHz (min 1927, max 1942, regime SOTA, nessun throttle) · potenza mediana 104,6 W ·
+VRAM picco 11893 MiB (riposo 305 MiB) · CPU% media 55,3%.
+
+**ESITO: PROMOSSO.** Non-regressione confermata; V0 diventa il riferimento del binario nuovo per
+gli altri bracci di oggi (17,06, genealogia calda-con-restore).
+
+percorsi file: `...\work\runs\v0_k2_subtract.*`
+
+---
+
+## Braccio 2/4 — V1 (`v1_k0_subtract`) — IL BRACCIO DECISIVO del fix cattura K=0
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'v1_k0_subtract' -MaxTokens 1200 -Repetitions 1
+  -PortoHotSnapshot $false -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;LLAMA_OVERLAP_K=0'
+protocollo = FREE-RUN (snapshot 0), 1 sola richiesta, grafi CUDA ACCESI
+```
+
+Contesto: il precedente turno di oggi aveva registrato `warm_k0_b1200_20260817` **ABORTITO** con
+`CUDA error: operation failed due to a previous error during capture` (`common.cuh:1681`), e aveva
+isolato con `k0_nograph_diag_b1200_20260817` che il crash e' specifico della CATTURA del grafo
+(K=0 con grafi spenti gira senza errori: 11,65 t/s, p1 0.78319, SHA `F501E5C5...E194A`). Il fix C
+di oggi (`fix_k0_capture.patch`) protegge la sonda `fork_gate` durante la cattura con
+`cudaStreamIsCapturing` + contatore `mis_saltati`.
+
+**Risultato: NESSUN CRASH.** 1200 token generati, `finish_reason=length`.
+
+```text
+r1 (unica) : eval 13,30 t/s   wall 93295,1 ms   p1 0.78319 (643 accepted / 821 generated)
+             SHA output = F501E5C5785EF309B34870AA0AAC54161FF90700011F37825F1EBE5172FE194A
+             content_chars = 1794   prompt_tokens = 68   completion_tokens = 1200
+```
+
+**Confronto con `k0_nograph_diag_b1200_20260817` (K=0, grafi SPENTI, diagnostico storico)**:
+
+```text
+                    V1 (K=0, grafi ACCESI, oggi)     k0_nograph_diag (K=0, grafi SPENTI, storico)
+eval t/s            13,30                             11,65                    <- +14,2% coi grafi
+p1                  0.78319 (643/821)                 0.78319 (643/821)        <- IDENTICO
+SHA output          F501E5C5785EF3...E194A            F501E5C5785EF3...E194A   <- IDENTICO
+copie/buchi         domanda 357588, colpi 55.3%,       domanda 357588, colpi    <- IDENTICO
+                    buchi 159993                       55.3%, buchi 159993
+```
+
+Traiettoria di calcolo **bit-identica** con e senza grafi (atteso: i grafi CUDA sono
+un'ottimizzazione dell'esecuzione, non cambiano l'aritmetica) -- prova ulteriore di correttezza,
+non solo di assenza di crash.
+
+**Righe testimone (verbatim)**:
+
+```text
+manifesto: LLAMA_OVERLAP_K=0(E)                                    <- leva confermata esplicita
+manifesto: GGML_CUDA_DISABLE_GRAPHS=<spento>(D)                    <- grafi ACCESI, regola vitale
+cache-esperti: 473 slot da 6.75 MiB = ... sfratto_par=1, ...        <- identica al riferimento
+righe sched-profilo = 0
+CANCELLO DECISIVO: cache-esperti: fork cronometro -> lanci=2197, campioni=34,
+  saltati in cattura=1591, durata media della copia=2.015 ms       <- N=1591 > 0 -- FIX CONFERMATO
+eval time = 90231.26 ms / 1200 tokens (75.19 ms per token, 13.30 tokens per second)
+(nessuna riga GGML_ASSERT / CUDA error / invalid index nel log)
+(nessuna riga RISERVA / MORTO / RICHIESTA FALLITA / CONTESA)
+shutdown = ctrl-c
+```
+
+**Cancelli**: 1200 token generati con 0 `CUDA error` -- PASSATO. `saltati in cattura`=1591 (N>0,
+l'unico esito falsificante era N==0) -- PASSATO, **ipotesi CONFERMATA, non falsificata**. Riga
+cache-esperti identica -- PASSATO. Zero `GGML_ASSERT`/divergenze/`CONTESA` -- PASSATO. Chiusura
+`ctrl-c` -- PASSATO.
+
+**Controllo di coerenza testuale** (r1, 1794 caratteri, letto per intero): italiano corretto,
+HTML/CSS cyberpunk pertinente al prompt NeuraForge, tronco a meta' di un commento per esaurimento
+budget. Lingua sana=si, loop=no, pertinenza=si, degradazione=no.
+
+**Telemetria** (`v1_k0_subtract.hw.csv`, 43 campioni/2s, 40 busy util>30%):
+SM mediano 1927 MHz (min 1792, max 1942, nessun throttle) · potenza mediana 107,4 W · VRAM picco
+11807 MiB · CPU% media 31,2% (piu' bassa di V0: K=0 toglie lavoro alla lane CPU, coerente).
+
+**ESITO: PROMOSSO.** Il fix di cattura K=0 (`fix_k0_capture.patch`) funziona: risolve il crash
+storico, produce un output verificabilmente corretto (bit-identico al percorso di riferimento
+senza grafi) e recupera +14,2% di velocita' grazie ai grafi CUDA. t/s non confrontabile con la
+SOTA K=2 (regime di calcolo diverso, atteso): e' un dato, non un verdetto di velocita'.
+
+percorsi file: `...\work\runs\v1_k0_subtract.*`
+
+---
+
+## Braccio 3/4 — FIX-1 (`fix1_freerun`) — meccanismo del checkpoint di fine prompt
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'fix1_freerun' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $false -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;LLAMA_CTXCP_PROMPT_END=1'
+protocollo = FREE-RUN (snapshot 0), 4 richieste, r1 warm-up fuori verdetto
+```
+
+Contesto: il turno precedente di oggi aveva gia' scoperto (banco maschera A1-A7) che il fix
+upstream equivalente (`-cms` basso, braccio A7) riproduce **bit per bit** la traiettoria del
+free-run rotto e non recupera p1 per niente (colpa isolata su C3, il checkpoint `PARTIAL_ONLY` che
+non copre l'anello caldo DSV4). Il mandato di oggi chiedeva quindi di verificare **solo il
+meccanismo** (prompt eval ridotto + checkpoint creato), non la qualita'.
+
+| richiesta | ruolo | eval t/s | p1 | prompt eval | SHA output | content_chars |
+|---|---|---:|---|---:|---|---:|
+| r1 | warm-up | 16,92 | 0.90281 (771/854) | 68 tok | `1EDA23452D...9089` (= freddo) | 3782 |
+| r2 | verdetto | 14,81 | 0.81078 (677/835) | **4 tok** | `3CD00E94EA...4DABA` | 2107 |
+| r3 | verdetto | 14,99 | 0.81862 (677/827) | **4 tok** | `AA5A128AC7...9DDF7` | 3015 |
+| r4 | verdetto | 16,20 | 0.85649 (746/871) | **4 tok** | `C65F9F2414...8D78B` | 3133 |
+
+```text
+valori ordinati (r2,r3,r4) : 14,81 / 14,99 / 16,20
+MEDIANA                    : 14,99
+spread max-min              : 9,39 %   (sopra soglia 5%: banco free-run rumoroso, atteso §8.9 punto 3)
+
+SHA/p1 di r2/r3/r4 = IDENTICI bit-per-bit al free-run rotto storico (warm_anchor_b1200_20260817):
+  la qualita' NON recupera -- ESATTAMENTE come anticipato dal mandato e dalla scoperta A7 di ieri.
+```
+
+**Righe testimone (verbatim) -- CANCELLO MECCANISMO**:
+
+```text
+prompt eval time =    3233.76 ms /    68 tokens (...)   task 0    (r1, nessun checkpoint ancora)
+prompt eval time =     286.54 ms /     4 tokens (...)   task 432  (r2)  <- 4 <= 4, PASSATO
+prompt eval time =     271.30 ms /     4 tokens (...)   task 956  (r3)  <- 4 <= 4, PASSATO
+prompt eval time =     272.80 ms /     4 tokens (...)   task 1480 (r4)  <- 4 <= 4, PASSATO
+LLAMA_CTXCP_PROMPT_END = 1: la spaziatura non veta piu' il checkpoint di fine prompt   (1 volta)
+created context checkpoint 2 of 32 (pos_min = 63, pos_max = 63, n_tokens = 64, ...)    (dopo r1)
+task 432 | checking checkpoint with [63, 63] against 67...
+task 432 | restored context checkpoint (pos_min = 63, pos_max = 63, n_tokens = 64, n_past = 64, ...)
+(pattern identico su task 956 e task 1480)
+```
+
+**Cancelli**: prompt eval r2-r4 <= 4 token -- PASSATO. Checkpoint di fine prompt creato e
+ripristinato esplicitamente nel log -- PASSATO (meccanismo confermato, non dedotto). Riga
+cache-esperti identica -- PASSATO. `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` -- PASSATO. Zero
+`GGML_ASSERT`/`CUDA error`/`CONTESA` -- PASSATO. Chiusura `ctrl-c` -- PASSATO. p1 **non** e' un
+cancello in regime free-run (§8.9 punto 5): registrato come dato, coerente con l'atteso .81-.87.
+
+**Controllo di coerenza testuale** (r2, 2107 caratteri, letto per intero -- stessa traiettoria
+byte-per-byte gia' letta e giudicata sana nel turno precedente): italiano corretto, HTML/CSS
+cyberpunk NeuraForge pertinente, tronco a meta' di una dichiarazione CSS per esaurimento budget.
+Lingua sana=si, loop=no, pertinenza=si, degradazione=no.
+
+**Telemetria** (`fix1_freerun.hw.csv`, 134 campioni/2s, 129 busy util>30%):
+SM mediano 1927 MHz (nessun throttle) · potenza mediana 102,9 W · VRAM picco 11895 MiB · CPU% media
+60,0%.
+
+**ESITO: PROMOSSO (meccanismo).** Il prefill si riduce esattamente come progettato (67-68 -> 4
+token, premio di latenza ~3200ms -> ~280ms per richiesta calda). La qualita' (p1, traiettoria)
+resta quella del cammino rotto, **atteso e non un fallimento della patch**: il colpevole rimane C3
+(checkpoint `PARTIAL_ONLY` non copre l'anello caldo DSV4), gia' isolato ieri e fuori mandato oggi.
+
+percorsi file: `...\work\runs\fix1_freerun.*`
+
+---
+
+## Braccio 4/4 — SONDA adaptive-K (`adk_sonda`) — NESSUNA MISURA (prerequisito mancante)
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'adk_sonda' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;LLAMA_CACHE_ESPERTI_K_ADATTIVO=1'
+protocollo = warm-restore, come da mandato -- lanciato letteralmente cosi' com'e' specificato
+```
+
+**La corsa e' fallita durante l'inizializzazione**, dopo il caricamento completo dei pesi e la
+riserva del compute buffer (`sched_reserve: reserve took 49.17 ms`), nella fase di warmup
+(`common_init_: warming up the model with an empty run`), **prima di aprire la porta HTTP** (mai
+raggiunto `/health`, ~1 min 44 s dall'avvio del processo):
+
+```text
+cache-esperti: *** K_ADATTIVO CHIESTA MA SPENTA: richiede CALENDARIO_TRACE + CALENDARIO_PIANO
+               validi: senza piano non c'e' deadline ***
+cache-esperti: la corsa si ferma qui. Proseguendo, il banco misurerebbe un'altra
+               configurazione e restituirebbe un t/s plausibile lo stesso.
+               Correggere la configurazione, oppure LLAMA_CACHE_ESPERTI_STRICT=0
+               per proseguire sapendo che quella leva non c'e'.
+```
+
+Il processo esce da solo (`exit(1)`, confermato nel codice a `cache-esperti.cu:470`); il runner
+riceve `shutdown=gia-uscito` (non un `ctrl-c` riuscito, ma nessun residuo: vedi postflight sotto).
+Nessun `.summary.json`, nessun `.r*.output.txt` prodotto. `sample_hw.ps1` non avviato (mai
+raggiunto `/health`).
+
+**Diagnosi (verificata sul codice, non dedotta a posteriori)**: `LLAMA_CACHE_ESPERTI_K_ADATTIVO`
+richiede un piano PORTCAL1 caricato tramite le variabili **`LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE`**
+(trace) + **`LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO`** (piano, file binario `PORTCAL1`) — nessuna
+delle due e' nel mandato ne' ha un default embedded (`cache-esperti.cu:1136-1139`:
+senza `CALENDARIO_PIANO` valorizzata, `cache_calendario_trasporto_carica` ritorna `false` in
+silenzio; poi `cache-esperti.cu:2206-2209` rifiuta esplicitamente `K_ADATTIVO` per l'assenza di
+`scadenza_ep`). Senza `LLAMA_CACHE_ESPERTI_STRICT=0` esplicito (non presente nel mandato), il
+cancello e' **fatale di difetto** (`cache-esperti.cu:455-470`, `exit(1)`) — per design ("Fermarsi
+costa trenta secondi. Non fermarsi e' costato due notti.", commento in testa alla funzione).
+
+Nessun piano compatibile col carico di oggi esiste sul disco: l'unico trovato
+(`macro_v2_current_codegen_calendar_k0_tail77_q8_drain_b160_r1_20260815.portcal`, `HANDOFF_PORTO_
+16_AGOSTO_2026.md` §18.3) e' per B160 con `CALENDARIO_K0=1`/`SLOT_DIRETTI=1` (`--lane k0
+--tail-cycles 77 --copy-quanta 8 --drain-cycle`) — un regime opposto a quello di oggi, che impone
+`CALENDARIO_K0=0` su tutti e 4 i bracci. Usarlo avrebbe misurato una configurazione diversa da
+quella chiesta (lo stesso errore per cui `cache_leva_rifiutata` esiste). Non generato un piano
+nuovo: costruirlo (`LLAMA_CACHE_ESPERTI_TRACCIA=<file>` per registrare, poi
+`analyze_route_trace.py --tail-cycles N --lane ... --copy-quanta N [--drain-cycle]` per costruirlo)
+richiede scelte di parametri (tail-cycles, lane, copy-quanta) non specificate dal mandato per il
+regime K=2/warm-restore di oggi: improvvisarle avrebbe violato la regola di non decidere al posto
+del coordinatore.
+
+**Postflight**: 0 processi llama residui, VRAM 305 MiB (= riposo), RAM libera 88,5 GB — **nessun
+danno alla macchina** nonostante l'uscita non fosse un `ctrl-c` pulito.
+
+**ESITO: NESSUNA MISURA** (RUNBOOK §4.8: un'uscita prima di `eval time` non e' 0 t/s, e' nessuna
+misura). Non e' un fallimento della leva K_ADATTIVO in se' (il codice si comporta esattamente come
+progettato: rifiuta con un messaggio esplicito invece di misurare in silenzio un'altra
+configurazione — la stessa disciplina gia' vista per `FORK`/`MASSA=2`/`CALENDARIO_SLOT_DIRETTI` in
+questo stesso file). E' un **prerequisito operativo mancante dal mandato**: serve una trace +
+piano PORTCAL1 costruiti apposta per il carico B1200/warm-restore/K=2 di oggi, oppure
+un'autorizzazione esplicita a girare con `LLAMA_CACHE_ESPERTI_STRICT=0` (nel qual caso la leva
+sarebbe silenziosamente spenta e il braccio misurerebbe V0, non la sonda) — decisione che spetta al
+coordinatore, non presa qui.
+
+percorsi file: `...\work\runs\adk_sonda.server.log` (261 righe, nessun `.summary.json`)
+
+---
+
+## VERDETTO FINALE — tabella dei 4 bracci
+
+| braccio | tag | t/s (mediana) | p1 | cancello specifico | esito |
+|---|---|---:|---|---|---|
+| V0 | v0_k2_subtract | **17,06** (r2-r4, spread 0,12%) | 0.90281 costante | nessuna riga "adaptive-K" (leva spenta) — PASSATO | **PROMOSSO** — non-regressione vs 16,86 (+1,19%, dentro banda) |
+| V1 | v1_k0_subtract | 13,30 (r1 unica) | 0.78319 | `saltati in cattura=1591` (N>0) — PASSATO | **PROMOSSO** — fix cattura CONFERMATO, 0 CUDA error, bit-identico allo storico senza grafi (+14,2% t/s) |
+| FIX-1 | fix1_freerun | 14,99 (r2-r4, spread 9,39%) | .81078/.81862/.85649 (= rotto storico) | prompt eval r2-r4 = 4/4/4 token, checkpoint fine-prompt creato/ripristinato — PASSATO | **PROMOSSO (meccanismo)** — qualita' invariata (atteso, colpa C3) |
+| SONDA | adk_sonda | — | — | server `exit(1)` prima di `/health`: piano PORTCAL1 assente | **NESSUNA MISURA** — prerequisito mancante dal mandato |
+
+**Verdetto per leva**:
+- **C (fix cattura K=0)**: **CONFERMATO FUNZIONANTE**, pronto per l'adozione nel regime K=0. Prova
+  diretta (`saltati in cattura`>0) + prova indiretta di correttezza (traiettoria bit-identica al
+  riferimento senza grafi) + salute piena su 1200 token.
+- **B (FIX-1, checkpoint fine-prompt)**: **meccanismo SI** (prompt eval 67-68 -> 4 token,
+  verificato nel log, non dedotto), **qualita' NO** (p1/traiettoria identiche al free-run rotto,
+  colpa isolata ieri su C3 = checkpoint `PARTIAL_ONLY` che non copre l'anello caldo DSV4 — fuori
+  mandato di oggi).
+- **A (sonda adaptive-K)**: **NON VALUTABILE in questo turno** — manca un piano PORTCAL1 costruito
+  per il carico odierno; nessuna conclusione tratta sul merito della leva stessa.
+
+**Stato macchina a fine sessione**: 0 processi llama, VRAM 305 MiB (= preflight), RAM libera 88,5
+GB (da 88,4 di preflight — nessuna perdita su 4 bracci + 1 fallimento controllato). Chiusura pulita
+su 3/4 bracci (`ctrl-c`); il quarto (`adk_sonda`) e' uscito da solo con `exit(1)` per un cancello
+di leva applicativo, senza lasciare residui. QUIETE a tempo abolita su indicazione del coordinatore
+a meta' sessione: verifica "macchina pulita" (processi=0, VRAM~riposo) applicata invece fra tutte e
+quattro le transizioni. NESSUN commit eseguito.
+
+Percorsi completi di tutti gli artefatti (server.log/server.out/summary.json/r*.output.txt/
+r*.response.json/hw.csv/cpu.csv) in
+`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\` con tag
+`v0_k2_subtract`, `v1_k0_subtract`, `fix1_freerun`, `adk_sonda`.

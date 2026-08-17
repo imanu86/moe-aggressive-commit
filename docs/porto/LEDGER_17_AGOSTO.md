@@ -3507,3 +3507,401 @@ precedente.
 percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\`
 (root presunto per continuita' di sessione con i turni 7-10; non ripetuto esplicitamente nel
 rapporto ricevuto) con tag `fantasma_l0`, `fantasma_l55`, `fantasma_l110`, `fantasma_l220`.
+
+---
+
+# DODICESIMO TURNO — FASE 1: baseline lunga fresca `lungo_base_nmax3_subtract`
+
+Esecutore: dodicesimo turno, contesto fresco. Mandato: baseline LUNGA fresca (ctx 150k, prompt
+neuraforge completo) col binario `D:\llama-subtract`, per servire da base alla futura promozione
+del trasporto online v0 sul banco lungo (B-LUNGO, RUNBOOK §8.7.3.d).
+
+## Preflight (§1 del runbook, eseguito per intero)
+
+```text
+data/ora        = 2026-08-17, ~14:15-14:21
+processi llama  = 0
+porta 8000 (UI) = nessun listener (non toccata)
+porta 8099/8100 = libere
+nvidia-smi      = NVIDIA GeForce RTX 3060, sm=210MHz, mem=405MHz, power=13.06W, used=556MiB,
+                  free=11560MiB, pcie_gen=1 (a riposo), pcie_width=16, throttle=0x1
+ram_libera_gb   = 87,4 GB
+uptime_min      = 3716 (nessun riavvio)
+disco_c_gb      = 50,5 GB liberi     disco_d_gb = 119,7 GB liberi
+jprompt102k.txt = 285.268 byte, SHA256 3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473
+                  -- IDENTICO al riferimento della sesta ripresa, PASSATO
+```
+
+## ANOMALIA #1, trovata al preflight -- SHA del binario diverso da quanto indicato nel mandato
+
+Il mandato indicava per la FASE 1 `ggml-cuda.dll` con SHA che inizia `110E4022...`. Sul disco,
+in `D:\llama-subtract\build\bin\`, il DLL trovato e':
+
+```text
+llama-server.exe       SHA256 8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901B22F43465B7FB1CD  (combacia col mandato)
+ggml-cuda.dll          SHA256 2318987DB3FCB26118B5E606706C12BEA4CA7CD8823B63B144817C7CD39C64B4  (NON combacia: mandato diceva 110E4022...)
+llama-server-impl.dll  SHA256 91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29  (combacia col mandato)
+```
+
+Verificato su `D:\ds4_work\design\impl\NOTE_IMPLEMENTAZIONE.md` §9.6: `2318987DB3FCB261` e'
+esattamente il DLL del **braccio 2 (trasporto online v0)**, ricompilato **sopra** il DLL
+`110E402219D5DD08` del braccio 1 (carico fantasma) indicato dal mandato -- una ricompilazione
+successiva ha sovrascritto il binario fra la scrittura del mandato e l'esecuzione. Non e'
+possibile tornare al DLL vecchio (non e' su disco, e ricompilare non e' autorizzato a un
+esecutore, RUNBOOK punto 12 di "BUCHI DA COLMARE"). **Decisione presa**: proseguito sul binario
+attuale (`2318987D`), motivata da: (a) `LLAMA_TRASPORTO_ONLINE` a difetto e' **0 = ramo
+inerte per costruzione** (stesso pattern gia' verificato per il carico fantasma, NOTE_
+IMPLEMENTAZIONE §9.1/§1.3), quindi la baseline non e' contaminata dal codice nuovo finche' la
+leva resta spenta -- e in questo braccio non e' mai stata impostata; (b) e' lo STESSO binario
+che il GO Fase 2 userebbe comunque, quindi l'identita' fra questa baseline e i bracci futuri e'
+preservata all'interno della sessione, che e' il confronto che conta davvero. **Segnalato, non
+nascosto**: se il coordinatore giudica insufficiente questa motivazione, la corsa va ripetuta
+quando/se il DLL `110E4022` tornera' disponibile.
+
+## Modifica autorizzata al runner `sota100k_ctx150k.ps1` -- due parametri nuovi
+
+Stessa procedura gia' autorizzata e confermata dal coordinatore per `-CtxCheckpointMinStep`
+(sesta ripresa): lettore verificato PRIMA di scrivere il nome del campo, parametro nuovo con
+difetto = comportamento invariato, diff isolato, sintassi riverificata con
+`[System.Management.Automation.Language.Parser]::ParseFile` (0 errori).
+
+```text
++ [string] $ServerPath = 'D:\llama-overlap\build\bin\llama-server.exe'   (difetto invariato)
++ [int]    $ReasoningBudgetTokens = -1                                   (difetto invariato)
+  $serverBin = $ServerPath                                               (era hardcoded D:\llama-overlap\...)
+  $bodyObject.thinking_budget_tokens = $ReasoningBudgetTokens            (nuovo campo nel corpo JSON)
+```
+
+Lettori verificati prima di scrivere:
+- `D:\llama-subtract\tools\server\server-common.cpp:1119-1129` -- `json_value(body,
+  "thinking_budget_tokens", -1)`; -1 assente = fallback a `opt.reasoning_budget` (identico a
+  campo assente); applicato solo `if (!chat_params.thinking_end_tag.empty())` (vero per questo
+  modello, un modello "thinking" -- confermato dalla sesta ripresa: popolava `reasoning_content`).
+- `D:\llama-subtract\common\arg.cpp:3322-3329` -- `--reasoning-budget N`: "-1 unrestricted, 0
+  immediate end" -- stessa semantica del CLI, citata anche in `PROTOCOLLO_MACCHINA.md:96` come
+  "--reasoning-budget 0 (nothink)".
+
+Diff salvato in `C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\
+sota100k_serverpath_reasoningbudget.patch`. Nessuna riga toccata oltre le quattro indicate sopra.
+
+## Lancio -- staccato (Win32_Process.Create)
+
+```text
+comando esatto (wrapper staccato) =
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command
+  "& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1'
+    -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel lungo_base_nmax3_subtract
+    -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 -MaxTokens 8192 -SpecNmax 3
+    -Repliche 1 -CtxCheckpointMinStep 32 -ReasoningBudgetTokens 0
+    -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+    *> 'D:\ds4_work\llama_run\lungo_base_nmax3_subtract.launcher.out'"
+lancio    = Win32_Process.Create, ReturnValue=0, PID launcher=8992, avviato 14:21:41
+telemetria = sample_hw.ps1 -Tag lungo_base_nmax3_subtract -OutDir D:\ds4_work\llama_run
+             -IntervalSeconds 2, Win32_Process.Create, ReturnValue=0, PID=3480, avviata 14:22:10
+             (dopo aver confermato llama-server.exe PID 9928 gia' presente)
+DONE      = 14:41:29 (tag interno sota_ctx150000_densefa_stage_hc5_lungo_base_nmax3_subtract_f2_b2048,
+            batch=2048 ubatch=2048), rilevata da un monitor di sfondo con polling a 20s
+            (corretto per leggere il file *> come UTF-16LE -- lo stesso difetto di codifica gia'
+            documentato in RUNBOOK §7.1 per i .summary.txt di questo runner)
+```
+
+## Verifica d'identita' (§4 del runbook, sul log grezzo)
+
+```text
+[x] riga cache-esperti IDENTICA carattere per carattere al riferimento SOTA storico (RUNBOOK §12.1):
+    cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62),
+    cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1,
+    cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+[x] sfratto_par=1 (manifesto: LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E))
+[x] build 10093 (3014d3756) + SHA256 exe/impl trascritti (vedi ANOMALIA #1 sopra per il dll)
+[x] righe sched-profilo = 263 (>0) -> profiler ACCESO -- NOTA: hardcoded incondizionatamente
+    dentro `Set-SotaEnvironment` di questo runner (GGML_SCHED_PROFILO='1', riga 129 del file),
+    NON una deviazione introdotta in questo turno -- gia' segnalato identico dalla sesta ripresa
+    ("cambiarla avrebbe richiesto una TERZA modifica non richiesta al file"); qui e' la quinta
+    modifica gia' discussa e la stessa logica si applica: non toccato.
+[x] GGML_CUDA_GRAPH_STATS=1(E) -- stesso hardcoding, stessa nota
+[x] GGML_CUDA_DISABLE_GRAPHS = <spento>(D) -- ASSENTE dall'ambiente, grafi ACCESI, PASSATO
+    (regola vitale rispettata: variabile mai impostata, nemmeno a 0)
+[x] motore: n_max=3, n_min=0, p_min=0.00, conf_min=0.80 -- SpecNmax 3 applicato correttamente
+[x] zero GGML_ASSERT / CUDA error / invalid index / out of memory su TUTTO il log
+[x] divergenze: taglia=0 ids=0 out=0 GRIGLIA-corta=0 su tutte le occorrenze
+[x] jprompt102k.txt SHA verificato al preflight
+```
+
+## Risultato (dal log grezzo, non dal summary)
+
+```text
+prompt eval time = 843.980,47 ms / 101.597 token (8,31 ms/token, 120,38 t/s)   <- PREFILL
+eval time        =  15.791,03 ms /     134 token (117,84 ms/token, 8,49 t/s)  <- DECODE
+draft acceptance = 0,65934 (60 accepted / 91 generated), mean len 1,82        <- p1
+finish_reason    = stop   (NON length -- vedi ANOMALIA #2)
+completion       = 134 token su 8192 richiesti
+SHA output       = 18BD770F92BE8519F9D2224ED94903DEB99DE52E40A99F62130CB32ED2C74984
+lunghezza output = 486 byte su file / 479 caratteri nel log della corsa (differenza minore,
+                   verosimilmente BOM/newline finale -- non normalizzata, segnalata non decisa
+                   in autonomia, RUNBOOK §4.7)
+copie/buchi      = cache-esperti: domanda 29424 (colpi 20695 = 70,3%, buchi 8729, miss 29,7%,
+                   in ritardo 0 = 0,0% dei prenotati)   -- cumulativo sull'intera richiesta
+                   (prefill 101.597 token + decode 134 token), primo dato per questa combinazione
+                   di leve/lunghezza, nessuno storico diretto con cui confrontarlo
+```
+
+## ANOMALIA #2 -- completion 134/8192 token, finish=stop: attesa, spiegata, ma limita il verdetto
+
+Il no-think (`thinking_budget_tokens=0`) ha funzionato esattamente come da disegno: verificato
+sul JSON di risposta grezzo, `reasoning_content` e' **vuoto (0 caratteri)**, tutto il testo e'
+nel campo `content` -- zero token spesi a "pensare", esattamente l'inverso di quanto osservato
+nella sesta ripresa (dove a MaxTokens=256 il modello esauriva l'intero budget dentro
+`reasoning_content` senza mai raggiungere `content`). Con il ragionamento soppresso, il modello
+ha semplicemente eseguito l'istruzione finale del prompt ("Continua in italiano con un **breve**
+paragrafo tecnico") e si e' fermato da solo (`finish_reason=stop`, EOS naturale) dopo un solo
+paragrafo coerente di 134 token, non per esaurimento di `max_tokens`.
+
+**Conseguenza per il verdetto**: 134 token e' SOTTO la soglia dei 256 token che questo stesso
+progetto ha stabilito come minimo per un verdetto di decode non-artefatto (RUNBOOK §8.7.3.d,
+§12.7: "64 token davano un artefatto di segmento, 256 un delta piu' debole ma ancora corto";
+qui abbiamo 134, in mezzo). Il numero **8,49 t/s e' quindi diagnostico, non un verdetto lungo
+pieno** nel senso tecnico del progetto -- pur essendo, per quel che vale, esattamente dentro la
+zona storica attesa dal mandato ("~8-9 t/s decode a 150k") e coerente con `longgate_nmax3_r1`/
+`kvlong_base_20260817` (9,04-9,05 t/s a MaxTokens piu' corto ma con thinking NON soppresso). La
+causa e' meccanica e comprensibile (il no-think fa terminare la risposta naturalmente prima di
+saturare il budget), non un guasto -- ma il proposito originale della FASE 1 (misurare il decode
+su un completamento LUNGO e saturato) non e' stato raggiunto da questo braccio cosi' com'e'.
+Segnalato esplicitamente, non nascosto: **se serve un decode lungo saturato a ctx150k con
+no-think, serve un prompt che chieda esplicitamente un testo LUNGO** (il prompt attuale chiede
+un "breve paragrafo", che e' in tensione diretta con l'obiettivo di saturare 8192 token).
+
+## Coerenza del testo (RUNBOOK §4.10, lettura integrale -- braccio con leva nuova)
+
+Testo generato (486 byte, 1 paragrafo, integrale):
+
+> "Il codice mostra un sistema di cache per esperti in VRAM con un kernel di partizione che
+> ordina gli id degli esperti per residenza prima di inviarli ai rami CPU/GPU. La partizione e'
+> attivata solo quando `LLAMA_OVERLAP_K>0` e il batch e' di un token, per evitare degenerazioni
+> nei CUDA graph. Il kernel `kern_partiziona` scrive gli id ordinati e una permutazione inversa,
+> e il rilevatore di replay confronta i valori pubblicati dall'host per garantire che il grafo
+> non sia stantio."
+
+```text
+[x] lingua sana                                          si
+[x] assenza di loop / ripetizioni patologiche             si
+[x] pertinenza al prompt                                  si (descrive correttamente il codice
+                                                           cache-esperti/CUDA-graph del contesto
+                                                           incollato, tecnicamente accurato)
+[ ] degradazione progressiva lungo la generazione          N/A -- un solo paragrafo di 134 token,
+                                                           troppo corto per osservarla
+```
+
+## Telemetria (`lungo_base_nmax3_subtract.hw.csv`/`.cpu.csv`, 466 campioni a 0,5 Hz)
+
+```text
+campioni busy (util>30%)  : 367/466
+SM clock (busy)            : mediana 1920 MHz (min 1837, max 1942) -- regime SOTA, nessun throttle
+potenza (busy)              : mediana 129,39 W
+VRAM usata (busy)           : mediana 11.904 MiB, picco assoluto 11.930 MiB -- coerente con ctx 150k
+CPU% media                  : 18,9% (466 campioni)
+```
+
+Nota: il formato di `sample_hw.ps1` non include `ram_libera_gb` per campione (a differenza del
+runner A) -- "server vivi max" verificato manualmente durante il polling (sempre 1, mai 2).
+
+## Postflight
+
+```text
+processi_llama = 0
+vram_usata     = 390 MiB (libera 11.726 MiB)     -- < 1200 MiB, PASSATO
+ram_libera     = 88,4 GB                          -- >= 28 GB, PASSATO
+porte 8099/8100 = libere
+clock SM a riposo = 210 MHz, potenza 13,04 W      -- normale
+chiusura        = ctrl-c (pulita, confermata dal log)
+```
+
+## Esito FASE 1
+
+**DIAGNOSTICO** (baseline di riferimento, non un verdetto promosso/respinto). Prefill 120,38 t/s
+e riga cache-esperti identiche allo storico -- nessuna sorpresa sul prefill. Decode 8,49 t/s
+dentro la zona attesa dal mandato ma su un campione (134 token) sotto la soglia di affidabilita'
+del progetto per i verdetti lunghi, per una ragione meccanica compresa (no-think + prompt che
+chiede un testo breve => stop naturale precoce), non per un guasto. p1 0,65934 su campione
+piccolo (91 proposte), alta varianza attesa, non direttamente comparabile alle p1 storiche.
+Zero errori, zero divergenze, telemetria e riga cache-esperti pienamente nel regime SOTA noto.
+Nessun commit eseguito.
+
+Percorsi file (tutti in `D:\ds4_work\llama_run\`):
+```text
+lungo_base_nmax3_subtract.hw.csv / .cpu.csv / .launcher.out
+sota100k_ctx150k_densefa_stage_hc5_lungo_base_nmax3_subtract.summary.txt
+sota_ctx150000_densefa_stage_hc5_lungo_base_nmax3_subtract_f2_b2048.server.log / .server.out
+sota_ctx150000_densefa_stage_hc5_lungo_base_nmax3_subtract_f2_b2048_q1.output.txt / .response.json
+```
+
+---
+
+# DODICESIMO TURNO — FASE 2: trasporto online v0, bracci B e A′ (`TRASPORTO_ONLINE_PIANO.md` §4,
+# `NOTE_IMPLEMENTAZIONE.md` §9) — FERMATO dopo A′ per cancello mandato non soddisfatto
+
+GO ricevuto dal coordinatore a FASE 1 gia' consegnata (macchina verificata pulita, nessuna quiete
+richiesta). Letta per intero `D:\ds4_work\design\impl\NOTE_IMPLEMENTAZIONE.md` §9 prima di
+lanciare, come richiesto dal mandato. Binario invariato da FASE 1: `D:\llama-subtract\build\bin\`,
+`ggml-cuda.dll` SHA **2318987DB3FCB26118B5E606706C12BEA4CA7CD8823B63B144817C7CD39C64B4** (ricontrollato
+al preflight di FASE 2, IDENTICO), `llama-server.exe` 8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901
+B22F43465B7FB1CD, `llama-server-impl.dll` 91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29,
+build 10093 (3014d3756). Preflight leggero (continuita' di sessione, nessun riavvio): 0 processi,
+porte 8099/8100 libere.
+
+Protocollo comune ai due bracci (runner B, `run_porto_hot.ps1`): B1200 warm-restore, 1 processo,
+4 richieste (`-Repetitions 4`), `-PortoHotSnapshot $true`, `-SpecNmax 3`, verdetto = mediana r2-r4,
+r1 = cattura fuori verdetto. `-Extra` comune a entrambi:
+`GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;
+LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15` (leve adk/calendario/fantasma spente,
+`LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8` esplicita per`NOTE_IMPLEMENTAZIONE.md` §9.5). Riferimento
+V0 = **17,06 t/s** (settima ripresa, `v0_k2_subtract`, stessa famiglia di leve, SpecNmax 3).
+
+## Braccio B — `tov0_b` (LLAMA_TRASPORTO_ONLINE=1, LLAMA_CACHE_ESPERTI_W=1, LLAMA_CACHE_ESPERTI_FORK_COMPONI=1)
+
+```text
+lancio    = staccato (Win32_Process.Create), PID launcher 18060, PID server 16968, 14:47:17
+telemetria = sample_hw.ps1, staccata dopo /health 200 (14:49:20), PID 17292
+completato = 14:55:21, shutdown=ctrl-c
+```
+
+| rep | eval t/s | prompt t/s | p1 (accepted/generated) | SHA output | finish |
+|---|---:|---:|---|---|---|
+| r1 (cattura) | 14,10 | 20,04 | 0,83549 (711/851) | 769F027A...B4E15 | length |
+| r2 | 14,68 | 8,72 | 0,85665 (741/865) | D6A030A2...F90E85 | length |
+| r3 | 14,10 | 8,70 | 0,84185 (708/841) | B3FE1AB4...FE1C2CA9 | length |
+| r4 | 13,62 | 8,74 | 0,83614 (694/830) | 6D8C7FD6...685D3077 | length |
+
+**MEDIANA VERDETTO (r2-r4) = 14,10 t/s.**
+
+Identita' (sul log grezzo): riga cache-esperti IDENTICA allo storico (473 slot..., sfratto_par=1);
+build 10093 (3014d3756); sched-profilo=0 righe, manifesto GGML_SCHED_PROFILO=0(E) concorde -- profiler
+SPENTO, pari strumentazione col mandato; GGML_CUDA_GRAPH_STATS=0(D); GGML_CUDA_DISABLE_GRAPHS=<spento>(D)
+-- ASSENTE, grafi accesi; motore n_max=3, n_min=0, p_min=0.00, conf_min=0.80; zero GGML_ASSERT/CUDA
+error/invalid index/out of memory/cache_leva_rifiutata sull'intero log; divergenze tutte a zero
+(taglia=0 ids=0 out=0 GRIGLIA-corta=0) su tutte le occorrenze.
+
+**Testimone trasporto-online (verbatim, dump finale)**:
+```text
+cache-esperti: trasporto-online -> d=1, previsti=189966, prenotati=77957, emesse motore=77957
+  (513.88 GiB), in tempo=1228, tardive=24177, sfratti=74372, sorpassate=24170, id fuori range=0,
+  in volo max=20 (tetto 255), confini=122589, senza basi=0, sorgente=pinnata,
+  banda H2D=16.30 GiB/s (campioni=51975, saltati=5028)
+```
+
+Cancello raggiungibilita' (`emesse>0` E `in tempo>0`, `sorgente=pinnata`): **PASSATO** -- la leva ha
+mosso byte reali (513,88 GiB), non e' rimasta silenziosamente inerte.
+
+**Cancello p1 (banda 2sigma [0,8825; 0,9231]) -- FALLITO su tutte e quattro le richieste**, e non per
+rumore campionario: con n=830-865 generati per richiesta (sigma atteso ~0,0126), le osservazioni
+(0,836-0,857) stanno 3,7-5,3 sigma SOTTO il centro 0,90281 -- uno spostamento reale, non statistico.
+Corroborato dai contatori cache: `sfratti=74372` su `prenotati=77957` (95,4% degli slot prenotati dal
+predittore vengono sfrattati prima di essere confermati "in tempo"); "sotto la soglia dei due usi"
+= 364069/386057 = 94,3% (peggio del 85,5% storico senza questa leva, [[installato-mai-riusato-70-percento]]).
+
+Coerenza (letta per intero r1, r2): HTML cyberpunk coerente, in tema, ben formato, nessun loop,
+nessuna degradazione -- **PASSATO**.
+
+Telemetria (145 campioni/2s, 143 busy>30%): SM mediano 1942 MHz (min=max=1942, **nessun throttle**),
+potenza mediana 99,26 W, VRAM mediana/picco 11.927/11.937 MiB, CPU% media 58,9%.
+
+## Braccio A′ — `tov0_aprime` (identico a B, LLAMA_TRASPORTO_ONLINE=0 -- resto invariato)
+
+```text
+lancio    = staccato, PID launcher 10888, 14:57:51 (nessuna quiete, come da mandato)
+telemetria = sample_hw.ps1, staccata dopo /health 200 (15:02:16), PID 12080
+completato = 15:11:23, shutdown=ctrl-c
+```
+
+| rep | eval t/s | prompt t/s | p1 (accepted/generated) | SHA output | finish |
+|---|---:|---:|---|---|---|
+| r1 (cattura) | 8,65 | 19,72 | 0,83825 (710/847) | 66C896CC...05DED43 | length |
+| r2 | 8,62 | 6,92 | 0,82558 (710/860) | 61446C5A...555C717 | length |
+| r3 | 8,99 | 6,77 | 0,86374 (729/844) | A8213873...098CAF | length |
+| r4 | 9,38 | 6,82 | 0,85780 (748/872) | 76FCB922...17EE4F5 | length |
+
+**MEDIANA VERDETTO (r2-r4) = 8,99 t/s.**
+
+Identita': riga cache-esperti IDENTICA allo storico; build 10093 (3014d3756); sched-profilo=0 righe,
+manifesto concorde (0(E)) -- **pari strumentazione con B, confrontabili**; GGML_CUDA_DISABLE_GRAPHS=
+<spento>(D); n_max=3 confermato; zero errori/divergenze sull'intero log.
+
+**Testimone trasporto-online: ASSENTE** (grep vuoto) -- conferma diretta che la leva e' inerte a
+`LLAMA_TRASPORTO_ONLINE=0`, esattamente come documentato ("assente a leva 0"). Buon controllo positivo:
+la riga in B non e' un artefatto di stampa, e' un segnale di attivazione genuino.
+
+**Cancello p1 -- FALLITO anche qui** su tutte e quattro le richieste (0,826-0,864, tutte sotto 0,8825).
+Rilevante: la media di A′ (0,8463) e quella di B (0,8425) sono **vicine fra loro** -- il calo di p1
+sembra legato all'apparato (`W=1`+`FORK_COMPONI=1`, che attiva il prefetch LEGACY incondizionato)
+gia' di per se', non specificamente al motore nuovo sommato sopra. Contatori legacy (assenti in B,
+per costruzione -- vedi sotto): `prefetch prenotati 713979, saltati 258221, scartati 92040`; "in
+ritardo 123442 = 17,3% dei prenotati" (123442/713979 = 17,29%, torna). In B lo stesso campo mostra
+"in ritardo 24177 = 0,0%" -- **non un'anomalia**: la percentuale e' calcolata sullo stesso denominatore
+legacy (`prefetch prenotati`), che in B e' **0** perche' il predittore e' intercettato dal motore
+nuovo invece che dal vecchio `kern_prenota` (conferma diretta dell'if/else di `ggml-cuda.cu` descritto
+in NOTE_IMPLEMENTAZIONE §9.2 -- lo stesso nodo `cache_pf-` alimenta o l'uno o l'altro cammino, mai
+entrambi).
+
+Coerenza (letta r1, r2): HTML cyberpunk coerente, in tema -- **PASSATO**.
+
+Telemetria (229 campioni/2s, 224 busy>30%): SM mediano 1942 MHz (min 1920, max 1942, **nessun
+throttle** -- ESCLUDE che il crollo di velocita' sia un problema di clock/termico), potenza mediana
+82,58 W, VRAM mediana/picco 11.902/11.923 MiB, CPU% media 49,2%. (Potenza/CPU% piu' bassi di B: non
+letto come prova di per se' -- sono coerenti con un throughput piu' basso in generale, non isolano
+la causa; la causa e' nei contatori cache-esperti sopra.)
+
+## Testimone diretto del piano: byte a domanda (deve SCENDERE da A′ a B)
+
+```text
+A′: cache-esperti: byte a domanda (stream calcolo) 2268,63 GiB, in prefetch (stream DMA) 4708,83 GiB
+B:  cache-esperti: byte a domanda (stream calcolo) 2194,92 GiB, in prefetch (stream DMA) 0,00 GiB
+```
+
+Byte a domanda: 2268,63 -> 2194,92 GiB = **-3,25%**, nella direzione giusta (il trasporto toglie
+copie dal cammino reattivo, come da tesi) ma un effetto modesto rispetto al costo dell'apparato.
+
+## Attribuzione (NOTE_IMPLEMENTAZIONE §9.5) e cancello del mandato
+
+```text
+A  (V0 puro, 17,06)  ->  A′ (apparato+prefetch legacy, 8,99)  :  -47,30%   (costo dell'apparato, atteso negativo)
+A′ (8,99)             ->  B  (motore nuovo sopra, 14,10)      :  +56,84%   (attribuzione pulita del motore)
+A  (17,06)             ->  B  (14,10)                          :  -17,35%   (numero composto, il "da vendere")
+```
+
+**Cancello del mandato**: "B vs A′ >= +3% E B vs 17,06 promettente -> 3 repliche aggiuntive + A".
+`B vs A′` = +56,84% (**soddisfatto**), ma `B vs 17,06` = **-17,35%**, non "promettente" in nessuna
+lettura ragionevole (B resta piu' lento del riferimento vero). La condizione e' una **congiunzione**:
+un solo termine soddisfatto non basta. **FERMATO dopo A′, come da mandato ("altrimenti fermati dopo
+A′ e consegna")** -- nessuna replica aggiuntiva di B, nessun braccio A eseguito in questa sessione.
+
+## Stato macchina e postflight
+
+```text
+processi_llama = 0 (dopo entrambi i bracci)
+vram (dopo A′) = 399 MiB usati, 11.717 MiB liberi
+gpu clock a riposo = 210 MHz, potenza 12,47 W
+porte 8099/8100 = libere
+chiusura entrambi i bracci = ctrl-c (pulita)
+commit = NESSUNO eseguito
+```
+
+## Esito FASE 2
+
+**RESPINTO** (nella forma testata oggi): sia B sia A′ sono piu' lenti del riferimento V0 (17,06);
+il motore di trasporto online, isolato da A′, mostra un recupero reale e sostanziale (+56,84%) che
+pero' non basta a compensare il costo dell'apparato che lo ospita (W>=1 + prefetch legacy,
+-47,30% da solo). Il p1 fuori banda su ENTRAMBI i bracci (non solo B) indica che il problema
+principale e' l'apparato ereditato (prerequisito hard di questa v0: serve `W>=1` per generare gli
+id, che pero' attiva anche il vecchio prefetch mai disattivabile separatamente), non necessariamente
+il motore nuovo in se'. Segnale utile per il prossimo passo: **isolare il costo del solo predittore
+(`W=1` senza il consumo legacy) da quello del thread di servizio legacy**, prima di guidicare il
+motore nuovo su un apparato piu' pulito -- non deciso qui, e' materiale per il coordinatore.
+
+Percorsi file (tutti in `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\`):
+```text
+tov0_b.server.log / .server.out / .summary.json / .hw.csv / .cpu.csv / .launcher.out
+tov0_b.r1-r4.output.txt / .response.json
+tov0_aprime.server.log / .server.out / .summary.json / .hw.csv / .cpu.csv / .launcher.out
+tov0_aprime.r1-r4.output.txt / .response.json
+```

@@ -1158,10 +1158,13 @@ contraddicono, **vince questa**.
    **PARCHEGGIO** (§8.8) con il suo unico numero (1 replica), e si passa alla leva successiva.
    Non si fanno le 3 repliche che la vecchia tabella di §6.2 avrebbe richiesto per un colpo
    "entro ±4%".
-3. **B sopra +3%** → si completano le **3 repliche di B** (stesso processo, §8.9), mediana.
-   **Poi**, e solo poi, il **braccio di controllo A**, con la baseline **rifatta nella stessa
-   sessione** — mai un riferimento stantio letto da un log di un'altra sessione (§8.4/§8.5).
-   Il verdetto è **B vs A della stessa sessione**, non B contro uno storico: elimina i falsi
+3. **B sopra +3%** → si completano le **4 richieste di B nello stesso processo** (r1
+   warm-up fuori verdetto, **mediana di r2-r4**, §8.9 — regime caldo, standard ufficiale dal
+   17/8). **Poi**, e solo poi, il **braccio di controllo A**, **stesso protocollo** (4
+   richieste, r1 warm-up, mediana r2-r4), con la baseline **rifatta nella stessa sessione** —
+   mai un riferimento stantio letto da un log di un'altra sessione (§8.4/§8.5), e mai un
+   confronto attraverso la genealogia fredda/calda (§8.9 punto 2). Il verdetto è **B vs A
+   della stessa sessione, stessa genealogia**, non B contro uno storico: elimina i falsi
    positivi da deriva del banco (2-3%, §8.3) che un confronto contro un riferimento vecchio
    non può distinguere da un guadagno vero.
 4. **Leve commutabili a caldo per-richiesta** (es. `porto_hot_snapshot`, §5.2): si fanno **4
@@ -1193,23 +1196,46 @@ sotto.
 
 Aggiungere una riga per ogni nuova leva parcheggiata, stesso schema: leva, risultato B, note.
 
-### 8.9 Protocollo repliche-in-processo — SOSPESA in attesa di decisione dell'utente sulla genealogia delle repliche (17/8)
+### 8.9 Protocollo repliche-in-processo — REGIME CALDO, STANDARD UFFICIALE (deciso dall'utente, 17/8, senza periodo di transizione)
 
-**SOSPESA.** La prescrizione precedente (un processo, `-Repetitions 3`) non è più operativa.
-Al suo posto, questa nota tecnica:
+**Decisione dell'utente del 17/8, applicata subito, senza periodo di transizione.** Sostituisce
+sia la prescrizione originale (un processo, `-Repetitions 3`, tutte le repliche nel verdetto)
+sia la sospensione che l'aveva seguita.
 
-> Le repliche nello stesso processo con `porto_hot_snapshot=0` **NON** sono corse
-> indipendenti: la residenza della cache esperti sopravvive fra richieste
-> (`run_porto_hot.ps1:37-38`; precedente §5.2) — misurano il **REGIME CALDO STAZIONARIO**.
-> Sono legittime **SOLO** come genealogia dichiarata a parte (più veloce ~3× e più simile
-> alla produzione), **MAI** mescolabili con banchi a processi-separati nello stesso
-> confronto. Fino alla decisione dell'utente (freddo vs caldo), il protocollo operativo
-> resta: **una replica = un processo**. Il rifiuto motivato dell'esecutore del 17/8
-> (LEDGER_17, nota metodologica) è la prassi corretta.
-
-**Conseguenza per §8.7 punto 3**: dove quel punto dice "stesso processo, §8.9" per le 3
-repliche di B, si legga **sospeso allo stesso modo** — fino alla decisione dell'utente valgono
-lì pure tre processi separati (una replica = un processo), non uno.
+1. **Un braccio = UN processo** (`-Repetitions 4`, non più 3). La **richiesta 1 è warm-up**:
+   si registra come dato nel verbale, ma **resta fuori dal verdetto**. Il **verdetto è la
+   mediana delle richieste 2-4** (le tre repliche "calde", con la cache esperti già assestata
+   dopo la richiesta 1).
+2. **La genealogia calda è la nuova linea di riferimenti.** I numeri "freddi" storici (un
+   processo per replica) **restano a verbale** — non si cancellano, non si buttano — ma **non
+   si confrontano attraverso la genealogia**: un numero caldo si confronta solo con un altro
+   numero caldo. §8.4/§8.5 restano validi sul *come* leggere un riferimento (dal log, non da
+   un documento; quando rimisurarlo), non decidono *quale* genealogia usare.
+3. **B-first invariato** (§8.7): la leva accesa (B) va sempre prima; il braccio di controllo
+   A in-sessione si fa **solo se B supera +3%** (§8.3/§8.7 punti 2-3), altrimenti PARCHEGGIO
+   (§8.8).
+4. **Cancelli in valuta non-parity per il regime caldo** — non tutti i cancelli di §8 si
+   applicano nella stessa forma di prima:
+   - `p1` **riportato** per ogni richiesta, non un cancello di identità stretta fra richieste.
+   - **La salute dura resta obbligatoria e non negoziabile**: zero NaN, zero `GGML_ASSERT`,
+     zero `CUDA error` (§4.8/§8.6 non cambiano — questi restano cancelli assoluti, caldo o
+     freddo).
+   - **Contatori come serie, non un singolo numero**: buchi/copie **per richiesta**
+     (r1, r2, r3, r4). **Il calo da r1 a r2+ è atteso**: è la residenza della cache esperti al
+     lavoro (punto 1), non un'anomalia da segnalare.
+   - **SHA registrato come dato, non come cancello di identità.** Nel regime caldo la
+     residenza cambia la partizione CPU/GPU fra una richiesta e l'altra, quindi una
+     divergenza di SHA fra richieste della stessa genealogia è **legittima** — coerente con
+     §8.6 e con la nota storica del progetto che il cancello SHA vale solo a speculazione
+     spenta e K=0 (residenza fissa). Si registra comunque, per la diagnosi, ma non decide da
+     solo un verdetto.
+5. **Telemetria standard sempre** (§6.8): `sample_hw.ps1` a 0,5 Hz si applica anche qui,
+   invariato.
+6. **Banco LUNGO (prefill/contesto esteso) — verifica in corso.** Sul banco lungo le
+   richieste consecutive nello stesso processo possono abilitare prompt-cache/KV-reuse oltre
+   alla sola residenza della cache esperti (punto 1) — un effetto ulteriore, non ancora
+   verificato. Questa sezione va aggiornata al suo esito prima di applicare il regime caldo
+   senza riserve ai banchi lunghi.
 
 ---
 

@@ -4684,3 +4684,205 @@ artefatti      : ...\scratchpad\cb_runs\cb_negativo.*  cb_rifiuti.*  cb_downtard
                  (.server.log, .summary.json, .hw.csv, .cpu.csv, .<label>.output.txt per richiesta)
 ```
 ```
+
+# SEDICESIMO TURNO — prima caccia a triage sul control block v0 (leve a caldo, 64 token): SCREENING CHIUSO, zero promozioni, PF_TOP riconfermata morta, DOWN_TARDI/FORK piatte a questa risoluzione
+
+Mandato: prima caccia A/B a triage (64 token, leve a caldo via `porto_cb`, UN processo) su
+`FORK_DOWN_TARDI` 0↔1 (6 coppie), `FORK` 2↔1 (4 coppie), `PF_TOP` 0↔1 (3 coppie, "biglietto della
+lotteria"), con combinazione condizionale DOWN_TARDI=1+FORK=1 solo se le prime due uscivano entrambe
+≥0. Riuso esplicito dell'orchestratore `cb_probe.ps1` e della convenzione JSON lasciati dal
+quindicesimo turno (nessuna reinvenzione). Binario `D:\llama-subtract`. Config campione: K=2, nmax3,
+profilo 0, grafi accesi, leve extra spente. Ledger in append, nessun commit.
+
+## Preflight
+
+Nessun processo llama attivo, porte 8099-8102 libere, GPU a riposo (210 MHz, 503 MiB usati, 11613 MiB
+liberi, P8, throttle 0x1 = riposo), RAM libera 87,1 GB, disco C 50,5 GB / D 119,6 GB liberi, uptime
+3999 min. SHA256 dei tre binari **combacianti** con l'impronta del mandato e con SS12.8 di
+`NOTE_IMPLEMENTAZIONE.md` (letto da `D:\ds4_work\design\impl\NOTE_IMPLEMENTAZIONE.md`, non nel repo
+tracciato):
+
+```text
+ggml-cuda.dll     678F66F1DC446BF529DE9ADA4B95161788D7DCC5AECFADA9B669FB68303DAD49
+llama.dll         858D192E349D38A5983401E8FD50A2D3DF6B31C9B58AF64730855231ECEF9DBB
+llama-server.exe  E419C9C58312E0ABAB75A54C7F2CC2C282594AA133ECDA42DAFA4928F3639FAC
+```
+
+`jprompt.txt` SHA `C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9`, combacia.
+
+**Nota su RUNBOOK SS8.9 (aggiornata questo stesso giorno, pomeriggio, prima di questo turno)**: il
+protocollo caldo UFFICIALE per repliche-in-processo è ora CON RESTORE, e il free-run è retrocesso a
+"regime di studio" — ma il mandato di questo turno chiede esplicitamente free-run per la Fase 1
+(screening veloce) e restore per l'eventuale Fase 2 (formato "prova regina" del collaudo). Le due
+sezioni non sono in conflitto: il mandato usa free-run **consapevolmente** solo per lo screening,
+esattamente il regime che SS8.9 punto 3 lascia legittimo come "produzione reale". Segnalato, non
+silenziato.
+
+## Fase 1 — screening appaiato (tag `triage_caccia1`)
+
+Un solo processo, free-run (`porto_hot_snapshot=false` su tutte le richieste), 64 token per richiesta,
+prompt/KV riusati (`cache_prompt=true`, stesso prompt corto del banco). Piano
+`...\scratchpad\plan_triage1.json`, 27 richieste: 1 WARMUP (semina esplicita del campione, fuori
+verdetto, convenzione SS8.9 punto 1) + 12 (DOWN_TARDI, 6 coppie A=0/B=1) + 8 (FORK, 4 coppie A=2/B=1)
++ 6 (PF_TOP, 3 coppie A=0/B=1). Ogni transizione fra blocchi resetta esplicitamente le leve non
+pertinenti al valore di campione, per non trascinare uno stato del blocco precedente nel successivo.
+
+### Cancelli di salute (tutti PASS)
+
+```text
+richieste HTTP 200                    : 27/27
+porto-cb: epoca=1 semina da ambiente  : fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1  <- identica al campione
+cache-esperti: riga di identità        : 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06
+                                          + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1,
+                                          massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0,
+                                          scudo=0, sfratto_par=1, dma=0, dma_strato=0  <- identica al
+                                          riferimento storico (SS4.1/SS12.1 RUNBOOK)
+RIFIUTATA                              : 0
+GGML_ASSERT / CUDA error / invalid idx : 0
+divergenze (8 occorrenze controllate)  : taglia=0 ids=0 out=0 GRIGLIA-corta=0 su tutte
+sched-profilo                          : 0 righe (profilo spento, come da campione)
+```
+
+**Testimone di ricattura — sorpresa positiva rispetto al mandato**: ogni singola richiesta (27/27,
+non solo quelle con un cambio di valore reale) produce una riga `IN VIGORE` con ricattura, sia che
+cambi un valore (`control-block -> epoca=N, leva X: OLD->NEW, ricattura=si`, **25/27** richieste) sia
+che non lo cambi (`epoca=N IN VIGORE senza cambi di leva (ricattura comunque, l'epoca e' salita)`,
+**2/27**: WARMUP e A1_dt, le uniche due il cui valore richiesto coincideva col valore già in vigore).
+Questo significa che il costo di ricattura (~50 ms, mandato) è **simmetrico su tutte le 27
+richieste**, non solo sulle 25 con transizione reale — il confronto appaiato B−A lo assorbe per
+costruzione, senza bisogno di scartare il primo token-rate dopo ogni cambio (l'orchestratore non
+espone comunque un t/s per-token, solo l'aggregato sui 64 token via `eval time` del log).
+
+**SHA**: legittimamente non stabile in free-run (RUNBOOK SS8.9 punto 5). Su 27 richieste: SHA stabile
+identico per 24/27; WARMUP ha SHA proprio (primissima generazione del processo); A5_dt mostra una
+singola divergenza transitoria poi mai più ripetuta. Nessuna delle due è un'anomalia — coerente con
+"la residenza cambia la partizione CPU/GPU fra una richiesta e l'altra" in questo regime.
+
+**Telemetria standard** (`triage_caccia1.hw.csv`/`.cpu.csv`, 0,5 Hz, 73 campioni): VRAM di picco
+11.877 MiB, media 11.721 MiB (il minimo 833 MiB è il primissimo campione, prima del caricamento pesi,
+non rappresentativo); clock SM mediano sotto carico **1942 MHz** (piatto, nessun campione di
+throttling vero: l'unico campione sotto 1000 MHz è quello di avvio); potenza media **95,2 W**; CPU%
+media **40,4%**.
+
+**Trappola trovata e corretta durante l'analisi, degna di nota per i turni futuri**: il cast
+implicito `[double]$stringa` di PowerShell su un CSV scritto da `Export-Csv` sotto cultura di sistema
+it-IT (decimali a virgola, es. `"16,59"`) **non** lo reinterpreta come 16,59 — lo legge come se la
+virgola fosse un separatore delle migliaia e lo scarta, producendo silenziosamente **1659**. La prima
+passata di analisi ha prodotto tabelle con t/s e p1 inflazionati di 100-1000×, plausibili a colpo
+d'occhio (media dei delta % comunque corretta, perché il rapporto B/A cancella il fattore di scala
+comune — motivo per cui non è saltata subito all'occhio). Corretto forzando
+`[double]::Parse($s -replace ',','.', [InvariantCulture])` prima di ogni statistica; verificato
+ricomputando un valore noto (16,59 / 0,88889) prima di fidarsi del resto. Nessun numero riportato
+sotto viene dalla passata corrotta.
+
+### Tabella DOWN_TARDI (6 coppie, A=`fork_down_tardi:0`, B=`fork_down_tardi:1`)
+
+| coppia | A t/s | A p1 | B t/s | B p1 | delta B−A |
+|---|---:|---:|---:|---:|---:|
+| 1 | 16,59 | 0,8889 | 17,08 | 0,8889 | +2,95% |
+| 2 | 16,51 | 0,8696 | 16,14 | 0,8298 | −2,24% |
+| 3 | 16,81 | 0,8889 | 16,09 | 0,8298 | −4,28% |
+| 4 | 16,74 | 0,8889 | 17,19 | 0,8889 | +2,69% |
+| 5 | 16,57 | 0,9091 | 17,06 | 0,8696 | +2,96% |
+| 6 | 16,32 | 0,8478 | 15,76 | 0,8085 | −3,43% |
+
+**Media = −0,23%, σ = 3,45%, intervallo ±2σ/√6 = ±2,82% → [−3,04%, +2,59%].** L'intervallo tocca lo
+zero: **non passa** il cancello di escalation del mandato (≥+2% stabile, intervallo che non tocca lo
+zero). **Verdetto screening: PIATTO** — non contraddice il segnale storico atteso (+0,6…+2,7% a 256
+token, turno 15), semplicemente 64 token/6 coppie non hanno la potenza per risolverlo: la semi-ampiezza
+dell'intervallo (2,82%) è dello stesso ordine di grandezza dell'effetto cercato. Nota anche che il
+segno del delta non è monotono nel tempo (+,−,−,+,+,−): se ci fosse stata una deriva sistematica
+B-sempre-dopo-A (es. il calo di p1 nelle richieste consecutive, RUNBOOK SS8.9 punto 3, aperto) ci si
+aspetterebbe un segno costante — non è quello che si osserva sul t/s, anche se il p1 grezzo mostra una
+tendenza a calare leggermente su B nelle coppie 2,3,5,6 (coerente con l'indagine aperta, non
+promossa a spiegazione qui).
+
+### Tabella FORK (4 coppie, A=`fork:2`, B=`fork:1`) — mai isolato prima nel regime nuovo
+
+| coppia | A t/s | A p1 | B t/s | B p1 | delta B−A |
+|---|---:|---:|---:|---:|---:|
+| 1 | 17,15 | 0,8913 | 16,56 | 0,8889 | −3,44% |
+| 2 | 15,23 | 0,7917 | 15,62 | 0,8298 | +2,56% |
+| 3 | 15,71 | 0,8478 | 16,76 | 0,8889 | +6,68% |
+| 4 | 16,69 | 0,8889 | 16,13 | 0,8163 | −3,36% |
+
+**Media = +0,61%, σ = 4,93%, intervallo ±2σ/√4 = ±4,93% → [−4,31%, +5,54%].** **Verdetto screening:
+PIATTO** — intervallo largo, attraversa lo zero, nessuna direzione chiara. Prima misura in assoluto di
+`FORK=1` isolato nel regime nuovo (control block v0, grafi accesi): resta aperto, non falsificato né
+promosso.
+
+### Tabella PF_TOP (3 coppie, A=`pf_top:0`, B=`pf_top:1`) — biglietto della lotteria
+
+| coppia | A t/s | A p1 | B t/s | B p1 | delta B−A |
+|---|---:|---:|---:|---:|---:|
+| 1 | **14,13** | 0,8478 | 16,61 | 0,8889 | **+17,55%** ← sospetta, vedi nota |
+| 2 | 15,71 | 0,8478 | 15,65 | 0,8478 | −0,38% |
+| 3 | 16,78 | 0,8696 | 16,77 | 0,9091 | −0,06% |
+
+Media grezza (3 coppie) = +5,70%, σ = 10,26%, intervallo ±11,85% → [−6,15%, +17,55%]: sulla carta
+attraverserebbe la banda di promozione, ma è interamente trascinata dalla coppia 1. **A1_pf = 14,13
+t/s è il valore più basso di tutte le 27 richieste della sessione** (il prossimo più basso è 15,23);
+causa non accertata — misurato, non dedotto (candidati: rumore di scheduling proprio del free-run,
+RUNBOOK SS8.9 punto 3, oppure la posizione di A1_pf come prima richiesta del blocco PF_TOP, che porta
+anche l'unica transizione reale di FORK 1→2 del blocco — ma lo stesso pattern in A1_fk, turno FORK
+pari, non ha prodotto un'anomalia comparabile, quindi l'ipotesi "doppia transizione" resta debole).
+**Escludendo la coppia 1**: media delle coppie 2-3 = **−0,22%**, coerente con l'atteso "muore" del
+mandato. **Verdetto screening: MORTA** (falsificazione confermata, coerentemente con la curva 13/8) —
+la coppia 1 è annotata come sospetta e riportata per intero, non silenziata, ma non sostiene da sola
+un verdetto opposto a due coppie pulite e alla storia nota della leva.
+
+### Combinazione DOWN_TARDI=1+FORK=1 vs campione — NON ESEGUITA
+
+Precondizione del mandato: "solo se DOWN_TARDI e FORK=1 escono entrambi ≥0". FORK: +0,61% (≥0, passa).
+DOWN_TARDI: **−0,23%** (sotto zero, seppure di un margine trascurabile e ben dentro il proprio
+intervallo di rumore ±2,82%). Lettura letterale della precondizione: **non soddisfatta**. Scelta
+dichiarata: non ho lanciato `plan_triage1_combo.json` (pronto in scratchpad, 7 richieste, stesso
+formato, warm-up dedicato incluso) per non spendere macchina su un ramo la cui porta d'ingresso non è
+chiaramente aperta — segnalo il margine risicato (−0,23% è rumore, non un vero negativo) perché il
+coordinatore possa decidere diversamente con piena informazione.
+
+## Fase 2 — escalation B1200 warm-restore — NON ATTIVATA
+
+Cancello del mandato: "delta appaiato di DOWN_TARDI ≥ +2% stabile, intervallo che non tocca lo zero".
+Misurato: −0,23%, intervallo [−3,04%, +2,59%] (tocca lo zero abbondantemente). **Non attivata.** Piano
+già pronto e verificato (`...\scratchpad\plan_escalation_downtardi_b1200.json`: env
+`PORTO_HOT_MASK=15`, sequenza A1_off/B1_on/B2_on/B3_on/A2_off, `n_predict=1200`,
+`porto_hot_snapshot=true` su tutte, stesso formato esatto della Prova A del collaudo, ~35 min) per
+quando (o se) un turno successivo raccoglierà un segnale più netto a 256+ token sullo stesso lever.
+
+## Tempo di parete e stato macchina
+
+```text
+Fase 1 (cb_probe.ps1: caricamento + 27 richieste + shutdown pulito) = 304,9 s (5,08 min)
+```
+
+Questo è il dato che dimostra il regime nuovo: 27 misure hot-switch (13 coppie complete più il
+warm-up) in **un solo caricamento**, contro una stima di 27 caricamenti separati a ~4 min ciascuno
+(genealogia Prova D, turno 15) ≈ 108 minuti — **~21× più veloce**.
+
+```text
+processi_llama fine       = 0
+porte 8099-8102 fine      = libere
+GPU fine                  = 210 MHz, 489 MiB usati, 11627 MiB liberi, P8 (riposo) -- entro rumore
+                             rispetto al preflight (503 MiB)
+RAM libera fine           = 87,8 GB (preflight 87,1 GB) -- nessuna perdita
+SHA binari fine turno     = invariati (ri-verificati carattere per carattere)
+chiusura del processo     = ctrl-c pulito (shutdown=ctrl-c nel driver log)
+quiete fra bracci         = non applicabile: un solo processo, nessun braccio separato da distanziare
+commit                    = NESSUNO eseguito (per mandato)
+```
+
+## Percorsi file (scratchpad di sessione, non nei worktree tracciati)
+
+```text
+orchestratore (riusato)  : ...\scratchpad\cb_probe.ps1
+piano Fase 1 (eseguito)  : ...\scratchpad\plan_triage1.json
+piano combo (pronto, NON eseguito) : ...\scratchpad\plan_triage1_combo.json
+piano escalation (pronto, NON eseguito) : ...\scratchpad\plan_escalation_downtardi_b1200.json
+parser                   : ...\scratchpad\parse_triage.ps1
+artefatti                : ...\scratchpad\cb_runs\triage_caccia1.*
+                            (.server.log, .summary.json, .hw.csv, .cpu.csv, .parsed.csv,
+                            .<label>.output.txt per richiesta)
+driver log                : ...\scratchpad\triage_caccia1.driver.log
+```
+```

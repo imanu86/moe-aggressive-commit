@@ -3905,3 +3905,182 @@ tov0_b.r1-r4.output.txt / .response.json
 tov0_aprime.server.log / .server.out / .summary.json / .hw.csv / .cpu.csv / .launcher.out
 tov0_aprime.r1-r4.output.txt / .response.json
 ```
+
+---
+
+# TREDICESIMO TURNO — trasporto online v0.1: RESPINTO, il veto anti-sfratto blocca il 99,2% (compilata da rapporto)
+
+**Nota di provenienza (dichiarata, non nascosta), stesso trattamento dell'undicesimo turno.**
+Verificato con `git status`/`git diff` che nessuna modifica pendente esisteva su questo file
+prima di scrivere questa sezione: l'esecutore 13 ha prodotto solo un rapporto, non una voce di
+ledger. Il coordinatore l'ha girato in forma condensata chiedendo di compilare qui la voce.
+Dati di seconda mano, non letti da questo agente sui log grezzi: i campi non forniti dal
+rapporto sono marcati **[non fornito]** invece di inventati. Rispetto all'undicesimo turno,
+questo rapporto e' PIU' condensato -- niente tabella per-richiesta (r1/r2/r3/r4), solo mediane
+e range di p1 -- quindi ci sono piu' campi §9.2 mancanti qui che nel turno 11.
+
+Mandato (dal rapporto): banco `v0.1` del trasporto online -- iterazione successiva al `v0`
+respinto nel dodicesimo turno (apparato -47,30%, motore isolato +56,84%, netto -17,35%). Tre
+bracci: `A` (V0 puro, riferimento fresco), `A''` (apparato ripulito, `PF_LEGACY=0`) e `B`
+(trasporto online v0.1 sopra l'apparato ripulito).
+
+## Config comune ai tre bracci (dal rapporto; vedi caveat sopra)
+
+```text
+runner             = B (run_porto_hot.ps1) -- dedotto dal protocollo warm-restore, come
+                      sempre in questa sessione
+banco              = B1200
+ripetizioni        = 4 per braccio (protocollo warm-restore standard della sessione: r1 =
+                      cattura fuori verdetto, verdetto = mediana r2-r4) -- non riconfermato
+                      esplicitamente in questo rapporto, presunto per coerenza col resto della
+                      sessione di oggi
+comando esatto     = [non fornito per nessuno dei tre bracci]
+SHA ggml-cuda      = 4527613F... (NUOVA -- solo il prefisso e' stato dato nel rapporto, il
+                      SHA256 completo [non fornito])
+SHA llama-server   = [non fornito]      SHA llama-impl = [non fornito]      build = [non fornito]
+profiler/graph stats/snapshot/telemetria/clock/potenza/VRAM/RAM = [non forniti per nessuno dei
+                      tre bracci in questo rapporto]
+salute dura        = nessun crash o NESSUNA MISURA menzionato dal rapporto -- presunto
+                      completato con successo su tutti e tre i bracci, ma zero GGML_ASSERT/
+                      CUDA error NON confermato esplicitamente da questo agente sui log grezzi
+```
+
+## tov01_a -- A, V0 puro (riferimento fresco di sessione)
+
+```text
+tag         = tov01_a
+eval t/s    = 16,40 (mediana)
+p1          = 0,90281 -- IN BANDA (2sigma, centro storico); SHA "canonico" (valore esatto
+              [non fornito] in questo rapporto)
+esito       = DIAGNOSTICO -- riferimento, non il candidato sotto giudizio
+percorsi file = [non forniti]
+anomalie    = nessuna riportata
+```
+
+**Nota su 16,40 contro il 17,06 storico**: -3,87% (calcolato da questo agente: (16,40-17,06)/
+17,06), leggermente sopra la banda di deriva 2-3% di RUNBOOK §8.3 in senso stretto, ma il
+rapporto lo tratta come normale deriva di sessione catturata correttamente dal protocollo
+B-first (RUNBOOK §8.7, §6.9 punto 4 di oggi stesso): i delta sotto usano SEMPRE questo A
+fresco, mai il 17,06 di ieri, quindi l'eventuale deriva non contamina il verdetto su A'' e B.
+
+## tov01_aprime2 -- A'', apparato ripulito (PF_LEGACY=0)
+
+```text
+tag         = tov01_aprime2
+eval t/s    = 15,47 (mediana)
+delta vs A  = -5,67% (calcolato: (15,47-16,40)/16,40 = -5,67% -- torna esatto col rapporto)
+p1          = 0,86305 -- FISSO su tutte le richieste (a differenza di B, vedi sotto), comunque
+              FUORI banda
+leva        = apparato del trasporto online presente ma "ripulito": `PF_LEGACY=0` e' lo
+              shorthand dato dal rapporto per la leva che disattiva il prefetch legacy -- nome
+              esatto della variabile d'ambiente [non fornito], non confermato se imparentata
+              con `LLAMA_CACHE_ESPERTI_FORK_COMPONI`/`W` del dodicesimo turno
+esito       = DIAGNOSTICO -- isola il costo dell'apparato SENZA il prefetch legacy, contro
+              l'A' del dodicesimo turno (legacy acceso, -47,30%)
+percorsi file = [non forniti]
+anomalie    = nessuna riportata
+```
+
+**Lettura (dal rapporto)**: il crollo da -47,30% (A' del dodicesimo turno, legacy acceso) a
+-5,67% (A'' di oggi, legacy spento) isola una larghissima fetta del costo dell'apparato nel
+prefetch legacy -- ma NON tutto: il residuo di p1 (0,90281 -> 0,86305 = -0,040) mostra che il
+legacy era UNA causa, non l'UNICA (vedi VERDETTO sotto).
+
+## tov01_b -- B, trasporto online v0.1 (sopra l'apparato ripulito)
+
+```text
+tag         = tov01_b
+eval t/s    = 14,96 (mediana)
+delta vs A''= -3,30% (calcolato: (14,96-15,47)/15,47 = -3,30% -- torna esatto col rapporto)
+delta vs A  = -8,78% (calcolato: (14,96-16,40)/16,40 = -8,78% -- torna esatto col rapporto)
+p1          = 0,853-0,880 -- VARIABILE fra le richieste (range, non un valore singolo dato dal
+              rapporto), FUORI banda su tutto il range
+SHA output  = 4 SHA DIVERSI su 4 richieste -- **il restore NON e' bit-esatto in questo
+              braccio**: il trasporto asincrono rompe il determinismo del meccanismo di
+              restore warm. Con restore attivo, SHA identico su tutte le richieste e'
+              normalmente un cancello (RUNBOOK §8.9 punto 5) -- qui e' VIOLATO, segnalato dal
+              rapporto stesso come anomalia, non nascosto
+esito       = RESPINTO -- e' il candidato sotto giudizio in questa forma v0.1
+percorsi file = [non forniti]
+anomalie    = SI -- 4 SHA diversi su 4 richieste warm-restore (determinismo del restore rotto)
+```
+
+**Testimone trasporto-online (verbatim, dal rapporto)**:
+
+```text
+trasporto-online -> d=1, budget=24, previsti=182262, prenotati=556, emesse motore=556
+  (3.67 GiB), in tempo=48, tardive=131, sfratti=473, sorpassate=131, id fuori range=0,
+  in volo max=13 (tetto 255), confini=102824, senza basi=0, rifiutate_pressione=71316,
+  sorgente=pinnata, banda H2D=14.30 GiB/s
+```
+
+**Aritmetica di verifica (fatta da questo agente sui numeri del testimone)**: tentativi totali
+di prenotazione = prenotati + rifiutate_pressione = 556 + 71.316 = 71.872. Frazione respinta
+dal veto = 71.316 / 71.872 = **99,23%** -- torna col "99,2%" del verdetto. Delle 556
+prenotazioni che HANNO superato il veto, solo 48 sono arrivate "in tempo" (8,6% delle
+prenotate, 0,067% dei tentativi totali) -- il meccanismo, quando riesce a prenotare, raramente
+arriva in orario.
+
+## Delta riassuntivi (dal rapporto, verificati aritmeticamente da questo agente)
+
+```text
+A   (16,40, V0 puro)            -> A'' (15,47, apparato ripulito)     : -5,67 %
+A'' (15,47, apparato ripulito)  -> B   (14,96, trasporto v0.1 sopra)  : -3,30 %
+A   (16,40, V0 puro)            -> B   (14,96, trasporto v0.1)       : -8,78 %   (il "da vendere")
+```
+
+**Osservazione (sintesi fra turni, non nel rapporto originale -- calcolata da questo agente
+confrontando dodicesimo e tredicesimo turno)**: nel dodicesimo turno il motore isolato (A' ->
+B) dava un guadagno netto forte (+56,84%) sopra un apparato costoso e sporco (legacy acceso,
+-47,30%). Qui, sopra un apparato ripulito e piu' economico (A'' a -5,67%), lo stesso tipo di
+isolamento mostra **segno opposto**: -3,30%. Nessuna spiegazione di questo capovolgimento e'
+nel rapporto ricevuto -- resta una domanda aperta per il prossimo turno, non una conclusione di
+questo agente.
+
+## VERDETTO -- RESPINTO nella forma v0.1
+
+**Causa radice dichiarata dal rapporto** (citata dal rapporto come "reperto §10" di un
+documento/report originale che questo agente non ha ricevuto -- non verificata sul codice in
+prima persona): **non ci sono slot freddi perche' `usato[]` non invecchia mai nel ramo massa**
+-- il veto anti-sfratto tratta sempre tutto come "caldo" (usato di recente) in quel ramo, quindi
+respinge il 99,2% delle prenotazioni (aritmetica sopra) invece di lasciar passare quelle che
+punterebbero a slot davvero freddi.
+
+**Tre segnali, nessuno a favore della promozione**:
+1. **Byte a domanda +1,58% su B** (rispetto a quale altro braccio [non specificato nel
+   rapporto]) -- **la tesi non e' pagata**: il trasporto online dovrebbe TOGLIERE byte dal
+   canale reattivo "a domanda" (come nel dodicesimo turno, dove B li aveva ridotti del -3,25%
+   vs A'); qui invece li **aumenta**.
+2. **p1 fuori banda su A'' e B** (A e' il riferimento, in banda per costruzione) -- il legacy
+   era UNA causa (A'' recupera parzialmente, a 0,86305, contro lo 0,846 di A' del dodicesimo
+   turno) ma **non l'unica**: residuo di -0,040 rispetto ad A anche col legacy spento.
+3. **Determinismo del restore rotto su B** (4 SHA diversi su 4 richieste warm-restore) -- un
+   problema ulteriore, distinto dal costo in t/s: il trasporto asincrono introduce una sorgente
+   di non-riproducibilita' nel meccanismo di restore che finora (RUNBOOK §8.9) era sempre
+   risultato bit-esatto quando acceso. Segnalato dal rapporto, non approfondito qui.
+
+**Non promosso, non parcheggiato**: la diagnosi indica una causa di codice specifica e
+attaccabile (l'invecchiamento mancante di `usato[]` nel ramo massa), non un limite strutturale
+del meccanismo -- coerente con l'esito "RESPINTO nella forma v0.1" (una forma specifica, non la
+tesi del trasporto online in se', che nel dodicesimo turno aveva gia' mostrato un recupero reale
+di +56,84% una volta isolata da un apparato sporco).
+
+## Prossimo cantiere dichiarato (dal rapporto, non deciso da questo agente)
+
+```text
+1. leva di invecchiamento per usato[] nel ramo massa   -- assegnata a "chirurgo 7"
+2. control block (Fase D, RUNBOOK §5.1/§6.9)           -- gia' in coda da prima di oggi
+3. eventuale v0.2 "inscatolata" del trasporto online   -- condizionata ai due punti sopra
+```
+
+## Stato macchina ed esito finale
+
+```text
+postflight : [non fornito in questo rapporto]
+commit     : NESSUNO eseguito dall'esecutore 13 (questa voce di ledger e' stata compilata e
+             committata dall'agente documentazione su istruzione del coordinatore -- vedi nota
+             di provenienza in testa alla sezione)
+```
+
+percorsi file: [non forniti in questo rapporto] -- tag noti: `tov01_a`, `tov01_aprime2`,
+`tov01_b`.

@@ -4404,4 +4404,283 @@ log collaudi               : C:\...\work\strumenti\log\sentinella_b64_r1_2026081
                               C:\...\work\strumenti\log\impronta_invecchiamento_solo_fix_b64_r1_20260817_170233.*
 banco v0.2 (tag inv_tov)   : C:\...\work\runs\inv_tov.server.log / .server.out / .summary.json /
                               .hw.csv / .cpu.csv / .r1-r4.output.txt / .r1-r4.response.json
+
+---
+
+# QUINDICESIMO TURNO — collaudo control block v0 (canale `porto_cb`): COLLAUDATO, con una riserva circoscritta sul cancello 5 di Prova A (non di sicurezza)
+
+Mandato: collaudare il control block v0 (`NOTE_IMPLEMENTAZIONE.md` SS12) con le quattro prove proposte
+dal chirurgo (SS12.5), ordine B, C, A, D. Binario `D:\llama-subtract`. Config campione: K=2, nmax3,
+profilo 0, grafi accesi (variabile assente), leve nuove (trasporto/invecchia/fantasma/adk) tutte spente.
+Telemetria standard, chiusura pulita, niente quiete fra bracci, ledger in append, nessun commit.
+
+## Preflight
+
+Nessun processo llama attivo, porte 8099-8102 libere, porta 8000 (UI) senza listener, GPU a riposo
+(210 MHz, 502 MiB usati, 11614 MiB liberi, PCIe Gen1x16, throttle 0x1 = riposo), RAM libera 87,9 GB,
+disco C 50,5 GB / D 119,6 GB liberi, uptime 3947 min. SHA256 dei tre binari **combacianti carattere per
+carattere** con le impronte nuove del mandato e con SS12.8 di `NOTE_IMPLEMENTAZIONE.md`:
+
+```text
+ggml-cuda.dll     678F66F1DC446BF529DE9ADA4B95161788D7DCC5AECFADA9B669FB68303DAD49
+llama.dll         858D192E349D38A5983401E8FD50A2D3DF6B31C9B58AF64730855231ECEF9DBB
+llama-server.exe  E419C9C58312E0ABAB75A54C7F2CC2C282594AA133ECDA42DAFA4928F3639FAC
+```
+
+`jprompt.txt` SHA `C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9`, combacia.
+
+**Nota metodologica**: nessun runner esistente (`run_porto_hot.ps1`) supporta il campo `porto_cb` per
+richiesta — funzionalità nuova di questo stesso turno. Costruito un orchestratore dedicato
+(`cb_probe.ps1`, in scratchpad di sessione, non nei worktree tracciati) che replica **esattamente**
+l'ambiente/gli argomenti di `run_porto_hot.ps1` (stesso modello, stesso `-otd`/`-ot`, stesso `-c 10000
+-ub 64`, stesso `--spec-draft-conf-min 0.80 --cache-ram 8192 --ctx-checkpoints 32 -cms 8192`, stessa
+chiusura ctrl-c via `AttachConsole`+`GenerateConsoleCtrlEvent`) ma permette di variare `porto_cb` per
+richiesta in un unico processo, guidato da un piano JSON per prova. **Deviazione dichiarata**: le
+richieste vanno a `/v1/chat/completions` con `messages` (non `/completion` con `prompt` come nell'esempio
+SS12.3) per restare sulla stessa convezione chat-template del banco storico e mantenere p1/SHA
+confrontabili con i riferimenti noti; il campo `porto_cb` è comunque un fratello di primo livello dello
+stesso corpo JSON e passa dallo stesso schema condiviso (`eval_llama_cmpl_schema`), verificato nel codice
+prima di lanciare. Quattro processi separati (un tag = un processo, come da convenzione SS8.9 punto 1),
+porta 8101 per tutti, mai concorrenti.
+
+## Prova B — cancello negativo (tag `cb_negativo`)
+
+```text
+comando = cb_probe.ps1 -Tag cb_negativo -PlanPath plan_b_negativo.json -Port 8101
+          -ServerPath D:\llama-subtract\build\bin\llama-server.exe
+env     = campione + PORTO_CB_NO_EPOCA=1
+richiesta = 1: porto_cb={fork_blocchi:8} (valore uguale all'ambiente, per testare anche il ramo
+          "epoca sale comunque"), n_predict=64, porto_hot_snapshot=false
+```
+
+**Esito**: connessione chiusa dal server dopo 3.680 ms (`http_status=-1`, eccezione "Connessione
+sottostante chiusa: ... chiusa dal server in modo imprevisto"). Processo confermato uscito da solo
+(`server_exited_after=true`), nessun ctrl-c necessario. Log termina esattamente lì, **zero righe dopo**,
+zero `GGML_ASSERT`/`CUDA error` prima del cancello.
+
+**Testimoni verbatim** (`cb_negativo.server.log`):
+
+```text
+259: cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0,
+     spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0,
+     scudo=0, sfratto_par=1, dma=0, dma_strato=0                              <- identica al riferimento
+260: porto-cb: epoca=1 semina da ambiente: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+483: porto-cb: epoca=2 richiesta, ricattura attesa: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+492: porto-cb: epoca=2 IN VIGORE senza cambi di leva (ricattura comunque, l'epoca e' salita)
+495: cache-esperti: *** PORTO_CB CHIESTA MA SPENTA: grafo stantio: catturato sotto epoca 0, in vigore 2
+     -- il replay misurerebbe la configurazione di prima ***
+496: cache-esperti: la corsa si ferma qui. Proseguendo, il banco misurerebbe un'altra
+497:                configurazione e restituirebbe un t/s plausibile lo stesso.
+498:                Correggere la configurazione, oppure LLAMA_CACHE_ESPERTI_STRICT=0
+499:                per proseguire sapendo che quella leva non c'e'.
+```
+
+**Lettura**: la corsa muore al **primo grafo** (dopo `n_tokens=1`, checkpoint 1/32), non "al primo
+cambio di leva" come una lettura letterale del mandato lascerebbe intendere — coerente con SS12.5:
+"con l'epoca spenta la corsa muore al primo token... la semina porta gia' l'epoca a 1 mentre il grafo
+resta a 0". La mia richiesta con `porto_cb` ha comunque spostato l'epoca da 1 a 2 (visibile nel
+testimone "in vigore 2"), dimostrando che il cancello intercetta **anche** il caso di una richiesta
+accettata a caldo, non solo il disallineamento passivo semina-vs-grafo-nuovo.
+
+**VERDETTO PROVA B: PASS.** Il control block è sicuro su questo cancello: senza propagazione d'epoca la
+corsa non produce MAI un t/s silenzioso su una configurazione stantia.
+
+## Prova C — rifiuti senza morte (tag `cb_rifiuti`)
+
+```text
+env = campione, nessuna variabile extra
+richieste = 4 illegali + 1 legale, n_predict 8 (illegali) / 16 (legale), porto_hot_snapshot=false
+```
+
+| # | `porto_cb` | esito | tempo | testimone |
+|---|---|---|---:|---|
+| 1 | `{"fork":0}` | **400** | 55,5 ms | log: `porto-cb: richiesta RIFIUTATA, epoca resta 1: MASSA=2 e' in vigore e richiede FORK>0` |
+| 2 | `{"sfratto_par":0}` | **400** | 22,8 ms | log: `porto-cb: richiesta RIFIUTATA, epoca resta 1: MASSA=2 e' in vigore e richiede SFRATTO_PAR=1 per l'ammissione globale parallela` |
+| 3 | `{"cura":1}` | **400** | 21,2 ms | nessuna riga di log lato backend — respinta dallo schema HTTP prima di raggiungere il control block (`server-schema.cpp:59`, chiave fuori lista bianca) |
+| 4 | `{"fork":7}` | **400** | 16,4 ms | idem, fuori intervallo (`server-schema.cpp:64`) |
+| 5 | `{"pf_top":4}` | **200** | 4.472,6 ms | 16 token generati, SHA `82E1AC40...`, log: `epoca=2 richiesta...pf_top=4` + `control-block -> epoca=2, leva PF_TOP: 0->4, ricattura=si` + `epoca=2 IN VIGORE: ...pf_top=4...` |
+
+Le due rifiutate a livello di schema (#3, #4) non producono una riga `RIFIUTATA` perche' non raggiungono
+mai `ggml_cuda_porto_cb_valida`: il messaggio HTTP e' generato prima, dal validatore del campo JSON
+(confermato leggendo `server-schema.cpp`), quindi "epoca invariata" vale banalmente per costruzione.
+
+`server_exited_after=false` su **tutte e cinque** le righe del summary. Zero `GGML_ASSERT`/`CUDA
+error`/`invalid index`; `divergenze: taglia=0 ids=0 out=0 GRIGLIA-corta=0` su entrambe le occorrenze;
+`sched-profilo` = 0 righe (profiler spento, come da campione). Testo della richiesta legale letto per
+intero (71 caratteri): lingua sana, pertinente al prompt, nessun loop. Chiusura: `ctrl-c`.
+
+**VERDETTO PROVA C: PASS.** Quattro rifiuti puliti, server sempre vivo, epoca coerente, quinta richiesta
+accettata e applicata correttamente subito dopo.
+
+## Prova A — la prova regina (tag `cb_downtardi`)
+
+```text
+env = campione + PORTO_HOT_MASK=15
+richieste = 5, tutte porto_hot_snapshot=true, n_predict=256
+  A1_off : nessun porto_cb (ambiente: down_tardi=0)         -- cattura (numero=1)
+  B1_on  : porto_cb={fork_down_tardi:1}                     -- transizione reale, restore numero=1
+  B2_on  : nessun porto_cb (resta a 1)                       -- restore numero=2
+  B3_on  : nessun porto_cb (resta a 1)                       -- restore numero=3
+  A2_off : porto_cb={fork_down_tardi:0}                      -- transizione reale, restore numero=4
+```
+
+| rep | epoca | eval t/s | prompt t/s | p1 (acc/gen, mean len) | SHA output (16) |
+|---|---:|---:|---:|---|---|
+| A1_off | 1 | 14,05 | 20,46 | 0,84302 (145/172, 2,33) | `1F003E46561D3D88` |
+| B1_on  | 2 | 14,94 |  9,90 | 0,84302 (145/172, 2,33) | `1F003E46561D3D88` |
+| B2_on  | 2 | 15,09 | 10,07 | 0,84302 (145/172, 2,33) | `1F003E46561D3D88` |
+| B3_on  | 2 | 15,09 | 10,04 | 0,84302 (145/172, 2,33) | `1F003E46561D3D88` |
+| A2_off | 3 | 14,69 |  9,50 | 0,84302 (145/172, 2,33) | `1F003E46561D3D88` |
+
+**Le cinque SHA sono IDENTICHE** (non solo A=A', anche B non diverge — piu' forte del minimo richiesto
+da SS12.5: "B puo' divergere legittimamente", qui non diverge affatto).
+
+**Testimoni verbatim dei due cambi reali**:
+
+```text
+1367: control-block -> epoca=2, leva FORK_DOWN_TARDI: 0->1, ricattura=si
+1368: porto-cb: epoca=2 IN VIGORE: fork=2 blocchi=8 down_tardi=1 pf_top=0 sfratto_par=1
+2817: control-block -> epoca=3, leva FORK_DOWN_TARDI: 1->0, ricattura=si
+2818: porto-cb: epoca=3 IN VIGORE: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+```
+
+Nessuna riga di cambio per B2_on/B3_on (correttamente: nessun `porto_cb` inviato, l'epoca resta 2 senza
+alcuna nuova richiesta). `porto-hot: cattura ... numero=1` poi `ripristino ... numero=1..4`, sempre
+`mask=15`: nessun `prompt diverso, snapshot invalidato` in tutta la corsa (restore sempre riuscito).
+`divergenze` sempre a zero (5 occorrenze), `sched-profilo`=0, riga cache-esperti identica al
+riferimento. Testo letto per intero (411 caratteri, identico su tutte le richieste): lingua sana,
+pertinente, nessun loop. Chiusura: `ctrl-c`.
+
+### I cinque cancelli
+
+1. **Catture >=+1 ad ogni cambio** — PASS. Due cambi reali (r1->r2, r4->r5), due witness completi
+   (`control-block ->` + `IN VIGORE:`) esattamente li'; zero recatture spurie su B2/B3 (nessun cambio
+   richiesto).
+2. **Identita' configurazione carattere per carattere** — PASS sulla riga `cache-esperti:` (identica al
+   riferimento storico SS4.1/SS12.1 di `RUNBOOK_BANCO_DS4.md`). **Adattamento dichiarato**: la riga
+   `porto-cb: epoca=1 semina da ambiente:` non ha un braccio "freddo" gemello eseguito in questo turno
+   per un confronto diretto — verificata **per costruzione** (i cinque valori coincidono esattamente con
+   l'ambiente che ho impostato: fork=2, blocchi=8, down_tardi=0, pf_top=0, sfratto_par=1), non per diff
+   contro un secondo processo. Misurato vs dedotto: la riga `cache-esperti:` e' misurata, la coerenza
+   della riga `porto-cb:` e' dedotta dal codice + dall'ambiente noto.
+3. **SHA coerenti** — PASS, piu' forte del richiesto: tutti e cinque bit-identici, non solo A=A'.
+4. **t/s: delta B-A entro banda 3%** — PASS **usando A2_off (14,69 t/s) come riferimento**, non A1_off:
+   A1_off paga il costo di prima cattura di **tutte** le forme di grafo del processo (centinaia di righe
+   "catture di questa chiave: 0 (era 0)" unicamente li', vedi log), quindi non e' un riferimento onesto
+   per il costo della SOLA leva. B = mediana(B1,B2,B3) = mediana(14,94; 15,09; 15,09) = **15,09 t/s**.
+   Delta = **+2,72%**, dentro banda 3%, stesso segno del noto storico (+0,6%) ma di modulo maggiore —
+   nota, non promossa a spiegazione. Se si usasse A1_off come riferimento il delta salirebbe a +7,0%
+   (fuori banda), ma quel confronto e' confuso dal warm-up, non dalla leva.
+5. **A'-A entro 3%** — **NON PASSA alla lettera**: A1_off (14,05) vs A2_off (14,69) = **+4,55%**, sopra
+   la banda 3%. Attribuito (con buona evidenza, non certezza) allo stesso costo di prima cattura del
+   punto 4 — A1_off e' anche la primissima richiesta del processo, A2_off no — piuttosto che a isteresi
+   vera indotta dal control block: coerente con la convenzione dell'intero progetto (SS8.9 punto 1) di
+   trattare sempre la prima richiesta di un processo come "fuori verdetto" per questo esatto motivo.
+   **Limite dichiarato**: non ho eseguito una sesta richiesta di controllo per isolare pulitamente
+   questo cancello dal confondimento di warm-up; la sequenza A,B,B,B,A' a 5 richieste (come da mandato)
+   non lo permette da sola.
+
+## Prova D — banco-in-un-processo (tag `cb_blocchi`)
+
+```text
+env = campione, LLAMA_CACHE_ESPERTI_FORK_BLOCCHI non impostata (per ottenere il difetto di codice = 32)
+richieste = 5, porto_hot_snapshot=false (free-run, come il vecchio sweep a processi separati),
+            n_predict=1200 (per confrontabilita' con la zona B1200)
+  A1_32 : nessun porto_cb -- blocchi=32 confermato dalla semina (il "difetto" del codice, non del runner)
+  B1_8  : porto_cb={fork_blocchi:8}  -- transizione reale
+  B2_8  : porto_cb={fork_blocchi:8}  -- stesso valore, reinviato esplicitamente
+  B3_8  : porto_cb={fork_blocchi:8}  -- idem
+  A2_32 : porto_cb={fork_blocchi:32} -- transizione reale di ritorno
+```
+
+| rep | epoca | eval t/s | prompt t/s | p1 (acc/gen, mean len) | SHA output (16) |
+|---|---:|---:|---:|---|---|
+| A1_32 | 1 | 15,95 | 21,26 | 0,90281 (771/854, 2,80) | `232DED5284E6BEF2` |
+| B1_8  | 2 | 14,47 | 27,04 | 0,81078 (677/835, 2,30) | `DCDCEF27CB351690` |
+| B2_8  | 3 | 14,66 | 27,22 | 0,81862 (677/827, 2,30) | `9F00077616E41789` |
+| B3_8  | 4 | 15,86 | 27,13 | 0,85649 (746/871, 2,65) | `90145716A4B7AA1B` |
+| A2_32 | 5 | 14,82 | 27,03 | 0,84495 (703/832, 2,42) | `083B35D57BD5D7D9` |
+
+**Testimoni verbatim**:
+
+```text
+260:  porto-cb: epoca=1 semina da ambiente: fork=2 blocchi=32 down_tardi=0 pf_top=0 sfratto_par=1
+1617: control-block -> epoca=2, leva FORK_BLOCCHI: 32->8, ricattura=si
+2476: porto-cb: epoca=3 IN VIGORE senza cambi di leva (ricattura comunque, l'epoca e' salita)
+3502: porto-cb: epoca=4 IN VIGORE senza cambi di leva (ricattura comunque, l'epoca e' salita)
+4364: control-block -> epoca=5, leva FORK_BLOCCHI: 8->32, ricattura=si
+```
+
+**5 bracci, 1 caricamento, 4 ricatture (epoche 2,3,4,5)** — esattamente come previsto da SS12.5.
+Zero `GGML_ASSERT`/`CUDA error`; `divergenze` a zero su tutte le 17 occorrenze; `sched-profilo`=0.
+Telemetria (`cb_blocchi.hw.csv`, 174 campioni a 0,5 Hz): clock SM mediano sotto carico **1927 MHz**
+(range 1935-1942 sui campioni puliti), potenza 77-115 W; **un solo campione anomalo** (240 MHz / 16,5 W
+con `utilization.gpu`=61%, chiaramente un transiente di confine-richiesta — la potenza da riposo
+contraddice un vero throttling) su 173 campioni "busy": non sistemico, non promosso ad allarme. Testo
+letto (inizio A1_32, inizio A2_32): lingua sana, pertinente, nessun loop.
+
+**SORPRESA verificata, non richiesta dal mandato**: le p1 di A1_32/B1_8/B2_8/B3_8 (,90281 / ,81078 /
+,81862 / ,85649) combaciano **esattamente**, a cinque decimali, con la genealogia storica free-run
+`warm_anchor_b1200_20260817` citata in `RUNBOOK_BANCO_DS4.md` SS8.9 punto 3 — nonostante A1_32 abbia
+girato con `FORK_BLOCCHI=32` invece del difetto storico 8. Prova indipendente che la leva e'
+numericamente inerte (cambia solo il `gridDim` del lancio, mai il risultato), coerente con la sua
+natura dichiarata nel codice ("il gridDim di sei lanci", SS12.2).
+
+**Confronto richiesto dal mandato**: mediana(B1_8, B2_8, B3_8) = mediana(14,47; 14,66; 15,86) =
+**14,66 t/s**.
+
+```text
+vs 16,70 (zona, freddo un-processo-per-replica)      : -12,22%
+vs 16,40 (zona, barra di promozione del turno 14)    : -10,61%
+vs 14,77 (genealogia FREE-RUN corretta, SS8.9 punto 3): -0,74%  <- stessa genealogia, confronto onesto
+```
+
+I due riferimenti "di zona" indicati dal mandato (16,70/16,40) appartengono a genealogie diverse
+(freddo a processo singolo / restore) da quella di questo braccio (free-run in-processo): il confronto
+onesto, stessa genealogia, e' contro 14,77 e mostra una differenza di **-0,74%**, dentro la deriva di
+banco. Riportato come richiesto — solo sanita', non verdetto — con la genealogia corretta esplicitata
+perche' il numero letterale (-10/-12%) da solo sarebbe fuorviante.
+
+**VERDETTO PROVA D: dimostrazione riuscita.** Il vecchio sweep a 5 processi (15-30 min ciascuno) e'
+diventato 1 caricamento + 4 ricatture economiche (sotto-secondo ciascuna, si legge dai timestamp fra
+`richiesta` e `IN VIGORE`); i numeri sono sani nella genealogia che li confronta correttamente.
+
+## Verdetto complessivo
+
+**COLLAUDATO.** I due cancelli che uccidono (B, C) passano senza riserve: il control block e' sicuro
+(muore sempre e solo quando dovrebbe, con il testimone esatto previsto dal codice) e non fragile (quattro
+combinazioni illegali diverse non hanno mai fatto cadere il server ne' smosso l'epoca). La prova regina
+(A) passa quattro cancelli su cinque in modo pulito, con evidenza **piu' forte** del minimo richiesto su
+identita' e SHA; il quinto cancello (A'-A entro 3%) non passa alla lettera per un confondimento di
+warm-up ben identificato (non un sintomo di isteresi del control block), con un limite di misura
+dichiarato esplicitamente (nessun sesto braccio di isolamento eseguito). La dimostrazione (D) conferma il
+moltiplicatore 5-processi-in-uno con un bonus non richiesto: prova indipendente che `FORK_BLOCCHI` e'
+bit-neutro.
+
+**Nessuna azione ulteriore raccomandata su B/C.** Su A, se si vuole chiudere anche il cancello 5 alla
+lettera: un braccio di 6 richieste (A, A_ripetuta, B, B, B, A') isolerebbe il costo di warm-up dal costo
+di isteresi confrontando A_ripetuta (seconda richiesta, ancora "off", NON prima nel processo) con A'.
+
+## Stato macchina e postflight
+
+```text
+processi_llama       = 0 (verificato dopo ogni prova)
+GPU a fine sessione   = 210 MHz, 498 MiB usati, 11618 MiB liberi, throttle 0x1 (riposo) -- identica al preflight
+RAM libera fine       = 87,9 GB -- identica al preflight, nessuna perdita nella sessione
+porte 8099/8100/8101  = libere dopo ogni prova
+SHA binari fine turno = invariati rispetto al preflight (tutti e tre ri-verificati carattere per carattere)
+chiusura dei 4 processi = cb_negativo: morto da solo (exit(1) atteso) | cb_rifiuti/cb_downtardi/cb_blocchi: ctrl-c pulito
+quiete fra bracci     = NESSUNA (per mandato esplicito)
+commit                = NESSUNO eseguito (per mandato: "ledger append, NESSUN commit")
+```
+
+## Percorsi file (scratchpad di sessione, non nei worktree tracciati)
+
+```text
+orchestratore  : ...\scratchpad\cb_probe.ps1
+piani JSON     : ...\scratchpad\plan_b_negativo.json / plan_c_rifiuti.json / plan_a_downtardi.json /
+                 plan_d_blocchi.json
+artefatti      : ...\scratchpad\cb_runs\cb_negativo.*  cb_rifiuti.*  cb_downtardi.*  cb_blocchi.*
+                 (.server.log, .summary.json, .hw.csv, .cpu.csv, .<label>.output.txt per richiesta)
+```
 ```

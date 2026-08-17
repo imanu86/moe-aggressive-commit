@@ -4886,3 +4886,209 @@ artefatti                : ...\scratchpad\cb_runs\triage_caccia1.*
 driver log                : ...\scratchpad\triage_caccia1.driver.log
 ```
 ```
+
+## FASE 1-BIS — turno di potenza (ordine esplicito del coordinatore, in coda allo stesso turno)
+
+**Mandato ricevuto mentre la Fase 1 era già consegnata**: la Fase 1 era sotto-potenziata per
+costruzione (pavimento ±2,8-4,9% contro un effetto atteso di +1-2%). Ordine: un secondo processo
+free-run, stesso formato, tag `triage_caccia1bis`, **30 coppie DOWN_TARDI 0↔1 interfogliate con 15
+coppie FORK 2↔1** (90 richieste appaiate da 64 token), stesso parsing appaiato (delta per coppia
+adiacente, media ± 2σ/√n). Verdetti pre-registrati dal coordinatore: (a) DOWN_TARDI intervallo che non
+tocca lo zero e delta ≥+1% → escalation immediata col piano B1200 già pronto; (b) intervallo pulito ma
+<+1% → parcheggio definitivo; (c) FORK: stesso criterio, solo screening.
+
+### Piano e generazione
+
+Interfogliamento a rapporto 2:1 (2 coppie DOWN_TARDI, poi 1 coppia FORK, ripetuto 15 volte) per
+distribuire uniformemente ogni leva sull'intera durata della sessione — non un blocco-poi-l'altro come
+la Fase 1, proprio per non lasciare che un'eventuale deriva lenta (termica, o il calo di p1 in
+free-run, RUNBOOK SS8.9 punto 3) si confonda con una leva specifica. Costruito con un generatore
+(`...\scratchpad\gen_plan_bis.ps1`, non scritto a mano: 90 richieste appaiate sono troppe per
+trascriverle senza errori) che traccia lo stato corrente di `fork`/`fork_down_tardi` e inserisce il
+reset esplicito solo quando serve, esattamente come in Fase 1. Verificato prima del lancio: 91
+richieste totali (1 WARMUP + 60 dt + 30 fk), 30 coppie dt, 15 coppie fk. Piano:
+`...\scratchpad\plan_triage1bis.json`.
+
+### Cancelli di salute (tutti PASS)
+
+```text
+richieste HTTP 200                    : 91/91
+porto-cb: epoca=1 semina da ambiente  : fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1  <- identica al campione
+cache-esperti: riga di identità        : 473 slot da 6.75 MiB = 3194 MiB in VRAM (...) sfratto_par=1,
+                                          dma=0, dma_strato=0  <- identica al riferimento e alla Fase 1
+RIFIUTATA                              : 0
+GGML_ASSERT / CUDA error / invalid idx : 0
+divergenze                             : sempre taglia=0 ids=0 out=0 GRIGLIA-corta=0
+sched-profilo                          : 0 righe
+transizioni reali + senza-cambio       : 89 + 2 = 91  <- ogni richiesta paga una ricattura simmetrica
+                                          (le 2 "senza cambi" sono WARMUP e A1_dt, identico alla Fase 1)
+```
+
+**Telemetria standard** (0,5 Hz, 246 campioni): clock SM mediano sotto carico 1942 MHz (piatto, come
+Fase 1); potenza media 96,5 W; VRAM media 11.881 MiB, picco 11.883 MiB; CPU% media 40,4% — nessuna
+deriva hardware rilevabile rispetto alla Fase 1.
+
+**Trappola del cast `[double]` (documentata in Fase 1) applicata correttamente questa volta**: ogni
+valore è passato per `-replace ',','.'` + `[double]::Parse(..., InvariantCulture)` prima di qualunque
+media; verificato ricomputando un valore noto (16,59 / 0,88889) prima di fidarsi del resto — combacia.
+
+### Tabella DOWN_TARDI (30 coppie, A=`fork_down_tardi:0`, B=`fork_down_tardi:1`, t/s)
+
+| # | A | B | Δ% | # | A | B | Δ% | # | A | B | Δ% |
+|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 16,59 | 17,30 | +4,28% | 11 | 17,01 | 16,18 | −4,88% | 21 | 16,83 | 15,61 | −7,25% |
+| 2 | 16,70 | 16,14 | −3,35% | 12 | 16,99 | 17,40 | +2,41% | 22 | 15,69 | 16,35 | +4,21% |
+| 3 | 16,89 | 17,40 | +3,02% | 13 | 17,05 | 16,11 | −5,51% | 23 | 16,88 | 17,45 | +3,38% |
+| 4 | 16,61 | 17,35 | +4,46% | 14 | 15,82 | 17,26 | +9,10% | 24 | 16,94 | 16,18 | −4,49% |
+| 5 | 17,18 | 17,38 | +1,16% | 15 | 15,85 | 17,43 | +9,97% | 25 | 16,96 | 17,35 | +2,30% |
+| 6 | 15,38 | 16,23 | +5,53% | 16 | 16,96 | 17,09 | +0,77% | 26 | 16,98 | 17,43 | +2,65% |
+| 7 | 16,67 | 16,64 | −0,18% | 17 | 16,81 | 17,41 | +3,57% | 27 | 15,81 | 16,35 | +3,42% |
+| 8 | 15,68 | 17,35 | +10,65% | 18 | 16,91 | 17,37 | +2,72% | 28 | 15,71 | 16,23 | +3,31% |
+| 9 | 16,88 | 17,27 | +2,31% | 19 | 16,93 | 16,18 | −4,43% | 29 | 15,79 | 17,42 | +10,32% |
+| 10 | 15,86 | 16,08 | +1,39% | 20 | 16,77 | 17,40 | +3,76% | 30 | 15,09 | 15,57 | +3,18% |
+
+**Media = +2,259%, σ = 4,580%, intervallo ±2σ/√30 = ±1,672% → [+0,586%, +3,931%].** L'intervallo **non
+tocca lo zero** e la media è **≥+1%**: **scatta il verdetto (a)** del coordinatore. Mediana +3,02%
+(21/30 coppie positive, 9/30 negative — non un colpo isolato). Coerente col segnale storico atteso
+(+0,6…+2,7%, turno 15): la media di questo campione a potenza maggiore (+2,26%) cade dentro quella
+banda, verso l'estremo alto.
+
+**Nota metodologica, disclosa non silenziata**: l'ordine è sempre A-poi-B dentro ogni coppia (mai
+contro-bilanciato B-poi-A). Se esistesse un effetto generico "il secondo di due richieste consecutive
+è più veloce" indipendente dalla leva, ci si aspetterebbe una taglia simile anche su FORK, che ha
+identica struttura temporale A-poi-B — non è quello che si osserva (FORK sotto, effetto più debole e
+intervallo che tocca lo zero): il segnale è verosimilmente specifico della leva, ma il controllo
+pulito è l'escalation con restore qui sotto, struttura temporale diversa (B ripetuto 3× di seguito,
+non alternato).
+
+### Tabella FORK (15 coppie, A=`fork:2`, B=`fork:1`, t/s)
+
+| # | A | B | Δ% | # | A | B | Δ% | # | A | B | Δ% |
+|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|--:|
+| 1 | 16,80 | 15,83 | −5,77% | 6 | 16,56 | 16,86 | +1,81% | 11 | 16,91 | 15,87 | −6,15% |
+| 2 | 16,32 | 15,53 | −4,84% | 7 | 16,97 | 15,81 | −6,84% | 12 | 15,69 | 17,04 | +8,60% |
+| 3 | 15,67 | 16,94 | +8,10% | 8 | 15,50 | 16,93 | +9,23% | 13 | 17,00 | 15,87 | −6,65% |
+| 4 | 15,76 | 15,81 | +0,32% | 9 | 15,77 | 17,03 | +7,99% | 14 | 15,44 | 17,01 | +10,17% |
+| 5 | 16,90 | 16,88 | −0,12% | 10 | 15,47 | 17,05 | +10,21% | 15 | 16,87 | 16,88 | +0,06% |
+
+**Media = +1,742%, σ = 6,760%, intervallo ±2σ/√15 = ±3,491% → [−1,749%, +5,233%].** Intervallo **non
+pulito** (tocca lo zero) nonostante la media puntuale sia ≥+1%. **Verdetto (c)**: non si segnala per
+composizione — **si archivia che FORK=2 resta l'ottimo anche nel regime nuovo**, con la nota che il
+punto stimato non è ostile (+1,7%, non negativo): non è una falsificazione forte come PF_TOP, solo
+"non abbastanza pulito da agire".
+
+### Tempo di parete Fase 1-bis
+
+```text
+91 richieste (90 appaiate + 1 warmup) = 709,7 s (11,83 min) — sotto la stima del coordinatore (17-18
+min), nonostante l'interfogliamento produca transizioni reali quasi ad ogni richiesta (89/91 contro
+25/27 della Fase 1): ulteriore conferma di velocità del regime nuovo, non solo sui blocchi compatti
+della Fase 1 ma anche su una sequenza fitta di cambi di leva continui.
+```
+
+### Escalation immediata — B1200 warm-restore (tag `esc_downtardi_b1200`) — IN CORSO
+
+Verdetto (a) soddisfatto: lanciata subito, come da ordine. Piano già pronto dal turno base
+(`...\scratchpad\plan_escalation_downtardi_b1200.json`): env campione + `PORTO_HOT_MASK=15`, sequenza
+`A1_off(porto_cb dt=0) / B1_on(dt=1) / B2_on / B3_on / A2_off(dt=0)`, tutte `porto_hot_snapshot=true`,
+`n_predict=1200`, stesso formato esatto della Prova A del collaudo (quindicesimo turno). Verdetto
+atteso: mediana(B1,B2,B3) vs media(A1,A2) — se ≥+3% è il primo candidato alla promozione dell'era
+nuova. **Risultato riportato in una sezione successiva di questo stesso turno, appena il processo (in
+background) restituisce l'esito** — per mandato del coordinatore ("riporta e fermati lì" se promuove).
+
+### Stato macchina dopo Fase 1-bis (prima di lanciare l'escalation)
+
+```text
+processi_llama = 0, porte 8099-8102 libere, shutdown ctrl-c pulito
+```
+
+## ESITO ESCALATION — B1200 warm-restore FORK_DOWN_TARDI: PRIMO CANDIDATO ALLA PROMOZIONE (+3,05%)
+
+Tag `esc_downtardi_b1200`. Sequenza A1_off/B1_on/B2_on/B3_on/A2_off, `n_predict=1200`,
+`porto_hot_snapshot=true`, env campione + `PORTO_HOT_MASK=15` — formato identico alla Prova A del
+quindicesimo turno.
+
+### Cancelli di salute (tutti PASS, più forti del minimo richiesto)
+
+```text
+richieste HTTP 200                    : 5/5
+semina                                 : fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1 (identica al campione)
+cache-esperti: riga di identità        : identica al riferimento (473 slot..., sfratto_par=1, dma=0)
+RIFIUTATA / GGML_ASSERT / CUDA error   : 0 / 0 / 0
+divergenze                             : sempre a zero
+transizioni reali                      : 2 (epoca3 dt 0->1 per B1_on, epoca4 dt 1->0 per A2_off) —
+                                          B2_on/B3_on/A2_off non rimandano porto_cb dove non serve,
+                                          coerente col piano
+porto-hot                              : cattura numero=1 (A1_off) poi ripristino numero=1..4 (B1,B2,B3,A2)
+                                          — sempre mask=15, MAI "prompt diverso, snapshot invalidato"
+```
+
+### Tabella dei cinque bracci
+
+| rep | eval t/s | p1 (acc/gen, mean len) | SHA output (16) |
+|---|---:|---|---|
+| A1_off | 16,45 | 0,90281 (771/854, 2,80) | `232DED5284E6BEF2` |
+| B1_on  | 17,06 | 0,90281 (771/854, 2,80) | `232DED5284E6BEF2` |
+| B2_on  | 17,04 | 0,90281 (771/854, 2,80) | `232DED5284E6BEF2` |
+| B3_on  | 17,07 | 0,90281 (771/854, 2,80) | `232DED5284E6BEF2` |
+| A2_off | 16,66 | 0,90281 (771/854, 2,80) | `232DED5284E6BEF2` |
+
+**Le cinque SHA sono IDENTICHE e i cinque p1 sono IDENTICI fino alla quinta cifra** — più forte del
+minimo richiesto (B può divergere legittimamente da A, qui non diverge affatto): il restore funziona
+perfettamente, `FORK_DOWN_TARDI` sposta solo la schedulazione di un join, mai un byte dell'output.
+Testo generato (3.782 caratteri) identico su tutte e cinque le richieste.
+
+### Verdetto numerico
+
+```text
+media(A1_off, A2_off)      = (16,45 + 16,66) / 2 = 16,5550 t/s
+mediana(B1_on,B2_on,B3_on) = mediana(17,06; 17,04; 17,07) = 17,0600 t/s
+DELTA = (17,0600 - 16,5550) / 16,5550 * 100 = +3,0504%
+```
+
+**≥+3%: soglia superata.** Margine stretto (+3,05% contro la soglia +3%, cioè ~0,05 punti sopra —
+alla precisione a due decimali con cui il log riporta il t/s, non un margine ampio) ma reale: appoggiato
+su SHA e p1 bit-identici su tutti e cinque i bracci, quindi non confuso da deriva di residenza o da
+divergenza di traiettoria — è la misura più pulita possibile con questa metodologia. Coerente in segno
+e ordine di grandezza con lo storico (+0,6% turno precedente, +2,72% Prova A del collaudo, +2,26%
+Fase 1-bis di questo turno, ora +3,05% sul formato a restore/1200 token): la stessa leva, misurata
+con quattro strumenti diversi in tre turni diversi, non ha mai cambiato segno.
+
+**PRIMO CANDIDATO ALLA PROMOZIONE DELL'ERA NUOVA: `FORK_DOWN_TARDI=1`.** Per mandato del coordinatore
+mi fermo qui — non eseguo altri bracci, non eseguo la sequenza di promozione B-LUNGO (che il
+coordinatore ha detto essere di sua competenza ordinare).
+
+**Telemetria standard** (0,5 Hz, 153 campioni): clock SM mediana sotto carico 1927 MHz (in linea con
+la genealogia storica del formato B1200, RUNBOOK); potenza media 104,2 W (più alta della Fase 1/1-bis,
+coerente con generazioni più lunghe = meno tempo a vuoto fra le richieste); VRAM media 11.843 MiB,
+picco 11.919 MiB; CPU% media 58,5% (più alta delle fasi a 64 token, coerente con `n_predict=1200`
+che tiene la CPU della bozza più occupata per richiesta più lunga).
+
+**Tempo di parete**: 492,1 s (8,20 min) per l'intera escalation (caricamento + 5×1200 token +
+shutdown) — molto sotto la stima iniziale di ~35 min della missione base (quella stima probabilmente
+assumeva un caricamento più lento o non contava sulla velocità già dimostrata dal regime nuovo).
+
+### Stato macchina a fine turno
+
+```text
+processi_llama         = 0
+porte 8099-8102         = libere
+GPU                      = 210 MHz, 499 MiB usati, 11617 MiB liberi, P8 (riposo) -- identica al preflight
+RAM libera               = 88,1 GB (preflight 87,1 GB) -- nessuna perdita in tutto il turno (3 processi
+                            in sequenza: triage_caccia1, triage_caccia1bis, esc_downtardi_b1200)
+SHA binari                = invariati, ri-verificati carattere per carattere a fine turno
+chiusura                  = ctrl-c pulito sui tre processi
+commit                    = NESSUNO eseguito in tutto il turno (per mandato)
+```
+
+### Percorsi file aggiuntivi (Fase 1-bis + escalation)
+
+```text
+generatore piano bis  : ...\scratchpad\gen_plan_bis.ps1
+piano Fase 1-bis       : ...\scratchpad\plan_triage1bis.json
+piano escalation       : ...\scratchpad\plan_escalation_downtardi_b1200.json (eseguito)
+artefatti Fase 1-bis   : ...\scratchpad\cb_runs\triage_caccia1bis.*
+artefatti escalation   : ...\scratchpad\cb_runs\esc_downtardi_b1200.*
+driver log             : ...\scratchpad\triage_caccia1bis.driver.log , esc_downtardi_b1200.driver.log
+```
+```

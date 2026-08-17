@@ -5092,3 +5092,275 @@ artefatti escalation   : ...\scratchpad\cb_runs\esc_downtardi_b1200.*
 driver log             : ...\scratchpad\triage_caccia1bis.driver.log , esc_downtardi_b1200.driver.log
 ```
 ```
+
+---
+
+# DICIASSETTESIMO TURNO — B-LUNGO `lungo_downtardi`: fix del prompt RIUSCITO (8192/8192 token, zero EOS precoce su tutte e tre le repliche), ma la certificazione di DOWN_TARDI è INVALIDATA da una SCOPERTA — collasso tardivo del decode (10,95 -> 2,3-3,0 t/s) indipendente dalla leva, su richieste successive nello stesso processo via ripristino da checkpoint
+
+Esecutore: diciassettesimo turno, contesto fresco. Mandato: (1) correggere il prompt del banco lungo perché saturi 8192 token invece di chiudere per EOS a 134 (diagnosticato dal dodicesimo turno); (2) certificare `FORK_DOWN_TARDI=1` (candidato +3,05% del sedicesimo turno) sul banco B-LUNGO, un processo, tre richieste (r1 leva spenta / r2 leva accesa via `porto_cb` / r3 leva spenta di nuovo), tag `lungo_downtardi`. Binario `D:\llama-subtract`. Ledger in append, nessun commit.
+
+## Preflight
+
+```text
+processi llama    = 0
+porta 8000 (UI)    = nessun listener
+porte 8099/8100    = libere
+GPU a riposo        = 210 MHz, 405 MHz mem, 14,23 W, 497 MiB usati, 11619 MiB liberi, PCIe gen1x16, throttle 0x1
+ram_libera_gb       = 88 GB
+disco_c_gb / d_gb   = 50,5 / 119,6 GB liberi
+uptime_min          = 4051 (nessun riavvio)
+SHA llama-server.exe = E419C9C58312E0ABAB75A54C7F2CC2C282594AA133ECDA42DAFA4928F3639FAC  <- combacia col mandato
+SHA ggml-cuda.dll    = 678F66F1DC446BF529DE9ADA4B95161788D7DCC5AECFADA9B669FB68303DAD49  <- combacia col mandato
+SHA llama.dll        = 858D192E349D38A5983401E8FD50A2D3DF6B31C9B58AF64730855231ECEF9DBB  <- combacia col mandato
+SHA jprompt102k.txt  = 3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473, 285.268 byte <- identico al riferimento del dodicesimo turno
+SHA jprompt.txt      = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9, 252 byte <- identico a RUNBOOK SS1.8
+```
+
+## PASSO 1 — fix del prompt lungo (autorizzato)
+
+File: `C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1`. Lettori verificati prima di
+scrivere (`server-schema.cpp:42-73` per lo schema `porto_cb`, `cache-esperti.cu:643-910` per i formati esatti dei
+testimoni control-block). Tre modifiche, diff completo salvato in
+`C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\sota100k_lungotesto_downtardi.patch`:
+
+1. **Testo dell'istruzione di coda**, sostituito (solo questa riga, il contesto neuraforge/jprompt102k non toccato):
+
+   ```text
+   PRIMA: Continua in italiano con un breve paragrafo tecnico coerente con il contesto. Non menzionare queste istruzioni.
+
+   DOPO:  Continua in italiano con un saggio tecnico ESTESO e dettagliato, con esempi e sezioni, senza limitarti:
+          tratta il maggior numero possibile di aspetti tecnici del contesto sopra, usando piu' sezioni con titoli
+          ed esempi concreti (anche frammenti di codice dove pertinente). Non fermarti dopo un solo paragrafo:
+          continua a scrivere finche' non hai coperto il contesto in profondita' o raggiunto il limite di
+          lunghezza disponibile. Non menzionare queste istruzioni.
+   ```
+
+2. **Nuovo parametro `-PortoCbForkDownTardi`** (stringa, difetto `''`): sequenza per-replica separata da virgole
+   (`'-'`/`''` = nessun campo `porto_cb` per quella replica, comportamento invariato; `'0'`/`'1'` = invia
+   `porto_cb={fork_down_tardi:N}` in quella sola richiesta). Con il difetto (`''`) il corpo resta byte-per-byte
+   identico su tutte le repliche esattamente come prima di questa modifica — verificato con un test isolato
+   (vedi sotto) prima del lancio reale.
+3. Il corpo JSON (`$body`) è ora costruito **per replica** dentro il ciclo (prima era calcolato una sola volta fuori
+   dal ciclo), clonando l'oggetto base e aggiungendo `porto_cb` solo se richiesto da (2).
+
+Sintassi riverificata con `[System.Management.Automation.Language.Parser]::ParseFile` (0 errori, dopo una correzione:
+`$Repliche:` dentro una stringa interpolata veniva letto come riferimento di scope `$Repliche:` invece di
+variabile+due-punti — corretto in `${Repliche}:`). Logica `PortoCbForkDownTardi` testata a vuoto (fuori dal banco
+reale) su un oggetto di prova: con `'-,1,0'` produce `porto_cb` assente/`{"fork_down_tardi":1}`/`{"fork_down_tardi":0}`
+su r1/r2/r3; con il difetto (`''`) produce lo stesso JSON byte-per-byte su tutte le repliche.
+
+## PASSO 2 — B-LUNGO `lungo_downtardi`, lancio staccato
+
+```text
+comando (wrapper staccato, Invoke-CimMethod Win32_Process.Create) =
+  sota100k_ctx150k.ps1 -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel lungo_downtardi
+    -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 -MaxTokens 8192 -SpecNmax 3
+    -Repliche 3 -CtxCheckpointMinStep 32 -ReasoningBudgetTokens 0 -PortoCbForkDownTardi '-,1,0'
+    -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+lancio     = ReturnValue=0, PID launcher=6992, PID llama-server=3352 (comparso pochi secondi dopo, confermato prima
+             di avviare la telemetria)
+telemetria = sample_hw.ps1 -Tag lungo_downtardi -OutDir D:\ds4_work\llama_run -IntervalSeconds 2, PID=17288
+attesa     = passiva, monitor di fase (sola lettura) invece di polling silenzioso: una riga ad ogni passaggio
+             (fine r1/r2/r3, DONE, o errore) su richiesta esplicita del coordinatore durante l'attesa
+DONE       = 22:11:46, tag sota_ctx150000_densefa_stage_hc5_lungo_downtardi_f2_b2048 batch=2048 ubatch=2048
+tempo totale = ~19:57:12 -> 22:11:46 = 134,6 min (2h14m34s)
+```
+
+**NOTA su "profilo 0" del mandato**: NON ottenuto. `Set-SotaEnvironment` dentro questo runner fissa
+`GGML_SCHED_PROFILO='1'` e `GGML_CUDA_GRAPH_STATS='1'` **incondizionatamente**, fuori dai punti autorizzati per
+questo turno (solo il fix del prompt, PASSO 1). Stessa situazione già segnalata identica dal dodicesimo turno e
+dalla sesta ripresa su questo stesso file ("cambiarla avrebbe richiesto una modifica non richiesta al file"): non
+toccato. Non invalida il confronto interno r1/r2/r3 (stesso processo, stessa strumentazione su tutti e tre, RUNBOOK
+SS8.2), ma il turno NON consegna un braccio "pulito" nel senso letterale del mandato.
+
+## Tabella dei tre bracci (dal LOG, non dal summary — vince il log, RUNBOOK SS7.2)
+
+| rep | leva (`fork_down_tardi`) | prefill tok/tempo/t-s | decode tok/finish/t-s | p1 (acc/gen, mean len) | SHA output (16) | chars |
+|---|---|---|---|---|---|---:|
+| r1 | 0 (nessun `porto_cb`, difetto) | 101.691 / 843.131,40 ms / 120,61 t/s | 8.192/8.192, **length**, **10,95 t/s** | 0,90449 (5341/5905, 2,87) | `2CBB795A3CA00022` | 24.972 |
+| r2 | 1 (`porto_cb` esplicito) | 4 / 341,40 ms / 11,72 t/s | 8.192/8.192, **length**, **3,03 t/s** | 0,90881 (5362/5900, 2,90) | `ED9C7DCE79AE06CE` | 24.783 |
+| r3 | 0 (`porto_cb` esplicito, ritorno) | 4 / 1.197,41 ms / 3,34 t/s | 8.192/8.192, **length**, **2,34 t/s** | 0,90812 (5357/5899, 2,89) | `AA070B08D89A9EE2` | 24.708 |
+
+## Verifica dei cancelli del mandato
+
+```text
+(a) >=256 token per richiesta         : PASS su tutte e tre -- 8192/8192/8192, finish_reason=length su TUTTE.
+                                          ZERO EOS precoce: il fix del prompt (PASSO 1) ha funzionato in pieno,
+                                          altrettanto bene sulla leva accesa (r2) e sulla leva spenta (r1, r3).
+(b) riprefill r2/r3 <=4 token          : PASS, esattamente 4 token su entrambe (101.691 - 101.687 = 4; checkpoint
+                                          di coda: "created context checkpoint 3 of 32 (pos_min=101686,
+                                          n_tokens=101687)" durante il prefill di r1; "restored context checkpoint
+                                          (n_tokens=101687, n_past=101687)" su r2 (task 2903) e r3 (task 5734),
+                                          identico. ASSENTI in tutto il log: "forcing full prompt re-processing",
+                                          "erased invalidated context checkpoint".
+(c) testimone ricattura al cambio leva : PASS.
+      porto-cb: epoca=1 semina da ambiente: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+      control-block -> epoca=2, leva FORK_DOWN_TARDI: 0->1, ricattura=si          (r2)
+      porto-cb: epoca=2 IN VIGORE: fork=2 blocchi=8 down_tardi=1 pf_top=0 sfratto_par=1
+      control-block -> epoca=3, leva FORK_DOWN_TARDI: 1->0, ricattura=si          (r3)
+      porto-cb: epoca=3 IN VIGORE: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+      RIFIUTATA: 0 occorrenze. (Nota: esiste anche "porto-cb: epoca=N IN VIGORE, catture di questa chiave: ...,
+      key=..." -- un testimone DIVERSO e molto piu' frequente [27.096 righe], per-grafo/per-chiave, legato a
+      GGML_CUDA_GRAPH_STATS; non e' il testimone di stato del control block e non va confuso con esso -- trappola
+      di regex trovata e corretta durante l'analisi, vedi sotto.)
+(d) VERDETTO t/s r2(B) vs media r1/r3(A) : letto alla lettera del mandato, NEGATIVO OLTRE -3% -- ma la lettura
+      letterale e' INVALIDATA dalla scoperta sotto. Vedi sezione "LA SCOPERTA" e "Verdetto".
+(e) coerenza (lettura embedded, SS4.10) : PASS su tutte e tre. Letti per intero l'inizio e ampie porzioni centrali
+      di r1 (~630 righe / 17 dei 25 KB), inizio e coda di r2 e r3. Tutti e tre: lingua sana (italiano tecnico
+      fluente), nessun loop/ripetizione patologica, pieno in tema (descrivono correttamente
+      cache-esperti.cu/deepseek4.cpp/llama-graph.cpp del contesto incollato, con frammenti di codice pertinenti,
+      esattamente come richiesto dal nuovo testo), struttura a sezioni rispettata su tutte e tre. Due micro-glitch
+      isolati in r1 ("continueva" invece di "continue", "ilonge" invece di "il" dentro un identificatore) -- rumore
+      di generazione normale su un testo di 25k caratteri, non degradazione. Tutte e tre terminano a meta' frase/
+      blocco di codice: atteso, e' il taglio a max_tokens=8192 (finish=length), non un sintomo.
+(f) salute piena, zero errori CUDA      : PASS. CUDA error/GGML_ASSERT/invalid index/out of memory = 0 su TUTTO il
+      log (~2h14m, 3 repliche da 8192 token + un prefill da 101.691). divergenze: 285 occorrenze, TUTTE
+      "taglia=0 ids=0 out=0 GRIGLIA-corta=0" (filtro esplicito per righe non-tutte-zero: vuoto). riga cache-esperti
+      identica carattere per carattere al riferimento storico (RUNBOOK SS4.1/SS12.1, sfratto_par=1). build 10093
+      (3014d3756). sched-profilo=939 righe (>0, profiler ACCESO -- vedi nota sopra). GGML_CUDA_DISABLE_GRAPHS =
+      <spento>(D), ASSENTE dall'ambiente: grafi ACCESI, regola vitale rispettata.
+```
+
+## LA SCOPERTA — collasso tardivo del decode indipendente da DOWN_TARDI (dettata dall'osservazione in corsa, con il coordinatore)
+
+Durante l'attesa passiva, il coordinatore ha chiesto un check intermedio che ha rivelato r2 completata a **3,03 t/s**
+(contro i 10,95 t/s di r1): non rumore di banco, un crollo di **-72,3%**. Indagine di sola lettura, in tre fasi:
+
+**1. Non e' throttling.** Telemetria (`lungo_downtardi.hw.csv`, 0,5 Hz) nella finestra di r2: clock SM min=1927
+mediana=1950 max=1950 MHz, **zero campioni sotto 1500 MHz** su 1165. Utilizzo GPU mediana 99% in entrambe le meta'
+della finestra. Il regime SOTA (1950 MHz) non e' mai stato lasciato.
+
+**2. Non e' rumore generico ne' un limite di posizione/contesto assoluto.** La traiettoria per-token
+(`slot print_timing`, `ms_cycle_3s`) di r1 (task 0) resta a ~200-320 ms/ciclo dal token 102 al token 8159, PIATTA,
+**attraversando senza rallentare la stessa identica finestra di posizione assoluta** (101.691 -> 109.883) in cui r2
+crolla. r2 (task 2903) parte identica a r1 (~200-300 ms/ciclo, tg cumulato 9,9->10,8 t/s) fino a circa il token
+1417, poi fra il token 1417 e il token 3228 **cambia regime di colpo**: `ms_cycle_3s` salta a ~1150-1350 ms
+(4-5x) e non recupera piu' fino al token 8192.
+
+**3. Il fatto decisivo: r3 (leva SPENTA, identica a r1) collassa ANCH'ESSA -- peggio e prima di r2.**
+r3 (task 5734) non ha MAI una fase veloce: `ms_cycle_3s` e' gia' a ~1000 ms al token 102 (il primissimo campione) e
+resta li' (~980-1300 ms) per tutti gli 8192 token; perfino il suo riprefill da 4 token e' lento (3,34 t/s contro
+gli 11,72 t/s di r2). Questo esclude alla lettera l'ipotesi "la leva e' colpevole": la leva e' spenta in r3 come lo
+era in r1, ma solo r1 resta veloce.
+
+**4. VRAM (richiesta dal coordinatore): mai a zero nella telemetria.** `memory.free` (nvidia-smi, 0,5 Hz):
+
+| finestra | campioni | memory.free MiB (min/mediana/max) |
+|---|---:|---|
+| r1 decode (riferimento) | 320 | 185 / 185 / 337 |
+| r2 fase veloce (primi ~2 min) | 54 | 185 / 185 / 185 |
+| r2 fase lenta (dopo il collasso) | 1088 | 175 / 207 / 213 |
+| r3 (lenta dall'inizio) | 672 | 202 / 209 / 210 |
+
+Zero campioni a 0 MiB in **tutte e quattro** le finestre (0 su 2.134). L'unica riga "VRAM libera 0 MiB" nel log e'
+un evento interno del meccanismo vram-a-fasi (non nvidia-smi), occorso **una sola volta in tutto il log**
+("cambio n. 2" -- solo 2 transizioni totali, "cambio n. 1"/"cambio n. 2", entrambe nel caricamento/primo prefill di
+r1, MAI ripetute ai confini di r2 o r3) e non correlato temporalmente al collasso (dove e' comparso, r1 e' rimasto
+veloce). `LLAMA_VRAM_A_FASI=2(E)`, livello=2 -- identico e hardcoded su tutte e tre le repliche, non e' una
+variabile di questo esperimento.
+
+**5. Indizio (non prova) sul meccanismo: perdita di riuso dei CUDA graph.** Contatori `cuda-graph-stats` (18.964
+righe totali) a campione: vicino all'inizio (dentro r1) `calls=4 launches=2 captures=1` (buon riuso, poche
+ricatture); **dentro la fase lenta di r3, quasi ogni chiave mostra `calls=1 launches=0 captures=0`** -- prima
+esecuzione/cammino diretto per (quasi) ogni grafo, mai un replay. Non misurato con nsys, resta un'ipotesi con buona
+coerenza indiziaria (non una prova strumentale): il turnover della cache-esperti (hit-rate cumulativo 58,7% a inizio
+sessione -> 53,7% a fine r3, calo lento e continuo, nessun gradino netto in corrispondenza del collasso) potrebbe
+rendere sempre meno stabile l'insieme di indirizzi-slot referenziati dai grafi dopo ~20k token cumulativi di decode
+nello stesso processo, facendo collassare il riuso dei grafi CUDA -- non e' la leva, e' l'anzianita' cumulativa del
+processo attraverso richieste multiple con ripristino da checkpoint.
+
+**Trappola di regex trovata durante l'indagine** (per i turni futuri): `Select-String -Pattern 'IN VIGORE'` sul log
+di questo braccio prende **27.098** righe, quasi tutte del formato per-grafo `"epoca=N IN VIGORE, catture di questa
+chiave: ..."` (diagnostico ad alta frequenza, GGML_CUDA_GRAPH_STATS), non il testimone di stato del control block
+(`"epoca=N IN VIGORE: fork=... down_tardi=..."`, **2** righe vere). Il discriminante e' il carattere subito dopo
+"IN VIGORE": `:` (due punti, testimone vero) contro `,` (virgola, diagnostico per-grafo). Confuso in un primo
+tentativo, corretto prima di riportare qualunque numero.
+
+## Verdetto
+
+```text
+lettura letterale del mandato (d):
+  media(r1, r3)               = (10,95 + 2,34) / 2 = 6,645 t/s
+  mediana/valore r2 (B)       = 3,03 t/s
+  DELTA                        = (3,03 - 6,645) / 6,645 * 100 = -54,40%
+  -> per la lettera del cancello (d): "negativo oltre -3%: NON TRASFERISCE, promozione respinta"
+```
+
+**Questa lettura letterale NON e' un verdetto valido e non viene usata come tale.** Il termine di paragone "A" del
+cancello (media r1/r3) mescola un dato pulito (r1: unica richiesta di questo braccio non toccata dal guasto) con un
+dato contaminato dallo STESSO guasto che affligge B/r2 (r3, anzi piu' gravemente) -- un confronto B contro
+"A rotto" non misura la leva, misura il guasto due volte con pesi diversi. **Esito corretto: NESSUNA MISURA VALIDA
+di `FORK_DOWN_TARDI=1` sul banco lungo, in nessuna direzione**, ne' per promuovere ne' per respingere. L'unico dato
+pulito del turno e' **r1 (leva spenta): 10,95 t/s, 8192/8192 token, p1 0,90449** -- una baseline lunga vera che
+sostituisce finalmente la diagnostica da 134 token del dodicesimo turno, ma da sola non certifica ne' falsifica la
+leva.
+
+Il +3,05% del sedicesimo turno (protocollo warm-restore, `PORTO_HOT_MASK=15`, un meccanismo DIVERSO dal ripristino
+via ctx-checkpoint usato qui) **resta formalmente non toccato** da questo esito -- ma la metodologia "3 richieste in
+un processo via ripristino da checkpoint" e' **invalidata per certificare qualunque leva sul banco lungo** finche'
+il guasto scoperto sopra non e' capito o corretto: la 2a e la 3a richiesta di un processo, su decode molto lunghi
+(qui il crollo comincia verso il token 1400-3200; mai osservato prima perche' nessun turno precedente aveva mai
+decodificato oltre 256 token con questo meccanismo), non sono affidabili per NESSUNA leva, non solo per DOWN_TARDI.
+
+**Percorso proposto per una misura pulita futura** (non eseguito in questo turno): DOWN_TARDI=1 come **prima
+richiesta di un processo fresco** (esattamente come r1), confrontata contro un secondo processo fresco con la leva
+spenta -- abbandonando, solo per il banco lungo, il disegno "N richieste in un processo" finche' il guasto qui
+sopra non e' diagnosticato o riparato. Priorita' propria, indipendente da DOWN_TARDI: il guasto stesso (probabile
+perdita di riuso dei CUDA graph su richieste successive a decode molto lungo) meriterebbe un profilo nsys dedicato.
+
+## Telemetria complessiva (`lungo_downtardi.hw.csv`/`.cpu.csv`, 0,5 Hz, ~2h14m)
+
+```text
+campioni hw totali        : 3.411 (cpu.csv), corrispondenti hw.csv
+campioni busy (util>30%)  : 3.307
+SM clock (busy)             : min 247 (transiente isolato) mediana 1950 max 1950 MHz -- regime SOTA, nessun
+                               throttle sostenuto in tutto il turno
+potenza (busy)               : min 15,56 mediana 66,75 max 139,64 W
+VRAM usata                   : min 487 mediana 11.909 picco 11.941 MiB -- coerente con ctx 150k, mai vicino a un
+                               errore di allocazione
+CPU%                         : min 0 mediana 32 max 84 (3.411 campioni)
+```
+
+## Coerenza del testo (SS4.10) -- estratti verbatim
+
+r1 (inizio): "# Il Motore di Inferenza DeepSeek-V4: Architettura, Cache Esperti e Overlap di Esecuzione / ## 1.
+Introduzione e Panoramica del Sistema / Il contesto fornito descrive un sistema di inferenza estremamente
+sofisticato per il modello DeepSeek-V4, basato su `llama.cpp` e `ggml`..."
+
+r2 (inizio): "# Il Motore di Inferenza DeepSeek-V4: Architettura, Cache Esperti e Overlap di Esecuzione / ##1.
+Panoramica Architetturale: Il Modello DeepSeek-V4 / Il codice presentato descrive un'implementazione completa di un
+motore di inferenza per il modello DeepSeek-V4 (DSV4)..."
+
+r3 (inizio): "# Il Motore di Inferenza DeepSeek-V4: Architettura, Cache Esperti e Overlap / ## Introduzione al
+Contesto / Il codice sorgente presentato descrive un motore di inferenza per DeepSeek-V4 (DSV4)..."
+
+Tutte e tre terminano a meta' frase o blocco di codice per `finish_reason=length` a 8192 token (atteso, non un
+sintomo -- confermato leggendo anche i JSON di risposta grezzi, `content` popolato in tutte e tre, `reasoning_content`
+vuoto: il no-think ha funzionato come da disegno).
+
+## Postflight
+
+```text
+processi_llama    = 0
+vram_usata         = 422 MiB (libera 11.694 MiB)   -- < 1200 MiB, PASSATO
+ram_libera          = 86,7 GB                        -- >= 28 GB, PASSATO
+porte 8099/8100     = libere
+SHA binari fine turno = invariati carattere per carattere (nessuna ricompilazione)
+chiusura              = ctrl-c pulito (shutdown=ctrl-c nel log)
+commit                = NESSUNO eseguito (per mandato)
+```
+
+## Percorsi file
+
+```text
+patch PASSO 1              : C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\
+                              sota100k_lungotesto_downtardi.patch
+lanciatore modificato       : C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1
+launcher.out                : D:\ds4_work\llama_run\lungo_downtardi.launcher.out          (UTF-16LE)
+summary                     : D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_lungo_downtardi.summary.txt
+                              (UTF-16LE)
+server.log                  : D:\ds4_work\llama_run\
+                              sota_ctx150000_densefa_stage_hc5_lungo_downtardi_f2_b2048.server.log
+output/response per replica : ..._f2_b2048_q1/q2/q3.output.txt / .response.json
+telemetria                  : D:\ds4_work\llama_run\lungo_downtardi.hw.csv / .cpu.csv
+```

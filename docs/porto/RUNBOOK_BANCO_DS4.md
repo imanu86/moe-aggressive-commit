@@ -669,6 +669,34 @@ riga `eval time` **non è 0 t/s: è nessuna misura**. Non riportare un t/s. FERM
 [ ] jprompt.txt SHA verificato al preflight
 ```
 
+### 4.10 CONTROLLO DI COERENZA DELL'OUTPUT (dettato utente, 17/8)
+
+Per **ogni braccio con leva nuova**, l'esecutore **legge** il testo generato — non si delega
+ai contatori. I marcatori numerici (SHA, p1, copie/buchi, divergenze=0) **non vedono le
+sciocchezze grammaticalmente valide**: un testo può passare tutti i cancelli numerici ed
+essere comunque spazzatura.
+
+**Che cosa leggere:**
+- banco **corto**: la **prima replica per intero**;
+- banco **lungo**: lettura integrale **a campione** — **inizio**, **3-4 finestre centrali**,
+  **fine**.
+
+**Che cosa registrare nel ledger, come giudizio esplicito** (non basta "letto: ok"):
+
+```text
+[ ] lingua sana                                          si/no
+[ ] assenza di loop / ripetizioni patologiche             si/no
+[ ] pertinenza al prompt                                  si/no
+[ ] degradazione progressiva lungo la generazione          si/no (con dove, se si)
+```
+
+**Qualunque anomalia → il braccio è FERMATO e riportato**, anche con tutti i contatori verdi.
+Non si promuove un numero il cui testo non è stato letto.
+
+**Perché il testo va sempre salvato su disco** (regola storica di questo runbook, §7.1): è
+precisamente per rendere possibile questo controllo. Un braccio il cui `.output.*` non esiste
+o non è leggibile **non passa questo cancello per definizione**.
+
 ---
 
 ## 5. Leve a caldo contro leve che richiedono il riavvio del server
@@ -1158,26 +1186,52 @@ contraddicono, **vince questa**.
    **PARCHEGGIO** (§8.8) con il suo unico numero (1 replica), e si passa alla leva successiva.
    Non si fanno le 3 repliche che la vecchia tabella di §6.2 avrebbe richiesto per un colpo
    "entro ±4%".
-3. **B sopra +3%** → si completano le **4 richieste di B nello stesso processo** (r1
-   warm-up fuori verdetto, **mediana di r2-r4**, §8.9 — regime caldo, standard ufficiale dal
-   17/8). **Poi**, e solo poi, il **braccio di controllo A**, **stesso protocollo** (4
-   richieste, r1 warm-up, mediana r2-r4), con la baseline **rifatta nella stessa sessione** —
-   mai un riferimento stantio letto da un log di un'altra sessione (§8.4/§8.5), e mai un
-   confronto attraverso la genealogia fredda/calda (§8.9 punto 2). Il verdetto è **B vs A
-   della stessa sessione, stessa genealogia**, non B contro uno storico: elimina i falsi
-   positivi da deriva del banco (2-3%, §8.3) che un confronto contro un riferimento vecchio
-   non può distinguere da un guadagno vero.
-4. **Leve commutabili a caldo per-richiesta** (es. `porto_hot_snapshot`, §5.2): si fanno **4
-   bracci con UN solo caricamento del server** — 3 richieste con B acceso, poi 1 con A (leva
-   spenta), stesso processo, via `-PortoHotSequence` o il campo JSON pertinente. Resta
-   **B-first**: le 3 di B prima, la 1 di A dopo, mai intercalate.
-   **Leve lette a init del processo** (la maggioranza, tabella di §5.3): niente hot-switch
-   possibile — si riavvia per B (3 repliche), poi si riavvia per A. **Vale comunque B-first**:
-   B prima, A dopo, mai il contrario.
-   **Prima di ogni banco**, verificare nel sorgente **il momento** in cui la leva viene letta
-   (init vs per-chiamata/richiesta) con un `grep` mirato sul nome esatto della variabile —
-   **non un'assunzione dal nome**. Se il grep non chiarisce, trattarla come "a init" (il caso
-   più conservativo, richiede il riavvio fra B e A).
+3. **B sopra +3%** → sequenza **«B, B, A, B-LUNGO»** (dettato utente, 17/8):
+   a. **B** (probe) — già fatto al punto 1 (1 replica).
+   b. **B** (seconda tappa, "seconda replica di B" nel mandato) — si completa la misura calda
+      di B nello stesso processo: richieste 2-4, con la richiesta del punto 1 come warm-up
+      (§8.9 punto 1), **mediana di r2-r4**.
+      *Nota di ambiguità, segnalata non silenziata*: se "seconda replica" nel mandato
+      intendeva letteralmente **una sola** richiesta aggiuntiva (2 repliche totali) invece
+      delle 4 di §8.9, andrebbe chiarito — con 2 sole repliche non esiste una mediana. Qui si
+      applica la lettura che **non contraddice** §8.9 punto 1; da confermare se non è quella
+      intesa.
+   c. **A** — il braccio di controllo, **stesso protocollo** (4 richieste, r1 warm-up, mediana
+      r2-r4), con la baseline **rifatta nella stessa sessione** — mai un riferimento stantio
+      letto da un log di un'altra sessione (§8.4/§8.5), mai un confronto attraverso la
+      genealogia fredda/calda (§8.9 punto 2). Il verdetto **B vs A** è su questa coppia,
+      stessa sessione, stessa genealogia: elimina i falsi positivi da deriva del banco
+      (2-3%, §8.3) che un confronto contro un riferimento vecchio non può distinguere da un
+      guadagno vero.
+   d. **B-LUNGO** — con B sopra +3% il braccio LUNGO è **obbligatorio**, leva ancora accesa:
+      prompt neuraforge **completo** (101.597 token), `-MaxTokens 8192`, modalità
+      **no-think**, `-c 150000`, genealogia calda (§8.9), telemetria standard (§6.8). Il
+      decode da 8k token **chiude per sempre** il problema del campione-di-segmento (§12.7 e
+      il "cancello lungo" del 16-17/8: 64 token davano un artefatto di segmento, 256 un
+      delta più debole ma ancora corto). **Verdetto lungo**: decode t/s contro il riferimento
+      lungo **più recente**, in **valuta calda** (stessa genealogia). B-LUNGO è una verifica
+      **aggiuntiva** — non sostituisce il verdetto B vs A del punto (c), lo protegge da un
+      falso positivo visto solo sul banco corto.
+4. **Leve commutabili a caldo per-richiesta** (es. `porto_hot_snapshot`, §5.2), **verificate**
+   tali con un `grep` mirato sul nome esatto della variabile che le legge — **non
+   un'assunzione dal nome**. Se il grep non chiarisce, trattarla come "a init" (il caso più
+   conservativo, vedi sotto). Struttura precisa (dettato utente, 17/8): **8 richieste in UN
+   solo processo**, via `-PortoHotSequence` o il campo JSON pertinente:
+   - **r1** — warm-up con leva **B** (fuori verdetto);
+   - **r2-r4** — verdetto **B** (mediana);
+   - **r5** — **RI-warm-up con leva A** (fuori verdetto): dopo il cambio leva lo stato di
+     residenza **si riadatta**, la prima richiesta sotto A è contaminata dallo stato plasmato
+     da B — non è lo stesso tipo di warm-up di un processo fresco, ma serve comunque a
+     scartare quella richiesta dal verdetto;
+   - **r6-r8** — verdetto **A** (mediana).
+
+   Confronto **B vs A sulle due mediane**, stessa sessione, **stesso processo**. Resta
+   **B-first**: B (r1-r4) sempre prima di A (r5-r8), mai intercalate.
+
+   **Leve lette a init del processo** (la maggioranza, tabella di §5.3): **niente hot-switch**
+   — resta il processo **separato per lato**, **ciascuno col proprio warm-up** (4 richieste
+   per processo, r1 warm-up + mediana r2-r4, §8.9 punto 1). **Vale comunque B-first**: si
+   riavvia per B, poi si riavvia per A, mai il contrario.
 
 ### 8.8 PARCHEGGIO LEVE
 

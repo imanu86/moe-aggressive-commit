@@ -807,3 +807,530 @@ Diff completo salvato in
 toccata, verificato leggendo il diff per intero). Sintassi verificata con
 `[System.Management.Automation.Language.Parser]::ParseFile` (0 errori) prima del lancio. Nessuna
 ricompilazione: la modifica e' solo nel wrapper PowerShell, il binario resta quello del preflight.
+
+## Braccio B-cms32 — kvlong_cms32_20260817
+
+Lancio staccato (`Win32_Process.Create`, PID launcher 19008, PID `llama-server` 11332),
+telemetria `sample_hw.ps1` staccata (PID 15928) avviata non appena il processo server e'
+comparso. Monitor di sfondo con polling attivo ogni 25 s, tetto di sicurezza 3600 s (non
+raggiunto).
+
+```text
+comando = & '...\work\sota100k_ctx150k.ps1' -StartBatch 2048 -BlockSparse 0 -HcFused 5
+  -RunLabel kvlong_cms32_20260817 -BlockDenseCpu 0 -Context 150000 -MaxTokens 256 -SpecNmax 3
+  -Repliche 3
+telemetria = work\sample_hw.ps1 -Tag kvlong_cms32_20260817 -OutDir D:\ds4_work\llama_run -IntervalSeconds 2
+```
+
+### Serie completa r1/r2/r3 (dal log, non dal riassunto)
+
+| | r1 (piena) | r2 (restore) | r3 (restore) |
+|---|---:|---:|---:|
+| task id | 0 | 184 | 323 |
+| prompt eval | 790.163,24 ms / 101.597 token (128,58 t/s) | **342,75 ms / 4 token** (11,67 t/s) | **340,82 ms / 4 token** (11,74 t/s) |
+| decode (eval time) | 28.285,00 ms / 256 token (9,05 t/s) | 28.496,42 ms / 256 token (8,98 t/s) | 27.398,51 ms / 256 token (9,34 t/s) |
+| p1 (draft acceptance) | 0,71264 (124/174), mean len 1,95 | 0,67429 (118/175), mean len 1,87 | 0,69274 (124/179), mean len 1,95 |
+| wall della richiesta | 13,65 min | 0,49 min (29,4 s) | 0,47 min (28,2 s) |
+| SHA output | 86ADC2E5...F3B | 1CDC38F1...1BAF | 290A0465...FD81 |
+| output chars | 1173 | 1189 | 66 |
+| finish_reason | length | length | length |
+
+SHA-12: r1 `86ADC2E5FC5B`, r2 `1CDC38F15231`, r3 `290A0465B5A1` (tutti diversi fra loro, atteso
+-- vedi Cancello 2).
+
+### Cancello 1 — la prova del salto: **PASSATO**
+
+Dal `.server.log` (`D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_kvlong_cms32_20260817_f2_b2048.server.log`):
+
+```text
+:1522  created context checkpoint 3 of 32 (pos_min = 101592, pos_max = 101592, n_tokens = 101593, size = 18.906 MiB)
+       -- il checkpoint di coda SOPRAVVIVE (con -cms 8192 di difetto sarebbe stato vetato: 101593 > 99549+8192 e' falso;
+          con -cms 32: 101593 > 99549+32 e' vero -> sopravvive. Aritmetica del piano confermata.)
+:1599  task 184 | restored context checkpoint (pos_min = 101592, pos_max = 101592, n_tokens = 101593, n_past = 101593, ...)
+:1600  task 184 | cached n_tokens = 101593, memory_seq_rm [101593, end)
+:1847  task 323 | restored context checkpoint (... n_past = 101593 ...)  -- identico per r3
+:1848  task 323 | cached n_tokens = 101593, memory_seq_rm [101593, end)
+```
+
+n_past = 101593 >= 101593 richiesto -- PASSATO su r2 e r3. `prompt eval ... / 4 tokens` <= 4 --
+PASSATO. **ASSENTI** su tutto il log: `forcing full prompt re-processing` e
+`erased invalidated context checkpoint` (grep vuoto) -- PASSATO.
+
+**Nota su una sotto-riga del cancello che NON compare, spiegata dal codice**: la riga
+`selected slot by LCP similarity, sim_best = 1.000 ...` prevista dal piano **non e' presente**;
+al suo posto, su tutte e tre le richieste: `task -1 | selected slot by id (0)`. Causa verificata
+sul lettore (`server-context.cpp:1687-1690` vs `:1729-1732`): il ramo LCP-similarity stampa
+`sim_best` solo `if (task.id_slot == -1)`; con `id_slot=0` dichiarato nella richiesta (la stessa
+modifica autorizzata di oggi) il codice prende il ramo "by id", che salta il calcolo di
+similarita' perche' non serve -- con `-np 1` i due rami selezionerebbero comunque lo stesso
+(unico) slot. La sostanza del cancello (stato corretto individuato e ripristinato) e' provata
+dalle righe `restored context checkpoint`/`cached n_tokens` sopra, identiche nella forma a
+`banda.server.log`. Non e' un'anomalia, e' una conseguenza diretta e attesa della modifica
+autorizzata (1).
+
+### Cancello 2 — parita' di qualita' e contatori: **PARZIALE, con spiegazione**
+
+- caratteri generati: r1 1173, r2 1189 (stesso ordine di grandezza) -- **PASSATO**; r3 66, vedi
+  Cancello 5 per la spiegazione (non e' un difetto del meccanismo).
+- riga `cache-esperti: 473 slot ...`: **UNA SOLA per processo** (le tre repliche condividono lo
+  stesso processo server), e coincide carattere per carattere col riferimento SOTA di RUNBOOK
+  §12.1/§4.1 incluso `sfratto_par=1` -- **PASSATO** (identita' per costruzione).
+- salute dura: zero `GGML_ASSERT`/`CUDA error`/`out of memory`/`invalid index`; l'unico hit su
+  `inf` e' `logit bias = -inf` per il token end-of-sentence, inizializzazione normale, non un
+  errore numerico -- **PASSATO**. Zero `divergenze` diverse da tutti-zero sull'intero log --
+  **PASSATO**.
+- contatori cache-esperti (cumulativi di processo, il log non li segmenta per richiesta --
+  stessa limitazione gia' documentata sopra per `warm_anchor`): domanda 841 colpi 58,7% (inizio
+  r1) -> domanda 89.008 colpi 68,5% (fine r1) -> domanda 170.632 colpi 69,1% (fine r3). Banda
+  stabile 68-69% da fine-r1 a fine-r3, **nessun salto** al passaggio r1->r2 -- **PASSATO**
+  (coerente con "non e' ripristinata, ci si aspetta un transitorio iniziale non una banda
+  diversa a regime").
+- **p1**: r1 0,71264 -> r2 0,67429 (**-5,38%**) -> r3 0,69274 (**-2,79%**). Il piano chiede
+  "entro 2,2-2,4%": **NON rispettato in senso stretto su nessuna delle due repliche**.
+  Osservazioni prima di giudicare:
+  1. il campione e' piccolo: 174-179 proposte di bozza per replica (MaxTokens 256), contro le
+     792-854 del banco B1200 su cui e' stata caratterizzata la banda 2,2-2,4% (`capienza-non-
+     paga`, `resume-20260812`) -- un campione ~4,5 volte piu' piccolo. L'errore standard atteso
+     di una proporzione a p~=0,71 con n=175 e' sqrt(0,71*0,29/175) = 3,4 punti percentuali (1
+     sigma): il calo di r2 (3,8 punti assoluti) sta a ~1,1 sigma di puro rumore campionario a
+     questa taglia, quello di r3 (2,0 punti) a ~0,6 sigma. La banda 2,2-2,4% non e' stata
+     misurata a questa taglia di campione e applicarla tale e quale sottostima il rumore atteso.
+  2. il piano stesso (`KV_REUSE_VERIFICA.md` tabella §1.1) documenta che il ripristino da
+     checkpoint e' **PARZIALE per costruzione** sul target DSV4 (`LLAMA_STATE_SEQ_FLAGS_
+     PARTIAL_ONLY`: solo la meta' SWA + i comp-state, i tre `kv_csa/hca/lid` grezzi **non**
+     passano) -- una via gia' segnalata dal piano come "lo stato non e' neutro per costruzione"
+     per il testo/SHA; la stessa via puo' plausibilmente introdurre differenze numeriche minime
+     che, sotto campionamento greedy, cambiano l'esatta sequenza accettata dalla bozza.
+  3. nessuna deriva monotona: r3 e' piu' vicino a r1 di r2 (non un decadimento sostenuto come
+     visto invece nel meccanismo SEPARATO `porto_hot_snapshot` free-run di oggi, sezione
+     `warm_anchor` sopra, dove il calo e' stato fino a -10 punti e MAI recuperato).
+  **Verdetto su questo punto**: divergenza reale e sopra soglia letterale, ma di ampiezza e
+  forma compatibili con rumore di campione piccolo + stato-parziale-per-costruzione, non con uno
+  stato "non e' quello catturato" nel senso allarmante del piano. Segnalato, non nascosto: **il
+  coordinatore decide se la soglia del 2,4% va ricalibrata per campioni piccoli prima di
+  promuovere**. E' anche materiale utile per il mandato in coda (`P1_DEGRADO_ROOT_CAUSE.md`),
+  perche' e' un SECONDO meccanismo (checkpoint restore, non `porto_hot_snapshot`) che mostra un
+  calo di p1 fra richieste consecutive nello stesso processo.
+
+  **RIVALUTAZIONE (decisione del coordinatore, 17/8, dopo il report)**: la soglia fissa 2,4% non
+  vale per campioni piccoli. **Nuova regola per il cancello p1, da applicare da ora**: banda =
+  **2σ binomiali**, con `σ = sqrt(p·(1-p)/n_proposte)`, `p` = p1 del riferimento (r1),
+  `n_proposte` = generated della replica in esame (non un valore arrotondato comune alle due
+  repliche). Ricalcolo con l'aritmetica esatta di questo braccio:
+
+  ```text
+  r1 (riferimento): p = 0,71264, n = 174 (generated)
+
+  r2: n = 175 -> sigma = sqrt(0,71264*0,28736/175) = sqrt(0,0011704) = 3,421 punti  -> banda 2 sigma = ±6,842 punti
+      delta assoluto = 0,67429-0,71264 = -3,835 punti  ->  |−3,835| < 6,842  ->  PASSA (≈1,12 sigma)
+      delta relativo (quello riportato sopra, -5,38%)   ->  |−5,38| < 7 (banda arrotondata del coordinatore) -> PASSA anche in questa lettura
+
+  r3: n = 179 -> sigma = sqrt(0,71264*0,28736/179) = sqrt(0,0011442) = 3,383 punti  -> banda 2 sigma = ±6,765 punti
+      delta assoluto = 0,69274-0,71264 = -1,990 punti  ->  |−1,990| < 6,765  ->  PASSA (≈0,59 sigma)
+      delta relativo (-2,79%) -> PASSA anche in questa lettura
+  ```
+
+  Nota sull'unita' (controllo dovuto, `check-counter-units`): `sigma` e' una deviazione standard
+  di una PROPORZIONE, quindi e' in punti percentuali assoluti (stessa unita' di p1), non in
+  percentuale relativa. Ho ricalcolato in entrambe le convenzioni per chiarezza: il verdetto
+  **PASSA in entrambe**, con margine piu' ampio nella lettura assoluta (corretta per la formula
+  data) che in quella relativa. **Cancello 2 PASSATO RETROATTIVAMENTE su r2 e r3.** Con questo,
+  **tutti e cinque i cancelli di B-cms32 sono PASSATI**, nessuna riserva residua sulla parita' di
+  qualita'.
+
+### Cancello 3 — il premio: **PASSATO, ampiamente**
+
+```text
+prompt eval r1 = 790.163,24 ms
+prompt eval r2 =     342,75 ms   -> rapporto r1/r2 = 2.305,6x
+prompt eval r3 =     340,82 ms   -> rapporto r1/r3 = 2.318,7x
+soglia B-cms32 richiesta: >= 500x   ->  PASSATO con margine ~4,6x oltre soglia
+(per confronto: banda.server.log storico misurava 2.787x sullo stesso meccanismo)
+```
+
+### Cancello 4 — nessuna regressione decode: **PASSATO**
+
+```text
+decode r1 = 9,050735 t/s  (riferimento)
+decode r2 = 8,983585 t/s  -> delta = -0,74%   (soglia -2,4%: PASSATO)
+decode r3 = 9,343573 t/s  -> delta = +3,24%   (PASSATO, piu' veloce di r1)
+```
+
+### Cancello 5 — coerenza del testo: **PASSATO, con osservazione utile**
+
+Letti per intero r1, r2 e r3 (il terzo aggiunto per il conteggio caratteri anomalo). Verificato
+sul JSON di risposta grezzo (non solo sull'`.output.txt`) quale campo il server ha popolato:
+
+```text
+r1: content = VUOTO/assente | reasoning_content = 1173 char ("We need to answer in Italian...")
+r2: content = VUOTO/assente | reasoning_content = 1189 char ("We need to produce a short technical paragraph...")
+r3: content = 66 char ("Il sistema di cache per-esperti in VRAM e lo split sequenziale dei")
+    | reasoning_content = 1095 char (stesso tipo di apertura di r1/r2)
+```
+
+Il modello e' un modello "thinking": scrive il proprio ragionamento in `reasoning_content` e la
+risposta finale in `content`. Con `MaxTokens=256` r1 e r2 esauriscono l'intero budget dentro il
+ragionamento (mai raggiunto `content`, lo script ricade su `reasoning_content` per non scrivere
+un file vuoto); r3 comprime leggermente il ragionamento (1095 contro ~1180 char) e lascia spazio
+a 66 caratteri di risposta italiana reale, in tema, poi troncata per fine budget.
+**Giudizio esplicito**: lingua sana = si (su tutti e tre, incluso il ragionamento in inglese:
+grammaticalmente valido, non gibberish); assenza di loop/ripetizioni patologiche = si; pertinenza
+al prompt = si (tutti e tre parlano di cache-esperti/DSV4/overlap, l'argomento vero del contesto
+incollato); degradazione progressiva = no. **r1 e r2 si comportano in modo qualitativamente
+IDENTICO** (stesso tipo di testo, stessa lunghezza, stesso campo vuoto) -- il fatto piu'
+rassicurante per l'ipotesi del salto: lo stesso "limite" (budget insufficiente per un modello
+thinking) si riproduce identico a stato ripristinato. Non e' un difetto del meccanismo KV, e'
+una caratteristica nota di banchi con budget corto su un modello reasoning (coerente con le note
+RUNBOOK su "modalita' no-think" altrove); da tenere presente per il dimensionamento di banchi
+futuri con questo prompt/modello, non per questo verdetto.
+
+### Telemetria (`kvlong_cms32_20260817.hw.csv`/`.cpu.csv`, 422 campioni a 0,5 Hz)
+
+```text
+campioni busy (util>30%) : 378/422
+SM clock (busy)           : mediana 1920 MHz (min 607, max 1942) -- regime SOTA, nessun throttle sostenuto
+VRAM usata (busy)         : mediana 11.907 MiB (picco 11.924 MiB) -- vicino al tetto dei 12 GB per il contesto 150k
+potenza (busy)             : mediana 135,4 W
+CPU% media                 : 24,2 % (422 campioni)
+```
+
+### Strumentazione (dichiarata, non promossa a cancello di questa sessione)
+
+`sched-profilo` = 286 righe (>0) -> profiler **ACCESO**; `GGML_CUDA_GRAPH_STATS=1`. Questo NON
+e' una deviazione introdotta oggi: `Set-SotaEnvironment` dentro `sota100k_ctx150k.ps1` fissa
+`GGML_SCHED_PROFILO='1'` e `GGML_CUDA_GRAPH_STATS='1'` incondizionatamente (righe gia' presenti
+prima delle mie modifiche, fuori dai due punti autorizzati -- non toccate). E' quindi lo stesso
+stato di TUTTE le corse storiche di questo runner (incluso il riferimento archiviato `_m256`),
+quindi il confronto r1-vs-r2-vs-r3 interno a questo braccio resta a pari strumentazione (RUNBOOK
+§8.2). Segnalato per trasparenza rispetto alla regola vitale generale "GGML_SCHED_PROFILO=0":
+qui non e' rispettata, ma cambiarla avrebbe richiesto una TERZA modifica non richiesta al file.
+`GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` confermato dal manifesto -- grafi accesi, regola vitale
+rispettata.
+
+### VERDETTO B-cms32
+
+**Il meccanismo di salto (Cancello 1) e il premio (Cancello 3) sono confermati in modo netto e
+inequivocabile**: checkpoint di coda a 101.593 token creato e ripristinato su r2 e r3, riprefill
+di 4 token invece di 101.597, guadagno 2.306-2.319x (oltre 4x la soglia dei 500x richiesta). Il
+decode non regredisce (Cancello 4). Il testo resta sano su tutte e tre le repliche (Cancello 5).
+L'unico punto sotto soglia letterale e' la parita' p1 (Cancello 2, -5,4%/-2,8% contro soglia
+2,4%), con una spiegazione statisticamente e meccanicamente fondata (campione piccolo + stato
+parziale per costruzione) che il coordinatore deve validare. **Procedo a B-base** come da mandato
+(il core del meccanismo e' provato; B-base misura il premio SENZA checkpoint fine, punto
+distinto dalla parita' p1) e segnalo la questione p1 esplicitamente nel report finale.
+
+Postflight: 0 processi llama, RAM libera 89,3 GB (da 89,4 di preflight), VRAM 321 MiB (da 372),
+`shutdown: ctrl-c` pulito. Percorsi: log/summary/output/response/hw.csv/cpu.csv tutti in
+`D:\ds4_work\llama_run\` con tag `kvlong_cms32_20260817` / `sota_ctx150000_densefa_stage_hc5_
+kvlong_cms32_20260817_f2_b2048*`.
+
+## Terza modifica (flaggata) a `sota100k_ctx150k.ps1` — parametro `-CtxCheckpointMinStep`
+
+L'autorizzazione originaria copriva **due** modifiche, non tre. Il mandato pero' chiede anche
+B-base "identico SENZA il -cms nel server": impossibile con `-cms` fissato a `'32'` incondizionato
+(modifica 2 originaria) senza toccare di nuovo il file. Il messaggio in coda del coordinatore,
+arrivato nel frattempo per un mandato diverso, descrive **esplicitamente** questo stesso caso
+("se serve una modifica al runner: parametro -X, stessa procedura autorizzata di -SpecNmax,
+diff salvato") come procedura standard. Ho applicato **la stessa procedura, sullo stesso file**,
+per necessita' interna al mandato originario (B-base ne fa parte fin dal testo del mandato), non
+per iniziativa autonoma su un punto nuovo:
+
+```text
+param(...) : aggiunto [int] $CtxCheckpointMinStep = 32   (difetto = comportamento odierno invariato)
+$serverArgs: '-cms', '32'  ->  '-cms', "$CtxCheckpointMinStep"
+```
+
+Verificato sul lettore (`D:\llama-overlap\common\arg.cpp:1492-1501`): l'handler fa solo
+`params.checkpoint_min_step = value`, nessuna distinzione fra "esplicito" e "di difetto" --
+passare `-cms 8192` e passare NIENTE producono lo stesso `checkpoint_min_step`, quindi
+`-CtxCheckpointMinStep 8192` per B-base e' bit-equivalente a "senza -cms nel server" a runtime,
+pur restando un argomento passato (piu' semplice da implementare di un array condizionale, zero
+rischio di rompere gli altri argomenti). Diff isolato di questa sola modifica salvato in
+`C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\sota100k_kvreuse_ctxcheckpointminstep.patch`
+(2 hunk, verificato che non tocca nient'altro). Sintassi riverificata con
+`[System.Management.Automation.Language.Parser]::ParseFile` (0 errori). **Segnalato esplicitamente
+al coordinatore nel report finale come giudizio preso in autonomia, non pre-autorizzato
+testualmente** -- da confermare o correggere.
+
+**CONFERMATO dal coordinatore (17/8, dopo il report)**: "seguiva esattamente il pattern
+autorizzato (lettore verificato, diff isolato, default bit-equivalente). Ben fatto a segnalarla
+comunque: e' la prassi giusta." Nessuna correzione richiesta, nessun'altra azione dovuta su
+questo punto.
+
+## Braccio B-base — kvlong_base_20260817 — R1 valido, R2/R3 ABORTITI (CUDA OOM): NESSUNA MISURA
+
+QUIETE di 300 s eseguita per intero (polling attivo, 0 processi/321 MiB VRAM/89,2 GB RAM stabili
+per tutta la finestra) prima del lancio. Lancio staccato identico a B-cms32 (`Win32_Process.Create`,
+PID launcher 20228, PID `llama-server` 14804, telemetria PID 17684 su tag `kvlong_base_20260817`).
+
+```text
+comando = & '...\work\sota100k_ctx150k.ps1' -StartBatch 2048 -BlockSparse 0 -HcFused 5
+  -RunLabel kvlong_base_20260817 -BlockDenseCpu 0 -Context 150000 -MaxTokens 256 -SpecNmax 3
+  -Repliche 3 -CtxCheckpointMinStep 8192
+```
+
+### r1 — PASSATO, bit-identico a B-cms32/r1
+
+```text
+prompt eval = 819.227,35 ms / 101.597 token (124,02 t/s)      [B-cms32/r1: 790.163,24 ms, 128,58 t/s -- entro la dispersione nota del prefill lungo, spread 13,86% gia' documentato in RUNBOOK §12.5]
+decode      =  28.325,23 ms /    256 token (9,04 t/s)          [B-cms32/r1: 9,05 t/s]
+p1          = 0,71264 (124 accettati / 174 generati), mean len 1,95   [IDENTICO a B-cms32/r1]
+SHA output  = 86ADC2E5FC5B7BF2AB08DC79DD1CF5347E269BDD6C3C4D10CADE8C96BCF99F3B   [IDENTICO a B-cms32/r1]
+checkpoint creato = "created context checkpoint 2 of 32 (pos_min=99548, pos_max=99548, n_tokens=99549)"
+                     -- SOLO questo (con -cms 8192 di difetto il checkpoint di coda a 101.593 e' vetato:
+                     101593 > 99549+8192=107741 e' falso -- aritmetica del piano confermata anche qui)
+```
+
+SHA e p1 identici a B-cms32/r1 confermano che i due bracci sono correttamente comparabili a
+livello di r1 (stessa traiettoria fredda, sola differenza e' `-cms`, che non tocca la richiesta
+fresca).
+
+### r2/r3 — ABORTITI: CUDA error out of memory. NESSUNA MISURA (RUNBOOK §4.8)
+
+```text
+r2: "REQUEST FAILED: Connessione sottostante chiusa ... chiusa dal server in modo imprevisto"
+r3: "REQUEST FAILED: Impossibile effettuare la connessione al server remoto"  (server gia' morto)
+```
+
+**Causa esatta, dal log** (`sota_ctx150000_densefa_stage_hc5_kvlong_base_20260817_f2_b2048.server.log:1598-1644`):
+
+```text
+:1598-1602  task 184 | new prompt, n_tokens=101597
+            checking checkpoint with [99548, 99548] against 101596...
+            restored context checkpoint (pos_min=99548, pos_max=99548, n_tokens=99549, n_past=99549)
+            -- IL RIPRISTINO FUNZIONA CORRETTAMENTE anche con -cms 8192: trova ed usa il checkpoint 2.
+            residuo da ririprocessare = 101.597 - 99.549 = 2.048 token (esattamente l'atteso del mandato)
+:1625       vram-a-fasi: fase=prefill livello=2  cache 473 -> 0 slot (-473, -3194 MiB)  VRAM libera 2707 MiB [cambio n. 3]
+            -- il residuo di 2.048 token supera la riserva-ubatch di 64 della modalita' decode:
+            il gestore VRAM-a-fasi torna in modalita' prefill, liberando i 3194 MiB della cache esperti
+:1631-1636  sched_reserve: CUDA0 compute buffer = 1772,18 MiB; buffer di calcolo 137,95 -> 2296,35 MiB (+2158,40 MiB) -- RIESCE
+:1637-1638  layer-major: staging di 1729 MiB NON allocabile
+            CUDA error: out of memory
+:1639       current device: 0, in function ggml_cuda_mul_mat_q at ggml-cuda\mmq.cu:183
+```
+
+Aritmetica: 2.707 MiB liberati dalla cache esperti, 2.158 MiB assorbiti dalla ricrescita del
+buffer di calcolo (riesce, restano ~549 MiB), poi lo staging layer-major da 1.729 MiB NON ci
+sta (549 << 1729) -> OOM dentro un lancio di matmul, il processo muore (`shutdown: already-
+exited`, non un Ctrl+C pulito).
+
+**Perche' B-cms32 NON lo incontra**: confermato rileggendo il suo `.server.log` -- l'INTERO
+braccio (3 repliche) mostra **solo due** transizioni `vram-a-fasi` (`cambio n. 1` all'ingresso
+di r1, `cambio n. 2` al passaggio r1-prefill -> decode), **zero** transizioni successive: il
+residuo di r2/r3 li' e' **4 token**, sotto la riserva-ubatch=64 della modalita' decode, quindi
+il gestore VRAM-a-fasi non torna MAI in modalita' prefill per r2/r3 e la cache esperti (3194 MiB)
+resta residente per tutto il processo. La telemetria conferma indipendentemente: `kvlong_
+base_20260817.hw.csv` mostra VRAM 11.899 MiB -> 10.355 MiB (r2 avvia, libera la cache) ->
+10.343 MiB -> **382 MiB** (crash, contesto CUDA distrutto) fra le 06:41:40 e le 06:41:52, in
+coincidenza con la fine di r1 (06:41:46,8 attesa da `[06:27:38] + 14,13 min`).
+
+**Conclusione**: il meccanismo di IDENTIFICAZIONE e RIPRISTINO del checkpoint funziona
+correttamente anche a `-cms` di difetto (8192) -- non e' un bug del cammino KV-reuse in se'.
+Il crash e' un problema SEPARATO e a valle: la gestione VRAM-a-fasi di questo binario non ha
+abbastanza margine per rientrare in modalita' prefill a meta' processo su un residuo di 2.048
+token, su questa scheda da 12 GB a ctx=150k. **Questo e' un argomento aggiuntivo, non previsto
+dal piano, a favore di B-cms32**: oltre a essere ~2.300x piu' veloce, evita STRUTTURALMENTE
+la transizione che fa crashare B-base, perche' il suo residuo (4 token) non supera mai la
+soglia che innesca il cambio di modalita'.
+
+### Telemetria (413 campioni, interrotta dal crash a ~06:41:57)
+
+```text
+SM clock (busy)    : 1920 MHz (regime SOTA, nessun throttle fino al crash)
+VRAM usata (busy)  : mediana e picco ~11.899 MiB (satura, coerente con ctx 150k)
+```
+
+### Postflight dopo il crash
+
+```text
+processi_llama = 0 (il processo e' morto da solo, nessun residuo rilevato)
+vram_usata     = 319 MiB (da 372 MiB del preflight di sessione -- nessuna perdita)
+ram_libera     = 88,8 GB (da 89,2 GB pre-lancio -- nessuna perdita apprezzabile)
+```
+
+Nessun residuo, ma chiusura NON pulita (`shutdown: already-exited`, non `ctrl-c`): per
+RUNBOOK §10.1, un riferimento successivo da questo stesso processo andrebbe rimisurato --
+non applicabile qui perche' non e' previsto un braccio successivo in questo mandato.
+
+### Esito B-base
+
+`r1 = PROMOSSO` (diagnostico, bit-identico al controllo). `r2/r3 = NESSUNA MISURA (crash CUDA
+OOM)`, non "0x" e non un numero negativo -- per RUNBOOK §4.8 un crash non e' una misura, e non
+ne invento una. **Non e' possibile quantificare il "premio senza checkpoint fine" atteso dal
+mandato** (atteso ~50x, riprefill ~16,6 s) perche' il braccio non arriva a generare quel numero:
+si ferma prima, con una causa determinata e determinabile (OOM VRAM-a-fasi), non con un esito
+ambiguo.
+
+### REGOLA DI SICUREZZA (scolpita dal coordinatore, 17/8, da questo momento vale come RUNBOOK)
+
+> **Ogni banco lungo MULTI-RICHIESTA a ctx150k DEVE passare `-cms 32` (o `CtxCheckpointMinStep`
+> basso): la spaziatura a difetto lascia un residuo di ~2k token che forza il rientro in
+> modalita' prefill a meta' processo e va in OOM (staging 1.729 MiB vs ~549 liberi) --
+> instabilita' strutturale, non lentezza. I banchi storici mono-richiesta non sono esposti (mai
+> un restore).**
+
+Ambito verificato della regola: si applica a `sota100k_ctx150k.ps1` con `-Repliche > 1` a
+`-Context 150000`. Non verificato (fuori dallo scopo di questo braccio) se il residuo-soglia
+scali con `-Context` diverso o con `-StartBatch` diverso da 2048 -- da trattare come ignoto, non
+come sicuro, finche' non misurato.
+
+## INTERPRETAZIONE FINALE per il mandato — nuovo protocollo del banco lungo
+
+**Il nuovo protocollo esiste, condizionato**: sul banco lungo (101.597 token, ctx 150k), la
+sequenza «prima richiesta piena (~14 min) + repliche successive a costo di decine di secondi»
+e' **confermata e misurata** (B-cms32: r2/r3 a 0,49/0,47 min contro 13,65 min di r1, premio
+2.306-2.319x sul prefill), **ma solo con `-cms 32`** (spaziatura minima checkpoint fine). Il
+banco B-base ha mostrato che la configurazione a difetto (`-cms 8192`) su questo stesso banco
+**non degrada soltanto** il premio (da atteso ~50x a probabilmente meno, visto il residuo di
+2.048 token) -- **rompe il processo**: il residuo di 2.048 token e' abbastanza grande da forzare
+il gestore VRAM-a-fasi a rientrare in modalita' prefill a meta' processo, e su questa scheda da
+12 GB a ctx=150k quella transizione va in OOM. `-cms 32` evita il problema non solo perche' e'
+piu' veloce, ma perche' il suo residuo (4 token) resta sempre sotto la riserva-ubatch=64 della
+modalita' decode e non innesca mai quella transizione.
+
+**Annotazione per la promozione B,B,A,B-lungo**: il braccio "B-lungo" per banchi futuri su
+questo prompt/contesto va eseguito con `sota100k_ctx150k.ps1 -Repliche N -CtxCheckpointMinStep 32`
+(il difetto attuale del parametro, quindi basta non passare `-CtxCheckpointMinStep` oppure
+passarlo esplicitamente a 32) -- **mai** con la spaziatura a difetto del binario (8192) su
+contesti di questa taglia, che oggi e' non solo piu' lenta ma **non sicura**.
+
+---
+
+# Scala mask p1 — GO SCALA ricevuto, mandato `P1_DEGRADO_ROOT_CAUSE.md`
+
+Protocollo comune (tutti gli A1/A2/A3/A6): `run_porto_hot.ps1 -MaxTokens 1200 -Repetitions 4
+-PortoHotSnapshot $true -SpecNmax 3 -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=<N>'`, lanci staccati (Win32_Process.Create),
+telemetria `sample_hw.ps1`, QUIETE 300s fra bracci. Verificato prima di lanciare (lettore, non
+assunto): `server-context.cpp:3237-3274` conferma bit-per-bit la semantica del piano (1=KV target,
+2=KV draft, 4=spec, 8=cache esperti). r1 = cattura (fuori verdetto), verdetto = p1 di r2-r4 con
+cancello **binomiale 2σ** (deciso dal coordinatore oggi): σ = sqrt(0,90281·0,09719/n), riferimento
+p=0,90281 (771/854, r1, identico su tutti i bracci).
+
+Per A7 (unico diverso): `-PortoHotSnapshot $false -CtxCheckpointMinStep 8` (nessun mask, il
+free-run vero non passa mai dal porto-hot). **Modifica al runner**, stessa procedura autorizzata
+di `-SpecNmax`/`-CtxCheckpointMinStep` su `sota100k_ctx150k.ps1`: aggiunto `[int]
+$CtxCheckpointMinStep = 8192` (difetto = comportamento invariato) e `'-cms', "$CtxCheckpointMinStep"`
+a `$argsServer` (`run_porto_hot.ps1:12,119`). Diff in `...\work\runs\run_porto_hot_ctxcheckpointminstep.patch`
+(2 hunk). Sintassi verificata, 0 errori.
+
+## Tabella completa
+
+| braccio | mask | prompt eval r2/r3/r4 | p1 r2/r3/r4 | 2σ (n proprio) | dentro banda? | t/s r2/r3/r4 | SHA r2/r3/r4 |
+|---|---|---|---|---|---|---|---|
+| **A1** | 1 (solo KV tgt) | 4/4/4 tok | .82706/.86811/.87192 | ±2,03/±2,03/±2,03 pt | **NO/NO/NO** (delta 7,58/3,47/3,09 pt) | 15,18/15,72/16,13 | tutte diverse |
+| **A2** | 8 (solo cache) | 68/68/68 tok | .82054/.82054/.82054 | ±2,03 pt (n=847) | **NO** (delta 8,23 pt, costante) | 15,02/15,06/15,09 | identiche fra loro |
+| **A3** | 0 (nessuno stato) | 68/68/68 tok | .78654/.87074/.85766 | ±2,10/±2,03/±2,10 pt | **NO/NO/NO** (delta 11,63/3,21/4,52 pt) | 13,89/15,88/15,56 | tutte diverse |
+| **A6** | 4 (solo spec) | 68/68/68 tok | .78654/.87074/.85766 | come A3 | **BIT-IDENTICO ad A3** (stesso p1, stesse SHA, stessi content_chars) | 13,84/15,82/15,53 | = A3 esatte |
+| **A7** | free-run+cms8 | **4/4/4 tok** | .81078/.81862/.85649 | ±2,03/±2,06/±1,99 pt | **NO/NO/NO** (delta 9,20/8,42/4,63 pt) | 14,78/14,96/16,16 | **= baseline storica esatte** |
+
+(riferimento comune r1, tutti i bracci: prompt eval 68 tok, p1 .90281 (771/854), SHA
+`1EDA23452D...9089`, identico in ognuno dei 5 lanci — identità di traiettoria fredda confermata
+5/5.)
+
+## Le tre letture meccaniche, verificate sul log
+
+1. **Prompt eval segue esattamente la meccanica prevista dal piano su tutti e 5 i bracci**: bit 1
+   acceso (A1) o checkpoint upstream con spaziatura bassa (A7) → 4 token; bit 1 spento (A2, A3,
+   A6) → 68 token. **Zero sorprese su questo fronte**: il meccanismo del checkpoint/KV-restore
+   fa esattamente quello che il codice dice che deve fare.
+2. **A6 = A3 bit-per-bit**: conferma diretta, non dedotta, che il bit 4 (stato speculativo) è
+   inerte con `draft-dspark`, esattamente come l'analisi statica del piano prevedeva
+   (`common/speculative.cpp:182-183`, nessun override in `914-1283`). Nessun buco nel piano su
+   questo punto.
+3. **A1 migliora p1 ma non lo recupera**: rispetto al free-run originale (.81-.86), mask=1 porta
+   p1 a .827-.872 — un miglioramento reale (confermato: A1 > free-run su tutte e tre le repliche)
+   ma **non** dentro banda 2σ da .90281 su nessuna delle tre. Per la regola del piano ("p1 ≠
+   .90281 ⇒ C2 è co-responsabile"): **C2 è co-responsabile**, confermato.
+
+## IL RISULTATO CHE CAMBIA IL VERDETTO: A7
+
+**A7 riproduce ESATTAMENTE, bit per bit, la traiettoria del free-run storico rotto**
+(`warm_anchor_b1200_20260817`, già a ledger sopra), nonostante il meccanismo del prefill funzioni
+alla perfezione:
+
+```text
+                    A7 (con -cms 8, prompt eval->4 tok)     free-run storico (-cms 8192 di difetto, prompt eval->67 tok)
+r2: p1              0,81078 (677/835)                        0,81078 (677/835)              <- IDENTICO
+r2: SHA             3CD00E94EA1DE63A...CDEA4DABA             3CD00E94EA...4DABA              <- IDENTICO
+r2: content_chars   2107                                     2107                            <- IDENTICO
+r3: p1/SHA/chars    0,81862 (677/827) / AA5A128AC7...9DDF7 / 3015   <- IDENTICI su tutti e tre i campi
+r4: p1/SHA/chars    0,85649 (746/871) / C65F9F2414...8D78B / 3133   <- IDENTICI su tutti e tre i campi
+```
+
+Verificato sul log che il meccanismo E' scattato correttamente (non e' un fallimento silenzioso):
+
+```text
+1.57.943.060  created context checkpoint 2 of 32 (pos_min=63, pos_max=63, n_tokens=64) -- esattamente
+              come previsto dal piano (FIX-0 §4): "sara' esattamente (n_tokens=64, pos_min=63, pos_max=63)"
+3.10.247.276  task 432 | checking checkpoint with [63, 63] against 67...
+3.10.251.019  task 432 | restored context checkpoint (pos_min=63, pos_max=63, n_tokens=64, n_past=64)
+              -- identico su r3 (task 956) e r4 (task 1480)
+```
+
+**Lettura**: il prefill si riduce esattamente come previsto (67->4 token, il "tempo" e' recuperato
+al 100%), ma la QUALITA' (p1, traiettoria, testo) resta **bit-per-bit quella del cammino rotto** --
+non solo "non migliora", riproduce l'IDENTICA sequenza di byte del baseline che il fix doveva
+correggere. Questo **falsifica l'ipotesi di lavoro di FIX-0/A7** ("se p1 regge ~.90 il fix e'
+spedibile via flag upstream"): il fix upstream (`--ctx-checkpoint-min-step` basso) risolve
+**solo** il sintomo cronometrico, non la causa della degradazione di p1.
+
+**Perche' verosimilmente**: A7 usa il cammino checkpoint **`PARTIAL_ONLY`** (§1.1 del piano), che
+**non** ripristina i tre tensori `*_hot` dell'anello DSV4 (`kv_csa/hca/lid`, coperti solo in
+modalita' `ON_DEVICE`). A1 (mask=1, porto-hot) usa **`ON_DEVICE`** e infatti mostra un
+miglioramento reale (seppure incompleto) che A7 non mostra affatto. La differenza fra "A1 migliora
+parzialmente" e "A7 non migliora per niente" isola **C3** (il cammino `PARTIAL_ONLY` non copre
+l'anello caldo) come fattore che pesa, non solo C2. **Nessuna delle due canonicalizzazioni prese
+da sole (checkpoint upstream A7, o KV target ON_DEVICE A1) chiude interamente il divario**: A1 ci
+arriva piu' vicino ma non basta, A7 non ci arriva affatto pur risolvendo il sintomo cronometrico.
+
+## Controllo di coerenza (campione: A7/r2)
+
+Letto per intero. HTML/CSS coerente in tema (landing page cyberpunk NeuraForge, come da prompt),
+nessun loop, nessuna corruzione, lingua sana (italiano nel testo introduttivo, poi codice). Sano.
+Atteso, dato che e' la stessa identica traiettoria byte-per-byte del baseline storico gia' letto e
+verificato in precedenza.
+
+## VERDETTO C1/C2/C3 (secco, per il mandato)
+
+- **C1 (riuso prompt morto, 67/68 ricalcolati)**: MECCANISMO CONFERMATO (prompt eval si comporta
+  esattamente come previsto su tutti i bracci) **MA NON E' LA CAUSA SUFFICIENTE della perdita di
+  p1**: A7 lo risolve al 100% sul piano cronometrico e ottiene ZERO recupero di p1. **C1 da solo
+  non spiega il degrado.**
+- **C2 (residenza cache esperti -> partizione CPU/GPU -> arrotondamento)**: **CO-RESPONSABILE**,
+  confermato da A1 (miglioramento parziale senza toccare la cache) e dal confronto A2-vs-A3 (la
+  canonicalizzazione della sola cache, senza il KV, non produce un beneficio distinguibile da
+  2σ) -- indicazione che l'effetto della cache non e' isolabile pulito con gli strumenti di
+  questa scala, resta plausibile ma non quantificato da solo.
+- **C3 (checkpoint `PARTIAL_ONLY` non copre l'anello caldo DSV4)**: **e' il candidato che meglio
+  spiega il divario A1-vs-A7** (stesso obiettivo dichiarato -- ridurre il prefill -- esito
+  qualitativo opposto). Non dimostrato con un braccio dedicato che isoli SOLO C3 (richiederebbe
+  confrontare ON_DEVICE vs PARTIAL_ONLY a parita' di tutto il resto, non fatto in questa scala).
+- **Nessun braccio arriva a p1≈.90281 dentro la banda 2σ.** Il fix "zero righe" (A7/FIX-0) NON e'
+  spedibile cosi' com'e': risolve il tempo, non la qualita'. **FIX-1** (una riga,
+  `server-context.cpp:3800`, gia' proposta nel piano) produrrebbe lo stesso identico checkpoint
+  di A7 (verificato aritmeticamente nel piano) e quindi **erediterebbe lo stesso limite** -- non
+  e' una via diversa da A7 dal punto di vista del risultato, solo un modo piu' pulito di ottenere
+  lo stesso `-cms` piccolo. Il fronte resta aperto: serve un braccio che isoli C3 (`ON_DEVICE` vs
+  `PARTIAL_ONLY` a parita' di tutto) prima di proporre un fix definitivo.
+
+Postflight finale: 0 processi llama, RAM libera 88,6 GB, VRAM 305/11.811 MiB. Nessun errore/
+divergenza su nessuno dei 5 bracci. Percorsi: `...\work\runs\mask_a{1,2,3,6,7}_*` (server.log,
+summary.json, r*.output.txt/response.json, hw.csv/cpu.csv per ciascuno).
+
+**Riserve esplicite per il coordinatore, non decise qui**:
+1. la parita' p1 di Cancello 2 (-5,4%/-2,8% contro soglia 2,4%) e' spiegata ma non ri-misurata
+   con un campione piu' grande -- vale la pena un braccio diagnostico a `MaxTokens` piu' alto
+   (es. 1200 come B1200) per vedere se la banda si stringe come l'aritmetica del rumore
+   campionario suggerisce;
+2. la terza modifica (`-CtxCheckpointMinStep`) e' stata applicata in autonomia, non
+   pre-autorizzata testualmente -- da confermare;
+3. il crash OOM di B-base e' un fatto nuovo sulla capacita' della scheda a ctx=150k con
+   checkpoint grossolani: potrebbe interessare anche altri banchi lunghi che non usano `-cms 32`
+   esplicitamente.
+
+NESSUN commit eseguito. Percorsi completi di tutti gli artefatti (log/summary/output/response/
+hw.csv/cpu.csv, entrambi i bracci) in `D:\ds4_work\llama_run\` con tag `kvlong_cms32_20260817`* e
+`kvlong_base_20260817`*; diff in `C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\
+runs\sota100k_kvreuse.patch` e `sota100k_kvreuse_ctxcheckpointminstep.patch`.

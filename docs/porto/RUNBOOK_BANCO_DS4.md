@@ -925,6 +925,93 @@ media.
 
 **Cancello 2 di §8.2 aggiornato**: vedi nota lì.
 
+### 6.9 Il prezzo della sonda — taratura e classificazione (dettato utente, 17/8 sera)
+
+1. **Taratura d'incidenza obbligatoria.** Ogni sonda/strumento attivabile (profiler,
+   telemetria, apparati diagnostici come calendario/trace/piano, `DUMP_EP`, ecc.) paga **una
+   taratura d'incidenza** prima di entrare nei banchi: una coppia di bracci **CORTI** (**B160
+   basta** — si misura una tassa **stazionaria per token**, non un regime) a leva **SPENTA**,
+   sonda **ON** contro sonda **OFF**, resto identico. **L'incidenza va nel ledger accanto alla
+   sonda**, non in un documento a parte.
+
+2. **Classificazione obbligatoria — PASSIVA contro ATTIVA.**
+   - **PASSIVA**: paga solo una tassa fissa e non cambia il regime di calcolo. Esempi: profiler
+     `GGML_SCHED_PROFILO`, telemetria hardware, `GGML_CUDA_GRAPH_STATS`, un `DUMP_EP` one-shot
+     (lettura, non intervento).
+   - **ATTIVA**: cambia il regime — sposta traiettoria, residenza o partizione CPU/GPU. Esempi:
+     l'apparato calendario/trace/piano (muove sfratti e traiettoria), `W>=1` (aggiunge nodi al
+     grafo).
+   - **Test discriminante**: confrontare sonda ON contro sonda OFF. Se cambiano **colpi,
+     sfratti, copie o p1** — non solo il t/s — la sonda è **ATTIVA**. Il t/s da solo non basta a
+     classificare: una sonda può costare in t/s ed essere comunque passiva (tassa pura), o
+     costare poco in t/s ed essere comunque attiva (traiettoria spostata a parità quasi di
+     velocità).
+
+3. **Uso della classificazione.**
+   - **PASSIVA**: è ammessa la **correzione scalare** (`t/s pulito ≈ t/s strumentato +
+     incidenza tarata`), e i confronti **possono attraversare i mondi** (strumentato contro
+     pulito).
+   - **ATTIVA**: valgono **SOLO i delta interni allo stesso mondo strumentato** (es. B contro
+     A′ a sonde pari, stessa attivazione su entrambi i lati) — **mai** assoluti contro un
+     riferimento pulito, **mai** correzioni scalari. Il costo di una sonda attiva non si
+     sottrae: si accompagna sempre con la sonda accesa anche sul lato di confronto.
+
+   **Riferimenti empirici del 17/8** (`LEDGER_17_AGOSTO.md`, stesso giorno):
+   ```text
+   apparato calendario/trace/piano    : -3,6% ... -9,7%   CON p1 fuori banda    -> ATTIVA
+   apparato W1 + prefetch legacy      : -47%              con p1 0,846          -> ATTIVA
+   carico fantasma (fino 220 MiB/tok) : -0,47%            a parità BIT-ESATTA   -> quasi-PASSIVA
+                                                            (lo scratch della copia non è mai
+                                                            letto dal calcolo: costa solo
+                                                            submission/banda, non sposta un
+                                                            byte dell'output su 16/16 richieste)
+   ```
+
+4. **Regola esistente confermata e collegata.** «Sonde uguali sui due lati di ogni confronto»
+   (§8.2, Cancello 2 — pari strumentazione) resta valida e **non è sostituita** da questa
+   taratura: la taratura la **completa**. Pari strumentazione garantisce che il confronto non
+   sia contaminato da una sonda diversa sui due lati; la taratura dice **quanto** costa la sonda
+   quando è presente su entrambi — cosa che finora (§11 punto 6: «il costo della sonda
+   `GGML_SCHED_PROFILO` non è stabile... non esiste un fattore di correzione») restava un buco
+   aperto per le sonde passive. Per le attive, §11 punto 6 resta interamente valido: nessun
+   fattore di correzione, solo delta interni.
+
+#### Triage a 64 token — braccio corto di taratura e screening (dettato utente, 17/8 sera)
+
+**Protocollo**: **64 token di generazione**, server **sempre acceso** (nessun riavvio fra i due
+lati dove la leva è commutabile a caldo), KV/prompt **riusati** (zero riprefill), leva
+commutata **A CALDO dove possibile** (§5.2/§5.3). Circa **10-15 secondi a punto** — pensato per
+essere veloce, non per essere un verdetto.
+
+**Validità e divieto di estrapolazione**: entrambi i lati campionano lo **STESSO segmento**
+(stessa finestra di KV/prompt riusato), quindi il **confronto interno regge**. **VIETATO
+estrapolare la grandezza del delta ad altri regimi**: il «cancello lungo» del 16-17/8 (§8.7
+punto 3, braccio B-LUNGO; §12.7) resta il monito — a 64 token un delta può essere un artefatto
+di segmento (un caso storico di questo stesso progetto ha mostrato un delta forte a 64 token
+ridursi a una frazione, sotto soglia, a 256 token). **64 token è valuta di SCREENING, mai di
+verdetto.**
+
+**Cosa si valuta**: delta t/s con barra d'errore **±5%**, **più** colpi/sfratti/p1 **grezzi**
+(non solo il numero di velocità — stesso principio del test discriminante del punto 2 sopra).
+
+**Sopra soglia → graduazione**: un triage che supera la barra sale a **B1200** per la misura
+vera; la sequenza di promozione resta quella già codificata (**B, B, A, B-LUNGO**, §8.7 punto
+3), **invariata** da questo triage — il triage è un filtro PRIMA della sequenza, non un
+sostituto di nessuno dei suoi passi.
+
+**Nota infrastrutturale**: oggi a caldo si può commutare solo la famiglia `porto_hot_snapshot`
+(corpo JSON della richiesta, §5.2/§5.3) — **non** le leve lette all'avvio del processo (la
+maggioranza, §5.1/§5.3 tabella), per le quali serve un **control block atomico al confine
+token**, indicato in §5.1 come lavoro **futuro**, oggi **non disponibile**. Questo lavoro ha ora
+un nome e un piano — **Fase D**, `D:\ds4_work\design\FASED_CONTROL_BLOCK_PIANO.md` — **promosso
+a prossimo cantiere**, non ancora eseguito: finché non esiste, il triage a 64 token su leve
+lette a init richiede comunque un riavvio per lato, esattamente come i bracci lunghi.
+
+**Filosofia dichiarata dall'utente**, da tenere a mente leggendo un triage: *«è
+un'approssimazione ma voglio arrivare a 20 t/s prima di DeepSeek V5»* — approssimazione
+accettata per lo **screening**, **rigore pieno solo alla promozione** (i cancelli di §8 restano
+interi, non si allentano mai al momento di promuovere).
+
 ---
 
 ## 7. Lettura del risultato

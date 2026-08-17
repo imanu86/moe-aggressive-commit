@@ -1732,3 +1732,220 @@ Percorsi completi di tutti gli artefatti (server.log/server.out/summary.json/r*.
 r*.response.json/hw.csv/cpu.csv) in
 `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\` con tag
 `v0_k2_subtract`, `v1_k0_subtract`, `fix1_freerun`, `adk_sonda`.
+
+---
+
+## MANDATO SUPPLEMENTARE — costruzione piano PORTCAL1 dedicato e rilancio SONDA
+
+Decisione del coordinatore dopo il blocco `adk_sonda` (nessun piano compatibile col carico
+odierno): costruire un piano PORTCAL1 dedicato a B1200/warm-restore/K=2/nmax3, NIENTE
+`STRICT=0` (spegnerebbe la leva). **Ultimo mandato del turno** (budget di rotazione a fine
+corsa).
+
+### 1) Provenienza del generatore — verificata, non riscritta
+
+Generatore trovato: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\
+work\analyze_route_trace.py`. Formato **non ambiguo**: le struct Python (`HEADER="<8s7I"`,
+`RECORD="<IhBBBBH6h6B6B4x6f"` = 64 byte, `PLAN_HEADER="<8s6I"`, `PLAN_CYCLE="<III"` = 12 byte,
+`PLAN_ENTRY="<HHIhh"` = 12 byte) combaciano byte per byte con le struct C verificate sul codice:
+`static_assert(sizeof(cache_esperti_traccia_record) == 64)` (`cache-esperti.cuh:1774` regione),
+`static_assert(sizeof(cache_cal_cycle) == 12)` / `sizeof(cache_cal_voce) == 12`
+(`cache-esperti.cu:77-78`). Nessun nuovo generatore scritto.
+
+**Scoperta corretta rispetto all'assunto implicito**: la campagna del 15/8 (piano
+`macro_v2_..._tail77_q8_drain...portcal`) usava `--lane k0` perché il suo carico era
+B160/`CALENDARIO_K0=1`/`SLOT_DIRETTI=1`. Per il regime di oggi (`CALENDARIO_K0=0`, K=2 reale) la
+lane corretta e' **`--lane trace`** (il default dello script): usa il `k_cpu` realmente osservato
+nella trace, non "tutto GPU". Usare `k0` avrebbe misurato la sonda su un piano costruito per un
+regime diverso da quello richiesto.
+
+**Due variabili distinte, verificate sul codice** (non assunte dal nome):
+- `LLAMA_CACHE_ESPERTI_TRACCIA=<path>` — **REGISTRA** una trace nuova (`cache-esperti.cu:2181-
+  2196` alloca il buffer device da 200.000 record; `:6805-6823` la scrive su disco nel dump,
+  quindi **richiede chiusura pulita** per essere salvata).
+- `LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE=<path>` — **CARICA** una trace esistente per il replay/
+  rilevatore di divergenza (`cache_calendario_carica`, `:1048-1134`); precondizione di
+  `LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO` (`cache_calendario_trasporto_carica` verifica
+  `runtime->cache.calendario` a `:1137`, cioè il piano non si carica se la trace non si e' gia'
+  caricata con successo).
+
+### 2) Braccio TRACCIA (`adk_trace_capture`) — servizio, fuori genealogia
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'adk_trace_capture' -MaxTokens 1200
+  -Repetitions 1 -PortoHotSnapshot $true -SpecNmax 3
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra '<base>;PORTO_HOT_MASK=15;
+  LLAMA_CACHE_ESPERTI_TRACCIA=D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_20260817.cestrc'
+```
+
+**Scelta -Repetitions 1, non 4** (deviazione motivata dal mandato "config IDENTICA alla sonda"):
+il buffer trace ha capacita' FISSA di 200.000 record per l'intero processo, non per richiesta.
+Con warm-restore le repliche sono bit-identiche (dimostrato oggi su V0 e nello storico
+`warm_anchor_restore`), quindi 1 sola richiesta (r1=cattura) e' un campione equivalente a 4 per
+lo scopo, **e** evita il rischio concreto di overflow (stima ~4× la capacita' con 4 richieste da
+1200 token, dato il consuntivo reale sotto).
+
+**Risultato**: completata, 1200 token, `finish_reason=length`, chiusura `ctrl-c` (necessaria per
+salvare la trace). **Nota onesta**: la sola presenza di `LLAMA_CACHE_ESPERTI_TRACCIA` ha
+perturbato la traiettoria rispetto a V0 — p1 0.89858 (contro 0.90281 di V0) e SHA output diverso
+(`49668E37...C9464D`) — come il coordinatore aveva anticipato ("la traccia puo' perturbare il
+t/s: e' un braccio di SERVIZIO, fuori genealogia").
+
+```text
+eval t/s = 15,90   p1 = 0.89858   wall_ms = 79467
+riga di salvataggio = cache-esperti: traccia route salvata 27778/27778 record in
+  D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_20260817.cestrc          <- NESSUNA TRONCATURA (n=totale)
+file trace = D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_20260817.cestrc, 1.777.828 byte
+  (= header 36 + 27778 record x 64 byte, verificato aritmeticamente)
+SHA256 file = 8B325ADE551DAA3999A2E177D522BD8977268725AE86C4BEC78AFD4CDC85C5EA
+0 CUDA error / GGML_ASSERT, macchina pulita dopo (0 processi, VRAM 306 MiB)
+```
+
+percorsi file: `...\work\runs\adk_trace_capture.*`, `D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_
+20260817.cestrc`
+
+### 3) Costruzione del piano — riuscita, zero errori
+
+```text
+comando = python analyze_route_trace.py D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_20260817.cestrc
+  --lane trace --copy-quanta 8
+  --emit-layer-plan D:\ds4_work\adk\adk_piano_b1200_k2_nmax3_20260817.portcal
+```
+
+`--copy-quanta 8` allineato a `FORK_BLOCCHI`/`CALENDARIO_BLOCCHI=8` di oggi (fb8, il vincitore
+dello sweep di stamattina). Nessun `--tail-cycles` (unica richiesta gia' pulita), nessun
+`--drain-cycle` (specifico del replay diretto-slot/`SLOT_DIRETTI`, spento nel nostro regime).
+
+**Nessun `rescue_keys != 0` sollevato dallo script** (il generatore fallisce esplicitamente se il
+piano non riesce a coprire la domanda con la capacita' data — non e' successo):
+
+```text
+meta={'version': 2, 'records': 27778, ..., 'slots': 473, 'experts': 256}
+cycles=279 layers_per_cycle={43: 279}
+cycle_working_set: mean=253.32 p95=328.4 max=365            <- sempre sotto 473 (capacita')
+layer_plan_written=...adk_piano_b1200_k2_nmax3_20260817.portcal lane=trace quanta=8
+  cycles=279 entries=33106 max_cycle_entries=473 max_release_entries=473 bytes=400652
+```
+
+File verificato aritmeticamente contro il parser C++ (`cache-esperti.cu:1147-1180`): header
+32 byte + 279×12 (cicli) + 33106×12 (voci) = 400.652 byte — combacia esattamente. `h[2]`
+(capacity)=473 = `n_slot` runtime; `h[4]`/`h[5]` (12/12) = `sizeof(cache_cal_cycle)`/
+`sizeof(cache_cal_voce)`. Tutti i vincoli del parser rispettati per costruzione.
+
+percorso file: `D:\ds4_work\adk\adk_piano_b1200_k2_nmax3_20260817.portcal` (400.652 byte)
+
+### 4) SONDA finale (`adk_sonda_piano`) — piano CARICATO con successo, meccanismo osservato
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'adk_sonda_piano' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra '<base>;PORTO_HOT_MASK=15;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE=D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_20260817.cestrc;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO=D:\ds4_work\adk\adk_piano_b1200_k2_nmax3_20260817.portcal;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_ASYNC=1;LLAMA_CACHE_ESPERTI_K_ADATTIVO=1'
+```
+
+**Differenza decisiva rispetto al tentativo precedente (`adk_sonda`, ABORTITO)**: il server ha
+raggiunto `/health` e completato tutte e 4 le richieste. Manifesto: `cache-esperti: calendario
+corsie ACCESO: 27778/27778 record, 279 cicli, fonte '...cestrc'` — trace caricata per intero.
+Nessun `cache_leva_rifiutata`, nessun `exit(1)`.
+
+| richiesta | ruolo | eval t/s | p1 | SHA output | content_chars |
+|---|---|---:|---|---|---:|
+| r1 | cattura | 15,76 | 0.88502 (762/861) | `3FBE4F0B54...28CBA6` | 3743 |
+| r2 | verdetto | 16,03 | 0.88502 (762/861) | `3FBE4F0B54...28CBA6` | 3743 |
+| r3 | verdetto | 15,84 | 0.88502 (762/861) | `3FBE4F0B54...28CBA6` | 3743 |
+| r4 | verdetto | 15,79 | 0.88502 (762/861) | `3FBE4F0B54...28CBA6` | 3743 |
+
+```text
+valori ordinati (r2,r3,r4) : 15,79 / 15,84 / 16,03
+MEDIANA                    : 15,84
+spread max-min              : 1,52 %
+
+vs V0 (17,06)  : delta = -7,15 %   FUORI banda ±3% (vedi lettura sotto — non isolato dal costo
+                                    dell'apparato calendario+trace+piano+async)
+```
+
+**Cancello con-restore: PASSATO.** SHA/p1/content_chars **bit-identici su tutte e 4** le
+richieste — il restore funziona correttamente anche con calendario+trace+piano+async+k_adattivo
+tutti attivi insieme (nessuna divergenza fra cattura e ripristini).
+
+**CANCELLO PRIMARIO (mandato): la riga "adaptive-K →", letta PRIMA del t/s — ANOMALIA
+RISCONTRATA, non nascosta**:
+
+```text
+prima istantanea : ... rescue=2361 (20.1%), senza piano=9409 (79.9%)
+ultima istantanea: non residenti valutati=261549, in tempo (classe 4)=0 (0.0%),
+                    rescue = deadline miss=27541 (10.5%), senza piano=234008 (89.5%)
+```
+
+`senza piano` **non scende** dopo il primo ciclo come atteso dal mandato — sale (79,9% → 89,5%)
+e si stabilizza li'. **Secondo segnale, piu' netto**: `in tempo (classe 4)=0 (0.0%)` su **ogni
+singola istantanea** del dump, mentre `rescue` e' sempre positivo (10,5-20,1%) — cioe' ogni volta
+che una deadline VIENE TROVATA nella tabella, e' **sempre** classificata rescue, **mai** in
+tempo. Questo e' esattamente il sintomo descritto come segnale d'allarme in
+`NOTE_IMPLEMENTAZIONE.md` §5 punto 5 ("dubbi aperti"): *"Un `scadenza` in unità diverse
+renderebbe lo slack assurdo e la leva o sempre-rescue o mai-rescue: il primo sguardo va alla
+riga di dump, non al t/s."* — qui e' **sempre-rescue**.
+
+**Causa più probabile, verificata sul codice ma non isolata con un braccio dedicato** (fuori
+budget di questo turno): il replay/rilevatore di divergenza si arma **solo se gli ID del primo
+gruppo della richiesta corrente coincidono esattamente con quelli del primo gruppo della trace
+registrata** (`cache-esperti.cu:5638-5674`, commento esplicito: *"Il calendario non si arma sul
+prompt/warm-up: aspetta che layer, taglia e tutti gli id coincidano col primo gruppo della
+reference"*). Confermato sul log: `cache-esperti: calendario corsie -> posizione=0/27778,
+stato=0, ...` **resta fisso a zero per tutta la corsa** (mai armato). La trace fu registrata in
+un regime leggermente diverso (solo `TRACCIA` attiva, p1=0.89858) da quello della sonda finale
+(calendario+piano+async+k_adattivo insieme, p1=0.88502) — le due traiettorie **divergono già dal
+primo token generato**, quindi gli ID non possono mai coincidere. Il trasportatore persistente
+(che popola `scadenza_ep` indipendentemente dal replay, `cache-esperti.cu:6013-6028`/`:6087-
+6102`) segue comunque il proprio ciclo di rilascio, ma le chiavi che scrive non sempre
+corrispondono a quelle richieste dalla sequenza reale — da cui l'89,5% "senza piano" e lo
+sbilanciamento verso "sempre-rescue" quando una corrispondenza c'è. **Non dimostrato con un
+esperimento che isoli la causa esatta** (richiederebbe una registrazione trace fatta con
+l'apparato completo già attivo, o un piano costruito con margini di ETA diversi — entrambi fuori
+mandato/budget di questo turno). Riportato come richiesto, senza trarre conclusioni ulteriori.
+
+**Salute: piena.** 0 `GGML_ASSERT`/`CUDA error`, 0 `PERMUTAZIONE ROTTA` (guasto muto assente),
+0 `CONTESA`, riga cache-esperti identica al riferimento, chiusura `ctrl-c` pulita.
+
+**t/s -7,15% vs V0**: non attribuibile al solo `K_ADATTIVO` senza un braccio che isoli l'apparato
+calendario+trace+piano+async da solo (a `K_ADATTIVO=0`) — non eseguito in questo turno. E' quindi
+un dato, non un verdetto sul costo della leva in se'.
+
+**Controllo di coerenza testuale** (r2, 3743 caratteri, letto per intero): italiano corretto,
+HTML/CSS cyberpunk NeuraForge pertinente al prompt, tronco a meta' di una dichiarazione CSS per
+esaurimento budget. Lingua sana=si, loop=no, pertinenza=si, degradazione=no.
+
+**Telemetria** (`adk_sonda_piano.hw.csv`, 136 campioni/2s, 130 busy util>30%): SM mediano 1927 MHz
+(nessun throttle) · potenza mediana 103,1 W.
+
+**Postflight**: 0 processi llama, VRAM 306 MiB (= riposo), RAM libera 88,5 GB.
+
+percorsi file: `...\work\runs\adk_sonda_piano.*`
+
+### VERDETTO DEL MANDATO SUPPLEMENTARE
+
+- **Meccanismo di caricamento del piano: FUNZIONANTE.** Trace e piano si costruiscono col
+  generatore esistente, si caricano senza errori, il server gira in salute piena su 4 richieste
+  con restore bit-identico.
+- **Sonda A: raggiungibile ma ANOMALA, non "sana".** Il segnale "sempre-rescue, mai in-tempo" +
+  "senza piano" che non scende sono entrambi i sintomi che il design doc stesso elenca come
+  bandiera di un problema di fondo (disallineamento traccia/misura, o unità di `scadenza`), non
+  una lettura pulita del merito della leva. **Non si può oggi promuovere né respingere
+  `K_ADATTIVO` sul merito**: serve un braccio che chiuda il ciclo trace→piano→misura sulla
+  STESSA traiettoria (es. registrare la trace già con calendario+async attivi, senza
+  `K_ADATTIVO`, poi costruire il piano da quella) prima di leggere un verdetto di qualità/costo.
+- **Nessuna variante tentata oltre questa** (niente `STRICT=0`, niente secondo piano, niente
+  ri-registrazione) per rispetto del budget di fine rotazione dichiarato dal coordinatore.
+
+Stato macchina a fine intero turno (bracci 1-4 + mandato supplementare): 0 processi llama, VRAM
+306 MiB (= preflight 305 MiB), RAM libera 88,5 GB (da 88,4 di preflight — nessuna perdita su 6
+lanci del server). NESSUN commit eseguito.
+
+Percorsi completi di tutti gli artefatti (server.log/server.out/summary.json/r*.output.txt/
+r*.response.json/hw.csv/cpu.csv) in
+`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\` con tag
+`v0_k2_subtract`, `v1_k0_subtract`, `fix1_freerun`, `adk_sonda`, `adk_trace_capture`,
+`adk_sonda_piano`; trace e piano in `D:\ds4_work\adk\`.

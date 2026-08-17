@@ -2499,3 +2499,460 @@ quattro passi del mandato originale (S1/T2/piano-v2/SONDA-v2) completi con verde
 diagnosticato; braccio supplementare MASSA_CORSIE completo con verdetto PARCHEGGIO. Cinque lanci
 del server llama in tutto il turno, tutti con chiusura pulita, zero perdite di RAM/VRAM, zero
 commit.
+
+---
+
+# NONO TURNO — adk_sonda_v3: braccio NON ESEGUIBILE, il mandato si contraddice con un vincolo di
+# codice gia' diagnosticato nel turno 7
+
+Esecutore: nono turno, contesto fresco. Mandato del coordinatore: un solo braccio-strumento (tag
+`adk_sonda_v3`, non una promozione), B1200 warm-restore (1 processo, snapshot+mask15, 4 richieste,
+mediana r2-r4), binario `D:\llama-subtract` (ricompilato: `ggml-cuda.dll` CAMBIATO, patch v0b/§7
+di NOTE_IMPLEMENTAZIONE.md), piano NUOVO v3 (scadenze = distanza al prossimo uso, min1/mediana114/
+max197), config campione V0 (K=2, nmax3) **+ queste leve e solo queste**: `K_ADATTIVO=1`,
+`CALENDARIO_PIANO=<v3>`, `K_ADATTIVO_DUMP_EP=1`, **TRACE SPENTA (niente CALENDARIO_TRACE)**,
+`CALENDARIO_ASYNC=0`.
+
+## Preflight
+
+```text
+data/ora         = 2026-08-17 10:4x (poco prima del lancio)
+uptime_min       = 3505,4 (nessun riavvio dal turno precedente)
+processi llama   = 0
+porta 8000 (UI)  = nessun listener (non toccata)
+porta 8099/8100  = libere
+nvidia-smi       = NVIDIA GeForce RTX 3060, sm=210MHz, mem=405MHz, power=12.58W, used=306MiB,
+                   free=11810MiB, pcie_gen=1 (a riposo), pcie_width=16, throttle=0x1
+ram_libera_gb    = 88.4 GB
+disco_c_gb       = 49.3 GB liberi     disco_d_gb = 119.7 GB liberi
+jprompt          = 252 byte, SHA256 C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9
+                   -- PASSATO
+
+binari, D:\llama-subtract\build\bin\ (NON D:\llama-overlap: il mandato punta esplicitamente al
+binario ricompilato in D:\llama-subtract, usato via -ServerPath):
+  llama-server.exe       SHA256 8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901B22F43465B7FB1CD
+                         invariato -- combacia col mandato
+  ggml-cuda.dll          SHA256 251612C057EA23B78D2B1F4624C849C720AF2D664CC1DC69A331BBE92CEF877F
+                         CAMBIATO -- combacia col mandato ("251612C057EA23B7...") e con
+                         NOTE_IMPLEMENTAZIONE.md SS7.8 (SHA identico, byte per byte)
+  llama-server-impl.dll  SHA256 91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29
+                         invariato -- combacia col mandato
+
+piano v3         = D:\ds4_work\adk\adk_piano_v3_b1200_k2_nmax3_20260817.portcal
+                    367.700 byte -- combacia esattamente con NOTE_IMPLEMENTAZIONE.md SS7.9
+                    (bytes=367700, cycles=261, entries=30378)
+```
+
+Tutti i cancelli 1.1-1.8 PASSATI (adattati: SS1.7 verificato su `D:\llama-subtract`, non su
+`D:\llama-overlap`, come richiesto dal mandato). Riferimento V0 = **17,06** (dal mandato, letto
+in sessioni precedenti da `v0_k2_subtract.server.log`; non rimisurato in questo turno perche' il
+braccio non e' mai arrivato a produrre un numero comparabile -- vedi sotto).
+
+## Verifica lettori PRIMA di lanciare
+
+Letto integralmente `D:\ds4_work\design\impl\NOTE_IMPLEMENTAZIONE.md` SS7 (semantica nuova di
+`scadenza`, popolamento sull'host, DUMP_EP, gate CALENDARIO_ASYNC, piano v3). Poi grep mirato su
+`D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu` per le quattro leve nuove del mandato,
+nomi confermati **a valore** (non a presenza), righe:
+- `LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO` -- riga 1145 (dentro `cache_calendario_trasporto_carica`)
+- `LLAMA_CACHE_ESPERTI_K_ADATTIVO` -- riga 1905 (livello 1 = sonda, conta e non decide)
+- `LLAMA_CACHE_ESPERTI_K_ADATTIVO_DUMP_EP` -- riga 1920
+- `LLAMA_CACHE_ESPERTI_CALENDARIO_ASYNC` -- riga 2666 (gate: `K_ADATTIVO=1` senza ASYNC=1 e'
+  **solo un avviso**, righe 2702-2704 -- combacia con SS7.4 di NOTE_IMPLEMENTAZIONE.md)
+
+**Non e' stato letto, PRIMA del lancio, il codice che lega `CALENDARIO_PIANO` a `CALENDARIO_TRACE`**
+(la guardia di riga 1144 dentro `cache_calendario_trasporto_carica`) -- e' il buco che ha fatto
+fallire il braccio. Trovato SUBITO DOPO il fallimento, in sede di diagnosi (sotto), non prima.
+
+## Braccio tentato -- `adk_sonda_v3` -- NESSUNA MISURA (mandato in contraddizione con un vincolo di codice)
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'adk_sonda_v3' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;
+  LLAMA_CACHE_ESPERTI_K_ADATTIVO=1;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO=D:\ds4_work\adk\adk_piano_v3_b1200_k2_nmax3_20260817.portcal;
+  LLAMA_CACHE_ESPERTI_K_ADATTIVO_DUMP_EP=1;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_ASYNC=0'
+protocollo = warm-restore inteso (1 processo, cattura r1 fuori verdetto, mediana r2-r4),
+  MAI raggiunto -- vedi sotto. Telemetria predisposta (sample_hw.ps1 a 0,5 Hz), MAI avviata
+  (si avvia solo dopo 'listening on http', mai comparso nel log).
+env completo del tentativo (per la regola "registrare SEMPRE tutte le variabili", anche quelle
+  che non hanno avuto effetto perche' il processo e' morto prima): GGML_SCHED_PROFILO=0,
+  LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0, LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0,
+  LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8, LLAMA_DSV4_DECODE_GATE_UP_FUSO=0,
+  LLAMA_DSV4_DECODE_EXPERT_REUSE=0, LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0,
+  PORTO_HOT_MASK=15, LLAMA_CACHE_ESPERTI_K_ADATTIVO=1,
+  LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO=<v3>, LLAMA_CACHE_ESPERTI_K_ADATTIVO_DUMP_EP=1,
+  LLAMA_CACHE_ESPERTI_CALENDARIO_ASYNC=0, LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE=<ASSENTE, per
+  istruzione esplicita del mandato>, PortoHotSnapshot=1, SpecNmax=3, MaxTokens=1200,
+  Repetitions=4, PORTO_SPEC_NMAX=3 (settato dal runner da -SpecNmax)
+```
+
+**Fallito in inizializzazione, PRIMA di `/health`.** Dal log (`...\work\runs\adk_sonda_v3.server.log`,
+26.502 byte, ultime righe), dopo il caricamento completo dei pesi, la riserva del compute buffer
+(`sched_reserve: reserve took 48.85 ms`) e l'inizio del warmup
+(`common_init_: warming up the model with an empty run`), **verbatim**:
+
+```text
+cache-esperti: *** K_ADATTIVO CHIESTA MA SPENTA: richiede CALENDARIO_TRACE + CALENDARIO_PIANO validi: senza piano non c'e' deadline ***
+cache-esperti: la corsa si ferma qui. Proseguendo, il banco misurerebbe un'altra
+               configurazione e restituirebbe un t/s plausibile lo stesso.
+               Correggere la configurazione, oppure LLAMA_CACHE_ESPERTI_STRICT=0
+               per proseguire sapendo che quella leva non c'e'.
+```
+
+Il processo esce da solo (`exit(1)`, `cache-esperti.cu:462-470`, funzione `cache_leva_rifiutata`
+-- design intenzionale, "fermarsi costa trenta secondi, non fermarsi e' costato due notti"). Il
+runner riceve `shutdown=gia-uscito`, poi solleva lui stesso `Server non pronto entro 10 minuti.`
+(perche' `/health` non risponde mai): l'eccezione del runner e' un sintomo, non la causa. Nessun
+`.summary.json`, nessun `.r*.output.txt`, nessun `.hw.csv` prodotti -- solo `.server.log` (26.502
+byte) e `.server.out` (0 byte, come sempre). Nessuna delle righe testimone richieste dal mandato
+(caricamento piano, DUMP_EP, adaptive-K) esiste nel log: **non presenti**, non dedotte. **Nessun
+t/s, nessun p1**: non c'e' numero da riportare (RUNBOOK SS4.8: un'uscita prima di `eval time` non
+e' 0 t/s, e' nessuna misura).
+
+**Causa, verificata sul codice riga per riga DOPO il fallimento** (`D:\llama-subtract\ggml\src\
+ggml-cuda\cache-esperti.cu`):
+- `cache_calendario_trasporto_carica` (riga 1143-1144, la funzione che apre il file
+  `CALENDARIO_PIANO` e costruisce la tabella delle scadenze per K_ADATTIVO) ha come **primissima
+  guardia**: `if (!runtime || runtime->bozza || !runtime->cache.calendario) return false;` --
+  esce SENZA NEMMENO PROVARE AD APRIRE il file del piano se `runtime->cache.calendario` e' nullo.
+- `runtime->cache.calendario` e' popolato **esclusivamente** da `cache_calendario_carica` (riga
+  1055-1058), che a sua volta esce subito (`return false`) se
+  `getenv("LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE")` e' nullo o vuoto.
+- Le due funzioni sono chiamate in sequenza (riga 2259-2260):
+  `cache_calendario_carica(runtime); cache_calendario_trasporto_carica(runtime);` -- la seconda
+  dipende dallo stato lasciato dalla prima.
+- Conseguenza: **senza `CALENDARIO_TRACE` valorizzata e valida, `CALENDARIO_PIANO` non viene
+  MAI aperto**, indipendentemente dal fatto che il file del piano esista e sia corretto (verificato
+  che lo e': 367.700 byte, combacia con NOTE_IMPLEMENTAZIONE.md SS7.9). `scadenza_ep` resta
+  nullo, e il gate finale (riga 2267-2270) rifiuta `K_ADATTIVO` con il messaggio visto sopra.
+- Il gate `CALENDARIO_ASYNC` (righe 2698-2705, verificato in "Verifica lettori" sopra) non e' mai
+  stato raggiunto in modo significativo: essendo `cache_leva_rifiutata` fatale (`exit(1)`
+  dentro la stessa funzione di init, molto prima nel codice), il processo muore prima di arrivare
+  a quel controllo. **L'avviso "K_ADATTIVO=1 (sonda) con trasporto SINCRONO" atteso dal mandato
+  ("annotalo se compare") non compare per questo motivo -- non e' un dato mancante, e'
+  irraggiungibile in questa configurazione.**
+
+**Precedente identico, gia' a ledger.** Questo e' esattamente il fallimento del **Braccio 4/4 del
+turno 7** (`adk_sonda`, righe 1634-1702 di questo stesso file): stesso identico messaggio verbatim,
+stessa causa (mancava sia `CALENDARIO_TRACE` sia `CALENDARIO_PIANO` nel mandato di allora), stesso
+`exit(1)` prima di `/health`, stesso esito NESSUNA MISURA. La differenza con oggi: nel turno 7
+mancavano ENTRAMBE le variabili (nessuna delle due nel mandato); oggi manca **solo**
+`CALENDARIO_TRACE`, perche' il mandato la esclude **esplicitamente e per nome**
+("TRACE SPENTA (niente CALENDARIO_TRACE)"), mentre fornisce `CALENDARIO_PIANO=v3`. Il vincolo di
+codice (piano richiede trace) era gia' scritto in questo ledger (turno 7, riga 1666-1670) prima
+che questo mandato venisse scritto.
+
+**Diagnosi della contraddizione nel mandato -- riportata, NON risolta unilateralmente.** Il
+mandato elenca `CALENDARIO_TRACE` col nome tecnico esatto (non "TRACCIA", che e' un'altra
+variabile -- `LLAMA_CACHE_ESPERTI_TRACCIA`, quella usata nel Passo 2/T2 dell'ottavo turno per
+*registrare* una nuova traccia, non per il *replay*/caricamento del piano). Ipotesi piu' probabile,
+NON verificabile da qui con certezza: il coordinatore intendeva "niente registrazione di una nuova
+traccia" (cioe' niente `LLAMA_CACHE_ESPERTI_TRACCIA`, superflua qui perche' non serve registrare
+nulla di nuovo) e non "niente `CALENDARIO_TRACE`" (che invece e' un prerequisito tecnico di
+caricamento del piano, indipendente da K_ADATTIVO, e non ha alternative nel codice attuale). Non
+e' stata presa alcuna decisione al posto del coordinatore: nessuna variante e' stata eseguita,
+nessun valore e' stato sostituito di iniziativa (RUNBOOK REGOLA ZERO punti 1-2).
+
+**Che cosa servirebbe per procedere, non eseguito, decisione del coordinatore:**
+1. Aggiungere `LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE=D:\ds4_work\adk\adk_trace_v2_b1200_k2_nmax3_20260817.cestrc`
+   (il trace v2 gia' su disco, verificato 1.615.460 byte / 25.241 record nell'ottavo turno --
+   e' lo stesso trace da cui il piano v3 e' stato generato, quindi coerente per genealogia) senza
+   impostare `LLAMA_CACHE_ESPERTI_TRACCIA` (che resterebbe assente, come "TRACE SPENTA" nel senso
+   di "nessuna nuova registrazione"). Costo: un braccio, non ancora speso.
+2. In alternativa, `LLAMA_CACHE_ESPERTI_STRICT=0` -- ma questo NON misurerebbe K_ADATTIVO: la
+   leva verrebbe silenziosamente spenta (lo dice il messaggio stesso: "i numeri di questa corsa
+   NON parlano di K_ADATTIVO"), vanificando lo scopo dichiarato del braccio (verificare le attese
+   di NOTE_IMPLEMENTAZIONE.md SS7 su scatter/DUMP_EP/classi adaptive-K). Sconsigliato per lo scopo
+   di questo mandato, riportato solo per completezza.
+3. Nessuna delle due scelte e' stata presa qui: richiede conferma esplicita, come da REGOLA ZERO.
+
+## Stato macchina ed esito
+
+```text
+postflight       : 0 processi llama, VRAM 306 MiB (= 306 di preflight, nessuna perdita),
+                    RAM libera 88,5 GB (da 88,4 di preflight -- nessuna perdita)
+chiusura         : processo uscito da solo (exit(1) per design), non un ctrl-c ne' una
+                    RISERVA Stop-Process -- nessun residuo, nessun danno alla macchina
+quiete           : non applicata (nessun braccio successivo in questo turno)
+commit           : NESSUNO eseguito
+```
+
+**ESITO: NESSUNA MISURA.** Non e' un fallimento della leva K_ADATTIVO ne' del piano v3 (il codice
+si comporta esattamente come progettato: rifiuta con un messaggio esplicito invece di misurare in
+silenzio un'altra configurazione -- la stessa disciplina gia' vista per `FORK`/`MASSA=2`/
+`CALENDARIO_SLOT_DIRETTI`/K_ADATTIVO stesso nel turno 7). E' una **contraddizione nel mandato fra
+due istruzioni esplicite** (`CALENDARIO_PIANO=v3` richiede per costruzione di codice
+`CALENDARIO_TRACE` valorizzata; "niente CALENDARIO_TRACE" la vieta), scoperta e riportata, non
+risolta di iniziativa. Zero righe testimone da riportare (load/DUMP_EP/adaptive-K: tutte assenti
+dal log), zero t/s, zero p1, zero tabella di confronto -- non ci sono numeri da questa sessione.
+Nessuna leva parcheggiata, nessuna famiglia falsificata: la leva K_ADATTIVO + piano v3 restano
+**da testare**, in attesa della correzione del mandato.
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\adk_sonda_v3.attempt1_failed_init.server.log`
+(26.502 byte, rinominato per preservarlo prima del rilancio -- vedi sotto),
+`...\adk_sonda_v3.attempt1_failed_init.server.out` (0 byte)
+
+---
+
+## CORREZIONE DEL COORDINATORE, ricevuta durante l'esecuzione -- confermata esplicitamente
+
+Il coordinatore ha riconosciuto l'errore di mandato: con "TRACE spenta" intendeva la
+**REGISTRAZIONE** (`LLAMA_CACHE_ESPERTI_TRACCIA`, che infatti resta assente), non il file
+d'ingresso `CALENDARIO_TRACE`, che e' un prerequisito tecnico del caricatore del piano --
+esattamente l'ipotesi riportata sopra come "non verificata". Ordine confermato esplicitamente:
+rilanciare `adk_sonda_v3` identico, con **una sola aggiunta**:
+`LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE=D:\ds4_work\adk\adk_trace_v2_b1200_k2_nmax3_20260817.cestrc`
+(il trace da cui il piano v3 e' generato -- genealogia coerente). `LLAMA_CACHE_ESPERTI_TRACCIA`
+resta assente, `CALENDARIO_ASYNC=0` invariato, `LLAMA_CACHE_ESPERTI_STRICT` a default (assente).
+Avvertenza esplicita del coordinatore: il matcher del replay tentera' di armarsi e restera' a
+`posizione=0` come sempre -- **atteso e innocuo**, perche' le scadenze ora arrivano dallo
+scavalco host al load (SS7.2 di NOTE_IMPLEMENTAZIONE.md), non dal matcher del replay.
+
+Prima del rilancio: verificato che il trace v2 esiste ancora integro
+(`D:\ds4_work\adk\adk_trace_v2_b1200_k2_nmax3_20260817.cestrc`, 1.615.460 byte -- combacia con la
+verifica gia' fatta nell'ottavo turno). Il `.server.log`/`.server.out` del tentativo 1 (fallito in
+init, nessun dato di misura) sono stati **copiati** con suffisso `.attempt1_failed_init` prima del
+rilancio, per preservarli anche come file fisico oltre che a verbale (il tag `adk_sonda_v3` viene
+riusato per ordine esplicito del coordinatore, che era gia' al corrente che il tentativo 1 non
+aveva prodotto alcun `.summary.json`). Preflight rapido ripetuto: 0 processi llama, porte 8099/8100
+libere, RAM libera 88,4 GB, GPU a riposo (306 MiB, 210 MHz, 12,51 W) -- tutto invariato dal
+preflight del tentativo 1.
+
+## Braccio `adk_sonda_v3` -- TENTATIVO 2 -- RIUSCITO
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'adk_sonda_v3' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;
+  LLAMA_CACHE_ESPERTI_K_ADATTIVO=1;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_TRACE=D:\ds4_work\adk\adk_trace_v2_b1200_k2_nmax3_20260817.cestrc;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_PIANO=D:\ds4_work\adk\adk_piano_v3_b1200_k2_nmax3_20260817.portcal;
+  LLAMA_CACHE_ESPERTI_K_ADATTIVO_DUMP_EP=1;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_ASYNC=0'
+protocollo = warm-restore (1 processo, cattura r1 fuori verdetto, mediana r2-r4)
+telemetria = sample_hw.ps1 a 0,5 Hz, avviata dopo 'listening on http' (11:01:57), fermata da sola
+  a fine processo (11:07:32)
+```
+
+**Esito: RIUSCITO.** 4 richieste completate, `shutdown=ctrl-c` (chiusura pulita). File prodotti:
+`.summary.json`, `.server.log` (121.499 byte), `.r1-r4.output.txt`, `.r1-r4.response.json`,
+`.hw.csv` (137 campioni), `.cpu.csv` (137 campioni).
+
+### Cancelli d'identita' (SS4 RUNBOOK)
+
+```text
+riga cache-esperti : cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06
+                      + down 2.62), cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2,
+                      peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0,
+                      dma_strato=0                                    <- IDENTICA al riferimento
+sfratto_par=1        PASSATO
+grafi                manifesto: GGML_CUDA_DISABLE_GRAPHS=<spento>(D)  <- ACCESI, PASSATO
+sched-profilo         0 righe nel log                                 <- SPENTO, PASSATO (pari
+                      strumentazione col riferimento V0, anch'esso 0)
+GGML_CUDA_GRAPH_STATS manifesto: GGML_CUDA_GRAPH_STATS=0(D)            <- spento, PASSATO
+divergenze            taglia=0 ids=0 out=0 GRIGLIA-corta=0 su OGNI istantanea <- PASSATO
+errori                0 GGML_ASSERT / CUDA error / invalid index (grep sull'intero log) <- PASSATO
+p1 con-restore        0.82380 su TUTTE e 4 le richieste (r1=r2=r3=r4)  <- cancello SS8.9.5 PASSATO
+SHA con-restore       400BF7E913E30CE2E11543C50ECCF3FAC2FA1902EB7FD376080BD197C127686C su TUTTE
+                      e 4 le richieste                                <- cancello SS8.9.5 PASSATO
+```
+
+### 1. Riga di CARICAMENTO del piano (scatter) -- verbatim
+
+```text
+cache-esperti: trasporto calendario SINCRONO acceso: 261 cicli, 30378 voci, ultimo strato=42,
+  'D:\ds4_work\adk\adk_piano_v3_b1200_k2_nmax3_20260817.portcal'
+cache-esperti: ADAPTIVE-K v0 livello 1 (SONDA: conta e non decide): deadline dal piano,
+  copia=1177 us, strato=3100 us, tabella 32.0 KiB | scadenze dall'host: celle=6561, min=1,
+  max=189, voci fuori tabella=0, voci negative=0
+cache-esperti: K_ADATTIVO=1 (sonda) con trasporto SINCRONO: l'istogramma si legge, ma le ETA
+  misurano un regime diverso da quello di destinazione        <- avviso atteso (SS7.4), ORA
+  RAGGIUNTO (nel tentativo 1 non compariva mai: il processo moriva prima)
+```
+
+**Confronto con le attese di NOTE_IMPLEMENTAZIONE.md SS7.9** (simulazione Python dello scatter
+host, `n_strati=43`): `celle scritte = 6.561` atteso -> **6561 ottenuto, ESATTO**. `min=1` atteso
+-> **1 ottenuto, ESATTO**. `max=189` atteso -> **189 ottenuto, ESATTO**. `fuori=0` atteso ->
+**0 ottenuto, ESATTO**. `negative=0` atteso -> **0 ottenuto, ESATTO**. Tutte e cinque le cifre
+attese dalla simulazione **combaciano esattamente** coi numeri reali del caricamento. Nessuna
+riga scartata fuori-bounds, come richiesto dal mandato.
+
+### 2. Riga DUMP_EP dopo il primo forward -- verbatim, confrontata con le attese SS7
+
+```text
+cache-esperti: adaptive-K DUMP_EP (dopo il primo forward): celle=16384, ==-1=9823,
+  altre negative=0, valide=6561, min=1, max=189, secchi=188/151/164/2754/2073/1018/198/15
+```
+
+**Lettura in ordine di importanza (SS7.3)**:
+- `altre negative` = **0** -- SANO. Nessun valore `< -1` nella tabella: **nessuna prova di
+  scrittura spuria nei 32 KiB**. L'anomalia «qualcosa scrive nei 32 KiB» che il mandato chiedeva
+  di verificare **non si presenta**.
+- `celle` = **16384**, NON 11.008 come nella simulazione SS7.9. Non e' l'anomalia: e' spiegato
+  aritmeticamente. La riga di caricamento gia' diceva `tabella 32.0 KiB`; 32.768 byte / 2 byte
+  (int16) = 16.384 celle = **64 strati x 256**, non 43x256=11.008. Il PIANO copre 43 strati MoE
+  (0..42, confermato da `ultimo strato=42` nella riga di trasporto), ma la tabella e' allocata su
+  `runtime->cache.n_strati` = **il totale degli strati del modello** (64), non sul sottoinsieme
+  MoE coperto dal piano -- la simulazione Python di SS7.9 aveva assunto `n_strati=43` per il
+  proprio calcolo di riferimento, il modello reale ne ha 64. NOTE_IMPLEMENTAZIONE.md SS7.9 lo
+  prevedeva esplicitamente: "se la riga di load stampa numeri diversi da questi, il modello
+  caricato ha n_strati != 43 [...]".
+- `==-1` = **9823**. Non combacia col valore assoluto atteso (4.447, calcolato con l'assunzione
+  n_strati=43), ma **combacia ESATTAMENTE** col cancello di coerenza incrociata richiesto da
+  SS7.3 ("deve combaciare con celle - celle_scritte della riga di load"): `16384 - 6561 = 9823`.
+  Cancello **PASSATO** con l'aritmetica reale, la discrepanza col numero assoluto e' interamente
+  spiegata dal punto sopra (64 vs 43 strati), non da un difetto.
+- `valide` = **6561** -- combacia ESATTAMENTE con le celle scritte alla riga di caricamento.
+- `min`/`max` = **1 / 189** -- dentro `[1, ~200]` atteso, combaciano ESATTAMENTE coi valori del
+  piano v3 (SS7.9: min=1, max=197 sulle voci grezze; 189 e' il max delle celle AGGREGATE per MIN,
+  coerente).
+- `secchi` = **188/151/164/2754/2073/1018/198/15** contro l'atteso simulato
+  `188/151/175/2814/2102/954/162/15` -- stessa forma (crescente poi decrescente, primo e ultimo
+  secchio quasi identici: 188=188, 15=15), differenze piccole nei secchi centrali (binning), **non
+  degenere** (non tutto in un secchio).
+- `QUANDO` = **"dopo il primo forward"** -- e' il dump primario (fuori cattura), non il ripiego di
+  chiusura: la diagnostica e' scattata nel punto giusto.
+
+**Verdetto sul cancello DUMP_EP: SANO.** Nessuna prova di scrittura spuria; ogni numero e'
+spiegabile e internamente coerente; la sola differenza rispetto ai valori assoluti della
+simulazione SS7.9 e' dovuta a `n_strati` reale (64) diverso dall'assunzione della simulazione (43),
+non a un difetto del meccanismo.
+
+### 3. adaptive-K per istantanea -- ripartizione percentuale, SENZA VERDETTI (come richiesto)
+
+`calendario corsie -> posizione=0/25241, stato=0, divergenze=0, gruppi=0, domanda-allineata hit=0
+miss=0` -- presente su **tutte** le 8 istantanee della corsa, MAI cambia. **Confermato ATTESO E
+INNOCUO** per istruzione esplicita del coordinatore: le scadenze arrivano dallo scavalco host al
+load (SS7.2), non dal matcher del replay -- questa riga misura un meccanismo diverso (il replay
+del calendario corsie) che resta inerte per costruzione in questo regime, senza impatto su
+K_ADATTIVO.
+
+Serie completa delle 8 istantanee `adaptive-K ->` (leva=1, copia=1177 us, strato=3100 us costanti):
+
+| ist. | non residenti valutati | in tempo (classe 4) | rescue (deadline miss) | senza piano |
+|---:|---:|---:|---:|---:|
+| 1 | 29.202 | 25.740 (88,1%) | 87 (0,3%) | 3.375 (11,6%) |
+| 2 | 79.871 | 70.515 (88,3%) | 246 (0,3%) | 9.110 (11,4%) |
+| 3 | 134.947 | 119.200 (88,3%) | 418 (0,3%) | 15.329 (11,4%) |
+| 4 | 175.883 | 156.122 (88,8%) | 552 (0,3%) | 19.209 (10,9%) |
+| 5 | 236.815 | 209.240 (88,4%) | 738 (0,3%) | 26.837 (11,3%) |
+| 6 | 276.372 | 245.736 (88,9%) | 851 (0,3%) | 29.785 (10,8%) |
+| 7 | 337.498 | 299.143 (88,6%) | 1.040 (0,3%) | 37.315 (11,1%) |
+| 8 (ultima) | 354.890 | 315.210 (88,8%) | 1.108 (0,3%) | 38.572 (10,9%) |
+
+Ripartizione **stabile** per tutta la corsa: "in tempo (classe 4)" oscilla 88,1-88,9% (mai vicino
+al 100%), "rescue" costante 0,3%, "senza piano" 10,8-11,6%. Le tre percentuali sommano a 100,0%
+su ogni istantanea (verificato). Coerente con la previsione di SS7.5 di NOTE_IMPLEMENTAZIONE.md
+("quasi tutti i non residenti risulteranno in tempo... solo il primo secchio puo' produrre
+rescue"): "in tempo" e' effettivamente altissimo e "rescue" effettivamente minimo, ma **non e'
+saturato al 100%** come temuto -- resta un 11% stabile "senza piano" (le celle rimaste a -1, mai
+coperte dal piano) e uno 0,3% di rescue genuino. Nessun verdetto tratto, per istruzione esplicita
+del mandato.
+
+### 4. t/s vs 17,06 -- prezzo dello strumento
+
+```text
+richiesta | ruolo    | eval t/s | p1      | SHA output (prefix)      | content_chars
+r1        | cattura  | 15,28    | 0.82380 | 400BF7E913E30CE2...86C   | 2593
+r2        | verdetto | 15,41    | 0.82380 | 400BF7E913E30CE2...86C   | 2593
+r3        | verdetto | 15,41    | 0.82380 | 400BF7E913E30CE2...86C   | 2593
+r4        | verdetto | 15,41    | 0.82380 | 400BF7E913E30CE2...86C   | 2593
+
+valori ordinati (r2,r3,r4) : 15,41 / 15,41 / 15,41
+MEDIANA                    : 15,41          spread max-min : 0,00 %
+vs V0 (17,06)               : delta = -9,67 %   FUORI banda ±3%, NEGATIVO
+```
+
+**Confronto col prezzo vecchio (§8.8/ottavo turno)**:
+
+```text
+S1 (solo apparato: calendario+trace+piano v1+ASYNC=1, K_ADATTIVO=0)    : -3,58 % (16,45)
+SONDA v2 (turno 8: K_ADATTIVO=1, ASYNC=1, piano v2 degenere)            : -5,10 % (16,19)
+adk_sonda_v3 (oggi: K_ADATTIVO=1, ASYNC=0, piano v3 = distanza reale)   : -9,67 % (15,41)
+```
+
+Il prezzo di oggi e' **quasi il doppio** di quello di SONDA v2 (turno 8) e **circa 2,7 volte**
+quello del solo apparato (S1). La differenza principale di configurazione rispetto a SONDA v2 e'
+`CALENDARIO_ASYNC=0` (oggi, per mandato) contro `CALENDARIO_ASYNC=1` (allora): col trasporto
+SINCRONO invece che asincrono, anche il trasporto del *calendario corsie* stesso (non solo la
+lettura della tabella scadenze, che e' sull'host e indipendente da ASYNC per costruzione, SS7.4)
+diventa sincrono -- **ipotesi non isolata in questo turno con un braccio dedicato**, riportata
+come sospetto piu' probabile, non come conclusione. Nessun braccio di oggi separa il costo di
+`ASYNC=0` da quello di `K_ADATTIVO=1` col piano v3.
+
+`p1` = 0.82380, **FUORI dalla banda 2σ [0,8825; 0,9231]** citata dal mandato come "salute" --
+sotto il limite inferiore. Coerente con RUNBOOK SS4.5 ("p1 diversa dal riferimento = traiettoria
+diversa, non un confronto di prestazione valido"): la traiettoria di oggi (SHA
+`400BF7E913E30CE2...86C`, mai visto in nessun braccio precedente di questo turno o dell'ottavo)
+e' genuinamente diversa, non rumore di banco.
+
+### 5. Coerenza testo (SS4.10 RUNBOOK)
+
+Letto integralmente `adk_sonda_v3.r2.output.txt` (banco lungo, ma il file e' corto: 2.600 byte,
+73 righe -- letto per intero, non a campione). HTML5 valido (`<!DOCTYPE html>`, `<head>` con
+meta/title/CSS interno), tema cyberpunk NeuraForge pertinente al prompt (variabili colore neon,
+griglia di sfondo, header sticky con blur). Lingua sana=si (italiano corretto nella frase
+introduttiva), loop/ripetizioni patologiche=no, pertinenza=si, degradazione: **tronco a meta' di
+un valore CSS** (`padding: 15px 20`) per esaurimento del budget di token -- stesso pattern di
+troncamento gia' visto in tutte le corse di questo apparato (S1/T2/SONDA v2/MASSA_CORSIE
+dell'ottavo turno).
+
+**Osservazione riportata, non un difetto del testo presente**: il testo di oggi e'
+significativamente **piu' corto** (2.593 caratteri) delle corse dell'ottavo turno con lo stesso
+identico `MaxTokens=1200` (S1 3.743, T2 3.743, SONDA v2 3.504 caratteri) -- circa il 30% in meno.
+Il contenuto presente e' pulito e ben formato fino al punto di troncamento; nessuna ripetizione,
+nessun gibberish. Coerente con una traiettoria diversa (SHA/p1 mai visti prima in questo turno),
+non con una degradazione della qualita' del testo generato.
+
+### Telemetria (`adk_sonda_v3.hw.csv` 137 campioni/2s, 133 con util>30%; `.cpu.csv` 137 campioni)
+
+```text
+SM: min=1935 MHz, max=1950 MHz, mediana=1935 MHz (nessun throttle osservato)
+potenza mediana : 102,23 W
+VRAM            : picco 11.880 MiB, media 11.876 MiB
+CPU%            : media 60,2%
+```
+
+Regime di clock pieno (1935-1950 MHz), coerente con tutti gli altri bracci sani di questo e
+dell'ottavo turno (1927-1950 MHz).
+
+## Stato macchina ed esito finale
+
+```text
+postflight : 0 processi llama, VRAM 306 MiB (= 306 di preflight, nessuna perdita), RAM libera
+             88,5 GB (da 88,4/88,5 di preflight -- nessuna perdita)
+chiusura   : ctrl-c pulito
+quiete     : non applicata (nessun braccio successivo in questo turno)
+commit     : NESSUNO eseguito
+```
+
+**ESITO: DIAGNOSTICO -- STRUMENTO VALIDATO E FUNZIONANTE, NON UNA PROMOZIONE** (per esplicita
+natura del mandato: "e' uno STRUMENTO, non una promozione"). Riassunto:
+
+- **Meccanismo v0b/piano v3 verificato sano**: scatter al load esatto (6561/1/189/0/0, tutte le
+  cinque cifre attese da SS7.9 combaciano), DUMP_EP internamente coerente (zero prove di
+  scrittura spuria, `==-1` combacia con l'aritmetica reale una volta corretta l'assunzione
+  `n_strati`), ripartizione adaptive-K stabile e non satura (88% in tempo, non ~100%), avviso
+  ASYNC atteso presente. **Il difetto "tabella degenere" del turno 7 e' risolto e resta risolto
+  sotto questa configurazione.**
+- **Prezzo dello strumento**: -9,67% (15,41 vs 17,06), il piu' caro fra i tre punti dati
+  confrontabili di questo apparato (S1 -3,58%, SONDA v2 -5,10%, oggi -9,67%) -- sospetto
+  principale `CALENDARIO_ASYNC=0` (non isolato da un braccio dedicato).
+- **Traiettoria spostata**: p1 0.82380 fuori banda 2σ, SHA mai visto prima, testo ~30% piu' corto
+  a parita' di token -- coerente con "leva accesa cambia la traiettoria", non un'anomalia di
+  qualita' (testo comunque sano dove presente).
+- Nessuna leva parcheggiata, nessuna promozione: e' uno strumento diagnostico, il mandato non ne
+  ha chiesto il giudizio di merito.
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\adk_sonda_v3.*`
+(`.server.log` 121.499 byte, `.summary.json`, `.r1-r4.output.txt`, `.r1-r4.response.json`,
+`.hw.csv`, `.cpu.csv`); tentativo 1 preservato in `...\adk_sonda_v3.attempt1_failed_init.*`.

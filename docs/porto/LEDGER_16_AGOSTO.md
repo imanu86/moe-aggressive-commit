@@ -2590,3 +2590,463 @@ Nessun commit git eseguito. Nessuna build avviata. `D:\llama-overlap` non toccat
 Nessun invito a `codex`. Uniche modifiche a file diversi da questo ledger: il runner B
 (`run_porto_hot.ps1`, diff sopra e in `runner_specconf.patch`), autorizzato esplicitamente dal
 mandato per la Fase 1.
+
+---
+
+## Braccio L3 — mappa device-side del decode (Nsight Systems) — 17/8, notte
+
+Esecuzione del `PIANO_L3.md`. Tre archi previsti (L3-0 pilota, L3-A nodo, L3-B grafo) su B1200 al
+campione `n_max=3` (mediana 16,34 t/s, `nmax3fix_graphs_b1200_r{1,2,3}_20260816`, righe 1276-1372
+sopra in questo stesso file). L3-A **completato e analizzato per intero**. L3-B **non ottenuto a
+B1200** dopo tre tentativi (fallimento riproducibile, documentato sotto); ottenuta invece una sonda
+diagnostica a B160 che permette comunque la cross-verifica prevista dal piano.
+
+### Preflight
+
+```text
+data/ora inizio  = 2026-08-17 ~01:15
+processi llama   = 0
+porta 8000 (UI)  = nessun listener
+porte 8099/8100  = libere
+GPU a riposo     = 365 MiB usati, 11751 MiB liberi, SM 210 MHz, PCIe gen1x16 a riposo (normale)
+ram libera       = 88,3 GB
+uptime            = 2923,8 min
+disco C / D      = 50,9 / 120,4 GB liberi
+SHA llama-server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485
+SHA ggml-cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330
+SHA jprompt.txt  = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9 (identico, atteso)
+nsys.exe         = presente, versione 2024.5.1.113-245134619542v0
+shell            = NON amministratore (verificato, sola lettura: IsInRole Administrator = False)
+```
+
+### Verifica flag nsys 2024.5.1 — tre correzioni empiriche al piano
+
+Il piano imponeva di non fidarsi dei flag a memoria (§0.1). Verificato con `--help` e con prove
+dirette su un target innocuo prima di toccare il banco vero; **tre correzioni**, tutte riconciliate
+prima di qualunque cattura reale:
+
+1. **Il separatore `--` fra opzioni nsys e comando target rompe il parsing.** Con nsys 2024.5.1 su
+   questa macchina, `nsys profile <opzioni> -- <exe> <args>` da' `option is ambiguous and matches
+   'auto-report-name', 'cpuctxsw', ...` (un `--` isolato viene letto come nome di opzione lunga
+   vuoto). **Soluzione verificata**: nessun separatore, il primo argomento che non inizia per `-`
+   (il percorso dell'eseguibile) chiude comunque il parsing delle opzioni di nsys — verificato con
+   un target di prova che passa correttamente `-NoProfile`/`-Command` al processo figlio.
+2. **`--trace=wddm`, `--sample=process-tree`, `--cpuctxsw=process-tree` richiedono privilegi
+   amministrativi**, assenti in questa shell e non ottenibili (vietato elevare). Degradano con un
+   WARNING e si disattivano da soli (`"...requires administrative privileges, disabling"`), NON
+   abortiscono la cattura.
+3. **`--gpu-metrics-devices=0` invece FALLISCE IN MODO DURO** (`ERR_NVGPUCTRPERM`, exit 1, nessun
+   `.nsys-rep` scritto) — verificato sia con `--gpu-metrics-devices=help` sia con una cattura reale.
+   Va escluso del tutto, non solo "provato e tolto se fallisce": includerlo abortirebbe l'intera
+   cattura.
+
+**Conseguenza per il disegno**: nessuno dei tre archi ha potuto usare `wddm`, `cpuctxsw` o
+`gpu-metrics`. La correlazione con la lane CPU (§5.4 del piano, "la biforcazione principale
+dell'arm") e il cross-check hardware-indipendente del busy% **non sono disponibili in questo
+ambiente**, non per scelta di disegno ma per il vincolo di privilegi. Registrato come limite
+aperto, non come misura mancante per negligenza.
+
+### Copia del runner e patch
+
+Copiato `run_porto_hot.ps1` &rarr; `run_porto_hot_nsys.ps1` (stessa cartella `work\`), originale
+intatto. Modifiche, tutte nella sola copia:
+
+- `Start-Process` del server avvolta da `nsys profile` con i flag verificati sopra; parametri
+  aggiunti `-NsysGraphGranularity node|graph` (default `node`) e `-NsysOutDir` per servire sia
+  L3-0/L3-A sia L3-B dallo stesso file, senza duplicare la logica di setup ambiente/richiesta/shutdown
+  gia' testata — estensione minima oltre le due modifiche letteralmente prescritte dal piano
+  (avvolgimento + timeout), necessaria perche' L3-A e L3-B richiedono granularita' diverse e il
+  mandato autorizzava una sola copia.
+- `WaitForExit` in `Stop-PortoHotServer` alzato da 60.000 a 300.000 ms (la trappola citata dal
+  piano: sotto nsys il PID e' nsys, non il server, e il rapporto si scrive solo alla chiusura
+  pulita).
+- Aggiunta creazione di `$NsysOutDir` all'avvio.
+
+Diff completo: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\runner_nsys.patch`.
+
+**Scoperta operativa non anticipata dal piano**: sotto `Start-Process -WindowStyle Hidden` con
+redirect, l'output del processo FIGLIO (llama-server) non arriva ne' su stderr ne' su stdout del
+wrapper nsys (che restano quasi vuoti: solo i messaggi di stato propri di nsys). E' incorporato nel
+`.nsys-rep` stesso, recuperabile dopo l'export SQLite dalla tabella `ProcessStreams` (join su
+`StringIds` per `filenameId` e `contentId`, filtro sul nome file `%stderr%`). Tutte le verifiche di
+identita' sui bracci sotto sonda sono state fatte su questo log estratto, non su `.server.log`
+(che resta a 0 byte per design sotto nsys — non e' un'anomalia).
+
+### Comando campione (identico su tutti gli archi, verificato riga per riga dal ledger di stanotte)
+
+```powershell
+-MaxTokens <160|1200> -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 3 `
+-Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+```
+
+Nota su un'apparente contraddizione fra mandato e piano: il mandato chiedeva questi cinque zeri
+nell'`-Extra`; il piano (§3.2) diceva che le stesse famiglie di variabili "devono restare ASSENTI,
+non =0". Verificato nel codice sorgente (sola lettura, `D:\llama-overlap`) prima di lanciare
+qualunque cosa: tutti e cinque i punti di lettura (`cache-esperti.cu:2125-2126`, `llama-graph.cpp:1876-1878`,
+`ggml-cuda.cu:4497-4498`, `mmvq.cu:1808-1809`, `mmvq.cu:2748-2749`) usano il pattern
+`valore && *valore && atoi(valore) != 0` (o equivalente): per queste cinque variabili — a differenza
+di `GGML_CUDA_DISABLE_GRAPHS`, che e' un cancello a presenza — `=0` e "assente" sono
+**comportamentalmente identici**. Confermato anche dal ledger di stanotte: il comando esatto del
+campione `nmax3fix_graphs` (riga 1287 sopra) usa proprio questi cinque `=0` nell'`-Extra`. Nessuna
+contraddizione reale; il piano era prudente ma impreciso su questo punto specifico.
+
+Trovato anche, non menzionato dal piano, un secondo cancello di identita' essenziale: la riga del
+motore `common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.80`
+(distingue l'intenzione dal valore che il motore riceve davvero — vedi ledger di stanotte,
+`nmax3fix_graphs`). Verificato PASSATO su ogni arco sotto sonda.
+
+---
+
+### L3-0 — pilota B160 (node) — CANCELLO C3 PASSATO
+
+```text
+tag              = l3_0_pilota_b160_node_20260817
+comando          = run_porto_hot_nsys.ps1 -Tag ... -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot 0
+                    -SpecNmax 3 -NsysGraphGranularity node -Extra '<i cinque zeri + GGML_SCHED_PROFILO=0>'
+lancio staccato  = Win32_Process.Create, ReturnValue=0, 01:18:29 -> done 01:21:04 (2m35s)
+.nsys-rep        = D:\ds4_work\l3_nsys\l3_0_pilota_b160_node_20260817.nsys-rep (30.794.744 byte)
+riga cache-esperti = 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62),
+                    cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0,
+                    copie_min=1, cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0
+                    -- IDENTICA alla riga SOTA storica (runbook §12.1)
+build            = build 10093 (3014d3756) — SHA invariati
+profiler         = SPENTO (0 righe sched-profilo, manifesto GGML_SCHED_PROFILO=0(E) -- concordi)
+GGML_CUDA_DISABLE_GRAPHS = <spento>(D) -- grafi accesi, PASSATO
+motore n_max     = n_max=3, n_min=0, p_min=0.00, conf_min=0.80 -- PASSATO
+p1               = 0.80952 (85/105), mean len 2.16 (proprio di B160, non confrontabile col B1200)
+copie/buchi      = NON PRESENTE nel log (la riga finale "cache-esperti: domanda" non viene
+                    stampata su un B160 cosi' breve — registrato cosi', non dedotto)
+errori/divergenze = zero reali (i match del pattern ampio erano tutti falsi positivi su "info"/"-inf")
+finish_reason    = length, completion_tokens = 160
+```
+
+**Cancello C3**: PASSATO con ampio margine. 594.365 istanze kernel nella traccia (contro il
+fallimento noto dell'11/8 di "4 token invece di 500"), `mul_mat_vec_q_moe_maschera` 16.545 istanze
+(103/token), `cudaGraphLaunch_v10000` 5.286 lanci. **Scoperta**: i lanci di grafo sono piu' granulari
+di un lancio-per-ciclo-di-decode (coerente con "301 grafi, 35,1 split/grafo" gia' visto nel ledger di
+stanotte) — il rapporto "istanze moe_maschera / lanci grafo ~= 43" del piano non si verifica su
+questa base cosi' com'e' scritta; non e' un fallimento del cancello, e' una correzione al modello
+implicito nel piano. **Nomi kernel**: trovato sia `kern_copia` (6.840 istanze) sia `kern_fj_copia`
+(3.309 istanze) come kernel DISTINTI — il piano nominava solo `kern_fj_copia`; entrambi sono reali e
+vanno sommati per il trasporto totale.
+
+### Gemello B160 senza sonda (per il fattore di correzione)
+
+```text
+tag        = l3_0_pilota_twin_b160_20260817 (runner ORIGINALE, non la copia nsys)
+eval t/s   = 13,89   |   p1 = 0.80952   |   SHA output = 9863BCD6D16E38750C671A390C6F0C6DE6F902B8533CCF23126A777D930757BE
+```
+
+**SHA e p1 identici fra pilota sotto sonda e gemello**: la sonda node non altera la traiettoria di
+calcolo. **Overhead sonda node a B160**: (13,89 - 12,35) / 13,89 = **+11,1%**, stesso ordine di
+grandezza del +9,4% dell'11/8 (li' con speculazione spenta).
+
+---
+
+### L3-A — mappa kernel B1200 (node) — COMPLETATO, ANALISI PIENA
+
+```text
+tag              = l3a_b1200_node_20260817
+lancio           = foreground diretto (non staccato in background-poll: la chiamata WMI stessa
+                    e' rapida), 01:45:09 -> done 01:49:17 (4m8s)
+.nsys-rep        = D:\ds4_work\l3_nsys\l3a_b1200_node_20260817.nsys-rep (149.301.959 byte, 142,4 MiB
+                    -- piu' piccolo della stima del piano 0,8-2,0 GB: regime speculativo attuale
+                    genera meno eventi/token del riferimento 11/8)
+.sqlite          = D:\ds4_work\l3_nsys\l3a_b1200_node_20260817.sqlite (386.461.696 byte, export in 13,5s,
+                    5.752.143 eventi)
+```
+
+**Identita' (tutti PASSATI)**: riga cache-esperti identica; build/SHA invariati; profiler spento (0
+righe, manifesto concorde); `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)`; motore
+`n_max=3, n_min=0, p_min=0.00, conf_min=0.80`; **p1 = 0.90281 (771/854), mean len 2,80 — identico al
+campione di riferimento** `nmax3fix_graphs`; zero `GGML_ASSERT`/`CUDA error`/divergenze (tutte le
+righe `divergenze: taglia=0 ids=0 out=0 GRIGLIA-corta=0`); `finish_reason=length`,
+`completion_tokens=1200`; chiusura pulita (`ctrl-c`).
+
+**SHA output = `1EDA23452DE9292C817EAF47532724A409DD2FFE3B3EF9E165ED887BA4169089` — IDENTICO byte per
+byte al campione non sondato di stanotte** (`nmax3fix_graphs_b1200_r{1,2,3}_20260816`). La sonda
+node, anche a B1200, non altera in alcun modo la traiettoria di calcolo.
+
+```text
+eval t/s sotto sonda (log)  = 15,65   (76691,24 ms / 1200 token)
+eval t/s riferimento (log, nmax3fix_graphs mediana) = 16,34
+overhead sonda node a B1200 = (16,34-15,65)/16,34 = +4,22%   (molto piu' basso del +11,1% a B160:
+                               l'overhead per-lancio si ammortizza meglio su un run lungo)
+copie/buchi sotto sonda     = domanda 227069, colpi 160849 (70,8%), buchi 66220
+copie/buchi riferimento     = domanda 275477, colpi 195401 (70,9%), buchi 80076
+```
+
+Nota onesta sulla divergenza copie/buchi (colpi% quasi identico, 70,8 vs 70,9%, ma volume assoluto
+diverso -17,6%): con SHA/p1/mean-len bit-identici, la sequenza di esperti richiesti e' la stessa; la
+sonda altera la **temporizzazione fine** (il costo per-nodo di CUPTI cambia quando un rendezvous
+CPU/GPU arriva "in tempo" o "in ritardo"), quindi il conteggio hit/miss della cache — che e' una
+proprieta' di prestazione, non di correttezza — puo' divergere pur restando l'output finale
+identico. Non e' un errore, e' un artefatto noto della sonda sul bookkeeping della cache.
+
+**Controllo incrociato con `nsys stats --report cuda_gpu_kern_sum` (report ufficiale, sull'intera
+traccia)**: `kern_fj_copia` 18.532 istanze/21.770,26 ms sull'intera traccia contro le mie 18.403/
+21.654,16 ms nella sola finestra decode — la differenza (129 istanze, 116 ms) e' esattamente la
+piccola quota di prefill/avvio esclusa dalla finestra. Stesso riscontro per `kern_copia`,
+`kern_decidi`, `mul_mat_vec_q_moe_maschera` (variante per tipo). La metodologia SQL propria (finestra
+via `mul_mat_q`, aggregazione per `shortName`) e' validata contro lo strumento ufficiale.
+
+#### (a) GPU busy% e bolle — unione di intervalli (kernel+memcpy), non somma
+
+```text
+finestra decode  = 76.859,472 ms (76,859 s) -- contro 76.691,24 ms del log (scarto 0,22%, il confine
+                    mul_mat_q ha funzionato)
+GPU ATTIVA (unione, kernel+memcpy) = 50.037,404 ms = 65,10% della parete
+BOLLE totale                        = 26.822,069 ms = 34,90% della parete   (verificato: busy+bolle=parete esatto)
+
+Istogramma bolle (5 classi):
+  a) <10us      n=3.188.176  ms_tot=1.257,512   1,64% parete   us_medio=0,39   (overhead di lancio)
+  b) 10-100us   n=  240.263  ms_tot=5.574,418   7,25% parete   us_medio=23,20
+  c) 0.1-1ms    n=   11.587  ms_tot=4.990,910   6,49% parete   us_medio=430,73
+  d) 1-10ms     n=    7.300  ms_tot=13.653,435  17,76% parete  us_medio=1.870,33  <- LA PIU' GRANDE
+  e) >10ms      n=       58  ms_tot=1.345,794   1,75% parete   us_medio=23.203,34 (max singola 422,8 ms, vicino a inizio finestra)
+```
+
+La classe (d) 1-10ms da sola vale **17,76% dell'intera parete** (13,65 s su 76,86 s) — la firma che
+il piano associa ai "join della lane CPU" (10/8: "47,5% la CPU calcola mentre la GPU aspetta"). **Non
+posso confermare la correlazione con lo stato della CPU** (richiede `--cpuctxsw=process-tree`,
+indisponibile senza privilegi amministrativi — vedi sopra). Resta un buco aperto, non un verdetto:
+le bolle grandi ESISTONO e sono quantificate, ma la biforcazione "calcolo puro vs serializzazione
+CPU/GPU" (piano §5.4, "la biforcazione principale dell'arm") non e' risolvibile in questo ambiente.
+
+#### (c) Sovrapposizione trasporto/calcolo — LA DOMANDA CHE IL PIANO DICE "DECIDE DOVE VA IL PROSSIMO MESE"
+
+Classificato per NOME kernel (non per streamId, come prescritto dal piano §5.6), unione di intervalli
+per trasporto e per calcolo separatamente, poi sweep-line per l'intersezione esatta:
+
+```text
+trasporto (kern_fj_copia + kern_copia, unione) = 23.041,061 ms  (kern_fj_copia da solo: 21.654,159 ms)
+calcolo   (mul_mat_vec_q + moe_maschera + moe + mul_mat_f + mul_mat_vec_f, unione) = 22.192,836 ms
+sovrapposto (trasporto AND calcolo attivi insieme) = 3.983,066 ms
+
+sovrapposto / trasporto = 17,29%   (kern_fj_copia da solo: 18,39%; kern_copia da solo: 0,00%)
+```
+
+**VERDETTO: vicino a 0%, non vicino a 100%.** Il meccanismo FORK (`LLAMA_CACHE_ESPERTI_FORK=2`,
+stream dedicato) **non sta nascondendo la gran parte del trasporto dietro il calcolo** nel regime
+combinato attuale (n_max=3 + IBRIDO=1 + ACCEPTMOE + tutte le altre leve della SOTA insieme). Questo
+e' in forte contrasto con la misura isolata dell'11/8 ("sonda 99,4% coperto", vedi memoria
+`fork-join-giudicato-nel-regime-sbagliato`), fatta pero' in un regime diverso e piu' semplice. Circa
+**19,06 ms/ciclo di trasporto NON sovrapposto** (23.041-3.983=19.058 ms totali, 15,88 ms/token) sono
+sul tavolo PRIMA di toccare adaptive-K — e' il lato "vicino a 0" della biforcazione che il piano
+poneva, con la leva indicata: capienza/fork, non n_max. Controllo di robustezza: il risultato regge
+identico usando solo `kern_fj_copia` (18,39%) o la somma con `kern_copia` (17,29%) — non e' un
+artefatto della classificazione.
+
+#### (d) Quota del drafter DSpark
+
+Nessun `graphId` nella traccia a granularita' `node` (verificato: la colonna non esiste in
+`CUPTI_ACTIVITY_KIND_KERNEL` sotto questa modalita' — e' presente SOLO nella traccia a granularita'
+`graph`, in `CUPTI_ACTIVITY_KIND_GRAPH_TRACE`, scoperta fatta piu' sotto su L3-B). Usato il ripiego
+gia' previsto dal piano (§5.7): segmentazione per `cudaGraphLaunch_v10000` come confini, ogni
+segmento classificato bersaglio se contiene >=1 `mul_mat_vec_q_moe_maschera`, altrimenti bozza.
+
+```text
+lanci totali (finestra)      = 24.088
+segmenti BERSAGLIO            = 10.585  (kernel/segmento medio 219,41)
+segmenti BOZZA                 = 13.503  (kernel/segmento medio 70,03)
+DRAFTER (somma ms, tutti i kernel dei segmenti bozza) = 7.668,760 ms = 9,98% della parete = 6,39 ms/token
+```
+
+Metodo approssimato (confini temporali, non identita' di grafo vera) — la quota della bozza e' quindi
+una stima, non una misura esatta come per L3-B (dove il vero `graphId` era disponibile, vedi sotto).
+
+#### (e) Tempo per nodo e replay dei grafi
+
+```text
+segmenti bersaglio: 10.585, somma_ms=45.593,140 (RAW, con overlap interno) -> ~4,31 ms/replay medio
+kernel/segmento bersaglio: media 219,41  ->  ~19,6 us/nodo
+```
+
+Ordine di grandezza atteso dal piano ("se e' dell'ordine dei microsecondi con migliaia di nodi, il
+costo per nodo e' una voce di budget in se'") — confermato: 19,6 us/nodo su ~2,3 milioni di nodi
+bersaglio complessivi e' un costo strutturale, non rumore.
+
+---
+
+### L3-B — bolle e lane CPU (graph) — B1200 NON OTTENUTO dopo tre tentativi; sonda diagnostica B160 riuscita
+
+**Tre tentativi a B1200, tutti falliti con la stessa firma**, nessuno per un errore GGML/CUDA o un
+crash del server:
+
+```text
+tentativo 1 (l3b_b1200_graph_20260817)       : lancio combinato QUIETE+WMI in background.
+                                                Morto dopo ~4m36s. server.out = solo "Collecting data...".
+                                                NESSUN .nsys-rep scritto (nsys non ha fatto in tempo a
+                                                finalizzare). console.log = solo "shutdown=ctrl-c"
+                                                (l'eccezione nello script ha saltato la scrittura del
+                                                done-marker).
+tentativo 2 (l3b_b1200_graph_retry_20260817) : stesso pattern di lancio. Morto dopo ~2m36s. Stream
+                                                stderr estratto dal .nsys-rep (12,45 MiB, questa volta
+                                                scritto correttamente) mostra il decode in corso
+                                                NORMALE (n_decoded 148->172, tg~9,5-9,9 t/s) subito
+                                                seguito dal dump di chiusura standard di un vero
+                                                Ctrl+C -- non un crash, un'interruzione esterna.
+tentativo 3 (l3b_final_b1200_graph_20260817) : lancio WMI come chiamata FOREGROUND separata (pattern
+                                                identico a quello che ha fatto funzionare L3-A), QUIETE
+                                                prima come task background separato. Morto dopo ~11m19s
+                                                (molto piu' lungo dei primi due). console.log VUOTO
+                                                (0 byte, nemmeno "shutdown=ctrl-c" -- terminazione
+                                                ancora piu' brusca, dall'esterno del processo, non
+                                                un'eccezione dentro lo script). Nessun .nsys-rep.
+```
+
+**Diagnosi**: fenomenologia riproducibile tre volte, sempre B1200 (lungo), mai legata a
+`--cuda-graph-trace=graph` in se' (la sonda diagnostica a B160, sotto, con la STESSA granularita',
+completa senza problemi). Nessun `GGML_ASSERT`/`CUDA error`, stato macchina pulito prima e dopo ogni
+tentativo (RAM 88-90 GB, VRAM <400 MiB, 0 processi). Il pattern (morte dopo tempi variabili fra 2,6 e
+11,3 minuti, nessun errore applicativo, terminazione dall'esterno del processo) e' compatibile con un
+limite dell'ambiente sandboxato per processi staccati di lunga durata, non con un difetto del disegno
+sperimentale o della configurazione. **Non ho insistito oltre un terzo tentativo con variazione
+metodologica reale**, per non violare la regola "non improvvisare, non provare varianti a
+oltranza" del runbook: registro questo come esito, non lo nascondo.
+
+**Sonda diagnostica L3-B a B160 (`l3b_diag_b160_20260817`) — RIUSCITA**, stesso identico ambiente,
+lancio combinato QUIETE+WMI in background (come i tentativi falliti, ma su una durata breve, ~3m16s
+totali) — a conferma che la CAUSA e' la durata, non il pattern di lancio.
+
+```text
+tag              = l3b_diag_b160_20260817
+completion_tokens = 160, finish_reason=length, chiusura pulita
+riga cache-esperti = identica (473 slot ... sfratto_par=1 ...)
+profiler          = SPENTO, GGML_CUDA_DISABLE_GRAPHS=<spento>(D), motore n_max=3 -- tutti PASSATI
+p1                = 0.75229 (82/109), mean len 2,08
+errori            = zero
+eval t/s sotto sonda graph = 12,29   (13.021,19 ms / 160 token)
+```
+
+**Correzione metodologica importante, scoperta durante l'analisi**: sotto granularita' `graph`, nsys
+NON registra i nodi dentro i grafi in `CUPTI_ACTIVITY_KIND_KERNEL` (per design: "CUDA graphs will be
+traced as a whole and node activities will not be collected"). La mia prima lettura (solo KERNEL+
+MEMCPY) dava GPU attiva 11,32% — un numero assurdo, sbagliato per costruzione, non un dato reale.
+La tabella giusta e' **`CUPTI_ACTIVITY_KIND_GRAPH_TRACE`** (un evento per l'INTERO replay del grafo,
+con `graphId`/`graphExecId` propri — assenti invece nella traccia a granularita' `node`). Rifatto il
+calcolo unendo GRAPH_TRACE + kernel-non-catturati + memcpy:
+
+```text
+GPU ATTIVA (unione, corretta) = 7.575,434 ms = 56,69% della parete (13.363,442 ms)
+BOLLE                          = 5.788,008 ms = 43,31%   (verificato: busy+bolle=parete esatto)
+
+confronto diretto con L3-0 pilota (node, stessa scala B160):
+  GPU attiva: 56,69% (graph)  vs  56,41% (node)   -- differenza 0,28 punti, praticamente identiche
+  bolle:      43,31% (graph)  vs  43,59% (node)
+```
+
+**Questo E' la cross-verifica che il piano chiedeva (§2, "la (a) si misura due volte... i due numeri
+si confrontano")**, anche se solo alla scala B160 invece di B1200: le due granularita' concordano
+strettamente. Dato che la distorsione da sonda node e' minima a B160, e che l'overhead di sonda node
+scende (non sale) passando da B160 a B1200 (+11,1% -> +4,22%, vedi sopra), c'e' ragionevole fiducia
+che i numeri di L3-A a B1200 (65,10% busy, 34,90% bolle) non siano pesantemente distorti — ma questo
+resta un'inferenza, non una misura diretta a B1200 con `graph`.
+
+Non rifatta la scomposizione bersaglio/bozza via `graphId` vero per L3-B (il campo esiste ma la
+struttura e' > 100 `graphId` distinti con conteggi piccoli — coerente con "301 grafi, 35,1
+split/grafo" del ledger di stanotte, non un semplice 2-grafi bersaglio/bozza) — priorita' data a
+chiudere il deliverable principale nel tempo residuo del banco.
+
+---
+
+## DELIVERABLE — tabella voce -> ms/token -> % del token
+
+Base: **L3-A** (B1200, node, unico arco completo alla scala piena), token = 1200 (verita' di terra
+da `completion_tokens` nel summary, non stimato da cicli). Finestra 76.859,472 ms. t/s sotto sonda
+node = 15,65; t/s stesso banco senza sonda (campione di riferimento di stanotte) = 16,34; overhead
+sonda = +4,22%.
+
+```text
+voce                                        ms/token   % del token   istanze
+--------------------------------------------------------------------------------
+TRASPORTO cache (kern_fj_copia+kern_copia)    18,10        28,27%      55.215
+  di cui sovrapposto al calcolo                3,32     (5,18% parete; 18,3% di questa riga --
+                                                 la sezione (c) sotto usa la base target+bozza
+                                                 insieme, 17,29%: stessa conclusione, basi diverse)
+logica cache/fork (kern_decidi, kern_fj_*)     1,16         1,81%     110.424
+MMVQ MoE mascherate (+legacy)                  7,80        12,19%      92.021
+MMVQ/MM densi (vec_q, mul_mat_f, vec_f)        6,82        10,65%     171.566
+MMQ prefill (fuori finestra)                   0,00         0,00%           0
+attenzione (flash_attn*, soft_max)             0,77         1,20%      45.304
+AcceptMoE / routing / partiziona / argsort     0,46         0,72%      62.412
+DSV4 HC fuso (post/comb)                       0,17         0,26%      53.716
+norm/elementwise/rope/copy/concat/reduce       2,71         4,23%   1.553.461
+quantizzazione attivazioni (quantize_q8_1)     0,34         0,53%     193.314
+copie CUDA (fallback scheduler, cudaMemcpy)    0,67         1,04%     294.462
+DRAFTER DSpark (tutti i suoi nodi, stima)      6,39         9,98%     945.561
+--------------------------------------------------------------------------------
+GPU ATTIVA (unione, no overlap)               41,70        65,10%
+BOLLE totali                                  22,35        34,90%
+  a) <10us   (overhead di lancio)              1,05         1,64%   3.188.176
+  b) 10-100us                                  4,65         7,25%     240.263
+  c) 0,1-1ms                                   4,16         6,49%      11.587
+  d) 1-10ms  (probabile firma "join lane CPU") 11,38        17,76%       7.300
+  e) >10ms                                     1,12         1,75%          58
+  di cui con lane CPU in Running                 NON DISPONIBILE (richiede privilegi
+                                                  amministrativi, non ottenibili in questo ambiente)
+--------------------------------------------------------------------------------
+TOTALE = parete/token                         64,05        100%
+```
+
+**Nota sulla chiusura**: le voci per-tipo (trasporto...drafter) sommano a 54.467,15 ms (70,87% della
+parete) — PIU' del 65,10% di GPU-attiva-unione, perche' includono overlap interno fra kernel
+concorrenti (es. i 3.983 ms di trasporto/calcolo sovrapposti vengono contati in entrambe le righe).
+L'identita' che chiude esattamente sulla parete e' **GPU ATTIVA (unione) + BOLLE = parete**
+(50.037,404 + 26.822,069 = 76.859,473 ms, verificato). Le voci per-tipo restano il modo giusto di
+vedere "quanto SM-tempo consuma ciascun meccanismo" (la leva che ciascuna riga porta con se', come
+chiede il piano), ma non sono sommabili linearmente contro le bolle senza contare due volte
+l'overlap. Riportato cosi' invece di arrotondare per far quadrare un totale fittizio (vietato
+esplicitamente dal piano, §6: "non si arrotonda").
+
+**La leva che ciascuna riga porta con se'** (piano §6): TRASPORTO -> capienza/fork (vedi (c) sopra,
+la scoperta piu' importante del banco: overlap 17-18%, non ~100%, quindi la leva del fork e' in
+larga parte ancora da incassare in QUESTO regime combinato, prima ancora di guardare adaptive-K);
+MMVQ MoE mascherate -> adaptive-K/oracolo/gate+up fuso (12,19% del token, il bersaglio dichiarato
+dal mandato); bolle classe (d) -> finestra di join, ipotesi non verificabile qui per mancanza di
+`cpuctxsw`; DRAFTER -> n_max/conf (gia' esplorati ieri sera, vedi banchi L0 sopra in questo ledger).
+
+### File prodotti (tutti assoluti)
+
+```text
+D:\ds4_work\l3_nsys\l3_0_pilota_b160_node_20260817.nsys-rep   (30.794.744 byte)
+D:\ds4_work\l3_nsys\l3_0_pilota_b160_node_20260817.sqlite
+D:\ds4_work\l3_nsys\l3_0_pilota_b160_node_20260817.extracted_stderr.log
+D:\ds4_work\l3_nsys\l3a_b1200_node_20260817.nsys-rep           (149.301.959 byte)
+D:\ds4_work\l3_nsys\l3a_b1200_node_20260817.sqlite              (386.461.696 byte)
+D:\ds4_work\l3_nsys\l3a_b1200_node_20260817.extracted_stderr.log
+D:\ds4_work\l3_nsys\l3b_b1200_graph_retry_20260817.nsys-rep     (13.055.686 byte, cattura PARZIALE,
+                                                                  non usata per il deliverable)
+D:\ds4_work\l3_nsys\l3b_diag_b160_20260817.nsys-rep             (12.045.822 byte)
+D:\ds4_work\l3_nsys\l3b_diag_b160_20260817.sqlite
+D:\ds4_work\l3_nsys\l3b_diag_b160_20260817.extracted_stderr.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot_nsys.ps1  (copia autorizzata)
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\runner_nsys.patch  (diff)
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\l3_0_pilota_b160_node_20260817.* (summary/log/output)
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\l3_0_pilota_twin_b160_20260817.* (gemello senza sonda)
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\l3a_b1200_node_20260817.*
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\l3b_diag_b160_20260817.*
+```
+
+### Postflight e stato macchina a fine banco
+
+```text
+POSTFLIGHT FINALE (03:00): ram_libera=90,1 GB | vram_usata=372 MiB, vram_libera=11744 MiB |
+                            clock SM=210 MHz | potenza=12,72 W | processi (llama-server+nsys) = 0
+```
+
+Nessun commit git eseguito. Nessuna build avviata. `D:\llama-overlap` non toccato in scrittura
+(solo letto per verificare il comportamento delle variabili d'ambiente, §"comando campione" sopra).
+Nessun invito a `codex`. File toccati oltre a questo ledger: la copia del runner
+(`run_porto_hot_nsys.ps1`, autorizzata esplicitamente dal mandato) e la cartella `D:\ds4_work\l3_nsys\`
+(autorizzata). QUIETE di 300 s rispettata fra ogni arco con server attivo. Tre tentativi B1200 di
+L3-B, tutti con preflight/QUIETE regolari e postflight pulito verificato dopo ciascuno.
+
+**Ricorda per la prossima sessione**: (1) la sovrapposizione trasporto/calcolo del fork e' al 17-18%
+nel regime combinato attuale, non al ~99% misurato in isolamento l'11/8 — merita un banco dedicato
+prima di toccare adaptive-K; (2) L3-B a B1200 non ottenuto per un limite dell'ambiente (processi
+staccati di lunga durata terminati dall'esterno dopo 2,6-11,3 minuti, non riproducibile a B160) — se
+serve la cattura B1200 a granularita' `graph`, va tentata da una sessione/ambiente diverso o con
+`nsys start`/`nsys stop` su sessione con nome invece di `profile` con `--stop-on-exit`; (3) i
+`cpuctxsw`/`gpu-metrics`/`wddm` restano indisponibili senza privilegi amministrativi, che questo
+esecutore non e' autorizzato a richiedere o attivare.

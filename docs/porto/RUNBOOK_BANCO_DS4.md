@@ -1250,46 +1250,103 @@ sotto.
 
 Aggiungere una riga per ogni nuova leva parcheggiata, stesso schema: leva, risultato B, note.
 
-### 8.9 Protocollo repliche-in-processo — REGIME CALDO, STANDARD UFFICIALE (deciso dall'utente, 17/8, senza periodo di transizione)
+### 8.9 Protocollo repliche-in-processo — REGIME CALDO, STANDARD UFFICIALE = CON RESTORE (deciso dall'utente, 17/8; aggiornato 17/8 pomeriggio dal banco warm_anchor/warm_anchor_restore)
 
 **Decisione dell'utente del 17/8, applicata subito, senza periodo di transizione.** Sostituisce
 sia la prescrizione originale (un processo, `-Repetitions 3`, tutte le repliche nel verdetto)
 sia la sospensione che l'aveva seguita.
 
-1. **Un braccio = UN processo** (`-Repetitions 4`, non più 3). La **richiesta 1 è warm-up**:
-   si registra come dato nel verbale, ma **resta fuori dal verdetto**. Il **verdetto è la
-   mediana delle richieste 2-4** (le tre repliche "calde", con la cache esperti già assestata
-   dopo la richiesta 1).
-2. **La genealogia calda è la nuova linea di riferimenti.** I numeri "freddi" storici (un
-   processo per replica) **restano a verbale** — non si cancellano, non si buttano — ma **non
-   si confrontano attraverso la genealogia**: un numero caldo si confronta solo con un altro
-   numero caldo. §8.4/§8.5 restano validi sul *come* leggere un riferimento (dal log, non da
-   un documento; quando rimisurarlo), non decidono *quale* genealogia usare.
-3. **B-first invariato** (§8.7): la leva accesa (B) va sempre prima; il braccio di controllo
+**Aggiornamento 17/8 pomeriggio** (`LEDGER_17_AGOSTO.md`, sezioni `warm_anchor` /
+`warm_anchor_restore`): **il protocollo caldo ufficiale è CON RESTORE** — `-PortoHotSnapshot 1`
++ `PORTO_HOT_MASK=15` (tutti e quattro i componenti: target=1, draft=2, stato spec=4, cache
+esperti=8), cattura al confine naturale alla r1 (prima chiamata ON in un processo senza
+snapshot precedente: cattura da sola, per costruzione del meccanismo — non serve una sequenza
+ON/OFF esplicita), **restore prima di ogni richiesta successiva**. Verificato: repliche
+**BIT-IDENTICHE** (`warm_anchor_restore_b1200_20260817`: 4 richieste, stesso SHA
+`1EDA23452D...9089`, stesso p1 .90281, mediana verdetto r2-r4 = **16,86**, spread 0,30%). Il
+free-run (senza restore) **non è più la lettura di default** del regime caldo — resta un
+regime di studio separato, punto 3 sotto.
+
+1. **Un braccio = UN processo** (`-Repetitions 4`, non più 3). La **richiesta 1** è **warm-up**
+   in regime free-run o **cattura** in regime con-restore (sopra): si registra come dato nel
+   verbale, ma **resta fuori dal verdetto**. Il **verdetto è la mediana delle richieste 2-4**
+   — con restore, tre repliche bit-identiche; in free-run, tre repliche "calde" con la cache
+   esperti già assestata dopo la richiesta 1, ma **non** bit-identiche fra loro (punto 3).
+2. **La genealogia calda CON RESTORE è la linea di riferimenti ufficiale.** I numeri "freddi"
+   storici (un processo per replica) e i numeri "caldo-free-run" (regime di studio, punto 3)
+   **restano a verbale** — non si cancellano, non si buttano — ma **non si confrontano fra
+   loro**: un numero si confronta solo con un altro numero della STESSA genealogia. §8.4/§8.5
+   restano validi sul *come* leggere un riferimento (dal log, non da un documento; quando
+   rimisurarlo), non decidono *quale* genealogia usare.
+
+   **TRE riferimenti non intercambiabili, banco 17/8** (`LEDGER_17_AGOSTO.md`):
+
+   ```text
+   freddo (un processo per replica, fb8)      = 16,70
+   caldo CON RESTORE (protocollo ufficiale)   = 16,86   (+0,96% sul freddo, sostanzialmente
+                                                          lo stesso numero)
+   caldo FREE-RUN (regime di studio, punto 3) = 14,77   (-14,15% sul caldo-con-restore)
+   ```
+
+3. **Il free-run (`-PortoHotSnapshot 0`) resta un REGIME DI STUDIO separato** — non il
+   protocollo ufficiale (sopra), ma non si scarta: è la produzione reale (nessun sistema di
+   produzione fa restore-a-ogni-richiesta di serie), quindi il suo numero resta legittimo e
+   rilevante come stima di produzione. Va registrato con questo limite: **non è
+   riproducibile**. Misurato (`warm_anchor_b1200_20260817`): r1 (warm-up, = freddo per
+   costruzione, SHA identico) → r2/r3/r4 con **tre SHA diversi fra loro e da r1**, p1 in
+   caduta .90281 (r1) → .81078 (r2) → .81862 (r3) → .85649 (r4), mediana verdetto (r2-r4) =
+   **14,77**, spread max-min 9,06% — **sopra la soglia 5% di banco (§7.4)**: un banco
+   strutturalmente più rumoroso del freddo, non un errore di misura.
+   - **Fronte aperto, da investigare (non chiuso in questo turno)**: *p1 degrada fra
+     richieste consecutive in regime free-run — è uno stato del drafter/della pipeline
+     speculativa che si trascina, non rumore.* Isolato per esclusione: con restore attivo p1
+     resta fisso a .90281 su tutte e quattro le richieste; senza restore cala di quasi 10
+     punti dopo la prima richiesta e non torna mai al valore iniziale. **Non è la cache
+     esperti**: il suo hit-rate resta piatto 68,9-71,4% in ENTRAMBI i regimi (free-run e
+     restore) — due meccanismi indipendenti, la cache-esperti decide quali pesi sono
+     residenti in VRAM, la bozza decide quanti token proporre/accettare. Nessuna ipotesi sul
+     meccanismo esatto è stata verificata: resta un'indagine aperta per il prossimo turno.
+4. **B-first invariato** (§8.7): la leva accesa (B) va sempre prima; il braccio di controllo
    A in-sessione si fa **solo se B supera +3%** (§8.3/§8.7 punti 2-3), altrimenti PARCHEGGIO
    (§8.8).
-4. **Cancelli in valuta non-parity per il regime caldo** — non tutti i cancelli di §8 si
+5. **Cancelli in valuta non-parity per il regime caldo** — non tutti i cancelli di §8 si
    applicano nella stessa forma di prima:
-   - `p1` **riportato** per ogni richiesta, non un cancello di identità stretta fra richieste.
+   - `p1` **riportato** per ogni richiesta. In regime **free-run** non è un cancello di
+     identità stretta fra richieste (il calo è atteso, punto 3). In regime **con restore**,
+     invece, p1 identico su tutte le richieste **è un cancello**: una divergenza segnala che
+     il restore non ha funzionato, e va fermata e riportata come anomalia.
    - **La salute dura resta obbligatoria e non negoziabile**: zero NaN, zero `GGML_ASSERT`,
      zero `CUDA error` (§4.8/§8.6 non cambiano — questi restano cancelli assoluti, caldo o
      freddo).
    - **Contatori come serie, non un singolo numero**: buchi/copie **per richiesta**
      (r1, r2, r3, r4). **Il calo da r1 a r2+ è atteso**: è la residenza della cache esperti al
      lavoro (punto 1), non un'anomalia da segnalare.
-   - **SHA registrato come dato, non come cancello di identità.** Nel regime caldo la
-     residenza cambia la partizione CPU/GPU fra una richiesta e l'altra, quindi una
-     divergenza di SHA fra richieste della stessa genealogia è **legittima** — coerente con
-     §8.6 e con la nota storica del progetto che il cancello SHA vale solo a speculazione
-     spenta e K=0 (residenza fissa). Si registra comunque, per la diagnosi, ma non decide da
-     solo un verdetto.
-5. **Telemetria standard sempre** (§6.8): `sample_hw.ps1` a 0,5 Hz si applica anche qui,
+   - **SHA registrato come dato in free-run, come cancello di identità con restore.** Nel
+     regime free-run la residenza cambia la partizione CPU/GPU fra una richiesta e l'altra,
+     quindi una divergenza di SHA fra richieste è **legittima** — coerente con §8.6 e con la
+     nota storica del progetto che il cancello SHA vale solo a speculazione spenta e K=0
+     (residenza fissa). Nel regime CON RESTORE, invece, il SHA identico su tutte le richieste
+     **è verificato e atteso** (sopra): una divergenza lì è un'anomalia da fermare, non un
+     dato neutro.
+6. **Telemetria standard sempre** (§6.8): `sample_hw.ps1` a 0,5 Hz si applica anche qui,
    invariato.
-6. **Banco LUNGO (prefill/contesto esteso) — verifica in corso.** Sul banco lungo le
+7. **Banco LUNGO (prefill/contesto esteso) — verifica in corso.** Sul banco lungo le
    richieste consecutive nello stesso processo possono abilitare prompt-cache/KV-reuse oltre
    alla sola residenza della cache esperti (punto 1) — un effetto ulteriore, non ancora
    verificato. Questa sezione va aggiornata al suo esito prima di applicare il regime caldo
    senza riserve ai banchi lunghi.
+8. **VIETATO: `LLAMA_OVERLAP_K=0` con grafi CUDA attivi.** Crasha in cattura
+   (`warm_k0_b1200_20260817`): `CUDA error: operation failed due to a previous error during
+   capture`, in `ggml_cuda_kernel_launch` a `ggml-cuda/common.cuh:1681` — op capture-illegale
+   sul cammino tutto-GPU, durante la primissima cattura del grafo, prima di generare un
+   token. Sopravvive oggi solo grazie agli split CPU di K=2 (default): spezzano il grafo in
+   pezzi più piccoli che non includono mai quell'operazione nello stesso segmento catturato.
+   Diagnosi di conferma (`k0_nograph_diag_b1200_20260817`, K=0 con
+   `GGML_CUDA_DISABLE_GRAPHS=1` **esplicito, usato come strumento diagnostico** — non la
+   trappola di §10.4 punto 14, che riguarda lasciarla impostata per errore in un banco dove
+   si vogliono i grafi accesi): **verificato che senza grafi gira**, stesso identico calcolo,
+   completo, senza errori (0 `CUDA error`, 0 `GGML_ASSERT`; t/s non confrontabile, i grafi
+   spenti cambiano il cammino di calcolo). **Vietato finché non c'è il fix.**
 
 ---
 

@@ -2956,3 +2956,353 @@ natura del mandato: "e' uno STRUMENTO, non una promozione"). Riassunto:
 percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\adk_sonda_v3.*`
 (`.server.log` 121.499 byte, `.summary.json`, `.r1-r4.output.txt`, `.r1-r4.response.json`,
 `.hw.csv`, `.cpu.csv`); tentativo 1 preservato in `...\adk_sonda_v3.attempt1_failed_init.*`.
+
+---
+
+# DECIMO TURNO — braccio 0 di TRASPORTO_ONLINE_PIANO.md: 0b GUASTO dopo 2 archi (cancello
+# bit-esatto fallito), 0a SI GIRA nettamente sotto blocchi=8, 0c RINVIATA (buco di formato)
+
+Esecutore: decimo turno, contesto fresco. Mandato: eseguire la scala di falsificazione braccio 0
+di `D:\ds4_work\design\TRASPORTO_ONLINE_PIANO.md` (sonde 0a/0b/0c, zero righe di codice), ordine
+di priorita' del mandato: **0b (la sonda che uccide) -> 0a (griglia fork in giu') -> 0c (best
+effort, offline)**. Binario `D:\llama-subtract` via `-ServerPath`. Config campione: K=2 di
+riferimento (V0), nmax3, leve adk tutte spente, `GGML_SCHED_PROFILO=0`, grafi accesi (variabile
+assente), `sample_hw.ps1` 0,5 Hz, chiusura pulita, incatenamento diretto senza quiete a tempo,
+NESSUN commit.
+
+## Preflight
+
+```text
+data/ora        = 2026-08-17, sessione pomeridiana (prima corsa ~11:4x)
+uptime_min      = 3565,2 (nessun riavvio dalla sessione precedente)
+processi llama  = 0
+porta 8000 (UI) = nessun listener (non toccata)
+porta 8099/8100 = libere
+nvidia-smi      = NVIDIA GeForce RTX 3060, sm=210MHz, mem=405MHz, power=12.60W, used=306MiB,
+                  free=11810MiB, pcie_gen=1 (a riposo), pcie_width=16, throttle=0x1
+ram_libera_gb   = 88.2 GB
+disco_c_gb      = 50.5 GB liberi     disco_d_gb = 119.7 GB liberi
+jprompt         = 252 byte, SHA256 C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9
+                  -- PASSATO
+
+binari, D:\llama-subtract\build\bin\ (via -ServerPath, NON D:\llama-overlap):
+  llama-server.exe       SHA256 8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901B22F43465B7FB1CD
+                         -- combacia col mandato e col nono turno
+  ggml-cuda.dll          SHA256 251612C057EA23B78D2B1F4624C849C720AF2D664CC1DC69A331BBE92CEF877F
+                         -- combacia col mandato ("251612C0...") e col nono turno
+  llama-server-impl.dll  SHA256 91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29
+                         -- combacia col mandato ("91FF17F0...") e col nono turno
+```
+
+Tutti i cancelli 1.1-1.8 PASSATI. Riferimento V0 = **17,06** (`v0_k2_subtract`, settima ripresa,
+letto dal log su disco, non dal documento).
+
+## Verifica lettori PRIMA di lanciare
+
+```text
+cache-esperti.cu:544-547    ggml_cuda_cache_esperti_slot_richiesti: getenv("LLAMA_CACHE_ESPERTI_SLOT")
+                             (bozza=false) -- atoi, nessun fallback: e' la variabile della
+                             capienza usata da 0b.
+cache-esperti.cu:2752-2764  la riga di log "%s: %d slot da %.2f MiB..." stampa n_slot preso
+                             direttamente dal valore configurato -- log-linea confermata per 0b.
+cache-esperti.cuh:106-121   struct cache_esperti_traccia_record (formato del file .cestrc, 64
+                             byte, static_assert a cache-esperti.cu:1829): campi ordine/strato/
+                             riga/n_tok/k_cpu/n_esperti/ids[6]/stati[6]/fork[6]/pesi[6]. NESSUN
+                             campo per lo stato nascosto h[L] -- decisivo per 0c (sotto).
+```
+
+---
+
+## Sonda 0b — curva di capienza a K=0 — **GUASTO dopo 2 archi su 3** (cancello bit-esatto fallito)
+
+Protocollo: mono-richiesta B1200, free-run (`-PortoHotSnapshot $false -Repetitions 1`),
+`LLAMA_OVERLAP_K=0`, stesso template del braccio V1 della settima ripresa (fix cattura K=0 gia'
+confermato quel giorno). Unica leva variata fra i due archi: `LLAMA_CACHE_ESPERTI_SLOT`.
+
+```text
+comando (identico su entrambi gli archi salvo -Tag e SLOT) =
+  & '...\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 1
+    -PortoHotSnapshot $false -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+    -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+    LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+    LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+    LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;LLAMA_OVERLAP_K=0;LLAMA_CACHE_ESPERTI_SLOT=<N>'
+```
+
+### Arco B1 — `sonda0b_slot473_k0_b1200_20260817` (SLOT=473, ancora/default)
+
+```text
+eval t/s      = 13,29     wall = 93.327,8 ms
+p1            = 0.78319 (643 accepted / 821 generated), mean len 2,16
+SHA output    = F501E5C5785EF309B34870AA0AAC54161FF90700011F37825F1EBE5172FE194A
+content_chars = 1794     finish_reason = length
+copie/buchi   = domanda 357588 (colpi 197595 = 55,3%, buchi 159993, miss 44,7%, in ritardo 0)
+fork cronometro (finale) = lanci=2197, campioni=34, saltati in cattura=1591, durata media copia=2.012 ms
+```
+
+Righe testimone: `cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (... sfratto_par=1, ...)`
+identica al riferimento; `LLAMA_OVERLAP_K=0(E)`; `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)`;
+`LLAMA_CACHE_ESPERTI_SLOT=473(E)`; `sched-profilo`=0 righe; `GGML_CUDA_GRAPH_STATS=0(D)`; zero
+`GGML_ASSERT`/`CUDA error`/divergenze (tutte `taglia=0 ids=0 out=0 GRIGLIA-corta=0`); build 10093
+(3014d3756); chiusura `ctrl-c`. **Riproduce quasi esattamente `v1_k0_subtract` della settima
+ripresa** (13,30 / .78319 643/821 / stesso SHA) — buona cross-validazione del protocollo.
+Telemetria (135 campioni/2s, 41 busy>30%): SM mediana 1935 MHz, potenza mediana 108,64 W, VRAM
+picco 11.808 MiB, CPU% media 19,1%.
+
+**Tutti i cancelli d'identita' PASSATI.**
+
+### Arco B2 — `sonda0b_slot400_k0_b1200_20260817` (SLOT=400)
+
+```text
+eval t/s      = 12,33     wall = 100.465,2 ms
+p1            = 0.85168 (735 accepted / 863 generated), mean len 2,58
+SHA output    = 4764C03C044301F7011911CA0F3867044644DAED5B1FDB645CB8D800363FE7D5
+content_chars = 3461     finish_reason = length
+copie/buchi   = domanda 344688 (colpi 137243 = 39,8%, buchi 207445, miss 60,2%, in ritardo 0)
+fork cronometro (finale) = lanci=1685, campioni=26, saltati in cattura=962, durata media copia=2.757 ms
+```
+
+Righe testimone: `cache-esperti: 400 slot da 6.75 MiB = 2701 MiB in VRAM (... sfratto_par=1, ...)`
+-- **identica al riferimento su TUTTI i campi tranne n_slot e MiB totali** (cura=0, spin=256,
+filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0, scudo=0,
+sfratto_par=1, dma=0, dma_strato=0 -- tutti invariati); `LLAMA_OVERLAP_K=0(E)`;
+`GGML_CUDA_DISABLE_GRAPHS=<spento>(D)`; `LLAMA_CACHE_ESPERTI_SLOT=400(E)`; `sched-profilo`=0
+righe; zero `GGML_ASSERT`/`CUDA error`/divergenze; **nessuna riga "rifiutata"/"CHIESTA MA
+SPENTA"/fallback** -- nessuna leva e' stata silenziosamente disattivata dal cambio di capienza;
+chiusura `ctrl-c`. VRAM picco 11.314 MiB (vs 11.808 dell'arco B1 -- differenza 494 MiB, coerente
+con la differenza di slab 3194-2701=493 MiB: la leva ha preso effetto esattamente come atteso).
+Telemetria (93 campioni/2s, 45 busy>30%): SM mediana 1935 MHz, potenza mediana 96,9 W, CPU% media
+22,4%.
+
+**CANCELLO BIT-ESATTO FALLITO**: SHA e p1 **divergono** da B1 nonostante l'isolamento a singola
+variabile sia verificato pulito (nessun'altra riga del log e' cambiata, nessuna leva rifiutata,
+nessun errore). Il numero di richieste totali generate (821 -> 863) e il numero di accettazioni
+(643 -> 735) mostrano che la traiettoria e' divergente da presto, non un rumore terminale: a
+`temperature=0` (greedy) una qualunque perturbazione numerica minima nell'ordine di somma di un
+kernel di riduzione puo' capovolgere una decisione a soglia molto vicina e da li' la generazione
+diverge in modo irreversibile -- **ipotesi [D], non verificata a codice in questo turno**: nessun
+braccio dedicato ha isolato quale kernel introduce la dipendenza dalla capienza. Quel che e'
+**misurato [M]** e' che la precondizione dichiarata dal piano ("a k_cpu==0 la partizione non
+esiste: stessa aritmetica, cambia solo QUANDO i byte arrivano") **non regge empiricamente** su
+questa macchina/binario per il solo cambio di capienza.
+
+**Decisione presa, per Regola Zero #2 del runbook ("se un passo dice FERMATI, ci si ferma") e per
+il cancello esplicito del mandato ("se lo SHA diverge e' un guasto, fermati")**: **arco B3
+(SLOT=340) NON eseguito.** Eseguirlo avrebbe misurato una terza traiettoria altrettanto
+confondibile, senza poter attribuire alcuna differenza di t/s o di copie alla sola capienza (il
+numero totale di forward pass necessari per completare 1200 token in output e' esso stesso
+diverso fra le traiettorie: domanda 357588 vs 344688, giu' del 3,6%, un effetto che non ha nulla
+a che fare col trasporto).
+
+**Dati grezzi fra B1/B2, riportati come osservazione, ESPLICITAMENTE NON come pendenza valida**
+(la precondizione bit-esatta e' fallita, quindi NON e' la misura pulita "Δparete ÷ Δcopie" che la
+sonda richiedeva):
+
+```text
+delta t/s (B2 vs B1)      = -7,22 %
+delta domanda totale       = -3,61 %   (357588 -> 344688: traiettorie di lunghezza diversa)
+delta buchi                = +29,66 %  (159993 -> 207445)
+delta colpi%                = -15,5 punti (55,3% -> 39,8%)
+```
+
+**ESITO SONDA 0b: GUASTO — NE' UCCIDE NE' CONFERMA.** Non e' una misura valida della pendenza
+`Δparete/Δcopie` che la sonda doveva produrre, perche' il suo stesso cancello di precondizione
+(parita' bit-esatta a k_cpu=0) e' fallito al secondo arco. E' pero' un **risultato non-nullo in
+se'**: la premessa di codice "a k_cpu=0 la capienza della cache non cambia l'aritmetica" **non e'
+verificata su questo binario**, e questo e' un fatto da riportare al progettista prima di
+qualunque uso ulteriore del cancello bit-esatto di k_cpu=0 altrove nella campagna (es. e' la
+stessa precondizione invocata dal braccio 1 del piano per interpretare il carico fantasma).
+
+Percorsi file: `...\work\runs\sonda0b_slot473_k0_b1200_20260817.*`,
+`...\work\runs\sonda0b_slot400_k0_b1200_20260817.*` (server.log/summary.json/r1.output.txt/
+r1.response.json/hw.csv/cpu.csv per ciascuno).
+
+---
+
+## Sonda 0a — griglia fork in giu', warm-restore — **SI GIRA nettamente sotto blocchi=8**
+
+Protocollo: warm-restore ufficiale (`-PortoHotSnapshot $true -Repetitions 4`, `PORTO_HOT_MASK=15`),
+cattura a r1 (fuori verdetto), mediana r2-r4 -- identico template al braccio V0 della settima
+ripresa. Unica leva variata: `LLAMA_CACHE_ESPERTI_FORK_BLOCCHI` (V0/riferimento gira a 8 di
+default, non esplicitato nell'Extra di V0 ma confermato dal manifesto).
+
+```text
+comando (identico sui due archi salvo -Tag e FORK_BLOCCHI) =
+  & '...\work\run_porto_hot.ps1' -Tag '<tag>' -MaxTokens 1200 -Repetitions 4
+    -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+    -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+    LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+    LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+    LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;
+    LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=<N>'
+```
+
+### Arco A1 — `sonda0a_fb4_warmrestore_b1200_20260817` (FORK_BLOCCHI=4)
+
+| richiesta | ruolo | eval t/s | p1 | SHA output | content_chars |
+|---|---|---:|---|---|---:|
+| r1 | cattura | 15,93 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r2 | verdetto | 16,03 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r3 | verdetto | 16,05 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r4 | verdetto | 16,03 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+
+```text
+mediana r2-r4  : 16,03      spread max-min : 0,12 %
+vs V0 (17,06)  : delta = -6,04 %    FUORI banda, NEGATIVO
+```
+
+Righe testimone: `cache-esperti: 473 slot ... sfratto_par=1 ...` identica a V0; `FORK/JOIN acceso
+(livello 2, blocchi copia 4, ...)` -- leva confermata; `LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=4(E)`;
+`GGML_CUDA_DISABLE_GRAPHS=<spento>(D)`; `sched-profilo`=0; p1 **identico su tutte e 4 le
+richieste** (cancello SS8.9.5 con-restore) -- PASSATO; **SHA identico su tutte e 4 le richieste E
+identico al riferimento V0** -- PASSATO, parita' bit-esatta confermata "dentro la famiglia" come
+atteso dal cancello di 0a; copie/buchi finali (r4) = `domanda 1099385 (colpi 780122 = 71,0%,
+buchi 319263)` -- **identici, cifra per cifra, ai contatori finali di V0**: la griglia non ha
+mosso un byte, come da cancello. `fork cronometro` (finale) = `lanci=7793, campioni=121, saltati
+in cattura=5380, durata media della copia=1.172 ms` (lanci e saltati **identici** a V0: stesso
+numero di operazioni di copia). Zero errori/divergenze. Chiusura `ctrl-c`. Telemetria (178
+campioni/2s, 131 busy>30%): SM mediana 1935 MHz, potenza mediana 101,67 W, VRAM picco 11.894 MiB.
+
+**Tutti i cancelli PASSATI** (parita' bit-esatta, salute, identita' di configurazione).
+
+### Arco A2 — `sonda0a_fb2_warmrestore_b1200_20260817` (FORK_BLOCCHI=2)
+
+| richiesta | ruolo | eval t/s | p1 | SHA output | content_chars |
+|---|---|---:|---|---|---:|
+| r1 | cattura | 12,65 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r2 | verdetto | 12,74 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r3 | verdetto | 12,74 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r4 | verdetto | 12,75 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+
+```text
+mediana r2-r4    : 12,74      spread max-min : 0,08 %
+vs V0 (17,06)    : delta = -25,32 %   FUORI banda, NEGATIVO
+vs fb4 (16,03)   : delta = -20,52 %   FUORI banda, NEGATIVO -- il calo ACCELERA, non rallenta
+```
+
+Righe testimone: riga cache-esperti identica al riferimento; `FORK/JOIN acceso (livello 2,
+blocchi copia 2, ...)`; `LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=2(E)`; `GGML_CUDA_DISABLE_GRAPHS=
+<spento>(D)`; `sched-profilo`=0; p1 identico su tutte e 4 -- PASSATO; **SHA identico su tutte e 4
+E identico al riferimento V0** -- PASSATO; copie/buchi finali = `domanda 1099385 (colpi 780122 =
+71,0%, buchi 319263)` -- di nuovo identici a V0 e a fb4 cifra per cifra. `fork cronometro`
+(finale) = `lanci=7793, campioni=121, saltati in cattura=5380, durata media della copia=2.069 ms`
+(lanci/saltati ancora identici: stesso numero di copie, cambia solo la loro durata). Zero
+errori/divergenze. Chiusura `ctrl-c`. Telemetria (215 campioni/2s, 169 busy>30%): SM mediana
+1942 MHz, potenza mediana 91,39 W, VRAM picco 11.894 MiB.
+
+**Tutti i cancelli PASSATI.**
+
+### Curva completa a tre punti (8/4/2), parita' di byte su tutti e tre
+
+```text
+BLOCCHI   durata media copia   mediana t/s   delta vs fb8(V0)
+   8            0,941 ms          17,06            --          <- V0, riferimento
+   4            1,172 ms          16,03          -6,04 %
+   2            2,069 ms          12,74         -25,32 %
+```
+
+**SHA/p1/copie identici sui tre punti** (`1EDA23452D...9089`, p1=.90281, buchi=319263,
+lanci=7793/saltati=5380 su tutti e tre): parita' di byte perfetta, esattamente come il cancello
+prevedeva -- **non e' un problema di corsa d'ordine, e' un effetto reale sulla durata/costo della
+copia**. La durata media scala **meno che linearmente** col dimezzare della griglia (8->4: x1,25
+non x2; 4->2: x1,77 non x2, coerente con un overhead fisso per lancio che pesa di piu' a griglia
+piccola), ma il t/s netto scala **peggio** che linearmente nella direzione opposta (8->4: -6,04%;
+4->2: -20,52% aggiuntivo) -- il calo **accelera**, non si appiattisce.
+
+**ESITO SONDA 0a: IL SEGNO SI GIRA NETTAMENTE, ben oltre la soglia dell'1% che il piano indicava
+come cancello di inversione.** L'estrapolazione "meno SM alla copia = piu' t/s" **non regge sotto
+blocchi=8** in questo regime (warm-restore, K=2): fb4 e' gia' un'inversione netta (-6,04%, il
+doppio della soglia), fb2 e' un'inversione severa (-25,32%) che **accelera** invece di
+appiattirsi. Per la lettura del piano (§3.1, "se si gira, abbiamo trovato il ginocchio"): il
+ginocchio e' **fra 8 e 4**, non fra 4 e 2 come l'ipotesi "sfora la finestra di join" a fb2
+suggeriva -- gia' fb4 e' oltre il ginocchio. Coerente con la lettura H2 gia' scolpita nella prima
+parte di questa stessa sessione odierna (sweep FORK_BLOCCHI 8/32/112, righe 250-273 di questo
+file): il furto di SM alla MMVQ concorrente domina, e **domina anche verso il basso**, non solo
+verso l'alto. La tesi del trasporto online **non muore per questo** (il motore di copia a 0 SM
+resta un meccanismo diverso, non misurato qui), ma **perde l'appoggio empirico estrapolabile che
+sperava di trovare in questa direzione**: non c'e' "t/s gratis" scendendo di griglia, ne' un
+segnale che la griglia attuale (8) sia lontana dall'ottimo locale del regime warm-restore.
+
+Percorsi file: `...\work\runs\sonda0a_fb4_warmrestore_b1200_20260817.*`,
+`...\work\runs\sonda0a_fb2_warmrestore_b1200_20260817.*`.
+
+---
+
+## Sonda 0c — recall del predittore — **RINVIATA** (buco di formato, non di tempo/adattamento)
+
+Cercato e letto integralmente `docs/porto/predittore_route.py` (repo
+`moe-aggressive-commit`). Calcola `pred = top6(h[L] @ W_gate[L+1].T + bias)` e il recall contro
+`vero = ffn_moe_topk-(L+1)`: **richiede per costruzione il vettore di stato nascosto `h[L]`**
+(4096 float32 per token), letto da un dump `LLAMA_DEBUG_DUMP` su disco (`D:\ds4_work\dump`).
+
+Verificato sul codice (`cache-esperti.cuh:106-121`, vedi "Verifica lettori" sopra): il file
+indicato dal mandato, `D:\ds4_work\adk\adk_trace_v2_b1200_k2_nmax3_20260817.cestrc` (confermato
+su disco, 1.615.460 byte = 25.241 record x 64 byte esatti), e' scritto da
+`LLAMA_CACHE_ESPERTI_TRACCIA` (righe 2116-2117 dell'ottavo turno, questo stesso file) col formato
+`cache_esperti_traccia_record`: `ordine/strato/riga/n_tok/k_cpu/n_esperti/ids[6]/stati[6]/
+fork[6]/pesi[6]`. **Nessun campo contiene lo stato nascosto**: la traccia registra la route GIA'
+SCELTA (gli id dei 6 esperti e i loro pesi/gate) e il suo consumo lato FORK, non l'input che l'ha
+prodotta. Senza `h[L]` il calcolo `top6(W_gate[L+1] . h[L])` che il predittore implementa **non e'
+eseguibile su questo file**, per costruzione del formato -- non e' un limite di tempo o di
+adattamento dello script (il piano stesso, §3.1 sonda 0c, chiede infatti un **dump FRESCO** via
+`LLAMA_DEBUG_DUMP`, non il replay della traccia `.cestrc`: e' il mandato di oggi che aveva
+ristretto la sonda a "zero GPU, traccia esistente", una semplificazione che si scontra con questo
+vincolo di formato).
+
+Controllato anche l'unico dump con `h[L]` gia' su disco, `D:\ds4_work\dump\` (dipendenze dello
+script verificate presenti: `LLAMA_DEBUG_DUMP`/`LLAMA_DEBUG_FILTER` in `common/debug.cpp`,
+`D:\llama-dspark\gguf-py` installato): **datato 5 agosto**, lo stesso dato che il piano etichetta
+esplicitamente come STALE e la cui ri-misura "e' obbligatoria, non una formalita'" (§3.1 sonda
+0c). Rieseguire lo script su quel dump riprodurrebbe solo il vecchio 71,0%/90,2% gia' a verbale,
+non una misura del regime di oggi -- **non eseguito**, per non spacciare un numero vecchio per una
+conferma nuova.
+
+**ESITO SONDA 0c: RINVIATA.** Serve un mandato dedicato che autorizzi un dump `LLAMA_DEBUG_DUMP`
+fresco (GPU, regime odierno n_max=3/473 slot/IBRIDO=1/decode) -- fuori dallo scope "zero GPU" di
+questo turno. Nessuna riga di codice scritta, nessuna misura forzata.
+
+---
+
+## VERDETTO FINALE — tabella delle tre sonde
+
+| sonda | config | t/s | copie (buchi) | SHA-parita' | verdetto |
+|---|---|---:|---:|---|---|
+| 0b arco B1 | K=0, slot=473 | 13,29 | 159.993 | -- (ancora) | riferimento interno, cancelli PASSATI |
+| 0b arco B2 | K=0, slot=400 | 12,33 | 207.445 | **FALLITA** vs B1 (SHA/p1 diversi) | **GUASTO** -- ne' uccide ne' conferma |
+| 0b arco B3 | K=0, slot=340 | -- | -- | -- | **NON ESEGUITO** (fermato per guasto su B2) |
+| 0a arco A1 | warm-restore, FORK_BLOCCHI=4 | 16,03 (median.) | 319.263 | **PASSATA** (=V0 su tutto) | -6,04% vs V0 -- si gira |
+| 0a arco A2 | warm-restore, FORK_BLOCCHI=2 | 12,74 (median.) | 319.263 | **PASSATA** (=V0 su tutto) | -25,32% vs V0 -- si gira di piu' |
+| 0c | recall predittore su `.cestrc` | -- | -- | -- | **RINVIATA** -- formato traccia senza h[L] |
+
+**Pendenza 0b**: NON CALCOLABILE come misura pulita (precondizione bit-esatta fallita all'arco 2).
+Dato grezzo, non promuovibile: -7,22% di t/s a fronte di -3,61% di domanda totale e +29,66% di
+buchi, ma le due traiettorie non sono la stessa traiettoria.
+
+**Verdetto 0a**: il segno si gira nettamente e presto (gia' a fb4, ben oltre la soglia dell'1%);
+il calo accelera scendendo ulteriormente a fb2. Nessuna leva "t/s gratis" scendendo di griglia in
+regime warm-restore; il ginocchio e' fra blocchi=8 e blocchi=4, non fra 4 e 2.
+
+**Verdetto complessivo per il piano**: nessuna delle due sonde eseguite regge come conferma pulita
+della tesi del trasporto online. 0a chiude la via "griglia piu' piccola = guadagno gratis" per
+questo regime. 0b non produce ne' un'uccisione ne' una conferma della pendenza attesa, ma
+**scopre un fatto nuovo e non richiesto dal mandato**: la premessa di codice "a k_cpu=0 la
+capienza della cache non altera l'aritmetica" non regge empiricamente su `D:\llama-subtract`,
+il che intacca anche il cancello bit-esatto che il braccio 1 del piano (carico fantasma) intende
+riusare altrove. Prima di eseguire il braccio 1, questo fatto va portato al progettista.
+
+## Stato macchina ed esito finale
+
+```text
+postflight : 0 processi llama, VRAM 306 MiB (= 306 di preflight, nessuna perdita), RAM libera
+             88,3 GB (da 88,2 di preflight -- nessuna perdita, anzi +0,1 GB)
+chiusura   : ctrl-c pulito su tutti e 4 gli archi eseguiti (0b B1/B2, 0a A1/A2)
+quiete     : abolita (regola vigente dal 12/8): incatenamento diretto dopo verifica "macchina
+             pulita" (processi=0, VRAM a riposo) fra tutti gli archi
+commit     : NESSUNO eseguito
+```
+
+Percorsi completi di tutti gli artefatti (server.log/server.out/summary.json/r*.output.txt/
+r*.response.json/hw.csv/cpu.csv) in
+`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\` con tag
+`sonda0b_slot473_k0_b1200_20260817`, `sonda0b_slot400_k0_b1200_20260817`,
+`sonda0a_fb4_warmrestore_b1200_20260817`, `sonda0a_fb2_warmrestore_b1200_20260817`.

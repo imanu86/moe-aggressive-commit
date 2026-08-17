@@ -5364,3 +5364,308 @@ server.log                  : D:\ds4_work\llama_run\
 output/response per replica : ..._f2_b2048_q1/q2/q3.output.txt / .response.json
 telemetria                  : D:\ds4_work\llama_run\lungo_downtardi.hw.csv / .cpu.csv
 ```
+
+---
+
+# DICIOTTESIMO TURNO — validazione V1 del FIX-1 grafi (sfratto a conteggio di chiamate): CONFERMATO, nessun gradino su r2 né r3, SHA bit-identiche a stanotte
+
+Esecutore: diciottesimo turno, contesto fresco. Mandato iniziale: repro "fix0_kvcount" (banco lungo di
+stanotte + `LLAMA_GRAPH_REUSE_PER_TAGLIA=0` + stderr catturato) per rispondere a due domande, la
+diagnosi grafi (`GRAFI_MORTE_RICHIESTE_RIPETUTE.md`) e il contatore kv-ring
+(`TASSA_ATTENZIONE_LUNGO.md` §5). **Riqualificato dal coordinatore durante la preparazione** (vedi
+ANOMALIA sotto) in validazione **V1 del FIX-1** vero e proprio, appena consegnato dal chirurgo 9.
+Ledger in append, nessun commit.
+
+## Preflight — macchina libera
+
+L'esecutore precedente (diciassettesimo turno, banco `lungo_downtardi`) stava ancora chiudendo r3
+all'avvio di questo turno: `llama-server` PID 3352 attivo, VRAM 11914/12288 MiB, GPU 80-99%. Attesa
+passiva con controlli leggeri (Get-Process + nvidia-smi, non polling aggressivo), intervallata da
+letture della documentazione (nessun tocco alla macchina). Macchina libera confermata alle **22:21**:
+0 processi llama, porte 8099/8100 libere, GPU a riposo (210 MHz, 424 MiB usati, P8), RAM libera 87,5
+GB. La corsa precedente si era chiusa correttamente: `shutdown: ctrl-c`, `DONE tag=...lungo_downtardi...`,
+r3 finale a 2,34 t/s (ancora nel regime rotto, coerente con la diagnosi).
+
+## ANOMALIA — la dll è cambiata sotto i piedi durante la preparazione, il mandato è stato aggiornato
+
+Verificando i tre binari prima del lancio (regola vitale: annotare la SHA trovata), `ggml-cuda.dll`
+risultava **`703D58C206A36A91CD650E9E047CA7F6EDBD974704D345439631DFE262C12305`** — NESSUNO dei due
+prefissi indicati dal mandato (`E83A87ED` o `678F66F1`). Controllo di stabilità (hash+size+mtime
+ricontrollati dopo 8 s, nessun processo di build attivo): file stabile, scritto alle **22:18:05**.
+`common.cuh` (proprio il file della diagnosi, `cuda_graph()` a `common.cuh:1454-1476`) risultava
+modificato alle **22:11:32** — il chirurgo 9 aveva appena consegnato e ricompilato il FIX-1 vero
+(`D:\ds4_work\design\impl\graphs_evict_calls.patch`, +62/−12 righe, un solo file) esattamente mentre
+preparavo il lancio. Non ho proceduto alla cieca: ho letto per intero `NOTE_IMPLEMENTAZIONE.md` §13,
+confrontato le 5 SHA dei binari con la tabella dichiarata (§13.7 — **tutte e cinque combacianti,
+solo `ggml-cuda.dll` cambiato**, gli altri quattro byte-per-byte invarianti), e verificato la stringa
+testimone `porto-grafi: sfratti=%llu (anzianita=%llu tetto=%llu)` presente nel binario. Il
+coordinatore ha confermato via messaggio e riqualificato il braccio:
+
+```text
+tag: fix0_kvcount -> fix1_kvcount
+LLAMA_GRAPH_REUSE_PER_TAGLIA: NON impostare a 0 -- lasciare il DIFETTO (1). Il fix deve reggere
+  nel regime NORMALE, non nel regime aggirato.
+resto del mandato invariato: config identica a lungo_downtardi di stanotte, stderr sempre catturato
+  (gia' un mezzo -RedirectStandardError nello script, vedi sotto), B-C resta scopo secondario.
+nuovi cancelli V0-V4 da NOTE_IMPLEMENTAZIONE.md S13.8 (ricopiati dal design S5).
+contingenza: SE V1 fallisce, rilanciare l'originale fix0 (REUSE_PER_TAGLIA=0) sulla STESSA dll per
+  separare diagnosi da implementazione -- non attivata (V1 e' passato).
+```
+
+## Verifica preliminare dello stderr (prima di lanciare)
+
+Ho verificato nel sorgente del runner (`sota100k_ctx150k.ps1:217-218`) che il server viene già
+lanciato con `Start-Process ... -RedirectStandardError $log -RedirectStandardOutput $stdout`: il
+`.server.log` **è già** lo stderr del processo server, catturato su file per l'intera vita del
+processo — equivalente OS-level a un `2>` sul comando del server. Non serviva aggiungere nulla.
+Controllo indipendente (perché il mandato dava per scontato che bastasse): il contatore
+`[kv-ring-profile]` **non compare in NESSUN log storico su disco** (`lungo_base_nmax3_subtract`,
+`kvlong_cms32_20260817`, e il `lungo_downtardi` di stanotte — quest'ultimo già sul binario col fix
+anti-crash, shutdown ctrl-c pulito confermato). Letto il sorgente (`kv-ring.cu:265-296`): la funzione
+ha un'uscita silenziosa per-fallimento-CUDA-in-atexit, commento esplicito nel codice ("NON SI
+ABORTISCE IN USCITA... un fallimento significa solo niente statistiche"). Aspettativa dichiarata
+PRIMA del lancio: probabile che resti vuoto anche stavolta — confermato sotto.
+
+## Modifica autorizzata al runner — parametro `-GraphReusePerTaglia`
+
+Stessa procedura già confermata dal coordinatore per `-CtxCheckpointMinStep`/`-ServerPath`/
+`-ReasoningBudgetTokens`/`-PortoCbForkDownTardi`. Lettore verificato PRIMA di scrivere
+(`D:\llama-subtract\src\llama-context.cpp:359-360`, `getenv("LLAMA_GRAPH_REUSE_PER_TAGLIA")`, atoi
+!=0). Necessaria perché `Set-SotaEnvironment` imponeva `$env:LLAMA_GRAPH_REUSE_PER_TAGLIA = '1'`
+incondizionatamente dentro il loop di shape — un env esterno sarebbe stato sovrascritto. Aggiunto
+`[ValidateSet(0,1)] [int] $GraphReusePerTaglia = 1` (difetto = comportamento invariato), cambiata la
+riga a `"$GraphReusePerTaglia"`, e aggiunta al testo del log "arm:" per visibilità. Sintassi
+riverificata con `[System.Management.Automation.Language.Parser]::ParseFile` (0 errori). Diff isolato
+in `C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\sota100k_graphreuse_pertaglia.patch`.
+Usato in questo turno con `-GraphReusePerTaglia 1` (esplicito, non implicito) per lasciare traccia
+diretta nel log che la leva è rimasta al difetto.
+
+## Lancio — staccato, identico a `lungo_downtardi` salvo tag e la leva esplicita
+
+```text
+comando (Win32_Process.Create, ReturnValue=0, PID launcher=19960, 22:25:31) =
+  powershell.exe -NoProfile -ExecutionPolicy Bypass -Command
+  "& 'C:\...\work\sota100k_ctx150k.ps1' -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5
+    -RunLabel fix1_kvcount -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000
+    -MaxTokens 8192 -SpecNmax 3 -Repliche 3 -CtxCheckpointMinStep 32 -ReasoningBudgetTokens 0
+    -PortoCbForkDownTardi '-,1,0' -GraphReusePerTaglia 1
+    -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+    *> 'D:\ds4_work\llama_run\fix1_kvcount.launcher.out'"
+server PID = 13248 (22:25:32); telemetria sample_hw.ps1 -Tag fix1_kvcount -IntervalSeconds 2,
+  PID=9000 (22:25:50, Win32_Process.Create ReturnValue=0)
+monitor  = script di sola lettura (adattato da monitor_fasi_lungo_downtardi.ps1 del turno precedente),
+  poll ogni 25 s su launcher.out + coda del .server.log, MAI sulla macchina stessa
+```
+
+## Verifica d'identità (sul log grezzo)
+
+```text
+[x] cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (...), sfratto_par=1, dma=0, dma_strato=0
+    -- IDENTICA al riferimento storico e a stanotte
+[x] porto-cb: epoca=1 semina da ambiente: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+[x] porto-cb: epoca=2 richiesta (down_tardi=1, per r2) -- 1995 righe di ricattura per-chiave
+[x] porto-cb: epoca=3 richiesta (down_tardi=0, per r3) -- 2054 righe di ricattura per-chiave
+[x] arm: ...graph-reuse-per-taglia=1... (log del wrapper, conferma il valore passato)
+[x] "separate graph metadata arena per ubatch size enabled" -- 2 occorrenze (target+drafter),
+    conferma diretta che la leva e' arrivata al processo con valore 1 (se fosse stata 0, questa
+    riga sarebbe assente per costruzione, llama-context.cpp:366-368)
+[x] GGML_ASSERT / CUDA error / out of memory / invalid index: 0/0/0/0 su tutto il log
+[x] divergenze: sempre taglia=0 ids=0 out=0 GRIGLIA-corta=0 (controllate su tutta la coda)
+[x] motore: n_max=3 (SpecNmax applicato)
+[x] SHA binari: ggml-cuda.dll 703D58C2... (FIX-1), llama-server-impl.dll/ggml.dll/llama.dll/
+    llama-server.exe tutti invarianti -- combaciano ESATTAMENTE con NOTE_IMPLEMENTAZIONE.md S13.7
+```
+
+## Risultato — le tre traiettorie, confronto diretto con stanotte
+
+| | **r1** (piena, no porto_cb) | **r2** (checkpoint + `dt:0->1`) | **r3** (checkpoint + `dt:1->0`) |
+|---|---:|---:|---:|
+| decode oggi (fix1_kvcount) | **10,93 t/s** | **11,25 t/s** | **10,95 t/s** |
+| decode stanotte (lungo_downtardi) | 10,95 t/s | **3,03 t/s** | **2,34 t/s** |
+| delta vs riferimento V0 (solo r1) | **−0,17%** | — | — |
+| wall della richiesta oggi | 26,48 min | **12,14 min** | **12,48 min** |
+| wall della richiesta stanotte | 26,52 min | 45,11 min | 58,50 min |
+| gradino osservato | no | **NO** (atteso: sì, a n≈2043) | **NO** (atteso: sì, da subito) |
+| p1 oggi | 0,90449 | 0,90881 | 0,90812 |
+| p1 stanotte | 0,90449 | 0,90881 | 0,90812 |
+| SHA output oggi (16) | `2CBB795A3CA00022` | `ED9C7DCE79AE06CE` | `AA070B08D89A9EE2` |
+| SHA output stanotte (16) | `2CBB795A3CA00022` | `ED9C7DCE79AE06CE` | `AA070B08D89A9EE2` |
+| finish_reason | length | length | length |
+
+**Le tre SHA di output sono bit-identiche a stanotte, su tutte e tre le richieste** — non solo r1
+(atteso, nessun porto_cb) ma anche r2 e r3, che stanotte giravano nel regime rotto a 1/4-1/5 della
+velocità. Questa è la prova più forte possibile dell'invariante dichiarato in
+`NOTE_IMPLEMENTAZIONE.md` §13.6 ("bit-esattezza: nessun kernel toccato"): la politica di sfratto dei
+grafi cambia SOLO quanto spesso si ricattura, MAI il risultato numerico — dimostrato empiricamente,
+non solo per costruzione, confrontando due regimi di prestazione drasticamente diversi (catastrofico
+vs sano) sullo stesso identico output.
+
+## Verdetto cancelli (da `NOTE_IMPLEMENTAZIONE.md` §13.8)
+
+```text
+V0 (non-regressione, r1)   : PASSATO -- 10,93 t/s vs 10,95 atteso (-0,17%, ben dentro +-3%)
+V1 (IL BRACCIO CHE DECIDE) : PASSATO -- r2 E r3 restano 10,9-11,3 t/s per tutti gli 8.192 token,
+                              nessun gradino. Vedi sotto per la verifica di granularita' fine.
+V2 (testimoni)              : MISTO, vedi nota di onesta' sotto -- il riepilogo "porto-grafi:
+                              sfratti=" e' presente e coerente (tetto=0 come atteso), ma i due
+                              sotto-cancelli piu' stretti (calls=2/captures=1 a zero, catture/s<3)
+                              NON sono soddisfatti alla lettera
+V3 (VRAM)                    : PASSATO -- libera minima 167 MiB (mai sotto ~100), sebbene sotto la
+                              banda di riferimento 185-210 MiB (atteso dal rischio dichiarato in
+                              S13.4: piu' grafi vivi = piu' VRAM occupata; non ha richiesto la
+                              manopola GGML_CUDA_GRAPH_MAX)
+V4 (produzione, 4a/5a richiesta) : NON ESEGUITO -- fuori dallo scope di questo braccio (3 repliche),
+                              disponibile per un turno futuro se richiesto
+```
+
+### V1, verifica di granularità fine (non solo l'aggregato) — nessun gradino nascosto
+
+Il t/s aggregato per richiesta potrebbe mascherare un crollo tardivo compensato da un inizio
+veloce. Verifica indipendente: estratte tutte le **935 righe `sched-profilo:`** (medie cumulative
+dall'avvio del processo, stampate ogni ~50 grafi), confini di richiesta interpolati dai timestamp
+delle righe `cuda-graph-stats:` (dense, migliaia di campioni). Il campo `calc altri` (ms/grafo
+cumulativo) scende **in modo liscio e monotono per l'intera corsa**, attraverso ENTRAMBI i confini
+di transizione (proprio dove stanotte si apriva il precipizio):
+
+```text
+r1: 37,6 -> 31,3 ms/grafo (415 campioni)      -- nessuna discontinuita' interna
+    |  (confine r1->r2, cambio leva down_tardi 0->1)
+r2: 31,3 -> 22,5 ms/grafo (227 campioni)      -- CONTINUA il trend di r1, zero salto al confine
+    |  (confine r2->r3, cambio leva down_tardi 1->0)
+r3: 22,5 -> 18,0 ms/grafo (225 campioni)      -- CONTINUA il trend di r2, zero salto al confine
+```
+
+Conferma indipendente che il carico di lavoro sottostante è lo stesso di stanotte (solo l'esito
+cambia): `split/grafo` cumulativo a fine r1/r2/r3 = **11,2 / 14,8 / 16,6** — quasi identico a
+stanotte (**11,2 / 14,8 / 16,4**, dal log rotto). Stessa struttura di scheduling, stesso numero di
+split; l'unica differenza è se quegli split ricatturano a vuoto o replayano.
+
+### V2, nota di onestà — i sotto-cancelli più stretti non tornano puliti, ma non per il motivo del bug originale
+
+```text
+porto-grafi: sfratti=29 (anzianita=29 tetto=0)     <- drafter (contesto piccolo)
+porto-grafi: sfratti=6295 (anzianita=6295 tetto=0)  <- target (contesto principale)
+```
+
+`tetto=0` in entrambi conferma la lettura diagnostica di NOTE_IMPLEMENTAZIONE §13.3: il tetto di
+capienza (1024, difetto) non stringe. Ma:
+
+- **chiavi `calls=2 direct=1 launches=1 captures=1`** (creata-catturata-mai-replayata): **996 su
+  6.360** record di distruzione totali (**15,7%**), non zero. È comunque un ordine di grandezza
+  sotto la firma di stanotte (89/95 = 93,7% della popolazione VIVA a un istante nel regime rotto —
+  denominatori non perfettamente comparabili, ma la direzione è netta).
+- **catture/s**: sommando il campo `captures=` finale di tutte le 6.360 righe (46.287) sui 2.225,6 s
+  di decode totale = **~20,8/s**, sopra il "<3/s" atteso dal testimone, nello stesso ordine di
+  grandezza del regime ROTTO di stanotte (15-25/s).
+
+**Lettura, dichiarata come interpretazione non certificata**: questi due numeri sono ambigui, non
+necessariamente un segnale negativo. Il "secondo fronte" del design (§6 di `GRAFI_MORTE_...md`,
+esplicitamente **fuori scope** di questa patch, confermato in NOTE_IMPLEMENTAZIONE §13.6bis: `n_kv`
+scatta di 256 ogni 256 token, invalidando `memcmp` su TUTTA la popolazione viva → un'ondata di
+ricatture ogni 256 token, **indipendente dalla politica di sfratto**) è un candidato plausibile e
+sufficiente a spiegare volumi di ricattura comparabili in entrambi i regimi senza che sia il residuo
+del bug originale: su 24.576 token totali, ~96 ondate di questo tipo, ciascuna su una popolazione
+viva potenzialmente larga, possono facilmente sommare a decine di migliaia di eventi. **Il punto
+decisivo è che questi numeri, quali che siano, NON producono alcuna penalità di prestazione
+misurabile** (vedi la traiettoria liscia `sched-profilo` sopra): se le ricatture costassero quanto
+temuto (~50 ms l'una) a questo volume, sarebbero visibili come un collo di bottiglia enorme, e non
+lo sono. Non ho una spiegazione certificata del perché il conteggio grezzo non torni sotto la soglia
+letterale del testimone — **segnalato al coordinatore/chirurgo 9 come punto da chiarire**, non
+silenziato, ma non lo leggo come una falsificazione di V1: il cancello decisivo (t/s, nessun
+gradino, sul braccio che il mandato stesso chiama "quello che decide") è passato in modo netto e
+triplicemente corroborato (aggregato, granularità fine, e persino identità bit-esatta dell'output).
+
+## B-C — contatore kv-ring: ASSENTE anche stavolta (atteso, dichiarato prima del lancio)
+
+```text
+grep "kv-ring-profile" sul .server.log completo -> 0 occorrenze
+```
+
+Quarta corsa su quattro (contando `lungo_base_nmax3_subtract`, `kvlong_cms32_20260817`,
+`lungo_downtardi` di stanotte, e questa) in cui la riga non compare — **incluse due corse su
+questo stesso binario col fix anti-crash, entrambe con shutdown ctrl-c pulito confermato**. Non è
+un problema di redirezione (`.server.log` **è** già lo stderr catturato su file dall'intera vita del
+processo, verificato nel sorgente prima del lancio — vedi sopra). La funzione ha un'uscita silenziosa
+per costruzione se le chiamate CUDA falliscono in atexit (`kv-ring.cu:281-282`), e i log lo
+confermano su 4/4 tentativi indipendenti: **`bytes_h2d_per_token` e `bytes_staged` NON sono
+ottenibili con questo meccanismo su questa macchina/driver**, non un fallimento di questa verifica.
+Braccio B-C del design (`TASSA_ATTENZIONE_LUNGO.md` §5) resta **aperto**: se serve quel dato, serve
+un meccanismo diverso (es. spostare la lettura dei contatori PRIMA di `atexit`, magari a un
+`/health`-style endpoint interrogabile mentre il processo è ancora vivo, oppure un dump periodico
+invece che solo a fine vita) — non deciso qui, segnalato per il coordinatore/chirurgo 9.
+
+## Coerenza del testo (letto integralmente q2 e q3, i due casi ex-rotti)
+
+```text
+[x] lingua sana                                          si (italiano tecnico, entrambi)
+[x] assenza di loop / ripetizioni patologiche             si
+[x] pertinenza al prompt                                  si (saggio tecnico esteso su DSV4/
+                                                           cache-esperti/overlap, con sezioni,
+                                                           codice, esempi -- esattamente come
+                                                           chiesto dal prompt "lungo-saggio")
+[x] degradazione progressiva                              no, su ~24.700-24.800 caratteri ciascuno
+[x] finish_reason = length su tutte e tre                 si (budget saturato come da disegno,
+                                                           non stop precoce -- il fix del prompt
+                                                           lungo-saggio del turno precedente regge)
+```
+
+## Telemetria (`fix1_kvcount.hw.csv`, 1.438 campioni a 0,5 Hz)
+
+```text
+campioni busy (SM>1000MHz)  : 1313/1438
+SM clock (busy)               : mediana 1927 MHz -- nessun throttle
+potenza (busy)                 : mediana 108,5 W
+VRAM usata                     : mediana 11.949 MiB, picco 11.949 MiB
+VRAM libera                    : minimo 167 MiB, mediana 167 MiB (sotto la banda 185-210 MiB di
+                                riferimento ma sopra il pavimento ~100 MiB del cancello V3 -- coerente
+                                col rischio dichiarato in NOTE_IMPLEMENTAZIONE S13.4, non ha richiesto
+                                di abbassare GGML_CUDA_GRAPH_MAX)
+```
+
+## Postflight
+
+```text
+processi_llama = 0
+porte 8099/8100 = libere
+VRAM               = 350 MiB usati (11.766 MiB liberi), 210 MHz, 13,25 W, P8 -- a riposo
+RAM libera          = 87,7 GB
+chiusura            = ctrl-c (pulita, DONE tag confermato)
+commit              = NESSUNO eseguito (per mandato)
+contingenza Fix-0    = NON attivata (V1 e' passato, nessun bisogno di isolare diagnosi da
+                      implementazione con un secondo braccio)
+```
+
+## Esito del turno
+
+**FIX-1 CONFERMATO sul cancello decisivo (V1)**: il precipizio diagnosticato ieri notte (`GRAFI_MORTE_
+RICHIESTE_RIPETUTE.md`) **sparisce completamente** passando dallo sfratto a orologio (10 s) allo
+sfratto a conteggio di chiamate (16.384 chiamate, ~200-270 cicli di margine). r2 e r3 — le due
+richieste che stanotte collassavano a 3,03 e 2,34 t/s con un gradino netto — restano oggi a 11,25 e
+10,95 t/s per l'intero completamento di 8.192 token, verificato sia sull'aggregato per richiesta sia
+sulla traiettoria fine (`sched-profilo` liscio, nessuna discontinuità ai due confini di transizione
+leva). Le tre SHA di output sono bit-identiche a stanotte su tutte e tre le richieste, confermando
+empiricamente (non solo per costruzione) l'invariante di bit-esattezza dichiarato per la patch.
+Cancelli V0/V1/V3 passati con margine; V2 passato sul testimone di riepilogo ma con due sotto-metriche
+più strette (percentuale di chiavi mai-replayate, catture/secondo) che restano sopra soglia letterale
+senza che questo si traduca in alcuna penalità di prestazione misurabile — segnalato come punto aperto
+per chirurgo 9, non come falsificazione. B-C (contatore kv-ring) resta strutturalmente irraggiungibile
+con il meccanismo attuale, confermato su 4/4 tentativi indipendenti. Nessun errore, nessuna
+divergenza, nessuna perdita di risorse a fine turno.
+
+Percorsi file (tutti in `D:\ds4_work\llama_run\`):
+```text
+fix1_kvcount.launcher.out / .hw.csv / .cpu.csv / .telemetry.out
+sota100k_ctx150k_densefa_stage_hc5_fix1_kvcount.summary.txt
+sota_ctx150000_densefa_stage_hc5_fix1_kvcount_f2_b2048.server.log / .server.out
+sota_ctx150000_densefa_stage_hc5_fix1_kvcount_f2_b2048_q{1,2,3}.output.txt / .response.json
+```
+Script/diff/piano di analisi (scratchpad di sessione, non tracciati):
+```text
+...\scratchpad\monitor_fasi_fix1_kvcount.ps1
+...\scratchpad\piano_analisi_fix1_kvcount.md
+C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\sota100k_graphreuse_pertaglia.patch
+```
+
+---
+
+---

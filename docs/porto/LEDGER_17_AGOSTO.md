@@ -3306,3 +3306,204 @@ r*.response.json/hw.csv/cpu.csv) in
 `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\` con tag
 `sonda0b_slot473_k0_b1200_20260817`, `sonda0b_slot400_k0_b1200_20260817`,
 `sonda0a_fb4_warmrestore_b1200_20260817`, `sonda0a_fb2_warmrestore_b1200_20260817`.
+
+---
+
+# UNDICESIMO TURNO — Braccio 1: carico fantasma (D:\llama-subtract, ggml-cuda.dll nuova)
+
+**Nota di provenienza (dichiarata, non nascosta).** Questa sezione non e' stata scritta
+dall'esecutore 11: l'esecutore ha prodotto solo un rapporto (non una voce di ledger), e il
+coordinatore l'ha girato in forma condensata chiedendo di compilare qui la voce nel formato di
+RUNBOOK §9.2. I dati numerici sotto sono quindi di seconda mano (relayed dal coordinatore, non
+letti da questo agente sui log grezzi) -- trattarli con lo stesso peso evidenziale delle voci
+scritte in prima persona dagli altri turni di oggi sarebbe una sovra-attribuzione. Dove il
+rapporto ricevuto non specifica un campo richiesto da §9.2 (comando esatto letterale, nome
+preciso della env var della leva, data/ora/uptime di preflight, riga cache-esperti verbatim), e'
+marcato esplicitamente **[non fornito]** invece di inventarlo -- coerente con la regola del
+progetto "marca misurato vs dedotto" e con la disciplina di verificare i lettori prima di
+scrivere un nome di variabile come fatto accertato.
+
+Mandato (dal rapporto): braccio 1 di `D:\ds4_work\design\TRASPORTO_ONLINE_PIANO.md` -- il
+"carico fantasma", un meccanismo di trasporto H2D in background su stream dedicato non-blocking,
+misurato a quattro intensita' (0/55/110/220 MiB "fantasma" per token) sul banco B1200
+warm-restore, per verificare se il motore di trasporto puo' muovere byte reali senza costare piu'
+della soglia di rumore del banco (3%, RUNBOOK §8.3).
+
+## Config comune ai quattro bracci (dal rapporto; vedi caveat sopra sui campi non forniti)
+
+```text
+runner             = B (run_porto_hot.ps1) -- dedotto dal protocollo warm-restore descritto: e'
+                      l'unico runner di questo progetto che lo implementa
+banco              = B1200 (MaxTokens 1200 per convenzione del nome, non riconfermato in cifra
+                      nel rapporto)
+ripetizioni        = 4 per braccio (protocollo warm-restore: r1 = cattura, fuori verdetto;
+                      verdetto = mediana r2-r4) -- come da RUNBOOK §8.9
+leva variata        = "carico fantasma", intensita' target in MiB/token: 0 / 55 / 110 / 220 (il
+                      nome esatto della env var non e' nel rapporto ricevuto; dedotto dalla riga
+                      di log verbatim "carico fantasma ACCESO: <N> MiB/token" -- [nome variabile
+                      non fornito, non verificato con un grep diretto da questo agente])
+comando esatto     = [non fornito letteralmente]. Confermati esplicitamente dal rapporto:
+                      -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe', -SpecNmax 3,
+                      -PortoHotSnapshot $true, PORTO_HOT_MASK=15, GGML_SCHED_PROFILO=0,
+                      GGML_CUDA_DISABLE_GRAPHS assente (grafi accesi). Le altre variabili -Extra
+                      del campione V0 di oggi (LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0,
+                      _SLOT_DIRETTI=0, _BLOCCHI=8, LLAMA_DSV4_DECODE_GATE_UP_FUSO=0,
+                      _EXPERT_REUSE=0, _EXPERT_REUSE_ZERO_DST=0) sono PRESUNTE invariate per
+                      coerenza con ogni altro braccio di oggi, ma NON riconfermate esplicitamente
+                      in questo rapporto -- da verificare sul log grezzo se servira' un confronto
+                      fine.
+prompt t/s          = [non fornito]        ms/token = [non fornito]
+finish_reason       = [non fornito, presumibilmente length per coerenza con B1200/MaxTokens 1200
+                      e ogni altro braccio warm-restore di oggi -- non confermato]
+p1                  = 0.90281, IDENTICO su 16/16 richieste (tutti e 4 i bracci) -- cancello
+                      con-restore RUNBOOK §8.9.5 PASSATO su tutta la linea
+SHA output          = 1EDA23452DE9292C817EAF47532724A409DD2FFE3B3EF9E165ED887BA4169089, IDENTICO
+                      su 16/16 richieste (lunghezza non fornita in questo rapporto) -- parita'
+                      bit-esatta su tutta la linea: il carico fantasma, fino a 220 MiB/token, non
+                      sposta un solo byte dell'output
+copie/buchi         = colpi 780122 (71,0%) / buchi 319263 -- identici cifra per cifra sui 4 bracci
+fork cronometro     = lanci=7793, saltati in cattura=5380 -- identici sui 4 bracci
+riga cache-esperti  = [non fornita verbatim in questo rapporto -- presunta identica al
+                      riferimento V0 (473 slot, sfratto_par=1, ...), non trascritta perche' non
+                      vista direttamente da questo agente]
+profiler            = SPENTO (righe sched-profilo = 0, dichiarato "profilo 0" nel rapporto)
+graph stats         = [non esplicitato nel rapporto] -- presunto SPENTO per coerenza con ogni
+                      braccio warm-restore precedente di oggi
+snapshot            = porto_hot_snapshot = 1 (warm-restore)
+SHA llama-server    = 8E98393EB0225C05A5CE19AF1A02BB6D6112D6B69C2DC901B22F43465B7FB1CD (invariato:
+                      stesso valore registrato nella settima/nona/decima ripresa di questo file)
+SHA ggml-cuda       = 110E402219D5DD08C77E2A3A07E81C19547A6D00622C14EC35651DA4FF99499C (NUOVA --
+                      cambiata rispetto a 251612C057EA23B78D2B1F4624C849C720AF2D664CC1DC69A331
+                      BBE92CEF877F di nono/decimo turno: la patch del carico fantasma vive qui)
+SHA llama-impl      = 91FF17F0F64B6771A61A5545CEF3ECAE10172A0ACEA3F2D48CBD11596F2AEA29 (invariato)
+build               = build 10093 (3014d3756) -- presunto invariato (non riconfermato in questo
+                      rapporto, mai cambiato in nessun turno precedente di oggi)
+telemetria          = sample_hw.ps1 a 0,5 Hz
+clock SM mediano    = 1927-1935 MHz (range sull'intera linea, non scomposto per braccio) --
+                      regime SOTA, nessun throttle riportato
+potenza mediana     = 104-105 W (range sull'intera linea)      throttle = [non fornito]
+VRAM picco          = 11.894-11.902 MiB (range sull'intera linea)
+server vivi max     = [non fornito]        RAM libera min = [non fornita per braccio]
+uptime a inizio     = [non fornito]
+```
+
+## fantasma_l0 -- MIB=0 (controllo build-inerzia)
+
+```text
+tag            = fantasma_l0
+eval t/s       = 17,06 (mediana r2-r4), spread 0,12%
+delta vs V0    = 0,00% -- IDENTICO al riferimento (17,06, settima ripresa)
+riga fantasma  = ASSENTE dal log -- a MIB=0 il meccanismo non stampa nemmeno la riga "ACCESO":
+                 inerzia confermata, nessun costo residuo quando spento
+SHA output     = 1EDA23452D...9089 -- IDENTICO al V0 storico misurato sulla DLL VECCHIA
+                 (build-inerzia provata: la nuova ggml-cuda.dll, col meccanismo compilato dentro
+                 ma disattivato, riproduce byte per byte l'output della vecchia DLL che non lo
+                 conteneva affatto)
+esito          = DIAGNOSTICO -- controllo di non-regressione della build, PASSATO
+percorsi file  = <root sessione, vedi in fondo>\fantasma_l0.*
+anomalie       = nessuna
+```
+
+## fantasma_l55 -- MIB=55
+
+```text
+tag            = fantasma_l55
+eval t/s       = 17,02 (mediana r2-r4)
+delta vs V0    = -0,23% -- dentro banda di deriva (RUNBOOK §8.3, 2-3%): non distingue
+emesse/MiB     = emesse=9675, MiB=65340 (60,8 MiB/token misurato -- contro 55 di target,
+                 differenza non spiegata in questo rapporto)
+banda H2D      = 13,01 GiB/s (ceiling noto 19,45 GiB/s -- ampio margine, non saturo)
+p1/SHA         = identici alla linea (vedi Config comune) -- parita' bit-esatta
+esito          = DIAGNOSTICO -- sotto soglia di rumore
+percorsi file  = <root sessione, vedi in fondo>\fantasma_l55.*
+anomalie       = nessuna
+```
+
+## fantasma_l110 -- MIB=110 -- IL VERDETTO PRIMARIO DEL BRACCIO
+
+```text
+tag            = fantasma_l110
+eval t/s       = 16,98 (mediana r2-r4)
+delta vs V0    = -0,47% -- sotto la soglia 3% CON MARGINE 6x (0,47% e' circa 1/6,4 di 3%)
+emesse/MiB     = emesse=18275, MiB=123420 (114,8 MiB/token misurato, molto vicino al target 110)
+banda H2D      = 13,00 GiB/s
+p1/SHA         = identici alla linea -- parita' bit-esatta
+esito          = DIAGNOSTICO -- verdetto primario del braccio 1: la tesi del motore di trasporto
+                 online sopravvive alla falsificazione a questo punto operativo (parole del
+                 rapporto: "LA TESI DEL MOTORE VIVE")
+percorsi file  = <root sessione, vedi in fondo>\fantasma_l110.*
+anomalie       = nessuna
+```
+
+**Testimoni verbatim (dal rapporto, per L110)**:
+
+```text
+carico fantasma ACCESO: 110 MiB/token = 17 copie da 6.75 MiB, sorgente esperti del modello
+  (mappata) (672 MiB pinnata), stream dedicato non-blocking
+carico-fantasma -> emesse=18275, MiB=123420, copia=6.75 MiB, sorgente=modello, token=1075
+  (114.8 MiB/token), confini=96105 (89.4/token), banda H2D=13.00 GiB/s
+```
+
+## fantasma_l220 -- MIB=220
+
+```text
+tag            = fantasma_l220
+eval t/s       = 16,97 (mediana r2-r4)
+delta vs V0    = -0,53% -- ancora sotto soglia 3%, ma vedi curva e anomalia sotto
+emesse/MiB     = emesse=35475, MiB=239580 (222,9 MiB/token misurato, vicino al target 220)
+banda H2D      = 12,97 GiB/s
+p1/SHA         = identici alla linea -- parita' bit-esatta
+esito          = DIAGNOSTICO -- sotto soglia, ma vedi ANOMALIA sotto (tempo di caricamento)
+percorsi file  = <root sessione, vedi in fondo>\fantasma_l220.*
+anomalie       = SI -- vedi sezione dedicata sotto
+```
+
+## Forma della curva
+
+```text
+MIB/token target   eval t/s (mediana)   delta vs V0 (17,06)
+        0                17,06                 0,00 %
+       55                17,02                -0,23 %
+      110                16,98                -0,47 %
+      220                16,97                -0,53 %
+```
+
+Proporzionale fino a L110, poi satura: da 0 a 110 MiB/token il costo cresce (0,00% -> -0,47%),
+ma raddoppiando ulteriormente il carico (110 -> 220) il costo aggiuntivo e' solo +0,06 punti
+(-0,47% -> -0,53%), non il raddoppio atteso da una relazione lineare. Letto (dal rapporto) come
+overhead di submission (il costo fisso di lanciare le copie), non come contesa di banda: nessuno
+dei quattro bracci si avvicina al ceiling H2D noto di 19,45 GiB/s (banda misurata 12,97-13,01
+GiB/s su L55/L110/L220, sempre sotto i due terzi del ceiling).
+
+## ANOMALIA a verbale (non attribuita)
+
+Tempo di caricamento del modello per `fantasma_l220`: ~9m50s, contro ~1m52s degli altri tre
+bracci (L0/L55/L110). Riguarda solo la fase di caricamento (non il decode: t/s coerente con la
+curva sopra, nessun errore, nessuna divergenza riportata). Non attribuita in questo turno --
+riportata come richiesto dalla regola "qualunque anomalia va a verbale, anche con tutti i
+contatori verdi" (RUNBOOK §4.10), non indagata oltre in questo rapporto.
+
+## Stato macchina ed esito finale
+
+```text
+postflight : 0 processi llama, VRAM 306 MiB (= riposo), RAM libera 88,2 GB (invariata --
+             nessuna perdita su 4 lanci del server)
+commit     : NESSUNO eseguito dall'esecutore 11 (questa voce di ledger e' stata compilata e
+             committata dall'agente documentazione su istruzione del coordinatore -- vedi nota
+             di provenienza in testa alla sezione)
+```
+
+**Verdetto complessivo per il mandato (dal rapporto)**: parita' bit-esatta su tutte le 16
+richieste della linea (4 bracci x 4 richieste) dimostra che il carico fantasma, fino a 220
+MiB/token, e' puramente additivo sul trasporto e non tocca la traiettoria di calcolo. Il costo in
+t/s resta sotto la soglia di rumore del banco (3%) su tutti e tre i punti non-zero testati, con
+L110 -- il punto indicato dal mandato come verdetto primario -- a -0,47%, un margine di circa 6x
+sotto soglia. La forma della curva (proporzionale poi satura) e la banda H2D mai vicina al
+ceiling indicano che il collo, quando arriva, sara' l'overhead di sottomissione delle copie, non
+la banda del bus. Nessuna promozione a leva di produzione e' stata dichiarata nel rapporto
+ricevuto: resta uno strumento diagnostico dello stesso genere delle sonde 0a/0b/0c del turno
+precedente.
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\`
+(root presunto per continuita' di sessione con i turni 7-10; non ripetuto esplicitamente nel
+rapporto ricevuto) con tag `fantasma_l0`, `fantasma_l55`, `fantasma_l110`, `fantasma_l220`.

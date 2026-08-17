@@ -1193,22 +1193,23 @@ sotto.
 
 Aggiungere una riga per ogni nuova leva parcheggiata, stesso schema: leva, risultato B, note.
 
-### 8.9 Protocollo repliche-in-processo (dettato utente, 17/8)
+### 8.9 Protocollo repliche-in-processo — SOSPESA in attesa di decisione dell'utente sulla genealogia delle repliche (17/8)
 
-**Un braccio = un processo server, `-Repetitions 3`** (§3.1: "numero di richieste nello
-**stesso** processo server"). Le 3 repliche di un braccio sono richieste **sequenziali allo
-stesso processo**, non processi separati. Motivo: isola la variabile sotto test (la leva) dal
-rumore di caricamento/allocazione che un riavvio del processo introdurrebbe a ogni replica.
+**SOSPESA.** La prescrizione precedente (un processo, `-Repetitions 3`) non è più operativa.
+Al suo posto, questa nota tecnica:
 
-**Nota di onestà**: i banchi promossi di questa sessione (`truth_clean2`, `nmax3fix_graphs`,
-`conf07_graphs`, `conf09_graphs`) hanno invece usato **tre `-Tag` distinti con
-`-Repetitions 1` ciascuno** (tre processi separati, uno per replica) — è la prassi
-**precedente** a questa regola, non un precedente a suo favore. Da questa regola in avanti si
-usa un solo processo con `-Repetitions 3`.
+> Le repliche nello stesso processo con `porto_hot_snapshot=0` **NON** sono corse
+> indipendenti: la residenza della cache esperti sopravvive fra richieste
+> (`run_porto_hot.ps1:37-38`; precedente §5.2) — misurano il **REGIME CALDO STAZIONARIO**.
+> Sono legittime **SOLO** come genealogia dichiarata a parte (più veloce ~3× e più simile
+> alla produzione), **MAI** mescolabili con banchi a processi-separati nello stesso
+> confronto. Fino alla decisione dell'utente (freddo vs caldo), il protocollo operativo
+> resta: **una replica = un processo**. Il rifiuto motivato dell'esecutore del 17/8
+> (LEDGER_17, nota metodologica) è la prassi corretta.
 
-Vale anche per il confronto B-vs-A di §8.7 punto 3: **stesso schema per ciascuno dei due**
-(3 repliche interne allo stesso processo), **processo diverso fra B e A** (sono due
-configurazioni diverse, richiedono due riavvii, salvo il caso hot-switch del punto 4).
+**Conseguenza per §8.7 punto 3**: dove quel punto dice "stesso processo, §8.9" per le 3
+repliche di B, si legga **sospeso allo stesso modo** — fino alla decisione dell'utente valgono
+lì pure tre processi separati (una replica = un processo), non uno.
 
 ---
 

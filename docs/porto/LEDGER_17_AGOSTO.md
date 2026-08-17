@@ -403,6 +403,322 @@ scartare (il segno resta positivo su tutte e tre le repliche, mai sotto fb8... s
 16,72 di fb8-r1 ma > fb8 mediana 16,70), ma non e' nemmeno il "+5-8% della parete" che
 ROOT_CAUSE §4 H2 stimava come guadagno atteso.
 
+## Riancoraggio genealogia calda — warm_anchor_b1200_20260817
+
+Decisione dell'utente (tramite coordinatore), arrivata dopo l'obiezione sollevata sopra: la
+genealogia CALDA (residenza che sopravvive fra richieste consecutive nello stesso processo)
+diventa il regime ufficiale per la produzione, separato e NON comparabile a verdetto con la
+genealogia fredda dei 5 bracci sopra. Protocollo: un processo, `-Repetitions 4`, richiesta 1 =
+warm-up (dato, fuori verdetto), verdetto = mediana delle richieste 2-4.
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'warm_anchor_b1200_20260817' -MaxTokens 1200
+  -Repetitions 4 -PortoHotSnapshot 0 -SpecNmax 3
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0'
+  (FORK_BLOCCHI non passato = default del runner = 8, stessa griglia di fb8)
+telemetria = work\sample_hw.ps1 -Tag warm_anchor_b1200_20260817 -OutDir <runs> -IntervalSeconds 2
+  (avviato non appena il processo llama-server compare, fermato da solo alla sua uscita)
+```
+
+**Cancelli di processo (una volta sola)**: manifesto `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` —
+PASSATO. `sched-profilo` righe = 0 — PASSATO. Motore `n_max=3, n_min=0, p_min=0.00, conf_min=0.80`
+— PASSATO. Riga cache-esperti identica al riferimento (473 slot, massa=2, sfratto_par=1, ...) —
+PASSATO. FORK/JOIN acceso, blocchi copia 8 — PASSATO. `CONTESA`=0, `GGML_ASSERT`/`CUDA error`=0
+— PASSATO. Processi residui dopo chiusura = 0 — PASSATO.
+
+### Serie per richiesta (valuta calda: SHA/p1 sono DATO, non cancello)
+
+| richiesta | ruolo | eval t/s | p1 (draft acceptance) | mean len | SHA output | content_chars | finish |
+|---|---|---:|---|---:|---|---:|---|
+| r1 | warm-up (dato) | 16,65 | 0.90281 (771/854) | 2,80 | `1EDA23452D...9089` — **identico al freddo** | 3782 | length |
+| r2 | verdetto | 14,57 | 0.81078 (677/835) | 2,30 | `3CD00E94EA...4DABA` | 2107 | length |
+| r3 | verdetto | 14,77 | 0.81862 (677/827) | 2,30 | `AA5A128AC7...9DDF7` | 3015 | length |
+| r4 | verdetto | 15,89 | 0.85649 (746/871) | 2,65 | `C65F9F2414...8D78B` | 3133 | length |
+
+**r1 riproduce ESATTAMENTE la traiettoria fredda** (stesso SHA, stesso p1 .90281, stesso
+content_chars 3782 di tutti e 15 i run del sweep sopra) — coerente: e' la prima richiesta su
+processo appena caricato, nessuna residenza ancora accumulata. **r2/r3/r4 divergono fra loro E
+da r1** (tre SHA diversi, p1 in calo a .81-.86): la residenza che sopravvive cambia davvero la
+traiettoria di calcolo a ogni richiesta successiva, non converge a un secondo stato fisso.
+
+```text
+valori ordinati (r2,r3,r4) : 14,57 / 14,77 / 15,89
+MEDIANA (verdetto caldo)   : 14,77
+spread max-min             : 9,06 %   (va oltre la soglia 5% del RUNBOOK: il caldo e' un banco
+                                        piu' rumoroso del freddo, atteso e coerente con traiettorie
+                                        diverse a ogni richiesta)
+```
+
+### Controllo di coerenza sul testo (prima richiesta-verdetto = r2)
+
+Letto per intero `warm_anchor_b1200_20260817.r2.output.txt` (2107 caratteri, 59 righe): apre con
+"Ecco il codice HTML completo per una landing page cyberpunk neon di NeuraForge..." poi markdown
+fence + HTML/CSS in tema (header, variabili colore neon, font Orbitron/Rajdhani), si interrompe a
+meta' di una dichiarazione CSS per esaurimento del budget di 1200 token. **Sano**: nessun loop,
+nessuna ripetizione patologica, nessun testo fuori tema o degenerato — la brevita' (2107 contro
+3782 caratteri di r1) e' spiegata dal mean len piu' basso (2,30 contro 2,80: piu' round di
+verifica per token accettato), non da un guasto.
+
+### Contatori cache-esperti — trend, non serie per richiesta esatta
+
+**Trovato un limite reale, riportato onestamente invece di forzare una precisione che il log non
+offre**: il blocco `domanda` + `bussate al momento del buco` (cache-esperti.cu:6632-6649) si
+stampa a intervalli irregolari legati a un trigger interno (non un timer, non un confine di
+richiesta) — 8 istantanee del contatore bersaglio nell'intero processo, i cui numeri di riga
+(498, 553, 620, 675, 762, 851, 886, 970) **non cadono esattamente sui confini delle 4 richieste**
+(righe p1 a 579/700/818/939). Non e' possibile isolare "buchi della richiesta N" senza inventare
+un'attribuzione che il log non sostiene. Riporto invece il TREND cumulativo, che e' un dato reale:
+
+```text
+riga  domanda    colpi%   buchi     bussate 8+ (quota sul totale buchi classificati)
+498     70153    68,9%     21831    56,0%
+553    253765    70,8%     74136    72,0%
+620    378901    71,4%    108277    75,9%
+675    543437    70,4%    160783    75,7%
+762    667485    71,0%    193287    77,7%
+851    822905    70,7%    241387    77,6%
+886    979684    70,7%    286668    77,7%
+970   1104724    70,4%    327079    77,7%   <- finale, fine processo (dopo r4)
+```
+
+**Colpi% resta piatto 68,9-71,4% per tutto il processo**, comprese le richieste con p1 piu'
+basso: l'hit-rate della cache esperti (quali esperti sono residenti in VRAM) NON segue il calo di
+p1 (accettazione della bozza). Sono due meccanismi indipendenti: la cache-esperti decide quali
+pesi sono in VRAM, la bozza decide quanti token proporre/accettare. **Il calo di t/s nel caldo
+sembra guidato da p1, non dalla cache-esperti.** La quota di buchi "8+ bussate" (tempo di attesa
+lungo prima dello sfratto) sale dal 56% al 77,7% e poi si stabilizza: primo segno di residenza che
+lavora, poi satura.
+
+### Contatori richiesti ma non presenti nel log
+
+`lane_cpu`, `lane_gpu`, `lane_scudati`: **non presenti nel log** — cercato con
+`Select-String -Pattern 'lane'` sull'intero file (990 righe), zero corrispondenze. I contatori
+esistono nel codice come interi device incrementati con `atomicAdd`
+(`cache-esperti.cu:2096-2098` dichiarazione, molteplici siti di incremento), ma non ho trovato
+nessuna `fprintf` che li stampi con quel nome in questa configurazione (K=2 di default, non
+K=0). Non deducibili da altri numeri senza inventare. Se servono, vanno cercati con K=0 (braccio
+successivo) o serve indicare il sito di stampa esatto.
+
+### Telemetria (work\sample_hw.ps1, 2 s/campione, 187 campioni validi)
+
+```text
+campioni con util.gpu>30%   : 140/187
+SM clock (busy)              : mediana 1935 MHz (min 225, max 1942) -- combacia col regime SOTA storico (1950 MHz), nessun throttle
+VRAM usata (busy)            : mediana 11896 MiB (picco assoluto 11898 MiB, minimo 372 MiB a processo concluso)
+potenza (busy)                : mediana 101,1 W (combacia col regime storico 95-100 W)
+```
+
+### Riferimenti annotati accanto (NESSUN confronto di verdetto attraverso la genealogia)
+
+```text
+freddo fb8 di oggi (mediana 3 processi indipendenti)  = 16,70
+campione storico freddo (nmax3fix_graphs, 16/8)       = 16,34
+CALDO — r1 (warm-up, = freddo per costruzione)        = 16,65
+CALDO — verdetto (mediana r2-r4)                      = 14,77   <-- PRIMO RIFERIMENTO GENEALOGIA CALDA
+```
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\warm_anchor_b1200_20260817.*`
+
+---
+
+## warm_k0_b1200_20260817 — ABORTITO, CUDA error. NESSUNA MISURA.
+
+Primo braccio della campagna adaptive-K (`LLAMA_OVERLAP_K=0`, lane CPU spenta), stesso
+protocollo di warm_anchor + `LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8` (igiene, inerte:
+il trasporto calendario resta sincrono in questa configurazione).
+
+```text
+comando = come warm_anchor, -Extra con in piu' 'LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;LLAMA_OVERLAP_K=0'
+```
+
+**La corsa e' fallita durante la richiesta 1 (task 0), PRIMA di generare un solo token**, subito
+dopo l'elaborazione del prompt (`cached n_tokens = 64`, poi `init_sampler`), nella fase di
+riserva/cattura del grafo CUDA:
+
+```text
+CUDA error: operation failed due to a previous error during capture
+  current device: 0, in function ggml_cuda_kernel_launch at D:\llama-overlap\ggml\src\ggml-cuda\common.cuh:1681
+  cudaGetLastError()
+1.58.936.671 E CUDA error: operation failed due to a previous error during capture
+1.58.936.677 E   current device: 0, in function ggml_cuda_kernel_launch at D:\llama-overlap\ggml\src\ggml-cuda\common.cuh:1681
+1.58.936.677 E   cudaGetLastError()
+D:\llama-overlap\ggml\src\ggml-cuda\ggml-cuda.cu:123: CUDA error
+```
+
+Il server e' morto immediatamente dopo (righe 492/495/498 del `.server.log`, che finisce li':
+498 righe totali). `run_porto_hot.ps1` ha ricevuto `Invoke-RestMethod: Connessione sottostante
+chiusa... chiusa dal server in modo imprevisto` alla riga 209, e allo shutdown ha trovato il
+processo `gia-uscito` (crash, non un Ctrl+C riuscito).
+
+**Cancelli**: manifesto confermava `LLAMA_OVERLAP_K=0(E)` (esplicito, la leva era davvero
+impostata) e `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` (grafi CUDA attivi, coerente con la regola
+vitale). Riga cache-esperti identica al riferimento fino al punto del crash. **Salute: FALLITA**
+— CUDA error presente, `finish_reason` mai raggiunto, nessun `summary.json` prodotto.
+
+**Postflight**: 0 processi llama residui, RAM libera 90,4 GB (nessuna perdita). Chiusura non
+pulita (il processo e' morto da solo, non e' stato un Ctrl+C) ma senza residui rilevabili.
+
+**Nessun t/s riportato: non e' zero, e' NESSUNA MISURA** (RUNBOOK §4.8). Non ho riprovato con
+una variante (niente K frazionario, niente disattivazione grafi, niente altro tentativo): la
+regola vitale e' fermarsi e riportare. Il commento del codice a `llama-graph.cpp:1814-1817`
+descrive K=0 come il cammino piu' semplice ("il nodo di partizione NON viene inserito, il grafo
+e' strutturalmente quello di oggi") — il crash durante la CATTURA del grafo CUDA suggerisce che
+K=0 in combinazione con i grafi CUDA attivi percorre un ramo raramente esercitato (la baseline
+usa sempre K=2) con un problema latente, non che la leva in se' sia incoerente con la sua
+descrizione. **Non e' stato possibile determinare se il problema sia specifico di K=0+grafi, di
+K=0 in generale, o di qualcos'altro nella combinazione con il resto della configurazione calda
+senza ulteriori bracci — decisione che spetta all'utente/coordinatore, non presa qui.**
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\warm_k0_b1200_20260817.server.log` (498 righe, nessun `.summary.json`, nessun `.r*.output.txt`)
+
+---
+
+## k0_nograph_diag_b1200_20260817 — diagnosi isolamento del crash: RISOLTA
+
+Un solo lancio diagnostico, `-Repetitions 1`, identico a `warm_k0` (K=0) ma con
+**`GGML_CUDA_DISABLE_GRAPHS=1` impostato ESPLICITAMENTE**. Questo NON e' la trappola descritta
+nella regola vitale #1 del mandato originale (quella riguarda il lasciarla impostata per errore
+in un banco di certificazione dove si vogliono i grafi accesi): qui e' uno **strumento usato
+intenzionalmente** per isolare la causa del crash, e va letto come tale. `t/s` di questo braccio
+**non e' confrontabile con nient'altro** in questo ledger (grafi spenti cambiano il cammino di
+calcolo in modo massiccio) — e' diagnostica pura.
+
+```text
+comando = come warm_k0, -Extra con in piu' 'GGML_CUDA_DISABLE_GRAPHS=1', -Repetitions 1
+manifesto = GGML_CUDA_DISABLE_GRAPHS=1(E)  LLAMA_OVERLAP_K=0(E)   -- entrambi confermati come da intenzione
+```
+
+**Risultato: NESSUN crash.** Completato per intero, `finish_reason=length`, 1200 token generati,
+0 `CUDA error`, 0 `GGML_ASSERT`, 0 `CONTESA`, 0 processi residui.
+
+```text
+eval time = 102988.83 ms / 1200 tokens (85.82 ms/token, 11,65 t/s)   [NON CONFRONTABILE: grafi spenti]
+p1        = 0.78319 (643 accepted / 821 generated), mean len = 2,16
+SHA       = F501E5C5785EF309B34870AA0AAC54161FF90700011F37825F1EBE5172FE194A
+copie/buchi = domanda 357588, colpi 197595 (55,3%), buchi 159993 (44,7% miss)
+```
+
+Prime righe del testo generato (controllo di coerenza): "Ecco il codice HTML completo per una
+landing page cyberpunk di NeuraForge..." poi HTML/CSS in tema, sano, nessuna degenerazione.
+
+**VERDETTO DELLA DIAGNOSI: il bug e' specifico della CATTURA del grafo CUDA sul cammino
+tutto-GPU.** Con K=0 e grafi ATTIVI (`warm_k0`, sopra) il server crasha con `CUDA error:
+operation failed due to a previous error during capture` durante la primissima cattura. Con K=0
+e grafi SPENTI (questo braccio) lo stesso identico calcolo (K=0, nessuno split CPU) procede senza
+errori. Per esclusione: l'operazione che va in errore e' illegale **solo durante la cattura**
+(non nell'esecuzione normale), e oggi sopravvive nella configurazione standard (K=2) solo perche'
+lo split CPU spezza il grafo in pezzi piu' piccoli che non includono mai quell'operazione nello
+stesso segmento catturato. **Non e' stato necessario uno stack completo**: il primo ramo
+dell'ipotesi (nessun crash senza grafi) si e' verificato, quindi la diagnosi si chiude qui come
+da mandato, senza esplorare oltre.
+
+**Nota supplementare non richiesta ma osservata**: il colpi% crolla a 55,3% (contro 70-71% del
+regime K=2) — coerente col fatto che K=0 toglie l'intera valvola di sfogo verso la CPU: tutti gli
+esperti devono passare dalla cache VRAM da 473 slot, che quindi si sovraccarica rispetto al
+regime K=2 dove una parte del traffico va altrove. Non e' il focus della diagnosi richiesta, ma e'
+coerente e va tenuto a mente per la campagna adaptive-K.
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\k0_nograph_diag_b1200_20260817.*`
+
+---
+
+## warm_anchor_restore_b1200_20260817 — IPOTESI CONFERMATA: il caldo con restore e' riproducibile
+
+Stesso protocollo di `warm_anchor` ma con lo snapshot hot attivo nella forma verificata il 16/8
+(`hotmask15_natural_full`): `-PortoHotSnapshot 1` **costante su tutte e 4 le richieste**
+(non una sequenza ON/OFF: la prima chiamata ON in un processo senza snapshot precedente CATTURA
+da sola, per costruzione del meccanismo — verificato nel precedente storico
+`hotmask15_natural_full_b1200_r2_20260816`, dove 2 richieste ON diedero R1=cattura/R2=ripristino
+con SHA identico) + `PORTO_HOT_MASK=15` (target=1, draft=2, stato spec=4, cache esperti=8: tutti
+e quattro i componenti).
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'warm_anchor_restore_b1200_20260817' -MaxTokens 1200
+  -Repetitions 4 -PortoHotSnapshot 1 -SpecNmax 3
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15'
+telemetria = work\sample_hw.ps1, stesso schema dei bracci precedenti
+```
+
+**Cancelli di processo**: manifesto `GGML_CUDA_DISABLE_GRAPHS=<spento>(D)` — PASSATO.
+`sched-profilo`=0 — PASSATO. Motore `n_max=3, conf_min=0.80` — PASSATO. Riga cache-esperti
+identica al riferimento — PASSATO. `CONTESA`=0, `CUDA error`/`GGML_ASSERT`=0 — PASSATO.
+Processi residui = 0 — PASSATO.
+
+**Righe porto-hot (prova diretta del meccanismo, non dedotta)**:
+
+```text
+riga 501: task 0    | porto-hot: cattura    n_tokens=64, coda=4, mask=15, ... numero=1     <- r1
+riga 615: task 432  | porto-hot: ripristino n_tokens=64, ...            mask=15, numero=1  <- r2
+riga 711: task 862  | porto-hot: ripristino n_tokens=64, ...            mask=15, numero=2  <- r3
+riga 829: task 1292 | porto-hot: ripristino n_tokens=64, ...            mask=15, numero=3  <- r4
+```
+
+### Serie per richiesta
+
+| richiesta | ruolo | eval t/s | p1 | SHA output | content_chars |
+|---|---|---:|---|---|---:|
+| r1 | cattura | 16,72 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r2 | ripristino #1 (verdetto) | 16,88 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r3 | ripristino #2 (verdetto) | 16,86 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+| r4 | ripristino #3 (verdetto) | 16,83 | 0.90281 (771/854) | `1EDA23452D...9089` | 3782 |
+
+**Le quattro richieste sono bit-identiche fra loro** (stesso SHA, stesso p1, stesso
+content_chars) — e identiche anche al riferimento freddo (`fb8`, campione storico n_max=3).
+L'ipotesi e' **CONFERMATA senza ambiguita'**: con restore dello stato canonico, il caldo smette
+di essere una traiettoria diversa a ogni richiesta e torna esattamente riproducibile.
+
+```text
+valori ordinati (r2,r3,r4) : 16,83 / 16,86 / 16,88
+MEDIANA (verdetto caldo con restore) : 16,86
+spread max-min                       : 0,30 %   (molto stabile, ben sotto il 5%)
+
+vs CALDO free-run (warm_anchor, 14,77)      : +14,15 %
+vs FREDDO fb8 di oggi (16,70)               : +0,96 %   (sostanzialmente lo stesso numero)
+vs campione storico freddo (16,34)          : +3,18 %
+```
+
+### Controllo di coerenza (r2, identica per costruzione a r1/r3/r4)
+
+Letto `warm_anchor_restore_b1200_20260817.r2.output.txt`: apre con "Ecco il codice HTML completo
+per una landing page cyberpunk neon di NeuraForge..." poi HTML/CSS coerente in tema (reset CSS,
+variabili colore). Sano, nessuna anomalia — atteso, dato che questa e' la stessa identica
+traiettoria byte-per-byte gia' letta e verificata nel braccio `fb8` a inizio turno.
+
+### Telemetria (180 campioni validi, 123 busy util>30%)
+
+```text
+SM clock (busy)   : mediana 1927 MHz (min 225, max 1942) -- regime SOTA, nessun throttle
+VRAM usata (busy) : mediana 11898 MiB (picco 11898 MiB)
+potenza (busy)    : mediana 103,3 W (regime storico 95-100 W)
+```
+
+### Verdetto per il mandato
+
+**QUESTO e' il protocollo caldo vero**: veloce (16,86, sostanzialmente pari al freddo 16,70) E
+riproducibile (SHA identico su tutte le richieste post-cattura). Il 14,77 del free-run
+(`warm_anchor`, sopra) resta annotato come **regime free-run**, non scartato: la produzione reale
+**e'** free-run (nessun sistema di produzione fa restore-a-ogni-richiesta di serie), quindi resta
+un numero legittimo e rilevante — ma ora sappiamo CHE COSA lo distingue dal caldo-con-restore.
+
+**FRONTE NUOVO, da annotare per il prossimo turno**: *"p1 degrada fra richieste consecutive in
+regime free-run: e' uno stato del drafter/della speculazione che si trascina, non rumore."*
+Prova diretta raccolta in questo turno: `warm_anchor` free-run ha dato p1 = .90281 (r1, fresco) →
+.81078 (r2) → .81862 (r3) → .85649 (r4) — un calo di quasi 10 punti percentuali dopo la prima
+richiesta, poi un recupero parziale, MAI un ritorno al valore iniziale. Con restore attivo (questo
+braccio) p1 resta fisso a .90281 su tutte e quattro. Questo isola il colpevole: **non e' la
+cache-esperti** (il suo hit-rate resta piatto 68,9-71,4% in entrambi i regimi, vedi sopra), **e'
+qualcosa nello stato del drafter o della pipeline speculativa che il restore azzera e il free-run
+lascia derivare**. Nessuna ipotesi sul meccanismo esatto e' stata verificata in questo turno:
+resta un'indagine aperta, non un risultato.
+
+percorsi file: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\warm_anchor_restore_b1200_20260817.*`
+
+---
+
 **Lettura complessiva per il mandato.** Nessuna delle leve testate (griglia piu' larga, join
 piu' scaglionato) sposta il t/s fuori dalla banda di rumore del banco in modo netto e univoco,
 tranne fserial verso il basso (il pavimento). Il tetto strutturale della sovrapposizione
@@ -417,3 +733,77 @@ configurazione di default**: fb8 (la configurazione odierna, BLOCCHI=8, nessun D
 il punto di riferimento.
 
 ---
+
+# SESTA RIPRESA — KV reuse sul banco lungo (verifica `KV_REUSE_VERIFICA.md`)
+
+Esecutore: sesto turno, contesto fresco. Mandato del coordinatore: applicare le due modifiche
+autorizzate a `sota100k_ctx150k.ps1` (repliche in-processo + `-cms 32`) e misurare il braccio
+B-cms32 secondo il disegno B-first del piano.
+
+Fonti: `docs/porto/RUNBOOK_BANCO_DS4.md`, `D:\ds4_work\design\KV_REUSE_VERIFICA.md` (risposta in
+una riga del piano: prefill R1 1.169.865 ms / 101.558 token, R2 419,73 ms / 4 token nello stesso
+processo, fattore ~2.787x, gia' misurato l'11/8 su `banda.server.log`; il banco lungo di oggi non
+lo sfrutta perche' lo script manda una sola richiesta per processo).
+
+## Preflight (nuovo turno)
+
+```text
+data/ora        = 2026-08-17 (turno serale)
+processi llama  = 0
+porta 8000 (UI) = non toccata (nessun listener trovato)
+porta 8099      = libera
+porta 8100      = libera
+nvidia-smi (UNICA invocazione extra di preflight) =
+  NVIDIA GeForce RTX 3060, sm=210MHz, mem=405MHz, power=12.55W, used=372MiB, free=11744MiB,
+  pcie_gen=1 (a riposo), pcie_width=16, throttle=0x0000000000000001
+ram_libera_gb   = 89.4 GB
+uptime_min      = 3206.6 (~53,4h, nessun riavvio dall'ultimo preflight di oggi)
+disco_c_gb      = 49.2 GB liberi
+disco_d_gb      = 119.7 GB liberi
+sha_llama_server= C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (IDENTICO al preflight precedente di oggi)
+sha_ggml_cuda   = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (IDENTICO)
+build           = build 10093 (3014d3756) -- invariato, nessuna ricompilazione in mezzo
+sha_jprompt102k = 3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473 (285.268 byte,
+                  20260811 05:16 -- il banco lungo usa jprompt102k.txt, non jprompt.txt da 252
+                  byte/§1.8 del banco corto; nessuna firma storica con cui confrontarlo, registrata
+                  qui come nuova baseline)
+```
+
+## Modifica autorizzata a `sota100k_ctx150k.ps1` (unico file, NIENT'ALTRO)
+
+Autorizzazione esplicita del coordinatore per questo file soltanto, due modifiche dal piano KV
+(`KV_REUSE_VERIFICA.md` §2.a, §3.5):
+
+1. nuovo parametro `-Repliche N` (difetto 1, i bracci storici restano riproducibili) con un
+   ciclo di N richieste IDENTICHE consecutive nello STESSO processo, attorno all'`Invoke-RestMethod`
+   (riga ~235 originale); artefatti per-replica con suffisso `_q$r` su `response.json`/`output.txt`
+   (log/summary restano un solo file per processo); `id_slot=0` e `cache_prompt=true` dichiarati
+   nel corpo JSON (righe 152-158 originali) -- gia' veri per difetto (`common.h:626`, `server-
+   context.cpp:4592`), ora resi espliciti nella richiesta;
+2. `'-cms', '32'` aggiunto a `$serverArgs` (righe 190-198 originali).
+
+**Verifica lettori PRIMA di usare la leva** (regola vitale, grep eseguito su `D:\llama-overlap`,
+sola lettura):
+
+```text
+D:\llama-overlap\common\arg.cpp:1484-1499
+  {"-ctxcp","--ctx-checkpoints","--swa-checkpoints"} -> params.n_ctx_checkpoints    (difetto 32)
+  {"-cms","--checkpoint-min-step"}                   -> params.checkpoint_min_step (difetto 8192)
+D:\llama-overlap\common\common.h:628-629 conferma i due difetti (32 / 8192).
+D:\llama-overlap\tools\server\server-context.cpp:4592
+  task.id_slot = json_value(data, "id_slot", -1);   -- campo confermato, -1=auto senza il campo
+```
+
+Nota di precisione: il testo del mandato citava `-cms` come "(--ctx-checkpoints 32)" fra
+parentesi; il grep mostra che `-cms` e' in realta' `--checkpoint-min-step` (spaziatura minima fra
+checkpoint), distinto da `--ctx-checkpoints`/`-ctxcp` (numero massimo di checkpoint, gia' 32 di
+difetto e non toccato). La modifica applicata e' quella letterale del mandato (`'-cms', '32'`) e
+corrisponde esattamente all'aritmetica del piano (`checkpoint_min_step` 8192 -> 32, per far
+sopravvivere il checkpoint di coda a 101.593 token invece di fermarsi a 99.549 -- piano §1.3).
+
+Diff completo salvato in
+`C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\sota100k_kvreuse.patch`
+(4 hunk: param `Repliche`, `cache_prompt`/`id_slot`, `-cms`, ciclo repliche -- nessun'altra riga
+toccata, verificato leggendo il diff per intero). Sintassi verificata con
+`[System.Management.Automation.Language.Parser]::ParseFile` (0 errori) prima del lancio. Nessuna
+ricompilazione: la modifica e' solo nel wrapper PowerShell, il binario resta quello del preflight.

@@ -2366,3 +2366,136 @@ r*.response.json/hw.csv/cpu.csv/telemetry_wait.log) in
 `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\` con tag
 `adk_s1_apparato`, `adk_trace_v2`, `adk_sonda_v2`; trace e piano in `D:\ds4_work\adk\`
 (`adk_trace_v2_b1200_k2_nmax3_20260817.cestrc`, `adk_piano_v2_b1200_k2_nmax3_20260817.portcal`).
+
+---
+
+## Braccio supplementare — MASSA_CORSIE (`massa_corsie_b1`) — confermato dal coordinatore dopo il fatto
+
+**Nota di processo.** Questo braccio era stato scritto (script pronto) durante la preparazione dei
+quattro passi sopra, sulla base di una convinzione erronea di aver ricevuto un ordine del
+coordinatore mentre S1 girava — non trovavo traccia di alcun messaggio simile nel mio contesto e
+l'ho dichiarato esplicitamente come probabile errore, **senza eseguire lo script**. Il coordinatore
+ha poi confermato ESPLICITAMENTE, in un messaggio successivo ricevuto per il canale normale, che
+l'ordine era reale ("mandato via messaggio mentre S1 girava, consegna arrivata in forma anomala")
+e ne ha richiesto l'esecuzione. Eseguito da quel punto in poi. Resta il fatto, riportato per
+completezza, che non ho mai avuto modo di verificare in modo indipendente il contenuto del
+presunto messaggio originale delle 09:2x — il braccio e' stato eseguito sulla base della conferma
+esplicita ricevuta, non di un ricordo recuperato.
+
+```text
+comando = & '...\work\run_porto_hot.ps1' -Tag 'massa_corsie_b1' -MaxTokens 1200 -Repetitions 4
+  -PortoHotSnapshot $true -SpecNmax 3 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+  -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_CACHE_ESPERTI_CALENDARIO_BLOCCHI=8;
+  LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;LLAMA_CACHE_ESPERTI_MASSA_CORSIE=1'
+protocollo = config campione V0 pulita (apparato calendario/trace/piano/K_ADATTIVO SPENTO --
+  nessuna di quelle variabili e' impostata) + warm-restore 4 richieste, mediana r2-r4
+```
+
+**Grep del lettore PRIMA del lancio** (`D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu`):
+nome confermato `LLAMA_CACHE_ESPERTI_MASSA_CORSIE` (righe 1924/1930), lettura **a valore**
+(`cache_env_intero`, non a presenza), riga di log testimone `cache-esperti: massa globale ACCESA:
+... corsie=%d ...` (riga 2682-2687). **Scoperta prima del lancio**: il default nel codice-sorgente
+e' 1, ma `run_porto_hot.ps1` (righe 47-48) lo forza esplicitamente a `'0'` insieme a
+`MASSA_AMMISSIONE` — confermato anche sul log reale di V0 (`v0_k2_subtract.server.log`:
+`corsie=0`). La leva e' quindi rimasta spenta in **ogni** braccio di questa sessione (V0, S1, T2,
+SONDA v2 compresi) fino a questo momento: accenderla e' un test reale, non un no-op.
+
+| richiesta | ruolo | eval t/s | p1 | SHA output | content_chars |
+|---|---|---:|---|---|---:|
+| r1 | cattura | 15,94 | 0.86449 | `5368487D8B...AAA837EA3` | 3602 |
+| r2 | verdetto | 16,09 | 0.86449 | `5368487D8B...AAA837EA3` | 3602 |
+| r3 | verdetto | 16,09 | 0.86449 | `5368487D8B...AAA837EA3` | 3602 |
+| r4 | verdetto | 16,09 | 0.86449 | `5368487D8B...AAA837EA3` | 3602 |
+
+```text
+valori ordinati (r2,r3,r4) : 16,09 / 16,09 / 16,09
+MEDIANA                    : 16,09          spread max-min : 0,00 %
+vs V0 (17,06)               : delta = -5,69 %   FUORI banda ±3%, NEGATIVO
+```
+
+**Righe testimone (verbatim)**:
+
+```text
+cache-esperti: massa globale ACCESA: emivita=64 cicli, unita=4, floor=3, margine vittima=2,
+  ammissione=0, corsie=1, domanda=tutti i 6 esperti route                <- corsie=1, RAGGIUNTA
+cache-esperti: 473 slot da 6.75 MiB = ... sfratto_par=1, ...             <- identica al riferimento
+manifesto: GGML_CUDA_DISABLE_GRAPHS=<spento>(D)                         <- grafi ACCESI
+cache-esperti: domanda 1108329 (colpi 783925 = 70.7%, buchi 324404, miss 29.3%, in ritardo
+  0 = 0.0% dei prenotati)                                                <- totale finale
+cache-esperti: byte a domanda (stream calcolo) 2139.51 GiB, in prefetch (stream DMA) 0.00 GiB
+                                                                           <- totale finale
+cache-esperti: riusi dell'installato -> mai=269652 (83.3%), 1=32128 (9.9%), 2-3=15744 (4.9%),
+  4+=6008 (1.9%) | installati=323532                                     <- totale finale
+cache-esperti: prefetch prenotati 0, saltati 0, scartati 0, guasti 0     <- sempre, ogni istantanea
+righe sched-profilo = 0        0 GGML_ASSERT/CUDA error/divergenze/CONTESA/MORTO
+shutdown = ctrl-c
+```
+
+**CANCELLI (dal mandato del coordinatore)**:
+
+```text
+(a) raggiungibilita': corsie=1 nel log                                   PASSATO
+    (altrimenti l'esito sarebbe da buttare -- non e' il caso qui)
+
+(b) p1 in banda 2sigma [0.8825; 0.9231]                                  FALLITO
+    p1 = 0.86449, SOTTO il limite inferiore (0.8825). Traiettoria spostata, non rumore di banco.
+
+(c) colpi VRAM in salita vs V0 (71.0%)                                   FALLITO
+    70.7% finale -- leggermente IN CALO, non in salita (differenza piccola, ~0,3 punti,
+    ma nella direzione sbagliata).
+
+(d) byte a domanda in calo vs V0 (2105,60 GiB)                           FALLITO
+    2139,51 GiB finale -- in SALITA (+1,6%), non in calo. Coerente con buchi in salita
+    (324.404 contro 319.263 di V0, stesso +1,6%).
+
+(e) contatore "mai" in calo vs V0 (85,2%)                                PASSATO
+    83,3% finale -- in calo di 1,9 punti percentuali. L'UNICO segnale nella direzione attesa:
+    coerente con l'ipotesi del lettore (l'ordinamento per merito dentro ogni classe di residenza
+    tiene gli esperti piu' spesso riusati in GPU e manda alla CPU quelli di massa minore prima).
+
+(f) guasti=0 e coerenza testo letta                                      PARZIALE
+    guasti=0 -- PASSATO (sempre zero, ogni istantanea). Testo letto per intero (r2, 3602
+    caratteri, 113 righe): italiano corretto in apertura, HTML/CSS cyberpunk NeuraForge
+    pertinente -- MA un DIFETTO isolato trovato: il blocco `.logo span { color: #ff00ff;`
+    (riga 94-95) non si chiude mai con `}` prima che inizi `.nav-links {` (riga 96) --
+    una graffa CSS mancante, non presente negli altri tre bracci di oggi (S1/T2/SONDA v2, testo
+    sempre ben formato). Isolato, non un loop/ripetizione patologica, non gibberish -- ma e'
+    un'anomalia da riportare per RUNBOOK SS4.10 ("qualunque anomalia -> il braccio e' fermato e
+    riportato, anche con tutti i contatori verdi"). Lingua sana=si, loop=no, pertinenza=si,
+    degradazione=si (un difetto strutturale isolato nel CSS, non progressivo).
+```
+
+**Telemetria** (`massa_corsie_b1.hw.csv`, 183 campioni/2s, 134 con util>30%): SM mediano 1935 MHz
+(min 210, max 1950, nessun throttle) · potenza mediana 101,51 W · VRAM picco 11898 MiB, media
+10749,2 MiB · CPU% media 46,4%.
+
+**Postflight**: 0 processi llama, VRAM 306 MiB (= riposo), RAM libera 88,4 GB.
+
+**VERDETTO**: mediana **16,09** vs riferimento 17,06 = **-5,69%**, fuori banda e negativo. Non
+"sopra +3%" (anzi, chiaramente negativo): niente B×3 + braccio A, per istruzione esplicita del
+coordinatore va a **PARCHEGGIO con un solo braccio speso**. Su 6 cancelli: 2 passati (a, f-parziale
+su guasti), 1 passato con segnale reale ma piccolo (e), 3 falliti (b, c, d, f-testo). Raggiungibile
+e sano nei contatori duri (zero crash/assert), ma la leva **non porta il beneficio atteso** in
+questa configurazione: sposta la traiettoria (p1 fuori banda) senza migliorare ne' i colpi ne' i
+byte a domanda, con un solo segnale positivo isolato (contatore "mai", -1,9pp) che non compensa il
+costo di velocita' (-5,69%) ne' il piccolo difetto testuale trovato.
+
+**ESITO: PARCHEGGIO.** Aggiunta alla tabella §8.8 del runbook:
+
+| leva | risultato B (1 replica, mediana r2-r4) | note |
+|---|---:|---|
+| `MASSA_CORSIE` | -5,69% (16,09 vs 17,06) | raggiunta (corsie=1), p1 fuori banda 2σ, colpi e byte-a-domanda nella direzione sbagliata, unico segnale positivo sul contatore "mai" (-1,9pp); difetto CSS isolato nel testo (graffa mancante) |
+
+percorsi file: `...\work\runs\massa_corsie_b1.*`
+
+Stato macchina dopo questo braccio: 0 processi llama, VRAM 306 MiB (= preflight), RAM libera 88,4
+GB (invariata dal preflight su 4 lanci del server totali in questo turno). Chiusura pulita
+(`ctrl-c`). NESSUN commit eseguito.
+
+**Fine turno (budget di rotazione esaurito, dichiarato dal coordinatore).** Riepilogo consegne:
+quattro passi del mandato originale (S1/T2/piano-v2/SONDA-v2) completi con verdetto "non armata"
+diagnosticato; braccio supplementare MASSA_CORSIE completo con verdetto PARCHEGGIO. Cinque lanci
+del server llama in tutto il turno, tutti con chiusura pulita, zero perdite di RAM/VRAM, zero
+commit.

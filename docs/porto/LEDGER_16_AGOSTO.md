@@ -1512,6 +1512,10 @@ nessuna altra differenza oltre a quelle in tabella.
 
 ### La leva decisiva: `GGML_CUDA_DISABLE_GRAPHS=0` **spegne** i CUDA graph
 
+> **[CHIUSA 18/8]** Bonifica applicata: cancello A VALORE in `common.cuh` (overlap +
+> subtract), DLL overlap ricompilata (`1ED035D3…` → `06BF8AAF…`). Banco di verifica a tre
+> bracci in coda (macchina contesa la mattina del 18/8). Cronaca: `LEDGER_18_AGOSTO.md`.
+
 Verificato nel sorgente, non dedotto —
 `D:\llama-overlap\ggml\src\ggml-cuda\common.cuh:1266`:
 

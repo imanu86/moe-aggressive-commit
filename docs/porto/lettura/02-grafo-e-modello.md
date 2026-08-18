@@ -522,8 +522,11 @@ un no-op.** E anche a `1` sarebbe inerte per noi: accetta solo nodi con `ggml_nr
 esattamente 3 (`:5084`) — l'MLA di DSV4 non ha un QKV a 3 vie. `LETTO NEL CODICE` i filtri;
 `DEDOTTO` la conseguenza.
 
-**Attenzione, trappola upstream**: `GGML_CUDA_DISABLE_GRAPHS` e' testata con
-`getenv(...) != nullptr` (`common.cuh:1240-1243`), quindi **anche `=0` DISABILITA i grafi**.
+**Trappola upstream, bonificata in casa il 18/8**: upstream testa `GGML_CUDA_DISABLE_GRAPHS`
+con `getenv(...) != nullptr` (a presenza: **anche `=0` DISABILITA i grafi**). Negli alberi
+vivi (overlap, subtract) dal 18/8 il cancello e' A VALORE (`atoi`, `common.cuh`): `=0` ≡
+assente. A ogni rebase da upstream la bonifica va ri-applicata; i binari pre-18/8 restano
+a presenza (LEDGER_18_AGOSTO.md).
 
 ### 4. Il modello di bozza (dflash / DSpark): aggancio, e dove finiscono i suoi tensori
 
@@ -702,8 +705,9 @@ puntatore a funzione col buft CUDA normale (`:1456`, commento `:1288-1290`), cos
 
 11. **`GGML_CUDA_GRAPH_OPT=0` nello script non fa nulla** (gate `atoi(env) == 1`,
     `ggml-cuda.cu:5019`). Non e' un difetto — e' una riga protettiva — ma non va contata come
-    «leva impostata». E la cugina `GGML_CUDA_DISABLE_GRAPHS` si comporta all'opposto: **`=0`
-    disabilita** (`common.cuh:1240-1243`, test su `!= nullptr`).
+    «leva impostata». La cugina `GGML_CUDA_DISABLE_GRAPHS` si comportava all'opposto (**`=0`
+    disabilitava**, test su `!= nullptr`): bonificata il 18/8, ora A VALORE — ma solo nei
+    binari compilati dal 18/8 in poi (LEDGER_18_AGOSTO.md).
 
 ---
 

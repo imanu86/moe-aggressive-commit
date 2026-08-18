@@ -19,7 +19,7 @@ Stato finale di questa sessione: **INCOMPLETO PER BLOCCO DI SCRITTURA ESTERNO AL
 - **LETTO NEL CODICE:** `GGML_CUDA_AR_COPY_THRESHOLD` - lettura indiretta in `ggml/src/ggml-cuda/allreduce.cu:344-345`, nome passato in `ggml/src/ggml-cuda/allreduce.cu:418`.
 - **LETTO NEL CODICE:** `GGML_CUDA_CUBLAS_COMPUTE_TYPE` - `ggml/src/ggml-cuda/ggml-cuda.cu:1884`.
 - **LETTO NEL CODICE:** `GGML_CUDA_DISABLE_FUSION` - `ggml/src/ggml-cuda/ggml-cuda.cu:3846`.
-- **LETTO NEL CODICE:** `GGML_CUDA_DISABLE_GRAPHS` - `ggml/src/ggml-cuda/common.cuh:1241`.
+- **LETTO NEL CODICE:** `GGML_CUDA_DISABLE_GRAPHS` - `ggml/src/ggml-cuda/common.cuh:1241`. **[18/8: bonificato, ora cancello A VALORE — LEDGER_18_AGOSTO.md.]**
 - **LETTO NEL CODICE:** `GGML_CUDA_ENABLE_UNIFIED_MEMORY` - `ggml/src/ggml-cuda/ggml-cuda.cu:134`.
 - **LETTO NEL CODICE:** `GGML_CUDA_GRAPH_OPT` - `ggml/src/ggml-cuda/ggml-cuda.cu:5019`.
 - **LETTO NEL CODICE:** `GGML_CUDA_NO_PINNED` - `ggml/src/ggml-cuda/ggml-cuda.cu:1210`.

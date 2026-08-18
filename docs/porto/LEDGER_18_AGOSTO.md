@@ -91,30 +91,40 @@ Contromisure per il futuro:
 - **REGOLA: mai ricompilare un albero mentre una campagna altrui può star girando sul suo
   build** — prima il censimento processi/artefatti, poi il backup DELLA DLL, poi la build.
 
-## Il banco a tre bracci — IN CODA (macchina contesa)
+## Il banco a tre bracci — ESEGUITO E VERDE (18/8, corse 15:43–16:20)
 
-Due tentativi, entrambi fermati AL PREFLIGHT dall'esecutore (correttamente: zero corse
-lanciate, zero processi toccati):
+Due tentativi fermati AL PREFLIGHT dall'esecutore (zero corse, zero processi toccati):
+**06:38** (banco lungo `pad_b0` su subtract + campagna `topk_fuso`) e **10:28** (replica
+`gather_g1_r2` partita 22 secondi prima del check — le repliche distavano ~74 minuti: una
+sentinella a sola assenza di processi dà falsi «libero»). Sentinella v2 su processi E file,
+conferma a 90 minuti; coordinamento: due avvisi alla sessione «Recupero sessioni Codex e
+workflow agenti», push all'utente, finestra presa solo a quiete vera (ultima scrittura
+altrui 14:05, banco dalle 15:39).
 
-1. **06:38** — banco occupato dal banco lungo `pad_b0` (150k ctx, binario subtract 05:52,
-   pid 10808) più la campagna `topk_fuso` sul runner B.
-2. **10:28** — la campagna `gather_g1` ha rilanciato la replica r2 **22 secondi prima** del
-   check: le repliche distano ~74 minuti (r1 chiusa 09:14, r2 partita 10:28) e una sentinella
-   a sola assenza di processi dà falsi «libero». Sentinella v2: quiete di 90 minuti su
-   processi E file artefatti; arbitrato chiesto all'utente via push.
+Terzo tentativo: preflight §1 TUTTO verde (RAM 88,9 GB, VRAM libera 11.730 MiB, GPU a
+riposo, porte libere) e `sha_ggml_cuda = 06BF8AAF…` verificato PRIMA E DOPO il banco:
+binario fermo per costruzione.
 
-Il preflight ha comunque verificato DUE volte: `sha_ggml_cuda = 06BF8AAF…` (nessuna
-ricompilazione estranea), stub exe invariato, jprompt `C2D18E35…` integro,
-`GGML_CUDA_DISABLE_GRAPHS` assente in tutti e tre gli scope.
+| braccio | t/s (r1/r2/r3) | mediana | delta vs assente |
+|---|---|---:|---:|
+| ASSENTE (`<spento>(D)`) | 16,50 / 16,47 / 16,48 | **16,48** | — |
+| ZERO (`0(E)`) | 16,45 / 16,47 / 16,45 | **16,45** | **−0,18 %** (cancello ≤3 %: SUPERATO) |
+| UNO (`1(E)`) | 13,66 / 13,62 / 13,61 | **13,62** | **−17,35 %** (cancello ≥10 % sotto: SUPERATO) |
 
-Mandato di ripresa (pronto): 9 corse B1200 canonico §3.3, bracci assente/`=0`/`=1`,
-telemetria §6.8 (`<tag>.hw.csv` + `<tag>.cpu.csv` per braccio), riferimento freddo 16,70
-(17/8). Cancelli: |assente−zero| ≤ 3% di assente; uno ≤ 0,90×min(assente, zero); p1 e SHA
-uscita identici sulle 9; manifesto `<spento>(D)`/`0(E)`/`1(E)`; sched-profilo = 0 righe;
-riga `cache-esperti:` identica su tutte.
+Parità perfetta su tutte e 9 le corse: p1 `.90025 (713/792)`, mean len 2,47; SHA uscita
+`4FDCFADF…C65D` **= SOTA storica**; buchi 47.906, colpi 77,9 %; riga `cache-esperti:`
+identica carattere per carattere (473 slot, sfratto_par=1); sched-profilo = 0 righe; zero
+assert/errori CUDA/divergenze; chiusure ctrl-c pulite; spread interno ≤ 0,37 %. Telemetria
+§6.8 su ogni braccio: regime storico (SM 1942 MHz, ~99 W; il braccio UNO consuma ~8 W in
+meno a clock quasi pari — grafi spenti = bolle di submission, non throttling). Zona: 16,48
+contro il freddo 16,70 del 17/8 = −1,32 %, dentro la deriva; genealogia fredda (9 processi,
+snapshot 0), confrontabile SOLO col freddo (§8.9).
 
-**L'esito verrà scritto QUI (secondo commit) e il runbook §10.4 p.14 passerà da
-LETTO NEL CODICE a MISURATO.**
+**VERDETTO: bonifica CONFERMATA A MISURA.** `=0` è indistinguibile dall'assenza (grafi
+accesi); `=1` spegne. Letto al contrario, i CUDA graph valgono **+20,99 %** (13,62 → 16,48),
+coerente col +16,46 % storico misurato nell'altro verso. La trappola del 15-16/8 è chiusa;
+runbook §3.3 e §10.4 p.14 passati a MISURATO in questo stesso commit. 20/20 cancelli
+superati; rapporto completo dell'esecutore agli atti della sessione.
 
 ## Artefatti
 
@@ -122,4 +132,6 @@ LETTO NEL CODICE a MISURATO.**
 - backup stub (inutili ma esistenti): `llama-server_pre_bonifica_16ago.exe` (overlap),
   `llama-server_pre_bonifica_18ago0552.exe` (subtract)
 - marcatore: `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\ATTENZIONE_BUILD_OVERLAP_CAMBIATA_20260818.md`
-- log del banco (quando eseguito): `…\work\runs\bonifica_graphs_{assente,zero,uno}_b1200_r{1,2,3}_20260818.*`
+- log del banco (72 file, 8 per corsa: server.log, summary.json, r1.output/.response,
+  hw.csv, cpu.csv, telemetry.out, server.out):
+  `…\work\runs\bonifica_graphs_{assente,zero,uno}_b1200_r{1,2,3}_20260818.*`

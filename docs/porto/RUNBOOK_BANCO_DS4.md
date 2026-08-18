@@ -425,10 +425,11 @@ Questo è il comando canonico da cui partire, copiato dalla fonte autoritativa:
 ```
 
 **`GGML_CUDA_DISABLE_GRAPHS` resta fuori dal comando canonico** (assente = grafi accesi).
-Dal 18/8 il motore la legge **A VALORE** (`atoi`, bonifica in `common.cuh`; banco di conferma
-in coda): `=0` è indistinguibile dall'assenza, `=1` spegne — vedi §10.4 punto 14. **I binari
-compilati PRIMA del 18/8 leggono ancora A PRESENZA**: con quelli, impostarla a qualunque
-valore, compreso `=0`, disabilita i CUDA graph.
+Dal 18/8 il motore la legge **A VALORE** (`atoi`, bonifica in `common.cuh`; **MISURATO** col
+banco a tre bracci del 18/8, LEDGER_18: assente 16,48 ≈ `=0` 16,45, `=1` 13,62): `=0` è
+indistinguibile dall'assenza, `=1` spegne — vedi §10.4 punto 14. **I binari compilati PRIMA
+del 18/8 leggono ancora A PRESENZA**: con quelli, impostarla a qualunque valore, compreso
+`=0`, disabilita i CUDA graph.
 
 ### 3.4 Attesa della readiness
 
@@ -1592,14 +1593,15 @@ Dopo una sessione: nessun ripristino è previsto. **Non si cancellano artefatti*
 12. **Mai fare commit o push** senza richiesta esplicita.
 13. **Mai far girare agenti che leggono file grandi durante una misura.**
 14. **`GGML_CUDA_DISABLE_GRAPHS`: dal 18/8 il cancello è A VALORE** (bonifica in
-    `ggml-cuda/common.cuh`, lettura `atoi` come `GGML_CUDA_DISABLE_FUSION`; LETTO NEL CODICE,
-    binario overlap `ggml-cuda.dll` = `06BF8AAF…`): assente o `=0` = grafi ACCESI, `=1` =
-    grafi SPENTI. Banco di conferma a tre bracci (assente/`=0`/`=1` a binario fermo) IN CODA
-    — finché non è a ledger, l'igiene resta la stessa: nel banco normale NON impostarla mai,
-    e la riga del manifesto deve dire `<spento>(D)`. **Ogni binario compilato PRIMA del 18/8
-    legge ancora A PRESENZA**: con quelli `=0` spegne i grafi esattamente come `=1` — è la
-    trappola che ha nascosto ~2,5 t/s per due giorni (tutti i banchi del 15-16/8 senza grafi,
-    LEDGER_16 forense; bonifica: LEDGER_18_AGOSTO.md).
+    `ggml-cuda/common.cuh`, lettura `atoi` come `GGML_CUDA_DISABLE_FUSION`; **MISURATO** il
+    18/8 con banco a tre bracci a binario fermo `06BF8AAF…`, LEDGER_18: assente 16,48,
+    `=0` 16,45 (−0,18 %), `=1` 13,62 (−17,35 %), p1 e SHA identici sulle 9 corse): assente
+    o `=0` = grafi ACCESI, `=1` = grafi SPENTI. L'igiene resta la stessa: nel banco normale
+    NON impostarla, e la riga del manifesto deve dire `<spento>(D)` (oppure `0(E)`, ora
+    equivalente). **Ogni binario compilato PRIMA del 18/8 legge ancora A PRESENZA**: con
+    quelli `=0` spegne i grafi esattamente come `=1` — è la trappola che ha nascosto
+    ~2,5 t/s per due giorni (tutti i banchi del 15-16/8 senza grafi, LEDGER_16 forense;
+    bonifica: LEDGER_18_AGOSTO.md).
 
 ---
 

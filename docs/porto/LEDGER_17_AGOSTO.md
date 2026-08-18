@@ -6552,6 +6552,20 @@ Range stabile ~10748-10752 per tutta la corsa dopo il transitorio iniziale, **co
 512×21=10752** entro <0,1%. Il cammino gather e' inequivocabilmente attivo e lavora come da
 disegno.
 
+**[integrazione post-commit: riga testimone dal rapporto esecutore 20, presente in
+`gather_g1.server.log` — omessa dalla trascrizione originale]**
+
+```text
+llama: [kv-gather-profile] quando=battito gathers=65496 rows=95270400 rows_cold=89258576
+  bytes_h2d=91400781824 tokens=8861 rows_per_token=10751.7 bytes_h2d_per_token=10314951.11
+```
+
+`bytes_h2d_per_token` = 10.314.951 byte ≈ **10,3 MB/token** trasportati dal cammino gather --
+contro i ~700 MB/token stimati del cammino denso mappato (candidato 1 della tassa d'attenzione,
+NOTE_IMPLEMENTAZIONE.md §14.1): il confronto che dà la scala della riduzione ottenuta dal gather.
+Fonte verificata prima di scrivere (riga 8584 di
+`sota_ctx150000_densefa_stage_hc5_gather_g1_f2_b2048.server.log`, grep carattere per carattere).
+
 **3) `rows_cold/rows` VERBATIM** -- dato registrato, non un cancello pass/fail
 ```text
 rows_cold=89258576  rows=95270400  ->  93,69% delle righe raccolte viene dalla RAM host (cold);

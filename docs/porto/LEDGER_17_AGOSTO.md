@@ -6463,3 +6463,291 @@ lanciarli è stata una decisione esplicita del coordinatore per la rotazione di 
 giudizio su questo agente circa quei bracci).
 
 ---
+
+## Turno 20 — G1 GATHER (`LLAMA_KV_GATHER=1`), tag `gather_g1` — **TESI VIVA MA SOTTO PREDIZIONE, guadagno reale e replicato +14,8% media, anomalia p1 aperta**
+
+### Verifiche pre-lancio
+
+```text
+[x] 4 impronte SHA256 di D:\llama-subtract\build\bin\ IDENTICHE carattere per carattere a
+    NOTE_IMPLEMENTAZIONE.md S15.10:
+      ggml-cuda.dll     F45AA564C2D1B80715650ECB52698C59DB9E0DD4B29076B712FC0DC688ACDA2E
+      llama.dll         652A9ED4547886A84BA5B52C1CD2CC85D1A7EE6E8615D2D9EAE2A6EB5BCE4A92
+      ggml-base.dll     DD7122DE0D2E256269D08AE45C0C82A22F5275CDB37210F1AE87B0EA7C446943
+      llama-server.exe  CC460C3D817DF494E2218342A7BA3E465F47E43A3A132E576DA3C244EC9550F2
+[x] jprompt102k.txt: 285.268 byte, invariato
+[x] preflight S1: 0 processi llama, GPU a riposo (210 MHz/13 W/305 MiB), RAM libera 87,3 GB,
+    porte 8099/8100 libere, disco C 49,5 GB / D 119,6 GB liberi, uptime 4819,7 min
+[x] LLAMA_KV_GATHER verificato nel sorgente (deepseek4.cpp:281-291): cancello A VALORE
+    (atoi(v)!=0), non a presenza -- non e' un altro caso GGML_CUDA_DISABLE_GRAPHS
+[x] riferimento riletto DAL LOG GREZZO di pad_b0_bis (non dalla prosa del ledger):
+      D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_bis_f2_b2048.server.log
+      decode  : eval time = 746813.07 ms / 8192 tokens (91.16 ms/token, 10.97 t/s)
+      prefill : prompt eval time = 842871.84 ms / 101691 tokens (8.29 ms/token, 120.65 t/s)
+      p1      : draft acceptance = 0.90449 (5341 accepted / 5905 generated), mean len 2.87
+      SHA out : 2CBB795A3CA00022C641BA1507F1C069F6276F992D474FFDAF3A929F7874073B (24972 char)
+      cache-esperti identity: 473 slot ... sfratto_par=1 (identica a SOTA storica)
+      sched-profilo 485 righe (ACCESO), GGML_CUDA_GRAPH_STATS=1(E), GGML_CUDA_DISABLE_GRAPHS
+      assente(D) -- grafi accesi confermati
+```
+
+### Comando (identico a `pad_b0_bis` salvo `RunLabel` e `LLAMA_KV_GATHER=1`)
+
+```powershell
+$env:LLAMA_KV_GATHER = '1'
+$env:LLAMA_KV_GATHER_BATTITO = '30'          # passivo/diagnostico, non tocca il cammino di calcolo
+& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' `
+  -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel 'gather_g1' `
+  -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 `
+  -MaxTokens 8192 -SpecNmax 3 -Repliche 1 -CtxCheckpointMinStep 32 `
+  -ReasoningBudgetTokens 0 -GraphReusePerTaglia 1 -KvRingBattito 5 `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+`LLAMA_KV_PAD` assente (256, difetto), `LLAMA_CONF_PRENORM` mai impostata (chirurgo 12 non
+compilato in questo binario, S16). Le altre leve: identiche al riferimento (K=2 di default,
+SpecNmax 3, GraphReusePerTaglia 1). **NOTA su "profilo 0" del mandato**: NON ottenuto, stessa
+situazione già segnalata da più turni (`Set-SotaEnvironment` fissa `GGML_SCHED_PROFILO='1'` e
+`GGML_CUDA_GRAPH_STATS='1'` incondizionatamente in questo runner) -- non e' una deviazione
+introdotta qui, ed e' comunque **pari strumentazione** col riferimento pad_b0_bis (anch'esso
+profilato ACCESO), quindi il confronto resta valido per S8.2.
+
+### Lancio -- staccato (Win32_Process.Create), con nota sull'interruzione di sessione
+
+```text
+lancio     = ReturnValue=0, PID launcher=13172, PID llama-server=10348, avviato 08:44:54/55
+telemetria = sample_hw.ps1 -Tag gather_g1 -IntervalSeconds 2, PID=6500, avviata 08:45:10
+```
+
+**Interruzione e ripresa**: la sessione dell'agente si e' interrotta per limite API mentre il
+braccio era in prefill (~08:50). Il coordinatore ha confermato correttamente che il processo
+staccato (CIM/WMI, indipendente dalla sessione dell'agente) avrebbe continuato a girare da solo.
+Verificato dal vivo alla ripresa (10:20:50): **il braccio era gia' concluso** (DONE alle
+09:14:18 circa), chiusura pulita (`shutdown: ctrl-c`), **zero impatto sulla misura** --
+telemetria completa e ininterrotta (731 campioni, 08:45:10-09:14:22, chiusa da sola alla fine
+naturale del processo `llama-server`), nessuna azione correttiva necessaria. Lezione confermata:
+il lancio staccato e' davvero indipendente dalla sessione dell'agente, come da protocollo del
+progetto.
+
+### Cancelli, nell'ordine del mandato -- corsa 1 (`gather_g1`)
+
+**1) Riga di avvio `kv-gather ACCESO`** -- PASSATO
+```text
+4.06.317.805 I kv-gather ACCESO (512 righe/layer CSA)
+```
+512 = esattamente `indexer.top_k` atteso dal disegno.
+
+**2) Cancello PRIMARIO binario -- `[kv-gather-profile] rows_per_token = 10.752×n_tok`** -- PASSATO
+22 righe `quando=battito` (periodo 30 s), nessuna `finale`/`atexit` catturata in questo log
+(osservazione, non un fallimento: la cattura non e' comparsa in nessuna delle 22 righe --
+verosimilmente lo shutdown ha chiuso stderr prima che il distruttore/`atexit` stampasse; il
+rapporto rows/tokens e' comunque stabilissimo su tutta la corsa, quindi l'assenza dell'ultimo
+campione non intacca la lettura):
+```text
+prima  : gathers=500    rows=598016    tokens=56    rows_per_token=10678.9  (rumore da n piccolo)
+...
+ultima : gathers=65496  rows=95270400  rows_cold=89258576  tokens=8861  rows_per_token=10751.7
+```
+Range stabile ~10748-10752 per tutta la corsa dopo il transitorio iniziale, **combacia con
+512×21=10752** entro <0,1%. Il cammino gather e' inequivocabilmente attivo e lavora come da
+disegno.
+
+**3) `rows_cold/rows` VERBATIM** -- dato registrato, non un cancello pass/fail
+```text
+rows_cold=89258576  rows=95270400  ->  93,69% delle righe raccolte viene dalla RAM host (cold);
+6,31% cade nel prefisso caldo residente in VRAM (LLAMA_KV_RING_VRAM_TOKEN=2048).
+```
+NON e' ~2% (che il mandato cita come possibile segnale di "il caldo scalda il posto sbagliato,
+distribuzione uniforme/casuale"): il tasso di colpo osservato (6,31%) e' alcune volte piu' alto
+di quanto un URTO puramente casuale fra selezione top-k e finestra calda produrrebbe se le due
+cose fossero scorrelate -- quindi c'e' una correlazione posizionale reale, ma lontana dal poter
+rendere il gather "quasi gratis". Prima cifra della curva L6, come richiesto dal mandato: dato
+prezioso, lasciato al disegno per l'interpretazione quantitativa completa (serve la taglia esatta
+della finestra calda per calcolare la base di confronto casuale).
+
+**4) NESSUN cancello SHA (atteso, il gather non e' bit-esatto per costruzione); p1 in banda 2σ;
+coerenza del testo; salute piena**
+
+```text
+p1 gather   : 0,86519 (5038 accepted / 5823 generated), mean len 2,60
+p1 riferim. : 0,90449 (5341 accepted / 5905 generated), mean len 2,87
+delta       : -3,93 punti percentuali
+2sigma      : sigma = sqrt(0,90449*0,09551/5823) = 0,003852 -> 2sigma = 0,77 punti percentuali
+esito       : *** FUORI BANDA, ~10,2 sigma *** -- non spiegabile da rumore campionario
+```
+**Questa e' l'anomalia piu' rilevante del braccio.** Non e' un rumore statistico: e' 13× la banda
+2σ. Tre osservazioni che la contestualizzano (nessuna la chiude):
+- Il gather NON tocca il drafter (DSpark, modello separato) ne' LID/HCA (S15.8): tocca solo
+  l'attenzione CSA del **target**. Un target che sceglie token leggermente diversi (per via
+  dell'ordine di riduzione FA cambiato, non bit-esatto per disegno) puo' plausibilmente
+  allontanarsi, token dopo token, da cio' che il drafter propone -- specialmente su una
+  generazione di 8192 token dove le differenze si accumulano. Questa e' un'ipotesi plausibile,
+  NON verificata qui: servirebbe un confronto diretto dei logit per isolarla da un vero difetto.
+- **Riproducibilita' bit-esatta fra le due corse di questo turno** (vedi sotto): p1, SHA e
+  contatori cache-esperti sono IDENTICI fra `gather_g1` e la replica `gather_g1_r2`. Questo
+  esclude una race/instabilita' del kernel gather come causa (il risultato e' deterministico),
+  e sposta il peso verso "e' uno spostamento di traiettoria reale e stabile", non un difetto
+  intermittente.
+- La qualita' del testo (sotto) non mostra segni di rottura -- un indicizzatore/maschera rotto
+  tipicamente produce testo palesemente sbagliato, non solo un'accettazione piu' bassa.
+
+**Coerenza del testo** (S4.10 RUNBOOK: banco lungo, lettura integrale, non solo a campione --
+il file e' stato letto per intero, 674 righe / 24.683 caratteri):
+```text
+[x] lingua sana                                       si (italiano tecnico fluente, 14 sezioni)
+[x] assenza di loop / ripetizioni patologiche          si (nessuna ripetizione, progressione
+                                                           tematica pulita sezione per sezione)
+[x] pertinenza al prompt                               si (elabora fedelmente cache-esperti.cu,
+                                                           deepseek4.cpp, llama-graph.cpp -- lo
+                                                           stesso codice del contesto fornito)
+[x] degradazione progressiva lungo la generazione       no (qualita' costante dalla sezione 1
+                                                           alla 14; si interrompe a meta' riga di
+                                                           codice per esaurimento di max_tokens,
+                                                           non per collasso di qualita')
+```
+finish_reason = length (8192/8192 token, budget pieno raggiunto).
+
+**Salute piena**: zero `GGML_ASSERT`/`CUDA error`/`invalid index` su tutto il file; tutte le
+righe `divergenze:` a zero su tutto il file (non solo la coda); unica occorrenza di
+"inf" nell'intero log e' `logit bias = -inf` per l'EOS all'init (innocua, attesa).
+
+**5) t/s / ms-token vs 10,97 / 91,16 = il verdetto**
+```text
+prefill : 848053.42 ms / 101691 token ( 8,34 ms/token, 119,91 t/s)  delta -0,61% (rumore, atteso:
+                                                                     il gather non tocca il prefill)
+decode  : 642979.40 ms /  8192 token (78,49 ms/token,  12,74 t/s)  delta ms/token -13,90%
+                                                                    delta t/s      +16,13%
+```
+78,49 ms/token e' **sotto la soglia di falsificazione (85)** ma **sopra la fascia predetta
+(64-70)**. Non falsificata; non pienamente confermata nella magnitudine scritta. **+16,13% ≥ +3%
+-> per mandato, replica obbligatoria.**
+
+### Replica di conferma -- corsa 2 (`gather_g1_r2`), stessa configurazione esatta
+
+QUIETE naturale fra i due bracci: >70 minuti (l'interruzione di sessione l'ha fornita gratis).
+Preflight rifatto (0 processi, GPU a riposo, RAM 87,2 GB libera, porta 8099 libera) prima del
+lancio, 10:28:11. Lancio staccato identico (PID launcher=13744, PID llama-server=11096, avviato
+10:28:26; telemetria PID=13860, avviata 10:28:37). DONE 10:58:59 (shutdown ctrl-c pulito).
+
+```text
+prefill : 899578.48 ms / 101691 token ( 8,85 ms/token, 113,04 t/s)  delta vs rif. -6,31%
+decode  : 657872.80 ms /  8192 token (80,31 ms/token,  12,45 t/s)  delta ms/token -11,91%
+                                                                    delta t/s      +13,49%
+p1      : 0,86519 (5038 accepted / 5823 generated), mean len 2,60  -- IDENTICO a corsa 1
+SHA out : 1f7f86e578499c9ba1f1c53aa2e73c4d60e5bc88d47aed3cd56e334461f80732 -- IDENTICO a corsa 1
+          (24.683 caratteri, 674 righe -- stesso file byte per byte)
+cache-esperti domanda 1873028 (colpi 1078524 = 57,6%, buchi 794504) -- IDENTICO a corsa 1
+rows_per_token  ~10749-10752 (ultima battito: gathers=65911 rows=95949312 tokens=8925)
+rows_cold/rows  89917252/95949312 = 93,71% -- coerente con corsa 1 (93,69%)
+kv-gather ACCESO (512 righe/layer CSA) -- identico
+sfratto_par=1, riga cache-esperti identity IDENTICA carattere per carattere a corsa 1/riferimento
+sched-profilo 509 righe (ACCESO), GGML_CUDA_GRAPH_STATS=1(E), GGML_CUDA_DISABLE_GRAPHS assente(D)
+build 10093 (3014d3756) -- identico
+zero GGML_ASSERT/CUDA error/invalid index; tutte le divergenze a zero su tutto il file
+finish_reason = length (8192/8192)
+```
+
+**Le due corse sono BIT-IDENTICHE fra loro** (stesso SHA output, stesso p1, stessi contatori
+cache-esperti) pur essendo due processi separati con caricamento/temporizzazione indipendenti:
+conferma che il kernel gather e' deterministico (nessuna race/instabilita'), e che la corsa 1
+non era un fluke -- e' la stessa identica traiettoria di calcolo, misurata due volte.
+
+**Nota sul prefill**: -6,31% in corsa 2 contro -0,61% in corsa 1 (spread fra le due corse
+gather: -5,73%, oltre la banda di rumore 2-3%). Dato che il prefill NON usa il gather (guardia 4,
+verificato: stesso conteggio 101.691 token in entrambe le corse, cammino denso invariato per
+disegno), questo spread e' rumore di sistema/tempistica fra sessioni (caricamento modello con
+`--no-mmap` su un contesto di 150k, verosimilmente sensibile alla cache del disco/OS in quel
+momento), non un effetto del gather. Segnalato per onesta', non e' parte del verdetto.
+
+### Media delle due corse (decode, il verdetto)
+
+```text
+corsa 1        : 78,49 ms/token  12,74 t/s   (+16,13% t/s, -13,90% ms/token)
+corsa 2        : 80,31 ms/token  12,45 t/s   (+13,49% t/s, -11,91% ms/token)
+spread 1 vs 2  : 2,33% (dentro la banda di rumore di banco 2-3%, S8.3 -- replica CONSISTENTE)
+media          : 79,40 ms/token  12,595 t/s
+delta media vs riferimento (91,16 ms/token / 10,97 t/s):
+                 ms/token  -12,90%
+                 t/s       +14,81%
+```
+
+### VERDETTO: TESI VIVA MA SOTTO PREDIZIONE (non falsificata, non pienamente confermata)
+
+```text
+predetto (S15.11)      : 64-70 ms/token (14,3-15,6 t/s)
+soglia di falsificazione: > 85 ms/token
+osservato (media 2 corse, replicato, spread 2,33%): 79,40 ms/token (12,595 t/s)
+```
+- **Non falsificata**: 79,40 ms/token è comodamente sotto 85 in entrambe le corse (78,49 e
+  80,31), quindi il candidato 1 della tassa d'attenzione (materialize/PCIe sulla CSA) non è
+  "falso" nel senso del mandato.
+- **Non pienamente confermata**: 79,40 ms/token resta 9-15 ms/token SOPRA la fascia scritta
+  (64-70). Il guadagno e' reale, sostanziale (+14,81% t/s in media, replicato con spread 2,33%,
+  ben dentro rumore) ma **circa la meta'** del guadagno scritto in previsione (+30-42% atteso).
+- **Ipotesi di lavoro sul divario** (non verificata, per il prossimo turno di disegno): il calo
+  di p1 (0,90449 -> 0,86519) e mean-len (2,87 -> 2,60, -9,4% relativo) implica **+10,4% di round
+  di verifica** per token di output (2,87/2,60 = 1,1038). Se ogni round porta un costo fisso di
+  overhead (lancio kernel, sync CPU/GPU), una parte del guadagno grezzo dell'attenzione piu'
+  veloce verrebbe "mangiata" dall'aumento dei round dovuto alla traiettoria diversa del target.
+  Coerente con l'anomalia p1 del cancello 4, ma NON isolato quantitativamente in questo braccio
+  (richiederebbe un profilo per-round, non fatto qui).
+- **Anomalia aperta e prioritaria per il prossimo turno**: il p1 fuori banda 2σ di ~10,2σ,
+  stabile e riproducibile bit-esatto fra le due corse. Testo sano, zero errori, quindi
+  probabilmente non e' un guasto grossolano di maschera/indici -- ma non e' stato isolato se sia
+  "solo" deriva numerica accumulata su 8192 token o qualcosa di piu' strutturale. Prima di
+  comporre G1 con altre leve (P1 doppio-tampone LID, C1 cache righe, PAD1024), va deciso se
+  questa deriva di p1 e' accettabile.
+
+### Telemetria
+
+```text
+corsa 1 (gather_g1)     : 731 campioni (0,5 Hz), 631 busy (util>50%)
+                          SM: min 1830, mediana 1912, max 1942 MHz -- 0/631 sotto 1500 MHz
+                          potenza: min 86,27, mediana 125,73, max 140,6 W
+                          CPU% media 30,1%
+                          telemetria chiusa da sola a fine processo, 731/731 campioni, pulita
+corsa 2 (gather_g1_r2)  : 758 campioni (0,5 Hz), 663 busy (util>50%)
+                          SM: mediana 1927, max 1935 MHz -- 1/663 campione sotto 1500 MHz
+                          (270 MHz, alle 10:32:11, ~31 s PRIMA dell'inizio della richiesta
+                          misurata alle 10:32:42 -- un singolo campione transitorio di rampa
+                          clock pre-richiesta, non la famiglia sostenuta del turno 19; non
+                          promosso come anomalia, telemetria giudicata pulita)
+                          potenza: mediana 122,39, max 132,66 W
+                          telemetria chiusa da sola a fine processo, 758/758 campioni, pulita
+```
+Nessun braccio ha mostrato il regime anomalo 780 MHz/50-56 W del 15-16/8: entrambe le corse sono
+nel regime sano storico (1800-1999 MHz) per l'intera durata del carico.
+
+### Stato macchina alla consegna
+
+```text
+processi_llama = 0
+gpu: 210 MHz, 13,00 W, 456/11660 MiB usati/liberi
+ram_libera = 87 GB
+porta 8099 = libera
+```
+Macchina pulita, ferma, nessun processo residuo. Nessun commit eseguito (regola del mandato).
+
+### Percorsi file
+
+```text
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_gather_g1_f2_b2048.server.log
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_gather_g1_f2_b2048_q1.output.txt
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_gather_g1_f2_b2048_q1.response.json
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_gather_g1.summary.txt
+D:\ds4_work\llama_run\gather_g1.hw.csv / gather_g1.cpu.csv / gather_g1.telemetry.out
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_gather_g1_r2_f2_b2048.server.log
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_gather_g1_r2_f2_b2048_q1.output.txt
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_gather_g1_r2_f2_b2048_q1.response.json
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_gather_g1_r2.summary.txt
+D:\ds4_work\llama_run\gather_g1_r2.hw.csv / gather_g1_r2.cpu.csv / gather_g1_r2.telemetry.out
+```
+
+**Consegna al ventunesimo turno**: B3 resta da eseguire (fuori mandato di questo turno). G1 e'
+misurato e replicato: guadagno reale ma sotto predizione, anomalia p1 aperta e prioritaria.
+Prossimi passi suggeriti (non ordinati, da decidere dal coordinatore): (a) isolare la causa del
+calo p1 (confronto logit diretto dense-vs-gather su un banco corto e controllato); (b) profilo
+per-round per verificare l'ipotesi "piu' round mangiano il guadagno"; (c) solo dopo (a)/(b), la
+composizione G1+PAD1024 resta condizionale come gia' annotato dal turno 19.
+
+---

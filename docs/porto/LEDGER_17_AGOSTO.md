@@ -6765,3 +6765,409 @@ per-round per verificare l'ipotesi "piu' round mangiano il guadagno"; (c) solo d
 composizione G1+PAD1024 resta condizionale come gia' annotato dal turno 19.
 
 ---
+
+## Turno 21 — ESECUTORE, Lavoro 1: A fresco + F2 FORK_STADI — **PARCHEGGIO (+2,41%, sotto soglia)**; Lavoro 2: CONF_PRENORM cancello PASSATO, sweep INTERROTTO da CUDA OOM su S3
+
+Binario `D:\llama-subtract` (impronte verificate carattere per carattere contro il mandato:
+`llama-server.exe`=`CC460C3D817DF494E2218342A7BA3E465F47E43A3A132E576DA3C244EC9550F2`,
+`ggml-cuda.dll`=`F45AA564C2D1B80715650ECB52698C59DB9E0DD4B29076B712FC0DC688ACDA2E`,
+`llama.dll`=`652A9ED4547886A84BA5B52C1CD2CC85D1A7EE6E8615D2D9EAE2A6EB5BCE4A92`,
+`ggml-base.dll`=`DD7122DE0D2E256269D08AE45C0C82A22F5275CDB37210F1AE87B0EA7C446943` — tutte OK).
+Runner B (`run_porto_hot.ps1`), protocollo warm-restore standard (`-PortoHotSnapshot 1`,
+`PORTO_HOT_MASK=15`, 4 richieste, r1 cattura fuori verdetto, **mediana r2-r4**), telemetria
+`sample_hw.ps1` a 0,5 Hz su ogni braccio, B1200, nessun commit.
+
+### Preflight (§1, tutti PASS)
+
+```text
+processi_llama=0   porta 8000 nessun listener   porta 8099/8100 libere
+gpu a riposo = 210 MHz, 405 MHz mem, 13,07 W, 459 MiB usati / 11657 liberi, pcie x16
+ram_libera = 86,9 GB   disco C = 49,5 GB   disco D = 119,4 GB
+uptime = 4971,8 min (nessun riavvio: sessione lunga in corso, coerente coi turni 19-20)
+sha_llama_server = CC460C3D817DF494E2218342A7BA3E465F47E43A3A132E576DA3C244EC9550F2
+sha_ggml_cuda    = F45AA564C2D1B80715650ECB52698C59DB9E0DD4B29076B712FC0DC688ACDA2E
+sha_llama_dll    = 652A9ED4547886A84BA5B52C1CD2CC85D1A7EE6E8615D2D9EAE2A6EB5BCE4A92
+sha_ggml_base    = DD7122DE0D2E256269D08AE45C0C82A22F5275CDB37210F1AE87B0EA7C446943
+sha_jprompt      = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9 (252 byte) -- ATTESO
+modelli presenti: target 86.720.111.488 byte, draft 7.179.447.776 byte
+```
+
+Nessun rito "A FREDDO" (§2): uptime ben oltre 10 min, sessione ininterrotta dai turni 19-20. Il
+mandato chiede comunque "A fresco di sessione" (§8.7/§8.4: riferimento letto dal log di oggi, mai
+da un documento) — è il braccio A sotto, lanciato con Runner B in config campione pura.
+
+### Verifica del LETTORE nel codice, prima di lanciare (obbligatoria da mandato)
+
+`LLAMA_CACHE_ESPERTI_FORK_STADI` — `D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu:3216-3217`:
+```cpp
+const char * st = getenv("LLAMA_CACHE_ESPERTI_FORK_STADI");
+runtime->fj_stadi = (st && *st && atoi(st) != 0) ? 1 : 0;
+```
+A valore (non a presenza). Uso a `:6555-6635`: sotto `fj_stadi`, la copia gate/up/down diventa
+tre kernel separati (`kern_fj_copia_uno`) con **tre `cudaEventRecord` distinti** (`ev_copia` dopo
+gate, `ev_up` dopo up, `ev_down` dopo down) e **tre join separati**
+(`ggml_cuda_cache_esperti_fork_join` su `ev_copia`, `..._join_up` su `ev_up`, `..._join_down` su
+`ev_down`). Testimone di raggiungibilità (stampa su stderr, quindi nel `.server.log`, solo se
+`fj_leva>0` **e** `fj_stadi=1`): `cache-esperti: FORK_STADI=1 -- pipeline gate -> up -> down con
+join distinti` (`:3306`). **Nota**: gli otto eventi/due stream del fork sono allocati **incondi-
+zionatamente** oggi (commento `:3268-3276`, "ALLOCAZIONE INCONDIZIONATA" — CUDA graph-legal),
+diverso da quanto la cauzione di `CURA_PER_ESPERTO_PIANO.md` §5 F2 descriveva ("`ev_up` condi-
+zionato da `FORK_STADI`"): il codice è stato aggiornato dopo la scrittura di quel piano; il vero
+cancello di raggiungibilità resta comunque la riga di stampa sopra, verificata a runtime.
+
+`LLAMA_CONF_PRENORM` — `D:\llama-subtract\src\models\dflash.cpp:32-42` (`atoi` a valore, difetto
+0 = post-norm come oggi), sito `:466-473` (`cur_prenorm` alias di puntatore, `res->t_embd =
+dspark_conf_prenorm() ? cur_prenorm : cur;`). Testimone: `conf_proj: lettura PRE-norm (riferimento
+upstream)`. Strumentazione delle confidenze per posizione: `server-context.cpp:340-350` popola
+`n_accepted_per_pos`; la stampa vera è a `:739-757` (`SLT_TRC`, livello TRACE=4 — **visibile** con
+`-lv 4` già cablato di default nel runner: `LOG_TRC` richiede `verbosity(4) <= thold`, e
+`common_log_set_verbosity_thold(4)` è impostato dal parametro `-lv 4`), riga
+`acc per pos = (p0, p1, ...)` con `p_i = n_accepted_per_pos[i] / n_draft_verif_steps`. Verificato
+già presente in un log storico prima di lanciare nulla (`warm_anchor_restore_b1200_20260817`,
+valori `(0.883, 0.579, 0.339)`).
+
+---
+
+## LAVORO 1 — braccio A (`t21_a_b1200_r1_20260818`) — riferimento fresco di oggi
+
+### Comando
+
+```powershell
+& '...\work\run_porto_hot.ps1' -Tag 't21_a_b1200_r1_20260818' -MaxTokens 1200 -Repetitions 4 `
+  -PortoHotSnapshot 1 -SpecNmax 3 -Extra 'GGML_SCHED_PROFILO=0;LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;
+  LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;
+  LLAMA_DSV4_DECODE_EXPERT_REUSE=0;LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15' `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+# + sample_hw.ps1 -Tag t21_a_b1200_r1_20260818 -OutDir ...\work\runs -IntervalSeconds 2
+```
+
+Config campione = quella cablata di default nel runner (K=2, FORK=2+blocchi=8, MASSA=2,
+ACCEPTMOE .75, nmax3, conf CLI 0,80, `LLAMA_SPEC_DRAFT_TOPK=1`, profilo 0, grafi assenti=accesi) +
+`PORTO_HOT_MASK=15` per il restore. Ambiente completo = quello di §3.2 del runbook, invariato.
+
+### Verifica d'identità (dal log, non dal manifesto)
+
+```text
+[x] cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06+up 2.06+down 2.62), cura=0,
+    spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0,
+    scudo=0, sfratto_par=1, dma=0, dma_strato=0  -- IDENTICA alla SOTA storica (RUNBOOK §12.1)
+[x] build 10093 (3014d3756) MSVC 19.44.35227.0
+[x] sched-profilo: 0 righe -> SPENTO, manifesto GGML_SCHED_PROFILO=0(E) coerente
+[x] GGML_CUDA_DISABLE_GRAPHS=<spento>(D) -> grafi ACCESI ; GGML_CUDA_GRAPH_STATS=0(D) spento
+[x] zero GGML_ASSERT / CUDA error / invalid index; divergenze sempre taglia=0 ids=0 out=0
+    GRIGLIA-corta=0; CONTESA=0; MORTO/RICHIESTA FALLITA=0
+[x] copie/buchi (cumulativo 4 richieste): domanda 1082705 (colpi 767945=70,9%, buchi 314760)
+[x] coerenza testo (§4.10, campione inizio/3 finestre centrali/fine): HTML/CSS cyberpunk neon
+    ben formato, classi .hero/.logo/.neon-button coerenti col prompt, nessun loop, lingua sana,
+    troncato per fine budget (atteso, finish_reason=length) -- SANO
+```
+
+### Serie per richiesta
+
+| rep | ruolo | eval t/s | p1 | SHA output (16) |
+|---|---|---:|---|---|
+| r1 | cattura | 16,32 | .90281 | `1EDA23452DE9292C` |
+| r2 | verdetto | 16,68 | .90281 | `1EDA23452DE9292C` |
+| r3 | verdetto | 16,62 | .90281 | `1EDA23452DE9292C` |
+| r4 | verdetto | 16,63 | .90281 | `1EDA23452DE9292C` |
+
+**MEDIANA (r2-r4) = 16,63 t/s**, media 16,6433, spread max-min 0,36% (pulitissimo). SHA e p1
+identici su tutte e 4 le richieste.
+
+### Telemetria (`t21_a_b1200_r1_20260818.hw.csv`, 202 campioni a 0,5 Hz, 116 busy util>50%)
+
+```text
+SM: min=1935  mediana=1935  max=1950 MHz   -- 0/116 campioni sotto 1500 MHz
+potenza: min=81,13  mediana=104,29  max=118,53 W
+VRAM used: 11699-11918 MiB
+```
+
+Regime pulito, coerente con lo storico SOTA (1800-1999 MHz).
+
+### ANOMALIA — chiusura
+
+`shutdown=ctrl-c -> RISERVA Stop-Process`. Il Ctrl+C non ha funzionato entro il timeout dello
+script (60 s + attesa) ed è scattata la riserva `Stop-Process -Force` (RUNBOOK §10.1). **Il
+numero non è a rischio**: il runner legge il log e i risultati HTTP **prima** di tentare lo
+shutdown (regola non negoziabile del runner), quindi tutti e 4 i valori sopra sono letti da un
+processo ancora vivo e completo. Verificato **dopo**: macchina rilasciata pulita (processi=0,
+VRAM 453 MiB, RAM libera invariata) — nessuna perdita di risorse. Registrato come da regola, non
+rimisurato (il numero è coerente con l'atteso zona 16,4-17,1 e con lo storico 17/8 sullo stesso
+protocollo, 16,45-17,07): la stessa identica anomalia si è ripetuta su **tutti e tre** i bracci
+di oggi (A, B, cancello/controllo C) — pattern sistemico di questa sessione/binario, da segnalare
+al coordinatore, non un evento isolato di un braccio.
+
+---
+
+## LAVORO 1 — braccio B (`t21_stadi_b1200_r1_20260818`) — `LLAMA_CACHE_ESPERTI_FORK_STADI=1`
+
+### Comando
+
+Identico al braccio A salvo `LLAMA_CACHE_ESPERTI_FORK_STADI=1` aggiunta a `-Extra`.
+
+### Verifica d'identità e RAGGIUNGIBILITÀ (dal log)
+
+```text
+[x] cache-esperti (riga base): IDENTICA ad A e alla SOTA storica
+[x] manifesto: LLAMA_CACHE_ESPERTI_FORK_STADI=1(E)  (esplicito, non default)
+[x] riga runtime: "cache-esperti: FORK/JOIN acceso (livello 2, blocchi copia 8, esatto 0: no, a
+    un token il MoE mascherato (come oggi))"
+[x] riga runtime: "cache-esperti: FORK_STADI=1 -- pipeline gate -> up -> down con join distinti"
+    -- RAGGIUNGIBILITA' CONFERMATA A RUNTIME, non solo dichiarata
+[x] build 10093 (3014d3756) -- identico ad A
+[x] sched-profilo: 0 righe, grafi accesi -- pari ad A
+[x] zero errori/divergenze; CONTESA=0; MORTO/FALLITA=0
+[x] copie/buchi: domanda 925197 (colpi 654460=70,7%, buchi 270737) -- ordine confrontabile ad A
+    (leggermente diverso: nuovo processo, cache ripopolata da zero, atteso)
+[x] SHA output IDENTICO ad A su tutte le 4 richieste -- FORK_STADI non cambia UN BYTE
+    dell'output, esattamente come da design (sposta solo la schedulazione dei join)
+```
+
+### Serie per richiesta
+
+| rep | ruolo | eval t/s | p1 | SHA output (16) |
+|---|---|---:|---|---|
+| r1 | cattura | 16,86 | .90281 | `1EDA23452DE9292C` (= A) |
+| r2 | verdetto | 17,03 | .90281 | `1EDA23452DE9292C` (= A) |
+| r3 | verdetto | 17,05 | .90281 | `1EDA23452DE9292C` (= A) |
+| r4 | verdetto | 17,01 | .90281 | `1EDA23452DE9292C` (= A) |
+
+**MEDIANA (r2-r4) = 17,03 t/s**, media 17,03, spread max-min 0,24%.
+
+### Telemetria (`t21_stadi_b1200_r1_20260818.hw.csv`, 204 campioni, 111 busy)
+
+```text
+SM: min=307 (transitorio isolato)  mediana=1935  max=1950 MHz  -- 1/111 sotto 1500 MHz
+potenza: min=30,78 (stesso transitorio)  mediana=105,3  max=120,77 W
+```
+
+Il campione a 307 MHz/95% util è un transitorio di rampa-clock isolato immediatamente dopo un
+periodo di idle fra due richieste (governor non ancora salito quando il carico è ripartito): 2 s
+dopo è già a 1927-1950 MHz. Stesso pattern già documentato non-anomalo nel progetto
+(`gather_g1_r2`, turno 20, campione isolato a 270 MHz). Non promosso come anomalia.
+
+Stessa chiusura `ctrl-c -> RISERVA Stop-Process` di A (vedi nota sopra, pattern sistemico).
+
+### Verdetto numerico e confronto col design
+
+```text
+mediana A (r2-r4) = 16,63 t/s
+mediana B (r2-r4) = 17,03 t/s
+DELTA = (17,03 - 16,63) / 16,63 * 100 = +2,4053%
+```
+
+**SOTTO +3%** (protocollo B-FIRST, mandato: "sotto → parcheggio con un braccio"). Nessuna replica
+aggiuntiva lanciata.
+
+**Confronto concettuale col design** (`CURA_PER_ESPERTO_PIANO.md` §5 F2): riferimento
+`FORK_DOWN_TARDI=1` = +3,05% (caldo B1200, `LEDGER_17:5005-5060`, stesso protocollo warm-restore).
+STADI (+2,41%) è **leggermente sotto** DOWN_TARDI (+3,05%) — la curva dei punti di rilascio
+(1 stadio=0% · 2 stadi=+3,05% · 3 stadi=+2,41%) è **piatta, anzi lievemente discendente**, entro
+il rumore inter-sessione (i due punti sono misurati in sessioni diverse, 17/8 e 18/8, con la
+deriva di banco nota 2-3%). Nessun segnale che il terzo punto di rilascio aggiunga valore oltre
+il secondo. **Criterio di "uccisione" del piano soddisfatto**: "FORK_STADI ≤ FORK_DOWN_TARDI...
+parcheggio prima di scrivere una riga" (la versione per-esperto a grana più fine, che pagherebbe
+in più il costo delle spazzate a vuoto, non ha razionale a questo punto).
+
+### VERDETTO LAVORO 1
+
+**`LLAMA_CACHE_ESPERTI_FORK_STADI` → PARCHEGGIO.** +2,41% (sotto soglia +3%), SHA e p1
+bit-identici su tutte le 8 richieste A+B (misura pulitissima, nessuna corruzione, il meccanismo
+funziona esattamente come da design). **Non promuovere la versione per-esperto a grana più fine**
+(F1/G del piano CURA_PER_ESPERTO): la curva satura già a 2 stadi.
+
+---
+
+## LAVORO 2 — cancello diagnostico + sweep CONF_PRENORM
+
+### (a) CANCELLO — braccio `t21_conf_c_b1200_r1_20260818` (nmax3, `--spec-draft-conf-min 0`,
+`LLAMA_CONF_PRENORM=1`) — funge ANCHE da "controllo" C del piano §16.7 (stessa configurazione)
+
+```powershell
+& '...\work\run_porto_hot.ps1' -Tag 't21_conf_c_b1200_r1_20260818' -MaxTokens 1200 -Repetitions 4 `
+  -PortoHotSnapshot 1 -SpecNmax 3 -SpecConf '0' -Extra '<base>;PORTO_HOT_MASK=15;LLAMA_CONF_PRENORM=1' `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+```text
+[x] riga runtime: "conf_proj: lettura PRE-norm (riferimento upstream)" -- RAGGIUNGIBILITA' OK
+[x] common_speculative_impl_draft_dflash: - n_max=3, n_min=0, p_min=0.00, conf_min=0.00 -- config
+    confermata dal log
+[x] cache-esperti riga identica alla SOTA; build 10093; sched-profilo=0; grafi accesi
+[x] zero errori/divergenze; CONTESA=0; MORTO/FALLITA=0
+[x] SHA output B0B8DE1C2AF7804B2F73D899A93FC351F872436C6393748D3D4F92ADA7832468 su 4/4 richieste,
+    p1 .59751 su 4/4 -- identità interna coerente
+```
+
+**Curva di accettazione per posizione**: `acc per pos = (0.765, 0.590, 0.438)`, costante sulle 4
+richieste. Draft acceptance complessiva = 0,59751 (769/1287 accepted/generated), mean len = 2,79.
+
+**Verifica cancello §16.6** — due proprietà:
+1. Distribuite dentro (0,1), non sature: **0,765 / 0,590 / 0,438 — PASS**.
+2. Calano con la posizione: **0,765 > 0,590 > 0,438 — monotonicamente decrescente, PASS**.
+
+**CANCELLO DIAGNOSTICO PASSATO.** Il fix pre/post-norm produce una curva sana e coerente con il
+decadimento di accettazione atteso. Procedo allo sweep.
+
+Mediana t/s (r2-r4) = **10,93** (10,93/10,93/10,93, spread 0%) — nota: questo braccio ha
+conf_min=0 (nessun troncamento), quindi il t/s **non è comparabile in velocità** con la config
+campione standard (conf=0,80): il numero di round di verifica per token generato è strutturalmente
+più alto. Serve da riferimento di p1-per-posizione/mean-len nel regime "nessuna soglia a nmax3",
+non da termine di paragone per il t/s degli S-bracci (per quello, vedi nota sotto il cancello 4).
+
+### (b) SWEEP — S0 (`t21_conf_s0_b1200_r1_20260818`, nmax5/conf0/PRENORM=1) — **RESPINTO (atteso)**
+
+```text
+common_speculative_impl_draft_dflash: - n_max=5, n_min=0, p_min=0.00, conf_min=0.00
+acc per pos = (0.645, 0.357, 0.180, 0.070, 0.035)  -- in (0,1), monotona decrescente, forma sana
+draft acceptance = 0.25780 (587 accepted / 2277 generated), mean len = 2.29
+mediana t/s (r2-r4) = 8,47 (8,47/8,47/8,47)
+SHA output 83EF141E6583EB08F8E7342D0C164B062C64B487741C39C5D97D15E70DEFA28E su 4/4, p1 su 4/4 pari
+```
+
+**ANOMALIA DI CONTENUTO, cancello §4.10** — `content_chars=52` su un braccio da 1200 token.
+Ispezionato il campo `reasoning_content` della risposta completa (`.r1.response.json`): **4167
+caratteri** di ragionamento in italiano, sano, pertinente, che analizza correttamente TUTTI i
+requisiti del prompt (head/CSS, header/nav, hero, 3 feature card, tabella prezzi, form JS,
+footer, palette, font) e termina con "Ora scrivo." — **il modello ha esaurito l'intero budget di
+1200 token nel ragionamento**, lasciando il campo `content` (il codice HTML vero) troncato ai
+primi 52 caratteri (`` `\n```html\n<!DOCTYPE html>\n<html lang="it">\n<head>\n   ` ``). **Non è un
+loop o una degenerazione**: lingua sana, nessuna ripetizione patologica, pertinenza confermata —
+ma il braccio non ha prodotto contenuto utile. Riportato come richiesto (§4.10: "qualunque
+anomalia → il braccio è fermato e riportato, anche con tutti i contatori verdi"), sebbene qui il
+"fermo" sia di giudizio (RESPINTO) più che di interruzione.
+
+**Cancello 1 (§16.7): p1 posizione-0 ≥ 0,90 — FALLISCE** (0,645 < 0,90). Coerente col ruolo di S0
+nel piano ("costo del blocco lungo senza troncamento", non un candidato alla promozione — misura
+il limite). **VERDETTO S0: RESPINTO**, come atteso da disegno.
+
+### (b) SWEEP — S3 (`t21_conf_s3_b1200_r1_20260818`, nmax5/conf0,3/PRENORM=1) — **CRASH, CUDA OOM**
+
+```powershell
+& '...\work\run_porto_hot.ps1' -Tag 't21_conf_s3_b1200_r1_20260818' -MaxTokens 1200 -Repetitions 4 `
+  -PortoHotSnapshot 1 -SpecNmax 5 -SpecConf '0.3' -Extra '<base>;PORTO_HOT_MASK=15;LLAMA_CONF_PRENORM=1' `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+Raggiungibilità confermata prima del crash (`conf_proj: lettura PRE-norm` presente,
+`n_max=5, ... conf_min=0.30` nel log). **Il server è crashato durante la prima richiesta**, mai
+arrivato a `eval time`:
+
+```text
+CUDA error: out of memory
+  current device: 0, in function ggml_cuda_graph_evaluate_and_capture at
+  D:\llama-subtract\ggml\src\ggml-cuda\ggml-cuda.cu:5739
+  cudaGraphLaunch(graph->instance, cuda_ctx->stream())
+D:\llama-subtract\ggml\src\ggml-cuda\ggml-cuda.cu:124: CUDA error
+```
+
+`shutdown=gia-uscito` (il processo era già morto quando il runner ha tentato lo shutdown) +
+`Invoke-RestMethod: connessione chiusa dal server in modo imprevisto`. **Per RUNBOOK §4.8: un
+crash prima di `eval time` non è 0 t/s, è NESSUNA MISURA. FERMATO qui, come da regola.**
+
+**Diagnosi raccolta** (per orientare la prossima decisione, non una conclusione chiusa):
+confrontando le righe `porto-cb: epoca=1 IN VIGORE, catture di questa chiave` (una nuova chiave =
+una nuova forma di grafo CUDA catturata, memoria persistente allocata):
+
+```text
+                    righe porto-cb   chiavi distinte   rapporto nuove/totali
+C  (nmax3, conf0)   301              293                97,3%
+S0 (nmax5, conf0)   2083             565                27,1%  -- molto riuso
+S3 (nmax5, conf0,3) 580              580                100,0% -- MAI un riuso, prima del crash
+```
+
+In S3, **ogni singola transizione crea una forma di grafo mai vista prima** — a differenza di S0
+(stesso n_max, ma senza soglia) dove il 73% delle transizioni riusa una forma già catturata.
+Ipotesi più plausibile: la soglia intermedia (0,3) rende **variabile sia quanti token il drafter
+propone** (dipende dalla confidenza calcolata dinamicamente, ora corretta dal fix pre-norm) **sia
+quanti il target accetta** — la combinazione delle due variabili esplode il numero di forme di
+batch distinte molto più che a soglia 0 (dove la proposta è sempre fissa a n_max) o a nmax3
+(spazio combinatorio più piccolo). Ogni forma nuova richiede una nuova cattura di grafo CUDA, che
+consuma VRAM persistente e non viene mai rilasciata nel corso della richiesta.
+
+**Telemetria (`t21_conf_s3_b1200_r1_20260818.hw.csv`) — conferma diretta**: `memory.used` a
+**11900 MiB** (saturazione quasi totale degli 11,7-11,9 GB disponibili sotto Windows) nelle righe
+immediatamente precedenti al crash — stesso ordine di grandezza di VRAM già occupata anche nei
+bracci riusciti (C e S0 giravano vicino allo stesso tetto), quindi il margine libero era già
+minimo prima ancora di iniziare S3.
+
+**Stato macchina dopo il crash**: verificato pulito — `processi_llama=0`, VRAM rilasciata a 379
+MiB, RAM libera 89,4 GB (anzi cresciuta rispetto al preflight precedente, nessuna perdita).
+Nessun danno residuo.
+
+### S5, S7 — NON ESEGUITI
+
+Fermato per il crash di S3, per la regola runbook §4.8 ("FERMATI" su CUDA error) e per rischio
+strutturale concreto: la causa diagnosticata (esplosione combinatoria delle forme di grafo sotto
+soglia intermedia) non dipende dal valore specifico della soglia — non c'è base per credere che
+0,5 o 0,7 sarebbero strutturalmente più sicure di 0,3. Rilanciare S5/S7 identici a S3 salvo il
+valore di conf sarebbe "riprovare la stessa cosa sperando in un esito diverso", vietato dalla
+Regola Zero. **Decisione di questo agente, dichiarata**: fermare l'intero sweep qui e riportare,
+lasciando al coordinatore la scelta se e come mitigare (es. investigare un tetto/eviction sulla
+cache di grafi catturati, o testare S5/S7 con più margine di VRAM libero, o un `--cache-ram`
+diverso) prima di ritentare.
+
+### VERDETTO LAVORO 2
+
+```text
+cancello diagnostico CONF_PRENORM (§16.6)  : PASSATO (confidenze in (0,1), calanti con la
+                                              posizione, su C: 0,765/0,590/0,438)
+controllo C (nmax3/conf0)                  : mediana 10,93 t/s, acc-per-pos sana, non promosso
+                                              (non è un candidato, è riferimento diagnostico)
+S0 (nmax5/conf0)                           : RESPINTO -- fallisce p1 pos-0 ≥ 0,90 (0,645), atteso
+                                              da disegno; content troncato dal reasoning esteso
+S3 (nmax5/conf0,3)                         : NESSUNA MISURA -- CUDA OOM, causa diagnosticata
+                                              (esplosione forme di grafo catturate)
+S5, S7 (nmax5/conf0,5|0,7)                 : NON ESEGUITI
+ottimo nuovo per conf_min                  : NON IDENTIFICATO in questo turno (sweep interrotto)
+```
+
+**Nessun braccio promosso in questo Lavoro 2.** La scoperta di rilievo NON è un numero di
+velocità, ma un **rischio tecnico**: `LLAMA_CONF_PRENORM=1` con `n_max=5` e soglia intermedia
+produce un'esplosione delle catture di grafo CUDA che esaurisce i 12 GB di VRAM della 3060 in
+circa 2 minuti di decode (580 round). Segnalare al progettista/coordinatore **prima** di
+qualunch'altro sweep su questa leva con `n_max>3`: il piano `NOTE_IMPLEMENTAZIONE.md` §16.7 non
+menzionava questo rischio (non era stato compilato/misurato prima d'ora). Il vecchio ottimo
+storico `conf_min=0,80` (citato come "da rivalidare, non da riusare" nel piano stesso) resta
+**non testato** in questo turno per lo stesso motivo — sarebbe comunque una soglia intermedia con
+`n_max=5`, stesso rischio strutturale di S3.
+
+---
+
+## Stato macchina alla consegna
+
+```text
+processi_llama = 0
+gpu: 210 MHz, 405 MHz mem, 12,80 W, 379 MiB usati / 11737 liberi, pcie x16, throttle 0x1 (riposo)
+ram_libera = 89,4 GB
+disco C = 47,7 GB (sceso di ~1,8 GB rispetto al preflight -- non indagato, non bloccante; da
+   tenere d'occhio nel turno successivo se continua a scendere)
+disco D = 119,4 GB
+porte 8099/8100 = libere
+```
+
+Macchina pulita, ferma, nessun processo residuo. Nessun commit eseguito (regola del mandato).
+**Anomalia sistemica da portare avanti**: tutti e tre i bracci completati con successo (A, B, C)
+hanno chiuso con `ctrl-c -> RISERVA Stop-Process` invece di un ctrl-c pulito — mai un problema per
+i dati (letti prima dello shutdown) né per il rilascio delle risorse (verificato ogni volta), ma
+è un pattern ripetuto 3/3 su questa sessione/binario che non c'era nei turni 19-20 con lo stesso
+runner: da investigare se ricapita.
+
+## Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t21_a_b1200_r1_20260818.*
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t21_stadi_b1200_r1_20260818.*
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t21_conf_c_b1200_r1_20260818.*
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t21_conf_s0_b1200_r1_20260818.*
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t21_conf_s3_b1200_r1_20260818.* (crash, senza .summary.json ne' .r1.output.txt)
+(ciascuno con .server.log, .server.out, .hw.csv, .cpu.csv; i primi quattro con .summary.json e .rN.output.txt/.response.json per N=1..4)
+```
+
+**Consegna al ventiduesimo turno**: (1) S5/S7 di CONF_PRENORM restano da fare, ma non prima di
+decidere come mitigare il rischio OOM (vedi sopra); (2) FORK_STADI è chiuso in parcheggio, curva
+punti-di-rilascio satura a 2 stadi — non riaprire senza una ragione nuova; (3) l'anomalia di
+chiusura sistemica (RISERVA Stop-Process 3/3) andrebbe confrontata con i log dei turni 19-20 per
+capire se è una regressione di questa sessione o del binario.
+
+---

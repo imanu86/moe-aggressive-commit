@@ -5669,3 +5669,797 @@ C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\runs\sota100k_gra
 ---
 
 ---
+
+## Turno 19 — ESECUTORE, Lavoro 1: F3 `LLAMA_DSV4_TOPK_FUSO`, banco lanci (D:\llama-overlap, sola lettura)
+
+### Preflight (§1, tutti PASS)
+
+```text
+data/ora         = 2026-08-18 ~05:25 (preflight), macchina in sessione da turno 18 (fix1_kvcount su subtract)
+uptime_min       = 4628,5
+ram_libera_gb    = 86,8
+vram_usata_mib   = 346   vram_libera_mib = 11770
+disco_c_gb       = 50    disco_d_gb      = 119,4
+porte 8099/8100  = libere; porta 8000 = nessun listener (nessuna UI da rispettare)
+processi llama   = 0
+sha_llama_server = C727251E7F88A9AE76541F14DDA6BAE6DE8CB58A9712A3BB661CF41A567F1485  (10.752 byte)
+sha_ggml_cuda    = 1ED035D3D3782F3981928E71EA8459506AEE364ED6FADE077EBFE343E6902330  (213.380.608 byte)
+sha_jprompt      = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9  (252 byte) -- ATTESO, combacia
+```
+
+Nessun riavvio recente della macchina: non eseguito il rito "Lancio A FREDDO" di §2, coerente con
+mandato (confronto A/B autocontenuto sullo stesso `run_porto_hot.ps1`, leva letta a init -> due
+processi separati, non serve un riferimento freddo di sessione a parte).
+
+### Mandato
+
+F3 (`D:\ds4_work\design\MACRO_V2_PIANO.md` §6.3): `LLAMA_DSV4_TOPK_FUSO=1` fonde
+`SOFTPLUS→SQRT→RESHAPE→ADD(bias)→ARGSORT→VIEW→GET_ROWS→[RESHAPE,SUM_ROWS,CLAMP,DIV,RESHAPE]→[SCALE]`
+(9 nodi/strato) in un solo lancio `topk_moe_cuda` (`topk-moe.cu:91`), rimuove ~123 lanci/token,
+guadagno atteso **0,90%** — sotto il pavimento di rumore, "si misura in LANCI, non in t/s" (disegno
+stesso). Letto il sorgente prima di lanciare (`D:\llama-overlap`, sola lettura): la leva è
+`getenv("LLAMA_DSV4_TOPK_FUSO"); atoi!=0`, memoizzata in una `static const bool` al primo uso
+(`ggml-cuda.cu:4070`) -> **conferma indipendente** che è init-time/statica, un processo per lato,
+come da mandato. Individuato anche il testimone di lanci senza nsys: `GGML_CUDA_GRAPH_STATS=1`
+stampa alla **distruzione** di ogni oggetto grafo (quindi a fine processo, dopo shutdown pulito)
+`cuda-graph-stats: key=... nodes=%zu calls=... launches=... captures=... warmup_resets=...`
+(`common.cuh:1219`, `nodes=cgraph->n_nodes` a `ggml-cuda.cu:5689`) — usato come proxy quantitativo.
+
+### Comandi (identici salvo la leva sotto test)
+
+```powershell
+& 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' `
+  -Tag 'topk_fuso_a_b160_r1_20260818' -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 3 `
+  -Extra 'LLAMA_DSV4_TOPK_FUSO=0;GGML_SCHED_PROFILO=0;GGML_CUDA_GRAPH_STATS=1'
+
+& 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' `
+  -Tag 'topk_fuso_b_b160_r1_20260818' -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot 0 -SpecNmax 3 `
+  -Extra 'LLAMA_DSV4_TOPK_FUSO=1;GGML_SCHED_PROFILO=0;GGML_CUDA_GRAPH_STATS=1'
+```
+
+`-ServerPath` non specificato -> default script = `D:\llama-overlap\build\bin\llama-server.exe`
+(esecuzione, nessuna scrittura nell'albero). Ambiente completo effettivo (identico sui due lati
+salvo le 3 voci di `-Extra`): `LLAMA_CACHE_BOZZA_SLOT=12 LLAMA_CACHE_ESPERTI_BATCH=8
+LLAMA_CACHE_ESPERTI_BATTITO=45 LLAMA_CACHE_ESPERTI_CODA_MAX=0 LLAMA_CACHE_ESPERTI_CURA=0
+LLAMA_CACHE_ESPERTI_SCUDO=0 LLAMA_CACHE_ESPERTI_MASSA=2 LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE=0
+LLAMA_CACHE_ESPERTI_MASSA_CORSIE=0 LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0 LLAMA_CACHE_ESPERTI_LRU=1
+LLAMA_CACHE_ESPERTI_W=0 LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1 LLAMA_CACHE_ESPERTI_SLOT=473
+LLAMA_CACHE_ESPERTI_FORK=2 LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8 LLAMA_CACHE_ESPERTI_FORK_RIUSA_SLOT=0
+LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0 LLAMA_ACCEPTMOE=1 LLAMA_ACCEPTMOE_ESATTE=1
+LLAMA_ACCEPTMOE_SOGLIA=0.75 LLAMA_ACCEPTMOE_COMPATTA=1 LLAMA_CKPT_CRONO=0
+LLAMA_SPEC_CONF_ESENTA_POS0=1 LLAMA_SPEC_DRAFT_TOPK=1 PORTO_SPEC_NMAX=3 PORTO_SPEC_CONF_MIN=0.8
+LLAMA_MAPPED_IBRIDO=1 LLAMA_MAPPED_IBRIDO_SOGLIA=2 LLAMA_OVERLAP_ASYNC=1 LLAMA_OVERLAP_K=2
+LLAMA_OVERLAP_BATCH_MAX=3 LLAMA_OVERLAP_GRIGLIA_VARIABILE=0 LLAMA_OVERLAP_PIN=1
+LLAMA_OVERLAP_JOIN_ASYNC=0 LLAMA_KV_RING=1 LLAMA_KV_RING_VRAM_TOKEN=2048
+LLAMA_KV_ROLLBACK_PARZIALE=1 LLAMA_KV_ROLLBACK_SOLO_ANELLO=0 LLAMA_VRAM_A_FASI=0
+LLAMA_DSV4_INDEXER_FUSO=0 LLAMA_DSV4_HC_FUSO=5 LLAMA_GRAPH_REUSE_PER_TAGLIA=1
+GGML_CUDA_GRAPH_OPT=0 LLAMA_VRAM_ZAVORRA=0` + `GGML_SCHED_PROFILO=0` (override esplicito, il
+default dello script è 1) + `GGML_CUDA_GRAPH_STATS=1` (aggiunta per questo banco, pari sui due
+lati) + `LLAMA_DSV4_TOPK_FUSO=0|1` (leva sotto test). `GGML_CUDA_DISABLE_GRAPHS` MAI impostata
+(nessuna presenza in ambiente su nessuno dei due lati) -> grafi accesi su entrambi, verificato a
+manifesto (`=<spento>(D)` su entrambi). Argomenti server: `-m DS4-0731-IQ2XXS.gguf -md
+DSpark-draft-Q2K.gguf --spec-type draft-dspark --fit off -ngld 99 --spec-draft-n-max 3
+--spec-draft-ubatch-size 16 -otd ... -c 10000 -ub 64 -np 1 -ngl 99 -ot ... -t 7 --no-mmap -lv 4
+--port 8100 --spec-draft-conf-min 0.80 --cache-ram 8192 --ctx-checkpoints 32 -cms 8192`.
+
+### Nota metodologica — notifica di background persa (autodiagnosi in corsa)
+
+Il braccio A è stato lanciato in background e la notifica di completamento **non è mai arrivata**
+in questa sessione (segnalato dal coordinatore su richiesta dell'utente, che vedeva il server
+spento e temeva una corsa morta). Verificato **dal vivo** invece di continuare ad aspettare una
+notifica: `Get-Process` = 0 processi llama, `nvidia-smi` = GPU a riposo (210 MHz, 433-436 MiB,
+13,1 W), il file `.summary.json` e l'output esistevano già da **~39 minuti** (mtime 05:37,
+verifica alle 06:16), log completo con `shutdown=ctrl-c` e `[exited with code 0]`. La corsa era
+riuscita e ferma da tempo: la QUIETE di §6.6 (300 s, 0 processi + VRAM<1200 + RAM>=28) era quindi
+già ampiamente soddisfatta per il tempo trascorso, non per un poll dedicato — non ripetuto un poll
+di 300 s a vuoto, il braccio B è stato lanciato subito dopo la verifica dal vivo. Il braccio B
+invece ha notificato correttamente. Nessuna spiegazione trovata per la notifica persa di A (va
+segnalato come rischio noto dell'infrastruttura di monitor, non del banco).
+
+### Verifica d'identità — braccio A (`topk_fuso_a_b160_r1_20260818`)
+
+```text
+[x] cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62),
+    cura=0, spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1,
+    cpu_leggeri=0, scudo=0, sfratto_par=1, dma=0, dma_strato=0   -- IDENTICA carattere per
+    carattere alla SOTA storica (§12.1) e al braccio B (sotto)
+[x] sfratto_par=1 (dentro la riga sopra + manifesto LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1(E))
+[x] build 10093 (3014d3756) MSVC 19.44.35227.0 -- combacia coi due SHA256 di preflight
+[x] sched-profilo: 0 righe -> profiler SPENTO (manifesto GGML_SCHED_PROFILO=0(E), coerente)
+[x] manifesto/diag: GGML_CUDA_GRAPH_STATS=1(E)
+[x] manifesto/compute: LLAMA_DSV4_TOPK_FUSO=0(E)  GGML_CUDA_DISABLE_GRAPHS=<spento>(D)
+[x] p1 = 0.80952 (85 accepted / 105 generated), mean len = 2,16  [nmax3, non confrontabile col
+    riferimento storico nmax2 (.77670) -- atteso, config diversa di proposito]
+[x] cache-esperti: domanda 36481 (colpi 25551 = 70,0%, buchi 10930, miss 30,0%, in ritardo 0)
+[x] zero GGML_ASSERT / CUDA error / invalid index; divergenze: taglia=0 ids=0 out=0
+    GRIGLIA-corta=0 su entrambe le righe "rilevatore replay" del log
+[x] SHA output 9863BCD6D16E38750C671A390C6F0C6DE6F902B8533CCF23126A777D930757BE, 73 caratteri,
+    finish_reason=length, completion_tokens=160
+[x] jprompt.txt verificato al preflight
+eval time = 12068,15 ms / 160 tokens (75,43 ms/token, 13,26 t/s)   wall_ms=15108,9
+righe cuda-graph-stats nel log: 738
+```
+
+### Verifica d'identità — braccio B (`topk_fuso_b_b160_r1_20260818`)
+
+```text
+[x] cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (...) sfratto_par=1  -- IDENTICA ad A
+[x] build 10093 (3014d3756) -- identico ad A
+[x] sched-profilo: 0 righe -> profiler SPENTO (pari ad A)
+[x] manifesto/diag: GGML_CUDA_GRAPH_STATS=1(E) -- pari ad A
+[x] manifesto/compute: LLAMA_DSV4_TOPK_FUSO=1(E)  GGML_CUDA_DISABLE_GRAPHS=<spento>(D) -- grafi
+    accesi, pari strumentazione rispetto ad A salvo la leva sotto test
+[x] p1 = 0.73148 (79 accepted / 108 generated), mean len = 1,99
+[x] cache-esperti: domanda 37668 (colpi 27039 = 71,8%, buchi 10629, miss 28,2%, in ritardo 0)
+[x] zero GGML_ASSERT / CUDA error / invalid index; divergenze tutte a zero
+[x] SHA output 204FC52E20A47AC7869F1521A64CCD02F04230AE91408B8248AD6AEE14517E85, 577 caratteri,
+    finish_reason=length, completion_tokens=160
+eval time = 13457,61 ms / 160 tokens (84,11 ms/token, 11,89 t/s)   wall_ms=16711,1
+righe cuda-graph-stats nel log: 653
+```
+
+### Cancello (a) — raggiungibilità e conteggio lanci
+
+**Manifesto: CONFERMATO.** `LLAMA_DSV4_TOPK_FUSO=0(E)` su A, `=1(E)` su B, entrambi espliciti
+(non un default silenzioso). La leva si accende.
+
+**Conteggio lanci (proxy da log, senza nsys): evidenza direzionale, NON un numero pulito.**
+Analizzate tutte le righe `cuda-graph-stats:` (738 chiavi-grafo distinte in A, 653 in B) via
+regex + aggregazione (`nodes`, `calls`, `launches` per chiave):
+
+```text
+                                    A (FUSO=0)     B (FUSO=1)     delta
+righe cuda-graph-stats (chiavi)    738            653            -85 (-11,5%)
+somma nodes su tutte le chiavi     126.209        115.746        -10.463 (-8,3%)
+somma launches su tutte le chiavi  5.293          5.950          +657 (+12,4%)
+somma (nodes x calls)              891.076        961.681        +70.605 (+7,9%)
+```
+
+Lettura onesta: il segno di "righe" e "nodes totali" va nella direzione attesa (in calo con la
+fusione accesa), **ma B ha eseguito più cicli di verifica di A** (mean_len 1,99 contro 2,16 ->
+~54 cicli contro ~49 per produrre gli stessi 160 token) — un handicap che va nella direzione
+OPPOSTA alla riduzione osservata su "righe"/"nodes totali", e che infatti fa salire "launches" e
+"nodes x calls" aggregati (più cicli pesano più della fusione sul totale grezzo). **Non è stato
+possibile isolare dal solo log il sottoinsieme "router del bersaglio"**: le centinaia di chiavi
+sono in gran parte forme effimere (onda `n_kv`/ricatture, un oggetto per variante di forma), e
+`GGML_CUDA_GRAPH_STATS` non etichetta la chiave per ruolo. Controllo di scoping riuscito: il
+**cluster "caldo" del drafter** (le chiavi con più `calls`/`launches` in assoluto — nodes
+149/277/58/18/10/9, calls 72->78 da A a B) ha **nodes IDENTICI** fra A e B: conferma che la
+fusione non tocca il drafter, coerente col disegno ("la funzione di gating di DS4", non del
+drafter). Il numero pulito "9->1/strato = -123/token" richiesto dal disegno (MACRO_V2_PIANO.md
+§6.3) resta **non misurato**: quel protocollo è nsys per nome-kernel (`k_argsort_f32_i32`,
+`k_bin_bcast`), non eseguito in questo banco rapido su richiesta esplicita di velocità
+("subito", niente nsys nel mandato). **Verdetto cancello (a): manifesto PASSA da solo;
+il conteggio lanci PASSA come indizio direzionale ma non chiude la misura di F3** — se serve il
+numero esatto, va rifatto con nsys secondo il protocollo originale.
+
+### Cancello (b) — non-parity (p1, SHA come dato, coerenza testo)
+
+p1: A = 85/105 = 0,80952; B = 79/108 = 0,73148. Test a due proporzioni (pooled):
+p_pool=164/213=0,77465, SE=sqrt(p_pool(1-p_pool)(1/105+1/108))=0,05727,
+**z = (0,80952-0,73148)/0,05727 = 1,36** -> **dentro la banda 2sigma (|z|<2), PASSA**.
+
+SHA: diversi (atteso, non è un cancello qui — "un dato", non-parity dichiarata dal disegno).
+
+Coerenza testo (§4.10, lettura integrale essendo banco corto):
+- A (73 caratteri): *"Ecco il codice HTML completo per una landing page cyberpunk neon di Neura"*
+  -- si interrompe a metà di "NeuraForge" per fine token budget.
+- B (577 caratteri): *"Il sistema richiede una pagina HTML completa per una startup AI chiamata
+  NeuraForge... [riepiloga fedelmente TUTTI i requisiti del prompt: head/CSS, header/nav, hero,
+  3 feature card, tabella prezzi 3 tier, form contatti JS, footer, palette cyan/magenta/giallo,
+  sfondo scuro, font futuristici, responsive] ... Procedo a generare il codice completo. Userò
+  CSS con variabili, animazioni, glow, e"* -- si interrompe a metà lista per fine token budget.
+
+```text
+[x] lingua sana                                          si (entrambi, italiano corretto)
+[x] assenza di loop / ripetizioni patologiche             si (entrambi)
+[x] pertinenza al prompt                                  si (entrambi; B riassume i requisiti
+                                                              con precisione, A va diretto al
+                                                              codice -- stile diverso, non difetto)
+[x] degradazione progressiva                              no (testi troppo corti per mostrarla;
+                                                              nessun segno nella finestra vista)
+```
+
+Nessuna anomalia: il cambio di traiettoria (stile del preambolo, p1, mean_len) è la conseguenza
+attesa e dichiarata dal disegno ("la riduzione fusa cambia l'ordine delle somme"), non un difetto.
+
+### Cancello (c) — t/s indicativo
+
+A = 13,26 t/s, B = 11,89 t/s -> **delta = -10,33%**, fuori dalla barra ±5% del triage. **Non
+interpretabile come verdetto di velocità**: un solo colpo per lato, nessuna replica, guadagno
+atteso da disegno (0,90%) ben sotto qualunque rumore di questo banco, e traiettoria diversa
+(mean_len 2,16 vs 1,99 cambia da solo il t/s indipendentemente da qualunque conteggio di lanci).
+Esattamente il motivo per cui il disegno impone di giudicare F3 sui lanci, non sul t/s.
+
+### Tabella riassuntiva A/B
+
+| | A (`TOPK_FUSO=0`) | B (`TOPK_FUSO=1`) | delta |
+|---|---:|---:|---:|
+| manifesto leva | `=0(E)` | `=1(E)` | accesa |
+| t/s (indicativo) | 13,26 | 11,89 | -10,33% (fuori banda, non interpretabile) |
+| p1 (accepted/generated) | .80952 (85/105) | .73148 (79/108) | z=1,36 (<2sigma, PASSA) |
+| mean len | 2,16 | 1,99 | -- |
+| righe cuda-graph-stats | 738 | 653 | -11,5% |
+| nodes totali (somma chiavi) | 126.209 | 115.746 | -8,3% |
+| cluster caldo drafter (nodes) | 149/277/58/18/10/9 | 149/277/58/18/10/9 | IDENTICO (0 impatto) |
+| cache-esperti domanda/buchi | 36481 / 10930 | 37668 / 10629 | ordine confrontabile |
+| errori/divergenze | 0 | 0 | -- |
+| sched-profilo | SPENTO (0 righe) | SPENTO (0 righe) | pari |
+| SHA output | 9863BCD6... | 204FC52E... | diverso (atteso, non-parity) |
+
+### VERDETTO Lavoro 1
+
+**Raggiungibilità: CONFERMATA** (manifesto esplicito su entrambi i lati, letto correttamente a
+init, memoizzato static per processo -- coerente col sorgente). **Correttezza: PASSA** (p1 in
+banda 2sigma, testo coerente su entrambi, zero errori/divergenze). **Conteggio lanci: evidenza
+direzionale a favore dell'aggancio** (righe-grafo e nodi totali in calo nonostante B abbia
+eseguito più cicli di A, cluster drafter invariato = scoping corretto) **ma non il numero
+"9->1/strato" preciso** richiesto dal disegno — quello resta da fare con nsys se in futuro serve
+il dato esatto per il control block (Fase D). **t/s: fuori banda ma non interpretabile**, coerente
+con l'attesa del disegno stesso. **Esito: PARCHEGGIO**, esattamente come pre-scritto in
+MACRO_V2_PIANO.md §6.3 ("guadagno finito su costo zero... adottata in parcheggio per la
+composizione") — non promossa (il guadagno stimato 0,90% non lo consente comunque), non
+respinta, raggiungibilità del ramo upstream ora verificata dal vivo e non solo dal disegno.
+Nessuna riga della "tabella PARCHEGGIO LEVE" di RUNBOOK_BANCO_DS4.md §8.8 aggiornata da questo
+agente in questo turno (di competenza del coordinatore/prossimo censimento); il dato sta qui.
+
+### Stato macchina e postflight
+
+```text
+processi_llama = 0
+vram: 436 MiB usati / 11680 MiB liberi | clock SM 210 MHz | potenza 13,14 W
+ram_libera = 87,9 GB
+```
+
+Macchina pulita, pronta per il Lavoro 2 (banco PAD su `D:\llama-subtract`) senza bisogno di
+ulteriore quiete: >39 min di inattività reale già trascorsi da fine A, e B è uscito con
+`shutdown=ctrl-c` pulito, confermato dal log.
+
+### Percorsi file
+
+```text
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\topk_fuso_a_b160_r1_20260818.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\topk_fuso_a_b160_r1_20260818.summary.json
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\topk_fuso_a_b160_r1_20260818.r1.output.txt
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\topk_fuso_b_b160_r1_20260818.server.log
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\topk_fuso_b_b160_r1_20260818.summary.json
+C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\topk_fuso_b_b160_r1_20260818.r1.output.txt
+```
+
+---
+
+## Turno 19 — ESECUTORE, Lavoro 2: banco PAD su D:\llama-subtract — **B0 FERMATO da cancello 3%, anomalia da investigare**
+
+### Preflight e verifica binari (§1 + SHA dei 4 file, GO del coordinatore)
+
+```text
+processi = 0   GPU a riposo 210 MHz/437 MiB/12,9 W   ram_libera = 86,4 GB   porta 8099 = libera
+disco C = 49,4 GB   disco D = 119,6 GB
+jprompt102k.txt: 285.268 byte (11/08/2026)
+modello target: 86.720.111.488 byte   modello draft: 7.179.447.776 byte  -- entrambi presenti
+
+SHA256 dei 4 binari D:\llama-subtract\build\bin — VERIFICATI CONTRO IL GO AGGIORNATO:
+  llama-server.exe -> CC460C3D817DF494E2218342A7BA3E465F47E43A3A132E576DA3C244EC9550F2  (atteso CC460C3D817DF494... OK)
+  ggml-cuda.dll    -> F45AA564C2D1B80715650ECB52698C59DB9E0DD4B29076B712FC0DC688ACDA2E  (atteso F45AA564C2D1B807... OK)
+  llama.dll        -> 652A9ED4547886A84BA5B52C1CD2CC85D1A7EE6E8615D2D9EAE2A6EB5BCE4A92  (atteso 652A9ED454... OK)
+  ggml-base.dll    -> DD7122DE0D2E256269D08AE45C0C82A22F5275CDB37210F1AE87B0EA7C446943  (atteso DD7122DE... OK)
+  NESSUNA traccia della build stale 700BBA2D -- è la build G1 gather (chirurgo 11), non quella
+  intermedia di solo chirurgo 10.
+```
+
+Letto NOTE_IMPLEMENTAZIONE.md §14 (kv-ring counter fix + `LLAMA_KV_PAD`, chirurgo 10) e §15 (G1
+gather, chirurgo 11, per dopo). Estesi due parametri su
+`C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1`:
+`-KvPad` (default `''` = variabile non impostata = 256, comportamento invariato) e
+`-KvRingBattito` (default `''` = variabile non impostata = 60 s, comportamento invariato).
+Lettori verificati PRIMA di scrivere direttamente nel sorgente `D:\llama-subtract` (sola lettura):
+`LLAMA_KV_PAD` in `llama-kv-cache.cpp:1253` (`atoi` a valore, arrotonda in su a potenza di due,
+log `llama_kv_cache: LLAMA_KV_PAD passo di n_kv = %u (chiesto %d, difetto 256)`);
+`LLAMA_KV_RING_BATTITO` in `kv-ring.cu:340` (`atoi` a valore, difetto 60). Sintassi PowerShell
+riverificata con `[System.Management.Automation.Language.Parser]::ParseFile` — 0 errori.
+
+### Comando B0
+
+```powershell
+& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' `
+  -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel 'pad_b0' `
+  -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 `
+  -MaxTokens 8192 -SpecNmax 3 -Repliche 1 -CtxCheckpointMinStep 32 `
+  -ReasoningBudgetTokens 0 -GraphReusePerTaglia 1 -KvRingBattito 5 `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+`-KvPad` omesso (= assente = 256, config B0). `-PortoCbForkDownTardi` omesso (default '', nessuna
+leva estranea impilata — a differenza di `fix1_kvcount` che testava quella leva, qui non
+pertinente al mandato). **OMISSIONE DA SEGNALARE**: non ho lanciato `sample_hw.ps1` in parallelo
+per la telemetria hardware di questo braccio — §6.8 del runbook la rende obbligatoria per OGNI
+braccio, e qui manca. Non recuperabile a posteriori: **B0 non ha telemetria di clock/potenza**,
+quindi un eventuale throttling durante la corsa non è né confermato né escluso da questo braccio.
+
+### VERIFICA D'IDENTITÀ
+
+```text
+[x] cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (...) sfratto_par=1  -- combacia
+    carattere per carattere con la SOTA storica (§12.1 del runbook)
+[x] build 10093 (3014d3756) -- combacia coi 4 SHA256 di preflight
+[x] manifesto/diag: GGML_CUDA_GRAPH_STATS=1(E) (di default nello script, non aggiunto da me)
+[x] manifesto/compute: GGML_CUDA_DISABLE_GRAPHS=<spento>(D) -- grafi accesi
+[x] llama_kv_cache: LLAMA_KV_PAD passo di n_kv = 256 (chiesto 0, difetto 256) -- CONFERMATO,
+    B0 è davvero nella configurazione di controllo, non un refuso del parametro nuovo
+[x] p1 = 0.90449 (5341 accepted / 5905 generated), mean len = 2,87  -- SANO, anzi migliore
+    del riferimento storico (.90025, mean len 2,47): la traiettoria speculativa NON è degradata
+[x] zero GGML_ASSERT / CUDA error / invalid index / out of memory nel log
+[x] divergenze: tutte le righe "rilevatore replay" a zero (taglia=0 ids=0 out=0 GRIGLIA-corta=0)
+[x] coerenza testo (§4.10, lettura a campione inizio+fine su banco lungo): SANA -- saggio tecnico
+    ben strutturato su DS4/cache-esperti/overlap (il contesto del prompt), markdown corretto,
+    blocchi di codice coerenti, nessun loop, nessuna degradazione, pertinente dall'inizio alla
+    fine (25.014 byte, finish_reason=length)
+[x] SHA output 2CBB795A3CA00022C641BA1507F1C069F6276F992D474FFDAF3A929F7874073B
+eval time      = 1.666.097,73 ms / 8192 tokens (203,38 ms/token, 4,92 t/s)
+prompt eval    = 839.899,57 ms / 101.691 tokens (8,26 ms/token, 121,08 t/s)  -- prefill SANO
+wall richiesta = 41,78 min   caricamento = ~2min15s (06:32:28 -> 06:34:43)
+cuda-graph-stats: 2.757 chiavi distinte; somma warmup_resets = 13.847; somma incompatible = 200
+```
+
+### CANCELLO 3% (§14.4 tabella B0 + mandato del coordinatore) — **NON PASSATO**
+
+```text
+atteso (coordinatore)   : ~10,93-10,95 t/s
+atteso (NOTE_IMPL. S15.11, "oggi [M]") : 10,95 t/s (91,29 ms/token)
+misurato B0              : 4,92 t/s (203,38 ms/token)
+delta                    : (4,92-10,95)/10,95 = -55,1%
+```
+
+**Ben oltre il 3%.** Per §14.4 ("se non riproduce il riferimento entro il 3%, fermarsi: è deriva,
+non leva") e per il GO del coordinatore ("se devia oltre 3% le 'inerti' non sono inerti: riporta
+subito"): **mi fermo qui. Non lancio B1.** Un braccio B1 sopra una baseline rotta non misurerebbe
+niente e brucerebbe un altro ciclo da ~40 minuti.
+
+### Diagnosi raccolta (per orientare la prossima decisione, non una conclusione chiusa)
+
+1. **Non è un collasso di traiettoria.** p1 .90449 e mean len 2,87 sono SANI (migliori dello
+   storico), il testo è coerente dall'inizio alla fine. Qualunque cosa costi i 111 ms/token in
+   più, non passa dal meccanismo di accettazione della bozza.
+2. **Non è un gradino a metà corsa (verificato per aritmetica dei timestamp del log).** La
+   transizione di fase decode è alle "16.15" (formato log M.SS.mmm.µs dal via del processo) =
+   ~975 s dall'avvio processo = coerente al netto del caricamento (~135 s) con la fine del
+   prefill misurato (839,9 s, 121,08 t/s) — il decode parte quando dovrebbe. Le ultime tre righe
+   `[kv-ring-profile] quando=battito` (fine corsa) sono piatte fra loro (18.556.277,61 /
+   18.582.530,67 / 18.606.358,43 byte/token cumulativi), **nessuna accelerazione o
+   decelerazione visibile in coda**: la lentezza sembra distribuita uniformemente sul decode
+   (rapporto 203/91 ≈ 2,23×), non un evento isolato.
+3. **SCOPERTA COLLATERALE — il contatore kv-ring FINALMENTE stampa (dopo 4 tentativi falliti,
+   TASSA_ATTENZIONE_LUNGO.md §5), e la lettura FALSIFICA il candidato 1 "tassa PCIe" come
+   concepito finora.** Atteso (NOTE_IMPLEMENTAZIONE.md §14.1/§15.11) `bytes_h2d_per_token ≈
+   7,1×10⁸` se il trasporto CSA/LID/HCA fosse il costo dominante. Misurato in B0 (ultimo battito,
+   cumulativo su 110.445 "tokens" contati dal contatore): **`bytes_h2d_per_token` ≈
+   1,86×10⁷ (18.606.358 byte)** — **~38× SOTTO** l'atteso. Per il testimone stesso di §14.1
+   ("se è ordini di grandezza sotto, la tesi PCIe è falsa e il peso va sui candidati 2-3"):
+   **il candidato 1 è falsificato da una misura reale per la prima volta**, non solo da un
+   tentativo muto. Righe verbatim (dalle ultime 3 di 448 nel log):
+   ```text
+   llama: [kv-ring-profile] quando=battito materializations=179315 h2d_copies=178953 bytes_h2d=2048947060736 tokens=110418 bytes_h2d_per_token=18556277.61
+   llama: [kv-ring-profile] quando=battito materializations=179579 h2d_copies=179217 bytes_h2d=2052106027008 tokens=110432 bytes_h2d_per_token=18582530.67
+   llama: [kv-ring-profile] quando=battito materializations=179817 h2d_copies=179455 bytes_h2d=2054979256320 tokens=110445 bytes_h2d_per_token=18606358.43
+   ```
+   Questo è il B-C che mancava da 5 tentativi (compreso questo, se si conta la mancata stampa
+   come tentativo zero) — **stavolta stampa**, e il numero dice che il trasporto D2H del kv-ring
+   NON è la causa dei 203 ms/token: è troppo piccolo di un ordine e mezzo di grandezza.
+4. **Indizio più concreto sulla lentezza stessa: `warmup_resets` totali = 13.847** su
+   109.883 token totali (prompt+completion) — se concentrati nel decode (8.192 token) sono
+   **~1,7 reset/token**, una frequenza di ricattura del grafo molto alta. La "tassa di ricattura
+   del grafo" è già catalogata in questo progetto come costosa (decine di ms a ricattura). Non è
+   stato possibile in questo turno separare quanti reset cadono in prefill vs decode (richiede un
+   secondo passaggio sul log per fascia temporale, non fatto per dare priorità al fermarsi e
+   riportare). **Ipotesi di lavoro, non verificata**: la fonte dei reset extra è la nuova
+   strumentazione kv-ring (chirurgo 10, agganciata dentro `ggml_backend_cuda_graph_compute`,
+   "fuori da ogni cattura" per disegno) o l'impalcatura G1 (chirurgo 11, guardie valutate anche a
+   `LLAMA_KV_GATHER=0`) — nessuna delle due è stata isolata da questo braccio, che le porta
+   entrambe insieme (sono nella stessa dll, non scomponibili senza un'altra build).
+5. **Non escluso**: throttling GPU durante la corsa. **Non ho telemetria per questo braccio**
+   (omissione riportata sopra) — GPU ora a riposo (210 MHz, 12,9 W, throttle 0x1 = lo stesso bit
+   di riposo visto in ogni preflight di questa sessione, non un throttle sotto carico) ma questo
+   non dice niente sui 41,78 minuti già passati.
+6. **`LLAMA_KV_PAD` stesso è escluso come causa**: il log conferma `passo di n_kv = 256`, cioè
+   B0 è davvero alla config di controllo. Il difetto (se di leva si tratta, e non di macchina) è
+   nel binario stesso, non in un parametro mal passato da questo agente.
+
+### VERDETTO B0
+
+**RESPINTO come riferimento di sessione, cancello 3% del mandato non passato (-55,1%).**
+**FERMATO qui**, B1/B2/B3 NON lanciati in attesa di decisione: rilanciare B0 con telemetria
+(`sample_hw.ps1` a 0,5 Hz, correggendo l'omissione) per escludere il throttling è il passo più
+economico prima di sospettare il binario; se il throttling è escluso, il sospetto principale
+resta `warmup_resets` elevati, con kv-ring/G1 (impalcatura, non l'esecuzione: KV_GATHER=0) come
+unica differenza nota fra questa dll e quella del turno precedente (fix1_kvcount, che sull'r1
+girava nel regime sano). La scoperta sul contatore kv-ring (candidato 1 falsificato, punto 3
+sopra) resta valida indipendentemente dall'esito di questa indagine e va comunque consegnata.
+
+### Stato macchina e postflight
+
+```text
+processi_llama = 0
+gpu: 210 MHz, 12,87 W, 0% util, 362/11754 MiB, throttle 0x0000000000000001 (bit di riposo)
+ram_libera ≈ 86 GB (non ricontrollata puntualmente dopo l'ultima lettura di preflight)
+```
+
+Macchina pulita, ferma in attesa di decisione del coordinatore.
+
+### Percorsi file
+
+```text
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_f2_b2048.server.log
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_f2_b2048.server.out
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_f2_b2048_q1.output.txt
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_f2_b2048_q1.response.json
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_pad_b0.summary.txt
+C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1 (modificato: +KvPad/+KvRingBattito)
+```
+
+---
+
+## RETTIFICA (coordinatore) al punto 3 della diagnosi B0 — il candidato 1 NON è falsificato
+
+Il punto 3 sopra ("SCOPERTA COLLATERALE... la lettura FALSIFICA il candidato 1") è **scorretto** e va
+letto come ritirato. Correzione del coordinatore: il contatore kv-ring (chirurgo 10) conta **solo lo
+staging esplicito del ring** (18,6 MB/token misurati) — **le letture MAPPATE dei kernel dalla RAM
+host, che sono l'oggetto del candidato 1 della tassa d'attenzione, non passano da lì**. Lo strumento
+era **mal-scopato** per quella domanda, non la tesi PCIe smentita da una misura. Il numero
+18.606.358,43 byte/token resta un dato vero (il ring stesso trasporta poco), ma **non dice niente**
+sul volume delle letture mappate CSA/LID/HCA che `materialize` fa oggi. **Il test vero del candidato
+1 resta G1** (confronto `[kv-gather-profile]` vs `[kv-ring-profile]` dopo che il gather sposta la CSA
+fuori da `materialize`, NOTE_IMPLEMENTAZIONE.md §15.7). Non tocco il resto della diagnosi (punti 1,
+2, 4, 5, 6 restano validi): l'anomalia di velocità di B0 è indipendente da questa rettifica.
+
+---
+
+## Turno 19 — diagnosi B0: passo 1, SENTINELLA (canary corto)
+
+```text
+comando  = strumenti\sentinella.ps1 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+           -Etichetta 'diagnosi B0 dll gather'
+tag      = sentinella_b64_r1_20260818_072535
+dll SHA8 = F45AA564   exe SHA8 = CC460C3D   (la dll gather corrente, non E83A87ED)
+caricamento = 246,4 s
+t/s      = 13,67    p1 = 0,88636    finish = length
+SHA out  = 99E982C1DA01A1BC1F88F8D85CB7CA18BF43563AF0D85ECF966F73C1234E5924
+cache-esperti = 473 slot ... sfratto_par=1  -- identica alla SOTA
+chiusura = ctrl-c, 0 processi residui
+```
+
+**Verdetto dello script**: `FONDATA` — nessun precedente nella genealogia con questo esatto SHA8
+di dll (F45AA564): non è mai girata prima con questa dll, quindi lo script non ha un termine di
+paragone a **pari dll** (è la sua regola: confronta solo stesso SHA8). Non è né VERDE né
+GIALLO/ROSSO per costruzione dello strumento.
+
+**Confronto manuale col riferimento del mandato** (dll E83A87ED, 14,93 t/s, banda ±7% —
+un confronto FRA dll diverse, che lo strumento stesso non fa in automatico perché non è la
+domanda per cui è tarato: la banda ±7% è calibrata sul rumore a **binario identico**, qui i
+binari sono diversi per costruzione, quindi la stessa soglia misura rumore + una possibile
+differenza di build, non rumore puro):
+
+```text
+delta = (13,67 - 14,93) / 14,93 = -8,44%
+```
+
+**Fuori dalla banda ±7% di 1,44 punti** — non un VERDE pulito. Ma **un ordine di grandezza più
+piccolo del -55,1% di B0**, e senza nessuno dei segnali di ROSSO (nessun errore CUDA/ASSERT, la
+riga cache-esperti è quella attesa). **Decisione presa da questo agente, dichiarata non
+implicita**: leggo questo risultato come "il corto è ragionevolmente sano, il grosso del danno è
+nel lungo" (coerente con la diagnosi del mandato) e procedo al passo 2, invece di fermarmi per
+una bisezione — perché (a) un salto -8,44% su un confronto fra due build diverse, su un solo
+campione da 64 token, resta dentro il territorio plausibile di una differenza di build non
+patologica (questa build rilinka pure `llama-server.exe`, NOTE_IMPLEMENTAZIONE.md §15.10), e
+(b) il passo 2 è comunque il prossimo passo economico e diagnostico anche nel caso GIALLO, dato
+che l'unica differenza netta fra "malattia ovunque, lieve" e "malattia solo nel lungo, grave"
+è appunto l'esito di B0_bis. **Segnalato per iscritto**: se il coordinatore legge questo -8,44%
+come GIALLO vero (dll malata anche nel corto), la decisione corretta sarebbe fermarsi qui invece
+che al passo 2 — non l'ho fatto perché il peso delle prove (l'asimmetria coi -55,1% del lungo,
+la natura cross-build della soglia, l'assenza di ROSSO) mi sembra deporre per l'altra lettura, ma
+la registro come scelta mia, non come fatto.
+
+---
+
+## Turno 19 — diagnosi B0: passo 2, `pad_b0_bis` (identico a B0, stavolta con telemetria) — **B0 ERA UN ONE-OFF DI MACCHINA, VERDETTO CHIUSO**
+
+### Comando (identico a B0, RunLabel diverso) + telemetria stavolta presente
+
+```powershell
+& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' `
+  -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel 'pad_b0_bis' `
+  -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 `
+  -MaxTokens 8192 -SpecNmax 3 -Repliche 1 -CtxCheckpointMinStep 32 `
+  -ReasoningBudgetTokens 0 -GraphReusePerTaglia 1 -KvRingBattito 5 `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+# in parallelo:
+& '...\work\sample_hw.ps1' -Tag 'pad_b0_bis' -OutDir 'D:\ds4_work\llama_run' -IntervalSeconds 2
+```
+
+### Risultato
+
+```text
+wall richiesta = 26,5 min  (B0: 41,78 min)
+prefill        = 120,65 t/s (B0: 121,08 -- pari)
+decode         = 10,97 t/s (B0: 4,92 -- +123% rispetto a B0, ORA IN BANDA col riferimento
+                 10,93-10,95: delta = (10,97-10,95)/10,95 = +0,18%)
+p1             = 0,90449            -- IDENTICO a B0
+SHA output     = 2CBB795A3CA00022C641BA1507F1C069F6276F992D474FFDAF3A929F7874073B  -- IDENTICO a B0
+output chars   = 24972              -- IDENTICO a B0
+LLAMA_KV_PAD   = passo di n_kv = 256 (chiesto 0, difetto 256)  -- confermato, config invariata
+cache-esperti  = riga identica alla SOTA, identica a B0
+build          = 10093 (3014d3756) -- identico
+divergenze     = tutte a zero, zero errori/ASSERT/CUDA error
+chiusura       = ctrl-c, 0 processi residui
+```
+
+**Il calcolo è BIT-IDENTICO a B0** (stesso SHA output, stesso p1, stessi caratteri): stesso identico
+lavoro svolto, in un tempo diverso. Questo isola immediatamente la causa a qualcosa di **esterno al
+calcolo stesso**.
+
+### Verifica warmup_resets/incompatible — IDENTICI a B0, l'ipotesi "tempesta di ricatture" è ESCLUSA
+
+```text
+                    B0        pad_b0_bis
+chiavi grafo        2.757     2.757        (identiche)
+somma warmup_resets 13.847    13.847       (IDENTICA)
+somma incompatible  200       200          (IDENTICA)
+```
+
+Il punto 4 della diagnosi di B0 ("ipotesi di lavoro: la fonte dei reset extra...") è **escluso**: la
+struttura e la frequenza di ricattura del grafo sono **esattamente le stesse** nei due bracci, eppure
+uno è 2,23× più lento dell'altro. Non è la ricattura a spiegare il delta.
+
+### Telemetria (`pad_b0_bis.hw.csv`, 735 campioni a 0,5 Hz, 678 "busy" con util>50%)
+
+```text
+SM clock durante il carico:  min 1830 MHz, mediana 1920 MHz, max 1942 MHz
+potenza durante il carico:   min 102,0 W,  mediana 124,8 W,   max 139,9 W
+campioni busy con SM < 1500 MHz: 0 / 678 (0,0%)
+distribuzione: 678/678 campioni busy nella fascia 1800-1999 MHz -- NESSUN campione fuori banda
+```
+
+**pad_b0_bis non ha mai girato sotto clock per l'intera corsa.** Il regime è pieno e sano dall'inizio
+alla fine (coerente col regime storico SOTA, SM ~1950 MHz).
+
+### VERDETTO
+
+**B0 (4,92 t/s) era un one-off di macchina.** Non ho telemetria per B0 stesso (omissione già
+segnalata, non recuperabile), quindi non posso PROVARE direttamente che B0 abbia girato a clock
+basso — ma l'evidenza indiretta è forte e converge: (a) calcolo bit-identico fra i due bracci, (b)
+struttura e frequenza di ricattura del grafo IDENTICHE, (c) pad_b0_bis pulito e sano al 100% dei
+campioni di telemetria, con risultato che combacia col riferimento (+0,18%). Le uniche variabili
+rimaste diverse fra i due bracci sono **esterne al processo stesso** (stato termico/clock della
+GPU, altro carico di sistema nella finestra di tempo) — esattamente la famiglia di anomalie già
+documentata in questo stesso progetto (regime 780 MHz del 15-16/8, mai spiegato con certezza ma
+mai riprodotto a comando). **Non è la dll, non è `LLAMA_KV_PAD`, non è la ricattura del grafo.**
+
+Per la diramazione dichiarata dal coordinatore ("se torna ~10,9 → il B0 originale era un one-off
+di macchina... → prosegui B1 come da piano"): **procedo a B1.** Applico la lezione per tutti i
+bracci restanti: telemetria SEMPRE in parallelo da qui in avanti, nessuna eccezione.
+
+### Stato macchina e postflight
+
+```text
+processi_llama = 0 (shutdown ctrl-c pulito, sample_hw uscito da solo dopo 734 campioni)
+```
+
+### Percorsi file
+
+```text
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_bis_f2_b2048.server.log
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b0_bis_f2_b2048_q1.output.txt
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_pad_b0_bis.summary.txt
+D:\ds4_work\llama_run\pad_b0_bis.hw.csv
+D:\ds4_work\llama_run\pad_b0_bis.cpu.csv
+```
+
+---
+
+## Turno 19 — Lavoro 2: B1 (`LLAMA_KV_PAD=1024`) — **PARCHEGGIO: nessun guadagno misurabile, e `warmup_resets` NON si muove (indizio forte)**
+
+### Comando (identico a B0/pad_b0_bis salvo `-KvPad 1024`, telemetria in parallelo)
+
+```powershell
+& 'C:\Users\imanu\Documents\Codex\2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' `
+  -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel 'pad_b1' `
+  -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000 `
+  -MaxTokens 8192 -SpecNmax 3 -Repliche 1 -CtxCheckpointMinStep 32 `
+  -ReasoningBudgetTokens 0 -GraphReusePerTaglia 1 -KvRingBattito 5 -KvPad 1024 `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+# in parallelo: sample_hw.ps1 -Tag 'pad_b1' -OutDir 'D:\ds4_work\llama_run' -IntervalSeconds 2
+```
+
+### VERIFICA D'IDENTITÀ
+
+```text
+[x] llama_kv_cache: LLAMA_KV_PAD passo di n_kv = 1024 (chiesto 1024, difetto 256)  -- CONFERMATO,
+    la leva è davvero accesa (non è il manifesto: è la riga di log dedicata, RUNBOOK-style)
+[x] cache-esperti: 473 slot ... sfratto_par=1  -- identica a B0/pad_b0_bis/SOTA
+[x] build 10093 (3014d3756) -- identico
+[x] p1 = 0,90449 (IDENTICO a B0 e pad_b0_bis)
+[x] zero errori/GGML_ASSERT/CUDA error; divergenze tutte a zero
+[x] SHA output 2CBB795A3CA00022C641BA1507F1C069F6276F992D474FFDAF3A929F7874073B -- IDENTICO a
+    B0/pad_b0_bis. Nota dal disegno (NOTE_IMPLEMENTAZIONE.md S14.2): "il bit-esatto non è
+    atteso" con PAD diverso (cambia il numero di colonne sommate in fp16) -- non è un difetto
+    se combacia comunque, è solo non garantito; qui su questo prompt/posizione ha combaciato
+finish = length   output chars = 24972 (identico)
+```
+
+### Risultato
+
+```text
+wall richiesta = 26,37 min
+prefill        = 121,44 t/s   (B0_bis: 120,65 -- pari)
+decode         = 11,00 t/s    (B0_bis: 10,97 -- delta = +0,27%)
+```
+
+**Cancello §14.4 ("±3% sul t/s ⇒ parcheggio")**: +0,27% è ben dentro la banda di rumore. **Nessun
+guadagno misurabile.**
+
+### `warmup_resets` — ATTESO ÷4, MISURATO: **INVARIATO**
+
+```text
+                    B0 / pad_b0_bis (PAD=256)   B1 (PAD=1024)
+chiavi grafo        2.757                       2.757          (identiche)
+somma warmup_resets 13.847                      13.847         (IDENTICA, non ÷4 come atteso)
+somma incompatible  200                         200            (identica)
+somma captures      -- (non raccolta su B0)     14.841         (nuovo dato, nessun confronto diretto)
+```
+
+**Questo è il punto più interessante del braccio.** Il disegno (NOTE_IMPLEMENTAZIONE.md §14.2)
+prevedeva `warmup_resets ÷4` passando da PAD=256 a PAD=1024, perché il passo di padding del kv-cache
+**raw** quadruplica. La misura dice che i reset **non si sono mossi di una unità**. Ipotesi più
+plausibile, **coerente col resto del §14.2 letto in preparazione**: il sito toccato dalla patch è
+**solo** quello del kv-cache raw (`llama-kv-cache.cpp:1276`); il documento stesso segnala un
+**secondo sito, deliberatamente NON toccato**, che padda le cache **compresse** (CSA/LID/HCA) a
+256 fisso (`llama-kv-cache-dsv4.cpp:766`, rapporto 4 per CSA/LID = onda ogni 1.024 token reali,
+128 per HCA = ogni 32.768). **Se la popolazione di `warmup_resets` osservata è dominata dall'onda
+delle cache compresse e non da quella del kv-cache raw, questo braccio non poteva muoverla**: la
+leva testata non copre la causa dominante. Non verificato in questo turno quale onda domini
+(richiederebbe isolare i reset per chiave/sito, non fatto per tempo) — **lascio il sospetto scritto
+per l'esecutore che riprende**, non una conclusione chiusa.
+
+### Telemetria (`pad_b1.hw.csv`, 729 campioni, 674 busy)
+
+```text
+SM: min 1807, mediana 1920, max 1942 MHz -- 0/674 campioni sotto 1500 MHz
+potenza: min 54,19 W (probabile transitorio di fase, isolato), mediana 123,7 W, max 140,0 W
+```
+
+Corsa pulita, nessun sospetto di throttling (stesso quadro sano di pad_b0_bis).
+
+### VERDETTO B1
+
+**PARCHEGGIO.** Nessun guadagno di t/s (+0,27%, dentro il rumore), nessuna riduzione di
+`warmup_resets` (contro l'atteso ÷4), nessun problema di correttezza (SHA/p1 identici, zero
+errori). La leva **non rende**, coerente col cancello del mandato ("la leva costa e non rende").
+**B2 (PAD=2048) SALTATO per giudizio esplicito di questo agente**: il coordinatore aveva
+autorizzato il salto ("se B1 non migliora B0 oltre il rumore, B2 si può saltare, giudica tu dai
+numeri, dichiarandolo") — lo dichiaro qui: B1 non migliora, quindi B2 (che raddoppierebbe ancora
+il passo E il costo di attenzione, per un guadagno che B1 mostra essere probabilmente nullo)
+non è stato lanciato.
+
+### Stato macchina e postflight
+
+```text
+processi_llama = 0 (shutdown ctrl-c pulito, sample_hw uscito da solo dopo 729 campioni)
+```
+
+### Percorsi file
+
+```text
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b1_f2_b2048.server.log
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_pad_b1_f2_b2048_q1.output.txt
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_pad_b1.summary.txt
+D:\ds4_work\llama_run\pad_b1.hw.csv
+D:\ds4_work\llama_run\pad_b1.cpu.csv
+```
+
+---
+
+## Turno 19 — CHIUSURA E PASSAGGIO CONSEGNE (rotazione per budget di contesto, ordine del coordinatore)
+
+### Stato della catena PAD (NOTE_IMPLEMENTAZIONE.md §14, mandato "GO LAVORO 2")
+
+```text
+SENTINELLA (canary corto)  : FATTA. Verdetto script FONDATA (primo giro su questo SHA8 di dll);
+                              confronto manuale col riferimento del mandato -8,44% (fuori dalla
+                              banda ±7%, ma cross-build, e un ordine di grandezza sotto B0).
+                              Giudizio dichiarato: letto come "corto ragionevolmente sano",
+                              non riaperto -- vedi la sezione dedicata sopra per il ragionamento
+                              completo, nel caso vada rivisto.
+B0  (PAD assente/256)      : FATTO due volte.
+                              1a corsa: 4,92 t/s -- ANOMALIA, -55,1% dal riferimento (10,93-10,95).
+                                 Cancello 3% del mandato NON passato. Fermato, non proseguito.
+                              2a corsa (pad_b0_bis, gemello IDENTICO): 10,97 t/s -- in banda
+                                 (+0,18%), calcolo BIT-IDENTICO alla 1a corsa (stesso SHA output,
+                                 stesso p1, stessi warmup_resets/incompatible/chiavi-grafo),
+                                 telemetria 678/678 campioni busy a 1800-1999 MHz (zero sotto
+                                 1500 MHz per l'intera corsa). VERDETTO: la 1a corsa era un
+                                 one-off di macchina (famiglia della stessa anomalia 780 MHz mai
+                                 spiegata del 15-16/8), non un difetto della dll/leva. Riferimento
+                                 di sessione ora fondato: **10,97 t/s, SHA
+                                 2CBB795A3CA00022C641BA1507F1C069F6276F992D474FFDAF3A929F7874073B,
+                                 p1 .90449**.
+B1  (LLAMA_KV_PAD=1024)    : FATTO. 11,00 t/s (+0,27% su B0_bis, dentro il rumore). SHA/p1
+                              identici a B0. `warmup_resets` INVARIATO (13.847 = 13.847, atteso
+                              ÷4) -- indizio che la causa dominante dei reset sia l'onda delle
+                              cache COMPRESSE (CSA/LID/HCA, sito a 256 fisso, deliberatamente non
+                              toccato dalla patch, NOTE_IMPLEMENTAZIONE.md §14.2), non quella del
+                              kv-cache raw che la leva tocca. VERDETTO: PARCHEGGIO.
+B2  (LLAMA_KV_PAD=2048)    : SALTATO per giudizio esplicito di questo agente (autorizzato dal
+                              mandato: "se B1 non migliora, B2 si può saltare"). B1 non ha
+                              mostrato guadagno: raddoppiare ancora il passo non ha razionale.
+B3  (PAD=1024 su corto,     NON ESEGUITO in questo turno -- resta da fare. Cancello negativo:
+     cancello negativo)      peggioramento atteso sul corto, NON un difetto; se il corto
+                              MIGLIORA la spiegazione dell'onda-256 va rivista.
+G1 (LLAMA_KV_GATHER, §15)  : NON ESEGUITO in questo turno -- resta da fare. Piano e attese
+                              completi in NOTE_IMPLEMENTAZIONE.md §15 (letto per intero questo
+                              turno): cancello primario BINARIO `[kv-gather-profile]
+                              rows_per_token = 10.752×n_tok`; nessun cancello SHA (il gather non
+                              è bit-esatto); p1 in banda + coerenza testo; atteso 64-70 ms/token
+                              (14,3-15,6 t/s) contro il riferimento oggi RIFONDATO a **10,97 t/s
+                              / 91,15 ms/token** (non più il vecchio "10,93-10,95" del documento
+                              -- usare il numero di B0_bis, più fresco e verificato in questa
+                              stessa sessione). Protocollo: B-first, lungo, mono-richiesta,
+                              sessione fresca, stesso prompt ~102k.
+G1+PAD1024 (composizione)  : CONDIZIONALE, non ordinata. Il coordinatore aveva detto "lo ordino
+                              dopo i numeri" -- dato che B1 è PARCHEGGIO (nessun guadagno da
+                              solo), la composizione con G1 andrebbe rivalutata alla luce di
+                              questo: PAD=1024 da solo non rende, quindi comporlo con G1 ha senso
+                              solo se G1 da solo rende E se la ragione per cui PAD non rende
+                              (onda delle cache compresse, non toccata) è indipendente dal
+                              guadagno di G1 (che infatti lavora sulla CSA, non sul passo di
+                              padding) -- **non è una contraddizione ovvia, ma è una domanda
+                              aperta da farsi prima di comporre, non durante**.
+```
+
+### Lezioni operative del turno (da portare avanti, non da riscoprire)
+
+1. **Telemetria SEMPRE dal primo braccio, senza eccezioni.** B0 (la 1a corsa) è stato lanciato
+   senza `sample_hw.ps1` -- un'omissione mia, non recuperabile a posteriori, che ha reso l'anomalia
+   di quel braccio molto più costosa da diagnosticare (ha richiesto un secondo giro di 26 minuti
+   invece di leggere subito un CSV). Da B0_bis in poi ho corretto: ogni braccio di questo turno,
+   da qui in avanti, ha `sample_hw.ps1` lanciato in parallelo fin dal comando di lancio. **Regola
+   per l'esecutore che riprende: non lanciare MAI un braccio lungo senza telemetria, nemmeno
+   "il primo, tanto è solo un controllo".**
+2. **Il contatore kv-ring è mal-scopato per la domanda "candidato 1 della tassa d'attenzione".**
+   Misura SOLO lo staging esplicito del ring (`bytes_h2d_per_token` ≈1,86×10⁷ misurato, un dato
+   vero ma di un'altra cosa) -- le letture MAPPATE dei kernel dalla RAM host che `materialize`
+   fa oggi (l'oggetto vero del candidato 1) non passano da lì. **Il test vero del candidato 1
+   resta G1**: confrontare `[kv-gather-profile]` (dopo che il gather sposta la CSA fuori da
+   `materialize`) con `[kv-ring-profile]` prima/dopo. Non riaprire la falsa piste "candidato 1
+   falsificato" -- è stata ritirata dal coordinatore stesso, vedi la RETTIFICA sopra.
+3. **Un delta enorme non prova sempre una leva/build malata: un gemello bit-identico è il modo
+   più economico per distinguere "regressione reale" da "one-off di macchina".** Il protocollo
+   usato con successo questo turno: rilanciare la STESSA identica configurazione (stesso comando,
+   stesso tag diverso), e leggere PRIMA lo SHA output/p1 (se identici, il calcolo non è
+   cambiato) POI il t/s e la telemetria. Se il gemello combacia col riferimento atteso e mostra
+   clock puliti per l'intera corsa, il primo risultato anomalo era una fluttuazione di macchina,
+   non un difetto -- **ma questo non prova che B0 fosse davvero throttled**: è un'inferenza forte
+   da evidenza indiretta, non una misura diretta (mancava la telemetria proprio lì dove serviva).
+   Se ricapita, e questa volta c'è telemetria fin dall'inizio, si potrà dire con certezza invece
+   di inferire.
+4. **`warmup_resets` non risponde a `LLAMA_KV_PAD` come previsto dal disegno.** Sospetto
+   documentato sopra (cache compresse non toccate dalla patch) ma non verificato: **prossimo
+   passo economico per chi riprende**, se il fronte torna d'interesse, è separare i reset per
+   sito/chiave invece che sommarli tutti insieme.
+
+### Stato macchina alla consegna
+
+```text
+processi_llama = 0
+gpu: 210 MHz, 13,10 W, 309/11807 MiB usati/liberi
+ram_libera = 87,3 GB
+porte 8099/8100/8101 = tutte libere
+```
+
+Macchina pulita, ferma, nessun processo residuo. Nessun commit eseguito in questo turno (regola
+del mandato). Script modificato e verificato: `sota100k_ctx150k.ps1` (+`-KvPad`/+`-KvRingBattito`,
+sintassi validata, default = comportamento invariato).
+
+**Consegna al ventesimo turno**: B3 e G1 restano da eseguire con mandato autosufficiente (non
+lanciarli è stata una decisione esplicita del coordinatore per la rotazione di contesto, non un
+giudizio su questo agente circa quei bracci).
+
+---

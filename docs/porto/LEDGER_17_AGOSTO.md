@@ -7171,3 +7171,232 @@ chiusura sistemica (RISERVA Stop-Process 3/3) andrebbe confrontata con i log dei
 capire se è una regressione di questa sessione o del binario.
 
 ---
+
+## Turno 22 — ESECUTORE, Braccio A (`t22_gather_a`) — **RI-ANCORAGGIO RIUSCITO, relink confermato innocuo bit-per-bit**; B-2a/B-2b/S3-bis IN CODA (STOP di giornata, budget token)
+
+Binario `D:\llama-subtract` — impronte nuove del turno (chirurgo 13, relink nvcc a taglia
+identica, zero sorgenti `.cu` toccati): `llama.dll` =
+`DFEC40BEC767309D5806EE45D97A66B9326269F7E91E8A46389CF892741770B9`, `ggml-cuda.dll` =
+`823D24D0BF16F64415C58C84632EC658C12096C4CEE561E8BC83A3DA3C745EB7`; `ggml-base.dll` e
+`llama-server.exe` invariati (`DD7122DE0D2E256269D08AE45C0C82A22F5275CDB37210F1AE87B0EA7C446943` /
+`CC460C3D817DF494E2218342A7BA3E465F47E43A3A132E576DA3C244EC9550F2`) — **tutte e quattro
+verificate carattere per carattere prima del lancio, live sul disco**, non assunte dal mandato.
+
+**Verifica preliminare delle stringhe testimoni nei binari live** (metodo `grep -a`, RUNBOOK
+S17.8 — **non** `Select-String`: prima prova con `Select-String` su `ggml-cuda.dll` [213 MB] ha
+dato FALSI NEGATIVI su `porto-grafi: sfratti=` e sulle stringhe `invalid LLAMA_KV_RING_VRAM_*`/
+`conf_proj: lettura PRE-norm`/`KV ring resident allocated` in `llama.dll`, poi tutte confermate
+presenti con `grep -a -c`; lezione per i turni futuri — **su binari grandi usare sempre `grep -a`,
+mai `Select-String`, per la ricerca di stringhe**): `LLAMA_KV_GATHER`(1), `LLAMA_KV_RING_VRAM_LID`
+(1), `LLAMA_KV_RING_VRAM_CSA`(1), `invalid LLAMA_KV_RING_VRAM_LID`(1),
+`invalid LLAMA_KV_RING_VRAM_CSA`(1), `LLAMA_CONF_PRENORM`(1), `conf_proj: lettura PRE-norm`(1),
+`KV ring resident allocated`(1), `LLAMA_CACHE_ESPERTI_SLOT`(1) in `llama.dll`;
+`GGML_CUDA_GRAPH_MAX`(1), `porto-grafi: sfratti=`(1), `GGML_CUDA_DISABLE_GRAPHS`(2), `anzianita`(2),
+`tetto`(4) in `ggml-cuda.dll` — **tutte presenti, conteggi identici a quelli dichiarati in
+NOTE_IMPLEMENTAZIONE.md S13.7/S17.8**. Sorgente live `common.cuh` controllato riga per riga
+(`graph_calls`, `last_used_call`, `graph_evict_stats`, tetto `GGML_CUDA_GRAPH_MAX`): tutto presente
+come da S13.
+
+### Preflight (S1, tutti PASS)
+
+```text
+processi_llama=0   porta 8000 nessun listener   porte 8099/8100 libere
+gpu a riposo = 210 MHz sm, 405 MHz mem, 13,06 W, 567 MiB usati / 11549 liberi, pcie gen1(riposo)/x16
+ram_libera = 88,2 GB   disco C = 47,7 GB   disco D = 119,4 GB   uptime = 5067,7 min (no riavvio)
+sha_llama_server = CC460C3D817DF494E2218342A7BA3E465F47E43A3A132E576DA3C244EC9550F2
+sha_ggml_cuda    = 823D24D0BF16F64415C58C84632EC658C12096C4CEE561E8BC83A3DA3C745EB7
+sha_llama_dll    = DFEC40BEC767309D5806EE45D97A66B9326269F7E91E8A46389CF892741770B9
+sha_ggml_base    = DD7122DE0D2E256269D08AE45C0C82A22F5275CDB37210F1AE87B0EA7C446943
+sha_jprompt (corto, 252B)  = C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9 (ATTESO)
+sha_jprompt102k (lungo, 285.268B) = 3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473 (ATTESO, identico ai turni precedenti)
+modelli presenti: target 86.720.111.488 byte, draft 7.179.447.776 byte
+```
+
+### Comando (identico a `gather_g1` del turno 20, salvo RunLabel/ServerPath — stesso dll ora con G1+B-2 dentro)
+
+Lanciato **staccato** (`Invoke-CimMethod -ClassName Win32_Process -MethodName Create`, immune
+alla sessione dell'agente): `powershell.exe -NoProfile -ExecutionPolicy Bypass -Command
+"$env:LLAMA_KV_GATHER='1'; $env:LLAMA_KV_GATHER_BATTITO='30'; & 'C:\Users\imanu\Documents\Codex\
+2026-08-14\ds4-porto-20tps\work\sota100k_ctx150k.ps1' -Port 8099 -StartBatch 2048 -BlockSparse 0
+-HcFused 5 -RunLabel 't22_gather_a' -BlockDenseCpu 0 -Packetizer -1 -PrefixChars 0 -Context 150000
+-MaxTokens 8192 -SpecNmax 3 -Repliche 1 -CtxCheckpointMinStep 32 -ReasoningBudgetTokens 0
+-GraphReusePerTaglia 1 -KvRingBattito 5 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+*> 'D:\ds4_work\llama_run\t22_gather_a.launcher.out'"` — `ReturnValue=0`, PID launcher 3816,
+lanciato 12:55:42. Telemetria `sample_hw.ps1 -Tag t22_gather_a -OutDir D:\ds4_work\llama_run
+-IntervalSeconds 2` staccata allo stesso modo (PID 5540), avviata 12:57:59 dopo `/health`=200
+(server PID 7448, VRAM libera al load = 266 MiB).
+
+**Ambiente completo effettivo** (da `Set-SotaEnvironment` dello script + le due leve del
+chiamante — tutte le variabili, non solo le cambiate, come da regola S9.2):
+```text
+LLAMA_KV_GATHER=1 (NUOVO, chiamante)  LLAMA_KV_GATHER_BATTITO=30 (NUOVO, chiamante, diagnostico)
+LLAMA_MAPPED_IBRIDO=1  LLAMA_MAPPED_IBRIDO_SOGLIA=2  LLAMA_CACHE_ESPERTI_SLOT=473
+LLAMA_CACHE_BOZZA_SLOT=12  LLAMA_CACHE_ESPERTI_BATCH=8  LLAMA_CACHE_ESPERTI_BATTITO=45
+LLAMA_CACHE_ESPERTI_CODA_MAX=0  LLAMA_CACHE_ESPERTI_CURA=0  LLAMA_CACHE_ESPERTI_SCUDO=0
+LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0  LLAMA_CACHE_ESPERTI_LRU=1  LLAMA_CACHE_ESPERTI_W=0
+LLAMA_CACHE_ESPERTI_SFRATTO_PAR=1  LLAMA_CACHE_ESPERTI_FORK=2  LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8
+LLAMA_CACHE_ESPERTI_FORK_RIUSA_SLOT=0  LLAMA_CACHE_ESPERTI_FORK_SALTA_COPIA_PARITA=0
+LLAMA_CACHE_ESPERTI_MASSA=2  LLAMA_CACHE_ESPERTI_MASSA_AMMISSIONE=0  LLAMA_CACHE_ESPERTI_MASSA_CORSIE=0
+LLAMA_CACHE_ESPERTI_DMA=0  LLAMA_SPEC_DRAFT_TOPK=1  LLAMA_SPEC_CONF_ESENTA_POS0=1
+LLAMA_ACCEPTMOE=1  LLAMA_ACCEPTMOE_ESATTE=1  LLAMA_ACCEPTMOE_SOGLIA=0.75  LLAMA_ACCEPTMOE_COMPATTA=1
+LLAMA_GRAPH_REUSE_PER_TAGLIA=1  LLAMA_OVERLAP_ASYNC=1  LLAMA_OVERLAP_K=2  LLAMA_OVERLAP_BATCH_MAX=3
+LLAMA_OVERLAP_GRIGLIA_VARIABILE=0  LLAMA_OVERLAP_PIN=1  LLAMA_OVERLAP_JOIN_ASYNC=0
+LLAMA_KV_RING=1  LLAMA_KV_RING_VRAM_TOKEN=2048  LLAMA_KV_ROLLBACK_PARZIALE=1
+LLAMA_KV_ROLLBACK_SOLO_ANELLO=0  LLAMA_KV_PAD=assente(256)  LLAMA_KV_RING_BATTITO=5
+LLAMA_VRAM_A_FASI=2  LLAMA_VRAM_A_FASI_UB=64  LLAMA_VRAM_A_FASI_CALDO=0  LLAMA_VRAM_A_FASI_MIN=0
+LLAMA_VRAM_A_FASI_MARGINE=0  LLAMA_DSV4_INDEXER_FUSO=1  LLAMA_DSV4_HC_FUSO=5
+LLAMA_DSV4_MASK_F16_INPUT=0  LLAMA_CUDA_FATTN_BLOCK_SPARSE=0  LLAMA_DSV4_PREFILL_LAYER_STAGING=1
+LLAMA_DSV4_PREFILL_LAYER_EXECUTOR=0  LLAMA_DSV4_PREFILL_LAYER_SPLIT=0  LLAMA_DSV4_PREFILL_FFN_SUPEROP=0
+LLAMA_DSV4_PREFILL_MOE_UB=2048  GGML_SCHED_OFFLOAD_PACCHETTI=0  GGML_CUDA_GRAPH_OPT=0
+GGML_CUDA_GRAPH_STATS=1  GGML_SCHED_PROFILO=1  LLAMA_CKPT_CRONO=0  LLAMA_VRAM_ZAVORRA=0
+LLAMA_MMQ_X_IDS=64  LLAMA_DSV4_PREFILL_FATTN_Q_TILE=assente  LLAMA_CONF_PRENORM=assente(0, post-norm)
+```
+CLI server: `-m DS4-0731-IQ2XXS.gguf -md DSpark-draft-Q2K.gguf --spec-type draft-dspark --fit off
+-ngld 99 --spec-draft-n-max 3 --spec-draft-conf-min 0.8 --spec-draft-ubatch-size 16 -otd "blk.0...
+CPU" -c 150000 -b 2048 -ub 2048 -np 1 -ngl 99 -ot "...CUDA0_Mapped" -t 7 --no-mmap --no-host
+--cache-ram 0 -cms 32 -lv 4 --host 127.0.0.1 --port 8099`.
+
+### Verifica d'identità (dal log, S4)
+
+```text
+[x] cache-esperti: 473 slot da 6.75 MiB = 3194 MiB in VRAM (gate 2.06 + up 2.06 + down 2.62), cura=0,
+    spin=256, filtro=0, coda_max=0, lru=1, massa=2, peso_copia_pm=0, copie_min=1, cpu_leggeri=0,
+    scudo=0, sfratto_par=1, dma=0, dma_strato=0  -- IDENTICA alla SOTA storica e al turno 20
+[x] build 10093 (3014d3756) MSVC 19.44.35227.0 -- SHA exe/dll trascritti sopra
+[x] sched-profilo: 509 righe -> ACCESO ; GGML_CUDA_GRAPH_STATS=1(E) -- ACCESO
+    (PARI STRUMENTAZIONE col riferimento turno 20, che aveva 509 righe/GGML_CUDA_GRAPH_STATS=1(E)
+    sulla corsa 2 -- confronto valido per S8.2)
+[x] kv-gather ACCESO (512 righe/layer CSA)
+[x] KV ring resident allocated: CSA = 10.50 MiB, HCA = 5.00 MiB, LID = 2.62 MiB, total = 18.12 MiB
+    -- NUOVO testimone (patch B-2 del chirurgo 13), mai visto prima; a TOKEN=2048 condiviso,
+    nessun knob per-deposito impostato in questo braccio (fallback = hot_token per tutti e tre,
+    S17.3) -- riferimento di base per leggere il delta di B-2a
+[x] zero GGML_ASSERT / CUDA error / invalid index / out of memory su tutto il log
+[x] p1 = 0.86519 (5038 accepted / 5823 generated), mean len = 2.60
+[x] copie/buchi = cache-esperti: domanda 1873028 (colpi 1078524 = 57.6%, buchi 794504, miss 42.4%)
+[x] SHA output = 1F7F86E578499C9BA1F1C53AA2E73C4D60E5BC88D47AED3CD56E334461F80732, 24.683 caratteri
+[x] jprompt102k.txt SHA verificato al preflight (sopra)
+```
+
+**BIT-PER-BIT IDENTICO al turno 20** (`gather_g1_r2`, la seconda corsa di quel turno, stessa
+strumentazione): p1 .86519 (5038/5823, mean len 2.60) — identico; copie/buchi
+domanda 1873028/colpi 1078524/buchi 794504 — identico; SHA output
+`1f7f86e578499c9ba1f1c53aa2e73c4d60e5bc88d47aed3cd56e334461f80732` (24.683 caratteri) —
+identico. **Il relink (llama.dll 652A9ED4→DFEC40BE, ggml-cuda.dll F45AA564→823D24D0) non ha
+cambiato UN SOLO BYTE del comportamento nel cammino gather** — conferma diretta, non dedotta,
+che B-2 (inerte a default) e il relink nvcc di ggml-cuda.dll sono davvero innocui per questa
+configurazione.
+
+### Coerenza del testo (S4.10 — lettura integrale fatta, non a campione: il file è piccolo, 675
+righe lette per intero)
+
+```text
+[x] lingua sana                                    si (saggio tecnico italiano, 14 sezioni)
+[x] assenza di loop / ripetizioni patologiche       si
+[x] pertinenza al prompt                            si (elabora fedelmente cache-esperti.cu,
+                                                        deepseek4.cpp, llama-graph.cpp)
+[x] degradazione progressiva                        no (qualita' costante; troncato a meta'
+                                                        istruzione C per esaurimento max_tokens,
+                                                        finish_reason=length, 8192/8192)
+```
+
+### Timing — il verdetto primario
+
+```text
+decode  : 647486.51 ms / 8192 tokens ( 79.04 ms/token, 12.65 t/s)
+prefill : 853242.46 ms / 101691 tokens ( 8.39 ms/token, 119.18 t/s)
+```
+
+**ATTESO scritto nel mandato**: ≈79,4 ms/token, banda 77-82 ms/token. **OSSERVATO: 79,04
+ms/token — dentro banda, a −0,45% dalla media storica di turno 20 (79,40)**, e cade fra le due
+corse di quel turno (78,49 e 80,31). **Cancello del mandato PASSATO**: il "relink innocuo" è
+confermato, non solo per il t/s ma bit-per-bit su p1/copie/SHA output (vedi sopra) — la
+conferma più forte possibile, più stretta di quanto il mandato stesso chiedesse.
+
+### Telemetria (`t22_gather_a.hw.csv`, 636 campioni a 0,5 Hz, 631 busy util>50%)
+
+```text
+SM: min=1830  mediana=1920  max=1935 MHz  -- 0/631 campioni sotto 1500 MHz (regime sano)
+potenza mediana: 123,99 W
+VRAM used: min=382 MiB, max=11946 MiB (picco sotto il tetto 11.850 citato nel mandato per B-2b
+  -- nota per quel braccio: questo picco a TOKEN=2048/SLOT=473 e' il pavimento, B-2b aggiunge
+  sia il LID pieno [+~130-145 MiB oltre il residente odierno 2,62 MiB] sia +66 slot esperti
+  [+446 MiB]: il margine da 11.946 a un tetto ragionevole (~12.000-12.045 MiB fisici Windows,
+  da S1.3 memory.free+memory.used odierno) va verificato dal vivo in quel braccio, non dedotto)
+```
+
+### Stato macchina alla consegna (verificato dal vivo, ORA, su richiesta del coordinatore)
+
+```text
+processi_llama = 0
+gpu: 210 MHz, 12,88 W, 436 MiB usati / 11680 liberi
+ram_libera = 88,3 GB (dal postflight subito dopo shutdown)
+porte 8099/8100 = libere
+shutdown = ctrl-c (pulito, NON RISERVA Stop-Process -- l'anomalia sistemica 3/3 del turno 21
+  non si e' ripetuta qui)
+```
+
+### Percorsi file
+
+```text
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t22_gather_a_f2_b2048.server.log
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t22_gather_a_f2_b2048.server.out
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t22_gather_a_f2_b2048_q1.output.txt
+D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t22_gather_a_f2_b2048_q1.response.json
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_t22_gather_a.summary.txt (= launcher.out)
+D:\ds4_work\llama_run\t22_gather_a.hw.csv / t22_gather_a.cpu.csv
+D:\ds4_work\llama_run\t22_gather_a.launcher.out
+```
+
+### VERDETTO BRACCIO A: **PROMOSSO come ri-ancoraggio** — dll nuovo confermato innocuo, si procede
+
+### STOP DI GIORNATA (ordine del coordinatore, budget token) — CODA per il ventitreesimo turno
+
+**Bracci NON lanciati, da eseguire nell'ordine già scritto nel mandato di turno 22** (nessuna
+modifica alle attese, restano valide — il braccio A appena chiuso ne è il prerequisito e ha
+già dato risultato positivo):
+
+1. **B-2a — ripuntamento** (tag `t22_repoint`): identico ad A + `LLAMA_KV_RING_VRAM_LID=<valore
+   per ~148 MiB caldi LID>` + `LLAMA_KV_RING_VRAM_CSA=0`. **Nota preparata per chi riprende**:
+   la size "148 MiB" e' confermata dal design (`TRASPORTO_KV_RIGHE_PIANO.md:41`,
+   `TASSA_ATTENZIONE_LUNGO.md:178` — "LID intero residente a 105-110k = 148 MiB") come il valore
+   di LID **interamente caldo** (non un parziale): usare un valore grande "kv_size o piu'" (per
+   esempio 300000, 2x il -Context 150000 di questo banco, per stare sopra qualunque arrotondamento
+   interno) per `LLAMA_KV_RING_VRAM_LID`, `LLAMA_KV_RING_VRAM_CSA=0` fa scendere CSA al pavimento
+   di S17.5 (atteso ~5 MiB, non zero letterale — nel braccio A il residente CSA condiviso a
+   TOKEN=2048 era 10,50 MiB, quindi il pavimento a CSA=0 dovrebbe scendere sotto quello). Attesa
+   scritta nel mandato: **-2,3 ms/token vs braccio A** (da 79,04 osservato, quindi atteso
+   ~76,7-76,8), testimone primario rows_cold deve CROLLARE dal 93,61% osservato in A.
+2. **B-2b — slot del dividendo** (tag `t22_slot539`): identico a B-2a + `LLAMA_CACHE_ESPERTI_SLOT=
+   539`. **TRAPPOLA GIA' TROVATA E RISOLTA per chi riprende**: il runner canonico
+   `sota100k_ctx150k.ps1` fissa `$env:LLAMA_CACHE_ESPERTI_SLOT='473'` DENTRO `Set-SotaEnvironment`,
+   chiamata ad ogni shape — un env preimpostato dal chiamante prima dello script viene
+   SILENZIOSAMENTE sovrascritto, nessun parametro nativo per cambiarlo. Copia scratch gia' pronta
+   con un unico parametro additivo `-CacheEspertiSlot` (default 473 = comportamento identico,
+   diff di una riga) in
+   `C:\Users\imanu\AppData\Local\Temp\claude\C--Users-imanu-source-repos-moe-aggressive-commit\
+   4b4c0194-0c4f-4f6b-8e2c-cb939d8d7daa\scratchpad\sota100k_ctx150k_slot.ps1` — **file in una
+   cartella scratchpad di sessione, va copiato in un posto stabile del progetto (o ricreato con lo
+   stesso diff) prima di riusarlo da un turno futuro**, altrimenti sparisce con la sessione.
+   Script canonico NON toccato. Verificare VRAM di picco (mandato: soglia 11.850 MiB) — vedi nota
+   in telemetria sopra.
+3. **S3-bis — sweep dinamico col tetto grafi** (tag `t22_s3bis`, CORTO warm-restore B1200 x4):
+   nmax5 + `--spec-draft-conf-min 0.3` + `LLAMA_CONF_PRENORM=1` + `GGML_CUDA_GRAPH_MAX=256`, via
+   Runner B (`run_porto_hot.ps1 -Tag t22_s3bis_b1200_r1_20260818 -MaxTokens 1200 -Repetitions 4
+   -PortoHotSnapshot 1 -SpecNmax 5 -SpecConf '0.3' -Extra 'GGML_SCHED_PROFILO=0;
+   LLAMA_CACHE_ESPERTI_CALENDARIO_K0=0;LLAMA_CACHE_ESPERTI_CALENDARIO_SLOT_DIRETTI=0;
+   LLAMA_DSV4_DECODE_GATE_UP_FUSO=0;LLAMA_DSV4_DECODE_EXPERT_REUSE=0;
+   LLAMA_DSV4_DECODE_EXPERT_REUSE_ZERO_DST=0;PORTO_HOT_MASK=15;LLAMA_CONF_PRENORM=1;
+   GGML_CUDA_GRAPH_MAX=256' -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'`).
+   **Verifica gia' fatta per chi riprende**: sia `LLAMA_CONF_PRENORM` sia `GGML_CUDA_GRAPH_MAX`
+   sono confermati presenti e leggibili nel binario live di oggi (grep -a sopra) — a differenza
+   del turno 21, dove i bracci CONF_PRENORM giravano **davvero post-norm** nonostante il log
+   dichiarasse la riga pre-norm (S16 non era ancora compilata in quel binario, S17.8): **questo e'
+   il primo binario dove il cancello S16.6 andra' riletto su una vera lettura pre-norm** — non
+   dare per buone le curve 0,765/0,590/0,438 del turno 21 come pre-norm, sono post-norm en travesti.
+   Cancelli: nessun OOM col tetto (VRAM sotto 11.500), curve di confidenza per posizione VERBATIM,
+   confronto vs controllo storico A 16,63 t/s.
+
+**Nessun commit eseguito** (regola del mandato, invariata).
+
+---

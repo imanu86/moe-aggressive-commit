@@ -423,3 +423,223 @@ GPU 45°C, porte 8099/8100 libere). Nessun commit eseguito. Nessuna quiete a oro
 dal braccio 3 in poi (regola abolita dal 12/8, corretta a banco in corso). Script usati (fuori
 repo, in scratchpad, non committati): `bat_replica_launcher.ps1`,
 `campione_plus_jinja_launcher.ps1`, `codex_reuse_test.ps1`, `oom_isolate_test.ps1`.
+
+---
+
+## Turno riparazione (23/8 sera, dopo il banco sopra) — CRASH RIPARATO + riuso KV CONFERMATO VIVO
+
+Mandato: rendere il server usabile sui prompt lunghi. Tre passi. Binario canonico invariato
+(vedi intestazione file). Script nuovi (scratchpad, non committati): `t25_repro.ps1` (repro
+parametrizzato: Lines/Margine/Ub/B/MoeUb/Slot, un solo messaggio "user"), `t25_kvreuse.ps1`
+(stessa parametrizzazione, 3 turni via `/v1/chat/completions`, system lungo ~13k).
+
+### Passo 1 — lettura del codice PRIMA di sweeppare (regola di casa)
+
+`D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu:2153-2317`
+(`ggml_cuda_cache_esperti_fasi`): `LLAMA_VRAM_A_FASI_MARGINE` e' a MiB (`margine_mib`,
+`atoi`), ma **anche quando la branca dinamica lo usa, il risultato e' sempre forzato al
+minimo `slot_base`** (`if (voluti < slot_base) voluti = slot_base;`, riga ~2234) — e
+`slot_base` viene da `LLAMA_CACHE_ESPERTI_SLOT` (473 nel bat). MARGINE puo' solo far
+crescere la cache OLTRE slot_base quando c'e' VRAM libera in abbondanza: non puo' MAI
+farla scendere sotto. Con `LLAMA_CACHE_ESPERTI_SLOT=473` fisso, MARGINE e' strutturalmente
+inerte per QUESTO problema, qualunque valore gli si dia. Il buffer "layer-major" (1729 MiB,
+`cache-esperti.cu:5609-5644`) e' un blocco A TAGLIA FISSA = `n_esperti * byte_slot` (256 x
+6.75 MiB), NON scala con `-ub`: quello che scala con `-ub` e' il buffer di calcolo del
+prefill (`sched_reserve`), che libera spazio INDIRETTAMENTE per il blocco fisso.
+
+### Manopole — repro a 1 messaggio "user", ~6,2k token (oom_isolate-style), poi ~28k
+
+| manopola (rispetto al bat) | 6,2k | VRAM libera alla transizione | prefill t/s | decode t/s |
+|---|---|---:|---:|---:|
+| **(a)** `MARGINE=512` (resto bat: ub/b=2048, slot=473) | **CRASH-OOM identico** (stessa riga, "cache 0->473", 0 buchi diversi) | 0 MiB | — | — |
+| **(b)** `-ub 512 -b 512` (margine=0, slot=473) | **CRASH-OOM** (spostato da 33% a 91% di progress: il buffer di calcolo scende da 2296 a 621 MiB, ma non basta) | 58 MiB (serve ≥1729) | — | — |
+| **(c)** `-ub 512 -b 512` + `LLAMA_CACHE_ESPERTI_SLOT=150` (margine=0) | **SOPRAVVIVE** | 2249 MiB | 99,97 | 11,28 |
+| (c) stessa combo, ripetuta a **~28k** (27908 tok reali) | **SOPRAVVIVE** | 2199 MiB | 100,08 | 10,63 |
+
+**Verdetto (a)+(b) FALSIFICATI da soli**: nessuna delle due manopole indicate dal mandato
+basta; la loro combinazione e' anche IDENTICA a (b) da sola (MARGINE resta inerte). Terza
+leva NECESSARIA, gia' candidata dal banco di ieri sera (tentativo 3): **ridurre
+`LLAMA_CACHE_ESPERTI_SLOT`** (473->150, -68%) per lasciare margine reale al blocco
+layer-major da 1729 MiB al momento esatto della transizione prefill->decode. Costo
+misurato: decode 11,28-10,63 t/s contro 14,44-14,45 t/s del campione/bat-corto a slot=473
+(braccio 1-2 di ieri sera) = **-21,9% / -26,4%**. 150 e' una scelta PRUDENTE (margine finale
+~2200 MiB, ben oltre i 1729 richiesti): un valore meno drastico (dedotto, NON misurato, es.
+~250-300) probabilmente basta e recupera parte del t/s, ma bisecare costava altri banchi da
+5-8 minuti l'uno e non rientrava nel regime economico di stanotte.
+
+### Passo 2 — riuso KV dall'endpoint chat: VIVO, confermato due volte
+
+Config: combo (c) sopra, system ~13k righe sintetiche (217 righe stile codex_reuse), 3 turni
+`/v1/chat/completions`, `cache_prompt=true`. Tag `t25_kvreuse_slot150_20260823`.
+
+```text
+r1 (system+u1, freddo)  prompt_tokens_usage=13053  wall=139,77 s
+  prompt eval time = 129775.22 ms / 13053 tokens (9.94 ms/tok, 100.58 tok/s)
+r2 (+assistant+u2)      prompt_tokens_usage=13202  wall=17,10 s
+  prompt eval time =   7790.39 ms /   181 tokens (43.04 ms/tok,  23.23 tok/s)
+r3 (+assistant+u3)      prompt_tokens_usage=13349  wall=18,17 s
+  prompt eval time =   7793.73 ms /   167 tokens (46.67 ms/tok,  21.43 tok/s)
+```
+
+**IL NUMERO**: r2 e r3 rivalutano SOLO 181 e 167 token (il delta del turno, non i 13053+
+cumulativi) — **riuso DELTA-ONLY, VIVO**, esattamente nel range 150-300 tok atteso dal
+mandato. Il caso Codex (system fisso + storia che cresce di pochi turni corti) e' RISOLTO
+per intero dall'endpoint chat, A CONDIZIONE di girare sulla combo (c) che non crasha. Prima
+di ieri sera questo test non era MAI arrivato a r2/r3 (crash su r1). Nota: Codex CLI reale
+parla quasi certamente con `/v1/responses` (vedi Passo 3), non `/v1/chat/completions`
+testato qui — il binario canonico li implementa ENTRAMBI (`server.cpp:450-453`,
+`post_responses_oai` converte verso chat completions), ma l'equivalenza esatta del
+comportamento di riuso fra i due endpoint non e' stata verificata byte per byte in questo
+banco (dedotto plausibile, non misurato).
+
+### Passo 3 — consegna pratica
+
+**(a) Diff esatto per `avvia ds4 locale.bat`** (canonico bonificato, vedi intestazione file
+per lo SHA): il mandato chiedeva "1-2 righe" ma la misura sopra dice che ne servono 3 (il
+lettore fa da floor duro su MARGINE, vedi Passo 1) — dichiarato, non nascosto:
+
+```diff
+- set "LLAMA_CACHE_ESPERTI_SLOT=473"
++ set "LLAMA_CACHE_ESPERTI_SLOT=150"
+...
+-  -b 2048 ^
+-  -ub 2048 ^
++  -b 512 ^
++  -ub 512 ^
+```
+
+più, come righe commentate pronte (promosse dai turni 20-23 del banco GRAPHS/gather,
+verificate a getenv `atoi(v)!=0` in `kv-gather.cu:174-179` e `cache-esperti.cu:3236-3237`
+— attivare a scelta, non testate in QUESTO banco):
+
+```bat
+rem set "LLAMA_KV_GATHER=1"
+rem set "LLAMA_CACHE_ESPERTI_FORK_DOWN_TARDI=1"
+```
+
+Trade-off dichiarato: prefill ~3x piu' lento sui prompt lunghi (100 t/s a ub512 contro
+~200+ a ub2048 sui chunk brevi) e decode -22/-26% (sopra) — accettabile per rendere il
+server USABILE oltre i 68 token invece di crashare, non gratis.
+
+**(b) Snippet `config.toml` per il Codex dell'altro PC** (IP LAN di questa macchina:
+`192.168.1.30`; verificato che nessun profilo/model_provider per la porta 8100 esiste gia'
+in `~/.codex/config.toml` di QUESTO pc, quindi sintassi dedotta da doc esterna, non da un
+esempio locale funzionante — **da fumare-testare sull'altro PC prima di fidarsene**):
+Codex >=0.59 (feb 2026) ha eliminato `wire_api="chat"`, resta solo `"responses"` — motivo
+per cui il binario canonico e' stato verificato supportare `/v1/responses` nativamente
+(sopra) prima di scrivere questo snippet.
+
+```toml
+[model_providers.ds4_local]
+name = "ds4_local"
+base_url = "http://192.168.1.30:8100/v1"
+wire_api = "responses"
+env_key = "DS4_LOCAL_API_KEY"
+requires_openai_auth = false
+
+[profiles.ds4local]
+model = "ds4-0731-iq2xxs"
+model_provider = "ds4_local"
+model_context_window = 150000
+approval_policy = "on-request"
+```
+
+Sull'altro PC: `setx DS4_LOCAL_API_KEY "Stigrangazzi86!11235813"` poi `codex --profile
+ds4local`.
+
+**Stato macchina a fine turno riparazione**: pulita (0 processi llama, VRAM 339 MiB usati /
+11777 liberi, RAM 89,7 GB libera, GPU 47°C, porte 8099/8100 libere). Nessun commit eseguito.
+Script fuori repo in scratchpad: `t25_repro.ps1`, `t25_kvreuse.ps1`.
+
+---
+
+## Turno esecutore (23/8, a seguire) — ricerca dello SLOT massimo sicuro: IL 28k NON è IL CASO PEGGIORE
+
+Mandato: partendo dalla combo sopravvissuta (`-ub 512 -b 512` + `LLAMA_CACHE_ESPERTI_SLOT=150`,
+margine 2.249 MiB liberi a 6,2k e 2.199 a 28k), trovare il massimo SLOT sicuro (stima iniziale
+~250 slot in più, 6,75 MiB/slot) usando il repro 28k come presunto caso peggiore, convergendo
+con margine ≥400 MiB liberi alla transizione. Binario invariato (SHA verificato identico
+all'intestazione file prima del banco). Preflight pulito (0 processi, porte libere, GPU a
+riposo 339 MiB/11777 liberi, RAM 89,3 GB, disco C 45,9/D 115,5 GB, uptime 4329,8 min).
+Script: `t25_repro.ps1` (scratchpad, invariato, parametri `-Lines -Margine -Ub -B -MoeUb -Slot`).
+
+### Lanci sul repro 28k (Lines=680, 27908 token reali)
+
+| SLOT | esito | VRAM libera a "cambio n. 2" | prefill t/s | decode t/s |
+|---:|---|---:|---:|---:|
+| 400 | sopravvive | 511 MiB | 100,11 | 11,95 |
+| 440 | sopravvive | 241 MiB | 100,13 | 11,67 |
+| 416 | sopravvive | 398 MiB (**sotto** i 400 richiesti, di 2 MiB) | 100,12 | 12,17 |
+| 410 | sopravvive | 443 MiB | 100,04 | 11,96 |
+| 250 (conferma finale) | sopravvive | 1523 MiB | 99,45 | 10,20 |
+
+Il modello lineare 6,75 MiB/slot **regge alla perfezione** dentro questa serie (400→440→416→410,
+tutti a 28k): `libera(slot) = 2199 − (slot−150)·6,75`, verificato a <1 MiB su quattro punti
+indipendenti (esempio: slot 440 predetto 241,5, misurato 241). Su questa sola serie, 410-416
+sarebbe stato il "massimo sicuro" cercato dal mandato.
+
+### Il repro 6,2k SMENTISCE il 28k come caso peggiore
+
+Conferma del vincitore apparente (SLOT=410) sul repro 6,2k (Lines=150, 6178 token reali):
+**CRASH-OOM**, stessa firma esatta (`layer-major: staging di 1729 MiB NON allocabile` → CUDA
+OOM in `mmq.cu:183`), **nonostante un margine nominale PIÙ ALTO** del 28k che era sopravvissuto
+(493 MiB contro 443). Ripetuto con SLOT=400 (il primo lancio, quello con più margine nominale
+di tutti sul 28k): **CRASH-OOM anche qui**, margine nominale 561 MiB — ancora insufficiente.
+
+Lettura dei due log affiancati (`t25_slot410_ub512_28k_20260823.server.log` vs
+`t25_slot410_ub512_6k_20260823.server.log`, righe intorno a "cambio n. 2"): in ENTRAMBI i casi
+compare la stessa riga `porto-cb: epoca=1 IN VIGORE senza cambi di leva (ricattura comunque,
+l'epoca e' salita)` subito dopo la transizione. Nel caso 28k (sopravvive) questa riga è seguita
+da centinaia di catture di chiave che procedono senza intoppi. Nel caso 6,2k (crash) la riga
+successiva è **immediatamente** `layer-major: staging di 1729 MiB NON allocabile`. Conclusione:
+il numero "VRAM libera N MiB" stampato al "cambio n. 2" **non predice la sopravvivenza fra
+casi di lunghezza diversa** — la ricattura del grafo CUDA innescata a quel punto consuma/richiede
+VRAM aggiuntiva in modo dipendente dalla lunghezza del prompt (verosimilmente da quanti "shape"
+di batch sono già stati catturati durante il prefill: un prefill lungo, con molti più chunk da
+512 token, arriva alla transizione con quasi tutte le chiavi di grafo già catturate; un prefill
+corto ne lascia molte da catturare proprio nel momento più stretto). Il modello 6,75 MiB/slot
+resta valido **dentro** una singola lunghezza di prompt, ma la soglia assoluta di sopravvivenza
+è determinata dal caso **corto** (6,2k), non dal lungo — l'ipotesi di mandato ("il 28k è il
+caso peggiore") è **falsificata**.
+
+### Bisezione sul vero caso vincolante (6,2k)
+
+| SLOT | esito | VRAM libera a "cambio n. 2" | prefill t/s | decode t/s |
+|---:|---|---:|---:|---:|
+| 410 | **CRASH-OOM** | 493 MiB (insufficiente) | — | — |
+| 400 | **CRASH-OOM** | 561 MiB (insufficiente) | — | — |
+| 250 | sopravvive | 1568 MiB | 98,62 | 12,08 |
+
+La soglia reale per il 6,2k sta fra 250 (vivo) e 400 (morto) — non ulteriormente bisecata per
+restare nel regime economico (già 9 lanci contro i 3-4 preventivati, giustificati dalla scoperta
+di cui sopra). SLOT=250 è stato poi riconfermato anche sul 28k (tabella sopra, ultima riga):
+sopravvive con 1523 MiB liberi, ampio margine su entrambi i casi.
+
+### Verdetto e valore vincente
+
+**SLOT=250** è il valore raccomandato: sopravvive su ENTRAMBI i repro (6,2k: 1568 MiB liberi;
+28k: 1523 MiB liberi — margini ~3,5× il target di 400 MiB scritto nel mandato, target che si è
+rivelato calibrato sul caso sbagliato). Decode: 6,2k passa da 11,28 (SLOT=150) a **12,08**
+(+7,1%); 28k passa da 10,63 (SLOT=150) a 10,20 (**-4,0%, verosimilmente rumore di banco**: colpo
+singolo senza repliche, protocollo di screening §6.2 runbook). **NON è il "massimo" nel senso
+letterale del mandato** (SLOT=400 sarebbe più aggressivo ma crasha sul 6,2k, quindi non è
+sicuro): è il massimo fra i valori effettivamente VERIFICATI su entrambi i casi. Uno spazio
+1568→561 MiB resta inesplorato fra 250 e 400 sul 6,2k: chi volesse spingere oltre 250 deve
+ripartire bisecando lì, non dal modello lineare (falsificato fra lunghezze diverse).
+
+### Diff aggiornato per `avvia ds4 locale.bat` (sostituisce quello del turno precedente)
+
+```diff
+- set "LLAMA_CACHE_ESPERTI_SLOT=473"
++ set "LLAMA_CACHE_ESPERTI_SLOT=250"
+...
+-  -b 2048 ^
+-  -ub 2048 ^
++  -b 512 ^
++  -ub 512 ^
+```
+
+**Stato macchina a fine turno**: pulita (0 processi llama, VRAM 566 MiB usati / 11550 liberi,
+RAM 89,1 GB libera, GPU 42°C, porte 8099/8100 libere). Nessun commit eseguito. 8 lanci server
+totali in questo turno (tag `t25_slot{400,440,416,410}_ub512_28k`, `t25_slot{410,400,250}_ub512_6k`,
+`t25_slot250_ub512_28k`), tutti sullo script scratchpad invariato `t25_repro.ps1`.

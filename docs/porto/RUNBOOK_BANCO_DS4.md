@@ -757,7 +757,7 @@ Altri campi del corpo che cambiano a caldo: `max_tokens`, `temperature`, `cache_
 2. Lancio (§3) con **una sola** leva diversa dal riferimento.
 3. Verifica d'identità completa di §4.
 4. Lettura del risultato (§7).
-5. **QUIETE**: attesa prima del braccio successivo (§6.6).
+5. **Risanamento**: macchina pulita prima del braccio successivo (§6.6).
 6. Registrazione nel ledger (§9).
 
 **Una leva per braccio.** Se il mandato ne chiede due, si eseguono due bracci. Non si
@@ -856,33 +856,35 @@ accanto al numero e **non promuovere la misura**: registrala come diagnostica.
 **VIETATO** correggere il clock. Nessun keeper, nessun pannello NVIDIA, nessun reset. Vedi
 §10.
 
-### 6.6 QUIETE fra bracci
+### 6.6 Risanamento della macchina fra bracci
 
-Fra la fine di un braccio (server uscito) e l'inizio del successivo: **300 secondi**, con
-polling attivo, non con una sleep cieca.
+Fra la fine di un braccio (server uscito) e l'inizio del successivo: **NESSUNA attesa a orologio**. Con chiusura pulita (ctrl-c corretto, zero processi llama residui, VRAM tornata a riposo ~300-500 MiB) si incatena SUBITO il braccio successivo. La verifica macchina-pulita è obbligatoria; l'attesa a tempo è abolita dal 12/8 (era per l'era del paging con mmap, morta). [Estirpata definitivamente il 23/8 dopo la seconda resurrezione da parte di esecutori freschi che rileggevano il runbook precedente.]
+
+**Procedura di verifica** (polling attivo, mai sleep cieca):
 
 ```powershell
-$fine = (Get-Date).AddSeconds(300)
-while ((Get-Date) -lt $fine) {
+$ok = $false
+for ($i = 0; $i -lt 180; $i++) {
     $p   = @(Get-Process -Name llama-server, llama-cli -ErrorAction SilentlyContinue).Count
     $vr  = (& nvidia-smi --query-gpu=memory.used --format=csv,noheader,nounits)
     $ram = [math]::Round((Get-CimInstance Win32_OperatingSystem).FreePhysicalMemory / 1MB, 1)
-    $res = [math]::Round(($fine - (Get-Date)).TotalSeconds, 0)
-    Write-Output "quiete: restano $res s | processi=$p vram_usata=$vr MiB ram=$ram GB"
-    Start-Sleep -Seconds 15
+    if ($p -eq 0 -and [int]$vr -lt 1200 -and $ram -ge 28) {
+        Write-Output "✓ macchina pulita: processi=0 vram=$vr MiB ram=$ram GB"
+        $ok = $true
+        break
+    }
+    Write-Output "check $i : processi=$p vram_usata=$vr MiB ram=$ram GB (attesa naturale, non a orologio)"
+    Start-Sleep -Seconds 2
 }
+if (-not $ok) { "FERMATI: macchina non pulita dopo polling; riporta stato"; exit 1 }
 ```
 
-**Condizioni per considerare finita la quiete** (tutte e tre):
+**Condizioni di macchina-pulita** (tutte e tre simultaneamente):
 - processi llama = 0;
 - `memory.used` < 1200 MiB;
 - RAM libera >= 28 GB.
 
-**SE dopo i 300 s una condizione non è soddisfatta**: continuare il polling fino a 15 minuti
-totali. Se ancora no: FERMATI e riporta.
-
-Nota onesta: le fonti sono in disaccordo sulla necessità dei 300 s (vedi §11, buco n. 5).
-Finché il disaccordo non è risolto, **si applicano i 300 s**: costano tempo, non correttezza.
+**SE anche dopo 6 minuti di polling una condizione non è soddisfatta**: FERMATI e riporta stato. Il braccio successivo non è confrontabile.
 
 ### 6.7 Divieto di lavoro concorrente durante una misura
 
@@ -1579,7 +1581,7 @@ Dopo una sessione: nessun ripristino è previsto. **Non si cancellano artefatti*
    worktree sporchi.
 5. **Mai uccidere il server della UI sulla porta 8000.**
 6. **Mai due server llama insieme.** Se il mandato prevede più configurazioni, si eseguono in
-   sequenza con la QUIETE di §6.6.
+   sequenza con la macchina-pulita di §6.6 (zero attesa a tempo).
 7. **Mai `Stop-Process -Force`** su un server llama, se non come riserva già dentro i runner,
    e in quel caso registrando l'anomalia.
 8. **Mai attese passive.** Ogni attesa è polling con un check che si stampa.
@@ -1645,10 +1647,11 @@ inventare risposte: se un mandato dipende da uno di questi punti, FERMATI e segn
    che solleva un'eccezione se trova un llama vivo. [da verificare] se esista un lock per
    `llama-server`.
 
-5. **La QUIETE di 300 s è contestata.** La regola nasce da un regime con il modello in mmap; con
-   `--no-mmap` una campagna ABBA a 60 s di distanza ha dato uno spread di 0,7%. Nessuna fonte
-   ha ritirato formalmente i 300 s. Questo runbook li impone (§6.6) come scelta prudente.
-   [da verificare]
+5. **(storico, non più in vigore) La QUIETE di 300 s è stata abolita.** La regola nasceva da un
+   regime con il modello in mmap; con `--no-mmap` una campagna ABBA a 60 s di distanza ha dato
+   uno spread di 0,7%. Dal 12/8 l'attesa a tempo è stata rimossa: bastano le condizioni di
+   macchina-pulita (zero processi, VRAM < 1200 MiB, RAM >= 28 GB) con polling attivo per
+   incatenare il braccio successivo. [Estirpata definitivamente il 23/8.]
 
 6. **Il costo della sonda `GGML_SCHED_PROFILO` non è stabile.** Registrato a 0% l'11/8, a 3,6%
    il 12/8, a 0,01 t/s (10,54 vs 10,53) il 16/8. Non esiste un fattore di correzione: per

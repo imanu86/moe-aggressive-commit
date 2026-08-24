@@ -1525,3 +1525,57 @@ Confermano §18.2/§18.3 **misurato, non più dedotto**: col chunk ridotto a 8 M
 **VERDETTO FASE 3**: **il repoint ora sopravvive (bersaglio del mandato raggiunto), ma sotto questa configurazione (LID=115000/CSA=2048/SLOT=450) costa più di quanto rende** — nessun guadagno di decode, anzi una perdita del 7% rispetto a non fare repoint affatto. La leva `SORT_CHUNK_MIB` è promuovibile da sola (fix OOM puro, zero costo misurato sul decode — 12,68 t/s qui vs strutturalmente confrontabile solo a un braccio gemello senza repoint, non fatto in questo turno). Il pacchetto LID/CSA/SLOT del repoint resta **sconsigliato così com'è**: il prossimo turno che vuole inseguirlo deve leggere il sito di materializzazione decode (`kv-ring.cu`, il ramo eseguito quando `n_kv` è già alla residenza piena) prima di ritoccare altri numeri — stessa priorità già scritta in coda al turno 29, ora con un indizio quantitativo in più.
 
 **Stato macchina a fine turno**: pulita, verificata (0 processi, VRAM 235 MiB usati / porte 8099-8101 libere, RAM 87,1 GB). **Nessun commit eseguito.** Script nuovi in scratchpad di sessione (non nel repo): `phase1_run.ps1`, `phase2_run.ps1`, `sota100k_ctx150k_t30.ps1` (copia dichiarata di `sota100k_ctx150k.ps1` con le 3 aggiunte additive), `phase3_launch.ps1`, `phase3_wait.ps1`. Percorsi: `D:\ds4_work\llama_run\t30_nonreg_b1200_r1_20260824.*`, `D:\ds4_work\llama_run\t30_confscale_b160_nmax5_conf0_20260824.*`, `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t30_repoint_sortchunk8_f2_b2048.{server.log,server.out,summary.txt}`, `D:\ds4_work\llama_run\t30_repoint_sortchunk8.{hw.csv,cpu.csv}`.
+
+---
+
+## Turno esecutore 31 (24/8) — SWEEP nmax5 NELLA SCALA GIUSTA (3a e ultima iterazione) + SORT_CHUNK=8 NON-REGRESSIONE LUNGO
+
+Mandato: LEDGER_23_AGOSTO.md turno 30 (scala confidenze pos1..5 mediana 0,600/0,254/0,128/0,105/0,069, letta con `LLAMA_SPEC_CONF_LOG=1`) + NOTE_IMPLEMENTAZIONE.md (`D:\ds4_work\design\impl\`) §16 (LLAMA_CONF_PRENORM, atoi a valore, difetto 0/post-norm, dflash.cpp:32-42) e §18 (SORT_CHUNK_MIB/POOL_TRACE/SPEC_CONF_LOG, chirurgo 14). Binari `D:\llama-subtract\build\bin` riverificati carattere per carattere: exe `3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9`, ggml-cuda `6EF5B781DDD14B6AB503580DEF7876AB38E9AE8E6A6347E665AA8A34C9C68B52`, llama-common `DD6689ECE4AE405372E581FB60210576970081C16CA57F7698A3AC54CA59C5E5`, llama-server-impl `9B417B4F314E36C04B24BABC1D7FB731298C0E92A7BAAE240F71B57336821B88` — identici al turno 30, stesso binario. Preflight: 0 processi, porte 8099-8101 libere, GPU 235 MiB usati/11881 liberi (P8), RAM 86,2/95,89 GB liberi, `jprompt.txt` 252 B e `jprompt102k.txt` 285.268 B (SHA `3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473`) entrambi integri.
+
+**Disciplina di scala (verificata sul COMANDO effettivo, non dedotta)**: recuperato `phase2_run.ps1` della sessione (stesso scratchpad del turno 30, sopravvissuto): comando esatto —
+```
+run_porto_hot.ps1 -Tag t30_confscale... -MaxTokens 160 -Repetitions 1 -PortoHotSnapshot $false `
+  -ServerPath D:\llama-subtract\build\bin\llama-server.exe -SpecNmax 5 -SpecConf '0' `
+  -Extra 'LLAMA_SPEC_CONF_LOG=1'
+```
+**`LLAMA_CONF_PRENORM` ASSENTE dal comando** — la fase 2 del turno 30 ha letto la scala (pos1 0,600 → pos5 0,069) sotto **CONF_PRENORM=0 (post-norm, il difetto)**. Ogni braccio dello sweep sottostante gira quindi anch'esso con `LLAMA_CONF_PRENORM` assente/0, per parlare la stessa scala. Dichiarato per ogni braccio sotto.
+
+### Fase 1 — sweep nmax5 (B1200 free-run, GGML_CUDA_GRAPH_MAX=256 su tutti, LLAMA_CONF_PRENORM assente/0 su tutti)
+
+Nota di percorso: il primo lancio del controllo ha usato per errore `conf=0,70` (rif. "campione" del banco LUNGO, non di questo banco CORTO); rilevato subito dal p1 basso e corretto. Il "campione" del banco CORTO free-run è **nmax=3/conf=0,80** (script `run_porto_hot.ps1`, difetto storico, riga 46/224 LEDGER; "L0 PROMOSSA" di memoria). Il braccio errato è riportato come extra, non come controllo.
+
+| braccio | nmax | conf_min | CONF_PRENORM | t/s | Δ vs 15,83 | p1 | mean_len | grafi sfrattati (tetto) | errori |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---|
+| **controllo** (corretto) | 3 | 0,80 | 0 (assente) | **16,17** | **+2,1%** | 0,90281 | **2,80** | 1640 (1412) | zero |
+| extra fuori-bersaglio (scartato come controllo) | 3 | 0,70 | 0 (assente) | 14,97 | −5,4% | 0,82614 | 2,54 | 881 (568) | zero |
+| nmax5 × conf_min=0,10 | 5 | 0,10 | 0 (assente) | **12,57** | **−20,6%** | 0,57042 | **3,20** | 542 (472) | zero |
+| nmax5 × conf_min=0,15 | 5 | 0,15 | 0 (assente) | **13,24** | **−16,4%** | 0,64404 | **3,19** | 722 (585) | zero |
+
+Identità controllo corretto: p1=0,90281 e mean_len=2,80 **bit-esatti** al riferimento storico "L0 PROMOSSA" (memoria di progetto) — stessa build, stessa traiettoria. `cache-esperti: 473 slot..., sfratto_par=1` presente e identico su tutti i bracci. Zero `CUDA error`/`GGML_ASSERT` su tutti i 4 bracci. `GGML_CUDA_GRAPH_MAX=256` verificato attivo (righe `porto-grafi: sfratti=N (... tetto=M)` con M>0 su tutti, nessun OOM).
+
+**Lettura**: su entrambi i punti nmax5 il mean_len SALE (3,19-3,20 contro 2,80 del controllo — il premio di densità cercato è reale, +14-15%), ma il `p1` (accettazione posizione 0) crolla da 0,903 a 0,57-0,64 e il costo per round (5 bozze da generare/verificare invece di 3) vince sul guadagno di lunghezza: t/s crolla del 16-21% vs riferimento 15,83, del 18-22% vs controllo. Nessun punto promette (soglia mandato +3%): **nessuna replica necessaria**.
+
+**VERDETTO FASE 1**: **nmax5 SI PARCHEGGIA — terza e ultima iterazione, chiusa con la scala a verbale.** Anche nella zona di conf_min indicata dalla lettura del turno 30 (mediana pos.3-4 ≈ 0,105-0,128, qui sweppata a 0,10/0,15) e sotto la STESSA config di scala (CONF_PRENORM assente/0, post-norm) usata per leggerla, nmax5 regredisce nettamente: il guadagno di densità (mean_len) non compensa mai il costo per round. **Non riaprire nmax5 sotto scoring post-norm.** L'unica via non ancora tentata è lo scoring PRE-norm (`LLAMA_CONF_PRENORM=1`, NOTE §16, mai buildato-e-testato in un binario live prima d'ora): fuori perimetro di questo turno, da valutare a parte se un turno futuro vuole riaprire il fascicolo con una terza scala mai letta.
+
+### Fase 2 — SORT_CHUNK_MIB=8 non-regressione sul campione lungo (G1+conf0,70, config INTATTA + solo l'aggiunta dichiarata)
+
+Comando: campione (`p1b_conf.ps1 -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -Context 150000 -MaxTokens 8192 -SpecNmax 3 -SpecConf 0.70 -Repliche 1 -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0 -ServerPath D:\llama-subtract\build\bin\llama-server.exe`, `LLAMA_KV_GATHER=1`) **invariato byte per byte** rispetto alla promozione del turno 28, **più SOLO** `LLAMA_CUDA_SORT_CHUNK_MIB=8` impostata prima del lancio. Nessun LID/CSA/SLOT di repoint (nessuno era presente nel campione originale). Lanciato come processo Win32 distaccato (CIM) per non rischiare il timeout dello strumento su una corsa da 22-24 minuti; telemetria hw/cpu campionata (novità rispetto al turno 28, che l'aveva omessa).
+
+Caricato a batch/ubatch 2048 (stessa shape), **free VRAM al load = 497 MiB**. Richiesta 13:22:20 → **22,45 min di parete** (contro i 24,1 min del turno 28 — entrambi dominati dal wall-clock, non comparabili al secondo).
+
+```
+prompt=101.691, completion=8192/8192 (finish=length)
+prefill = 137,34 t/s   (rif. turno 28: 120,94 t/s — +13,6%)
+decode  = 13,52 t/s / 73,96 ms/token   (rif.: 13,55 t/s / 73,79 ms/token — +0,23%, dentro banda 3%)
+p1      = 0,91096 (IDENTICO al riferimento, 8 cifre)
+mean_len= 3,18 (IDENTICO al riferimento)
+SHA out = F0733E8C5319CA75C7DE39BCFA7A89A06BEA2301D2279849BB6705084FA617CB — BIT-ESATTO al riferimento (byte per byte)
+```
+
+**Identità: replica BIT-ESATTA**, non solo "in banda" — p1, mean_len e SHA output coincidono carattere per carattere col campione del turno 28 (stessa traiettoria di calcolo fino all'ultimo token). L'unica differenza misurabile è il tempo di parete: decode +0,23% (rumore puro, dentro la deriva 2-3% di banco, §8.3 RUNBOOK), **prefill +13,6%** (miglioramento genuino misurato, non dedotto — coerente con SORT_CHUNK=8 che tocca esattamente `top_k`/argsort, l'operazione dominante del gather in prefill; da NON sovra-interpretare come garantito: un solo punto, nessuna replica). Zero `CUDA error`/`GGML_ASSERT`/`out of memory` nel log (error-scan pulito, solo righe di dump "rilevatore replay" con `divergenze:...=0`). Macchina pulita a fine corsa (0 processi, porte libere, VRAM 261/11855 MiB, RAM 86,4 GB).
+
+**VERDETTO FASE 2: PROMOSSA, oltre l'atteso.** Non solo dentro banda 3% come richiesto dal mandato: bit-esatta su p1/mean_len/SHA, decode indistinguibile (+0,23%), prefill misurato più veloce (+13,6%, un solo punto). **`LLAMA_CUDA_SORT_CHUNK_MIB=8` si dichiara ADOTTABILE come default di sicurezza dei banchi lunghi** — margine di pool ~280 MiB dedotto da NOTE §18.3 (non rimisurato qui byte a byte, nessun `LLAMA_CUDA_POOL_TRACE=1` in questo braccio per restare "config intatta + una sola aggiunta"), a costo di decode zero e con un possibile bonus di prefill da confermare su repliche future prima di generalizzarlo. Chiude anche il dubbio lasciato aperto dal turno 30 ("strutturalmente confrontabile solo a un braccio gemello senza repoint, non fatto in questo turno"): ora il braccio gemello esiste, ed è bit-esatto.
+
+## PASSAGGIO CONSEGNE — fine turno esecutore 31
+
+Binari invariati (`D:\llama-subtract\build\bin`, stesse impronte del turno 30, riverificate a inizio turno). Macchina lasciata pulita: 0 processi, porte 8099-8101 libere, VRAM 261 MiB usati / 11855 liberi (P8), RAM 86,4 GB liberi. Nessun commit eseguito. Script fuori repo, in scratchpad di sessione: `t31_p1_ctrl.ps1`/`t31_p1_ctrl_v2.ps1` (correzione conf 0,70→0,80), `t31_p1_nmax5_c010.ps1`, `t31_p1_nmax5_c015.ps1`, `t31_p2_sortchunk8.ps1` (wrapper su `p1b_conf.ps1` di sessione, invariato). Artefatti: `D:\ds4_work\llama_run\t31_sweep_*_20260824.*` (Fase 1, 4 bracci inclusa la variante fuori-bersaglio), `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t31_sortchunk8_check_f2_b2048.*` e `...t31_sortchunk8_f2_b2048.{hw,cpu}.csv` (Fase 2). **Aperto per il prossimo turno**: (1) se si vuole riprovare nmax5, l'unica scala mai letta è PRE-norm (`LLAMA_CONF_PRENORM=1`) — richiede prima una lettura-scala dedicata come quella del turno 30, poi uno sweep nuovo, mai un riuso dei conf_min di qui; (2) il bonus prefill di SORT_CHUNK=8 (+13,6%) è un solo punto non replicato — chi lo vuole generalizzare deve rifarlo almeno una volta prima di scriverlo come atteso.

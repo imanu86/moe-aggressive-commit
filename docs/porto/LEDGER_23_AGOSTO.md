@@ -1360,3 +1360,168 @@ sulla sua origine.
 sezioni "Turno esecutore 28" sopra, in ordine Fase 1 → Fase 2 → Fase 3. Script nuovi in
 scratchpad di sessione (non committati, non nel repo): `p2_ring_conf.ps1`,
 `phase3_factorial_plan.json`; riusati invariati: `p1b_conf.ps1`, `cb_probe.ps1`.
+
+---
+
+## Turno esecutore 29 (24/8) — BRACCIO REPOINT CSA=2048 (`t29_repoint_csa2048`): TERZO OOM,
+## PRIMA del secondo — FERMATO per protocollo, verdetto: serve la materializzazione incrementale
+
+Mandato: `D:\ds4_work\design\REPOINT_OOM_ANALISI.md`, risposta (3) — ripetere la Fase 2 del
+turno 28 con `LLAMA_KV_RING_VRAM_CSA=2048` (invece di `0`, il valore condiviso di base, l'unico
+già validato altrove) e `LLAMA_KV_RING_VRAM_LID=115000` invariato: il braccio più economico
+(zero build) che decide se il repoint è usabile senza chirurgia.
+
+Binario canonico riverificato prima del banco, **invariato dal turno 28** (nessuna
+ricompilazione fra i due turni): SHA exe `C15FF135F14024FED4ADD8B3FF14299429CA9627508150B7CDE
+06234E9795878`, SHA `ggml-cuda.dll` `00C6F0D2AC9161AF44EADDB0F22344E5580F4CC77E1D72A16839512
+14B15C576`. `jprompt102k.txt` SHA `3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284
+560A1473` (285.268 B) confermato. Preflight (11:0x, 24/8): 0 processi, porte 8099/8100/8101
+libere, GPU a riposo (511 MiB usati / 11605 liberi, 0% util), RAM libera 88,6/95,9 GB, disco C
+46,9 / D 115,5 GB, uptime 5152,5 min.
+
+### Config e lancio
+
+Stesso script `p2_ring_conf.ps1` (scratchpad, invariato), stesso comando verbatim della Fase 2
+del turno 28 salvo `-RunLabel` e **`-KvRingVramCsa 2048`** (era `0`):
+
+```
+LLAMA_KV_GATHER=1
+p2_ring_conf.ps1 -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5
+  -RunLabel t29_repoint_csa2048 -Context 150000 -MaxTokens 8192 -SpecNmax 3
+  -SpecConf 0.70 -Repliche 1 -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1
+  -ReasoningBudgetTokens 0 -KvRingVramLid 115000 -KvRingVramCsa 2048 -CacheEspertiSlot 450
+  -ServerPath D:\llama-subtract\build\bin\llama-server.exe
+```
+
+Lanciato staccato (background) con DONE finale. Caricato 11:11:28, **free VRAM al load = 341
+MiB** (contro 499 MiB della Fase 2 con CSA=0 — **−158 MiB di margine**). Testimone KV-ring:
+
+```
+KV ring resident allocated: CSA = 10.50 MiB, HCA = 5.00 MiB, LID = 148.31 MiB, total = 163.81 MiB
+```
+
+(contro `total = 158,56 MiB` della Fase 2: CSA cresce da 5,25 a 10,50 MiB, **+5,25 MiB soli**).
+**I −158 MiB di free-VRAM-al-load NON sono spiegati dal solo residente KV-ring dichiarato in
+questa riga** — overhead extra non isolato in questo turno (candidato: workspace/compressor
+state legato al gather CSA a 512 righe/layer, `kv-gather ACCESO (512 righe/layer CSA)`
+osservato — via `LLAMA_KV_GATHER=1` — solo in questo braccio). Telemetria `sample_hw.ps1`
+avviata correttamente (pid 18888), presente per l'intera corsa.
+
+### Esito: TERZO OOM — stessa firma, posizione PRIMA del secondo OOM (non dopo)
+
+Richiesta 11:13:59. Prefill in corso, GPU 100% util, 1890-1935 MHz, ~130-138 W (sano), velocità
+cumulativa in calo regolare da 206 a 189 t/s. Ultimo checkpoint riuscito **n_tokens=26.625
+(26,2% del prompt da 101.691 token), t=140,73 s, 189,19 tok/s cumulativo** — poi:
+
+```
+CUDA error: out of memory
+  current device: 0, in function alloc at ggml-cuda.cu:609
+  cuMemSetAccess(start_ptr, reserve_size, &access, 1)
+ggml-cuda.cu:124: CUDA error
+```
+
+**Stessa firma esatta della Fase 2** (allocatore VMM, stesso sito `alloc`/`cuMemSetAccess`) —
+ma a **26.625 invece di 28.673 token, differenza esatta −2.048 (un intero chunk di prefill a
+ubatch=2048) e −12,7 s**: il braccio con CSA=2048 cade **prima**, non dopo, della Fase 2 con
+CSA=0. Il processo è uscito da solo (richiesta HTTP fallita: "connessione chiusa dal server in
+modo imprevisto"); nessun file di risposta prodotto (`..._q1.response.json`/`.output.txt`
+assenti). **Prefill/decode/p1: non misurabili** (nessuna richiesta completata).
+
+**`bytes_h2d_per_token`** (testimone `[kv-ring-profile]`): 4.224 a tokens=8.192 (contro 8.064
+della Fase 2 a tokens=6.144 — quasi la metà, coerente con l'ipotesi del design doc che un hot
+CSA più grande riduca `cold_rows` per chiamata) ma **21.504 a tokens=18.432, quasi pari alla
+Fase 2 allo stesso punto (22.983, −6,4% soli)**: il vantaggio iniziale si erode rapidamente e
+non basta a compensare il margine di partenza più basso.
+
+**`rows_cold` (testimone `[kv-gather-profile]`, atteso in crollo da ~93%): NON misurabile.**
+Nonostante `LLAMA_KV_GATHER=1` attivo e confermato a runtime (`kv-gather ACCESO (512
+righe/layer CSA)`, `deepseek4.cpp:848`), **zero righe `[kv-gather-profile]` in tutto il log**
+(`kv-gather.cu:349`, formato `gathers=... rows=... rows_cold=... rows_per_token=...`). Il
+battito di default (60 s, nessun `LLAMA_KV_GATHER_BATTITO` impostato dallo script,
+`kv-gather.cu:369-373`) avrebbe dovuto scattare 1-2 volte nei 141 s di corsa e non lo ha fatto —
+lacuna dichiarata, non diagnosticata in questo turno (il chiamante è `ggml-cuda.cu:5888-5890`,
+dentro il cammino di sincronizzazione: priorità per chi riprende, solo se questo dato serve
+ancora dopo il verdetto sotto).
+
+**VRAM durante la corsa** (`hw.csv`, 0,5 Hz, 65 righe): 333 MiB liberi al primo campione
+(11:13:59, pre-ramp), poi **minimo 179 MiB liberi (11.937 MiB usati) alle 11:15:26-29**,
+stabile a 180-182 MiB liberi per quasi tutta la corsa (100% util) — margine operativo molto più
+stretto della Fase 2. Al crash (~11:16:22): util → 0%, clock → 210 MHz; **VRAM già a 11.853 MiB
+liberi 5 secondi dopo** (11:16:27) — riclamo molto più rapido dei ~9 minuti della Fase 2 (non
+indagato: verosimilmente un abort fatale immediato invece di uno shutdown più lento). Verificato
+dal vivo dopo la corsa: **macchina pulita** (0 processi, VRAM 287 MiB usati / 11829 liberi,
+porte 8099-8101 libere).
+
+### VERDETTO: FERMATO per protocollo (terzo OOM) — verdetto secco, non chirurgia in questo turno
+
+Per mandato ("se OOM di nuovo → fermati, il verdetto diventa serve la materializzazione
+incrementale"): **non si tenta un quarto valore di CSA/LID in questo turno.**
+
+1. **CSA=2048 (il valore condiviso di base, già validato altrove) NON rende il repoint
+   usabile.** Non solo non sopravvive ai 150k attesi: **cade leggermente PRIMA della Fase 2**
+   (26,2% contro 28,2%), perché il costo fisso aggiuntivo di tenere CSA caldo a 2048 token
+   (−158 MiB di margine al load, in gran parte non spiegato dal solo residente KV-ring
+   dichiarato) supera il beneficio per-chiamata che offre (`bytes_h2d_per_token` più basso solo
+   nelle primissime battute, poi quasi pari alla Fase 2).
+2. **Il meccanismo resta lo stesso in tutti e tre gli OOM finora** (stessa firma
+   `alloc`/`cuMemSetAccess`, allocatore VMM a pool crescente che non rilascia mai il picco, per
+   `REPOINT_OOM_ANALISI.md` punto 6): **nessuna combinazione di LID/CSA/SLOT a budget fisso lo
+   risolve per un prefill di lunghezza arbitraria** — sposta solo (o, come qui, nemmeno) il
+   muro.
+3. **Verdetto del mandato: serve la materializzazione incrementale** — cache device-side del
+   materializzato precedente in `ggml_cuda_kv_ring_materialize` (`kv-ring.cu:349-469`, contratto
+   di shape di `ggml_dsv4_kv_ring` in `ggml.c:5482-5519`), non un ritocco di env var. Il repoint
+   (LID pieno per pagare in decode) resta **strutturalmente incompatibile col prefill lungo così
+   com'è cablato** — CSA/LID sono letti una sola volta alla costruzione della cache, nessun
+   gancio a runtime al confine prefill→decode (`REPOINT_OOM_ANALISI.md` risposta (2)).
+
+**Lacuna dichiarata**: `rows_cold`/`[kv-gather-profile]` non misurato in nessuno dei tre OOM
+finora. Se serve ancora dopo il verdetto sopra, va prima capito perché il battito non scatta
+(letto il chiamante `ggml-cuda.cu:5888-5890`) prima di rilanciare solo per quello.
+
+**Stato macchina a fine turno**: pulita, verificata (0 processi, VRAM 287 MiB usati / 11829
+liberi, porte 8099-8101 libere). **Nessun commit eseguito.** Script invariato in scratchpad di
+sessione: `p2_ring_conf.ps1` (riusato, non modificato). Percorsi: `D:\ds4_work\llama_run\sota_c
+tx150000_densefa_stage_hc5_t29_repoint_csa2048_f2_b2048.{server.log,server.out,summary.txt,hw.
+csv,cpu.csv}`.
+
+---
+
+## Turno esecutore 30 (24/8) — NON-REGRESSIONE OK + SCALA CONFIDENZE LETTA + REPOINT SOPRAVVIVE (SORT_CHUNK_MIB=8) MA DECODE PIÙ LENTO DEL CAMPIONE
+
+Mandato: `NOTE_IMPLEMENTAZIONE.md` §18 (leve chirurgo 14) + coda turno 29 (OOM su LID=115000+CSA=2048). Binari `D:\llama-subtract\build\bin` verificati PRIMA del banco, SHA256 = dichiarati carattere per carattere: exe `3D3347D1...9C9`, ggml-cuda `6EF5B781...B52`, llama-common `DD6689EC...5E5`, impl `9B417B4F...B88`, llama.dll invariata `40E1DEAF...C50`. `jprompt.txt` (252B) e `jprompt102k.txt` (285.268B) integri. Preflight pulito (0 processi, porte 8099-8101 libere, RAM 87,5-87,9 GB). Script: `run_porto_hot.ps1` invariato per le fasi 1-2; per la fase 3, copia dichiarata di `sota100k_ctx150k.ps1` (`C:\...\2026-08-14\ds4-porto-20tps\work\`, invariato) con le stesse tre aggiunte additive già viste nei turni 22/28/29 (`-SpecConf`, `-KvRingVramLid/-KvRingVramCsa`, `-CacheEspertiSlot`); `LLAMA_KV_GATHER/LLAMA_CUDA_SORT_CHUNK_MIB/LLAMA_CUDA_POOL_TRACE` impostate dal chiamante, stesso schema di `LLAMA_KV_GATHER` nei turni precedenti (nessuna tocca `Set-SotaEnvironment`).
+
+### Fase 1 — non-regressione a difetti (B1200 free-run, `-ServerPath` nuovo, leve chirurgo 14 ASSENTI)
+`eval t/s = 15,83` (comparatore mandato 14,44 viene da `t24_base`, B**512** non B1200: nessuna base a parità di lunghezza, ma in nessun verso è una regressione). **`p1 = 0,90025 (713/792, mean len 2,47)` e `buchi = 47906`: identici cifra per cifra al fingerprint storico della SOTA B1200** (RUNBOOK §4.5/§4.6). Riga `cache-esperti` identica al riferimento canonico, `sfratto_par=1`, grafi ACCESI, zero errori/divergenze, SHA output `4FDCFADF...D65D`. Lettura testo (§4.10): coerente, pertinente, nessun loop. **VERDETTO: build non regredita — difetto 64 = comportamento invariato, confermato dal vivo.**
+
+### Fase 2 — scala vera delle confidenze (B160, `conf_min=0`, `nmax=5`, `LLAMA_SPEC_CONF_LOG=1`)
+Prima lettura mai fatta di `conf[]` reale. 63 cicli (60 con blocco pieno n=5):
+
+| posizione | n | min | mediana | max |
+|---|---:|---:|---:|---:|
+| 1 | 63 | 0,014 | 0,600 | 0,999 |
+| 2 | 62 | 0,023 | 0,254 | 0,996 |
+| 3 | 62 | 0,018 | 0,128 | 1,000 |
+| 4 | 61 | 0,018 | 0,105 | 0,962 |
+| 5 | 60 | 0,013 | 0,069 | 0,840 |
+
+Calo monotono con la posizione (§16.6 verificato). **Implicazione**: con `conf_min` storico 0,60-0,90 la mediana di posizione 2 (0,254) è già sotto soglia — nmax5 con quelle soglie non supera quasi mai la posizione 2. Un `conf_min` che lasci respirare nmax5 va cercato ~0,10-0,15 (mediana pos. 3-4), non nell'intervallo sweppato finora. p1=0,23377 (basso per costruzione: regime patologico apposta per leggere la sonda). Zero errori. **VERDETTO: dato raccolto e utilizzabile per un nuovo sweep conf_min×nmax5 mirato sotto 0,15.**
+
+### Fase 3 — retry repoint (LID=115000, CSA=2048, SLOT=450, `SORT_CHUNK_MIB=8`, `POOL_TRACE=1`, gather=1, conf 0,70)
+Lanciato staccato (Win32_Process, PID 17716) alle 12:12:22, `-Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -Context 150000 -MaxTokens 8192 -SpecNmax 3 -SpecConf 0.70 -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0`. Caricato con **free VRAM = 420 MiB** (contro 341 MiB del t29 con CSA=2048 senza il fix: +79 MiB di margine).
+
+**SOPRAVVIVE per la prima volta ai 150k dopo tre OOM consecutivi (turni 22/28/29).** Richiesta completa in 23,09 min: prompt=101.691, completion=8192/8192 (`finish=length`), **prefill = 137,58 t/s**, **decode = 12,68 t/s (78,9 ms/token)**, p1 = 0,82727 (4976/6015, mean len 2,55). Identità: `cache-esperti: 450 slot...sfratto_par=1` (SLOT applicato correttamente), build 10093/3014d3756, zero `CUDA error`/`GGML_ASSERT`/divergenze reali (solo righe innocue del rilevatore replay). SHA output `271A6A40...1E1`. Lettura a campione (§4.10, inizio+centro×2+fine): coerente, tecnico, pertinente al prompt (DS4/cache-esperti/KV-ring), tronca a metà parola per `length` — nessuna anomalia. Telemetria: 649 campioni, SM mediano (busy) 1920 MHz, max 1942 MHz, potenza mediana 130,5 W, **zero campioni sotto 1500 MHz da carico** — sano.
+
+**Causa dell'OOM chiusa, con la prova**: **zero righe `[cuda-pool]` durante l'intero prefill (101.691 token) e decode (8192 token)** — le uniche 5 righe della corsa cadono tutte nel caricamento iniziale, prima ancora che la richiesta parta. Le 3 più grosse, verbatim:
+```
+llama: [cuda-pool] device=0 richiesta=72.02 MiB commit=8.00 MiB pool=74.00 MiB usato=0.00 MiB op=MUL_MAT nome=attn_wo_a-0 ne=[1024,2048,8,1]
+llama: [cuda-pool] device=0 richiesta=64.00 MiB commit=62.00 MiB pool=64.00 MiB usato=0.00 MiB op=MUL_MAT nome=hc_mixes-0 ne=[24,2048,1,1]
+llama: [cuda-pool] device=0 richiesta=0.09 MiB commit=2.00 MiB pool=66.00 MiB usato=64.00 MiB op=MUL_MAT nome=hc_mixes-0 ne=[24,2048,1,1]
+```
+Confermano §18.2/§18.3 **misurato, non più dedotto**: col chunk ridotto a 8 MiB, ogni `top_k` del prefill resta dentro i 74 MiB già riservati al caricamento e non fa mai più crescere il pool — la causa dei tre OOM era esattamente quella, ed è chiusa.
+
+**Ma non è un miglioramento di prestazione — anzi**: **decode 78,9 ms/token è PIÙ LENTO del campione senza repoint (73,79 ms/token, G1+conf 0,70): +7,0%**, non il ~71-72 atteso dal mandato. **`rows_cold` NON crolla, sale**: 87,3%→93,1% lungo gli 11 battiti `[kv-gather-profile]` osservati (atteso: crollo da ~93%; osservato: il contrario). **Indizio forte sul perché** (`[kv-ring-profile]`, 23 battiti): il tasso di materializzazioni per token **esplode di ~460× esattamente al confine prefill→decode** (da ~0,03/token durante tutto il prefill a ~14,1/token per l'intero decode; `h2d_copies`/token da ~0,016 a ~6,9, stesso confine) — coerente con una ri-materializzazione pesante del prefisso LID/CSA ad ogni passo di decode sotto residenza piena, non con un trasporto ridotto come sperato dal disegno del repoint.
+
+**VERDETTO FASE 3**: **il repoint ora sopravvive (bersaglio del mandato raggiunto), ma sotto questa configurazione (LID=115000/CSA=2048/SLOT=450) costa più di quanto rende** — nessun guadagno di decode, anzi una perdita del 7% rispetto a non fare repoint affatto. La leva `SORT_CHUNK_MIB` è promuovibile da sola (fix OOM puro, zero costo misurato sul decode — 12,68 t/s qui vs strutturalmente confrontabile solo a un braccio gemello senza repoint, non fatto in questo turno). Il pacchetto LID/CSA/SLOT del repoint resta **sconsigliato così com'è**: il prossimo turno che vuole inseguirlo deve leggere il sito di materializzazione decode (`kv-ring.cu`, il ramo eseguito quando `n_kv` è già alla residenza piena) prima di ritoccare altri numeri — stessa priorità già scritta in coda al turno 29, ora con un indizio quantitativo in più.
+
+**Stato macchina a fine turno**: pulita, verificata (0 processi, VRAM 235 MiB usati / porte 8099-8101 libere, RAM 87,1 GB). **Nessun commit eseguito.** Script nuovi in scratchpad di sessione (non nel repo): `phase1_run.ps1`, `phase2_run.ps1`, `sota100k_ctx150k_t30.ps1` (copia dichiarata di `sota100k_ctx150k.ps1` con le 3 aggiunte additive), `phase3_launch.ps1`, `phase3_wait.ps1`. Percorsi: `D:\ds4_work\llama_run\t30_nonreg_b1200_r1_20260824.*`, `D:\ds4_work\llama_run\t30_confscale_b160_nmax5_conf0_20260824.*`, `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t30_repoint_sortchunk8_f2_b2048.{server.log,server.out,summary.txt}`, `D:\ds4_work\llama_run\t30_repoint_sortchunk8.{hw.csv,cpu.csv}`.

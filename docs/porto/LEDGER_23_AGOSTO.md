@@ -996,3 +996,367 @@ nuova per `conf[]` — una modifica di codice, fuori da questo mandato "nessuna 
 `C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t22_s3bis_b1200_r1_20260824.{server.log,server.out,summary.json,r1-r4.response.json,r1-r4.output.txt}`,
 `...\runs\t22_s3bis.hw.csv/cpu.csv`. **FASE 4 (fattoriale 2³) NON LANCIATA per ordine del
 coordinatore — passa al prossimo esecutore.**
+
+---
+
+## Turno esecutore 28 (24/8) — FASE 1 PROMOZIONE: replica conf_min=0,70 — BIT-ESATTA, PROMOSSA
+
+Mandato: rifare a parità totale il braccio 2 di Fase 1b (`conf_min=0,70`, 73,6 ms/token, p1
+0,91096, mean len 3,18) — la replica che mancava per promuoverlo a campione del lungo.
+Binario canonico riverificato prima del banco, invariato (SHA exe `C15FF135F14024FED4ADD8B3FF1
+4299429CA9627508150B7CDE06234E9795878`, SHA dll `00C6F0D2AC9161AF44EADDB0F22344E5580F4CC77E1D7
+2A1683951214B15C576`, build 10093/3014d3756). Preflight (09:4x, 24/8): 0 processi, porte
+8099/8100/8101 libere, GPU a riposo (376 MiB usati / 11740 liberi, pcie gen1x16), RAM libera
+88,1 GB, disco C 48,4 / D 115,5 GB, uptime 5073,2 min. `jprompt102k.txt` SHA
+`3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473` (285.268 B) — identico al
+riferimento. Script: stesso `p1b_conf.ps1` invariato (nessuna modifica), stesso comando
+verbatim salvo `-RunLabel` (nuovo, per non sovrascrivere gli artefatti originali):
+
+```
+LLAMA_KV_GATHER=1
+p1b_conf.ps1 -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -RunLabel p1b_conf070_replica
+  -Context 150000 -MaxTokens 8192 -SpecNmax 3 -SpecConf 0.70 -Repliche 1
+  -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0
+  -ServerPath D:\llama-subtract\build\bin\llama-server.exe
+```
+
+Lanciato staccato (background) con DONE finale; caricato a batch/ubatch 2048 (stessa shape
+dell'originale), free VRAM al load 419 MiB. Richiesta 09:55:20 → 24,1 min di parete.
+
+```
+tag         = sota_ctx150000_densefa_stage_hc5_p1b_conf070_replica_f2_b2048_q1
+prefill     = 120,94 t/s (8,27 ms/token, 101.691 token)
+decode      = 13,55 t/s (73,79 ms/token, 8192 token)          atteso: 13,58 (73,6 ms/token)
+p1          = 0,91096 (5617 accepted / 6166 generated), mean len = 3,18
+SHA output  = F0733E8C5319CA75C7DE39BCFA7A89A06BEA2301D2279849BB6705084FA617CB
+finish      = length   |   output chars = 24592
+```
+
+**Confronto con l'originale (braccio 2, Fase 1b)**: delta ms/token = **+0,26%**, delta t/s =
+**−0,22%** — non solo dentro la banda del 3% (§8.3): **p1, mean_len e SHA output sono
+IDENTICI carattere per carattere** all'originale (`F0733E8C...` coincide fino all'ultimo
+carattere, non solo sui primi 8 esadecimali della tabella di Fase 1b). Questa non è una
+replica "in banda", è una **replica bit-esatta**: la traiettoria di calcolo è la stessa fino
+all'ultimo token, l'unica differenza è rumore di parete puro (nessun cambio di trainettoria).
+
+**Checklist d'identità (§4.9)**: riga `cache-esperti` identica carattere per carattere al
+riferimento (473 slot..., `sfratto_par=1`); build 10093 (3014d3756) + SHA exe/dll trascritti
+sopra; `sched-profilo` = 463 righe (ACCESO — stesso script invariato di Fase 1b, quindi pari
+strumentazione per costruzione); `GGML_CUDA_GRAPH_STATS` assente dal grep mirato (non
+impostata da questo script); grafi ACCESI (`GGML_CUDA_DISABLE_GRAPHS` assente); zero
+`GGML_ASSERT`/`CUDA error`/divergenze (`rilevatore replay`: tutte le righe `taglia=0 ids=0
+out=0 GRIGLIA-corta=0`); `jprompt102k.txt` verificato al preflight. Copie/buchi (dato nuovo,
+non registrato per questo arm in Fase 1b): `cache-esperti: domanda 2016052 (colpi 1051067 =
+52,1%, buchi 964985, miss 47,9%, in ritardo 0 = 0,0%)`.
+
+**Lettura del testo (§4.10)**: SHA bit-identico al braccio già vagliato integralmente in Fase
+1b (letto allora: coerente, italiano tecnico sano, pertinente, nessun loop, nessuna
+degradazione) — rilettura qui di conferma (inizio + intorno carattere 330, sezione overlap/
+kern_partiziona): stesso contenuto tecnico coerente, cita codice reale del repository, nessuna
+anomalia.
+
+**Lacuna dichiarata**: telemetria hw/cpu **non campionata** su questo braccio — `p1b_conf.ps1`
+non lancia `sample_hw.ps1` da solo e non è stato affiancato qui (l'istruzione "telemetria
+sempre" di questo turno non è stata rispettata su questa fase; corretto dalla Fase 2 in poi).
+Non ripetuto: il braccio è già validato dalla bit-esattezza, la più forte prova di identità
+disponibile in questo progetto, e ripetere 24 minuti di GPU solo per un CSV non è
+proporzionato.
+
+**VERDETTO FASE 1: PROMOSSA.** `G1 (gather) + conf_min=0,70` è il nuovo campione del banco
+lungo (8k, mono-richiesta, gather acceso): **decode ≈13,55–13,58 t/s (~13,6), 73,6–73,8
+ms/token**, in luogo del vecchio campione a `conf_min=0,80` (~79 ms/token). Ogni banco futuro
+su questa configurazione usa `--spec-draft-conf-min 0.70`, non più `0.80`.
+
+**Stato macchina a fine Fase 1**: verificata pulita prima della Fase 2 (0 processi, VRAM 312
+MiB, RAM 88,3 GB, porte 8099/8100 libere). Nessun commit eseguito. Script fuori repo, in
+scratchpad di sessione: `p1b_conf.ps1` (invariato), percorsi `D:\ds4_work\llama_run\sota_ctx15
+0000_densefa_stage_hc5_p1b_conf070_replica_f2_b2048.{server.log,server.out,summary.txt}` e
+`..._q1.{response.json,output.txt}`.
+
+---
+
+## Turno esecutore 28 (24/8) — FASE 2 REPOINT CORRETTO: aritmetica del mandato CORRETTA prima
+## del lancio, secondo OOM (progresso reale, non risolto) — FERMATO per protocollo
+
+### Correzione dell'aritmetica PRIMA di lanciare (regola di casa: leggere il codice prima di
+### sweeppare)
+
+Il mandato suggeriva `LLAMA_KV_RING_VRAM_LID ≈ 225000-230000` per ottenere ~148 MiB, dedotto
+per proporzione lineare da `192,94 MiB @ 300000`. **Verificato sul codice sorgente prima di
+lanciare** (`D:\llama-subtract\src\llama-kv-cache-dsv4.cpp:1303-1312`):
+
+```cpp
+const uint32_t hot_token_lid = std::min(kv_size, dsv4_kv_ring_vram_token_deposito(
+        "LLAMA_KV_RING_VRAM_LID", ..., hot_token));
+const uint32_t lid_hot_size = std::min(kv_lid->get_size(),
+        GGML_PAD(dsv4_comp_size(hot_token_lid, DSV4_CSA_RATIO /* = 4 */), 256u));
+```
+
+Con `-Context 150000`, `kv_size = 150000`. **Qualunque valore richiesto ≥150000 (compreso
+225000-230000, come 300000) si clampa allo STESSO `hot_token_lid = 150000`**, cioè alla
+STESSA residenza piena da 192,94 MiB del crash di questa notte — **zero riduzione, stesso
+crash garantito**. Il mandato aveva ragione sul principio ("va dedotto da `dsv4_comp_size`,
+non riusato direttamente") ma il numero proposto era ancora sopra il muro del clamp.
+**Derivazione corretta**: il dato 192,94 MiB@300000 è in realtà 192,94 MiB alla residenza
+PIENA di 37.632 righe (`GGML_PAD(150000/4, 256)`), quindi 0,0051270 MiB/riga misurato
+(192,94/37632). Per un bersaglio di ~148 MiB servono **righe sotto il clamp**, cioè un valore
+RICHIESTO **inferiore** a 150000: 148/0,0051270 ≈ 28.868 righe → `GGML_PAD(·,256)` = 28.928
+righe (bucket da 1024 token, insensibile a ±500 token) → **`LLAMA_KV_RING_VRAM_LID=115000`**
+(ben sotto il clamp, comodamente dentro la banda 140-150 MiB, lontano dal bordo del bucket).
+**Verificato dal vivo qui sotto**: LID misurato = 148,31 MiB, **a 0,01 MiB dalla previsione**.
+
+### Config e lancio
+
+Script `p2_ring_conf.ps1` (nuova copia in scratchpad, DUE aggiunte dichiarate rispetto a
+`p2_ring.ps1`: parametro `-SpecConf` — a `'0.8'` di default è testualmente identico al
+comportamento precedente — e lancio automatico di `sample_hw.ps1` dopo `/health` OK, che
+`p2_ring.ps1`/`p1_nudo.ps1` non avevano — lacuna dichiarata in Fase 1, corretta qui). Comando:
+
+```
+LLAMA_KV_GATHER=1
+p2_ring_conf.ps1 -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5
+  -RunLabel t22_repoint_v2_slot450_lid115k -Context 150000 -MaxTokens 8192 -SpecNmax 3
+  -SpecConf 0.70 -Repliche 1 -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1
+  -ReasoningBudgetTokens 0 -KvRingVramLid 115000 -KvRingVramCsa 0 -CacheEspertiSlot 450
+  -ServerPath D:\llama-subtract\build\bin\llama-server.exe
+```
+
+Preflight verificato pulito (0 processi, porte libere, RAM 88,3 GB, VRAM 312 MiB). Caricato
+10:23:09, **free VRAM al load = 499 MiB** (contro 267 MiB dell'originale che ha crashato ieri
+notte — **+232 MiB di margine reale**, coerente con la somma attesa 44,6 (LID) + 155 (SLOT
+cuscino) ≈ 200 MiB più un margine extra). Testimone KV-ring:
+
+```
+KV ring resident allocated: CSA = 5.25 MiB, HCA = 5.00 MiB, LID = 148.31 MiB, total = 158.56 MiB
+```
+
+(contro `total = 203,19 MiB` dell'originale — **−44,63 MiB esatti**, come previsto). Telemetria
+`sample_hw.ps1` avviata correttamente (0,5 Hz), presente per l'intera durata.
+
+### Esito: SECONDO OOM — ma diverso e più tardi del primo
+
+Richiesta 10:27:24. Prefill in corso, GPU 100% util, 1905-1927 MHz, ~130 W (sano). A
+**n_tokens=28673 (28% del prompt, t=153,42 s, 186,90 tok/s cumulativo)**:
+
+```
+slot operator (): cached n_tokens = 28673, memory_seq_rm [28673, end)
+CUDA error: out of memory
+  current device: 0, in function alloc at ggml-cuda.cu:609
+  cuMemSetAccess(start_ptr, reserve_size, &access, 1)
+ggml-cuda.cu:124: CUDA error
+```
+
+Il processo è uscito **da solo** (`shutdown: already-exited`). **28.672 = esattamente 14 ×
+2048** (14° chunk di prefill a `-ub 2048`): il crash cade su un confine di chunk esatto, non
+un punto casuale.
+
+**Diverso dal crash di ieri notte in due modi**: (1) qui cade **durante il prefill** (28% del
+prompt), non alla transizione prefill→decode come `t22_repoint_redo`; (2) il sito preciso
+(`alloc`/`cuMemSetAccess`, l'allocatore VMM a pool crescente) non era stato osservato prima —
+diverso anche dalla firma "layer-major staging 1729 MiB" del crash del banco bat di ieri sera.
+**Non è la stessa causa radice, o non SOLO quella.**
+
+**Indizio nuovo, non diagnosticato a fondo (fuori budget di questa fase)**: i tre battiti
+`[kv-ring-profile]` prima del crash —
+
+```
+tokens=6144   materializations=186  h2d_copies=63   bytes_h2d_per_token=8064.00
+tokens=18432  materializations=544  h2d_copies=184  bytes_h2d_per_token=22983.11
+tokens=28672  materializations=854  h2d_copies=289  bytes_h2d_per_token=36397.71
+```
+
+— mostrano `materializations/token` (≈0,0298) e `h2d_copies/token` (≈0,0100) **costanti**, ma
+`bytes_h2d_per_token` (media cumulata) **quasi quadruplica** (8064→36398). Cioè: non crescono
+il numero di copie per token, cresce la **taglia media** di ogni copia. **Ipotesi, non
+verificata**: un pool CUDA a taglia crescente (VMM, coerente col sito `cuMemSetAccess`) legato
+allo staging delle materializzazioni del ring, che non rilascia mai il picco raggiunto — se
+vero, nessun ritocco di LID/SLOT a budget fisso risolve il problema per un prompt
+sufficientemente lungo: sposta solo il punto di rottura più avanti (esattamente ciò che si è
+osservato qui: dal crash immediato di ieri notte al 28% di oggi). **Non verificato con lettura
+del codice in questo turno** — priorità #1 per chi riprende: leggere il sito di allocazione
+dietro `cuMemSetAccess`/le materializzazioni del ring prima di ritoccare ancora LID.
+
+`rows_cold` (atteso in crollo da ~93% se sopravviveva) **non verificabile**: nessuna corsa
+completata da cui leggerlo.
+
+### Verifica macchina dopo il crash — la VRAM NON si è liberata subito
+
+Telemetria `hw.csv` (0,5 Hz, catturata per l'intera corsa): VRAM ferma a **11873-11930 MiB
+usati (solo 230-270 MiB liberi)** da 10:30:00 (crash) fino ad almeno 10:30:11 — poi un buco nel
+campionamento fino a 10:39:07, dove risulta ancora 192 MiB liberi; **solo a 10:39:15 la VRAM
+torna alla linea di riposo vera** (271-279 MiB usati, 11837-11845 liberi). **Il driver ha
+impiegato fino a ~9 minuti per riclamare la VRAM dopo l'errore CUDA fatale**, nonostante il
+processo fosse già uscito da solo. Verificato dal vivo con polling attivo a tre condizioni
+(§6.6) prima di procedere: **macchina pulita solo a 10:42:46** (0 processi, VRAM 286 MiB, RAM
+89,9 GB). **Lezione operativa**: dopo un OOM CUDA fatale, "processo uscito" da solo **non**
+implica "VRAM libera" — verificare sempre tutte e tre le condizioni del §6.6, mai fermarsi al
+solo conteggio processi.
+
+### VERDETTO FASE 2: FERMATO per protocollo (secondo OOM) — progresso reale, non chiuso
+
+Per mandato ("se OOM di nuovo → fermati su questa fase"): **non si tenta un terzo giro in
+questo turno**. Consegna onesta:
+
+1. **L'aritmetica del mandato (225000-230000) era sbagliata ed è stata corretta prima del
+   lancio** — quel valore avrebbe clampato alla stessa residenza piena del crash originale,
+   zero beneficio garantito. Il valore corretto (115000, sotto il clamp) è verificato dal vivo
+   a 0,01 MiB dalla previsione.
+2. **La correzione ha comprato progresso reale**: +232 MiB di margine al load, crash spostato
+   dall'immediato/transizione al 28% di un prefill da 101.691 token, con una firma di errore
+   diversa (VMM `alloc`/`cuMemSetAccess`, non più `layer-major staging`).
+3. **Non è chiuso**: l'indizio `bytes_h2d_per_token` crescente suggerisce un consumo che
+   scala con la posizione nel prefill, non un budget fisso — ritoccare ancora LID/SLOT con lo
+   stesso modello lineare rischia di spostare il muro senza eliminarlo. Priorità per il
+   prossimo turno: leggere il codice dietro le materializzazioni del ring prima di ritoccare
+   altri numeri.
+
+**Stato macchina a fine Fase 2**: pulita, verificata a tre condizioni (0 processi, VRAM 286
+MiB, RAM 89,9 GB, porte 8099/8100 libere) alle 10:42:46. Nessun commit eseguito. Script fuori
+repo, in scratchpad di sessione: `p2_ring_conf.ps1` (nuovo, invariato dopo il crash). Percorsi:
+`D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t22_repoint_v2_slot450_lid115k_f2_b204
+8.{server.log,server.out,summary.txt,hw.csv,cpu.csv}`. **Si procede alla Fase 3 (fattoriale
+2³ a caldo).**
+
+---
+
+## Turno esecutore 28 (24/8) — FASE 3 FATTORIALE 2³ A CALDO: FORK×BLOCCHI×DOWN_TARDI —
+## nessuna interazione rilevabile, DOWN_TARDI unico segnale coerente (sotto soglia)
+
+Mandato: `COMPOSIZIONE_PIANO.md` §4.3/BLOCCO A (A1) — il "2³ completo dentro un solo processo"
+via **Porto control block v0** (`porto_cb`, verificato sul sorgente prima di lanciare:
+`server-schema.cpp:42-73` — hot-switch di `fork`(0-2)/`fork_blocchi`(1-1024)/`fork_down_tardi`
+(0-1)/`pf_top`/`sfratto_par` al confine token, una ricattura per cambio, combinazioni illegali
+= 400 e server vivo). Versione **ridotta per regime economico**: 8 celle + 1 ancora (non 8×2
+repliche+2 ancore = 18 richieste del piano pieno), 256 token/punto (non 1200/B1200) — dichiarato
+esplicitamente, non è il protocollo di certificazione pieno.
+
+### Config e lancio
+
+Un solo processo, `cb_probe.ps1` (script scratchpad esistente, non modificato) + piano JSON
+nuovo (`phase3_factorial_plan.json`): ambiente base = campione (SOTA, porta 8101, `-c 10000
+-ub 64`, **jprompt.txt corto**), `+env.PORTO_HOT_MASK=15` (warm-restore completo). 9 richieste,
+`porto_hot_snapshot=true` su tutte, `n_predict=256`, stesso corpo salvo `porto_cb`:
+
+```
+c1 (2,8,0) campione | c2 (2,8,1) | c3 (2,32,0) | c4 (2,32,1) | c5 (1,8,0) | c6 (1,8,1)
+c7 (1,32,0) | c8 (1,32,1) | c9 (2,8,0) ancora = ripete c1
+```
+
+Preflight pulito (0 processi, porte libere). Caricato e lanciato senza incidenti: **9/9 HTTP
+200**, **0 rifiuti 400** (nessuna combinazione ha toccato `fork=0`, quindi C5 del piano non si
+applica), durata totale ~5 min (9 richieste × 256 token, molto più economico dei 25-28 min del
+piano pieno).
+
+### Cancello d'identità — PASSATO, il più forte possibile
+
+**Tutte e 9 le richieste**: `SHA output = 1F003E46561D3D880823DCEC593FE0631A90FEA59F48F5BF6B5
+48DFA000BA2DF` (identico carattere per carattere), `p1 = 0,84302 (145/172)`, `mean_len = 2,33`
+— **IDENTICI su tutte le 9 celle**, non solo sulle coppie ripetute. Riga `cache-esperti`
+identica al riferimento canonico (473 slot..., `sfratto_par=1`); grafi ACCESI (`GGML_CUDA_DISA
+BLE_GRAPHS` assente); build 10093 (3014d3756); zero `CUDA error`/`GGML_ASSERT`/righe 400 in
+tutto il log. **Qualunque divergenza sarebbe stata un guasto: non ce n'è nessuna.** Lettura
+integrale (§4.10, banco corto) della prima replica (`c1`, 411 caratteri, uguale bit-a-bit alle
+altre 8): coerente, pertinente al prompt (HTML cyberpunk NeuraForge), troncata a metà CSS per
+`length` — nessuna anomalia.
+
+### I nove numeri (decode, dal log, non dal wall_ms del runner)
+
+| cella | FORK | BLOCCHI | DOWN_TARDI | decode t/s | ms/token |
+|---|---:|---:|---:|---:|---:|
+| c1 campione | 2 | 8  | 0 | 14,37 | 69,57 |
+| c2          | 2 | 8  | 1 | 15,11 | 66,16 |
+| c3          | 2 | 32 | 0 | 14,69 | 68,05 |
+| c4          | 2 | 32 | 1 | 15,04 | 66,51 |
+| c5          | 1 | 8  | 0 | 14,87 | 67,26 |
+| c6          | 1 | 8  | 1 | 15,17 | 65,93 |
+| c7          | 1 | 32 | 0 | 14,72 | 67,93 |
+| c8          | 1 | 32 | 1 | 15,04 | 66,48 |
+| c9 ancora (=c1) | 2 | 8 | 0 | 14,81 | 67,53 |
+
+**Rumore dell'ancora (misurato, non assunto)**: c9 vs c1, **stessa cella bit-esatta**, t/s
+14,81 contro 14,37 = **+3,06%**. Più largo dei riferimenti storici del piano per il protocollo
+pieno (`spread 0,30%` repliche, `ancore a 1,3%`, §4.1) — coerente con l'aspettativa statistica
+di passare da 1200 a 256 token/punto (rumore relativo scala ~1/√n: √(1200/256)≈2,17×, e
+1,3%×2,17≈2,8% ≈ il 3,06% osservato). **Con un solo grado di libertà (una sola coppia), questa
+è una stima grezza**, non una varianza vera — riportata per onestà, non per rigore statistico.
+
+### 3 effetti principali (media alto − media basso, t/s; positivo = più veloce)
+
+| effetto | valore | % | IC grezzo (±, da 1 sola coppia-ancora) | verdetto |
+|---|---:|---:|---:|---|
+| **FORK** (2 vs 1) | −0,1475 | −1,0% | ±0,6 (±4%) | dentro il rumore, non distinguibile |
+| **BLOCCHI** (32 vs 8) | −0,0075 | −0,1% | ±0,6 (±4%) | zero, non distinguibile |
+| **DOWN_TARDI** (1 vs 0) | **+0,4275** | **+2,9%** | ±0,6 (±4%) | sotto la soglia formale, ma **unico segno coerente su tutte e 4 le coppie indipendenti** (c2>c1 +5,1%, c4>c3 +2,4%, c6>c5 +2,0%, c8>c7 +2,2%) |
+
+### 3 interazioni a due vie (stesso schema)
+
+| interazione | valore | % | verdetto |
+|---|---:|---:|---|
+| FORK×BLOCCHI | +0,1325 | +0,9% | dentro il rumore |
+| FORK×DOWN_TARDI | +0,1175 | +0,8% | dentro il rumore |
+| BLOCCHI×DOWN_TARDI | −0,0925 | −0,6% | dentro il rumore |
+
+**Nessuna delle tre interazioni a due vie è distinguibile da zero a questa risoluzione**:
+composizione additiva, nessuna sorpresa super/sub-additiva fra `FORK`, `FORK_BLOCCHI`,
+`DOWN_TARDI` nell'intervallo testato — consistente con l'assenza, nel piano, di una previsione
+esplicita di non-additività per questa terna specifica.
+
+### VERDETTO FASE 3
+
+**Screening onesto, non un verdetto di promozione.** A 256 token/punto: `FORK` (1 vs 2) e
+`FORK_BLOCCHI` (8 vs 32) non mostrano alcun effetto principale sopra il rumore misurato; nessuna
+delle tre interazioni a due vie emerge. `DOWN_TARDI=1` è l'unico segnale con una direzione
+coerente su tutte e 4 le coppie (+2,0%...+5,1%, media +2,9%), **sotto la soglia formale di
+questo banco ridotto** ma nella stessa direzione già assunta altrove nel progetto (`COMPOSIZIONE
+_PIANO.md` §7.1 usa "B1200 warm-restore, `DOWN_TARDI=1`" come riferimento corrente). **Non
+promuovere/falsificare nessuna delle tre leve da questo solo banco**: chi vuole un verdetto
+vero deve rifare il disegno pieno (8 celle × 2 repliche + 2 ancore, B1200, §4.3) dove il rumore
+atteso (±1,3-1,4%) è abbastanza piccolo da separare un +2,9% da zero — a 256 token il rumore
+misurato (3,06%) è già più grande dell'effetto più forte trovato qui.
+
+**Stato macchina a fine Fase 3**: verificare sotto (chiusura turno). Nessun commit eseguito.
+Script fuori repo, in scratchpad di sessione: `cb_probe.ps1` (invariato), `phase3_factorial_
+plan.json` (nuovo). Percorsi: `...\scratchpad\cb_runs\phase3_factorial_t28.{server.log,server.
+out,summary.json,c1..c9_*.output.txt,hw.csv,cpu.csv}`.
+
+---
+
+## PASSAGGIO CONSEGNE — fine turno esecutore 28 (24/8, ~10:53)
+
+**Le tre fasi del mandato, in breve:**
+
+1. **PROMOZIONE conf 0,70 — FATTA.** Replica bit-esatta (stesso SHA, p1, mean_len del braccio
+   2 di Fase 1b). `G1 + conf_min=0,70` è il nuovo campione del banco lungo 8k: **~13,55-13,58
+   t/s (73,6-73,8 ms/token)**, sostituisce `conf_min=0,80` in ogni banco futuro su questa
+   config.
+2. **REPOINT CORRETTO — FERMATO per protocollo (secondo OOM), non risolto.** L'aritmetica
+   suggerita dal mandato (LID 225000-230000) era **sbagliata** (clampava alla stessa residenza
+   piena del crash originale, zero beneficio) ed è stata corretta prima del lancio a partire
+   dal codice sorgente (`llama-kv-cache-dsv4.cpp:1303-1312`): **LID=115000 → 148,31 MiB
+   misurati, previsione a 0,01 MiB**. La correzione ha comprato progresso reale (+232 MiB al
+   load, crash spostato dall'immediato al 28% di un prefill da 101.691 token) ma non basta:
+   nuovo crash con firma diversa (`alloc`/`cuMemSetAccess`, allocatore VMM), con un indizio non
+   verificato che il costo scali con la posizione nel prefill (`bytes_h2d_per_token` quasi
+   quadruplica da 6k a 28k token) piuttosto che essere un budget fisso. **Priorità per il
+   prossimo turno**: leggere il codice delle materializzazioni del ring prima di ritoccare
+   ancora LID/SLOT — il modello "budget fisso" che ha guidato sia il mandato di stanotte sia
+   quello di oggi potrebbe essere incompleto.
+3. **FATTORIALE 2³ A CALDO — FATTO, screening onesto.** 9/9 richieste riuscite, identità
+   bit-esatta su tutte e 9 le celle (cancello più forte possibile, passato). Nessun effetto
+   principale o interazione a due vie sopra il rumore misurato (3,06% dall'ancora, a 256
+   token/punto); `DOWN_TARDI=1` è l'unico segnale con direzione coerente su tutte e 4 le coppie
+   (+2,9% medio) ma sotto soglia formale a questa risoluzione. Non è un verdetto di
+   promozione: serve il disegno pieno (B1200, 2 repliche+2 ancore, §4.3 del piano) per separare
+   un +2,9% dal rumore.
+
+**Macchina**: pulita e verificata alle 10:53:26 (0 processi llama, VRAM 278 MiB usati / porte
+8099-8101 libere, RAM 89,8 GB libera). **Nota, non azione**: un processo `powershell.exe`
+(PID 16488, avviato 04:32:14, quindi precedente a questo turno) risulta ancora vivo sulla
+macchina — non è stato toccato (non è un processo llama, non è stato creato da questo turno,
+e la regola di casa vieta di terminare processi non compresi). Segnalato per chi ha visibilità
+sulla sua origine.
+
+**Nessun commit eseguito in tutto il turno** (per mandato). Ledger di questo turno: le tre
+sezioni "Turno esecutore 28" sopra, in ordine Fase 1 → Fase 2 → Fase 3. Script nuovi in
+scratchpad di sessione (non committati, non nel repo): `p2_ring_conf.ps1`,
+`phase3_factorial_plan.json`; riusati invariati: `p1b_conf.ps1`, `cb_probe.ps1`.

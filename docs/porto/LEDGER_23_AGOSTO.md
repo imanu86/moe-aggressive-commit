@@ -1619,3 +1619,247 @@ Normalizzando per forward (ms/forward = ms/token × mean_len, toglie il confondi
 Intercetta: 72,73 ms/token (fit grezzo) è **chiaramente sopra** il riferimento corto ~59 ms (+23%) — bucket "intercetta molto sopra ~59 ms" del mandato: il lato-corto del campione lungo è più caro del corto vero. Overhead di regime da nominare: tutto ciò che il banco lungo accende e il banco corto no — `LLAMA_KV_RING` + gather + `VRAM_A_FASI` (coi due cambi di fase per richiesta, ~50-140 ms l'uno più il rischio appena documentato) + i 473 slot esperti dedicati. Non scala col contesto (è un intercetta, non una pendenza) ma pesa ~13-14 ms/token fisso rispetto al corto.
 
 **Stato macchina a fine turno**: 0 processi, porte 8099-8101 libere, GPU 159/12288 MiB (P8), RAM 89,13/95,89 GB liberi. Nessun commit eseguito. Script fuori repo in scratchpad di sessione: `t32_b1_ctx32k.ps1`/`_sb1024.ps1` (i due tentativi falliti, tenuti per traccia del bug), `t32_b1_ctx32k_v2.ps1`, `t32_b1_ctx64k_v2.ps1` (i due usati per i risultati sopra), tutti wrapper su `p1b_conf.ps1` di sessione (invariato, solo `-PrefixChars` è nuovo nell'uso). Task in coda per il bug OOM (non eseguito, fuori perimetro): fix di `llama-context.cpp:2296-2298` perché la classificazione prefill/decode guardi i token-ancora-da-processare della richiesta, non la taglia del singolo chunk.
+
+---
+
+## Turno esecutore 33 (24/8) — FASE 1: REPLICA DEL PUNTO 64k — BIT-ESATTA, il punto è REALE
+
+Mandato: ripetere il braccio 64k del turno 32 (il punto anomalo del fit B-1, sopra entrambi i vicini) a parità di build/sessione/slot, per distinguere rumore da struttura prima di eventualmente puntare nsys sull'indexer.
+
+Preflight (15:47): 0 processi llama, porte 8099/8100 libere, GPU 159/11957 MiB (P5, a riposo), RAM libera 88,18 GB, disco C 46,9/D 114,9 GB liberi, uptime 5429,7 min. Binari riverificati bit-identici al turno 32 (i backup `backup_pre_chirurgo14`/`backup_post_chirurgo14` in `D:\llama-subtract\build\bin` sono datati 24/8 11:31-11:37, cioè **prima** del turno 32: il chirurgo 15 non ha ancora toccato l'albero):
+
+```text
+llama-server.exe      = 3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9  (=)
+ggml-cuda.dll          = 6EF5B781DDD14B6AB503580DEF7876AB38E9AE8E6A6347E665AA8A34C9C68B52  (=)
+llama-common.dll       = DD6689ECE4AE405372E581FB60210576970081C16CA57F7698A3AC54CA59C5E5  (=)
+llama-server-impl.dll  = 9B417B4F314E36C04B24BABC1D7FB731298C0E92A7BAAE240F71B57336821B88  (=)
+```
+
+`jprompt102k.txt` invariato (285.268 B, SHA `3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473`).
+
+Comando: **byte-per-byte identico** al braccio 64k del turno 32 (`t32_b1_ctx64k_v2.ps1`, wrapper su `p1b_conf.ps1` di sessione) — `-Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -PrefixChars 178200 -Context 150000 -MaxTokens 8192 -SpecNmax 3 -SpecConf 0.70 -Repliche 1 -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0`, `LLAMA_KV_GATHER=1`, `LLAMA_CUDA_SORT_CHUNK_MIB=8`, stesso `-ServerPath D:\llama-subtract\build\bin\llama-server.exe`; unica differenza `-RunLabel t33_b1_ctx64k_replica` (solo per non sovrascrivere i log di riferimento del turno 32). Lanciato in background (~17 min attesi), cintura +50% non necessaria: chiuso pulito a 17,03 min.
+
+```text
+prompt=63.335 (identico), completion=8192/8192 (finish=length)
+prefill = 162,03 t/s     (rif. turno 32: 161,85 — +0,11%)
+decode  = 12,99 t/s / 77,00 ms/token   (rif.: 13,0994 t/s / 76,340 ms/token — +0,86%, dentro banda 2-3%)
+p1      = 0,86049   (IDENTICO bit-esatto al turno 32)
+mean_len= 2,75       (IDENTICO bit-esatto al turno 32)
+SHA out = A5989015C58EED44531E45B685C8EDB55F16D5A24A20B1CC3110629DD0D7A126 — BIT-ESATTO, carattere per carattere identico al turno 32
+```
+
+Zero `CUDA error`/`out of memory` nello scan finale (tutte le righe "rilevatore replay" con `divergenze: taglia=0 ids=0 out=0`). Shutdown `ctrl-c` pulito. VRAM libera al load: 641 MiB. Telemetria hw/cpu campionata (`...t33_b1_ctx64k_replica_f2_b2048.{hw,cpu}.csv`).
+
+**VERDETTO FASE 1: IL PUNTO È REALE, non rumore.** Non solo il ms/token torna vicino a 76,3 (77,00, +0,86%, ben dentro la deriva di banco 2-3%, §8.3 runbook): l'intera traiettoria di calcolo è **bit-esatta** (stesso SHA output, stesso p1 all'ultima cifra, stesso mean_len) al turno 32 — lo stesso identico mean_len basso (2,75, contro 2,86 a 32k e 3,18 a 102k) non è un accidente di sampling né di misura, è strutturale a questa combinazione di contesto/route. La pendenza normalizzata-per-forward del turno 32 (0,431 ms/forward/1000ctx, equivalente ~0,144 ms/token/1000ctx) **REGGE**: resta sopra la soglia 0,12 del mandato TASSA_ATTENZIONE_LUNGO.md §7.6 (bucket "voce che scala col contesto e non è nel conto"). Nessun rifit necessario — i 3 punti (33.344/63.335/101.691) sono confermati con l'anomalia del punto medio ormai misurata due volte, non una. **Prossimo passo indicato dal documento di design (nsys mirato a 102k con `--cuda-graph-trace=node` su `DSV4_KV_GATHER`/`ggml_lightning_indexer`/`FLASH_ATTN_EXT`/`ARGSORT`) resta APERTO per un turno dedicato**: fuori dal perimetro economico di questo turno.
+
+**Stato macchina dopo fase 1**: 0 processi, porta 8099 libera, GPU 403/11713 MiB (P8), RAM 86,99 GB liberi. Nessun commit eseguito. Script: `t33_b1_ctx64k_replica.ps1` (scratchpad di sessione, copia di `t32_b1_ctx64k_v2.ps1` con solo `-RunLabel` cambiato).
+
+**FASE 2 (validazione fix resto-64) NON eseguita in questo turno**: in attesa del GO del coordinatore con le nuove SHA del chirurgo 15 (non ancora arrivate — i binari verificati sopra sono ancora quelli pre-esistenti al turno 32/chirurgo 14).
+
+---
+
+## Chirurgo 15 (24/8) — FIX RESTO-64 IN DUE STESURE: la v1 rinviava anche il flip del WARMUP (misurato: «restano 1 token» al load della fase2a), la v2 aggiunge la GUARDIA DI TAGLIA — consegnata: llama.dll ECAEA60B
+
+Due attori sullo stesso mandato (la coda del turno 32), ricomposti dalla regia in corsa; cronaca fusa qui.
+
+**Cronologia (24/8 pomeriggio)**: 15:49 v1 nel sorgente (`llama-context.{h,cpp}`: `LLAMA_VRAM_FASE_RESTO_FIX`, difetto 1 — rinvio del flip prefill→decode quando `n_outputs_all < n_tokens_all` e la fase era prefill); 15:55 `backup_pre_chirurgo15` (fotografia completa pre-build); 16:14:27 build v1 → `llama.dll` `797672BE...837A` (2.276.352 B); 16:20:57 lancio fase2a `t33_fase2a_prompt32k` su v1; 16:21 audit indipendente (chirurgo-15-bis, sessione worktree) trova il difetto della v1 nel sorgente e la emenda (v2) — 7 minuti DOPO la build v1, i due attori ancora all'oscuro l'uno dell'altro; 16:23:03 ultima riga di log della fase2a = il rinvio sul warmup; ~16:25 diagnosi incrociata via messaggi, kill del PID 4232 (per mano dell'esecutore che lo possedeva), verifica 0 processi + DLL non mappata; 16:27:32 build v2 (6 passi Ninja: 5 TU che includono `llama-context.h` + link, zero warning).
+
+### Il difetto della v1, con la prova a riga di log (MISURATO)
+
+Il criterio «output < token ⇒ sta ancora nutrendo il prompt» è giusto per la coda, ma cattura anche il warmup del caricamento: `{bos,eos}` = 2 token con `logits=nullptr` ⇒ 1 output di difetto (`llama-batch.cpp:120-128`), e `vram_fasi_prefill` parte a `true` dal costruttore. Log fase2a righe 259-261:
+
+```text
+2.03.712.004 I cmn  common_init_: warming up the model with an empty run ...
+2.03.712.048 I decode: VRAM A FASI accesa: livello 2, ubatch di decode 64, prompt minimo 0
+2.03.712.049 I decode: vram-a-fasi: flip rinviato, restano 1 token di prompt
+```
+
+Quel flip rinviato era LA PRIMA transizione a decode del ciclo di vita: senza di essa il buffer di calcolo resta a taglia pp (2296 MiB, mai ridotto a 127) e i ~2,2 GiB che il load di riferimento recupera lì non ci sono più per le allocazioni successive (draft, KV ring, stato HCA) né per lo staging layer-major (1729 MiB), che al primo fallimento si latcha spento per l'intero processo (`layer_major_fallita`, `cache-esperti.cu:5628`). DEDOTTO e non osservato (run uccisa in load): quale dei due incidenti arrivi prima, OOM di load o latch con prefill azzoppato — in entrambi i casi la fase2a su v1 non poteva produrre un verdetto valido, e nel caso latch avrebbe prodotto il danno peggiore: un repro «verde» con il prefill silenziosamente distrutto.
+
+**Correzione a verbale di un errore del chirurgo-15-bis**: il primo allarme dichiarava la fase2a «congelata da ~30 minuti»; era un errore di ancoraggio dell'orologio di sessione — al momento del rilievo lo stallo era di ~2-3 minuti, dentro i silenzi normali di un load (il riferimento b1024 ha 1,9 min muti fra warmup e creazione KV). Il testimone che regge la diagnosi è la riga 261, non la durata.
+
+### La v2 (emendamento, nel sorgente dalle 16:21)
+
+Nuovo campo `vram_fasi_taglia_prefill` (`llama-context.h`, difetto `false`) = «l'ultima classificazione PER TAGLIA diceva prefill». Il rinvio ora chiede: fase ancora prefill E guardia armata E `resto_fix != 0` E `n_outputs_all < n_tokens_all`; in ogni altro caso la guardia si riallinea alla classificazione per taglia. Il warmup non la arma mai (2 token ≤ 64). Messaggio di log INVARIATO («flip rinviato, restano N token di prompt»). Tabella dei flussi (dedotta dal codice, da certificare a banco):
+
+| chiamata | v0 (pre-fix) | v2 |
+|---|---|---|
+| warmup di load (2 tok, 1 out) | flip a decode | flip a decode (IDENTICO) |
+| chunk 2048 di prompt | transizione a prefill | idem, e ARMA la guardia |
+| CODA resto ≤ 64 (out < tok) | flip a decode ⇒ OOM (turno 32) | **rinvio: resta prefill, staging vivo** |
+| coda resto = 1 (1 out = 1 tok) | flip a decode | flip a decode (nessun percorso staging ≤ ubatch: sicuro, DEDOTTO) |
+| primo verify (out = tok) | (già decode) | flip a decode QUI |
+| chat/prompt corto a fase decode | resta decode | resta decode (guardia disarmata) |
+| output_all / embeddings | per taglia | per taglia (out=tok non rinvia mai) |
+| `LLAMA_VRAM_FASE_RESTO_FIX=0` | — | comportamento v0 esatto (braccio A/B) |
+
+### Identità consegnata (build 16:27:32, riverificata carattere per carattere)
+
+```text
+llama.dll v2           = ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035  (2.276.352 B — NUOVA)
+llama-server.exe       = 3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9  (=)
+ggml-cuda.dll          = 6EF5B781DDD14B6AB503580DEF7876AB38E9AE8E6A6347E665AA8A34C9C68B52  (=)
+llama-common.dll       = DD6689ECE4AE405372E581FB60210576970081C16CA57F7698A3AC54CA59C5E5  (=)
+llama-server-impl.dll  = 9B417B4F314E36C04B24BABC1D7FB731298C0E92A7BAAE240F71B57336821B88  (=)
+```
+
+Perimetro certificato: su TUTTO l'albero (`src/`, `ggml/`, `common/`, `tools/server`) solo `llama-context.{cpp,h}` (16:21) erano più nuovi dei rispettivi binari — la v2 è il binario dei turni 30-33 più il fix emendato e nient'altro. **ATTENZIONE IDENTITÀ: v1 e v2 hanno STESSA taglia e STESSE stringhe** (il nome del campo guardia non compila come stringa in release): si distinguono SOLO per SHA e per la firma runtime al load. v1 = `797672BE...837A`, DIFETTOSA, mai per banchi. Backup: pre-build in `backup_pre_chirurgo15\` (la `llama.dll` pre-fix `40E1DEAF...C50` vi era stata sovrascritta per errore dal chirurgo-15-bis alle ~16:23 e RIPRISTINATA con SHA verificata dalla copia di `backup_post_chirurgo14`); post v1 = `*_chirurgo15_vramfaseresto_24ago` (difettosa, tenuta per forensica); post v2 = `*_chirurgo15_resto64_guardia_24ago`.
+
+### Firme attese per la fase2a rerun (esecutore 33, dopo GO regia)
+
+1. AL LOAD: «warming up…» → «VRAM A FASI accesa…» → riga `vram_a_fasi: fase=decode … ubatch riserva=64` e **NESSUN «flip rinviato» prima della richiesta** (se compare al load: è la v1, abortire).
+2. ALLA RICHIESTA (`PrefixChars=89800` → 32.782 token, resto 14): `cambio n. 1` a prefill (cache 473→0) → `layer-major: staging esperti 1729 MiB` → **UN SOLO «flip rinviato, restano 13 token di prompt»** sull'ultimo chunk, senza transizione lì → al primo verify `cambio n. 2` a decode (cache 0→473) → zero `CUDA error`/`out of memory` → completion piena.
+3. Non-regressione corto B1200: p1 = 0,90281 / mean_len = 2,80 bit-esatti (la guardia non si arma mai sul corto).
+4. Facoltativo coda=1: `PrefixChars` mirato a k·2048+1 token → NESSUN flip rinviato, flip a decode sul chunk-coda, nessun crash atteso (dedotto, da confermare).
+
+Nessun commit eseguito (convenzione dei turni di oggi: i commit alla regia). Il sorgente v2 nell'albero llama-subtract è da committare insieme al verdetto della fase2a.
+
+---
+
+## Turno esecutore 33 — FASE 2a: INCIDENTE — il fix v1 (as-built) cattura anche il WARMUP, crash nel caricamento del draft model
+
+GO ricevuto dal coordinatore: build del chirurgo 15 pubblicata, cambia **solo** `llama.dll`. Verificate tutte e cinque le SHA prima di lanciare:
+
+```text
+llama-server.exe       = 3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9  (invariato)
+ggml-cuda.dll           = 6EF5B781DDD14B6AB503580DEF7876AB38E9AE8E6A6347E665AA8A34C9C68B52  (invariato)
+llama-common.dll        = DD6689ECE4AE405372E581FB60210576970081C16CA57F7698A3AC54CA59C5E5  (invariato)
+llama-server-impl.dll   = 9B417B4F314E36C04B24BABC1D7FB731298C0E92A7BAAE240F71B57336821B88  (invariato)
+llama.dll               = 797672BEA7258F72D1AED7E8BE59ADAB6994D9F5064C7E3C65C5D7122102837A  (NUOVO, era 40E1DEAF...)
+```
+
+Comando braccio (a): identico al campione lungo, `PrefixChars=89800` (lo stesso valore che nel turno 32 aveva prodotto il crash OOM originale a 32.782 token, resto 14 mod 2048).
+
+**Esito: NON l'OOM del bug originale — un crash diverso, nel caricamento del draft model, innescato dal warmup.** Sequenza esatta dal log (`sota_ctx150000_densefa_stage_hc5_t33_fase2a_prompt32k_f2_b2048.server.log`, 64.223 B, ultima scrittura 16:23:03):
+
+```text
+2.03.712.004  I cmn  common_init_: warming up the model with an empty run - please wait ... (--no-warmup to disable)
+2.03.712.049  I decode: vram-a-fasi: flip rinviato, restano 1 token di prompt
+2.06.268.783  I llama_model_loader: loaded meta data ... from D:/ds4-models/DSpark-draft-Q2K.gguf  (inizio caricamento DRAFT)
+2.06.533.542  E llama_model_load: error loading model: invalid vector subscript
+2.06.533.556  E llama_model_load_from_file_impl: failed to load model
+2.06.533.558  E common_speculative_init_result: failed to load draft model, 'D:/ds4-models/DSpark-draft-Q2K.gguf'
+```
+
+Ritentato automaticamente dallo script (shape più piccola, b1024): **stesso identico errore**, stessa sequenza, poi `NO SHAPE LOADED; request not started.` Nessun processo rimasto vivo (uscita spontanea, non è servito `Stop-Process`).
+
+**Diagnosi del coordinatore** (sessione chirurgica parallela, dal vivo, PID 4232): il fix v1 as-built cattura anche il warmup — la fase parte a prefill dal costruttore, e la nuova condizione (`n_outputs_all < n_tokens_all`) è vera pure per il mini-batch di warmup (verosimilmente {bos,eos}=2 token, 1 solo output), non solo per un vero resto di prompt lungo. **Il mio log CONFERMA il testimone esatto**: appare 45 ms dopo l'inizio dichiarato del warmup, con "restano **1** token di prompt" — non decine di migliaia, un artefatto del warmup stesso.
+
+Nota di fedeltà (misurato vs riferito): il coordinatore descriveva il processo come "congelato", log fermo dalle 16:23. I miei timestamp di processo mostrano che l'intera sequenza (flip rinviato → tentativo caricamento draft → crash) dura **~2,8 s di tempo-processo** (2.03.712 → 2.06.533), non un hang prolungato — è un fallimento rapido ed esplicito, non un blocco indefinito. Dimensione/mtime del file (64.223 B ≈ 64 KB, 16:23:03) coincidono però esattamente con l'osservazione del coordinatore: quasi certamente la stessa identica istantanea, letta nel momento in cui il tentativo b2048 si era appena fermato per il crash e prima che lo script (in automatico) passasse al secondo tentativo su un file di log diverso (`..._b1024...`), che il coordinatore potrebbe non aver ancora visto comparire.
+
+Causa radice NON diagnosticata a fondo da questo turno (fuori mandato esecutore, per la sessione chirurgica): ipotesi non verificata — il flip rinviato durante il warmup lascia una struttura di stato che avrebbe dovuto essere (re)inizializzata al vero flip verso decode, mai scattato qui, in una condizione che il successivo caricamento del draft model indicizza fuori range.
+
+**Azioni eseguite su richiesta del coordinatore:**
+1. Verificato (non assunto): nessun processo `llama-server`/`llama-cli` per nome, nessun PID 4232, nessuna voce riconducibile in `nvidia-smi --query-compute-apps`, porta 8099 libera. Nulla da uccidere: il processo era già terminato da solo prima della mia verifica.
+2. Incidente annotato qui.
+3. **Nessun rilancio eseguito.** Fase 2b (non-regressione 102k) NON tentata. In attesa del GO con la SHA della `llama.dll` emendata (v2).
+
+**Stato macchina**: 0 processi, porta 8099 libera, GPU 388/11728 MiB (P8, 0% util), RAM 85,74 GB liberi. Libera per la rebuild del collega. Nessun commit eseguito. Script: `t33_fase2a_prompt32k.ps1`, `t33_fase2b_102k_nonreg.ps1` (quest'ultimo scritto ma mai lanciato, scratchpad di sessione).
+
+---
+
+## Turno esecutore 33 — FASE 2 v2: BRACCIO (a) — FAIL sulla firma esatta (secondo flip-rinviato inatteso), PASS sulla sopravvivenza. Braccio (b) NON lanciato (fail-fast)
+
+GO ricevuto dal coordinatore per la v2. **PASSO 0 (bloccante) — identità binario**: `Get-FileHash D:\llama-subtract\build\bin\llama.dll` = `ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035`, mtime `2026-08-24 16:27:32.601` — **IDENTICO** all'atteso (build 16:27:32 del chirurgo). Verifica passata, procedo.
+
+Preflight: 0 processi, GPU 404/11712 MiB (P8, 1%), RAM 86,8 GB liberi, porta 8099 libera.
+
+Comando braccio (a): identico alla campagna B-1/fase2a-v1, `PrefixChars=89800` → 32.782 token (resto 14 mod 2048), `RunLabel=t33_fase2a_v2_prompt32k`.
+
+**ENV completo** (manifesto integrale dal log, righe 1-15, verificato non dedotto):
+
+```text
+manifesto/cache:  LLAMA_CACHE_BOZZA_BATTITO=60(D) LLAMA_CACHE_BOZZA_SLOT=12(E) LLAMA_CACHE_ESPERTI_BATCH=8(E) LLAMA_CACHE_ESPERTI_BATTITO=45(E) LLAMA_CACHE_ESPERTI_CODA_MAX=0(E) LLAMA_CACHE_ESPERTI_CURA=0(E) LLAMA_CACHE_ESPERTI_FORK=2(E) LLAMA_CACHE_ESPERTI_FORK_BLOCCHI=8(E) LLAMA_CACHE_ESPERTI_LRU=1(E) LLAMA_CACHE_ESPERTI_MASSA=2(E) LLAMA_CACHE_ESPERTI_PF_TUTTI=1(D) LLAMA_CACHE_ESPERTI_PREFETCH_FILTRO=0(E) LLAMA_CACHE_ESPERTI_SCUDO=0(E) LLAMA_CACHE_ESPERTI_SLOT=473(E) LLAMA_CACHE_ESPERTI_SPIN=256(D) LLAMA_CACHE_ESPERTI_W=0(E) LLAMA_CACHE_ORACOLO=<spento>(D)
+manifesto/spec:   LLAMA_ACCEPTMOE=1(E) LLAMA_ACCEPTMOE_BATCH_MAX=8(D) LLAMA_ACCEPTMOE_COMPATTA=1(E) LLAMA_ACCEPTMOE_ESATTE=1(E) LLAMA_ACCEPTMOE_SOGLIA=0.75(E) LLAMA_ACCEPTMOE_SPIA=0(D) LLAMA_CKPT_CRONO=0(E) LLAMA_SPEC_CONF_ESENTA_POS0=1(E) LLAMA_SPEC_DRAFT_TOPK=1(E)
+manifesto/compute: LLAMA_DSV4_HC_FUSO=5(E) LLAMA_MAPPED_IBRIDO=1(E) LLAMA_MAPPED_IBRIDO_SOGLIA=2(E) LLAMA_OVERLAP_ASYNC=1(E) LLAMA_OVERLAP_CERCA_CPU=0(D) LLAMA_OVERLAP_BATCH_MAX=3(E) LLAMA_OVERLAP_GRIGLIA_VARIABILE=0(E) LLAMA_OVERLAP_K=2(E) LLAMA_OVERLAP_PIN=1(E) LLAMA_OVERLAP_SPIN=2000000(D) LLAMA_OVERLAP_VERIFICA=0(D) | LLAMA_OVERLAP_JOIN_ASYNC=0(E) LLAMA_OVERLAP_FINESTRA=0(D) LLAMA_DSV4_INDEXER_FUSO=1(E) LLAMA_DSV4_TOPK_FUSO=0(D) LLAMA_GRAPH_REUSE_DISABLE=0(D) LLAMA_GRAPH_REUSE_PER_TAGLIA=1(E) LLAMA_MMQ_X_IDS=64(E) GGML_SCHED_PROFILO=1(E) GGML_CUDA_GRAPH_OPT=0(E) | GGML_CUDA_DISABLE_GRAPHS=<spento>(D) GGML_OP_OFFLOAD_MIN_BATCH=<spento>(D) GGML_CPU_MMID_REUSE_SRC1=0(D)
+manifesto/kv:     LLAMA_KV_POSMIN_VERO=0(D) LLAMA_KV_RING=1(E) LLAMA_KV_RING_VRAM_TOKEN=2048(E) LLAMA_KV_RING_VRAM_TRACE=0(D) LLAMA_KV_ROLLBACK_MARGINE=4(D) LLAMA_KV_ROLLBACK_PARZIALE=1(E) LLAMA_KV_ROLLBACK_SOLO_ANELLO=0(E)
+manifesto/vram:   LLAMA_VRAM_A_FASI=2(E) LLAMA_VRAM_A_FASI_CALDO=0(E) LLAMA_VRAM_A_FASI_MARGINE=0(E) LLAMA_VRAM_A_FASI_MIN=0(E) LLAMA_VRAM_A_FASI_SLOT=0(D) LLAMA_VRAM_A_FASI_SLOT_MAX=1024(D) LLAMA_VRAM_A_FASI_UB=64(E) LLAMA_VRAM_ZAVORRA=0(E) LLAMA_REAP_WS_MIN_GB=0(D)  (LLAMA_VRAM_FASE_RESTO_FIX non impostata: atoi difetto=1, fix v2 attivo)
+manifesto/orfane: LLAMA_RING=0(D) LLAMA_RING_BATTITO=60(D) LLAMA_RING_PROFONDITA=380(D) | LLAMA_REAP=0(D) (+ blocco REAP tutto a difetto)
+manifesto/diag:   LLAMA_DEBUG_DUMP/FILTER a difetto, GGML_CUDA_GRAPH_STATS=1(E), tutto il resto <spento>(D)
+env script:       LLAMA_KV_GATHER=1, LLAMA_CUDA_SORT_CHUNK_MIB=8 (impostate dal wrapper, non nel manifesto server)
+```
+
+### Sequenza cronologica misurata (server.log, grep mirato — righe esatte)
+
+```text
+2.05.322.394  I cmn    common_init_: warming up the model with an empty run - please wait ...
+2.05.322.425  I decode: VRAM A FASI accesa: livello 2, ubatch di decode 64, prompt minimo 0
+2.05.439.750  I vram_a_fasi: fase=decode livello=2 ubatch riserva=64  buffer 2296.35->127.13 MiB  [117.3 ms]     <- flip del WARMUP, NESSUN "flip rinviato" qui: FIRMA #1 PASS
+              vram-a-fasi: fase=prefill livello=2  cache 473->0 slot (-473,-3194 MiB)  VRAM libera 3227 MiB  [22.1 ms, cambio n. 1]   <- FIRMA #2a PASS
+2.30.819.756  I vram_a_fasi: fase=prefill livello=2 ubatch riserva=2048  buffer 127.13->2296.35 MiB  [61.2 ms]
+              layer-major: staging esperti 1729 MiB, 256 slot; ogni peso verra' letto una volta per prompt        <- FIRMA #2b PASS
+5.13.043.337  I decode: vram-a-fasi: flip rinviato, restano 13 token di prompt                                    <- FIRMA #3 ATTESA, valore ESATTO (13)
+5.29.097.109  I decode: vram-a-fasi: flip rinviato, restano 3 token di prompt                                     <- SECONDA occorrenza, NON ATTESA ("UN SOLO" richiesto dalla teoria)
+              vram-a-fasi: fase=decode livello=2  cache 0->473 slot (+473,+3194 MiB)  VRAM libera 0 MiB  [5.7 ms, cambio n. 2]   <- FIRMA #4a PASS
+5.29.671.764  I vram_a_fasi: fase=decode livello=2 ubatch riserva=64  buffer 2296.35->127.13 MiB  [80.7 ms]
+```
+
+**FIRMA #3 FUORI POSTO — posizione esatta: riga 885 di `sota_ctx150000_densefa_stage_hc5_t33_fase2a_v2_prompt32k_f2_b2048.server.log`, timestamp `5.29.097.109`.** La teoria del chirurgo prevedeva **un solo** `flip rinviato` sul chunk-coda (14 token, resto aritmetico di 32.782 mod 2048), con `restano 13` (n_outputs_all=1 sottratto). Il primo evento (riga 867, `5.13.043.337`) combacia esattamente. Ma **16,05 s dopo** ne compare un **secondo**, con un valore diverso (`restano 3`, cioè un chunk da 4 token con n_outputs_all=1) — non nominato da nessuna delle 8 righe della tabella-flussi del chirurgo. Ipotesi non verificata (fuori mandato esecutore): potrebbe essere il primo verify speculativo (fino a `spec-draft-n-max=3` bozze + 1 token reale = 4 candidati) trattato dalla guardia come se chiedesse un solo output, invece che uno per posizione candidata come il commento del fix stesso prevede per la verifica multi-token.
+
+**Nessun OOM/crash**: error-scan pulito (tutte le righe "rilevatore replay" con `divergenze: taglia=0 ids=0 out=0`), `cambio n. 2` avvenuto, completion arrivata:
+
+```text
+prompt=32.782, completion=7.907/8192 (finish=stop, NON length — il modello si e' fermato da solo)
+prefill = 182,88 t/s
+decode  = 12,95 t/s
+p1      = 0,77716   mean_len = 2,31   (nettamente sotto il riferimento storico per questa taglia: turno 32 a 33.344 token aveva p1=0,88141 mean_len=2,86 — possibile correlazione con la discontinuita' del secondo flip, non verificata)
+SHA out = FF8E3868B2ADD8ADAC427456B81518EECA0943770391695E29568D164AD87F
+```
+
+**VERDETTO BRACCIO (a): FAIL sulla firma esatta, PASS sull'obiettivo di sopravvivenza.** Niente OOM, niente crash, la richiesta completa — il difetto originale del turno 32 (OOM garantito su questo identico prompt) resta risolto. Ma la firma richiesta dal chirurgo per dichiarare la v2 "certificata byte a riga" non è quella osservata: **due** eventi di flip-rinviato, non uno, e il secondo non è previsto da nessun ramo della tabella-flussi. Per il criterio fail-fast del coordinatore, mi fermo qui: **braccio (b) NON lanciato**, in attesa di decisione (procedere comunque con (b), o attendere una v3 mirata al secondo evento).
+
+**Stato macchina dopo (a)**: 0 processi, porta 8099 libera, GPU 300/11816 MiB (P8, 1%), RAM 88,18 GB liberi. Nessun commit eseguito. Script: `t33_fase2a_v2_prompt32k.ps1` (scratchpad di sessione).
+
+---
+
+## Chirurgo 15 — ADDENDUM (sera): la firma attesa era SBAGLIATA, la v2 è GIUSTA — i due «flip rinviato» sono ENTRAMBI chunk di prompt: il server taglia ai checkpoint (`fine−2048` e `fine−4`). NIENTE v3
+
+Lettura dal log della fase2a-v2 (righe 865-909) incrociata col riferimento 102k del turno 31.
+
+**La catena vera dei chunk (misurata)**: `…30721 →(+13)→ 30734 [checkpoint 2] →(+2044)→ 32778 [checkpoint 3] →(+4)→ 32782 → primo decode → cambio n.2`. E sul 102k (turno 31, binario pre-fix): `…98305 → 99643 (+1338) → 101687 (+2044) → +4 = 101691`. Il server NON manda k·2048 + resto: piazza due tagli assoluti dalla fine — **`fine−2048`** (checkpoint di rollback) e **`fine−4`** (= n_max+1 speculativo) — e la taglia della chiamata intermedia vale `(fine−2048) − ultimo confine` ≈ `fine mod 2048 − 1`. Quindi:
+- «restano 13» = chiamata intermedia da **13 token / 0 output** a cached 30721 — il PUNTO ESATTO del crash pre-fix («86,7% della prefill, n_tokens=30721/32782», turno 32): il fix ha lavorato proprio lì, a metà prompt, non sulla coda;
+- «restano 3» = coda finale da **4 token / 1 output**, presente su OGNI prompt lungo di questa config (anche sul 102k);
+- cambio n.2 alla PRIMA chiamata di decode vera, 574 ms dopo (righe 908-909: il secondo rinvio PRECEDE il cambio — il «in pieno decode» era un'illusione dell'ordine di lettura; i 16,05 s fra i due eventi sono il chunk da 2044 token a ~127 t/s, righe 881).
+
+**Risposte alle due domande della regia**: (1) la guardia si disarma a ogni chiamata che NON rinvia e si RIARMA a ogni chunk sopra soglia — per questo il secondo evento ha potuto scattare (il 2044 l'ha riarmata), ed è un bene: era prompt vero; dopo il cambio n.2 (flag=decode) il ramo è irraggiungibile per costruzione — infatti 2 eventi in 7.907 token, non centinaia. (2) Quando scatta, il ramo NON tocca stato né buffer: trattiene la fase (nessuna transizione) e salta l'aggiornamento della guardia; a macchina in decode non può scattare.
+
+**Sul p1 0,77716 / mean_len 2,31**: nella corsa v2 NESSUN calcolo è avvenuto in fase sbagliata (le due chiamate piccole erano prompt, in fase prefill = corretto). Il confronto con 0,88141/2,86 non è un confronto: quello è il prompt da 33.344 token (PrefixChars 91200), questo è il 32.782 (89800) — **prompt diverso, p1 mai confrontabile fra prompt diversi**. Baseline pre-fix per questo prompt non esiste (pre-fix crashava).
+
+**Predizioni falsificabili**: (a) il rerun a completion 256 mostrerà gli STESSI due eventi alle STESSE posizioni (cached 30721 e 32778) — chunking deterministico; (b) la fase2b 102k mostrerà UN SOLO «flip rinviato, restano 3» (chiamata intermedia = 1338 > 64: nessun rinvio lì — ed è il motivo per cui il 102k non è mai crashato: la «fortuna aritmetica» del turno 32, ora col meccanismo esatto). **AVVISO GROSSO PER LA 2b: lo SHA output può LEGITTIMAMENTE differire dai riferimenti pre-fix dei turni 28/31 (`F0733E8C…`)**: pre-fix gli ultimi 4 token di prompt giravano in fase decode (il flip avveniva PRIMA della coda), con la v2 girano — giustamente — in prefill: split diversi ⇒ arrotondamenti diversi ⇒ traiettoria che può divergere. Giudicare a banda (decode ±3%, p1 nell'intorno di 0,911, lettura testo §4.10), NON a bit. Un match bit-esatto sarebbe gradito ma NON è promesso dal disegno.
+
+**Firma attesa CORRETTA (sostituisce quella dell'entry principale)**: al load «fase=decode» senza rinvii; alla richiesta cambio n.1 + staging 1729; poi **N rinvii «flip rinviato», tutti PRIMA del primo decode** — N = [1 se la chiamata intermedia `fine−2048` è ≤ 64 token] + [1 per la coda `fine−4`, sempre] — ciascuno con `restano = n_tok − n_out`; cambio n.2 alla prima chiamata dopo il prompt; zero OOM. Per il 32.782: N=2 (13 e 3) ✓ — **la fase2a-v2 è dunque PASS PIENO con la firma corretta: v2 CONFERMATA, NESSUNA v3, SHA invariata `ECAEA60B…`.** Il caso «k·2048+1» del mandato originale va ritargetizzato: la variabile giusta è `fine mod 2048 ∈ [2..65]` (chiamata intermedia piccola), e il repro 32.782 (mod 14) È già il test di quel ramo. Due errori miei a verbale in questo giro: la firma «UN SOLO flip rinviato» era derivata dall'aritmetica ingenua `mod n_batch` invece che dal chunking REALE del server (i checkpoint tagliano), e la riga «coda resto = 1 → flippa a decode» della tabella-flussi presupponeva 1 output: la chiamata intermedia da 1 token ha 0 output e RINVIA (ugualmente sicuro, fase prefill a metà prompt è corretta).
+
+---
+
+## Turno esecutore 33 — CORSA DIAGNOSTICA (256 completion): REGRESSIONE VERA CONFERMATA, non confondimento di lunghezza
+
+Mandato del coordinatore: stessa config del braccio (a) (`PrefixChars=89800` → 32.782 token, resto 14), stesso fix v2 (`llama.dll` `ECAEA60B...`, invariato da prima — non riverificato una terza volta, nessun rebuild nel frattempo), ma `MaxTokens=256` invece di 8192. Doppio scopo: (1) separare confondimento-di-lunghezza da regressione vera nel p1/mean_len, confrontando a parità di completion col riferimento turno 32 (33.344 token, 256 tok: p1=0,88141, mean_len=2,86); (2) determinismo del secondo `flip rinviato`.
+
+Preflight: 0 processi, GPU 300/11816 MiB (P8, 0%), RAM 88,07 GB liberi, porta 8099 libera. RunLabel `t33_fase2a_v2_diag256`.
+
+```text
+prompt=32.782, completion=256/256 (finish=length)
+prefill = 182,74 t/s
+decode  = 11,55 t/s
+p1      = 0,63874   mean_len = 1,92
+SHA out = 1F269253F5F8F9A5933B2FCFC9EF78C73431E3C66BB36DD80C6D51B0F57BD4CD
+```
+
+**Scopo 1 — p1/mean_len a parità di lunghezza: REGRESSIONE VERA, più severa del worst-case atteso.** Banda dichiarata dal coordinatore: `~0,87-0,89` → il crollo era confondimento di lunghezza; `~0,78` → regressione vera da riportare al chirurgo. Misurato: **p1=0,63874, mean_len=1,92** — sotto ANCHE la soglia "regressione vera". Isolare la finestra corta non attenua l'effetto, lo AGGRAVA: il completion lungo (7.907 tok, braccio (a)) lo aveva diluito a 0,77716 mescolando la zona contaminata (primi ~16-30 s) con il resto pulito della generazione; qui, con soli 256 token (~22 s totali di decode), la finestra intera cade dentro o subito dopo la zona del secondo flip, e il danno resta concentrato invece di mediarsi via.
+
+**Scopo 2 — determinismo del secondo flip: CONFERMATO.** Conteggio esatto sull'intero file (`sota_ctx150000_densefa_stage_hc5_t33_fase2a_v2_diag256_f2_b2048.server.log`, grep `flip rinviato` su tutta la corsa): **2 eventi, non uno**, stesso schema del braccio (a) lungo:
+
+```text
+riga 867: 5.13.141.197  I decode: vram-a-fasi: flip rinviato, restano 13 token di prompt
+riga 902: 5.29.237.694  I decode: vram-a-fasi: flip rinviato, restano 3 token di prompt
+```
+
+Delta = **16,096 s** — praticamente identico al delta del braccio (a) da 8.192 completion (16,05 s, misurato in un'altra corsa, altro processo). Il secondo evento non dipende da `MaxTokens`: è **deterministico e legato al prefill/setup del prompt stesso** (probabilmente al primo verify speculativo dopo il chunk-coda, ipotesi già segnalata nel braccio (a)), non al progredire della generazione — cade sempre alla stessa distanza dal primo flip, in entrambe le corse.
+
+Zero OOM/CUDA error (error-scan pulito, divergenze tutte a 0). Shutdown `ctrl-c` pulito.
+
+**VERDETTO SECCO: FAIL.** Il fix v2 elimina l'OOM del bug originale ma introduce una regressione di qualità reale e riproducibile (accettazione speculativa quasi dimezzata, p1 0,88→0,64) legata al secondo evento `flip rinviato, restano 3 token di prompt` — non è rumore né un confondimento di misura, è deterministico su due corse indipendenti (256 e 8.192 completion). **Non pronto per produzione**: serve una v3 che elimini anche il secondo evento (probabile candidato: il primo verify speculativo trattato dalla guardia come resto-di-prompt).
+
+**Stato macchina a fine turno**: 0 processi, porta 8099 libera, GPU 271/11845 MiB (P8, 0%), RAM 87,99 GB liberi. Nessun commit eseguito. Script: `t33_fase2a_v2_diag256.ps1` (scratchpad di sessione).
+
+**Passaggio di consegne (fine turno esecutore 33)**: braccio (b) (non-regressione 102k) mai lanciato su richiesta del coordinatore (avrebbe sprecato 102k di prefill se arriva una v3). Aperto per il prossimo esecutore: (1) v3 del fix mirata al secondo flip; (2) una volta chiusa, rifare per intero (a)+(b) da zero (non solo (b)) perché anche (a) ha certificato solo la sopravvivenza, non la qualità; (3) il braccio 3 facoltativo del chirurgo (non-regressione corto B1200, p1=0,90281/mean_len=2,80 bit-esatti attesi) resta MAI eseguito, in nessuna versione del fix.

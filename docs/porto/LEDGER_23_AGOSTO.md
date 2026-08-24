@@ -643,3 +643,356 @@ ripartire bisecando lì, non dal modello lineare (falsificato fra lunghezze dive
 RAM 89,1 GB libera, GPU 42°C, porte 8099/8100 libere). Nessun commit eseguito. 8 lanci server
 totali in questo turno (tag `t25_slot{400,440,416,410}_ub512_28k`, `t25_slot{410,400,250}_ub512_6k`,
 `t25_slot250_ub512_28k`), tutti sullo script scratchpad invariato `t25_repro.ps1`.
+
+---
+
+## Turno esecutore (24/8) — CAMPAGNA PRINCIPALE, FASE 1: P1-NUDO — divergenza tardiva, verdetto ARROTONDAMENTO con riserva sul Δlogprob
+
+Mandato: `D:\ds4_work\design\G1_P1_ANALISI.md` §5 — isolare la grandezza pura della perturbazione
+di G1 (kv-gather) togliendo speculazione e mean_len dall'equazione. Config banco = campione pieno
+(SLOT=473, -b/-ub 2048, Context 150000), NON la config serving ridotta di ieri sera (SLOT=250,
+-b/-ub 512: quella resta per `avvia ds4 locale.bat`, qui non si usa). Binario canonico riverificato
+PRIMA del banco, invariato da ieri sera:
+
+```
+sha_llama_server = C15FF135F14024FED4ADD8B3FF14299429CA9627508150B7CDE06234E9795878
+sha_ggml_cuda    = 00C6F0D2AC9161AF44EADDB0F22344E5580F4CC77E1D72A1683951214B15C576
+sha_server_impl  = 729DC0DD655190C4001AD259CAE1BF954A9936407398A793E8182C3C0F13935F
+percorso         = D:\llama-subtract\build\bin\
+```
+
+Preflight (04:4x, 24/8): 0 processi llama, porte 8099/8100 libere, GPU a riposo (543 MiB usati /
+11573 liberi, pcie gen1x16), RAM libera 87,9 GB, disco C 48,4 GB / D 115,5 GB liberi, uptime 4764
+min (no riavvio). `jprompt.txt` (corto) SHA `C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9`
+e `jprompt102k.txt` (lungo, 285.268 B) SHA `3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473`
+— entrambi IDENTICI al riferimento del runbook/turno 22.
+
+Script: copia `p1_nudo.ps1` della famiglia `sota100k_ctx150k.ps1` (stessa usata a turno 22 per
+`t22_gather_a`), con **una sola aggiunta dichiarata**: campo `n_probs` nel corpo JSON (assente/0 =
+comportamento invariato rispetto allo script canonico). Comune ai due branch, tutto identico salvo
+`LLAMA_KV_GATHER`: `-Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 -BlockDenseCpu 0
+-Packetizer -1 -PrefixChars 0 -Context 150000 -MaxTokens 256 -SpecNmax 0 -Repliche 1
+-CtxCheckpointMinStep 32 -ReasoningBudgetTokens 0 -GraphReusePerTaglia 1 -NProbs 1
+-ServerPath D:\llama-subtract\build\bin\llama-server.exe`. `-SpecNmax 0` verificato sul codice
+(`common/speculative.cpp:357/1950`: con `n_max=0` il ciclo di proposta bozza non esegue nemmeno
+un'iterazione, `result` resta vuoto) — spec davvero OFF, non solo soglia a 0. `n_probs` verificato
+come campo generico passante (`server-schema.cpp:220-221`, alias `logprobs`) fino al parser
+sampling comune, quindi valido anche su `/v1/chat/completions` senza passare per il campo OAI
+`logprobs`/`top_logprobs`. Prompt jprompt102k.txt (101.691 token), stesso corpo byte-per-byte fra
+i due branch salvo l'env `LLAMA_KV_GATHER`; una sola richiesta per processo, sessione fresca per
+branch (processo server nuovo ciascuno — il cancello del gather è `static`, si legge una volta per
+processo). Telemetria hw 0,5 Hz su entrambi (`sample_hw.ps1`): avviata con ~90 s di ritardo su A
+(lacuna dichiarata, non copre i primi ~90 s di caricamento), dall'inizio su B.
+
+### Branch A — `p1_nudo_a_gather0` (LLAMA_KV_GATHER=0)
+
+```
+tag            = sota_ctx150000_densefa_stage_hc5_p1_nudo_a_gather0_f2_b2048_q1
+lanciato       = 04:45:07 (staccato, Win32_Process Create)   richiesta avviata 04:47:37
+prompt tokens  = 101691   completion = 256   finish_reason = length
+prefill        = 112.11 t/s (8,92 ms/token)   decode = 7.30 t/s (137.0 ms/token, mean_len=1 puro)
+wall richiesta = 15.71 min
+p1             = assente (spec OFF per costruzione, nessuna riga "draft acceptance")
+SHA output     = 0B3E8A3AB657764C3632C559BE2E526C2958C34DE279021C457D672F27926926 (855 caratteri)
+cache-esperti/VRAM: transizione prefill->decode pulita (473->0->473 slot, "VRAM libera 0 MiB" al
+  cambio n.2, nessun OOM); rilevatore replay: divergenze taglia=0/ids=0/out=0 su tutte le righe
+telemetria hw   = 421 campioni, SM mediano 1927 MHz (max 1950, 14/421 sotto 1500 MHz — bookend
+  di carico/scarico, non durante il decode), potenza mediana 125,68 W, VRAM picco 11894 MiB
+percorsi        = D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_p1_nudo_a_gather0_f2_b2048.{server.log,server.out,q1.response.json,q1.output.txt}
+                  D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_p1_nudo_a_gather0.summary.txt
+                  D:\ds4_work\llama_run\p1_nudo_a_gather0.{hw.csv,cpu.csv}
+```
+
+Lettura integrale del testo (§4.10): coerente, italiano tecnico sano, pertinente al prompt (saggio
+su cache-esperti/deepseek4.cpp/llama-graph.cpp), nessun loop, troncato a metà parola per
+`max_tokens` (`length`) — nessuna anomalia.
+
+### Branch B — `p1_nudo_b_gather1` (LLAMA_KV_GATHER=1)
+
+```
+tag            = sota_ctx150000_densefa_stage_hc5_p1_nudo_b_gather1_f2_b2048_q1
+lanciato       = 05:04:47 (staccato, Win32_Process Create)   richiesta avviata 05:07:18
+prompt tokens  = 101691   completion = 256   finish_reason = length
+prefill        = 118.40 t/s (8,45 ms/token)   decode = 10.38 t/s (96.3 ms/token, mean_len=1 puro)
+wall richiesta = 14.73 min
+p1             = assente (spec OFF per costruzione)
+SHA output     = C33C0DD73B1B5A945DAE9BDD6A37167431BF0C03A834E624581BA761C6287054 (896 caratteri)
+cache-esperti/VRAM: transizione prefill->decode pulita, stesso schema di A, nessun OOM; rilevatore
+  replay: divergenze taglia=0/ids=0/out=0 su tutte le righe
+telemetria hw   = 407 campioni, SM mediano 1920 MHz (max 1942, 25/407 sotto 1500 MHz — bookend),
+  potenza mediana 129,61 W, VRAM picco 11882 MiB
+percorsi        = D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_p1_nudo_b_gather1_f2_b2048.{server.log,server.out,q1.response.json,q1.output.txt}
+                  D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_p1_nudo_b_gather1.summary.txt
+                  D:\ds4_work\llama_run\p1_nudo_b_gather1.{hw.csv,cpu.csv}
+```
+
+Lettura integrale: coerente, sano, pertinente, nessun loop, troncato a metà parola per `length`.
+**Decode del gather è il 42% più veloce anche a speculazione spenta** (10,38 contro 7,30 t/s):
+conferma indipendente (mean_len=1, nessuna confusione con l'accettazione) che il guadagno di G1 è
+un vero taglio di lavoro per-forward (attenzione su 512 righe/layer invece delle ~26.368 dense),
+non un artefatto dell'interazione con la bozza.
+
+### Confronto A/B — le due misure del mandato
+
+Estratte da `choices[0].logprobs.content` di entrambi i `.response.json` (`n_probs=1`), confronto
+fatto in un solo processo PowerShell a cultura invariante (round-trip CSV con cultura locale mista
+aveva prima prodotto numeri assurdi dell'ordine di 1e15 — bonificato, non è un dato, è stato
+uno strumento che mentiva: il parsing corretto è quello riportato qui).
+
+```
+PRIMA DIVERGENZA (id del token)  =  indice 133 (0-based) su 256, cioè il 134° token generato
+  contesto:  idx130 ' Mo'/' Mo' (uguale) -> idx131 'E'/'E' (uguale) -> idx132 ','/',' (uguale)
+             -> idx133  A=' con' (id 399, lp -0.6641)   B=' pro' (id 413, lp -0.6806)  DIVERGE
+  i primi 133 token sono IDENTICI byte per byte (stesso id) fra i due branch.
+
+Δlogprob |A-B| sui primi 50 passi comparabili (tutti e 50 hanno lo stesso id, la divergenza è
+dopo): media = 0.024874, massimo = 0.196055
+  (idx=0, il token forzato "</think>" da thinking_budget_tokens=0, ESCLUSO dal conteggio dei 50
+  perché non è una decisione greedy: qui A=-10.2263, B=-10.1304, diff 0.0959, stesso ordine)
+```
+
+**Verdetto rispetto alla tabella pre-scritta in G1_P1_ANALISI.md §5**: la posizione della
+divergenza (133, ben oltre il "~50" del cancello) cade nettamente nella riga "arrotondamento
+amplificato dal top-k discreto, si passa a P1-CAL". Il Δlogprob medio (0,0249) **non cade pulito
+in nessuna delle due soglie scritte a verbale** (< 1e-2 per "arrotondamento pulito", > 5e-2 per
+"perturbazione troppo grande"): è nel mezzo, più vicino al lato piccolo. Letto insieme: 133 token
+di accordo bit-per-bit su una rete a 21 strati, con Δlogprob massimo nei primi 50 passi di appena
+0,196 nat (lontanissimo dagli ordini di grandezza di un bug vero — la memoria di progetto colloca
+i "corrotti veri" a p1 ≈ 0,16, cioè un crollo di traiettoria immediato, non una deriva lenta su
+133 passi), è la firma di un arrotondamento **reale ma leggermente più forte del previsto**, non
+di un difetto strutturale: nessuno dei quattro candidati del mandato G1 andrebbe riaperto sulla
+base di questo numero (sarebbe l'esito "posizione entro 5-10 token" a giustificarlo, e qui la
+posizione è 133). **Non eseguito** il ramo "caccia al bug" (dump per-layer `attn_csa_lid`): il
+cancello per attivarlo (divergenza precoce O Δlogprob > 5e-2) non è scattato su nessuno dei due
+assi.
+
+**VERDETTO FASE 1: ARROTONDAMENTO, con riserva onesta sul Δlogprob leggermente sopra l'attesa
+migliore.** Si procede a FASE 1b (P1-CAL): la cura resta ricalibrare `--spec-draft-conf-min` sul
+lungo con gather acceso, come previsto dal mandato — la riserva sul Δlogprob non cambia la cura
+proposta (che agisce comunque sulla soglia di accettazione, indipendentemente da quanto
+"leggero" sia l'arrotondamento a monte), ma va portata a verbale per chi rilegge questo turno.
+
+**Stato macchina a fine Fase 1**: pulita (0 processi llama, VRAM 426 MiB usati / 11690 liberi, RAM
+88,5 GB libera, porte 8099/8100 libere). Nessun commit eseguito. Script fuori repo, in scratchpad
+di sessione (non committati): `p1_nudo.ps1`, `p2_ring.ps1` (quest'ultimo pre-scritto per la Fase 2,
+non ancora lanciato a questo punto del turno).
+
+---
+
+## Turno esecutore (24/8) — CAMPAGNA PRINCIPALE, FASE 1b: P1-CAL — sweep conf_min, MASSIMO a 0,70
+
+Mandato (da G1_P1_ANALISI.md §5bis, punto 1, e dal mandato del turno): sweep `--spec-draft-conf-min
+{0,60; 0,70; 0,80}` sul LUNGO con gather acceso, 3 corse mono-richiesta 8k (`-MaxTokens 8192`),
+cercando il massimo di t/s. Script: copia `p1b_conf.ps1` della stessa famiglia (una sola aggiunta
+dichiarata: parametro `-SpecConf`, passato a `--spec-draft-conf-min` — a `0.8` è testualmente
+identico allo script canonico). Config comune, IDENTICA a `t22_gather_a` del turno 22 salvo
+`-SpecConf`: `LLAMA_KV_GATHER=1 -SpecNmax 3 -MaxTokens 8192 -Context 150000 -StartBatch 2048
+-BlockSparse 0 -HcFused 5 -CtxCheckpointMinStep 32 -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0
+-ServerPath D:\llama-subtract\build\bin\llama-server.exe`. Binario canonico invariato (stesso SHA
+di Fase 1). Preflight ripetuto e passato prima di ciascuno dei 3 lanci (0 processi, porte libere,
+RAM 87-88 GB, VRAM a riposo <350 MiB); macchina pulita fra un braccio e il successivo, incatenati
+senza quiete a tempo.
+
+```
+             conf_min  decode t/s  ms/token   p1        mean_len  prefill t/s  SHA output (primi 8)
+braccio 1    0,60      13,14       76,1       0,89552   3,16      130,23       F2FD14F5
+braccio 2    0,70      13,58       73,6       0,91096   3,18      120,75       F0733E8C
+braccio 3    0,80      12,57       79,6       0,86519   2,60       84,71*      1F7F86E5
+```
+
+`*` prefill anomalo (84,71 t/s contro 120-130 t/s degli altri due bracci e 119,18 del turno 22):
+telemetria hw conferma un calo reale, non un errore di lettura — potenza mediana 102,45 W contro
+127,76/131,68 W degli altri due bracci (`p1b_conf080.hw.csv`, 840 campioni). **Non attribuibile a
+`conf_min`**: `conf_min` non tocca il prefill per costruzione (nessuna speculazione durante il
+prefill), ed è confermato dal fatto che braccio 3 è una **replica bit-esatta** di `t22_gather_a`
+(vedi sotto) — un effetto di `conf_min` sul prefill romperebbe quella replica. Causa non
+diagnosticata (fuori mandato di questo braccio economico): candidati plausibili sono contesa di
+sistema transitoria o standby-list della RAM, nessuno verificato.
+
+**Cancello di controllo, molto forte**: il braccio 3 (`conf_min=0,80`, tutto il resto identico a
+`t22_gather_a`) riproduce turn 22 **bit per bit**: p1 0,86519 (5038/5823 atteso, qui non ristampato
+ma la cifra è identica a 5 decimali), mean_len 2,60, **SHA output
+`1F7F86E578499C9BA1F1C53AA2E73C4D60E5BC88D47AED3CD56E334461F80732` IDENTICO carattere per carattere**
+a quello registrato nel turno 22 (`LEDGER_17_AGOSTO.md`, riga "SHA output ="). Questo certifica che
+lo script di questo turno non ha introdotto nessuna deviazione rispetto alla config di riferimento:
+la differenza fra i tre bracci è **solo** `conf_min`.
+
+**Lettura a campione dei testi** (§4.10, banco lungo: inizio + finestre centrali + fine) sui bracci
+1 e 2 (nuovi): entrambi coerenti, italiano tecnico sano, citano correttamente frammenti di codice
+reali del repository (`kern_partiziona`, `LLAMA_OVERLAP_K`, `ggml_cache_esperti_partiziona`),
+nessun loop, nessuna degradazione osservata nelle finestre campionate. Nessuna anomalia.
+
+**VERDETTO FASE 1b: MASSIMO a `conf_min=0,70`** — **13,58 t/s (73,6 ms/token)**, contro 13,14
+(0,60) e 12,57 (0,80). Non monotona: **la curva ha un massimo interno**, non ai bordi, come
+anticipato dal mandato ("il massimo non è al bordo, va cercato"). Rispetto al riferimento storico
+0,80 (media dei due dati disponibili, 79,04 del turno 22 e 79,6 di questo turno): **−7,2% ms/token
+(+7,4% t/s)**. **Non raggiunge** l'attesa ottimistica scritta nel mandato (~71,5 ms/token, 14 t/s):
+il recupero è reale e nella direzione giusta ma **circa 3% sotto** il punto centrale atteso — onestà
+del numero, non arrotondato per farlo coincidere. `p1` sale insieme al recupero (0,86519 → 0,91096
+a 0,70), coerente con la lettura di G1_P1_ANALISI.md §4: una soglia più bassa lascia respirare la
+testa di confidenza spostata da G1, tronca meno blocchi, `mean_len` sale (2,60 → 3,18).
+
+**Prossimo passo suggerito, non eseguito in questo turno** (fuori dal mandato originale delle tre
+soglie, ma coerente con "il massimo non è al bordo"): un quarto punto fra 0,65-0,75 per bisecare
+l'ottimo più stretto, se un turno futuro vuole spremere l'ultimo margine verso i 14 t/s. **Valore da
+adottare per i banchi successivi che usano `--spec-draft-conf-min` sul lungo con gather: 0,70**,
+non più 0,80.
+
+**Stato macchina a fine Fase 1b**: pulita (0 processi llama, VRAM 317 MiB usati / 11799 liberi, RAM
+88,3 GB libera, porte 8099/8100 libere). Nessun commit eseguito. Script fuori repo, in scratchpad di
+sessione: `p1b_conf.ps1`. Percorsi: `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_p1b_conf0{60,70,80}_f2_b2048.{server.log,server.out,q1.response.json,q1.output.txt}`,
+`D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_p1b_conf0{60,70,80}.summary.txt`,
+`D:\ds4_work\llama_run\p1b_conf0{60,70,80}.{hw.csv,cpu.csv}`.
+
+---
+
+## Turno esecutore (24/8) — CAMPAGNA PRINCIPALE, FASE 2 (t22_repoint): CRASH OOM — diagnosi e FASE 2b bloccata di conseguenza
+
+Mandato: `NOTE_IMPLEMENTAZIONE.md` §17.7 riga 1 / coda del turno 22 — ripuntare il prefisso caldo
+del KV-ring: identico a `t22_gather_a` (quindi `conf_min=0,80`, **non** 0,70 della Fase 1b: una sola
+leva per braccio, il confronto atteso dal mandato è contro 79,04 ms/token che è la cifra del
+turno 22 sotto 0,80) + `LLAMA_KV_RING_VRAM_LID=300000` (valore "kv_size o più", per saturare al
+pieno il `std::min(kv_size, richiesto)` — 2× il `-Context 150000`, esattamente come indicato dalla
+nota del coordinatore lasciata in coda al turno 22) + `LLAMA_KV_RING_VRAM_CSA=0`. Script:
+`p2_ring.ps1` (pre-scritto durante l'attesa della Fase 1), unica aggiunta dichiarata rispetto al
+canonico: i due parametri `-KvRingVramLid`/`-KvRingVramCsa` (assenti = fallback al condiviso,
+comportamento invariato — verificato inerte per costruzione, §17.3) e `-CacheEspertiSlot` (qui
+lasciato al default 473, invariato: la Fase 2b l'avrebbe portato a 539). Preflight passato (0
+processi, porte libere, RAM 88,3 GB, VRAM a riposo 317 MiB).
+
+```
+tag         = sota_ctx150000_densefa_stage_hc5_t22_repoint_redo_f2_b2048
+lanciato    = 06:58:57   caricato = 06:58:xx (free VRAM al load = 267 MiB, quasi identico ai
+              266 MiB del turno 22 nonostante LID sia molto più pesante — vedi sotto: il costo
+              pieno del ring caldo non è ancora tutto addebitato al momento del "loaded")
+richiesta   = 07:01:28   ESITO = CRASH, "Connessione sottostante chiusa... dal server in modo
+              imprevisto" (connessione TCP caduta a metà del decode)
+```
+
+**Testimone KV-ring** (`KV ring resident allocated`, §17.4, presente e funzionante): `CSA = 5.25
+MiB, HCA = 5.00 MiB, LID = 192.94 MiB, total = 203.19 MiB`. Due letture, entrambe corrette rispetto
+al disegno di §17: **CSA è sceso esattamente al pavimento previsto da NOTE_IMPLEMENTAZIONE.md §17.5**
+(~5,25 MiB, "256 righe, il pavimento di `dsv4_comp_size`" — **misurato uguale alla predizione**);
+**LID è salito a 192,94 MiB**, molto più dei "~148 MiB" con cui il mandato descriveva "LID intero
+residente" — la stima del mandato era per un `-Context` diverso (105-110k, da
+`TASSA_ATTENZIONE_LUNGO.md:178`), qui il banco gira a `-Context 150000` e il valore vero a piena
+residenza scala di conseguenza. Il meccanismo per-deposito (§17.2-17.3) **funziona esattamente come
+disegnato** su entrambi i lati: questo NON è un bug della patch B-2, è un dimensionamento.
+
+**Causa del crash**: `CUDA error: out of memory` in `ggml-cuda.cu:124` (sito generico, diverso dalla
+firma "layer-major staging 1729 MiB" del banco di ieri sera — quello era un problema di PROMPT
+lungo con `-ub 2048`; qui il prompt è lo stesso corto-per-costruzione di sempre e la transizione
+prefill→decode di questo braccio non lo tocca). Il crash arriva **durante il decode**, dopo che il
+`[kv-ring-profile]` ha già registrato due battiti (`tokens=6144` e `tokens=16384` nel contatore
+cumulativo del ring, non il conteggio dei token generati). **Diagnosi**: `LID=192,94 MiB` più
+`CSA=5,25` più `HCA=5,00` (totale 203,19 MiB) si aggiungono agli stessi identici 3.194 MiB della
+cache-esperti (SLOT=473 invariato) e allo stesso buffer di calcolo da 2.296,35 MiB del braccio A —
+la somma eccede il margine già citato come "al muro" da `COMPOSIZIONE_PIANO.md` §1.1 R8 (167-210
+MiB liberi) e dalla nota lasciata dall'esecutore del turno 22 in coda al banco ("il margine... va
+verificato dal vivo in quel braccio, non dedotto" — **verificato ora: non regge**). Questo È il
+rischio che `COMPOSIZIONE_PIANO.md` §2 P4 aveva già scritto in anticipo: *"se a2 K-as-V non si
+scrive, LID non entra... la catena si ferma sul muro della VRAM"* — qui si è fermata esattamente
+lì, con LID (non a2) come primo a bussare.
+
+**Non è un errore di esecuzione**: il valore `300000` è quello scritto testualmente nella nota di
+consegna del turno 22 ("per esempio 300000"); l'ho usato senza modificarlo, ed è proprio quel
+valore a produrre 192,94 MiB — più di quanto il margine libero possa reggere insieme al resto del
+carico. **Nessuna build, nessun codice toccato**: la patch B-2 (già compilata da giorni) si
+comporta secondo il proprio contratto in entrambe le direzioni (CSA giù, LID su); il fallimento è
+nel dimensionamento del banco, non nel meccanismo.
+
+**FASE 2b (`t22_slot539`) NON ESEGUITA — bloccata per dipendenza.** Il mandato la definisce come
+"identico a B-2a" (cioè a questa Fase 2) **+** `LLAMA_CACHE_ESPERTI_SLOT=539` — cioè +446 MiB
+*ulteriori* di cache esperti sopra una configurazione che **già da sola** esaurisce la VRAM.
+Lanciarla comunque avrebbe significato ripetere lo stesso crash con un margine ancora più stretto:
+non è "la fase successiva indipendente", è un incremento sulla fase che è appena crashata. **Non
+lanciata**, per lo stesso principio del mandato ("se una fase crasha... si passa alla successiva",
+letto qui come: alla successiva **indipendente**, non a un suo aggravamento diretto).
+
+**Prossimo passo suggerito, non eseguito** (fuori dal tempo di questo turno): ripetere B-2a con un
+valore di `LLAMA_KV_RING_VRAM_LID` più piccolo del "kv_size o più" — per esempio il valore letterale
+`~148 MiB` tradotto nell'unità giusta (token, non MiB: va dedotto da `dsv4_comp_size`, non
+riusato direttamente), oppure con `LLAMA_CACHE_ESPERTI_SLOT` abbassato per fare posto (nella stessa
+direzione della "combo (c)" trovata ieri sera per il crash del prompt lungo, ma qui il problema è
+diverso: non serve ridurre lo slot per il prefill, serve ridurlo per accomodare LID in decode). Non
+tentato in questo turno per restare nel regime economico e per rispettare la disciplina "un braccio
+e stop" sul ramo che è appena stato falsificato.
+
+**Stato macchina dopo il crash**: pulita da sola (0 processi llama — il processo è uscito da sé
+sull'assert CUDA, non è stato necessario alcun intervento; nessuna quiete a orologio, solo verifica),
+VRAM 281 MiB usati / 11835 liberi, RAM 88,3 GB libera, porte 8099/8100 libere. Nessun commit
+eseguito. Script fuori repo, in scratchpad di sessione: `p2_ring.ps1` (non modificato dopo il
+crash — resta valido per un eventuale retentivo con un valore di LID più piccolo). Percorsi:
+`D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t22_repoint_redo_f2_b2048.{server.log,server.out}`,
+`D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_t22_repoint_redo.summary.txt`,
+`D:\ds4_work\llama_run\p2_repoint.{hw.csv,cpu.csv}`. **Si procede alla Fase 3 (S3-bis).**
+
+---
+
+## Turno esecutore (24/8) — CAMPAGNA PRINCIPALE, FASE 3 (S3-bis): NESSUN OOM, ma REGRESSIONE FORTE — conf_min=0,3 mal calibrata sotto CONF_PRENORM
+
+Mandato: `run_porto_hot.ps1 -Tag t22_s3bis_b1200_r1_20260824 -MaxTokens 1200 -Repetitions 4
+-PortoHotSnapshot 1 -SpecNmax 5 -SpecConf '0.3' -Extra '...;PORTO_HOT_MASK=15;LLAMA_CONF_PRENORM=1;
+GGML_CUDA_GRAPH_MAX=256' -ServerPath D:\llama-subtract\build\bin\llama-server.exe` (comando
+verbatim dalla coda del turno 22). Nessuna modifica allo script canonico. Preflight passato (0
+processi, porte libere, RAM 88,2 GB).
+
+```
+rep  eval t/s  ms/token  p1        SHA (primi 8)   finish
+1    12,16     82,2      0,55811   CB636113        length
+2    12,21     81,9      0,55811   CB636113        length
+3    12,20     82,0      0,55811   CB636113        length
+4    12,20     82,0      0,55811   CB636113        length
+mediana = 12,20 t/s (82,0 ms/token)
+```
+
+Le 4 repliche sono **bit-identiche** (stesso SHA, stesso p1 a 5 decimali) — il warm-restore
+(`PORTO_HOT_MASK=15`, `porto_hot_snapshot=true`) è deterministico come atteso.
+
+**Cancelli del mandato:**
+- **OOM: NO.** Zero `CUDA error`/`out of memory`/`GGML_ASSERT` in tutto il log. `shutdown=ctrl-c`
+  pulito su tutte e 4 le repliche.
+- **Testimone pre-norm nel log: PRESENTE.** `operator (): conf_proj: lettura PRE-norm (riferimento
+  upstream)` — riga singola, a caricamento, conferma che `LLAMA_CONF_PRENORM=1` è stato letto e ha
+  attivato il ramo pre-norm (non è "post-norm en travesti" come il turno 21).
+- **Sfratti-per-tetto: PRESENTE e attivo.** `porto-grafi: sfratti=37 (anzianita=37 tetto=0)` poi
+  `sfratti=3949 (anzianita=268 tetto=3681)` — la stragrande maggioranza degli sfratti (3.681 su
+  3.949) è imputabile al **tetto** `GGML_CUDA_GRAPH_MAX=256`, non all'anzianità: il tetto sta
+  davvero limitando la popolazione di grafi vivi, il meccanismo lavora come disegnato.
+- **Curve di confidenze verbatim: NON DISPONIBILE — dichiarato, non nascosto.** Cercato nel
+  codice (`common/speculative.cpp`, sito del confronto `conf[idx*n_embd_dec] < params.conf_min`
+  a riga 1229): **il valore di `conf[]` non viene mai stampato, a nessun livello di log, in nessun
+  punto di questo file** (`grep` mirato: solo `n_max/n_min/p_min/conf_min` — i PARAMETRI, non le
+  MISURE — sono loggati una volta a `LOG_INF`, riga 970). Il cancello diagnostico di
+  `NOTE_IMPLEMENTAZIONE.md` §16.6 ("verificare che le confidenze stiano dentro (0,1) e calino con
+  la posizione") **richiede una strumentazione che non esiste nel binario attuale**: non è stato
+  possibile eseguirlo, né prima né durante questo braccio. Non si inventa un numero che non c'è.
+
+**Il numero che conta, e la sua diagnosi**: `p1 = 0,55811` — **crollato** dal riferimento storico
+`~0,90` (turno 22, conf=0,80/post-norm) e ANCHE ben sotto il gate 1 del piano originale a 5 bracci
+(`NOTE_IMPLEMENTAZIONE.md` §16.7, "p1 ≥ 0,90 — se cala, la testa taglia dove non deve" — qui non è
+la stessa identica metrica di quel gate, ma la direzione del segnale è la stessa). Coerentemente,
+**t/s = 12,20 contro il confronto 16,63 richiesto dal mandato: −26,6%**, una regressione netta, non
+un mancato guadagno. **Diagnosi più probabile, scritta dalla fonte prima di questo turno**
+(`COMPOSIZIONE_PIANO.md` §2 P5): *"il campione storico conf_min=0,80 è da rivalidare, non da
+riusare (misurato sotto lo scoring POST-norm disallineato)... se cade conf_min=0,80, cade con lui
+l'ottimo di n_max: sono due coordinate della stessa superficie."* Qui è `conf_min=0,3` (non 0,80)
+a mostrarsi scalibrata sotto il nuovo scoring **PRE**-norm: la soglia era probabilmente tarata (o
+ipotizzata) sulla distribuzione POST-norm, e sotto PRE-norm i punteggi si sono spostati abbastanza
+da rendere 0,3 **più restrittivo**, non più permissivo, troncando la maggioranza dei blocchi molto
+presto (coerente con `mean_len` implicito basso, dedotto da t/s/p1 bassi insieme — non ristampato
+qui perché non nel corpo del cancello richiesto). **Senza la curva di confidenza (non disponibile)
+questo resta un'ipotesi forte, non una prova diretta.**
+
+**VERDETTO FASE 3: cancelli OOM/pre-norm/sfratti-tetto TUTTI PASSATI, ma il risultato di
+prestazione è una REGRESSIONE (−26,6% vs 16,63), non un miglioramento.** `conf_min=0,3` non è la
+soglia giusta sotto `CONF_PRENORM=1`: coerente con la legge di casa "i verdetti-nel-regime-sbagliato"
+(settima/ottava occorrenza). **Non promuovere `conf_min=0,3` con prenorm acceso.** Un turno futuro
+che voglia inseguire questa leva deve prima riaprire il cancello §16.6 (richiede una riga di log
+nuova per `conf[]` — una modifica di codice, fuori da questo mandato "nessuna build").
+
+**Stato macchina a fine Fase 3**: pulita (0 processi llama, VRAM 377 MiB usati / 11739 liberi, RAM
+88,2 GB libera, porte 8099/8100 libere). Nessun commit eseguito. Percorsi:
+`C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t22_s3bis_b1200_r1_20260824.{server.log,server.out,summary.json,r1-r4.response.json,r1-r4.output.txt}`,
+`...\runs\t22_s3bis.hw.csv/cpu.csv`. **FASE 4 (fattoriale 2³) NON LANCIATA per ordine del
+coordinatore — passa al prossimo esecutore.**

@@ -2227,3 +2227,108 @@ Script fuori repo, scratchpad di sessione: `e35_p1b_nsys.ps1` (copia di `p1b_con
 ### Stato macchina e chiusura turno
 
 Postflight: 0 processi, GPU 268-275 MiB usati (P8), RAM libera 87-88 GB stabile per tutto il turno. Macchina pulita. Nessun commit eseguito. `D:\llama-subtract` mai scritto. Nessuna quiete a tempo fra i 4 bracci (solo risanamento §6.6 a polling attivo). Nessuna anomalia fail-fast incontrata oltre alla firma attesa "flip rinviato, restano 3" (sana, dichiarata dal mandato). **Aperto per il prossimo turno**: braccio L3-B dedicato (`--cuda-graph-trace=graph` + `--cpuctxsw=process-tree` se si sblocca l'admin, altrimenti solo `--cpuctxsw` resta negato) per separare host-bound da dispatch-bound dentro le BOLLE; e un secondo punto di normalizzazione indipendente da `kern_acceptmoe` per chiudere il fattore ~1,7-1,8× non riconciliato con l'aggregato storico del turno 32.
+
+## Turno esecutore 36 (24/8 notte) — ANATOMIA delle BOLLE: 71,5% della crescita in 3 siti (2 su 3 sono il trasporto cache-esperti), 98,7-98,9% ai CONFINI fra un lancio e il successivo, crescita spalmata nel tempo (non a onde), verdetto indiziario prevalentemente HOST-BOUND con una quota dispatch-bound reale del 23%
+
+Mandato: sola analisi, niente corse/GPU (macchina non toccata, mai avviato un processo llama-server/nsys in questo turno). Dato il verdetto aperto del turno 35 ("la voce è attesa/bolla, non (solo) calcolo": KV RING + INDEXER + ARGSORT/TOPK spiegano il 52% della pendenza fuori-mappa, le BOLLE un altro 44% comparabile, natura non chiusa per mancanza di `--cpuctxsw`), attribuire dalla TIMELINE (kernel/memcpy/RUNTIME/SYNCHRONIZATION del sqlite già su disco) dove vivono le bolle che crescono, se ai confini o dentro le sequenze, se a onde o spalmate, e un verdetto indiziario host-bound/dispatch-bound. Letture obbligatorie completate: entry turno 35 sopra in questo ledger, `e35_forward_budget_v2.py` (schema/normalizzatore, riusato senza ricalcolo), `l3_budget.py`/`l3_gaps.py`/`l3_gaps_graph.py`/`l3_budget_final.py` (17/8, metodo di merge vettorializzato e segmentazione per-lancio, riusati/estesi).
+
+### Metodo
+
+Directory di lavoro: scratchpad di sessione, sottocartella `e36_bolle\` (7 script Python, tutti con connessione sqlite `mode=ro&immutable=1`, sola lettura). **Artefatti e35 verificati intatti a fine turno** (stessa dimensione/mtime dell'inizio: `e35_nsys33k...sqlite` 153.505.792 B @ 22:01, `e35_nsys102k...sqlite` 218.218.496 B @ 22:41 — invariati).
+
+1. **Unione BUSY = KERNEL∪MEMCPY** nella finestra decode (`t0,t1` da `.e35window.txt`, riusati), stesso algoritmo vettorializzato di `l3_budget.py` (merge per `argsort`+`maximum.accumulate`). **Validazione**: la BOLLA totale ricalcolata indipendentemente combacia ESATTAMENTE con la tabella del turno 35 (33k: 8836,191 ms = 40,908 ms/fwd; 102k: 9514,257 ms = 45,306 ms/fwd; pendenza ricalcolata +0,0643 ms/fwd/1000ctx, identica) — la somma busy+bolle torna alla parete al bit su entrambi i punti.
+2. **Identità del kernel-prima/kernel-dopo per ogni gap**: per ogni isola busy, l'evento che raggiunge `max(end)` (via `lexsort` per gruppo, robusto a stream concorrenti — nella finestra sono attivi 90+ `streamId` diversi in KERNEL) e l'evento che apre l'isola successiva. Soglia sito: **gap ≥ 20µs** (dichiarata dal mandato). Sopra soglia: 51.397/992.497 gap a 33k (5,2%, 7816,605 ms), 56.508/967.546 a 102k (5,8%, 8426,859 ms) — il resto (gap < 20µs, "polvere fine") vale 4,720→5,178 ms/fwd, pendenza +0,00670 (10,4% della crescita totale: **0,05765 (sopra soglia) + 0,00670 (sotto soglia) = 0,06435 ≈ 0,0643 del turno 35, chiude**).
+3. **Confine vs interno**: scoperta chiave (verificata empiricamente, non assunta — vedi sotto) che `CUPTI_ACTIVITY_KIND_KERNEL.correlationId` di un kernel eseguito in graph-replay combacia ESATTAMENTE col `correlationId` del `CUPTI_ACTIVITY_KIND_RUNTIME` `cudaGraphLaunch_v10000` che lo ha lanciato (testato su 5 lanci consecutivi: tutti i kernel nel range temporale del lancio condividono il suo correlationId, zero eccezioni). Stesso meccanismo per kernel standalone (`graphNodeId` NULL/0, lanciati via `cudaLaunchKernel_v7000` individuale) e per MEMCPY (`cudaMemcpyAsync_v3020`/`cudaMemcpy2DAsync_v3020`). Questo rende `correlationId` un identificatore ESATTO di "unità di dispatch host": **stesso correlationId prima/dopo = gap INTERNO a un lancio; diverso = gap di CONFINE fra un dispatch e il successivo**. Da qui, per ogni gap-confine, `CUPTI_ACTIVITY_KIND_RUNTIME` dice anche QUALE API host lo ha innescato.
+4. **Corroborazione indipendente**: `CUPTI_ACTIVITY_KIND_SYNCHRONIZATION` (popolata da `--trace=cuda`, non richiede `--cpuctxsw`) con `syncType=2` = `STREAM_WAIT_EVENT` (una lane GPU attende un evento segnalato da un'altra lane — il fork/join fra stream) intersecata via sweep a due puntatori con le isole BUSY e con i GAP.
+5. **Istogramma temporale**: 100 bin uniformi sulla finestra decode, somma dei gap-ns per bin, ricerca di spike (>3× mediana) e della loro spaziatura.
+
+### Q1 — LA CLASSIFICA: dove vivono le bolle che CRESCONO (consegna principale)
+
+143 siti (coppia kernel/memcpy-prima → kernel/memcpy-dopo) distinti sopra soglia nell'unione 33k∪102k; 111 in crescita, 32 in calo, nessuno invariato. I primi 3 spiegano **71,5%** della crescita totale, i primi 10 **83,4%**:
+
+| rank | prima → dopo | n 33k→102k | ms/fwd 33k→102k | pendenza (ms/fwd/1000ctx) | quota crescita | %confine | note |
+|---:|---|---:|---:|---:|---:|---:|---|
+| 1 | `MEMCPY:Host-to-Device` → `concat_cont` | 4896→4752 | 5,171→6,623 | **+0,02124** | 33,0% | 100%/100% | 85% innescato da `cudaGraphLaunch_v10000` (attesa prima del lancio del prossimo grafo, gated sull'arrivo della copia), 15% da `cudaLaunchKernel_v7000` standalone; us medio 228→293 (**+28,3%**, durata) |
+| 2 | `mul_mat_vec_q_moe_maschera` → `MEMCPY:Host-to-Device` | 4558→4412 | 14,323→15,316 | **+0,01453** | 22,6% | 100%/100% | 100% `cudaMemcpyAsync_v3020` standalone; us medio 679→729 (**+7,4%**); **bytes copiati quasi costanti** (72.955→75.436 B medi, +3,4%) — la crescita è nell'ATTESA prima della copia, non nella copia |
+| 3 | `MEMCPY:Device-to-Host` → `MEMCPY:Host-to-Device` | 802→795 | 7,726→8,426 | **+0,01026** | 16,0% | 100%/100% | 100% `cudaMemcpyAsync_v3020`; us medio 2081→2226 (**+7,0%**); bytes quasi costanti (121,0→119,4 KiB medi) |
+| 4 | `k_bin_bcast` → `k_bin_bcast` | 1751→2618 | 0,361→0,488 | +0,00186 | 2,9% | 65%/77% | unico sito nella top-10 con quota interna rilevante; us medio CALA (44,5→39,2), la crescita è tutta da CONTEGGIO (+49,5%) |
+| 5 | `MEMCPY:Device-to-Host` → `MEMCPY:Device-to-Host` | 11056→11197 | 1,835→1,954 | +0,00174 | 2,7% | 100%/100% | conteggio quasi flat, durata +2,3% |
+| 6 | `MEMCPY:Host-to-Device` → `MEMCPY:Host-to-Device` | 7202→7246 | 1,042→1,109 | +0,00098 | 1,5% | 100%/100% | idem |
+| 7 | `quantize_q8_1` → `mul_mat_vec_q` | 319→650 | 0,049→0,112 | +0,00092 | 1,4% | 100%/92% | conteggio +103,8%, durata +8,7% |
+| 8 | `convert_unary` → `Kernel2` | 689→896 | 0,113→0,166 | +0,00079 | 1,2% | 98%/100% | conteggio +30,0% |
+| 9 | `k_get_rows_float` → `MEMCPY:Device-to-Device` | 583→855 | 0,073→0,125 | +0,00075 | 1,2% | 100%/99% | conteggio +46,7% |
+| 10 | `convert_unary` → `k_bin_bcast` | 942→1155 | 0,127→0,168 | +0,00059 | 0,9% | 100%/100% | conteggio +22,6% |
+
+I restanti 133 siti sommano il residuo ~16,6% in coda lunga (elementwise/norm/rope/reduce/gather — la stessa famiglia della voce "norm/elementwise/..." del turno 35, che infatti cresceva solo +0,00196 ms/fwd/1000ctx come CALCOLO: qui si vede che una fetta di quella famiglia cresce anche come ATTESA-prima-del-kernel, voce distinta e non sommabile ingenuamente al calcolo). Nessun sito **nuovo** di peso significativo appare solo a 102k (i pochi a n=0→pochi hanno pendenza <0,0001).
+
+### Q2 — CONFINI o dentro le sequenze?
+
+Netto e univoco: **le bolle sopra-soglia vivono quasi interamente ai CONFINI** (correlationId diverso fra prima e dopo = nuovo dispatch host), non dentro le sequenze di kernel di un singolo lancio:
+
+| | 33k | 102k | pendenza |
+|---|---:|---:|---:|
+| **CONFINE** (correlationId diverso) | 7712,768 ms (n=51075) = 35,707 ms/fwd, 98,67% del sopra-soglia | 8333,374 ms (n=56222) = 39,683 ms/fwd, 98,89% | **+0,05817** |
+| **INTERNO** (stesso correlationId) | 103,837 ms (n=322) = 0,481 ms/fwd, 1,33% | 93,485 ms (n=286) = 0,445 ms/fwd, 1,11% | **−0,00052** (CALA) |
+
+L'INTERNO non solo è marginale in quota (1,1-1,3%), non CRESCE affatto — la pendenza è leggermente negativa. **Corroborazione indipendente** (`CUPTI_ACTIVITY_KIND_SYNCHRONIZATION`, `syncType=2`/STREAM_WAIT_EVENT — il fork/join GPU↔GPU tra lane, l'unica cosa che potrebbe produrre bolle "interne" a un grafo): totalizza 4225,490→4498,084 ms nella finestra (grande in assoluto, +6,45%), ma:
+
+| | overlap con BUSY (mascherato da altra lane) | overlap con GAP (bolla globale) |
+|---|---:|---:|
+| 33k | 3976,676 ms = **94,11%** | 248,811 ms = 5,89% |
+| 102k | 4274,956 ms = **95,04%** | 223,124 ms = 4,96% (CALA in assoluto) |
+
+Il fork/join intra-grafo è reale e costoso in isolamento ma **quasi del tutto sovrapposto ad altre lane attive** (94-95%), e la quota che sfugge alla sovrapposizione non cresce col contesto — anzi cala. **Scagionato come motore della crescita**: falsifica l'ipotesi (plausibile a priori, dato che il fork/join è un tema ricorrente del progetto — [[join-73-percento-finestra-uno-split]]) che fossero le attese di sincronizzazione multi-stream INTERNE al grafo a crescere.
+
+Sulla domanda "più rendezvous o rendezvous più lunghi": **dipende dal sito**. I 3 siti più pesanti (71,5% della crescita) crescono per DURATA (conteggio stabile o in lieve calo, us medio +7-28%); la coda dei siti minori cresce soprattutto per CONTEGGIO (molti quasi raddoppiano). Vedi ripartizione per API in Q4 per la sintesi aggregata.
+
+### Q3 — a onde o spalmata?
+
+Istogramma 100 bin uniformi (≈227 ms/bin a 33k, ≈242 ms/bin a 102k): **zero bin sopra 3× mediana in entrambi i contesti**. Il bin più alto in assoluto (~2,7× mediana) è lo stesso bin (#2, t≈2,5% della finestra) in ENTRAMBI i punti — un transiente di avvio del turno di decode (riscaldamento cache/grafi dopo il confine prefill→decode), presente **identico** ai due contesti e quindi NON un effetto di scala. A parte questo, i bin elevati sono dispersi senza spaziatura regolare (33k: bin 4,6,9,15,21,52,79; 102k: bin 4,24,49,52,64,79,80) — nessuna cadenza pulita a 256 o 2048 di n_kv. Un indizio debole e non confermato: un bin lievemente elevato (1,4-1,6× mediana) vicino a t≈79-80% in ENTRAMBI i contesti — posizione grossolanamente compatibile (sotto l'approssimazione di emissione lineare nel tempo) con l'UNICA transizione `n_kv mod 256 == 0` attesa dentro ciascuna finestra (33k parte da n_kv=33344, prossimo multiplo di 256 a 192/256=75% della finestra; 102k da 101691, a 197/256=77%) — ma l'elevazione non si distingue dal rumore di altri bin scollegati da questa ipotesi: **dichiarato NON confermato**, non promosso a scoperta. Una cadenza a 2048 non è testabile con queste due finestre (n_kv cresce solo di 256 nell'intera finestra profilata, mai attraversa un confine 2048 salvo casi al margine — verificato: 33344 mod 2048=576, 101691 mod 2048=1339, nessuno vicino a zero).
+
+**Verdetto Q3**: la crescita è **spalmata quasi uniformemente sul turno di decode**, non concentrata in poche onde catastrofiche — coerente con un costo host per-round che scala con continuità (una decisione un po' più lenta ad ogni round), non con un evento periodico raro e vistoso.
+
+### Q4 — verdetto indiziario host-bound vs dispatch-bound
+
+Applicando il criterio del mandato ai dati, per API host che innesca l'evento-dopo-il-gap (`CUPTI_ACTIVITY_KIND_RUNTIME.correlationId`; nota: questa tabella aggrega TUTTI i gap sopra soglia incluso il residuo INTERNO 1,1-1,3%, che inquina in proporzione trascurabile — è per questo che n(`cudaGraphLaunch_v10000`)=9048/8350 supera il conteggio totale di lanci nella finestra, 8753/8077: alcuni lanci hanno più di un gap interno attribuito a sé):
+
+| api_after (RUNTIME) | n 33k→102k | ms/fwd 33k→102k | pendenza | quota crescita | pattern |
+|---|---:|---:|---:|---:|---|
+| `cudaMemcpyAsync_v3020` | 29126→29102 (**−0,08%**) | 26,588→28,487 | **+0,02778** | **48,2%** | conteggio flat, us medio 197,2→205,5 (**+4,2%**) → **HOST-BOUND** (attesa più lunga prima di ogni copia, non più copie) |
+| `cudaGraphLaunch_v10000` | 9048→8350 (**−7,7%**) | 7,099→8,180 | **+0,01582** | **27,4%** | conteggio CALA, us medio 169,5→205,7 (**+21,4%**, code fino a 36,8→29,3 ms) → **HOST-BOUND** (l'opposto del pattern dispatch: meno lanci ma ciascuno attende di più) |
+| `cudaLaunchKernel_v7000` | 11941→17299 (**+44,9%**) | 2,230→3,143 | **+0,01335** | **23,2%** | conteggio esplode, us medio 40,3→38,2 (**−5,4%**, stabile/in calo) → **DISPATCH-BOUND puro** (pattern da manuale: più rendezvous di taglia costante) |
+| `cuLaunchKernel` + `cudaMemcpy2DAsync_v3020` | minori | 0,184→0,290 | +0,00156 | 2,7% | misto, marginale |
+| **TOTALE** | | 36,188→40,128 | **+0,05765** | 100% | |
+
+Corroborazione sul ramo `cudaGraphLaunch_v10000`: il costo CPU di gestione-grafo cresce nello stesso periodo — `cudaGraphInstantiate_v12000` (ricattura completa, richiesta quando l'update incrementale non basta) passa da 403 a 549 chiamate/finestra (+36,2% totale, **+40,1% per-forward**: 1,866→2,614), ciascuna 640-748µs di solo tempo CPU (`ms/fwd` 1,395→1,673, pendenza **+0,00407**, ~6,3% della crescita totale bolle); `cudaGraphExecUpdate_v10020` (update incrementale, il percorso più economico, sempre 1:1 con una nuova cattura) segue la stessa cadenza (+37,9%, ms/fwd +27,0%, pendenza +0,00080). Insieme spiegano **~31%** (0,00487/0,01582) della pendenza specifica di `cudaGraphLaunch_v10000` — coerente in ordine di grandezza con la "tassa di ricattura del grafo" nota dal 10/8 ([[tassa-ricattura-grafo]], ~50ms/ricattura su un banco diverso) ma non la esaurisce: il 69% residuo di quella riga non è attribuito a una singola API RUNTIME nota (**dedotto, non misurato** — è esattamente il buco che `--cpuctxsw` chiuderebbe: scheduling OS, altro lavoro host concorrente, o overhead del driver CUDA stesso nel processare l'update+il lancio in sequenza). Corroborazione indipendente sul ramo `cudaLaunchKernel_v7000`: il conteggio TOTALE di kernel-fuori-grafo nella finestra (non solo quelli con un gap sopra soglia) cresce anch'esso, ma più lentamente (152.838→168.999, +10,6% totale/+13,7% per-forward) del conteggio dei loro gap (+44,9%) — la CPU non si limita a dispatchare più kernel standalone per forward, una quota **crescente** di quei dispatch arriva in ritardo.
+
+**Verdetto netto**: la crescita delle bolle è **prevalentemente HOST-BOUND** (~75,6% della crescita: i 2 siti-copia della cache esperti dominanti in Q1 + la quota `cudaGraphLaunch`/ricattura — tutti col pattern "meno o pari rendezvous, ciascuno più lento"), con una componente **DISPATCH-BOUND reale e non trascurabile** (~23,2%, `cudaLaunchKernel_v7000` standalone — pattern da manuale, più lanci di taglia costante). Non è un fenomeno singolo: sono **due meccanismi distinti che crescono in parallelo**.
+
+**Confidenza**: ALTA sulla ripartizione confine/interno (98,7-98,9% vs 1,1-1,3%, cross-validata da due metodi indipendenti — soglia sui gap e overlap con SYNCHRONIZATION — che concordano) e sulla classifica dei siti (dati diretti da CUPTI, correlationId verificato empiricamente prima dell'uso, non assunto). MEDIA sulla ripartizione host/dispatch fra le singole API RUNTIME: l'attribuzione "un'attesa lunga prima di `cudaMemcpyAsync`/`cudaGraphLaunch` = host-bound" è un'inferenza dal pattern conteggio-vs-durata (esplicitamente richiesta dal mandato), non un'istruzione host cronometrata direttamente — **senza `--cpuctxsw` non posso dire se la CPU in quella finestra di 197-729µs sta CALCOLANDO (routing/sfratto/liste di copia) o è semplicemente non schedulata dall'OS**; "host-bound" qui significa con precisione "gap correlato a una nuova emissione host, di durata crescente col contesto e a bytes-copiati costanti", non "CPU al 100% di utilizzo verificato".
+
+### Raccomandazione
+
+La leva col miglior rapporto valore/costo attacca i primi 2 siti (55,6% della crescita, 47,9% delle bolle totali):
+
+1. **Sito #2** (`mul_mat_vec_q_moe_maschera` → `MEMCPY:Host-to-Device`, cache-esperti, 100% `cudaMemcpyAsync` standalone, bytes costanti ~73-75 KiB): il payload non cresce, quindi la leva è ridurre la LATENZA DI DECISIONE prima dell'issue del memcpy, non la copia stessa. Esperimento diagnostico a bassissimo costo per il prossimo turno (non serve nsys/admin): un timestamp prima/dopo nel sorgente host, nel punto che decide quali esperti installare dopo `mul_mat_vec_q_moe_maschera`, per vedere se quei 679-729µs sono spesi in un calcolo che scala (es. la logica di sfratto, `SFRATTO_PAR`) o in attesa di qualcos'altro.
+2. **Sito #1** (`MEMCPY:Host-to-Device` → `concat_cont`, 85% gated su `cudaGraphLaunch_v10000`): la leva è ridurre la FREQUENZA di ricattura/update del grafo (+36-42% per-forward col contesto) — capire nel sorgente del punto di cattura perché la topologia o i parametri del grafo cambiano più spesso a contesto lungo (dimensioni KV-dipendenti che invalidano l'update incrementale?) è il prossimo passo naturale, fuori perimetro di questo turno (sola analisi).
+
+Entrambi i siti condividono un pattern: il payload/il lavoro non cresce (bytes costanti, conteggio flat o in calo), è il TEMPO PRIMA che si allunga — la firma di una decisione host che diventa più lenta, non di più lavoro da fare. Il braccio L3-B con `--cpuctxsw` resta la chiusura definitiva (separerebbe "CPU occupata" da "CPU non schedulata" dentro questi intervalli) ma, in sua assenza, la strumentazione diretta nel sorgente (punto 1) è più economica e più mirata di un secondo profilo nsys.
+
+### Artefatti (tutti fuori repo, scratchpad di sessione — stessa directory dello script e35, sottocartella `e36_bolle\`)
+
+```text
+e36_bolle\e36_00_schema.py, e36_01_schema2.py, e36_02_correlation_test.py   (esplorazione schema, verifica empirica correlationId)
+e36_bolle\e36_10_gap_sites.py            (merge BUSY + classifica siti sopra soglia; produce .sites.json e .per_gap_events.json)
+e36_bolle\e36_20_growth.py               (tabella crescita 33k↔102k per sito; produce e36_growth_table.json)
+e36_bolle\e36_30_api_and_histogram.py    (attribuzione per API RUNTIME + istogramma temporale; produce e36_histograms.json)
+e36_bolle\e36_40_syncwait_overlap.py     (overlap SYNCHRONIZATION vs BUSY/GAP)
+e36_bolle\e36_33k.sites.json, e36_102k.sites.json         (siti classificati, per contesto)
+e36_bolle\e36_33k.per_gap_events.json, e36_102k.per_gap_events.json   (ogni gap sopra soglia, grezzo)
+e36_bolle\e36_growth_table.json, e36_bolle\e36_histograms.json
+```
+
+Nessun artefatto e35 toccato (sola lettura `mode=ro&immutable=1` su tutte le connessioni sqlite; dimensione/mtime verificati invariati a fine turno). Tutti i numeri assoluti ereditano il caveat del normalizzatore `n_target_fwd` (±1,7-1,8× non riconciliato, turno 35): i confronti RELATIVI 33k↔102k usati per ogni verdetto qui sopra non ne dipendono (stesso `n_target_fwd` per db, riusato senza ricalcolo dai `.e35_budget_v2.json`).
+
+### Stato macchina e chiusura turno
+
+Nessuna corsa lanciata, nessun processo GPU avviato, macchina non toccata (turno di sola analisi come da mandato). Nessun commit. **Aperto per il prossimo turno**: (a) strumentazione sorgente del punto-decisione cache-esperti prima di `mul_mat_vec_q_moe_maschera→MEMCPY:H2D` (raccomandazione §1 sopra); (b) causa della ricattura/update-grafo più frequente col contesto (raccomandazione §2); (c) resta valido dal turno 35 il braccio L3-B con `--cpuctxsw` se si sblocca l'admin, ora con un bersaglio più stretto (i 2 siti sopra, non "le bolle" in generale) e il fattore ~1,7-1,8× di normalizzazione non riconciliato.

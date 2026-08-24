@@ -1829,6 +1829,8 @@ Lettura dal log della fase2a-v2 (righe 865-909) incrociata col riferimento 102k 
 
 **Firma attesa CORRETTA (sostituisce quella dell'entry principale)**: al load «fase=decode» senza rinvii; alla richiesta cambio n.1 + staging 1729; poi **N rinvii «flip rinviato», tutti PRIMA del primo decode** — N = [1 se la chiamata intermedia `fine−2048` è ≤ 64 token] + [1 per la coda `fine−4`, sempre] — ciascuno con `restano = n_tok − n_out`; cambio n.2 alla prima chiamata dopo il prompt; zero OOM. Per il 32.782: N=2 (13 e 3) ✓ — **la fase2a-v2 è dunque PASS PIENO con la firma corretta: v2 CONFERMATA, NESSUNA v3, SHA invariata `ECAEA60B…`.** Il caso «k·2048+1» del mandato originale va ritargetizzato: la variabile giusta è `fine mod 2048 ∈ [2..65]` (chiamata intermedia piccola), e il repro 32.782 (mod 14) È già il test di quel ramo. Due errori miei a verbale in questo giro: la firma «UN SOLO flip rinviato» era derivata dall'aritmetica ingenua `mod n_batch` invece che dal chunking REALE del server (i checkpoint tagliano), e la riga «coda resto = 1 → flippa a decode» della tabella-flussi presupponeva 1 output: la chiamata intermedia da 1 token ha 0 output e RINVIA (ugualmente sicuro, fase prefill a metà prompt è corretta).
 
+**Coda della sera — il p1 resta un fascicolo APERTO a margine, con matrice PRE-REGISTRATA** (messaggio alla regia inviato PRIMA dell'atterraggio della 2b, perché il verdetto sia meccanico): 0,77716 sta 0,083 sotto il minimo della banda di famiglia 0,86-0,91 (1,6× lo spread su 3 punti) — sospetto ma non conclusivo: prompt senza riferimento (pre-fix crashava), contenuto generato diverso, finish=stop. Verifiche già fatte: testo §4.10 del 32k PULITO (saggio strutturato di 293 righe, marker d'apertura una volta sola, zero loop — dopo un falso allarme da sonda sbagliata: letto il file diag256 al posto del 32k, smentito contando le occorrenze); forense di rotta da sorgente: soglia `MMVQ_MAX_BATCH_SIZE=8` (`ggml-cuda.cu:2447`) — 13 token = rotta STAGING su slab (in prefill vivo = matematica corretta; in decode liberato = il crash pre-fix), 4 token = mmvq mappato zero-copy (stessi pesi, stessa matematica, mai staging): NESSUN meccanismo di corruzione a livello di op; contatori al cambio n.2 puliti. MATRICE: 2b in banda (p1 ~0,911±0,02, decode ±3%, §4.10) → braccio (c) = 33.344@v2 completion 8192 contro il riferimento pre-fix 0,88141/2,86 (unico A/B per-prompt esistente; unica differenza la fase della coda-4, intermedia 575 invariata; PARITÀ DI FINESTRA VERIFICATA SULL'ARTEFATTO: il riferimento è a completion **8192**, `finish=length` — summary `sota100k_ctx150k_densefa_stage_hc5_t32_b1_ctx32k_v2.summary.txt` righe 8/10/15/16: `completion=8192`, `p1=0.88141`, `mean_len=2.86`; il «256» circolato in serata era una confusione con la corsa diag256 di oggi) — dentro ~2 punti ⇒ **v2 PROMUOVIBILE** e lo 0,777 si archivia come varianza di contenuto; (c) fuori, o 2b fuori banda/testo sporco ⇒ **v3-soglia-8**: al rinvio si aggiunge `n_tokens_all > 8` — si rinviano SOLO le chiamate della rotta staging (9..64, quelle che il pre-fix ammazzava); le sub-9 tornano a flippare a decode = il percorso esatto di tutti i run di riferimento, con bit-comparabilità ripristinata su 33k/102k. Una riga più commento, backup DLL rituale, esecutore 34.
+
 ---
 
 ## Turno esecutore 33 — CORSA DIAGNOSTICA (256 completion): REGRESSIONE VERA CONFERMATA, non confondimento di lunghezza
@@ -1866,6 +1868,234 @@ Zero OOM/CUDA error (error-scan pulito, divergenze tutte a 0). Shutdown `ctrl-c`
 
 ---
 
+## Turno esecutore 34 (24/8 sera) — PASSO 0/0.5 CONFERMATI; BRACCIO (b) TRATTENUTO (il mandato dichiarava «fase2a già passata», ma l'ultima entry del ledger, DOPO l'ADDENDUM, registra una regressione reale mai chiusa); BRACCIO 3 ESEGUITO — PASS pieno, bit-esatto
+
+**Nota di ordinamento (scritta dopo, per onestà di cronaca)**: questa entry è stata scritta e appesa PRIMA che il commit `8e4b030` (CONTROVERDETTO, in fondo a questo file, timestamp 20:13:26 — atterrato mentre questo turno leggeva/eseguiva) raggiungesse questo esecutore. L'ordine fisico nel file è quindi invertito rispetto alla cronologia reale (il controverdetto è arrivato PRIMA che questa entry fosse completata, ma il mio append ha vinto la corsa sul file). Non la sposto per non rischiare l'integrità del testo già scritto: il seguito (verifica del controverdetto, braccio (b), eventuale (c)) è appeso in una nuova entry DOPO il CONTROVERDETTO, in fondo al file — quella è la sequenza da leggere.
+
+Mandato ricevuto: validazione finale fix resto-64 v2 — fase 2b (102k) + braccio 3 (B1200 corto), con premessa «la fase 2a è già passata (il FAIL precedente era una firma attesa sbagliata)». Prima di lanciare nulla, lettura obbligatoria completa di RUNBOOK + LEDGER_23_AGOSTO per intero (righe 1531-1865, non solo l'entry «Chirurgo 15»).
+
+### PASSO 0 — identità binario: PASS, tutti e cinque i file (non solo llama.dll)
+
+```text
+llama.dll               = ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035  (atteso, 2.276.352 B, mtime 24/08/2026 16:27:32 — IDENTICO)
+llama-server.exe        = 3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9  (invariato)
+ggml-cuda.dll            = 6EF5B781DDD14B6AB503580DEF7876AB38E9AE8E6A6347E665AA8A34C9C68B52  (invariato)
+llama-common.dll         = DD6689ECE4AE405372E581FB60210576970081C16CA57F7698A3AC54CA59C5E5  (invariato)
+llama-server-impl.dll    = 9B417B4F314E36C04B24BABC1D7FB731298C0E92A7BAAE240F71B57336821B88  (invariato)
+```
+
+### PASSO 0.5 — conferma della predizione del chirurgo sul log diag256: CONFERMATA, valori esatti
+
+File: `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t33_fase2a_v2_diag256_f2_b2048.server.log`. Grep mirato:
+
+```text
+riga 866: 5.13.141.027  I slot operator (): id 0 | task 0 | cached n_tokens = 30721, memory_seq_rm [30721, end)
+riga 867: 5.13.141.197  I decode: vram-a-fasi: flip rinviato, restano 13 token di prompt
+...
+riga 899: 5.29.227.120  I slot operator (): id 0 | task 0 | cached n_tokens = 32778, memory_seq_rm [32778, end)
+riga 902: 5.29.237.694  I decode: vram-a-fasi: flip rinviato, restano 3 token di prompt
+```
+
+`cached=30721` precede immediatamente il primo rinvio (chunk +13, coerente con `fine−2048`), `cached=32778` precede il secondo (chunk +4, coerente con `fine−4`) — **esattamente i valori predetti dall'ADDENDUM**. La spiegazione del chirurgo sulla firma (due rinvii, non uno, entrambi chunk di prompt) è confermata byte a riga.
+
+### ATTENZIONE — il mandato era incompleto: la fase 2a NON è «già passata» senza riserve
+
+L'ADDENDUM (riga 1815) risolve **solo** la firma (quanti eventi «flip rinviato» e perché) e dichiara v2 confermata su quella base, con l'avviso esplicito di giudicare «a banda, non a bit». Ma **l'ultima entry del ledger, cronologicamente successiva all'ADDENDUM** (righe 1834-1867, «CORSA DIAGNOSTICA 256 completion»), misura — sullo stesso prompt 32.782, a parità di completion col riferimento turno 32 — **p1=0,63874 / mean_len=1,92 contro l'atteso ~0,87-0,89** (confondimento di lunghezza) o **~0,78** (regressione vera secondo la banda dichiarata dal coordinatore stesso in quella corsa). Il valore osservato è **sotto anche la soglia "regressione vera"**. Verifica indipendente sul file grezzo (non solo la prosa del ledger), `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_t33_fase2a_v2_diag256.summary.txt`: `p1=0.63874`, `mean_len=1.92`, `sha256=1F269253F5F8F9A5933B2FCFC9EF78C73431E3C66BB36DD80C6D51B0F57BD4CD` — combacia esattamente coi numeri di ledger, non è un errore di trascrizione. Verdetto testuale di quella entry: **«VERDETTO SECCO: FAIL... Non pronto per produzione: serve una v3»** (riga 1863). E la «Passaggio di consegne» che chiude il turno 33 (righe 1867, appena sopra questa entry) dice **esplicitamente**: *braccio (b) mai lanciato «avrebbe sprecato 102k di prefill se arriva una v3»* e lo elenca come **aperto in attesa di v3**, non come pronto per il rerun.
+
+Il mandato ricevuto da questo esecutore cita solo il FAIL della firma (risolto dall'ADDENDUM) e non menziona la corsa diagnostica successiva né la regressione di qualità: **premessa parziale, non falsa in sé ma incompleta in un modo che avrebbe portato a certificare come «non-regressione» un binario con una regressione nota e non richiusa sullo stesso identico meccanismo** (`restano 3` — presente, per ammissione dello stesso ADDENDUM, «su OGNI prompt lungo di questa config, anche sul 102k»).
+
+**Decisione presa da questo esecutore, per fail-fast (regola esplicita del proprio mandato) e per REGOLA ZERO §2 del runbook** («un braccio non eseguito è un esito accettabile; un braccio eseguito male è un danno»): **BRACCIO (b) [non-regressione 102k] TRATTENUTO, non lanciato.** Il criterio di giudizio richiesto dal mandato («p1 in banda intorno a 0,911») è quasi certamente destinato al FAIL, per lo stesso meccanismo già misurato due volte (256 e 8.192 completion) sul prompt da 32k, che l'ADDENDUM stesso dichiara presente anche a 102k. Lanciarlo ora avrebbe (a) sprecato ~10+ minuti di prefill su un esito già preannunciato dal dato disponibile, (b) prodotto un verdetto PASS/FAIL potenzialmente fuorviante se letto senza il contesto della regressione aperta, (c) contraddetto la decisione esplicita e motivata del turno precedente.
+
+### Risposta alla domanda del coordinatore (matrice di decisione): completion del punto 33.344 (PrefixChars 91200) del turno 32
+
+**8192, non 256.** Verificato su due fonti indipendenti: (1) ledger riga 1601-1607, tabella B-1 del turno 32, tre punti tutti allo stesso `-MaxTokens 8192` (comando dichiarato «byte-per-byte identico» e ripreso testualmente da turno 33 fase 1 per il punto gemello 63.335, che mostra `-MaxTokens 8192` esplicito nel comando copiato); (2) file grezzo su disco `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_t32_b1_ctx32k_v2.summary.txt`: `prompt=33344, completion=8192`. Il 33.344 **non** è comparabile alla corsa diagnostica da 256 di questo fascicolo (regimi di lunghezza diversi), ma **è** comparabile al braccio (a) v2 da 7.907/8192 completion (stesso ordine di grandezza).
+
+### BRACCIO 3 — non-regressione corta B1200: ESEGUITO — PASS pieno, p1/mean_len bit-esatti
+
+Config ricostruita dai riferimenti disponibili (nessun turno precedente l'aveva mai eseguita): il runner B (`run_porto_hot.ps1`) ha **`LLAMA_VRAM_A_FASI=0` hardcoded** (riga 79 dello script) — la feature/il fix sotto test è quindi runtime-inattiva su questo banco per costruzione, coerente con l'attesa del chirurgo «la guardia non si arma mai sul corto» e col fatto che il riferimento bit-esatto citato (p1=0,90281/mean_len=2,80 = «L0 PROMOSSA» del 16/8, **riconfermato oggi stesso** da turno 31 come suo «controllo» con lo stesso comando) è stato ottenuto sempre con VRAM_A_FASI assente. Braccio 3 è quindi un controllo di non-regressione del **rebuild** (llama-context.{h,cpp} tocca codice condiviso) sul percorso corto di default, non uno stress-test del ramo guardia — coerente con «bit-esatto atteso».
+
+Preflight (20:2x, 24/8): 0 processi, GPU 265/11851 MiB (P8), porte 8099-8101 libere, uptime 5703,9 min, RAM libera 87,8 GB, disco C 46,9/D 113,8 GB liberi, `jprompt.txt` 252 B SHA `C2D18E35A0B933F68B1CDAB9CAD905776AD59399B7E916D8A4DF1ED56A9090A9`.
+
+**Comando esatto**:
+```powershell
+& 'C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\run_porto_hot.ps1' `
+  -Tag 't34_chirurgo15v2_braccio3_corto_b1200_r1_20260824' `
+  -MaxTokens 1200 -Repetitions 1 -PortoHotSnapshot $false `
+  -SpecNmax 3 -SpecConf '0.80' `
+  -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+```text
+tag              = t34_chirurgo15v2_braccio3_corto_b1200_r1_20260824
+runner           = B (run_porto_hot.ps1)
+banco            = B1200
+ripetizioni      = 1
+leva variata     = ServerPath (binario v2, chirurgo 15) — nessuna leva runtime rispetto al riferimento
+prompt           = 68 token (jprompt.txt)
+completion       = 1200/1200 (finish_reason=length)
+eval t/s (decode)  = 16,68
+prompt t/s (prefill) = 21,15
+p1               = 0,90281 (771 accepted / 854 generated)
+mean_len         = 2,80
+SHA output       = 1EDA23452DE9292C817EAF47532724A409DD2FFE3B3EF9E165ED887BA4169089  lunghezza = 3782 caratteri
+cache-esperti    = 473 slot da 6.75 MiB = 3194 MiB in VRAM ..., sfratto_par=1  (riga 260 log, identica ai riferimenti storici)
+cache-esperti domanda = 275477 (colpi 195401 = 70,9%, buchi 80076, miss 29,1%, in ritardo 0=0,0%)  [nessun riferimento pari-nmax per questo campo: nuovo, non confrontabile]
+VRAM_A_FASI      = 0 (E, esplicito nel manifesto) — zero righe "VRAM A FASI"/"flip rinviato" nell'intero log, come atteso
+errori           = zero CUDA error / out of memory / GGML_ASSERT; divergenze: taglia=0 ids=0 out=0 GRIGLIA-corta=0 su tutte le righe rilevatore-replay
+snapshot         = porto_hot_snapshot = 0
+SHA llama.dll    = ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035
+SHA llama-server = 3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9
+build            = chirurgo 15 v2 (16:27:32)
+server vivi max  = 1 (atteso) ; RAM libera min osservata = 87,8 GB
+uptime a inizio  = 5703,9 min
+esito            = PROMOSSO
+percorsi file    = C:\Users\imanu\Documents\Codex\2026-08-15\handoff-nuova-chat-15-agosto-md-3\work\runs\t34_chirurgo15v2_braccio3_corto_b1200_r1_20260824.{server.log,server.out,summary.json,r1.response.json,r1.output.txt}
+anomalie         = nessuna
+```
+
+**Controllo di coerenza §4.10 (prima replica per intero, banco corto)**: letta integralmente `...r1.output.txt` (HTML landing page cyberpunk "NeuraForge" — il prompt standard del banco). Lingua sana: sì. Assenza di loop/ripetizioni patologiche: sì. Pertinenza al prompt: sì (markup/CSS coerenti, commenti in italiano come da richiesta). Degradazione progressiva: no (il testo si interrompe a metà di un valore CSS per raggiungimento del tetto di 1200 token — troncamento per lunghezza, non degradazione).
+
+**Confronto col riferimento**: p1 e mean_len **bit-esatti a 5/2 cifre decimali** sia col valore atteso dal chirurgo (0,90281/2,80) sia con la rimisura fatta stamattina da turno 31 sullo stesso identico comando sul binario PRE-chirurgo15 (stessa tabella, riga «controllo (corretto)»). **Non disponibile** un confronto SHA-bit-esatto o accepted/generated grezzo: né la tabella di turno 31 né il runbook §4.5/4.7 riportano una SHA o un conteggio accepted/generated per questa esatta combinazione (nmax=3/conf=0,80/MaxTokens=1200) — solo p1/mean_len, che è comunque il criterio testualmente richiesto dal chirurgo.
+
+**VERDETTO BRACCIO 3: PASS pieno.** Il rebuild del chirurgo 15 (v2) non altera in alcun modo misurabile il percorso corto di default: p1/mean_len bit-esatti, zero errori, cache-esperti identica, VRAM_A_FASI correttamente inerte. Nessuna riserva.
+
+### Postflight e stato macchina
+
+```text
+POSTFLIGHT (20:27:29, 24/8): ram_libera=88 GB | gpu: 272 MiB usati/11844 liberi, clock 210 MHz, potenza 13,01 W | processi_llama=0
+```
+
+Macchina pulita. Nessun commit eseguito (di competenza della regia). Nessun file toccato in `D:\llama-subtract` (sola lettura, come da mandato).
+
+### Stato del turno: IN ATTESA DI ISTRUZIONI (non ritirato)
+
+Per l'aggiornamento del coordinatore («resta in attesa di istruzioni invece di ritirarti»): verdetti braccio 3 (PASS) e la lettura del braccio (b) (TRATTENUTO, motivazione sopra) sono pronti. In attesa di una delle due decisioni della matrice: (c) A/B per-prompt sul 33.344 su v2, oppure GO v3. Nessun'altra azione intrapresa nel frattempo su questo turno.
+
+---
+
 ## CONTROVERDETTO (regia, 24/8 sera) — supera il framing del commit 976646a
 
 Il «FAIL, regressione vera» della fase 2a è RITIRATO. Verdetto del chirurgo da sorgente+log (addendum sotto l'entry fase2a): la v2 è CORRETTA, nessuna v3. Sbagliata era la firma attesa «un solo flip rinviato»: i DUE eventi sono entrambi chunk di prompt GENUINI — il server taglia ai checkpoint (fine−2048 e fine−4, non k·2048+resto), quindi la coda da 4 token esiste su ogni prompt lungo e «restano 13» è esattamente il punto del crash pre-fix. La guardia si disarma a ogni chiamata che non rinvia; dopo il cambio n.2 il ramo è irraggiungibile; zero stato toccato. La «regressione p1 .88→.64» era un confronto fra PROMPT DIVERSI (32.782 vs 33.344) a completion diverse — p1 non è mai confrontabile fra prompt, e il maledetto non ha baseline pre-fix perché pre-fix crashava. I «16 s fra i flip» erano un chunk di prefill da 2044 token a ~127 t/s (contatori cached 30734→32778), non decode. Fase 2b: GO con firma attesa UN SOLO «restano 3» e giudizio A BANDA (±3% sul turno 31, p1 ~0,911, §4.10); lo SHA output può legittimamente divergere da F0733E8C (i 4 di coda pre-fix giravano in fase decode, con v2 in prefill). Esecutore 34 in corsa.
+
+---
+
+## Chirurgo 15 — FORENSE DI ROTTA A CATALOGO (fondamento dell'innocuità coda-4 e del disegno v3-soglia-8)
+
+Catalogazione formale richiesta dall'esecutore 34 (protocollo «ogni output catalogato»): la sintesi stava già nella «Coda della sera» dentro l'addendum del chirurgo (~riga 1832, paragrafo-riga unica, facile da mancare leggendo dalla coda) ma non nello stato committato. Qui autosufficiente.
+
+**La rotta, letta dal sorgente** (`ggml_cuda_mul_mat_id`, `ggml-cuda.cu:2445-2448`): il ramo layer-major/staging si prende SOLO se valgono TUTTE — buffer mappato (esperti `CUDA0_Mapped`), **`dst->ne[2] > MMVQ_MAX_BATCH_SIZE` (= 8)**, e mmq utilizzabile. Sotto o uguale a 8 righe si cade al cancello cache-decode (`:2483`, commento del sorgente: «Solo decode (un token)… Qualunque condizione manchi, si cade sul percorso di sempre senza toccare niente») e in sua assenza al percorso mappato zero-copy (mmvq sui pesi host via PCIe — stessi byte, stessa matematica). Lo staging si alloca PIGRAMENTE alla prima richiesta (`ggml_cuda_cache_esperti_layer_major`, `cache-esperti.cu:5601-5661`) e **al primo fallimento si latcha spento per l'intero processo** (`layer_major_fallita`, `:5628`).
+
+**Cosa spiega, tutto insieme**:
+1. *Il crash pre-fix* (turno 32, 3/3): la chiamata intermedia da 13 token (13 > 8) chiede la rotta staging ANCHE a fase decode; col flip prematuro lo staging era stato liberato e la VRAM era a 0 → `cudaMalloc` 1729 MiB fallisce → fallback su mmq che vuole pool → OOM `mmq.cu:183`. La geometria «102k salvo, 32k morto» segue dalla taglia dell'intermedia (1338 > 64 → mai classificata decode; 13 ≤ 64 → flip prematuro).
+2. *L'innocuità della coda-4 in v2*: 4 ≤ 8 → MAI staging; in fase prefill (cache a 0 slot) cade sul percorso mappato zero-copy — kernel mmvq, pesi identici, nessun meccanismo di corruzione a livello di op. La 13-in-prefill è ugualmente sana: staging VIVO → mmq sullo slab col banco completo.
+3. *I contatori al cambio n.2* (log fase2a-v2, righe 910-930): `domanda 0, colpi 0, copie 0, replay divergenze 0, acceptmoe lanci 0` — il prompt non ha mai bussato alla cache, come da disegno della fase.
+4. *Il disegno v3-soglia-8* (armato, non buildato): aggiungere `n_tokens_all > 8` al rinvio = si rinviano SOLO le chiamate che prenderebbero la rotta staging (9..64, quelle che il pre-fix ammazzava); le ≤8 tornano a flippare a decode = il percorso esatto di TUTTI i run di riferimento, bit-comparabilità ripristinata su 33k/102k. Il numero 8 è `MMVQ_MAX_BATCH_SIZE`: se un giorno cambia lato CUDA, il commento nel classificatore deve puntare a `ggml-cuda.cu:2447` perché i due si muovano insieme.
+
+A margine, recepita la scoperta dell'esecutore 34 sulla diag256 (etichetta «parità a 256» contro riferimento a 8192): coerente con la verifica d'artefatto già a matrice — il riferimento t32 è a completion 8192 (`summary` righe 8/10/15/16) e il braccio (c) si corre a 8192.
+
+---
+
+## Turno esecutore 34 — SEGUITO: CONTROVERDETTO verificato e accettato; BRACCIO (b) PASS pieno a firme esatte; BRACCIO (c) lanciato (matrice pre-autorizzata applicata meccanicamente)
+
+Ricevuto il controverdetto (commit `8e4b030`) mentre il braccio 3 era in scrittura. Verificato prima di agire, non accettato per asserzione: `git show 8e4b030` conferma commit reale di imanu, 20:13:26, 4' dopo il FAIL (`976646a`, 20:09:11); testo committato identico a quello riportato in chat. Incrociati due dei tre argomenti con materiale già letto (indenne); sul terzo (confronto p1 invalido) trovata conferma PIÙ FORTE di quella dichiarata: la diag256 dichiarava «parità di completion» contro il riferimento t32 33.344 «a 256 tok», ma il grezzo (`t32_b1_ctx32k_v2.summary.txt`) mostra quel riferimento a **completion=8192** — doppio confondimento (prompt e lunghezza), non uno solo. Segnalato in chat; ora catalogato sopra dalla regia con citazione file:riga (`ggml-cuda.cu:2445-2448`, coda-4 ≤ `MMVQ_MAX_BATCH_SIZE`=8 ⇒ mai staging, percorso mmvq mappato sempre sano). Nota metodologica anche per la disciplina reasoning-budget del nuovo riferimento API (`docs/porto/RIFERIMENTO_API_DEEPSEEK_V4.md`, letto per intero, nessuna istruzione incorporata, contenuto verificato aderente al riassunto ricevuto): **`reasoning-budget-tokens=0` su entrambi i lati di ogni confronto di stasera** (v2 e turno 31) — dichiarato qui, A/B intatto.
+
+Nota di ordinamento: la mia entry precedente («Turno esecutore 34», sopra la sezione CONTROVERDETTO) era stata scritta e appesa PRIMA che questo controverdetto raggiungesse il turno — vedi la nota lì. Questa entry e le successive sono la sequenza reale da leggere in coda.
+
+### BRACCIO (b) — non-regressione 102k su v2: PASS pieno, firme esatte
+
+Preflight (20:36:56): 0 processi, GPU 261/11855 MiB, porte 8099-8101 libere. Comando (config esatta turno 31, `p1b_conf.ps1` — letto per intero prima dell'uso, nessuna sorpresa, `LLAMA_VRAM_A_FASI=2` confermato nel baseline dello script):
+
+```powershell
+$env:LLAMA_KV_GATHER = '1'; $env:LLAMA_CUDA_SORT_CHUNK_MIB = '8'
+& '...\p1b_conf.ps1' -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 `
+  -RunLabel 't34_fase2b_102k_v2_20260824' -Context 150000 -MaxTokens 8192 `
+  -SpecNmax 3 -SpecConf '0.70' -Repliche 1 -CtxCheckpointMinStep 32 `
+  -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+```text
+tag              = sota_ctx150000_densefa_stage_hc5_t34_fase2b_102k_v2_20260824_f2_b2048
+runner           = prefill (p1b_conf.ps1, script di sessione — letto per intero, nessuna sorpresa)
+banco            = prefill/lungo (102k)
+ripetizioni      = 1
+leva variata     = ServerPath (binario v2, chirurgo 15) — nessuna leva runtime rispetto al riferimento turno 31
+reasoning-budget-tokens = 0 (entrambi i lati del confronto — disciplina nuova dichiarata)
+prompt           = 101.691 token (jprompt102k.txt, 285.268 B, SHA 3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473, riverificato)
+completion       = 8192/8192 (finish=length)
+prefill t/s      = 137,63  (rif. turno 31: 137,34 — +0,21%)
+decode t/s       = 13,26 / 75,44 ms/token  (rif.: 13,52 / 73,96 ms/token — +2,00% ms/token, DENTRO banda ±3%)
+p1               = 0,90229  (rif. ~0,911 — -0,95%, DENTRO banda)
+mean_len         = 3,06  (rif. 3,18 — nessun criterio esplicito, coerente in direzione col p1)
+SHA output       = B205E05298E7C4467AD1E1DCE1D25C06C90A3E913FEBE5D754517FB7D7DEDED1  (dato, non criterio — diverge legittimamente da F0733E8C per design, coda in prefill non decode)
+firma 1 (warmup pulito) = CONFERMATA: primo evento vram_a_fasi e' il flip diretto a decode, zero "flip rinviato" prima della richiesta
+firma 2 (UN SOLO "restano 3") = CONFERMATA ESATTA: grep -c "flip rinviato" sull'INTERO log (5697 righe, non solo il tail-20 del wrapper) = 1, riga 1267, "restano 3 token di prompt"; l'intermedia (fine-2048, +1338>64) non rinvia, come predetto
+firma 3 (zero OOM) = CONFERMATA: zero righe CUDA error/out of memory/GGML_ASSERT/invalid vector su tutto il log
+cache-esperti    = 473 slot..., sfratto_par=1 (riga 271, identico ai riferimenti storici)
+errori           = divergenze taglia=0 ids=0 out=0 su tutte le righe rilevatore-replay
+snapshot         = n/a (endpoint chat/completions diretto, non runner B)
+SHA llama.dll    = ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035
+build            = chirurgo 15 v2 (16:27:32)
+server vivi max  = 1; shutdown = ctrl-c pulito
+esito            = PROMOSSO
+percorsi file    = D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_t34_fase2b_102k_v2_20260824.summary.txt , D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t34_fase2b_102k_v2_20260824_f2_b2048.{server.log,server.out,_q1.response.json,_q1.output.txt}
+anomalie         = nessuna
+```
+
+**Controllo §4.10 (banco lungo, lettura a campione — qui integrale, il file e' risultato corto abbastanza)**: `..._q1.output.txt`, 736 righe, saggio tecnico in italiano sull'architettura DSV4/cache-esperti/overlap, grounded nel prompt reale (nomi di funzioni/struct coerenti col progetto). Lingua sana: sì. Loop/ripetizioni: no. Pertinenza: sì, pienamente. Degradazione: no — tronca puliti a metà frase per il tetto di 8192 token, qualità costante dalla sezione 1 alla 14.
+
+**VERDETTO BRACCIO (b): PASS pieno.** Tutte e tre le firme esatte (non solo "in banda" — la firma di conteggio è binaria e ha dato esattamente 1); throughput e p1 dentro la banda ±3% dichiarata dal mandato su entrambi i lati; nessuna anomalia; qualità del testo confermata a lettura integrale. Spiegazione di fondo ora disponibile ledger-side (entry "FORENSE DI ROTTA" sopra): la coda-4 non tocca mai la rotta staging (4 ≤ MMVQ_MAX_BATCH_SIZE=8), quindi il PASS non è un colpo di fortuna statistico ma la conseguenza attesa della meccanica.
+
+### Matrice applicata meccanicamente: (b) IN BANDA -> BRACCIO (c) lanciato
+
+Per la pre-autorizzazione del coordinatore, nessuna ulteriore conferma richiesta. Preflight (21:06:36): 0 processi, GPU 244/11872 MiB, porte libere. Lanciato in background (bx5rgsqrq), stessa config del punto 33.344 del turno 32 (PrefixChars 91200), stesso `reasoning-budget-tokens=0`, **unica variabile la DLL** (v2 `ECAEA60B` contro la pre-fix `40E1DEAF` di allora):
+
+```powershell
+$env:LLAMA_KV_GATHER='1'; $env:LLAMA_CUDA_SORT_CHUNK_MIB='8'
+& '...\p1b_conf.ps1' -Port 8099 -StartBatch 2048 -BlockSparse 0 -HcFused 5 `
+  -RunLabel 't34_braccio_c_33344_v2_20260824' -PrefixChars 91200 -Context 150000 -MaxTokens 8192 `
+  -SpecNmax 3 -SpecConf '0.70' -Repliche 1 -CtxCheckpointMinStep 32 `
+  -GraphReusePerTaglia 1 -ReasoningBudgetTokens 0 -ServerPath 'D:\llama-subtract\build\bin\llama-server.exe'
+```
+
+Criterio dichiarato: p1 entro ~2 punti da 0,88141, mean_len ~2,86, §4.10 pulito, SHA come dato. Atteso per design (v3-soglia-8 non ancora costruita, questo è ancora v2): coda-4 in prefill invece che decode, quindi SHA quasi certamente NON bit-esatto a `D73A5455...`, ma p1/mean_len dovrebbero restare in banda per lo stesso motivo strutturale del braccio (b) (coda-4 mai sulla rotta staging). In corsa, esito a seguire non appena il task in background notifica.
+
+### BRACCIO (c) — risultato: PASS pieno, dentro criterio
+
+```text
+tag              = sota_ctx150000_densefa_stage_hc5_t34_braccio_c_33344_v2_20260824_f2_b2048
+prompt           = 33.344 token (PrefixChars 91200, jprompt102k.txt troncato)
+completion       = 8192/8192 (finish=length)
+prefill t/s      = 183,72  (rif. turno 32 stesso punto: 182,95 — +0,42%)
+decode t/s       = 13,74 / 72,79 ms/token  (rif.: 13,8506 / 72,199 ms/token — -0,80% t/s, sostanzialmente invariato)
+p1               = 0,86469  (rif. 0,88141 — delta 1,67 punti percentuali, DENTRO "~2 punti")
+mean_len         = 2,82  (rif. 2,86 — delta -0,04, in banda)
+SHA output       = 515C678CD73A46B605D56237BB497A32E32C2FDAD92EE3A43FD16C409E9B2B0D  (dato: diverge da D73A5455... come atteso, coda-4 ora in prefill non decode)
+firma (UN SOLO "restano 3") = CONFERMATA ESATTA sull'INTERO log (7596 righe): grep -c "flip rinviato" = 1, riga 902
+errori           = zero CUDA error/OOM/GGML_ASSERT su tutto il log; divergenze taglia=0 ids=0 out=0 su tutte le righe rilevatore-replay
+identity         = cache-esperti 473 slot..., sfratto_par=1 (riga 271, identica)
+reasoning-budget-tokens = 0 (entrambi i lati)
+shutdown         = ctrl-c pulito; listening/idle puliti a inizio e fine
+esito            = PROMOSSO
+percorsi file    = D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_t34_braccio_c_33344_v2_20260824.summary.txt , D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_t34_braccio_c_33344_v2_20260824_f2_b2048.{server.log,server.out,_q1.response.json,_q1.output.txt}
+```
+
+**Controllo §4.10**: `..._q1.output.txt` letto per intero (684 righe prodotte prima del taglio a 8192 token). Saggio tecnico sulla stessa architettura (cache-esperti/DSV4/overlap), con commenti che citano date e incidenti reali del progetto (DwarfStar, «braccio delle 07:31», «il battito fisso a 60 ha mentito il 6/8») coerenti col resto del ledger — grounding genuino nel prompt, non confabulazione. Lingua sana: sì. Loop: no. Pertinenza: sì. Degradazione: no, tronca a metà frase per tetto token con qualità costante dalla sezione 1 alla 19.
+
+**VERDETTO BRACCIO (c): PASS pieno.** p1/mean_len dentro il criterio dichiarato, firma esatta (1 solo rinvio, stesso meccanismo coda-4-mai-staging del braccio (b)), zero errori, §4.10 pulito. SHA diverge dal pre-fix come predetto per design, coerente e non allarmante.
+
+### VERDETTO CONSOLIDATO — fix resto-64 v2 (llama.dll `ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035`)
+
+Con questo si chiude la matrice di validazione richiesta all'esecutore 34:
+
+| braccio | prompt | esito | note |
+|---|---|---|---|
+| (a) 32k, turno 33 | 32.782 (resto 14) | PASS (sopravvivenza sempre; qualità ora spiegata dal catalogo forense — coda-4 mai su staging) | nessun v3 necessario, il FAIL di qualità del 976646a era un doppio confondimento prompt+completion, ritirato con `8e4b030` e verificato in modo indipendente da questo esecutore |
+| (b) 102k | 101.691 | **PASS pieno**, firme esatte, in banda | questo turno |
+| (c) 33k A/B | 33.344 | **PASS pieno**, dentro criterio | questo turno |
+| 3, B1200 corto | 68 (jprompt.txt) | **PASS pieno**, bit-esatto | questo turno; guardia mai armata per costruzione (VRAM_A_FASI=0 sul banco corto) |
+
+Zero OOM su tutti e quattro. Zero divergenze rilevatore-replay su tutti e quattro. Nessuna firma fuori posto. Il fix è validato end-to-end: corto (guardia disarmata), 33k/102k (guardia armata, un solo rinvio ciascuno, sempre sotto soglia staging). **Nessuna v3 richiesta.** Sorgente v2 (`llama-context.{h,cpp}`, `D:\llama-subtract`) pronto per il commit di regia insieme a questo verdetto — nessun commit eseguito da questo esecutore (fuori mandato, di competenza della regia).
+
+### Stato macchina e chiusura turno
+
+Postflight (21:23:57): 0 processi, GPU 249/11867 MiB (P8), RAM libera 87,5 GB. Macchina pulita. Nessun commit eseguito. `D:\llama-subtract` non toccato (sola lettura per l'intero turno, come da mandato). Script di sessione usati: `p1b_conf.ps1` (letto integralmente prima dell'uso, pre-esistente nello scratchpad di sessione), `run_porto_hot.ps1` (repo Codex, invariato). In attesa di istruzioni per il commit o per un eventuale banco aggiuntivo.

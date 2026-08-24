@@ -700,6 +700,8 @@ Non si promuove un numero il cui testo non è stato letto.
 precisamente per rendere possibile questo controllo. Un braccio il cui `.output.*` non esiste
 o non è leggibile **non passa questo cancello per definizione**.
 
+Ogni verdetto di qualità/p1 DICHIARA il reasoning budget usato (rif. RIFERIMENTO_API_DEEPSEEK_V4.md §2: sull'endpoint ufficiale il thinking è il default e in thinking i parametri di sampling sono ignorati — budget 0 e budget ≠0 sono regimi diversi, confronti validi solo a budget pari).
+
 ---
 
 ## 5. Leve a caldo contro leve che richiedono il riavvio del server

@@ -2332,3 +2332,24 @@ Nessun artefatto e35 toccato (sola lettura `mode=ro&immutable=1` su tutte le con
 ### Stato macchina e chiusura turno
 
 Nessuna corsa lanciata, nessun processo GPU avviato, macchina non toccata (turno di sola analisi come da mandato). Nessun commit. **Aperto per il prossimo turno**: (a) strumentazione sorgente del punto-decisione cache-esperti prima di `mul_mat_vec_q_moe_maschera→MEMCPY:H2D` (raccomandazione §1 sopra); (b) causa della ricattura/update-grafo più frequente col contesto (raccomandazione §2); (c) resta valido dal turno 35 il braccio L3-B con `--cpuctxsw` se si sblocca l'admin, ora con un bersaglio più stretto (i 2 siti sopra, non "le bolle" in generale) e il fattore ~1,7-1,8× di normalizzazione non riconciliato.
+
+---
+
+## Turno progettista 37 (24/8, solo disegno) — LA CAUSA È L'AND RIGIDO DI `can_reuse`: due siti di padding di n_kv indipendenti invalidano l'intero grafo, uno già testato e insufficiente, l'altro mai toccato per rischio di correttezza
+
+Mandato: solo lettura e disegno (nessuna build/corsa/git in `D:\llama-subtract`), piano completo
+in **`D:\ds4_work\design\BOLLE_HOST_GRAFI_PIANO.md`**. Risposta a D1 (perché l'update/ricattura
+scala con n_kv): `ggml_cuda_graph_update_required` (`ggml-cuda.cu:3958`) è un confronto per-nodo
+la cui uscita alimenta un AND rigido a monte (`llm_graph_result::can_reuse`, `llama-graph.cpp:
+1305-1335`) — una sola differenza invalida l'intero grafo. Almeno **due** siti indipendenti
+paddano n_kv con periodo diverso: quello grezzo (`llama-kv-cache.cpp:1270`, governato da
+`LLAMA_KV_PAD`) e quello delle cache compresse DSV4 CSA/HCA/LID (`llama-kv-cache-dsv4.cpp:788`,
+256 cablato, mai esposto). **Scoperta chiave**: il turno 19 del 17/8 (`LEDGER_17_AGOSTO.md`) ha
+già testato `LLAMA_KV_PAD` 256→1024 sullo stesso banco lungo e trovato `warmup_resets`
+**invariato** — il sito grezzo NON è la causa dominante; il sospetto si sposta sul sito compresso,
+mai toccato perché accoppiato (senza clamp) alla sua stessa allocazione. Risposta a D2/D3: i siti
+MEMCPY di e36 quasi certamente NON vengono dal trasporto cache-esperti di default (`kern_copia`,
+capture-safe, nessun memcpy host) ma da uno dei due rami spenti per difetto — la sonda progettata
+verifica QUALE gira prima di misurare; per D3, propongo una riclassificazione a costo zero dei
+gap già su disco (turno 35) per separare "durante ricattura" da "stabile" senza corse nuove.
+Nessuna corsa, nessuna build, nessun commit in questo turno.

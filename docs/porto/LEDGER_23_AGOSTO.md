@@ -2592,3 +2592,308 @@ fine del turno 36 (nessuna scrittura di questo turno li ha toccati). Nessun comm
 il prossimo turno**: i tre punti della Raccomandazione sopra; resta valida dal turno 35/36 la
 chiusura definitiva con `--cpuctxsw` se si sblocca l'admin, ora con priorità ancora più stretta
 (solo sito #1 per D1, solo #2/#3 per D2 — non più "le bolle" come bersaglio unico).
+
+---
+
+## Turno esecutore 39 (24/8 notte → 25/8, sola analisi) — EMETTITORE NOMINATO: non è cache-esperti, è il fallback dello SCHEDULER GGML per pesi MoE host-mappati (`ggml-backend.cpp:2213`, sotto `LLAMA_MAPPED_IBRIDO=1`) — DOMANDA_DMA e TRASPORTO_ONLINE falsificati con prove dirette, non solo "dichiarati spenti"
+
+Mandato: dare un nome all'emettitore dei cudaMemcpyAsync "orfani" dei siti #2
+(`mul_mat_vec_q_moe_maschera`→H2D, 25,2% della crescita bolle, e38) e #3 (D2H→H2D, 17,8%) — quelli
+che l'e38 ha trovato 0% graph-gated in entrambe le definizioni e che il progettista 37 non ha
+saputo assegnare a nessuno dei tre cammini cache-esperti noti (default/DOMANDA_DMA/TRASPORTO_ONLINE),
+lasciando scritto che potevano essere "un ramo creduto spento ma vivo" o "un terzo cammino mai
+sospettato". Sola analisi: nessuna corsa, nessuna GPU, nessuna scrittura in `D:\llama-subtract`
+(copia di worktree, sola lettura assoluta), nessun git. Letture obbligatorie completate: entry
+turni 35/36/37/38 sopra in questo ledger, `BOLLE_HOST_GRAFI_PIANO.md` per intero,
+`e36_10_gap_sites.py`/`e36_20_growth.py`/`e38_00_check.py` (schema/convenzioni riusate, mai
+riscritte).
+
+### Passo 0 — verificato che le taglie del turno 36 non sono riproducibili da nessun artefatto salvato
+
+`grep -r bytes e36_bolle/ e38_ricattura/` (tutti gli script Python dei turni 35/36/38): **zero
+hit**. Nessuno dei due turni ha mai estratto la colonna `bytes` da `CUPTI_ACTIVITY_KIND_MEMCPY`.
+Le cifre "bytes copiati quasi costanti (72.955→75.436 B medi)" e "(121,0→119,4 KiB medi)" nella
+tabella Q1 del turno 36 **non sono riproducibili da nessun file su disco**: uscite da un calcolo
+ad-hoc non salvato. Il censimento sotto (`e39_10_site_bytes.py`) è quindi la prima misura ESATTA
+e riproducibile dei due siti — e la prima cifra (72.955,4 B, ricostruita dall'istogramma esatto)
+**combacia al decimo con quella informale del turno 36**, a conferma che il join per
+`correlationId` qui sotto è corretto.
+
+### Passo 1 — censimento ESATTO dal DB (`e39_10_site_bytes.py`, riusa i `correlationId` già isolati da `e36_bolle\*.per_gap_events.json`, join su `CUPTI_ACTIVITY_KIND_MEMCPY`)
+
+**Sito #2** (`mul_mat_vec_q_moe_maschera` → `MEMCPY:Host-to-Device`) — taglia a DUE valori esatti, invariati fra 33k e 102k, cambia solo il MIX:
+
+| | 33k | 102k |
+|---|---:|---:|
+| n istanze | 4558 | 4412 |
+| bytes=65536 (64 KiB) | 3526 (77,4%) | 3079 (69,8%) |
+| bytes=98304 (96 KiB) | 1032 (22,6%) | 1333 (30,2%) |
+| streamId | 14 (100%) | 14 (100%) |
+| copyKind | 1=HtoD (100%) | 1=HtoD (100%) |
+| srcKind | 1=Pinned (100%) | 1=Pinned (100%) |
+| dstKind | 2=Device (100%) | 2=Device (100%) |
+| API host | `cudaMemcpyAsync_v3020` (100%) | idem |
+
+Media ricostruita (65536×3526 + 98304×1032)/4558 = **72.955,4 B** — combacia col numero informale
+del turno 36 (72.955 B), confermando che è la stessa popolazione. Il MIX che scala (22,6%→30,2%
+verso la taglia grande) spiega l'intera crescita di +3,4% della media riportata dal turno 36: **le
+taglie stesse non scalano affatto**, solo la loro proporzione.
+
+**Sito #3** (`MEMCPY:Device-to-Host` → `MEMCPY:Host-to-Device`) — accoppiamento D2H/H2D
+**deterministico per evento** (`e39_11_pairs_and_context.py`, istogramma congiunto per-evento, non
+aggregato per valore isolato):
+
+| D2H (before) | H2D (after) | n @33k | rapporto H2D/D2H |
+|---:|---:|---:|---:|
+| 2072 | 294912 | 244 | 142,33 |
+| 4 | 1024 | 185 | **256,00** (esatto) |
+| 12288 | 32768 | 82 | 2,667 |
+| 32768 | 98304 | 82 | 3,000 |
+| 32768 | 32768 | 82 | 1,000 |
+| 12288 | 49152 | 24 | 4,000 |
+| 49152 | 147456 | 24 | 3,000 |
+| 49152 | 49152 | 24 | 1,000 |
+| 65536 | 196608 | 16 | 3,000 |
+| 65536 | 65536 | 16 | 1,000 |
+| 12288 | 65536 | 16 | 5,333 |
+| 16 | 49152 | 5 | 3072,0 |
+
+Tutti i valori H2D del sito #3 sono multipli ESATTI di una base comune **16.384 B**: 32768=2×,
+49152=3×, 65536=4×, 98304=6×, 147456=9×, 196608=12×, 294912=18× — nessun resto. Le taglie D2H
+2072/4/16 (e i valori minori non tabulati: 12288, 69632, 32) **non** appartengono a questa
+famiglia (12288/16384=0,75; 69632/16384=4,25) — non sono la stessa grandezza, verosimilmente il
+readback di un tensore "ids" di forma diversa (dipendente da ubatch/n_tok), non una taglia di
+peso esperto. streamId=14 al 100% su entrambi i lati (551+122+122+6=801 dei 802 su stream 14 per
+il D2H, 801/802 per l'H2D) — stessa lane del sito #2.
+
+**Ricerca diretta del "D2H fisso 260 B" citato dal progettista 37** (`cache-esperti.cu:5697-5699`,
+`(1+64)*sizeof(int32_t)`): censiti **TUTTI** i D2H della finestra decode (non solo quelli
+accoppiati a un gap sopra soglia), 31.392 eventi a 33k, 24 valori distinti di bytes. **Zero
+occorrenze di bytes==260** in tutta la finestra, su entrambi i punti di contesto. Falsificazione
+diretta, non un'inferenza dall'assenza nel manifesto.
+
+### Passo 2 — falsificazione diretta di DOMANDA_DMA e TRASPORTO_ONLINE (dal LOG INTATTO, non dal manifesto)
+
+I due `.server.log` dei bracci nsys sono VUOTI (trappola già scoperta dal turno 35). Ma gli
+**ancora** (`e35_anchor33k`/`102k`), stesso script/env/binario, hanno il log intatto:
+`D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_e35_anchor33k_20260824_f2_b2048.server.log`.
+Letto per intero (grep mirato + lettura diretta righe 1-15, 271, 924):
+
+```text
+riga 2:   LLAMA_CACHE_ESPERTI_W=0(E)
+riga 11:  LLAMA_CACHE_ESPERTI_DMA=0(E)  LLAMA_CACHE_ESPERTI_DOMANDA_DMA=0(D)
+riga 271/924: cache-esperti: ... dma=0, dma_strato=0   (stato RUNTIME derivato, non solo l'env letto)
+```
+
+`LLAMA_TRASPORTO_ONLINE` **non compare nel manifesto** (coerente col promemoria "il manifesto
+omette variabili decisive" — non è stata presa per buona l'assenza). Verificato sul SORGENTE
+(`cache-esperti.cu:2545-2575`): letta col suo stesso nome, la leva "madre" `d = atoi(getenv(...))`
+va a `runtime->cache.to_attivo = d>0 ? ... : 0`; **solo se `to_attivo!=0`** il codice controlla
+`LLAMA_CACHE_ESPERTI_W>=1` e, se manca, stampa `cache_leva_rifiutata("LLAMA_TRASPORTO_ONLINE", ...)`.
+Il log NON contiene mai questa stringa di rifiuto né "TRASPORTO_ONLINE" né "to_attivo" — cioè
+`d` era già 0 dall'inizio (env non impostata), il ramo di rifiuto non è nemmeno stato raggiunto.
+**E comunque**, anche se lo fosse stata, `LLAMA_CACHE_ESPERTI_W=0(E)` è dichiarato esplicito nel
+log: la leva sarebbe stata forzata a zero da un secondo cancello indipendente
+(`w>=1` richiesto, riga 2568-2574). Doppia morte, non una sola.
+
+**Verdetto passo 2**: DOMANDA_DMA e TRASPORTO_ONLINE sono morti con prove dirette (assenza della
+firma di taglia 260 B nel DB + env/stato runtime nel log intatto), non per fiducia nella
+dichiarazione del turno 35. Il progettista 37 aveva ragione sul verdetto, la verifica qui è più
+forte del "dichiarato".
+
+### Passo 3 — esclusi anche i due cammini a THREAD SEPARATO mai esaminati dal progettista 37
+
+Grep sistematico di `cudaMemcpyAsync`/`cudaMemcpy` in tutto `cache-esperti.cu` (13 file toccati in
+`ggml-cuda/`, cache-esperti.cu il più denso): oltre ai tre cammini noti, il sorgente ne mostra
+**altri due**, mai nominati da `BOLLE_HOST_GRAFI_PIANO.md`:
+
+1. **`LLAMA_CACHE_ESPERTI_DMA`** (`runtime->dma_leva`, righe 2673-2689) — variabile DISTINTA da
+   `LLAMA_CACHE_ESPERTI_DOMANDA_DMA` nonostante il nome simile (grep su `dma_leva` vs
+   `domanda_dma`: due campi diversi, due letture `getenv` diverse). Gira su un THREAD DI SERVIZIO
+   separato (`cache_esperti_servizio`, `new std::thread(...)`, riga 3082-3083), con le sue copie a
+   `cudaMemcpyAsync(..., runtime->stream_pf)` (righe 1353, 1457). **Già escluso al passo 2**
+   (`dma=0` nel log). Confermato *anche* strutturalmente morto: vedi sotto.
+2. **`LLAMA_CACHE_ESPERTI_PF_LEGACY`** ("il consumatore legacy", righe 2578-2584) — **ACCESO DI
+   DEFAULT** (`runtime->pf_legacy = ... : 1`, difetto 1 se la env non è impostata) e **non
+   presente nel manifesto stampato**. Alla riga 3082 lo stesso thread di servizio si accende
+   anche con `pf_legacy` vero (`if (runtime->pf_legacy || runtime->dma_leva)`), e il suo corpo
+   (righe 1430-1474, il ramo "anello_host") fa esattamente lo stesso genere di copie
+   (`cudaMemcpyAsync(dst+off[q], basi[q]+esperto*passi[q], passi[q], cudaMemcpyDefault,
+   runtime->stream_pf)`, righe 1450-1462) — su carta, un candidato plausibile per un "terzo
+   cammino mai sospettato".
+
+**Test diretto, non per lettura del cancello ma per THREAD**: interrogato il DB
+(`CUPTI_ACTIVITY_KIND_RUNTIME.globalTid`) per ENTRAMBI i correlationId dei siti #2/#3 e per TUTTI
+i `cudaMemcpyAsync_v3020`/`cudaLaunchKernel_v7000`/`cudaGraphLaunch_v10000` nell'intera finestra
+decode: **un solo `globalTid` (281641540919560) emette OGNI chiamata RUNTIME nella finestra**,
+inclusi tutti i 58.824 `cudaMemcpyAsync` (33k). Se `cache_esperti_servizio` fosse vivo e operoso
+(DMA o PF_LEGACY), comparirebbe un SECONDO thread con le sue proprie chiamate CUDA — non ce n'è
+traccia. **Verdetto**: entrambi i cammini a thread separato sono esclusi con prova diretta (thread
+assente dalla traccia), non solo per il cancello dichiarato — che per PF_LEGACY, essendo acceso
+di default e mai stampato nel manifesto, sarebbe stato altrimenti un sospetto ragionevole rimasto
+aperto.
+
+### Passo 4 — `ggml_cuda_cache_esperti_assicura` (la funzione che il progettista 37 ha letto) non contiene NESSUN memcpy raggiungibile
+
+Riletta per intero (`cache-esperti.cu:5741-5819`, la funzione citata da `BOLLE_HOST_GRAFI_PIANO.md`
+§1.4): la sequenza è `kern_dma_cattura` (device, gated `dma_leva`, morto) →
+`cache_pf_dev_giunta` (righe 6531-6538, SOLO `cudaStreamWaitEvent`, gated `runtime->pf_dev`,
+difetto 0, non dichiarato nel manifesto = spento) → `kern_decidi` (device) →
+`cache_pf_dev_forca` (righe 6477-6526, SOLO kernel+eventi, stesso gate `pf_dev`) →
+`cache_domanda_dma_copia` (gated `domanda_dma`, morto, passo 2) → `kern_copia` (device, il
+cammino di default). **Zero `cudaMemcpyAsync` in tutta la funzione, su qualunque ramo
+raggiungibile in questa config**: la lettura del progettista 37 sul cammino cache-esperti "puro"
+era corretta. L'emettitore non vive in questa funzione — vive altrove.
+
+### Passo 5 — IL RITROVAMENTO: il fallback dello scheduler GGML per pesi MoE host-mappati
+
+`grep cudaMemcpyAsync` esteso a `ggml-backend.cpp` (il file generico multi-backend, FUORI da
+`ggml-cuda/`, mai esaminato dal progettista 37): la funzione `ggml_backend_sched_compute_splits`
+(`ggml-backend.cpp:2019`) contiene, a riga **2213**, il commento upstream
+`// when offloading MoE weights, we can reduce the amount of data copied by copying only the
+experts that are used` — **lo stesso identico commento e cammino** documentato nella memoria di
+progetto `277-copie-per-token-fallback-scheduler.md` (11/8, 13 giorni fa): all'epoca girava sotto
+lo stesso gate e produceva 277 `cudaMemcpyAsync`/token, "non sono della nostra cache: i byte non
+passano di lì". Quella memoria non era mai stata collegata ai siti di e36.
+
+**Catena verificata riga per riga**:
+
+1. **Cancello**: `ggml_backend_buffer_is_host(input->buffer)` (riga 2217) è vero quando il buffer
+   dei pesi è il tipo "mappato ibrido" — `ggml_backend_cuda_mapped_buffer_type_is_host`
+   (`ggml-cuda.cu:1475-1504`) ritorna vero **solo se** `LLAMA_MAPPED_IBRIDO` è a valore non-zero
+   (`ibrido && g_cuda_mapped_uva`). **Confermato ACCESO** nel log intatto e35 (riga 4:
+   `LLAMA_MAPPED_IBRIDO=1(E)`).
+2. **Innesco**: `node->op == GGML_OP_MUL_MAT_ID` con l'input dei pesi come `src[0]` (riga 2218) —
+   il masked-matmul MoE standard di ggml, il vicino naturale di `mul_mat_vec_q_moe_maschera` (il
+   kernel "prima" del sito #2: entrambi servono lo stesso calcolo MoE, uno è il kernel del
+   progetto, l'altro il dispatch generico per il nodo successivo che non trova i pesi in VRAM).
+3. **Lettura ids** (riga 2241-2258, spiega il D2H del sito #3): `ggml_backend_tensor_get_async`
+   → `ggml_backend_cuda_get_tensor_async` (`ggml-cuda.cu:3789-3796`) →
+   `cudaMemcpyAsync(..., cudaMemcpyDeviceToHost, cuda_ctx->stream())`, **immediatamente seguito**
+   da `sync_profilato(ids_backend)` (riga 2244) — spiega ESATTAMENTE il pattern
+   memcpy→sync ripetuto visto nei dump di contesto (`e39_11`).
+4. **Copia selettiva** (righe 2260-2297, spiega l'H2D dei siti #2 e #3): la lambda `copy_experts`
+   (riga 2261) raggruppa run di id-esperto CONSECUTIVI e chiama
+   `ggml_backend_tensor_set_async(split_backend, input_cpy, ..., expert_offset,
+   expert_size_copy + padding_end)` → `ggml_backend_cuda_set_tensor_async`
+   (`ggml-cuda.cu:3780-3787`) → `cudaMemcpyAsync(..., cudaMemcpyHostToDevice, cuda_ctx->stream())`.
+   **Nessun thread nuovo**: `cuda_ctx->stream()` è lo STESSO stream usato dal resto del dispatch
+   dei kernel — combacia con `streamId=14` osservato per il 100% dei due siti.
+5. **Sorgente PINNATA** (spiega `srcKind=1` nel censimento): il buffer "mappato ibrido" è allocato
+   con `cudaHostAlloc(&host, size, cudaHostAllocMapped | cudaHostAllocPortable)`
+   (`ggml-cuda.cu:1427`) — pagina bloccata per contratto CUDA, non un'inferenza.
+
+**Nessun dettaglio resta scoperto**: cancello (LLAMA_MAPPED_IBRIDO, verificato ACCESO), innesco
+(MUL_MAT_ID + buffer host, coerente col vicino di kernel), direzione+srcKind+stream (tutti
+combacianti), e il motivo del pattern memcpy→sync ripetuto (la sequenza letta a riga per riga lo
+prevede esplicitamente, non è dedotto dal solo dato nsys).
+
+### Passo 6 — l'aritmetica delle taglie
+
+`expert_size = input->nb[2]` (per `MUL_MAT_ID`, riga 2223) è il passo in byte di UN esperto nel
+tensore dei pesi; `copy_size = (last_id-first_id+1) * expert_size [+ padding ≤512 B se non è
+l'ultimo run]` (righe 2262-2272). La famiglia di taglie osservata (sito #2: 65536, 98304; sito #3
+lato H2D: 32768, 49152, 65536, 98304, 147456, 196608, 294912) è **tutta multiplo esatto di una
+base comune 16.384 B**, con run-length {2,3,4,6,9,12,18} — nessun resto di +512 B visibile,
+quindi questi run terminano quasi sempre alla FINE del tensore esperti (`padding_end=0` per
+`last_id==n_expert-1`) oppure la base reale è leggermente diversa da 16.384 e il padding vi è già
+incluso in modo che il risultato torni comunque un multiplo pulito — **non verificato al bit**,
+segnalato come limite. Il run-length **6** (98304/16384) combacia col valore dichiarato di
+`n_expert_used=6` (turno 35, log ancore): una singola selezione di token con tutti e 6 gli id
+scelti casualmente contigui produrrebbe esattamente questa taglia. Le taglie D2H fuori famiglia
+(2072, 12288, 69632, 4, 16, 32 del sito #3) sono compatibili con lo stesso codice ma per il
+tensore `ids` (riga 2242, `ggml_nbytes(ids_tensor)`, forma dipendente da ubatch/n_tok — un
+tensore diverso, non una taglia di peso).
+
+### Passo 7 — chiude anche il punto 4 del mandato: memcpy e `cudaStreamSynchronize` sono lo STESSO emettitore
+
+`sync_profilato(b)` (`ggml-backend.cpp:2029-2033`, a `GGML_SCHED_PROFILO` spento come in e35) è
+`ggml_backend_synchronize(b)` → per il backend CUDA, `ggml_backend_cuda_synchronize`
+(`ggml-cuda.cu:3875-3878`) → **`cudaStreamSynchronize(cuda_ctx->stream())`** — lo STESSO stream
+del memcpy, non uno stream diverso. Questa funzione è chiamata a OGNI split × OGNI input dentro
+`ggml_backend_sched_compute_splits` (righe 2183, 2205, 2225, 2244 fra le altre) — **una volta per
+struttura del grafo, non per n_kv**: il conteggio scala con quanti split/input ha il grafo (una
+proprietà quasi fissa del modello), non con la profondità del contesto. Combacia ESATTAMENTE con
+la scoperta laterale dell'e38 (`cudaStreamSynchronize_v3020`: 81.441→79.361 chiamate, **quasi
+FLAT**, ~19% della parete, "non è un motore di crescita") — e SPIEGA perché quel pattern
+assomigliava a DOMANDA_DMA (stessa forma "memcpy poi sync bloccante ripetuto") pur non essendolo:
+è la stessa FORMA di codice (letto→sync, scrivi asincrono) ma in un file diverso, per un motivo
+diverso (confine di backend generico, non domanda-a-domanda della cache). Un solo emettitore
+spiega quindi ENTRAMBI i fenomeni del mandato (memcpy dei siti #2/#3 E il grosso della massa
+`cudaStreamSynchronize`), non due meccanismi coincidenti per caso.
+
+### VERDETTO
+
+**EMETTITORE NOMINATO**: `ggml_backend_sched_compute_splits` (`ggml-backend.cpp:2019`), blocco di
+copia selettiva MoE per pesi host-mappati (righe 2213-2297, upstream ggml — non è codice del
+progetto, non è `cache-esperti.cu`), attivato da `LLAMA_MAPPED_IBRIDO=1` (confermato ACCESO nel
+log intatto della corsa e35) su nodi `GGML_OP_MUL_MAT_ID` il cui buffer pesi è il tipo "mappato
+ibrido" (`ggml-cuda.cu:1475-1504`, pinnato via `cudaHostAlloc(...,
+cudaHostAllocMapped|cudaHostAllocPortable)`). Copia SOLO gli esperti usati (raggruppati per run
+consecutivo), su `cuda_ctx->stream()` (stesso stream del dispatch dei kernel, spiega
+`streamId=14`), con un readback D2H del tensore `ids` immediatamente prima (spiega il sito #3) e
+una `cudaStreamSynchronize` a ogni confine di split/input (spiega sia il pattern memcpy→sync
+ripetuto sia il grosso della massa `cudaStreamSynchronize` isolata dall'e38).
+
+Non è "un ramo creduto spento ma vivo" (DOMANDA_DMA e TRASPORTO_ONLINE restano morti, ora con
+prova diretta) — è esattamente il **terzo cammino mai sospettato**: non appartiene al sottosistema
+cache-esperti del progetto, appartiene allo scheduler generico di ggml, ed è per questo che
+nessuna delle leve `LLAMA_CACHE_ESPERTI_*` lo tocca (coerente con la memoria dell'11/8: "i byte
+non passano di lì").
+
+**Confidenza**: ALTA sul meccanismo e sul cancello (commento sorgente identico a un precedente
+verificato del progetto, condizione d'accensione confermata nel log della stessa identica corsa,
+direzione/srcKind/stream/pattern-sync tutti combacianti, nessuna corsa nuova necessaria). MEDIA
+sull'aritmetica esatta (base 16.384 B fittata sui dati, non verificata contro le dimensioni GGUF
+reali del tensore; non stabilito con certezza se il tensore coinvolto è del bersaglio o della
+bozza — vedi test discriminante sotto).
+
+### Incertezza residua e testimone discriminante per il prossimo turno (input diretto per la sonda D2 del progettista 37)
+
+1. **Quale tensore/modello esatto**: `ggml_cuda_cache_esperti_percorso_gpu_richiesto()`
+   (`ggml-cuda.cu:975-978`, letta anche a riga 6600) sospende un DIVERSO rifiuto
+   (`supports_op` per batch piccolo, righe 6587-6605) quando la cache-esperti vuole slot per
+   bersaglio O bozza — questo governa se `mul_mat_id` resta "supportato" sul backend CUDA, non
+   se lo scheduler evita la copia qui descritta (sono due decisioni distinte dello scheduler:
+   proprietà del buffer vs eleggibilità dell'op). Non verificato empiricamente se le due
+   interagiscono in modo da escludere la bozza o il bersaglio da questo cammino.
+2. **Test a costo minimo, stesso stile del progetto**: un contatore/somma-byte dietro una env
+   nuova (es. `LLAMA_SCHED_SONDA_MOE_COPY=1`) dentro la lambda `copy_experts`
+   (`ggml-backend.cpp:2261`) e al readback `ids` (riga 2243), stampato una sola volta a fine
+   corsa nello stile di `cache_esperti_dump` — confrontare `n`/`somma byte` con i valori misurati
+   qui (4558/4412 istanze, 332.529.664/332.824.576 byte totali) chiuderebbe la domanda senza ambiguità,
+   a costo pressoché zero (non è sul cammino caldo per token, è dentro lo split-compute che gira
+   comunque).
+3. **GGUF**: leggere `nb[1]`/`nb[2]` del tensore gate/up/down del bersaglio (IQ2XXS) e della bozza
+   (DSpark-draft Q2K) per vedere quale, se non nessuno dei due esattamente, produce 16.384 B/
+   esperto — fuori perimetro di questo turno (sola lettura del codice sorgente C++, non dei
+   metadata del modello).
+
+### Artefatti (tutti fuori repo, scratchpad di sessione, sottocartella `e39_memcpy\`)
+
+```text
+e39_memcpy\e39_00_schema.py              (schema CUPTI_ACTIVITY_KIND_MEMCPY, fail-fast sui campi richiesti)
+e39_memcpy\e39_10_site_bytes.py          (censimento esatto bytes/streamId/srcKind/dstKind/API per siti #2/#3, per contesto)
+e39_memcpy\e39_33k.site_bytes.json, e39_102k.site_bytes.json
+e39_memcpy\e39_11_pairs_and_context.py   (istogramma congiunto D2H/H2D per-evento; ricerca D2H=260B in tutta la finestra;
+                                           dump di contesto RUNTIME per-thread attorno a un campione di eventi)
+```
+
+Input: `D:\ds4_work\l3_nsys\e35_nsys{33k,102k}_20260824_b2048.sqlite` (mode=ro, invariati — vedi
+sotto), `e36_bolle\e36_{33k,102k}.per_gap_events.json` (riletti, mai scritti),
+`D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_e35_anchor{33k,102k}_20260824_f2_b2048.server.log`
+(letti per intero/grep mirato, log INTATTO delle ancore, non i due `.server.log` vuoti dei bracci
+nsys), sorgente `D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu`,
+`D:\llama-subtract\ggml\src\ggml-cuda\ggml-cuda.cu`, `D:\llama-subtract\ggml\src\ggml-backend.cpp`
+(sola lettura, `D:\llama-subtract` mai scritto, mai `git`).
+
+### Stato macchina e chiusura turno
+
+Nessuna corsa lanciata, nessun processo GPU avviato, macchina non toccata (turno di sola analisi
+come da mandato). **Artefatti e35/e36/e38 verificati intatti a fine turno**: i due `.sqlite`
+identici in dimensione ai valori dichiarati dal turno 35/38 (153.505.792 B / 218.218.496 B); i
+json di `e36_bolle\`/`e38_ricattura\` con mtime tutti precedenti l'inizio di questo turno (24/8
+22:59-23:46), nessuna scrittura di questo turno li ha toccati (solo letti). `D:\llama-subtract`
+mai scritto, mai `git`. Nessun commit. **Aperto per il prossimo turno**: i tre punti
+dell'incertezza residua sopra — in ordine di costo, prima il contatore a costo zero nella lambda
+`copy_experts`, poi (se serve ancora discriminare bersaglio/bozza) la lettura GGUF.

@@ -2353,3 +2353,242 @@ capture-safe, nessun memcpy host) ma da uno dei due rami spenti per difetto — 
 verifica QUALE gira prima di misurare; per D3, propongo una riclassificazione a costo zero dei
 gap già su disco (turno 35) per separare "durante ricattura" da "stabile" senza corse nuove.
 Nessuna corsa, nessuna build, nessun commit in questo turno.
+
+---
+
+## Turno esecutore 38 (24/8, sola analisi) — LA RICATTURA NON È IL CANCELLO UNICO IN AGGREGATO (7-26% della crescita delle bolle), MA LO È QUASI DEL TUTTO PER UN SOLO SITO: #1 (37% della crescita) graph-gated al 95%, #2+#3 (43%) indipendenti al 100%
+
+Mandato: sola analisi, niente corse/GPU/build/git (macchina non toccata, `D:\llama-subtract` mai
+aperto). Eseguire la misura a costo zero che il piano del progettista 37
+(`D:\ds4_work\design\BOLLE_HOST_GRAFI_PIANO.md`, D3 "il sito H2D→concat_cont è il grafo il gate
+unico?", §5 punto 1) propone esplicitamente: riclassificare i gap già isolati dal turno 36
+(`e36_bolle\*.sites.json`/`*.per_gap_events.json`) in "durante ricattura" vs "stabile" usando le
+finestre di update del grafo già presenti nei due sqlite del turno 35, senza corse nuove. Letture
+obbligatorie completate: entry turni 35/36/37 sopra in questo ledger, `BOLLE_HOST_GRAFI_PIANO.md`
+per intero (§1.1-1.4 anatomia, §2 D1-D3, §5 misure di validazione), gli script
+`e36_10_gap_sites.py`/`e36_20_growth.py`/`e36_30_api_and_histogram.py`/`e35_forward_budget_v2.py`
+(schema `per_gap_events.json`, normalizzatore `n_target_fwd`, riusati senza ricalcolo).
+
+### Metodo e definizione di "finestra di ricattura" (dichiarata, come richiesto dal mandato)
+
+Directory di lavoro: scratchpad di sessione, sottocartella `e38_ricattura\` (5 script Python,
+tutte le connessioni sqlite `mode=ro&immutable=1`, sola lettura; `e36_bolle\*.json` letti ma MAI
+scritti — dimensione/mtime verificate invariate a fine turno, vedi "Stato macchina"). **Fail-fast
+eseguito e superato** (`e38_00_check.py`): tutte e tre le API del mandato
+(`cudaGraphExecUpdate_v10020`, `cudaGraphInstantiate_v12000`, `cudaGraphLaunch_v10000`) e le tre
+nominate dal piano progettista 37 §1.1 come parte del cammino di cattura
+(`cudaStreamBeginCapture_v10000`, `cudaStreamEndCapture_v10000`, `cudaStreamIsCapturing_v10000`)
+sono presenti nella traccia RUNTIME di **entrambi** i sqlite — nessuna stima necessaria, il ramo
+fail-fast non è scattato.
+
+Due definizioni indipendenti di "finestra di ricattura", costruite SOLO da timestamp RUNTIME già
+su disco (nessuna riga nuova, nessuna sonda):
+
+- **STRICT** — unione `[start,end]` delle sole chiamate `cudaGraphInstantiate_v12000` ∪
+  `cudaGraphExecUpdate_v10020`. Misura SOLO il tempo host dentro la chiamata di update in senso
+  stretto. Stima per DIFETTO (limite inferiore).
+- **CLUSTER** — per ogni ciclo di cattura `cudaStreamBeginCapture_v10000`…`cudaStreamEndCapture_v10000`
+  (**verificato empiricamente che si appaiano 1:1 in ordine temporale senza overlap, su
+  1.153/1.590 confini controllati fra cicli consecutivi** — coerente con l'ipotesi di D3 che le
+  chiamate CUDA host di questo cammino siano emesse da UN thread unico in ordine di programma),
+  finestra = `[BeginCapture.start , prossimo cudaGraphLaunch_v10000.start dopo la fine
+  dell'update (Instantiate e/o ExecUpdate) di quel ciclo]`. Include il tempo di REGISTRAZIONE
+  della cattura stessa (i `cudaLaunchKernel_v7000` catturati, che non eseguono sulla GPU) fino al
+  momento in cui la GPU torna a ricevere lavoro reale via un lancio. Stima per ECCESSO (limite
+  superiore — include anche eventuale lavoro host non-ricattura che cade nello stesso intervallo).
+
+Le due definizioni inquadrano l'incertezza: il costo vero "attribuibile al grafo" sta fra STRICT
+e CLUSTER, non è un numero singolo — dichiarato esplicitamente, non nascosto dietro una scelta
+arbitraria.
+
+### Punto 1 — le finestre RUNTIME e le durate anomale (`e38_00_check.py`)
+
+Scoperta empirica preliminare: `cudaStreamBeginCapture_v10000` = `cudaStreamEndCapture_v10000` =
+`cudaGraphExecUpdate_v10020` **esattamente** in numero ai due punti (1.154=1.154=1.154 a 33k,
+1.591=1.591=1.591 a 102k) — ExecUpdate è tentato su OGNI ciclo di cattura, mai saltato.
+`cudaGraphInstantiate_v12000` è **aggiuntiva** (403 a 33k, 549 a 102k, ~35-39% dei cicli): o prima
+cattura in assoluto per quella chiave di grafo, o fallback quando ExecUpdate fallisce per
+violazione di vincoli (`ggml-cuda.cu:4040-4053`, citato dal piano) — non distinguibile dai soli
+timestamp, non necessario per questo mandato.
+
+| API RUNTIME | n 33k→102k | Δn | media_us | mediana_us | p95_us | max_us | durate ANOMALE (>3× mediana) |
+|---|---:|---:|---:|---:|---:|---:|---|
+| `cudaGraphExecUpdate_v10020` | 1.154→1.591 | +37,9% | 38,47→34,51 | 22,72→22,87 | 82,70→82,81 | 1.751,80→1.602,34 | 15,4%→13,6% dei call, 47,6%→38,1% del tempo |
+| `cudaGraphInstantiate_v12000` | 403→549 | +36,2% | 747,85→640,09 | 577,92→597,93 | 1.206,76→1.125,25 | 19.856,11→16.969,31 | 2,7%→1,1% dei call, 27,4%→11,4% del tempo |
+| `cudaGraphLaunch_v10000` | 8.753→8.077 | −7,7% | 229,80→232,82 | 93,08→90,43 | 548,96→548,60 | 5.980,72→5.531,93 | 36,0%→38,8% dei call, 73,9%→77,5% del tempo |
+
+Nota: la durata per-chiamata di Instantiate/ExecUpdate NON cresce col contesto (anzi cala
+leggermente, media e mediana) — la crescita della loro quota-tempo è **tutta da CONTEGGIO**
+(+36,2%/+37,9%), non da chiamate più lente. `cudaGraphLaunch_v10000` mostra da sé una coda pesante
+enorme (36-39% dei suoi call sono "anomali" e valgono 74-78% del suo tempo totale) — questa è la
+durata della chiamata di lancio STESSA (misura diversa dal "gap che la precede" di turno 36, i due
+non vanno confusi: qui è quanto il thread host resta dentro `cudaGraphLaunch`, non quanto la GPU
+aspetta prima che parta).
+
+### Punto 2 — riclassificazione del gap-time (`e38_10_windows.py` + `e38_20_reclassify.py`)
+
+Finestre costruite (nessuna query nuova al db, riusa i JSON di `e38_00`):
+
+| definizione | tot_ms 33k (%parete) | tot_ms 102k (%parete) |
+|---|---:|---:|
+| STRICT | 345,783 ms (1,521%) | 406,314 ms (1,680%) |
+| CLUSTER | 930,301 ms (4,092%) | 1.155,631 ms (4,777%) |
+
+Riclassificazione dei gap ≥20µs (`e36_bolle\*.per_gap_events.json`, riletti com'erano: **51.397
+gap / 7.816,605 ms a 33k, 56.508 gap / 8.426,859 ms a 102k — combaciano ESATTAMENTE col turno 36**,
+conferma che il caricamento non ha introdotto errori):
+
+| | ms_ricattura 33k | %ricatt 33k | ms_ricattura 102k | %ricatt 102k | n toccati / n totali |
+|---|---:|---:|---:|---:|---|
+| STRICT | 322,585 | 4,13% | 375,030 | 4,45% | 606/51.397 (1,18%) → 837/56.508 (1,48%) |
+| CLUSTER | 853,058 | 10,91% | 1.047,994 | 12,44% | 611/51.397 (1,19%) → 848/56.508 (1,50%) |
+
+Solo l'1,2-1,5% dei gap tocca MAI una finestra di ricattura, ma quei gap valgono 4-12% del tempo:
+un gap "toccato" è in media **3,0-3,5× più lungo** (STRICT) o **8,3-9,2× più lungo** (CLUSTER) di
+un gap medio della popolazione generale (532/448 us e 1.396/1.236 us contro 152/149 us) — la
+ricattura, quando c'entra, produce gap sistematicamente grossi, non rumore fine.
+
+### Punto 3 — IL NUMERO CHE DECIDE
+
+Crescita totale (102k−33k), tutti i gap ≥20µs: **+3,93991 ms/fwd** (pendenza **+0,05765
+ms/fwd/1000ctx** — combacia esatto con la tabella Q4 del turno 36, stesso normalizzatore
+`n_target_fwd` 216/210 riusato senza ricalcolo).
+
+| definizione | crescita ricattura (ms/fwd) | quota della crescita totale | quota (ms grezzi, non normalizzati per forward — sensibilità) |
+|---|---:|---:|---:|
+| **STRICT** | +0,29241 (pendenza +0,00428) | **7,4%** | 8,6% |
+| **CLUSTER** | +1,04111 (pendenza +0,01523) | **26,4%** | 31,9% |
+
+Range completo attraverso le 4 combinazioni (definizione × normalizzazione): **7,4% - 31,9%**.
+Applicando la soglia del mandato alla lettura "per forward" (quella esplicitamente richiesta):
+**entrambe le definizioni cadono sotto il 30%** — il verdetto aggregato formale è **<30%: le
+attese sono prevalentemente indipendenti dalla ricattura**. Ma CLUSTER è a un soffio dal
+confine (26,4%, e 31,9% nella lettura non normalizzata — la incrocia), quindi il numero aggregato
+da solo non è un verdetto sicuro: **la scomposizione per sito lo è**.
+
+**Breakdown sui 3 siti che il piano D3 nomina esplicitamente** (79,8% della crescita totale
+combinata — quote individuali 36,8%/25,2%/17,8%):
+
+| sito (e36) | quota della crescita totale | quota-ricattura della SUA crescita (STRICT → CLUSTER) | lettura |
+|---|---:|---:|---|
+| #1 `MEMCPY:H2D → concat_cont` | 36,8% (+1,45154 ms/fwd) | **32,2% → 95,2%** | **GRAPH-GATED**: quasi tutta la sua crescita vive dentro le finestre di ricattura |
+| #2 `mul_mat_vec_q_moe_maschera → MEMCPY:H2D` | 25,2% (+0,99291 ms/fwd) | **0,0% → 0,0%** | **INDIPENDENTE**: zero overlap con la ricattura, in ENTRAMBE le definizioni |
+| #3 `MEMCPY:D2H → MEMCPY:H2D` | 17,8% (+0,70098 ms/fwd) | **0,0% → 0,0%** | **INDIPENDENTE**: idem |
+
+Il numero aggregato (<30%) è quindi la MEDIA di due popolazioni radicalmente diverse, non la firma
+di un fenomeno omogeneo: il sito #1 da solo (33% della crescita totale delle bolle nella tabella
+del turno 36) è graph-gated quasi per intero (95,2% sotto CLUSTER, ancora 32,2% sotto la
+definizione più severa STRICT); i siti #2+#3 (38,6% nella stessa tabella) non toccano MAI una
+finestra di ricattura, in nessuna delle due definizioni. Questo è coerente al bit con e36 (sito #1:
+85% innescato da `cudaGraphLaunch_v10000`, il lancio che una finestra CLUSTER cattura per
+costruzione; siti #2/#3: 100% `cudaMemcpyAsync_v3020` standalone, un cammino che non tocca mai
+`cudaStreamBeginCapture`) e con la lettura a priori del piano (§3.3, nota di correzione alla
+raccomandazione del turno 36): il piano aveva già previsto che il sito #2 NON fosse spiegabile da
+un calcolo che scala, qui si aggiunge che non è nemmeno graph-gated.
+
+### Punto 4 (bonus) — periodicità delle finestre di ricattura (`e38_30_periodicity.py`)
+
+Approssimazione dichiarata (stessa del turno 36 Q3, non confermata come meccanismo, solo come
+scala): n_kv cresce ~linearmente nella finestra da n_kv_start a n_kv_start+256. Spacing mediano
+fra cicli di cattura consecutivi, tradotto in token-n_kv equivalenti:
+
+| popolazione | spacing mediano 33k | spacing mediano 102k | n cicli 33k→102k |
+|---|---:|---:|---:|
+| TUTTI i cicli | 0,0251 token | 0,0241 token | 1.154→1.591 |
+| cicli GRANDI (≥p95=188 kernel catturati fra Begin/EndCapture, proxy del grafo principale, ~23% dei cicli) | 0,0905 token | 0,0908 token | 269→368 |
+| cicli PICCOLI (proxy sotto-grafi/batch di copia) | 0,0283 token | 0,0306 token | 885→1.223 |
+
+**Nessuna popolazione si avvicina a un periodo di 256, 1.024 o 32.768 token** (i tre periodi di
+padding nominati da `BOLLE_HOST_GRAFI_PIANO.md` §1.2) — la cadenza osservata è 3-4 **ordini di
+grandezza** più fitta del più fine dei tre (256): anche isolando solo i cicli "grandi" (proxy del
+grafo principale bersaglio/bozza), la ricattura scatta ogni ~0,09 token, non ogni 256. Lettura:
+la stragrande maggioranza dei cicli di cattura NON è scandita dal padding di n_kv — è
+verosimilmente dominata dalle "chiavi di grafo multiple" già notate dal turno 35 (~8.753/8.077
+lanci per ~216/210 forward-bersaglio, cioè decine di grafi distinti per forward, uno per
+`nodes[0]` — piano §1.1) che invalidano per ragioni proprie (probabilmente il CONTENUTO che
+cambia ogni round, non la lunghezza del contesto). Coerente col fatto che i cicli/forward
+crescono comunque (5,34→7,58, **+42,0%**, combacia con il "+36-42%/forward" già misurato dal
+turno 36 per Instantiate+ExecUpdate) — la crescita è reale, solo non scandita a un periodo pulito
+di padding.
+
+### Osservazione laterale (fuori dal mandato stretto, economica da testare coi dati già caricati)
+
+`cudaStreamSynchronize_v3020` è enorme in assoluto (81.441 call / 4.268,741 ms a 33k → 79.361 /
+4.542,690 ms a 102k, **~19% della parete, quasi FLAT fra i due punti** — non è un motore di
+crescita) e **verificato 0,00% dentro le finestre CLUSTER** (0/81.441 e 0/79.361), a conferma del
+commento sorgente citato dal piano §1.4 ("solo fuori cattura"). Il 56%/42% delle occorrenze è
+seguito immediatamente da un altro `cudaMemcpyAsync_v3020`/`cudaStreamSynchronize_v3020` — un
+pattern di chiamate compatibile con `cache_domanda_dma_copia` (§1.4 del piano: D2H → sync
+bloccante → loop di H2D) nonostante quella leva sia dichiarata OFF nella config del turno 35.
+L'overlap diretto coi gap dei siti #2/#3 è però piccolo (2,3% e 0,5% del loro tempo-gap) — NON
+spiega la loro CRESCITA per semplice sovrapposizione temporale. Non promosso a scoperta: è
+esattamente l'incertezza che la sonda B del piano (§3.2, grep dei log per `domanda a domanda
+roundtrip=`) è disegnata per sciogliere con certezza, prima di puntare una sonda C su un sito
+sbagliato.
+
+### VERDETTO
+
+**In mezzo, ma non uniformemente**: la quota di crescita del gap-time attribuibile alle finestre
+di ricattura del grafo è **7,4% (STRICT) - 26,4% (CLUSTER)** in aggregato — sotto la soglia del
+30% nella lettura "per forward" richiesta dal mandato, ma a un soffio dal confine sotto CLUSTER
+(e sopra, 31,9%, nella lettura non normalizzata). **Il numero aggregato non è la risposta
+giusta da sola**: la crescita non è un fenomeno omogeneo, è la somma di due popolazioni
+opposte. Il sito #1 (37% della crescita totale, il singolo più pesante) è **graph-gated per
+quasi intero** (95,2% sotto CLUSTER) — per QUESTO sito la leva è una, il grafo, ed è la priorità
+di chirurgia D1 (contromisura 2 del piano: allargare il passo del sito B/DSV4 compresso). I siti
+#2+#3 (43% della crescita totale) sono **completamente indipendenti dalla ricattura** (0,0% in
+entrambe le definizioni) — per questi due la leva è il trasporto/la decisione cache-esperti (D2,
+sonda B poi C del piano), non il grafo, e l'osservazione laterale su `cudaStreamSynchronize`
+suggerisce dove guardare per primo. **Bonus**: la periodicità delle finestre di ricattura NON è
+scandita da nessuno dei tre periodi di padding noti (256/1.024/32.768 token) — è 3-4 ordini di
+grandezza più fitta, dominata quasi certamente dalle molte chiavi di grafo indipendenti (copie
+cache-esperti) più che dal solo confronto n_kv del sito A/B del piano.
+
+### Raccomandazione per il prossimo turno
+
+1. **Priorità D1 (piano progettista 37, contromisura 2)** resta giustificata ma SOLO per il sito
+   #1: allargare il passo del sito B (DSV4 compresso) dovrebbe abbattere in modo pressoché
+   proporzionale la sua quota di crescita (95,2% graph-gated sotto CLUSTER) — il bersaglio giusto
+   per misurare il successo è la pendenza del SOLO sito #1 nella prossima riedizione di
+   `e36_10/20/30`, non "le bolle" in blocco (che includono #2/#3, immuni a questa leva per
+   costruzione).
+2. **Priorità D2 (sonda B poi C, §3.2/§3.3 del piano)** resta l'unica leva per i siti #2+#3 (43%
+   della crescita, zero tocco con la ricattura in qualunque definizione) — la sonda B (grep dei
+   log esistenti per `domanda a domanda roundtrip=` / l'equivalente di trasporto-online) è ora
+   ANCHE motivata dal pattern di `cudaStreamSynchronize_v3020` osservato qui (compatibile con
+   DOMANDA_DMA nonostante la leva dichiarata off): confermarla o escluderla prima di scrivere la
+   sonda C.
+3. Non ancora tentato: isolare per NOME (sonda A del piano, `last_diff_node`) quali cicli di
+   cattura appartengono al grafo bersaglio/bozza vs alle molte copie cache-esperti — questo turno
+   li separa solo per TAGLIA (conteggio di kernel catturati, proxy indiretto), non per identità;
+   la sonda A chiuderebbe la domanda "chi sono davvero i cicli GRANDI" con certezza invece che per
+   inferenza.
+
+### Artefatti (tutti fuori repo, scratchpad di sessione, sottocartella `e38_ricattura\`)
+
+```text
+e38_ricattura\e38_00_check.py              (fail-fast + catalogo/percentili API RUNTIME di grafo)
+e38_ricattura\e38_33k.api_check.json, e38_102k.api_check.json
+e38_ricattura\e38_10_windows.py            (costruzione finestre STRICT/CLUSTER, verifica appaiamento Begin/EndCapture)
+e38_ricattura\e38_33k.windows.json, e38_102k.windows.json
+e38_ricattura\e38_20_reclassify.py         (riclassificazione gap ricattura/stabile, quota di crescita, breakdown per sito)
+e38_ricattura\e38_reclassify.json
+e38_ricattura\e38_30_periodicity.py        (bonus: periodicità in token-n_kv equivalenti, cicli grandi/piccoli)
+e38_ricattura\e38_periodicity.json
+e38_ricattura\e38_40_synchronize_side.py   (osservazione laterale cudaStreamSynchronize, fuori mandato stretto)
+```
+
+Input: `D:\ds4_work\l3_nsys\e35_nsys33k_20260824_b2048.sqlite` (153.505.792 B) e
+`...e35_nsys102k_20260824_b2048.sqlite` (218.218.496 B), `e36_bolle\e36_{33k,102k}.sites.json` e
+`.per_gap_events.json` — tutti riletti `mode=ro`/`json.load`, mai scritti.
+
+### Stato macchina e chiusura turno
+
+Nessuna corsa lanciata, nessun processo GPU avviato, macchina non toccata (turno di sola analisi
+come da mandato). **Artefatti e35/e36 verificati intatti a fine turno**: i due `.sqlite` sono
+identici in dimensione ai valori dichiarati dal turno 35 (153.505.792 B / 218.218.496 B); i quattro
+`e36_bolle\*.json` letti hanno mtime 22:59:08/22:59:31/22:59:08/22:59:32 del 24/8, invariati dalla
+fine del turno 36 (nessuna scrittura di questo turno li ha toccati). Nessun commit. **Aperto per
+il prossimo turno**: i tre punti della Raccomandazione sopra; resta valida dal turno 35/36 la
+chiusura definitiva con `--cpuctxsw` se si sblocca l'admin, ora con priorità ancora più stretta
+(solo sito #1 per D1, solo #2/#3 per D2 — non più "le bolle" come bersaglio unico).

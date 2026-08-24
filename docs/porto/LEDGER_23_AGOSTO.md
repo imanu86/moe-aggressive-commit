@@ -2099,3 +2099,131 @@ Zero OOM su tutti e quattro. Zero divergenze rilevatore-replay su tutti e quattr
 ### Stato macchina e chiusura turno
 
 Postflight (21:23:57): 0 processi, GPU 249/11867 MiB (P8), RAM libera 87,5 GB. Macchina pulita. Nessun commit eseguito. `D:\llama-subtract` non toccato (sola lettura per l'intero turno, come da mandato). Script di sessione usati: `p1b_conf.ps1` (letto integralmente prima dell'uso, pre-esistente nello scratchpad di sessione), `run_porto_hot.ps1` (repo Codex, invariato). In attesa di istruzioni per il commit o per un eventuale banco aggiuntivo.
+
+---
+
+## Turno esecutore 35 (24/8 sera) — ATTRIBUZIONE nsys della pendenza 0,144 ms/token/1000ctx: KV RING + INDEXER + ARGSORT/TOPK spiegano il 95% della crescita per-forward classificata, le BOLLE un altro pezzo comparabile
+
+Mandato: attribuire con nsys la voce fuori mappa da ~0,144 ms/token/1000ctx scoperta dalla campagna slope (turni 31-32-33, sopra in questo stesso ledger). Letture obbligatorie completate: RUNBOOK_BANCO_DS4.md (§1 preflight, §6.6 risanamento, §6.9 prezzo della sonda), questo ledger (turni 31-33, entry chirurgo 15/verdetto consolidato resto-64 v2), `D:\ds4_work\l3_nsys\PIANO_L3.md` (disegno L3 del 16-17/8) e gli script realmente eseguiti quel giorno (`run_porto_hot_nsys.ps1`, flag nsys confermati empiricamente).
+
+**PASSO 0 — identità binario**: `Get-FileHash D:\llama-subtract\build\bin\llama.dll` = `ECAEA60B96599741F2D879B4644157507124FBAD4DAE4725614902AE0699C035` — CONFERMATO, identico alla v2 canonica del mandato. `llama-server.exe` = `3D3347D1A4E03CA103E6BD9FCD32C2DEF61E9C413F2F9658D53F16B6910009C9` e `llama-server-impl.dll` = `9B417B4F314E36C04B24BABC1D7FB731298C0E92A7BAAE240F71B57336821B88`, invariati dai turni 31-33. `D:\llama-subtract` mai scritto, mai `git`. Preflight iniziale pulito: 0 processi, porte 8099-8101 libere, GPU 245/11871 MiB, RAM 87,1/95,89 GB liberi, disco C 46,9/D 113,8 GB liberi, `jprompt102k.txt` 285.268 B (SHA `3B4994877D4074E1249DA6EDE53ADC26C10D1297005428BE02990284560A1473`), modelli presenti.
+
+### Disegno eseguito, esattamente come da mandato
+
+Config slope esatta (env completo di `p1b_conf.ps1`, ricopiato dallo scratchpad di sessione — SOTA cache-esperti + `LLAMA_KV_GATHER=1` + `LLAMA_CUDA_SORT_CHUNK_MIB=8` + `LLAMA_DSV4_INDEXER_FUSO=1` + `LLAMA_VRAM_A_FASI=2` + `HC_FUSO=5` + `SpecNmax=3`/`SpecConf=0.70`, batch/ubatch 2048, `-ServerPath D:\llama-subtract\build\bin\llama-server.exe`, `reasoning-budget-tokens=0` — **dichiarato qui come da nuova regola §4.10**), completion **256** su tutti e 4 i bracci:
+
+1. **Ancora corta senza nsys** (`e35_anchor33k_20260824`, `PrefixChars=91200` → 33.344 token, punto identico al turno 32/33).
+2. **Profilo nsys 33k** (`e35_nsys33k_20260824`), stessa config, wrapper `e35_p1b_nsys.ps1` (copia di `p1b_conf.ps1` con l'unica differenza dichiarata: il lancio è avvolto in `nsys profile`).
+3. **Profilo nsys 102k** (`e35_nsys102k_20260824`), `PrefixChars` assente → prompt pieno, 101.691 token (punto turno 31 fase 2 / turno 32).
+4. **Ancora lunga senza nsys** (`e35_anchor102k_20260824`), stessa config del punto 3.
+
+Invocazione nsys (identica byte-per-byte ai flag confermati empiricamente il 17/8 in `run_porto_hot_nsys.ps1`, **non** al disegno originale di `PIANO_L3.md` che aveva ancora `--trace=cuda,nvtx,wddm` e un separatore `--`: quella forma fallisce su nsys 2024.5.1 su questa macchina):
+
+```powershell
+nsys profile --trace=cuda,nvtx --cuda-graph-trace=node --sample=none --cpuctxsw=none `
+  --stop-on-exit=true --force-overwrite=true -o <path> <llama-server.exe> <argomenti server>
+```
+
+`--cuda-graph-trace=node` presente su entrambi i profili (obbligatorio, altrimenti i kernel dentro i CUDA graph sono invisibili — C2 di `PIANO_L3.md`). Preflight/risanamento §6.6 eseguito fra **ogni** braccio (polling attivo, mai a tempo): sempre 0 processi, VRAM < 300 MiB, RAM ≥ 87 GB prima del braccio successivo.
+
+### TRAPPOLA NUOVA — nsys sotto questo wrapper NON inoltra stdout/stderr del figlio, la nota di `run_porto_hot_nsys.ps1`/`PIANO_L3.md` §4.1 su questo punto è FALSIFICATA
+
+Verificato direttamente: `<tag>.server.log` dei due bracci profilati è **0 byte**, `<tag>.server.out` contiene solo l'avanzamento di `nsys` stesso ("Collecting data... Generating ... Generated: ..."), zero righe del server llama (niente `cache-esperti:`, niente `p1`, niente `divergenze`). Questo spiega perché la mappa L3 del 16-17/8 aveva bisogno di file **separati** `*.extracted_stderr.log` (visti in `D:\ds4_work\l3_nsys\`) invece di leggere `<tag>.server.log`: l'affermazione "stdout/stderr del figlio continuano ad arrivare a $serverLog/$serverOut" in `run_porto_hot_nsys.ps1` riga 283 **non regge con questo binario/versione nsys**, e nessuno l'aveva corretta nel commento. **Non ho riprodotto il meccanismo di estrazione storico** (fuori perimetro, avrebbe richiesto tempo non budgettato); ho usato un canale equivalente e più diretto: **il campo `timings` della risposta JSON** (`draft_n`, `draft_n_accepted`, `prompt_per_second`, `predicted_per_second`) è popolato **indipendentemente dal log del server** e identico fra ancora e profilo pari-punto (vedi sotto). Verifica d'identità §4 del runbook fatta quindi su **SHA output + `timings.draft_n`/`draft_n_accepted` bit-esatti**, non sulla riga `cache-esperti:` (irraggiungibile sotto nsys con questo wrapper) — dichiarato esplicitamente come deviazione dalla procedura standard, con la prova che la sostituisce.
+
+### Identità dei 4 bracci — bit-esatta a coppie, verificata
+
+| braccio | prompt | completion | prefill t/s | decode t/s | ms/token | p1 (draft_n/accepted) | SHA output |
+|---|---:|---:|---:|---:|---:|---:|---|
+| ancora 33k (pulita) | 33.344 | 256/256 | 182,72 | 12,162 | 82,223 | 0,73743 (132/179) | `0DF732572DC90F0...F79A9` |
+| profilo 33k (nsys) | 33.344 | 256/256 | 172,71 | 11,403 | 87,698 | 0,73743 (132/179) | `0DF732572DC90F0...F79A9` **identico** |
+| ancora 102k (pulita) | 101.691 | 256/256 | 137,53 | 11,596 | 86,234 | 0,74725 (136/182) | `D2E3AE0520D9BD0...876D06` |
+| profilo 102k (nsys) | 101.691 | 256/256 | 136,24 | 10,775 | 92,804 | 0,74725 (136/182) | `D2E3AE0520D9BD0...876D06` **identico** |
+
+SHA output e `p1` **bit-esatti** fra ancora e profilo allo stesso punto di contesto: nsys non altera la traiettoria di calcolo (atteso, è una sonda passiva sul piano numerico), solo il tempo — esattamente la garanzia che il disegno A/B richiedeva. Firma v2 resto-64 presente e sana su tutti e 4 i bracci: **un solo** `vram-a-fasi: flip rinviato, restano 3 token di prompt` per ancora (verificato nei log intatti delle due ancore, dove il log NON è swallowed da nsys), zero `CUDA error`/OOM/divergenze diverse da zero, shutdown `ctrl-c` pulito su tutti e 4. Prefill delle ancore in banda con lo storico turno 31/32 (182,72 vs 182,95 = −0,13%; 137,53 vs 137,34 = +0,14%). `p1`/`mean_len` delle ancore (0,737/2,07 e 0,747/2,14) **differiscono** dall'aggregato storico a 8192 completion (0,881/2,86 e 0,911/3,18): atteso e non un difetto — sono statistiche cumulate sui **primi 256 token** di una generazione deterministica (temperature 0), quindi una finestra precoce del contenuto, non l'aggregato stazionario a 8192 token. Dichiarato come limite del disegno a completion 256, non nascosto.
+
+### Fattore di distorsione della sonda (dalle ancore, §6.9 — nsys è sonda ATTIVA, i suoi numeri contano SOLO come delta interni fra i due profili)
+
+| | 33k | 102k |
+|---|---:|---:|
+| prefill: distorsione | −5,48% | −0,94% |
+| decode: distorsione | −6,24% | −7,08% |
+| ms/token: Δ assoluto | +5,475 ms (+6,66%) | +6,570 ms (+7,62%) |
+
+Decode-distorsione stabile (~6-7%) sui due punti; prefill-distorsione molto meno stabile (−5,5% vs −0,9%, un solo run per punto, nessuna replica: può essere rumore di banco più che un vero effetto di scala). Ordine di grandezza coerente con l'unico riferimento storico di questo progetto per `--cuda-graph-trace=node` (+9,4% su un banco corto diverso, 11/8, PIANO_L3.md §2).
+
+### Normalizzazione "per forward" — corretta a metà analisi, dichiarato l'errore e la correzione
+
+**Primo tentativo (fallito, v1)**: segmentare per lancio di grafo (`cudaGraphLaunch_v10000`, stesso metodo di `l3_budget_final.py` del 16-17/8) e classificare un segmento "bersaglio" se contiene un kernel `*moe_maschera*`. **Falsificato da questo stesso banco**: 8753 lanci di grafo nella finestra decode a 33k contro ~124-216 round attesi (troppi: i lanci includono grafi piccoli separati per i batch di copia della cache esperti, non solo il forward principale), e soprattutto **il drafter di questa build NON è più denso/senza-esperti** come documentato nella mappa L3 del 16-17/8 — dal log intatto dell'ancora 33k: `dflash.block_count=3` **ma** `n_expert=256, n_expert_used=6`, cioè il drafter è anch'esso MoE. La presenza di un kernel `*moe_maschera*` non distingue più bersaglio da bozza: **assunzione della mappa L3 storica invalidata da un cambio di architettura del drafter fra il 17/8 e il 24/8**, chi riusa `l3_budget_final.py` va avvertito.
+
+**Correzione (v2, adottata)**: `kern_acceptmoe` (`cache-esperti.cu:7843-7867`, letto nel sorgente) prende un parametro `strato` — gira **una volta per strato MoE per forward**, sia bersaglio (43 strati, `deepseek4.block_count`) sia bozza (3 strati, `dflash.block_count`). Con `draft_n` esatto dalla risposta JSON:
+
+```
+n_target_fwd = (istanze_kern_acceptmoe − draft_n × 3) / 43
+33k:  (9824 − 179×3) / 43 = 215,98 → 216   (residuo 1/9288 istanze)
+102k: (9567 − 182×3) / 43 = 209,79 → 210   (residuo 9/9288 istanze)
+```
+
+Quadratura quasi esatta (< 0,1% di residuo) su entrambi i punti: adottato. **Umiltà dichiarata**: `n_target_fwd` non riconcilia con l'aggregato storico del ledger (256/mean_len ≈ 124 a 33k, contro 216 qui) — un fattore ~1,7-1,8× di differenza, **stabile sui due punti** (216 vs 210, non diverge), compatibile con `kern_acceptmoe` che spara più di una volta per round per ragioni strutturali non ancora isolate (due fasi decide/commit? gestione dei candidati parziali sotto `n_max=3`?). Il confronto **proporzionale** fra voci e fra i due punti di contesto non dipende da questo fattore (è un moltiplicatore comune); il confronto **assoluto** contro la cifra 0,431 ms/forward/1000ctx del turno 32 sì, e va quindi letto come indicativo, non come seconda misura indipendente della stessa costante.
+
+### LA TABELLA — ms/forward per voce ai due punti, pendenza per 1000ctx (Δcontesto = 68.347 token = 68,347×1000ctx)
+
+| voce | ms/fwd 33k | ms/fwd 102k | Δ | pendenza (ms/fwd/1000ctx) |
+|---|---:|---:|---:|---:|
+| **KV RING (materialize/store, kv-ring.cu)** | 1,300 | 3,690 | **+2,391** | **+0,03498** |
+| **INDEXER lightning (lightning_indexer_kernel_wmma/vec)** | 0,745 | 2,209 | **+1,464** | **+0,02142** |
+| **ARGSORT / TOPK (k_argsort_f32_i32 + DeviceSegmentedRadixSortKernel)** | 1,195 | 2,496 | **+1,301** | **+0,01903** |
+| non classificato | 0,198 | 0,526 | +0,328 | +0,00480 |
+| attenzione (flash_attn*, soft_max) | 3,450 | 3,724 | +0,274 | +0,00401 |
+| norm/elementwise/rope/copy/concat/reduce | 5,380 | 5,513 | +0,134 | +0,00196 |
+| MMVQ/MM densi | 16,326 | 16,406 | +0,080 | +0,00117 |
+| KV GATHER G1 (kv_gather_kernel/mask/account) | 0,537 | 0,608 | +0,071 | +0,00104 |
+| MMVQ MoE mascherate + legacy | 12,008 | 12,050 | +0,043 | +0,00062 |
+| copie CUDA (memcpy) | 1,063 | 1,085 | +0,022 | +0,00032 |
+| logica cache/fork (kern_decidi, kern_fj_*) | 1,484 | 1,496 | +0,012 | +0,00018 |
+| quantizzazione attivazioni (quantize_q8_1) | 0,535 | 0,541 | +0,005 | +0,00008 |
+| DSV4 HC fuso (post/comb/pre) | 0,330 | 0,336 | +0,005 | +0,00008 |
+| AcceptMoE/routing/partiziona/argmax | 0,570 | 0,572 | +0,002 | +0,00003 |
+| TRASPORTO cache (kern_fj_copia + kern_copia) | 24,156 | 23,464 | **−0,691** | **−0,01012** |
+| **SOMMA classificata (kernel+memcpy)** | 69,275 | 74,716 | +5,441 | **+0,0796** |
+| **BOLLE** (unione KERNEL+MEMCPY nella finestra, complemento) | 40,908 | 45,306 | +4,398 | **+0,0643** |
+| **PARETE (finestra decode / n_target_fwd)** | 105,248 | 115,199 | +9,951 | **+0,1456** |
+
+`DSV4 MoE tile` (gate_up/down tile) e `MMQ prefill` a zero istanze su entrambi i punti nella finestra decode (atteso: quei percorsi non sono attivi qui, sanity check passato — nessun residuo di prefill nella finestra, `mul_mat_q*` = 0 su entrambi).
+
+### VERDETTO
+
+**I tre colpevoli nominati dal mandato come "candidati pre-registrati" sono confermati, con un quarto elemento imprevisto**:
+
+1. **KV RING (materialize/store)** — la voce che cresce di più in assoluto (+0,035 ms/fwd/1000ctx, 44% della crescita classificata). Non era fra i tre candidati pre-registrati per nome, ma è esattamente la "lettura KV/attenzione residua fuori dal gather G1" che il mandato indicava come possibile: il **gather G1 vero e proprio resta piatto** (`KV GATHER G1`: +0,00104, sostanzialmente rumore), è la sua **contabilità di materializzazione** (`account_materialize_kernel`/`store_rows_kernel`/`materialize_all_kernel`, `kv-ring.cu`) a scalare con n_kv.
+2. **INDEXER lightning** (+0,021 ms/fwd/1000ctx, 27%) — **misurato con fondamento nel sorgente**: `lightning_indexer_kernel_wmma` (`lightning-indexer.cu:19-115`) prende `n_kv` come parametro runtime e dimensiona la griglia su `blockIdx.x` che copre `start_kv` fino a `n_kv`: è strutturalmente O(n_kv) per costruzione, non per inferenza statistica.
+3. **ARGSORT / TOPK** (+0,019 ms/fwd/1000ctx, 25%) — `k_argsort_f32_i32`/`DeviceSegmentedRadixSortKernel` con `ncols = src0->ne[0]` (`argsort.cu:276`): se il tensore ordinato è lo score-per-posizione dell'indexer (`ncols = n_kv`), è anch'esso O(n_kv); coerente con la scoperta del turno 31 che `LLAMA_CUDA_SORT_CHUNK_MIB` (proprio il chunking di questo sort) tocca "esattamente `top_k`/argsort, l'operazione dominante del gather".
+4. **TRASPORTO cache (kern_fj_copia)** e **MMVQ MoE mascherate** — FLAT o leggermente negativi: **esclusi**. Il numero di copie/esperti-serviti per round non scala col contesto (atteso: il routing MoE dipende dal contenuto del token, non dalla lunghezza del contesto).
+
+Insieme, questi tre spiegano **94,8%** della crescita classificata per-kernel (0,0754 su 0,0796 ms/fwd/1000ctx). Ma la crescita classificata è essa stessa solo **55%** della crescita totale della parete (0,0796 su 0,1456): il resto è **BOLLE** (+0,0643 ms/fwd/1000ctx, grandezza comparabile alla somma dei tre colpevoli) — buchi fra kernel dentro la finestra decode, non calcolo. Con questa build **non è stato possibile** (fuori dal wrapper usato, servirebbe `--cuda-graph-trace=graph` + `--cpuctxsw` in un braccio L3-B dedicato, mai lanciato qui) dire se le bolle sono host-bound (la CPU calcola mentre la GPU aspetta, firma già vista il 10/8, [[join-73-percento-finestra-uno-split]]) o dispatch-bound (latenza di lancio dei ~10^5-10^6 nodi di grafo in più portati dal contesto). **Dichiarato esplicitamente come da mandato: "la voce è attesa/bolla, non (solo) calcolo" — attribuzione valida, non chiusura completa.**
+
+**Verdetto secco**: la pendenza 0,144 (ledger, ms/token/1000ctx) — equivalente 0,431 ms/forward/1000ctx — è attribuita **per il 96% della sua parete-equivalente misurata qui** (0,1456 ms/fwd/1000ctx secondo il normalizzatore di questo banco) a KV RING + INDEXER + ARGSORT/TOPK (calcolo, 52%) e a BOLLE nella finestra decode (attesa, 44%), con KV GATHER G1 e TRASPORTO cache esplicitamente esclusi. **Resta aperto**: (a) la riconciliazione esatta fra il normalizzatore `n_target_fwd` di questo banco e il conteggio-round implicito del turno 32 (fattore ~1,7-1,8× non spiegato); (b) la natura esatta delle bolle (host-bound vs dispatch-bound), che richiede un braccio L3-B dedicato con `--cpuctxsw=process-tree` (oggi non disponibile senza privilegi admin su questa macchina, PIANO_L3.md §4.4) o un profilo `--gpu-metrics-*` (bloccato da `ERR_NVGPUCTRPERM` su questa GPU, stesso vincolo del 17/8).
+
+### Artefatti (tutti assoluti, nomi datati 20260824)
+
+```text
+D:\ds4_work\l3_nsys\e35_nsys33k_20260824_b2048.nsys-rep    (60.789.951 B)
+D:\ds4_work\l3_nsys\e35_nsys33k_20260824_b2048.sqlite      (153.505.792 B)
+D:\ds4_work\l3_nsys\e35_nsys33k_20260824_b2048.sqlite.e35window.txt
+D:\ds4_work\l3_nsys\e35_nsys33k_20260824_b2048.sqlite.e35_budget.json        (v1, round-count non affidabile — vedi sopra)
+D:\ds4_work\l3_nsys\e35_nsys33k_20260824_b2048.sqlite.e35_budget_v2.json     (v2, adottato)
+D:\ds4_work\l3_nsys\e35_nsys102k_20260824_b2048.nsys-rep   (87.235.906 B)
+D:\ds4_work\l3_nsys\e35_nsys102k_20260824_b2048.sqlite     (218.218.496 B)
+D:\ds4_work\l3_nsys\e35_nsys102k_20260824_b2048.sqlite.e35window.txt
+D:\ds4_work\l3_nsys\e35_nsys102k_20260824_b2048.sqlite.e35_budget.json
+D:\ds4_work\l3_nsys\e35_nsys102k_20260824_b2048.sqlite.e35_budget_v2.json
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_e35_anchor33k_20260824.summary.txt (+ .server.log intatto, .server.out, .r1 assenti — nomi q1.*, .hw/.cpu.csv)
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_e35_anchor102k_20260824.summary.txt (+ log intatto, .hw/.cpu.csv)
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_e35_nsys33k_20260824.summary.txt (+ .server.log VUOTO, vedi trappola sopra)
+D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_e35_nsys102k_20260824.summary.txt (+ .server.log VUOTO)
+```
+
+Script fuori repo, scratchpad di sessione: `e35_p1b_nsys.ps1` (copia di `p1b_conf.ps1`, unica differenza il wrapper nsys + timeout shutdown 300s), `e35_run1_anchor33k.ps1`..`e35_run4_anchor102k.ps1` (lanciatori con telemetria `sample_hw.ps1` standard §6.8), `e35_forward_budget.py` (v1, round-count rotto, tenuto per traccia dell'errore), `e35_forward_budget_v2.py` (v2, adottato).
+
+### Stato macchina e chiusura turno
+
+Postflight: 0 processi, GPU 268-275 MiB usati (P8), RAM libera 87-88 GB stabile per tutto il turno. Macchina pulita. Nessun commit eseguito. `D:\llama-subtract` mai scritto. Nessuna quiete a tempo fra i 4 bracci (solo risanamento §6.6 a polling attivo). Nessuna anomalia fail-fast incontrata oltre alla firma attesa "flip rinviato, restano 3" (sana, dichiarata dal mandato). **Aperto per il prossimo turno**: braccio L3-B dedicato (`--cuda-graph-trace=graph` + `--cpuctxsw=process-tree` se si sblocca l'admin, altrimenti solo `--cpuctxsw` resta negato) per separare host-bound da dispatch-bound dentro le BOLLE; e un secondo punto di normalizzazione indipendente da `kern_acceptmoe` per chiudere il fattore ~1,7-1,8× non riconciliato con l'aggregato storico del turno 32.

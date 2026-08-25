@@ -436,6 +436,71 @@ ubatch**: r41 non è più confrontabile. Piano C se nemmeno 256 entra: misurare 
 **CORTO**, che è legittimo per il bersaglio perché il costo del lungo è additivo e l'81,7% è
 pavimento, cioè esattamente ciò che il corto misura.
 
+## 7-sexies. r43/r44 — R1 MORDE IL MECCANISMO 24×, MA LA PARETE NON SI MUOVE
+
+**r43, sondaggio di capacità a ubatch ridotto: FALLITO, e conferma il modello.** Vincolo scoperto:
+`p1b_conf.ps1` ha `-StartBatch` con `ValidateSet(1024, 2048, …)` e la tabella `$shapes` accoppia
+sempre `Batch = UBatch` → **512 e 256 non sono raggiungibili senza modificare lo script**. A
+ubatch 1024 la leva fallisce di nuovo, **ma a taglia esattamente dimezzata**: `cudaHostAlloc di
+260.12 MiB fallita` contro i 524,17 di r42. Il rapporto 2:1 conferma che il buffer scala con
+l'ubatch — il modello era giusto, il margine no.
+
+**r44, banco CORTO, due bracci appaiati** (via `run_porto_hot.ps1`, già ripuntato al canonico dal
+mandato 1; verificato per grep: `MAPPED_IBRIDO=1`, `OVERLAP_K=2`, `BATCH_MAX=3`, `PIN=1` intatti,
+`FINESTRA` assente).
+
+| | **B** (`r44_R1_corto`, leva ON) | **A** (`r44_ctrl_corto`, leva OFF) |
+|---|---|---|
+| `sched-cpu-buft` | `mappato ATTIVO` | `mappato SPENTO (difetto)` |
+| censimento, **ingressi/grafo** | **22,62** | **63,83** |
+| profilo, **confini blocco** (a 301 grafi) | **432** | **10.506** |
+| p1 / mean_len | 0,75248 / 1,93 | 0,77670 / 2,01 |
+| SHA output | `2A64594A…447B` | `AD3D3770…FE11` |
+| decode t/s | 13,02 | 12,85 |
+| errori | zero | zero |
+
+- **G1 raggiungibilità: SUPERATO** — `mappato ATTIVO`, nessun `RIFIUTATO`.
+- **G2 meccanismo: 2,82×**, sotto la soglia pre-registrata di 4× ma **tutt'altro che inerte**.
+- **G3 conferma incrociata: 24,3×** — i confini di blocco crollano da 10.506 a **432**. Il crollo
+  dei blocchi è **quasi un ordine di grandezza più grande** di quello degli ingressi: i due
+  contatori sono correlati ma non equivalenti, e **è il blocco la cosa che R1 uccide**.
+- **G4 correttezza: APERTO, giustamente non certificato.** SHA/p1/mean_len divergono fra B e A, ma
+  sono **due lanci di processo separati** con speculazione accesa e K=2 — il regime in cui il
+  progetto stesso dichiara che la bit-esattezza non è garantita
+  (`cancello-sha-quando-vale`). In corso il **controllo di rumore** (`r45`): due lanci di A a
+  parità di tutto. Se A1≠A2 la divergenza è rumore di lancio e il cancello diventa **a banda**; se
+  A1=A2≠B, **R1 ha un baco** ed è un guasto.
+
+### La lettura, e perché è un risultato anche se è negativo
+
+**Il meccanismo funziona benissimo (24×), la parete si muove dell'1,3%, cioè dentro il rumore.** Se
+il controllo di rumore conferma, la conclusione è netta e chiude una strada intera: **quei blocchi
+host non erano overhead da togliere, erano l'host che osserva lavoro GPU vero**. È esattamente
+l'ipotesi che l'analisi del rendezvous dava per «falsa quasi certamente», con l'argomento che il
+costo per confine scala col **lavoro GPU** (0,24 ms a r41 contro 0,99 a t34) e non col numero di
+confini. Un negativo pulito qui vale più di un positivo dubbio, perché **se togliere il 96% dei
+blocchi non muove la parete, non la muoverebbe nemmeno un rendezvous perfetto** — e il fronte
+host-bound si chiude in blocco, indicando che il collo è la GPU.
+
+**Cautela dichiarata**: il corto ha p1 diversi fra i due bracci, quindi i due t/s non sono
+comparabili a parità di traiettoria; e il profilo del corto non è quello del lungo (10.506 confini
+su 301 grafi contro 320.661). **Il verdetto di velocità va preso sul lungo.**
+
+### L'aritmetica della pinnata che spiega perché R1 non entra sul lungo, e come farcela entrare
+
+```
+modello mappato   74.304 MiB
+draft mappato      2.224 MiB   (blocco 0, per -otd)
+                  ──────────
+totale             76.528 MiB = 74,73 GiB   <- il tetto noto è 74,7 sì / 76,9 no
++ buffer R1          524 MiB  =  75,2 GiB   -> SFONDA
+```
+
+Due margini da recuperare, entrambi già identificati: **(a)** `run_porto_hot.ps1` **non ha
+`--no-host`** (scoperta dell'esecutore) e carica il bersaglio pinnato — 1010 MiB liberabili su quel
+runner; **(b)** sul lungo, il **blocco 0 del drafter** occupa 2.224 MiB di mappata: spostarlo su
+CPU normale libererebbe da solo quattro volte quel che serve a R1.
+
 ## 8. STATO E CODA
 
 **Chiuso stanotte**: fascicolo SLOT 473 (già in produzione) · fronte speculazione (tetto 17,0 t/s)

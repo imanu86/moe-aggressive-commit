@@ -866,6 +866,59 @@ ha salvato la corsa, ma lo stesso −1 in un cammino senza bounds-check sarebbe 
 tabella silenziosa**. Il progetto ha già l'idioma giusto (`voci fuori tabella`/`voci negative`
 dell'ADAPTIVE-K, `NOTE_IMPLEMENTAZIONE.md` §7.2): andrebbe esteso a questa lookup. **Item aperto.**
 
+## 7-terdecies. r50 — le tre leve insieme: **SHA divergente, G2 fallito**
+
+Banco lungo, prefill reale 101k, `-MaxTokens 1200`, coppia appaiata.
+
+**G1 — testimoni, e uno dei tre è debole:**
+
+| leva | testimone | esito |
+|---|---|---|
+| `FORK_DOWN_TARDI` | `porto-cb: … down_tardi=1` (B) / `=0` (A) **+** manifesto | letta, **doppio** testimone |
+| `FORK_STADI` | riga dedicata `cache-esperti: FORK_STADI=1 -- pipeline gate -> up -> down con join distinti` (solo in B) **+** manifesto | letta, **doppio** testimone |
+| `TOPK_FUSO` | **solo** il manifesto. **Nessuna riga operativa** in nessuno dei due log | letta secondo il manifesto, **senza testimone indipendente** |
+
+**G2 — correttezza: FALLITO, e non per rumore.**
+
+| | B (tre leve) | A (nessuna) |
+|---|---|---|
+| SHA output | `b9fd992f…e252` | `a177ddaf…7479` |
+| p1 (acc/gen) | 0,81766 (713/872) | 0,84073 (739/879) |
+| mean_len | 2,47 | 2,61 |
+
+Entrambi i testi letti **integralmente** (3784 e 3586 caratteri): due saggi tecnici coerenti e
+pertinenti, ma **divergono già dal secondo paragrafo** — non è deriva tardiva, la traiettoria si
+separa presto, coerente con un p1 diverso fin dalle prime posizioni.
+
+**G4 — non rendibile, dati per trasparenza soltanto**: decode 12,95 contro 12,66 t/s (+2,29%),
+`C_round` 190,74 contro 206,13 (**−7,47%**). Sembrerebbe superare la soglia e avvicinarsi al +6%
+atteso, **ma B e A hanno calcolato output diversi**: un `C_round` più basso su una traiettoria con
+`mean_len` più corto (2,47 contro 2,61) non è un guadagno comparabile, potrebbe essere solo l'effetto
+di generare risposte più brevi per token accettato.
+
+**G5 salute: pulita.** Zero assert/CUDA error, zero guasti/in ritardo/pesi mancanti, divergenze
+replay a zero. Cambi di fase VRAM 36,4/10,1 ms (B) e 30,8/8,7 (A), **ben sotto i 100 ms**;
+`warmup_resets` 42 e 39, comparabili. **Nessuna contaminazione di sessione.**
+
+### La lettura, e la correzione al sospetto
+
+L'osservazione dell'esecutore che **«due testi entrambi ottimi ma diversi fra loro sono precisamente
+il sintomo di G2»** è la lettura corretta: *il cancello di qualità non è un sostituto del cancello di
+identità*, e nessuno deve usare il primo per assolvere il secondo.
+
+Il sospetto su `TOPK_FUSO` è probabilmente giusto **ma non come baco**: quella leva **fonde nove
+kernel del router in uno**, e una fusione cambia l'ordine delle operazioni in virgola mobile ⇒ **lo
+SHA diverge per costruzione**, stessa classe della fusione HC già adottata. L'esito atteso non è
+«leva rotta» ma **«leva con cancello diverso»**: per `TOPK_FUSO` il cancello dev'essere p1 in banda
+più il §4.10, mai lo SHA.
+
+**Scomposizione ordinata come `r51`, e costa UNA corsa sola** — il controllo A di r50 è già in cassa
+e questo banco riproduce bit-esatto: `DOWN_TARDI` + `STADI` accese, `TOPK_FUSO` spenta. Se lo SHA
+torna `a177ddaf…7479`, le due sono pulite, la divergenza era tutta della fusione, **e il confronto
+di prestazione contro A diventa valido a parità di traiettoria**. Se invece diverge ancora, allora
+**è la COMBINAZIONE a non essere neutra** — fatto pesante, dato che `DOWN_TARDI` da sola era già
+risultata SHA-identica in r46.
+
 ## 8. STATO E CODA
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**

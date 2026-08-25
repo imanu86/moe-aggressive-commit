@@ -665,6 +665,112 @@ Rilancio ordinato come `r47`, **ordine A-poi-B** (il controllo per primo: se è 
 scopre senza spendere anche B), con cancello di sanità pre-registrato — decode di A sopra 10,5 t/s e
 cambi di fase sotto 100 ms, altrimenti la macchina va riavviata.
 
+## 7-decies. FRONTE BYTE — una leva ritrovata, una falsificazione mai registrata, e il trasporto raddoppiato
+
+### ⚠ CORREZIONE AL BUDGET: il trasporto è ~2× quello che questo ledger dichiarava
+
+L'aritmetica `409 MiB/token → 17,3 ms → 20,1%` è ancorata alla finestra a **256 token** (colpi
+72,6%). Sul banco vero — 102k, completion **8192**, il punto da 75,44 ms/token — il tasso di colpi
+stazionario è **51,5%**:
+
+```
+buchi 976.213 / 8192 tok = 119,2 miss/token × 6,75 MiB = 804 MiB/token
+a 23,07 GiB/s = 34,0 ms/token = 45,1% della parete      (NON 20,4%)
+```
+
+Confermato indipendentemente da `p1b_conf070` (73,64 ms/tok): 795 MiB/token → 33,7 ms → 45,7%.
+**Il trasporto è quasi metà della parete, non un quinto.** E la derivazione «azzerare il trasporto
+dà 14,5 t/s» di §5 usava l'ancora a 256 invece della SOTA lunga: **il numero regge per un'altra via
+(l'elasticità empirica), la derivazione no.**
+
+### 🔑 `LLAMA_OVERLAP_BATCH_MAX=4` — la leva ritrovata, misurata il 21/8 e mai registrata
+
+`llama-graph.cpp:1862-1867`: `forma_ammessa = n_tokens <= batch_max`. Con `BATCH_MAX=3` **ogni
+forward da 4 righe gira senza corsia CPU**, cioè con tutti e 6 gli esperti sulla cache — e a nmax=3
+il forward di verifica arriva a 4 righe. Misura diretta al punto SOTA lungo: `domanda 2.011.416`
+contro `4 × partizioni 123.840 = 495.360` ⇒ **≥ 75,4% della domanda gira SENZA corsia CPU.**
+
+Coppia appaiata del 21/8, stesso checkpoint (`pos 101686, n_past 101687`), unica differenza la
+variabile (`D:\ds4_work\llama_run\t24_long_restore_{control473,overlapbm4}_g1_c070_n3_b1200_20260821.server.log`):
+
+| | control (BM=3) | **overlapbm4 (BM=4)** | Δ |
+|---|---:|---:|---:|
+| `partizioni` | 30.874 | **57.792** | **+87,2%** |
+| `domanda` | 285.433 | 226.041 | −20,8% |
+| `colpi` | 58,3% | **66,8%** | +8,5 pt |
+| **`buchi`** | 119.138 | **75.152** | **−36,9%** |
+| **`byte a domanda`** | **785,74 GiB** | **495,64 GiB** | **−290,1 GiB** |
+| p1 / mean_len | 0,83238 / 2,56 | 0,83939 / 2,49 | in banda 2σ |
+| ms/token · t/s | 77,58 · 12,89 | 76,03 · 13,15 | −2,00% · +2,02% |
+| **`C_round`** | 198,6 ms | **189,3 ms** | **−4,68%** |
+
+**Non è in nessun ledger** (grep su `docs/`), è rimasto orfano quattro giorni, e **il runner di
+produzione è ancora a 3**. Il `mean_len` peggiore in B è un handicap: il t/s grezzo (+2,0%, dentro
+banda) **sottostima** la leva; la metrica onesta è `C_round`.
+
+*Trappola latente*: `build_moe_ffn_overlap` chiama `ggml_dsv4_moe_decode` senza controllare
+`n_tokens` (`llama-graph.cpp:1935-1941`) mentre l'op asserisce `n_tokens <= 3` (`ggml.c:6809`).
+Oggi irraggiungibile perché `LLAMA_DSV4_DECODE_TILE_VRES` è spento — ma **`BATCH_MAX≥4` +
+`TILE_VRES=1` = abort**. Una riga di guardia a `:1936`.
+
+### ⚠ LA POLITICA A TRE LIVELLI È FALSIFICATA — e il «vale 17-20%» va ritirato
+
+La macchina è **completa e cablata end-to-end** (maschera a quattro valori `kern_fj_maschera:6042`;
+pesi del router dentro la cache `:4882-4888`; «non installare» `:5046-5080`; dispatch misto
+`ggml-cuda.cu:2704-2732`). Il blocco dichiarato il 13/8 («la cache non riceve i pesi») **è stato
+risolto**. Non manca nulla da accendere: **manca una ragione.**
+
+Banco 13/8, **cinque bracci contro due riferimenti**, unica variabile `peso_copia_pm`: **monotono —
+più byte si eliminano, più si perde.** `p150` toglie il **97,2% dei byte** e perde il **16,9%**; col
+pavimento anti-collasso toglie il 57,8% e perde il 2,4%, *pur alzando i colpi di +12,3 punti*. **Il
+meccanismo funziona; è il costo per miss ad avere il segno sbagliato**: lo zero-copy mappato in situ
+costa **0,43-0,68 ms/esperto contro 0,33-0,40 della copia**. Ragioni strutturali assenti dal
+microbench: compete col fork stream sullo stesso PCIe, e ha il pattern d'accesso della MMVQ invece
+di uno stream contiguo di `int4`. E peggiora nel regime nuovo: **la copia si de-duplica per riga, la
+lettura mappata si paga UNA VOLTA PER RIGA** (`mmvq.cu:1385`) — a mean_len 3,06 sono ~4 righe.
+
+**La discrepanza 17-20% contro 2,9-5,8% è sciolta: non regge nessuno dei due.** Il 17-20% aveva
+denominatore sbagliato (55,5 s invece di 83,24) e numeratore sbagliato (contava anche il gruppo «1
+uso», che in zero-copy **perde** 0,066 ms a testa): gonfiato 1,5-1,8×, e poi il segno si inverte. Il
+2,9-5,8% è un canale **diverso** (`MASSA_CORSIE`), già misurato a **−5,69%** con raggiungibilità
+passata (`LEDGER_17_AGOSTO.md:2405-2415`).
+
+**Debito**: il binario **stampa a ogni corsa una raccomandazione falsificata**
+(`cache-esperti.cu:8301-8303`: «in zero-copy costerebbero 0,274 invece di 0,403»).
+
+### Il nucleo caldo esiste, ed è l'1,1% — firma di THRASHING
+
+Al punto SOTA lungo: `mai=82,1% · 1=12,2% · 2-3=4,6% · 4+=1,1%`, riuso medio **1,06 per installato,
+mediana zero**. Ma le classi 1 e 2-3 spiegano al massimo ~250k colpi su 1.035k ⇒ **i restanti ~785k
+(76%) stanno nella coda `4+`, che è l'1,1% degli installati** (~75 colpi ciascuno). `vive-censurate
+= 473` = esattamente la capienza: la contabilità chiude, non è un artefatto.
+E **`bussate al momento del buco: 8+ = 81,9%`**: i buchi **non sono esperti freddi**, sono esperti
+con storia lunga continuamente sfrattati. **È thrashing, non working set assente.** Raffina e in
+parte contraddice `non-esiste-nucleo-caldo`.
+
+### Il tetto del fronte byte, tre vie concordi
+
+**Fattore di realizzazione, misurato** sul braccio bm4: 10,5 ms/token di trasporto seriale rimosso
+hanno mosso la parete di **1,55 grezzi / 3,63 normalizzati** ⇒ **si realizza il 15-34%** del tempo
+di trasporto che si toglie (il fork stream sovrappone la copia al calcolo, e la corsia CPU paga in
+tempo CPU ciò che risparmia in byte).
+
+| | ms/token | t/s |
+|---|---:|---:|
+| annullare **tutto** il trasporto (34,0 × realizzazione 15-34%) | 70,3 → 63,8 | **14,2 - 15,7** |
+| estrapolazione lineare dell'elasticità bm4 | | 14,0 - 15,0 |
+| **+ annullare anche il MoE mascherato** (10,5% = 7,9 ms) | 62,4 → 55,9 | **16,0 - 17,9** |
+| *tetto assoluto*: parete senza trasporto **né** MoE (−30,9%) | **52,1** | **19,2** |
+
+> **Un sottosistema esperti che costasse letteralmente zero — zero byte e zero calcolo — dà 19,2
+> t/s.** Il bersaglio è 20,0. **La famiglia «riduzione byte» non contiene un percorso ai 50,0
+> ms/token**, e la sua realizzazione plausibile si ferma a ~15 t/s.
+
+**E l'unico item abbastanza grande resta il fronte bolle (39,3% della parete), che questo ledger ha
+dichiarato chiuso a §7-octies ma che §7-septies riapre da solo**: il verdetto poggia sui bracci r43/r44,
+e r45 ha accertato che R1 ha un baco. **Il fronte host-bound non è chiuso: è SOSPESO**, e va
+riconfermato su un braccio non contaminato.
+
 ## 8. STATO E CODA
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**

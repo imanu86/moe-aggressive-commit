@@ -540,30 +540,124 @@ due corse corte e restituisce lo strumento di correttezza più economico che esi
 anticipo che servono i cancelli sostitutivi. Senza questo controllo, il verdetto su R1 sarebbe
 rimasto sospeso fra «baco» e «rumore».
 
+## 7-octies. DIAGNOSI R1 — **IL FRONTE HOST-BOUND È CHIUSO**
+
+### La misura che lo chiude era già sul disco, e nessuno l'aveva letta
+
+Appaiando `sync` e `calc altri` di `sched-profilo` ai checkpoint dei due bracci r44 [M]:
+
+| checkpoint | Δ `sync` (ON−OFF) | Δ `calc altri` (ON−OFF) |
+|---|---:|---:|
+| 51 grafi | **−21,47 ms/grafo** | **+21,76 ms/grafo** |
+| 101 grafi | −11,15 | +15,16 |
+| 301 grafi | **−4,09** | **+5,14** |
+
+> **Il costo MIGRA 1:1, e leggermente in perdita.** Togliere il 96% dei blocchi host non fa sparire
+> il tempo: lo sposta dal sito di attesa al **sito di lancio**, dove riaffiora come contropressione
+> della coda. **Quei blocchi non erano overhead: erano l'host che OSSERVA lavoro GPU vero.**
+
+**Conseguenza: cade l'intera classe «rendezvous ordinato dallo stream»** (`cudaLaunchHostFunc`,
+kernel persistente, flag mappato) che l'analisi del rendezvous aveva nominato come l'unica direzione
+con l'ordine di grandezza giusto. Se 24,3× di meccanismo danno zero parete, un rendezvous perfetto
+darebbe zero. Precedente coerente già a ledger e mai collegato: `LLAMA_OVERLAP_JOIN_ASYNC` è la
+versione plan-preserving della stessa idea sull'altro confine, **già misurata piatta** (−0,2%).
+
+### Il piano è INVARIANTE — confermato 3× su banchi e ubatch diversi
+
+Censimento sui grafi di riserva, appaiato per numero di grafi [M]:
+
+| grafi | split r41 (OFF, lungo b2048) | r42 (ON, lungo b2048) | r43 (ON, ub1024) | ingressi OFF→ON |
+|---|---:|---:|---:|---|
+| 2 | **262** | **262** | **262** | 468 → 172 |
+| 3 | **272** | **272** | **272** | 484 → 178 |
+| 6 | **405** | **405** | **405** | 723 → 264 |
+
+Conteggio degli split **identico all'unità** su tre corse indipendenti, due banchi e due ubatch,
+mentre gli ingressi crollano di 2,7×. Sul decode di r44: 35,1 split/grafo a ogni checkpoint in
+entrambi i bracci, `sched-sync` chiamate/grafo identiche a **tre decimali**, dispatch worker 10,30
+contro 10,35. Con `GGML_CUDA_GRAPH_OPT=0` in entrambi i manifesti, **le stesse fusioni vedono gli
+stessi sottografi**.
+
+### Verdetto sulle ipotesi
+
+| | esito | prova |
+|---|---|---|
+| **H1** join saltato via `dipende_dal_worker` | **REFUTATA** | `ggml-backend.cpp:2112-2128` è chiamata **solo** dentro `finestra > 0` (:2216-2219); con `FINESTRA=0` (difetto, nei manifesti) si prende `(split_id > split_spedito \|\| e_cpu)` (:2220) e con `CERCA_CPU=0` lo split spedito è `P+2` (:2537) ⇒ **join sempre eseguito**. *Il sospetto principale del ledger cade.* |
+| **H3** allineamento / `nb[]` | **REFUTATA** | entrambi i buft hanno `get_alloc_size = NULL` → `ggml_nbytes`; l'allineamento 32 vs 128 cambia solo `tensor->data`, **mai** gli `nb[]` |
+| **H4** cammino di calcolo diverso | **REFUTATA** | invarianza del piano, 3× |
+| **H5** ordine di riduzione | **REFUTATA** | segue da H4: stessi kernel, stesse fusioni |
+| **H6** l'arena CPU diventa condivisa fra worker concorrente e stream GPU | **unica superstite** [I] | i ~35 `synchronize`/grafo erano un **drenaggio di fatto dello stream**, l'unica barriera che teneva il fork/join concorrente compatibile con l'allocatore, che calcola le vite **assumendo esecuzione sequenziale** (`ggml-backend.cpp:2082-2086`) |
+
+**«Una barriera per split costa meno di tre sync per ingresso» è FALSO su questo banco** [M]: i
+confini di blocco sono 34,9 contro 35,1 split, cioè **già ~1 per split**. L'unica granularità che
+comprerebbe qualcosa è *per lavoro del worker* (10,3/grafo = 3,4× in meno), che al costo misurato di
+0,159 ms/confine varrebbe al massimo ~3,9 ms/grafo — e il costo migra comunque.
+
+**R1 va ARCHIVIATA, non riparata.** Il fix plan-preserving concepibile
+(`LLAMA_SCHED_INGRESSO_ASYNC`, cioè generalizzare i rami `copia_peso_host_async`/`copia_join_async`
+già presenti a `:2313-2324`) è la stessa idea di `JOIN_ASYNC`, già falsificata e già marchiata «non
+riproporre». Nota: `ggml_backend_cuda_cpy_tensor_async` **non aiuterà mai** a questo confine —
+rifiuta guardando i **backend**, non i buffer (`ggml-cuda.cu:3824`), e al confine uno dei due è il
+backend CPU per costruzione.
+
+### ⚠ Due esposizioni di correttezza che esistono A PRESCINDERE dalla leva
+
+Oggi mascherate **solo** dai ~35 drenaggi di stream per grafo. Chiunque tocchi quel meccanismo in
+futuro le riporta a galla:
+1. **Alias d'arena** [I]: un tensore dell'arena CPU il cui ultimo lettore è lo split GPU `P+1`
+   (concorrente col worker) può vedersi riusare la memoria dal worker che calcola `P+2`. RAW/WAR
+   reale, invisibile senza il dump delle assegnazioni.
+2. **Ingressi utente** [C]: tutti i `GGML_TENSOR_FLAG_INPUT` sono assegnati al backend CPU
+   (`ggml-backend.cpp:1118-1123`); il ramo `:2305-2312` fa `sync_profilato` *prima* di
+   sovrascriverli, col commento «prevent the user overwriting the data before the copy is done». Il
+   `set_inputs` del token successivo li riscrive con un **memcpy nudo** (`ggml-cuda.cu:1387-1390`,
+   nessuna sincronizzazione) mentre i kernel del grafo precedente possono ancora leggerli.
+
+---
+
 ## 8. STATO E CODA
 
-**Chiuso stanotte**: fascicolo SLOT 473 (già in produzione) · fronte speculazione (tetto 17,0 t/s)
-· strada DMA (segno invertito) · attribuzione e39 (falsificata e sostituita) · duplicazione
-cache/scheduler (non esiste).
+**Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**
+(tetto 17,0 t/s con bozza perfetta) · **strada DMA** (segno invertito: il kernel è 1,6-1,8× più
+veloce) · **attribuzione e39** (falsificata dall'aritmetica e poi dalla sonda: `copy_experts` = 0
+copie, 0 byte) · **duplicazione cache/scheduler** (non esiste, popolazioni disgiunte per
+costruzione) · **R1 e con essa il fronte host-bound** (il costo migra 1:1) · **`K=0`** (è −29,8%,
+non una leva) · **`FINESTRA`** (inerte per costruzione) · **`SPIN`** (spazzata) · l'anomalia del
+**degrado free-run** (è composizione del testo; semmai è il banco a sovrastimare del 12-14%).
 
-**In volo**: chirurgo 16 (sonda + R1, un solo build) · ancora r40.
+**In volo**: `r46` `FORK_DOWN_TARDI` sul lungo (B-poi-A) · progettista sulla **riduzione dei byte**.
 
-**Coda**: (1) banco di lettura sonde con R1 spento — misura il bersaglio; (2) A/B di R1, B-first,
-**mono-richiesta** (il free-run degrada e non è spiegato); (3) env-only già misurate:
-`FORK_DOWN_TARDI=1` (**+2,8% misurato sul lungo**, ferma da giorni), `FORK_STADI=1` (+2,41%
-bit-identico, mai sul lungo), `LLAMA_DSV4_TOPK_FUSO=1` (+0,90% a zero righe, spenta in **ogni**
-manifesto mai registrato); (4) chiusura di fascicolo nmax=4 × conf 0,70 con go/no-go
-pre-registrato a mean_len > 3,34.
+**La direzione, dopo la chiusura dell'host-bound**: se l'host non è il collo, il collo è la GPU, e
+dentro la GPU il **bus**. Le durate di `kern_fj_copia` sono quantizzate a 285,7 µs/esperto con un
+**vuoto assoluto fra 10 e 250 µs** — nessun esperto è servito da VRAM, **passano tutti dal PCIe**;
+409 MiB/token a 23 GiB/s. **Unica strada: ridurre i byte**, e la requantizzazione è esclusa (già
+IQ2_XXS, 2,06 bpw). Restano *meno copie* (il **70,8%** di ciò che copiamo non è mai riusato, e
+l'85,5% non arriva ai due usi che ripagano la copia) e *meno esperti* (adaptive-K, o spingere il
+ramo CPU oltre K=2 — che già toglie 1/3 della domanda alla cache). **Discrepanza da sciogliere**: la
+stessa famiglia è stimata 17-20% in una fonte e 2,9-5,8% in un'altra.
 
-**NON riproporre**: `JOIN_ASYNC` (F2-B già testata: join worker −0,2%, t/s piatto — il blocco host
-non era sul cammino critico).
+**Coda**: (1) verdetto `FORK_DOWN_TARDI`; (2) prima leva di riduzione byte, su raccomandazione del
+progettista; (3) env-only mai raccolte: `FORK_STADI=1` (+2,41% bit-identico, mai sul lungo),
+`LLAMA_DSV4_TOPK_FUSO=1` (+0,90% a zero righe, spenta in **ogni** manifesto mai registrato);
+(4) chiusura di fascicolo `nmax=4 × conf 0,70` con go/no-go pre-registrato a mean_len > 3,34;
+(5) opzionale: una corsa corta che ripete il braccio R1 per stabilire se dietro c'è una **corsa
+vera** nel fork/join (H6) — vale indipendentemente da R1, perché l'esposizione esiste nel codice.
 
-**Vincolo VRAM da non dimenticare**: al confine prefill→decode il log dice `+473 slot, +3194 MiB …
-VRAM libera 0 MiB`. **Nessuna leva può chiedere VRAM lì**; ogni chirurgia che allarga un buffer —
-la leva D1 in testa, che dovrebbe alzare le allocazioni a `dsv4:1276/1285` — rischia l'OOM proprio
-in quel punto, stessa firma dei tre OOM del repoint.
+**NON riproporre**: `JOIN_ASYNC` · `LLAMA_SCHED_CPU_BUFT_MAPPED` (R1) · `OVERLAP_K=0` ·
+`OVERLAP_PIN=0` · `OVERLAP_FINESTRA` · `OVERLAP_SPIN` · `LLAMA_KV_PAD` 256→1024 · repoint/B-2 ·
+griglia di copia più larga · prefetch con previsione esatta · capienza (più slot) · insieme statico
+· super-op CPU FFN · macro-kernel decode v2 · `GGML_SCHED_EVENT_JOIN`.
 
-**Contraddizione aperta**: pendenza **0,431 ms/fwd/1000ctx** (turno 32, 3 punti + replica
-bit-esatta del 64k) contro **0,1456** (e35). Non riconciliano nemmeno correggendo per il
-normalizzatore e la distorsione nsys. Usare 0,431 per gli **assoluti**, e35 solo per le
-**proporzioni**.
+**Vincolo VRAM**: al confine prefill→decode il log dice `+473 slot, +3194 MiB … VRAM libera 0 MiB`.
+**Nessuna leva può chiedere VRAM lì.** E sul versante pinnata: 74.304 MiB (modello) + 2.224 (blocco
+0 del draft) = 74,73 GiB, già al tetto (74,7 sì / 76,9 no). Margini recuperabili se servissero:
+`--no-host` mancante in `run_porto_hot.ps1` (1010 MiB) e il blocco 0 del draft (2.224 MiB).
+
+**Contraddizione aperta**: pendenza **0,431 ms/fwd/1000ctx** (turno 32, 3 punti + replica bit-esatta
+del 64k) contro **0,1456** (e35). Non riconciliano. Usare 0,431 per gli **assoluti**, e35 solo per
+le **proporzioni**.
+
+**Strumento riguadagnato**: su questi banchi lo **SHA riproduce bit-esatto fra lanci di processo
+indipendenti anche a spec ON + K=2** (tre lanci di controllo identici). Prima di usarlo come
+cancello in un regime nuovo, **misura che quel banco riproduca** con due lanci di controllo: costa
+due corse corte e restituisce il cancello di correttezza più economico che esista.

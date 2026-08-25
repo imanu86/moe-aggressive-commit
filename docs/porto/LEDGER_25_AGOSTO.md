@@ -919,6 +919,46 @@ di prestazione contro A diventa valido a parità di traiettoria**. Se invece div
 **è la COMBINAZIONE a non essere neutra** — fatto pesante, dato che `DOWN_TARDI` da sola era già
 risultata SHA-identica in r46.
 
+## 7-quaterdecies. r51 — scomposizione: **le due leve sono PULITE, la fusione era la causa**
+
+Una sola corsa (il controllo A di r50 era già in cassa e il banco riproduce bit-esatto):
+`DOWN_TARDI` + `STADI` accese, `TOPK_FUSO` spenta e **verificata assente** dal manifesto.
+
+```
+SHA r51    = a177ddaf3583610cde43ed768e9d0e950aa32b0f63d7acfa88e9657f26a47479
+SHA A(r50) = a177ddaf3583610cde43ed768e9d0e950aa32b0f63d7acfa88e9657f26a47479   ← IDENTICO
+p1  0,84073 (739/879) in entrambi · mean_len 2,61 in entrambi                    ← IDENTICI
+```
+
+**`DOWN_TARDI` + `STADI` sono correttezza-PULITE in combinazione**, e **la divergenza di r50 era
+interamente di `TOPK_FUSO`** — coerente con la sua natura di fusione a nove kernel, che altera
+l'ordine delle operazioni in virgola mobile **per costruzione, non per baco**. La domanda pesante
+lasciata aperta da r50 («è la combinazione a non essere neutra?») è **risolta: no**.
+
+*Nota di metodo dell'esecutore, corretta*: il §4.10 non è stato rifatto da zero perché **con SHA
+identico byte per byte il testo è lo stesso già letto e giudicato**, e l'identità è una garanzia più
+forte di una rilettura manuale. Averlo **dichiarato** invece di darlo per scontato è il modo giusto
+di trattare un cancello.
+
+**Prestazione, ora comparabile a parità di traiettoria:**
+
+| | r51 (due leve) | A (r50) | Δ |
+|---|---:|---:|---:|
+| decode | **13,02 t/s** | 12,66 | **+2,84%** |
+| ms/token | 76,80 | 78,98 | −2,76% |
+| `C_round` | 200,45 | 206,14 | −2,76% |
+| prefill | 138,18 | 138,08 | +0,07% (fuori verdetto) |
+
+**Sotto la soglia di promozione (+3%) — ma il confronto che conta è un altro**: `DOWN_TARDI` **da
+sola** aveva dato **+3,67%** (r47), la combinazione con `STADI` dà **+2,76%**. **`STADI` non
+aggiunge nulla e semmai toglie.**
+
+> **Lettura: si promuove `DOWN_TARDI` da sola; `STADI` resta parcheggiata.** Non serve spendere
+> corse per certificare una combinazione peggiore della sua parte migliore.
+
+Salute pulita: zero assert, divergenze replay a zero, cambi di fase VRAM 35,3/5,9 ms,
+`warmup_resets` 39 identico al controllo.
+
 ## 8. STATO E CODA
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**

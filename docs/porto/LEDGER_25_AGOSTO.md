@@ -959,7 +959,108 @@ aggiunge nulla e semmai toglie.**
 Salute pulita: zero assert, divergenze replay a zero, cambi di fase VRAM 35,3/5,9 ms,
 `warmup_resets` 39 identico al controllo.
 
-## 8. STATO E CODA
+## 7-quindecies. r47 — **`FORK_DOWN_TARDI` PROMOSSA** (le cifre misurate)
+
+| | A `r47_ctrl` | B `r47_downtardi` |
+|---|---:|---:|
+| prefill | 7,24 ms/tok, 138,05 t/s | 7,24 ms/tok, 138,08 t/s |
+| **decode** | 87,48 ms/tok, **11,43 t/s** | 84,36 ms/tok, **11,85 t/s** |
+| p1 (acc/gen) | 0,74725 (136/182) | 0,74725 — **identico** |
+| mean_len | 2,14 | 2,14 — **identico** |
+| **SHA output** | `D2E3AE05…76D06` | `D2E3AE05…76D06` — **identico byte per byte** |
+
+**Δ decode +3,67% t/s (−3,57% ms/token), con SHA, p1 e mean_len identici**: guadagno pulito a
+parità assoluta di traiettoria, correttezza verificata *prima* dell'adozione. **PROMOSSA.**
+
+## 7-sexdecies. r52 — `TOPK_FUSO` da sola: parcheggiata, e una triangolazione che chiude il quadro
+
+**Triangolazione non richiesta ma decisiva**: SHA di r52 = `b9fd992f…e252`, **identico al braccio B
+di r50** (tre leve insieme), con p1 e mean_len pure coincidenti. Da un terzo angolo, indipendente dal
+ragionamento sulla fusione: **`TOPK_FUSO` da sola riproduce l'INTERA divergenza di r50** —
+`DOWN_TARDI`+`STADI` non aggiungono nulla all'aritmetica, come r51 aveva già stabilito dal lato
+opposto.
+
+- **G1 testimone: ASSENTE.** Cercato case-insensitive su `TOPK_FUSO` e `topk`: l'unico riscontro è la
+  riga di manifesto. **Debito dichiarato**: questa leva non è verificabile raggiungibile se non dal
+  manifesto — se il lettore la leggesse senza usarla, dal log non lo sapremmo.
+- **G2 (non SHA, per costruzione)**: p1 0,81766 contro 0,84073, banda 2σ = [0,8160 ; 0,8654].
+  **Dentro banda ma a 1,87σ**, cioè 0,0017 sopra il confine: ci passa **di poco**. Testo riletto per
+  intero: lingua sana, nessun loop, pertinente.
+- **G4**: decode +0,79% (atteso dichiarato +0,90%), **sotto la soglia dei +3% ⇒ PARCHEGGIO**. Il
+  `C_round` darebbe −6,12% ma **`mean_len` non coincide** (2,47 contro 2,61), quindi parte del calo
+  può essere solo «risposte più corte per token accettato»: non lo si prende come verdetto.
+- **G5**: salute pulita, cambi di fase VRAM 36,8/5,6 ms, `warmup_resets` 42.
+
+---
+
+## 8. BILANCIO DELLA CAMPAGNA E STATO FINALE
+
+### I dodici bracci della notte
+
+| # | braccio | esito |
+|---|---|---|
+| 1 | bonifica `run_porto_hot.ps1` | ripuntato al canonico + guardia d'identità DLL (avvisa, non blocca) |
+| 2 | `r40` ancora ricostruita da log | **FALLITO** — mancava `--no-host`, OOM sul drafter |
+| 3 | `r41` ancora con lo script vero | riuscita, 11,19 t/s, SHA identico all'ancora del 24/8 |
+| 4 | `r42`/`r43` `CPU_BUFT_MAPPED` a ub 2048 e 1024 | OOM sul buffer di calcolo mappato (scala con l'ubatch: 524 → 260 MiB) |
+| 5 | `r44`/`r45` `CPU_BUFT_MAPPED` sul corto | raggiungibile ma **ROTTA**: SHA diverge da tre lanci bit-identici ⇒ **sospesa** |
+| 6 | `r46` `FORK_DOWN_TARDI` | sessione contaminata (5,46 t/s, `warmup_resets`=15) ⇒ scartato |
+| 7 | **`r47` `FORK_DOWN_TARDI`** | **PROMOSSA +3,67%**, SHA identico |
+| 8 | `r48` `BATCH_MAX=4` sul corto (3+3) | G1/G2 falliti — **il banco corto non ha la popolazione di forward** |
+| 9 | `r49` `BATCH_MAX=4` sul lungo | **CRASH**, indice −1 sulla testa Markov ⇒ chiusa |
+| 10 | `r50` tre leve insieme | G2 fallito, SHA/p1/mean_len divergenti |
+| 11 | `r51` `DOWN_TARDI`+`STADI` | **correttezza pulita** (SHA identico), +2,76% ⇒ `STADI` parcheggiata |
+| 12 | `r52` `TOPK_FUSO` da sola | causa unica della divergenza; +0,79% ⇒ parcheggiata |
+
+**Netto**: **una leva promossa** (`FORK_DOWN_TARDI`, +3,67%, correttezza verificata), due parcheggiate
+con dati puliti, una chiusa per crash, una sospesa per correttezza rotta. E **cinque fascicoli chiusi
+per misura** senza spendere quasi macchina: speculazione, DMA, attribuzione e39, duplicazione
+cache/scheduler, politica a tre livelli.
+
+### Il verdetto sul bersaglio
+
+**I 20 t/s non sono raggiungibili su questo banco**, e ora è quantificato da tre vie indipendenti:
+un sottosistema esperti a costo **letteralmente zero** (byte *e* calcolo) darebbe **19,2 t/s**; la
+speculazione con bozza perfetta **17,0**; azzerare l'intera tassa del contesto **16,2**. La somma
+onesta di tutto ciò che è vivo sta intorno a **17,5**, esattamente come `COMPOSIZIONE_PIANO.md`
+aveva anticipato giorni fa.
+
+### Che cosa resta davvero aperto
+
+1. **Il fronte bolle (39,3% della parete) è SOSPESO, non chiuso.** È l'unico item abbastanza grande.
+   Il verdetto «il costo migra 1:1» viene dal braccio r44, che r45 ha poi invalidato. **Va
+   riconfermato su un braccio non contaminato** — e la strada per farlo non è R1 (rotta), ma una
+   misura che discrimini «attesa evitabile» da «lavoro GPU osservato» senza toccare il calcolo.
+2. **Il bug dell'indice −1** (`ops.cpp:4831`, testa Markov del drafter al taglio del reasoning):
+   esiste, è riproducibile, e in un cammino senza bounds-check sarebbe silenzioso. Il progetto ha
+   già l'idioma `voci fuori tabella`: va esteso a quella lookup.
+3. **Due esposizioni latenti** (alias d'arena, ingressi utente riscritti con memcpy nudo), oggi
+   mascherate dai ~35 drenaggi di stream per grafo.
+4. **`TOPK_FUSO` non ha testimone operativo**: leva non verificabile se non dal manifesto.
+5. Il binario **stampa a ogni corsa una raccomandazione falsificata** (`cache-esperti.cu:8301-8303`).
+6. **Contraddizione mai riconciliata**: pendenza 0,431 ms/fwd/1000ctx (turno 32) contro 0,1456 (e35).
+
+### Regole nuove, da applicare da subito
+
+- **Verificare che il bersaglio di una leva esista nel banco scelto**, prima di lanciare: una leva
+  che dipende da `mean_len` va misurata dove `mean_len` è quello vero (costo dell'errore: sei corse).
+- **Una leva provata solo sul banco corto non è stata provata sulla transizione di fine-reasoning**,
+  che in produzione c'è sempre.
+- **Prima di usare lo SHA come cancello, misurare che il banco riproduca** con due lanci di
+  controllo: costa due corse e restituisce il cancello più economico che esista.
+- **Ri-ancorare il riferimento ogni tre bracci**; e trattare **cambio di fase VRAM sotto 100 ms** e
+  `warmup_resets` come indicatori di salute della sessione, su ogni corsa.
+- **Non si ricostruisce un comando: si esegue lo script che l'ha prodotto.** E **non si aggiornano
+  gli hash attesi** di uno script per far passare un cancello d'identità — estenderlo con un
+  parametro a difetto invariato invece è lecito.
+- **Il cancello di qualità non è un sostituto del cancello di identità**: due testi entrambi ottimi
+  ma diversi fra loro sono il sintomo, non l'assoluzione.
+
+### Configurazione SOTA aggiornata
+
+Aggiungere `LLAMA_CACHE_ESPERTI_FORK_DOWN_TARDI=1` alla configurazione di riferimento (testimone da
+grep-are: riga **`porto-cb: … down_tardi=1`**, *non* `cache-esperti:`). Restano al difetto:
+`FORK_STADI`, `TOPK_FUSO`, `OVERLAP_BATCH_MAX` (=3), `SCHED_CPU_BUFT_MAPPED`.
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**
 (tetto 17,0 t/s con bozza perfetta) · **strada DMA** (segno invertito: il kernel è 1,6-1,8× più

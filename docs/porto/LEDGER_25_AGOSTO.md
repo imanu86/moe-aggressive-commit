@@ -364,6 +364,78 @@ Rilancio ordinato come **r41_ancora102k_sonda_20260825**: stesso script, tag nuo
 leva R1 **spenta**. Un solo banco fa due lavori — ancora fresca sul binario nuovo (che è quello su
 cui girerà l'A/B) e lettura del bersaglio delle sonde.
 
+## 7-quater. r41 — CONTROLLO CON SONDA: **e39 falsificato SPERIMENTALMENTE**
+
+`r41_ancora102k_sonda_20260825`, binario chirurgo16, sonda accesa, leva **spenta**, script
+`p1b_conf.ps1` **non modificato** (verificato prima del lancio: contiene `--no-host` alla riga 219 e
+`-otd` alla 216). Cancello di caricamento superato a 15 s dall'avvio (`CPU model buffer size =
+1010.00 MiB`). Durata 15m20s, chiusura pulita.
+
+| | valore | vs ancora 24/8 |
+|---|---|---|
+| decode | **89,40 ms/token, 11,19 t/s** | −3,50% |
+| prefill | 7,24 ms/token, 138,14 t/s | +0,44% |
+| p1 / mean_len | 0,74725 / 2,14 | **identici** |
+| **SHA output** | `D2E3AE05…76D06` | **identico byte per byte** |
+| errori | zero assert/CUDA/nan/inf, divergenze replay 0 | |
+
+Il −3,50% a **parità assoluta di traiettoria e output** è il costo di bookkeeping della sonda più il
+binario nuovo, non un cambio di comportamento. **Il termine di paragone dei bracci successivi è
+questo, non l'ancora del 24/8.**
+
+### I dati della sonda — la lettura nuova confermata dalla misura
+
+```
+secchio 0 copy_experts      n 0,     byte 0                  <- ZERO. e39 FALSIFICATO
+secchio 1 readback-ids      n 0,     byte 0
+secchio 2 ripiego-sync-host n 20099, byte 2.122.607.584      <- il vero emittente
+secchio 3 ripiego-sync-dev  n 836,   byte 12.155.920
+taglie secchio 2: 32768x119  65536x3199  16x10332  196608x4  4x120  1024x356 | altre 5969
+taglie secchio 3: 32768x4  1048x4  4x356  49152x234  2072x234  16384x2 | altre 2
+censimento: grafi 13247, split 28607, ingressi 66995 | per grafo: split 2,16, ingressi 5,06
+```
+
+**`copy_experts` non emette nulla in decode: zero copie, zero byte su un'intera corsa.** La lambda
+accusata il 24/8 è innocente, come l'aritmetica aveva già stabilito. E la taglia dominante del vero
+emittente è **65.536 byte × 3.199**, esattamente il valore predetto dalla geometria del ramo CPU
+(`4096 × 2 × 4 B`, `esperti_cpu` a 2 token): predizione fatta sul codice, confermata dalla misura.
+Compaiono anche 2072 (= `ids`) e 49152 e 16384, tutti multipli di una riga di attivazione.
+
+## 7-quinquies. r42 — LEVA R1 ACCESA: **non falsificata, BLOCCATA DA CAPACITÀ**
+
+`r42_R1_bufmap_20260825`, stesso script, `LLAMA_SCHED_CPU_BUFT_MAPPED=1`. Verificato prima del
+lancio: `LLAMA_OVERLAP_FINESTRA` non compare in `p1b_conf.ps1` → resta a 0, vincolo R-1 rispettato.
+
+- **Cancello 1 SUPERATO**: `sched-cpu-buft: mappato ATTIVO - buffer di calcolo CPU CUDA_Host ->
+  CUDA0_Mapped`, due volte, nessun `RIFIUTATO` in tutto il log. **La leva è raggiungibile e si
+  attiva.**
+- **Cancello 2 SUPERATO**: `CPU model buffer size = 1010.00 MiB`.
+- **Poi, al cambio di fase verso il prefill (ubatch 2048):**
+
+```
+E ggml_backend_cuda_mapped_buffer_type_alloc_buffer: cudaHostAlloc di 524.17 MiB fallita: out of memory
+E ggml_gallocr_reserve_n_impl: failed to allocate CUDA0_Mapped buffer of size 549632128
+E graph_reserve: failed to allocate compute buffers
+E srv update_slots: decode() failed: failed to allocate compute pp buffers
+```
+
+**Lo stesso identico buffer da 524,17 MiB che nel controllo r41 passa come `CUDA_Host` non passa
+come `CUDA0_Mapped`**: il tetto della pinnabile è già eroso dai 74.304 MiB del modello mappato più
+anello KV e stato compressore DSV4. Errore gestito (`send_error` pulito, zero `GGML_ASSERT`),
+spegnimento regolare, nessun token generato → cancelli 3-6 **non valutabili**.
+
+**Verdetto**: non è «rotta ma veloce» (la correttezza non è nemmeno stata messa alla prova) e non è
+«non morde» (i contatori bassi sono l'assenza di prefill, non un trasporto rimasto sul vecchio
+percorso). È **un guasto di capacità in un punto nuovo e preciso**.
+
+**Prossimo passo, in corso**: `r43` con **ubatch ridotto** (512, poi 256), che rimpicciolisce
+proporzionalmente quel buffer **senza rinunciare al contesto lungo** — il decode gira comunque a
+ubatch minuscolo (`VRAM_A_FASI_UB=64`), quindi a soffrire è il prefill, che non è la metrica sotto
+esame. Ordine **B-poi-A** (se B non parte, A è sprecato) e **controllo appaiato allo stesso
+ubatch**: r41 non è più confrontabile. Piano C se nemmeno 256 entra: misurare R1 sul banco
+**CORTO**, che è legittimo per il bersaglio perché il costo del lungo è additivo e l'81,7% è
+pavimento, cioè esattamente ciò che il corto misura.
+
 ## 8. STATO E CODA
 
 **Chiuso stanotte**: fascicolo SLOT 473 (già in produzione) · fronte speculazione (tetto 17,0 t/s)

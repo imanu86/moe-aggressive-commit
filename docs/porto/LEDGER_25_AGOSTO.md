@@ -615,6 +615,56 @@ futuro le riporta a galla:
 
 ---
 
+## 7-nonies. r46 — `FORK_DOWN_TARDI`: correttezza SUPERATA, prestazione NON MISURABILE (sessione contaminata)
+
+**Cancello d'identità — con una precisazione che vale per il futuro.** La riga `cache-esperti:` è
+identica carattere per carattere fra i due bracci, **ma non perché la leva non sia stata letta**:
+quella riga non ha un campo per `down_tardi`. Il segnale sta nella riga adiacente dello stesso
+blocco d'avvio:
+
+```
+B: porto-cb: epoca=1 semina da ambiente: fork=2 blocchi=8 down_tardi=1 pf_top=0 sfratto_par=1
+A: porto-cb: epoca=1 semina da ambiente: fork=2 blocchi=8 down_tardi=0 pf_top=0 sfratto_par=1
+```
+
+**Per questa leva si grep-a `porto-cb:`, non `cache-esperti:`.** Tacca ulteriore per
+`il-manifesto-non-e-la-configurazione`: anche la riga «identità vera» è parziale, e quale riga porti
+il segnale dipende dalla leva.
+
+**Cancello di correttezza: SUPERATO, e più forte dell'atteso.** p1 e mean_len identici
+(`0,74725 — 136/182 — 2,14`) e **SHA output identico byte per byte** fra B, A e l'ancora del 24/8.
+Mi aspettavo divergenza legittima (la leva cambia l'ordine delle copie); invece **non tocca
+l'aritmetica**. Dato acquisito, non va rimisurato.
+
+**Prestazione: nessun verdetto. La coppia è inutilizzabile.**
+
+| | B (`r46_downtardi`) | A (`r46_ctrl`) |
+|---|---|---|
+| prefill | 137,60 t/s | 132,00 t/s |
+| decode | 92,79 ms/tok, **10,78 t/s** | 183,23 ms/tok, **5,46 t/s** |
+| cambi di fase VRAM (n.1 / n.2) | 33,0 / 28,4 ms | **4234,6 / 1028,4 ms** |
+| `warmup_resets` max | — | **15** |
+
+Un B/A che darebbe +97% contro un atteso di +2,8% è la firma di un controllo rotto, non di una leva
+straordinaria: verdetto correttamente **non preso**.
+
+**E la contaminazione è più ampia del solo braccio A.** r41 (controllo **con la sonda accesa**, che
+costa ~3,5%) ha fatto **11,19 t/s**; r46 B gira **senza sonda** e fa **10,78** — doveva essere più
+veloce, non più lento. Quindi il degrado **precede** il braccio A e tocca tutta la coppia.
+
+**Firma diagnostica**: cambi di fase VRAM 100-150× più lenti **con RAM libera a 87,3 GB**. Non è
+esaurimento, è **frammentazione della memoria pinnabile** dopo nove lanci consecutivi di un processo
+che ne prende 74 GiB ogni volta. Il `warmup_resets=15` è probabilmente conseguenza, non causa.
+
+**Regola nuova, dal runbook §8.5 che chiedeva la rimisura a freddo dopo tre bracci mentre noi eravamo
+a nove**: **ri-ancorare il riferimento ogni tre bracci**, non a fine giornata. E aggiungere ai
+cancelli di sanità di ogni corsa: **cambio di fase VRAM sotto 100 ms** e `warmup_resets` basso —
+sono indicatori di salute della *sessione*, non solo diagnosi a posteriori.
+
+Rilancio ordinato come `r47`, **ordine A-poi-B** (il controllo per primo: se è già degradato lo si
+scopre senza spendere anche B), con cancello di sanità pre-registrato — decode di A sopra 10,5 t/s e
+cambi di fase sotto 100 ms, altrimenti la macchina va riavviata.
+
 ## 8. STATO E CODA
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**

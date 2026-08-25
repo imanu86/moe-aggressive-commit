@@ -771,6 +771,55 @@ dichiarato chiuso a §7-octies ma che §7-septies riapre da solo**: il verdetto 
 e r45 ha accertato che R1 ha un baco. **Il fronte host-bound non è chiuso: è SOSPESO**, e va
 riconfermato su un braccio non contaminato.
 
+## 7-undecies. r48 — `BATCH_MAX=4` sul CORTO: **G1 fallito, e l'errore è di regia**
+
+Sei corse (tre per braccio), banco corto. Ogni terna **bit-identica al proprio interno** — terza
+conferma che il banco riproduce fra lanci indipendenti. Macchina **sana** (zero stalli nei log,
+~15 s stabili su tutte e sei, nessuna contaminazione: la sessione precedente era un episodio, non
+uno stato).
+
+| | `partizioni` | `buchi` | `byte a domanda` | colpi | mean_len | p1 | `C_round` mediana |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A (BM=3) | 8.041 | 8.304 | 54,77 GiB | 74,5% | 2,01 | 0,77670 | **148,56** |
+| B (BM=4) | 8.170 | 10.357 | 68,31 GiB | 67,6% | 2,06 | 0,78846 | **154,19** |
+| Δ | **+1,6%** | +24,7% | +24,7% | −6,9 pt | | | **+3,79%** |
+
+- **G1 raggiungibilità: FALLITO.** `partizioni` +1,6% contro la soglia di +50% (il 21/8 fu +87,2%).
+  Per la regola pre-registrata, **l'esito è da buttare, non da interpretare**.
+- **G2: fallito in direzione opposta** (+24,7% invece di −25%).
+- **G4**: `C_round` **sale** del 3,79%; anche il t/s grezzo è sfavorevole (−1,26%) — qui non c'è
+  nemmeno il pattern «grezzo positivo / normalizzato negativo» del 21/8.
+
+### La lezione, e l'errore è mio
+
+Avevo giustificato il banco corto così: *«il costo del lungo è additivo e l'81,7% è pavimento,
+quindi un guadagno sul corto si trasferisce»*. **Vero per il COSTO, falso per la POPOLAZIONE dei
+forward.** `BATCH_MAX` agisce sui forward da 4 righe, e quanti ce ne siano dipende dalla
+distribuzione di `mean_len`: sul corto è **2,01-2,06** — quasi tutti i forward hanno 2-3 righe, già
+coperti da `BATCH_MAX=3`, quindi alzare la soglia non ha bersaglio — contro il **2,56** del braccio
+del 21/8.
+
+> **REGOLA: una leva che dipende da `mean_len` va misurata dove `mean_len` è quello vero. Verificare
+> PRIMA che il bersaglio della leva esista nel banco che si sceglie.**
+
+Nota dell'esecutore, corretta e da tenere: B e A avevano già `mean_len` (2,06 vs 2,01) e p1 diversi,
+quindi erano **due traiettorie diverse** e i contatori di trasporto non erano confrontabili fra loro
+nemmeno in linea di principio — il peggioramento dei buchi è quasi certamente questo, non un danno
+della leva.
+
+*Episodio collaterale, chiuso senza forzature*: lo script che aveva prodotto il braccio del 21/8
+(`run_p1_nudo.ps1`) ha un **cancello d'identità su cinque hash** e li rifiuta tutti, essendo tarato
+su una build di cinque giorni fa; e il suo checkpoint da 1,05 GB (KV + stato drafter + checkpoint)
+era stato salvato **da quel binario**. Ripristinarlo in uno nuovo rischia il caso peggiore — un
+restore che «riesce» producendo numeri verosimili e falsi. **Non si aggiornano gli hash attesi di
+uno script per far passare un cancello**: il cancello stava facendo il suo mestiere. Aggirato usando
+un banco che non richiede restore.
+
+Rilancio come `r49` **sul lungo**, coppia singola (i contatori sono deterministici e il banco
+riproduce; le triplette servirebbero solo al t/s, che qui non decide), con G1 promosso a cancello di
+esistenza: **se `partizioni` non sale nemmeno lì, il +87,2% del 21/8 dipendeva dal regime restore e
+il fascicolo si chiude.**
+
 ## 8. STATO E CODA
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**

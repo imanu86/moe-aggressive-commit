@@ -287,6 +287,83 @@ sospensione.
 
 ---
 
+## 7-bis. CHIRURGO 16 — BINARIO PRONTO (sonda + R1 in un solo build)
+
+**Build riuscita alle 01:55:26.** Backup del pre in `D:\llama-subtract\build\bin\backup_pre_chirurgo16\`
+(7 DLL; i due SHA pre coincidono con i canonici dichiarati).
+
+| DLL | pre | post |
+|---|---|---|
+| `llama.dll` | `ECAEA60B…9C035` | **`12BF6E664EB77A15B6F4D0FF8C9A02E6C15C2414398D395A7796B0BF5F1B87EB`** |
+| `ggml-base.dll` | `BAD51D94…D0C65` | **`D52DA12E652EE6324213A5376334FB098B1C4CF6A73689B6DE12A40B53501546`** |
+| `ggml-cuda.dll` | `6EF5B781…C68B52` | invariata (nessun simbolo cambiato) |
+
+```bat
+call "C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+"C:\Program Files\...\CMake\bin\cmake.exe" --build D:\llama-subtract\build --target ggml-base llama
+```
+
+**Maniglie di grep**: `sched-sonda-copie` (4 secchi n+byte + istogramma taglie + censimento
+`grafi/split/ingressi`) e `sched-cpu-buft` (una riga fra ATTIVO / SPENTO / quattro varianti di
+RIFIUTATO). Su **stderr**, a `sched_free`, perché il callback del server filtra gli INFO di ggml.
+**Con entrambe le leve spente il log è identico a oggi.**
+
+Il cancello della leva non è la `getenv` ma una domanda al backend: `ggml_backend_sched_new`
+(`ggml-backend.cpp:2701`) fa `GGML_ASSERT(ggml_backend_supports_buft(...))` — con buft mappato e
+ibrido spento **è un abort, non un ripiego** — quindi la leva pone al backend CPU la stessa domanda
+*prima* di applicarsi (`llama-context.cpp:210`), coprendo in un colpo ibrido spento, proc address
+non risolto e device non-CUDA. Mai un crash.
+
+### ⚠ R-1 — vincolo di correttezza da rispettare nel banco
+
+`ggml_sched_split_dipende_dal_worker` (`ggml-backend.cpp:2112-2128`) scorre **solo
+`split->inputs[]`**, e il commento a :2096-2102 ne dichiara la premessa: *«perché uno split GPU le
+legga, devono passare da una COPIA, e ogni copia è un `split->inputs[i]`»*. **R1 fa sparire proprio
+quella copia**: lo split GPU leggerebbe l'uscita del worker direttamente dalla memoria mappata,
+quindi la funzione torna `false`, quindi con `finestra > 0` **il join verrebbe saltato** e la GPU
+leggerebbe mentre la CPU scrive.
+
+**Verificato dalla regia**: `ggml_sched_overlap_finestra()` (`ggml-backend.cpp:2087-2093`) ha
+**difetto 0**, e `LLAMA_OVERLAP_FINESTRA` **non è impostata** né nel `.bat` di produzione né nei
+lanciatori dei banchi. Con `finestra == 0` la condizione a :2220 unisce comunque: **sicuro**.
+Resta la regola: **mai R1 insieme a `LLAMA_OVERLAP_FINESTRA > 0`**.
+
+Altri rischi dichiarati: `g_cuda_mapped_uva` (`ggml-cuda.cu:1461`) è **assegnato**, non messo in
+AND, da ogni allocazione mappata — R1 ne aggiunge una, e se mai tornasse `host != dev` spegnerebbe
+l'ibrido ovunque in silenzio (R-2); la leva richiede che una prima allocazione mappata sia **già
+avvenuta** (R-3); il buffer di calcolo CPU resta pinnato ma cambia arena (R-4); il sito
+`tensor_copy` a :2312 (ramo `FLAG_INPUT`) **non è strumentato**, quindi se il conto risultasse più
+basso di nsys il buco è lì (R-5).
+
+## 7-ter. ANCORA r40 — **FALLITA in caricamento**, comando ricostruito invece che eseguito
+
+```
+cudaHostAlloc di 2224.00 MiB fallita: out of memory
+alloc_tensor_range: failed to allocate CUDA0_Mapped buffer of size 2332033024
+llama_model_load: error loading model: unable to allocate CUDA0_Mapped buffer
+```
+Morta alle 01:55:17 **caricando il drafter**, zero numeri prodotti. Diagnosi dal confronto dei due
+log:
+
+| | 24/8 riuscita | 25/8 fallita |
+|---|---|---|
+| bersaglio, pesi CPU | `CPU model buffer size = 1010.00 MiB` | **`CUDA_Host model buffer size = 1010.00 MiB`** (pinnata) |
+| drafter | `CPU model buffer size = 4458.36 MiB` | tenta `CUDA0_Mapped` 2224 MiB → OOM |
+
+Sono sfuggiti **`--no-host`** e **`-otd`** (l'override che tiene gli esperti del drafter fuori dalla
+mappata). **Nessuno dei due compare nel manifesto**: la regola di
+`il-manifesto-non-e-la-configurazione` vale identica per gli argomenti CLI. Il tetto del pin è
+~74,7 GiB sì / 76,9 no e il solo bersaglio ne prende 72,56: bastava poco per sfondarlo.
+
+**Cancello di caricamento, da qui in avanti in ogni banco**: entro i primi 2 minuti deve comparire
+`CPU model buffer size`, **mai** `CUDA_Host model buffer size`. Se compare, abortire subito.
+**E non si ricostruisce un comando: si esegue lo script che l'ha prodotto** (`p1b_conf.ps1`, ora in
+chiaro in `docs/porto/lanciatori/`).
+
+Rilancio ordinato come **r41_ancora102k_sonda_20260825**: stesso script, tag nuovo, `LLAMA_SCHED_SONDA_COPIE=1`,
+leva R1 **spenta**. Un solo banco fa due lavori — ancora fresca sul binario nuovo (che è quello su
+cui girerà l'A/B) e lettura del bersaglio delle sonde.
+
 ## 8. STATO E CODA
 
 **Chiuso stanotte**: fascicolo SLOT 473 (già in produzione) · fronte speculazione (tetto 17,0 t/s)

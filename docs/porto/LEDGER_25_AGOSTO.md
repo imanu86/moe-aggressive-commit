@@ -501,6 +501,45 @@ Due margini da recuperare, entrambi già identificati: **(a)** `run_porto_hot.ps
 runner; **(b)** sul lungo, il **blocco 0 del drafter** occupa 2.224 MiB di mappata: spostarlo su
 CPU normale libererebbe da solo quattro volte quel che serve a R1.
 
+## 7-septies. r45 — CONTROLLO DI RUMORE: **R1 HA UN BACO DI CORRETTEZZA**
+
+Tre lanci di **processo indipendenti** del braccio di controllo (leva spenta), banco corto,
+configurazione di produzione (spec ON, K=2, PIN=1):
+
+| | SHA output | p1 | acc/gen | mean_len | decode t/s |
+|---|---|---|---|---|---|
+| `r44_ctrl_corto` | `AD3D3770…FE11` | 0,77670 | 80/103 | 2,01 | 12,85 |
+| `r45_ctrl_rumore_1` | `AD3D3770…FE11` | 0,77670 | 80/103 | 2,01 | 13,11 |
+| `r45_ctrl_rumore_2` | `AD3D3770…FE11` | 0,77670 | 80/103 | 2,01 | 12,93 |
+| **`r44_R1_corto` (leva ON)** | **`2A64594A…447B`** | **0,75248** | **76/101** | **1,93** | 13,02 |
+
+**Il regime riproduce bit-esatto fra lanci indipendenti** (unica variazione: t/s entro 1,4%, che è
+misura). Per lo schema pre-registrato prima di guardare i dati: **la leva cambia davvero l'output
+⇒ R1 ha un baco di correttezza, non un guadagno di velocità.** **SOSPESA.**
+
+**Rilettura obbligata del turno precedente**: il crollo dei confini di blocco (24,3×) e degli
+ingressi (2,82×) restano fatti misurati, ma **non sono più leggibili come «la leva funziona»** —
+sono sintomi di un calcolo alterato. E il t/s di B (13,02) **non è confrontabile** con quello di A:
+sono due traiettorie diverse, non la stessa risposta calcolata più in fretta. La domanda «quei
+blocchi erano overhead o lavoro GPU osservato» **resta aperta** e va riposta dopo il fix, non prima.
+
+**Sospetto principale** [I], in diagnosi: la copia che R1 elimina non trasportava solo byte, era
+anche **il punto di sincronizzazione** — `ggml_sched_split_dipende_dal_worker`
+(`ggml-backend.cpp:2112-2128`) scorre **solo `split->inputs[]`**, ed è proprio quell'ingresso che
+R1 fa sparire. Se il fix richiedesse di reintrodurre una sincronizzazione la leva potrebbe essere
+strutturalmente vuota — ma una barriera *per split* è molto meno di *tre sync per ingresso*, quindi
+non è scontato.
+
+### Guadagno metodologico che vale più del braccio
+
+**Su questo banco lo SHA È un cancello valido anche a spec ON + K=2.** La tabella storica
+(`cancello-sha-quando-vale`) dava quel regime per non riproducibile; tre lanci indipendenti dicono
+il contrario, confermando la nota della direttiva 16/8. **Regola aggiornata: prima di usare lo SHA
+come cancello, misura se quel banco riproduce, con due lanci di controllo a parità di tutto.** Costa
+due corse corte e restituisce lo strumento di correttezza più economico che esista — o ti dice in
+anticipo che servono i cancelli sostitutivi. Senza questo controllo, il verdetto su R1 sarebbe
+rimasto sospeso fra «baco» e «rumore».
+
 ## 8. STATO E CODA
 
 **Chiuso stanotte**: fascicolo SLOT 473 (già in produzione) · fronte speculazione (tetto 17,0 t/s)

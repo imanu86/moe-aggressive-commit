@@ -820,6 +820,52 @@ riproduce; le triplette servirebbero solo al t/s, che qui non decide), con G1 pr
 esistenza: **se `partizioni` non sale nemmeno lì, il +87,2% del 21/8 dipendeva dal regime restore e
 il fascicolo si chiude.**
 
+## 7-duodecies. r49 — `BATCH_MAX=4` sul LUNGO: **CRASH, fascicolo chiuso, e un bug vero**
+
+*Prerequisito, chiuso pulito*: `p1b_conf.ps1` hardcodava `LLAMA_OVERLAP_BATCH_MAX='3'` dentro
+`Set-SotaEnvironment` e non esponeva il parametro. Esteso con **4 righe** (parametro
+`$OverlapBatchMax = 3` nel `param()`, stesso parametro nella firma della funzione, il literal
+sostituito, la chiamata aggiornata), backup byte-verificato, parse OK, e **cancello di
+non-regressione superato con tre controlli** (nessun argomento → 3, `4` → 4, `3` → 3). *Distinzione
+di principio applicata*: **estendere** uno script con difetto invariato è lecito; **aggiornare gli
+hash attesi** di `run_p1_nudo.ps1` per far passare il suo cancello d'identità no — quello
+disattiverebbe un controllo di sicurezza che esiste per impedire il restore di uno stato salvato da
+un binario diverso.
+
+**Esito del braccio B**: cancello di caricamento superato, prefill completato, richiesta avviata.
+Poi, **subito dopo `common_reaso: forced sequence complete, done`** (il taglio forzato del
+reasoning):
+
+```
+get_rows_q indice invalido: src0=markov_w1.weight src1=CPU#node_509#0 dst=node_510
+            i=0 i10=0 i11=0 i12=0  indice=-1  righe=129280
+ggml/src/ggml-cpu/ops.cpp:4831: GGML_ASSERT(i01 >= 0 && i01 < ne01) failed
+```
+
+**Non è l'assert previsto** (`ggml.c:6809`, legato a `TILE_VRES`, verificato assente): sito diverso,
+e il tensore è **`markov_w1.weight` della testa di routing del drafter** (129.280 righe = vocab).
+Processo morto da solo, nessun output, nessun `p1`/`mean_len`/`C_round` misurabile. **Il braccio A
+non è stato lanciato**, correttamente: una leva che fa fallire la richiesta non è promuovibile, e
+nessun controllo appaiato lo direbbe meglio di un assert con file, riga, tensore e valore
+dell'indice.
+
+**`LLAMA_OVERLAP_BATCH_MAX=4` è CHIUSA.** Il `+87,2%` di `partizioni` del 21/8 resta una domanda
+aperta sul **regime restore**, non una leva viva.
+
+### Il bug vale più del braccio
+
+**Perché il banco corto non lo vede** [D, sostenuta dai dati]: `run_porto_hot.ps1` **non imposta
+alcun reasoning-budget**, quindi la richiesta non attraversa mai il taglio forzato. La leva
+interagisce male **con quella transizione**, non con la decodifica in generale.
+
+> **REGOLA: una leva provata solo sul banco corto non è stata provata sulla transizione di
+> fine-reasoning — che in produzione c'è sempre.**
+
+E un **indice negativo in una lookup** non è mai «solo» l'interazione fra due opzioni: qui l'assert
+ha salvato la corsa, ma lo stesso −1 in un cammino senza bounds-check sarebbe una **lettura fuori
+tabella silenziosa**. Il progetto ha già l'idioma giusto (`voci fuori tabella`/`voci negative`
+dell'ADAPTIVE-K, `NOTE_IMPLEMENTAZIONE.md` §7.2): andrebbe esteso a questa lookup. **Item aperto.**
+
 ## 8. STATO E CODA
 
 **Chiuso il 25/8**, tutto per misura: fascicolo SLOT 473 (era già in produzione) · **speculazione**

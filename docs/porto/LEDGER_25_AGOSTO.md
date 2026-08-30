@@ -1225,3 +1225,50 @@ streaming DDR4 della lane al calcolo GPU attraverso la catena degli strati.
 sopra i 3000 **non regge stabile**. La configurazione a 3000 è deliberata, non un XMP scivolato:
 **la pista hardware è CHIUSA**. Il muro DDR4 misurato (40-44 GB/s letti, lane a 31-41) è il tetto
 vero di questa macchina, e i tetti derivati (~30-32 t/s per il sottosistema esperti) restano.
+
+---
+
+## 11. ADDENDUM 30/8 notte — fronte «bozza dentro i silenzi»: MORTO tre volte. E un modello di costo nuovo
+
+**1. Morte strutturale.** DSpark non è un modello ausiliario: è la **prosecuzione degli ultimi 3
+strati del bersaglio** (`dflash.target_layers = [41,42,43]` su un bersaglio da 43 strati [M dal
+GGUF]; `process()` legge `llama_get_embeddings_layer_inp(ctx_tgt, …)` per k=41,42,43 [C
+`speculative.cpp:1094`]). La bozza N+1 richiede gli stati nascosti di verify(N) (disponibili al
+95-100% dello stack) **più il token gratis** campionato dai logit finali. **Non esiste alcun
+prefisso di verify(N) in cui `draft(N+1)` sia definita**: la variante speculativa non è rischiosa,
+è indefinita. La «preparazione» sono microsecondi; il post-processing è 0,4 µs (`accept`) + 2,36 ms
+(checkpoint) [M].
+
+**2. Morte di risorse.** Il silenzio non è capacità libera: l'host è FUORI da ogni API CUDA perché
+sta calcolando la corsia al muro DDR4, e il bus è già sovraccritico (PCIe 24,8 + corsia 31-41 su
+~44 GB/s: i consumatori si serializzano). Il drafter è **orchestration-bound** ([M] spostare 6,8 GB
+fra VRAM/RAM muove il suo costo del 7%) e **condivide i 7 thread col bersaglio** [C]: metterlo nel
+silenzio allunga il silenzio. Stesso meccanismo già falsificato da `-t 14` (−2,2%) e `K=1`
+(−2,05%). E **il 35,9% dei round non ha silenzio affatto** (verify a 4 righe ⇒ `BATCH_MAX=3`
+esclude la corsia) — proprio i round con la bozza più cara.
+
+**3. Morte aritmetica.** Tetto assoluto +8,7% (`gen` = 17,93 ms/round nascosto sempre e gratis);
+raggiungibile +5,6%; **centrale +3,3% con oracolo perfetto e contesa zero** → ≈0 appena la contesa
+entra. Soglia di promozione: 3%. La variante «feature stantie» ha break-even a mean_len 2,07
+(−21%): un drafter privato del segnale del bersaglio perde più di così (già nmax 3→4, che cambia
+solo il denoising, fa −13%).
+
+### Il modello di costo del round (nuovo, dalle 16 finestre `ms_cycle_3s` di r55, R²=0,97)
+
+```
+C_round(L) = 81,4 + 48,4·L   ms      (L = mean_len; a L=2,61 → 207,7 contro 206,1 misurato)
+```
+
+- **Termine fisso 81,4 ms = 39% del round**: `gen` 17,93 + quasi tutto bolla del bersaglio che non
+  scala con le righe. **Marginale 48,4 ms/riga**: la valuta per prezzare ogni leva su nmax/conf.
+- Corollari: bozza perfetta a nmax=3 (L=4) ⇒ **14,5 t/s** (metodo corretto, sostituisce la vecchia
+  stima «17,0» che teneva C_round costante); asintoto a L→∞ = 1000/48,4 = **20,7 t/s** — il 20 sta
+  *sull'asintoto* del regime attuale.
+
+### Due correzioni di misura
+
+- **`proponente TOTALE 90,29 ms/chiamata` (log lungo) è un ARTEFATTO da ritirare**: `t_process_us`
+  include ~52 chiamate di **prefill** a 2048 righe divise per i soli 460 `n_call_draft`. In decode
+  `process()` vale ~1-3 ms. Il numero pulito è **`gen = 17,93 ms/round`**.
+- **Censimento lunghezze bozza al punto canonico** (mai fatto): `n_draft = 1/2/3` in
+  **206/89/165** round su 460 (44,8%/19,4%/35,9%) — nel 44,8% dei round la bozza è UN token.

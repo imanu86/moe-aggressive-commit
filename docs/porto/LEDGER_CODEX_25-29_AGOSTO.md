@@ -226,3 +226,35 @@ numero e' valido per la domanda; lettura pre-registrata: **decode < 20 ⇒ CLOSE
 Trappola d'attrezzatura da manuale (registrata): su PS 5.1 `Get-Content` senza BOM decodifica in
 ANSI e **corrompe l'UTF-8** (643 byte e SHA diverso su un file da 639): per i gate binari usare
 `[IO.File]::ReadAllBytes` + `UTF8.GetString`.
+
+---
+
+## ADDENDUM 30/8 notte — b57 L6-nohot: **14,33 t/s ad accettazione PERFETTA ⇒ CLOSE_ACCEPTANCE_TRACK**
+
+Braccio derivato dichiarato (niente ciclo Porto: `porto_hot_snapshot=false` nella request — il vero
+cancello è `server-context.cpp:4364`, PRIMA delle scritture ON_DEVICE; `PORTO_HOT_MASK=0` da solo
+non sarebbe bastato, è letto a :4382 DOPO). Gate della deviazione verificati: zero catture, zero
+scritture ON_DEVICE. Una lifetime, una POST, zero retry, zero errori.
+
+```
+load 150,2 s · prefill 101.691 tok a 124,47 t/s · DECODE 1.200 tok in 83,713 s = 14,3347 t/s
+accettazione sintetica 995/995 = 1,000000 · acc per pos (1,1,1,1,1) · mean accepted len = 6
+```
+
+**VERDETTO PRE-REGISTRATO: 14,33 < 20 ⇒ `CLOSE_ACCEPTANCE_TRACK`.** Con accettazione PERFETTA il
+motore consegna 14,33 sul lungo reale: il bersaglio dista ancora il 28,3% *dopo* aver regalato
+tutto ciò che l'accettazione può dare. Il filone accettazione si chiude come strada per i 20 —
+per la regola della campagna stessa. (La deviazione nohot non gonfia il numero: il checkpoint
+tocca l'avvio, non il regime; un numero BASSO è conclusivo così.)
+
+**Collaterale non piccolo**: a riga 1297 `decode: vram-a-fasi: flip rinviato, restano 3 token` —
+la coda da 4 token del prompt lungo ARMA davvero l'innesto resto-64, e la fase transita pulita.
+Per il meccanismo misurato in fase 2, **senza il fix questa L6 non sarebbe arrivata in fondo**:
+l'innesto è una PRECONDIZIONE del lungo su questa lineage, non un abbellimento. [inferenza dal
+meccanismo; il braccio L6-FIX=0 non è stato corso]
+
+Difetti di lineage b52 registrati (diagnosticati, non riparati): writer checkpoint ON_DEVICE senza
+NULL-check (`llama-context.cpp:3778`); i tre callsite draft ancora `ON_DEVICE` (manca il fix
+B54.1). Trappole PS 5.1 per la memoria: `Get-Content` corrompe UTF-8 senza BOM; `HttpClient` vuole
+`Add-Type`; `ConvertFrom-Json` senza `-Depth` — scrivere `response.json` su disco PRIMA di ogni
+parsing ha salvato il canary da un retry.

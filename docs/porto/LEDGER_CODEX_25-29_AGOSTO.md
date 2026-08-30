@@ -258,3 +258,39 @@ NULL-check (`llama-context.cpp:3778`); i tre callsite draft ancora `ON_DEVICE` (
 B54.1). Trappole PS 5.1 per la memoria: `Get-Content` corrompe UTF-8 senza BOM; `HttpClient` vuole
 `Add-Type`; `ConvertFrom-Json` senza `-Depth` — scrivere `response.json` su disco PRIMA di ogni
 parsing ha salvato il canary da un retry.
+
+---
+
+## ADDENDUM 31/8 — b58: LA BANCA W INGAGGIATA PER LA PRIMA VOLTA, E PAGA SUL LUNGO
+
+**L6 con banca attiva: 15,155 t/s contro il baseline b57 di 14,335 = +5,72%**, sopra la soglia +3%.
+Confronto pulitissimo: `draft_n/accepted = 995/995` IDENTICI al baseline — il profilo speculativo
+non e' cambiato di un token. Zero assert, zero CUDA error.
+
+**Scoperta di fase A: i patch B4.1 erano GIA' dentro b52** — meta' graph-runtime committata in
+`f36c7d6c1`, meta' frontier-lifecycle nelle 26 voci staged; verificato in quattro modi (SHA
+byte-identici ai manifest, 72/72 tratti presenti, `apply -R --check` pulito, file nuovi come
+soprainsiemi). Zero patch applicati, zero righe toccate. Anche il contatore `unarmed` esisteva gia'
+(`CE_WB_REACH_UNARMED`, `cache-esperti.cu:11332/:11505`). E la condizione mailbox temuta
+(`published_n==rows`) **non esiste nel codice**: il cancello vero e' `row_offset+published_rows==rows`
+(`:11237`), vero per costruzione — misurato `182/182` e `198/198` publish accettati.
+
+**Il PERCHE' il lungo paga e il corto no** (`VERIFY-BOUNDARY`): sul corto `structural_zero=8004,
+replay_armed=316`; **sull'L6 `structural_zero=0, direct_armed=777, replay_armed=0`** — il cammino
+dei grafi sul lungo e' interamente DIRETTO, cioe' esattamente il buco che l'armamento B4.1 tura:
+senza, la banca sarebbe rimasta disarmata per sempre proprio dove serve. Prima volta di
+`selected>0`: 4 lane a ~6.499 selected, 20.643 committed=converted, rese 71-87%, `invariants=PASS`,
+`fault/aba=0/0`, `ready_before_verify=13,4%`.
+
+**Sul corto la banca COSTA** (−2,84%, e il controller −5,92%): paga solo nel regime diretto/lungo.
+SHA del corto divergenti fra i tre bracci ma **non conclusivi**: manca il controllo di
+riproducibilita' (due lanci identici di A) — dichiarato, non nascosto.
+
+**Margini restanti dichiarati**: W=4 oltre la larghezza utile (resa marginale decade per lane,
+latenza lane3 ~4x lane0) ⇒ braccio W=2/3; layer RESIDENT (lease/promoted) **non esercitato**;
+registro grafi a 64 ruoli dormiente (GRAPH_VARIANTS assente). Tre guardie `armed` ancora senza
+witness (`:11681/:11698/:11780`).
+
+⚠ L6 e' una sonda sintetica (accettazione forzata 100%, output non valido per costruzione): misura
+il SOFFITTO di costo, non la prestazione reale. Il prossimo numero che serve e' il **lungo REALE**
+con banca ON/OFF.

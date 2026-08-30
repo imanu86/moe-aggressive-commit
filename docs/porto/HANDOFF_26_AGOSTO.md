@@ -472,6 +472,22 @@ parte fosse attesa recuperabile, sarebbe la voce più grande in gioco.
 regime** (13/8, banco e configurazione diversi). **Non usarlo come risposta**: va rifatto sul banco
 lungo SOTA, che ha colpi 51,5% invece di ~68% e quindi un profilo di occupazione diverso.
 
+> **ESITO (30/8, misura eseguita sui due DB, dati puliti — vedi `LEDGER_25_AGOSTO.md` §finale):**
+> dentro le finestre di `cudaStreamSynchronize` la GPU è attiva al **93,2% / 94,1%** (33k / 102k)
+> ⇒ soglia >90% ⇒ **quel fronte si CHIUDE**: il sync è l'host che osserva lavoro GPU, confermato
+> per via indipendente. **Ma la premessa era sbagliata**: sotto nsys il sync è il **18,78%** della
+> parete (non 50,5% — i contatori applicativi misurano altro), e le sue finestre spiegano solo
+> l'**1,1-1,3% della parete** di GPU ferma. Chiuderlo non compra quasi nulla.
+> **Il fronte vero riaperto**: la GPU è del tutto ferma per il **38,9-39,3%** della parete, e per
+> il **64%** di quel tempo l'host è FUORI da ogni API CUDA (**25,1% della parete**). Il sito n.1
+> (35% della massa): dopo `mul_mat_vec_q_moe_maschera` la GPU tace finché le attivazioni del ramo
+> CPU non rientrano via H2D su stream 14 — e il silenzio **scala col payload** (723 µs a 64 KiB,
+> 1036 a 96 KiB): **la GPU finisce i suoi 4 esperti e aspetta i 2 della CPU. L'overlap non
+> sovrappone.** Tetti misurati: senza tutte le bolle **×1,64**; senza le sole bolle del ramo CPU
+> **×1,36**. Indecidibile da questi DB (tracciamento CUDA-only): se in quel 25,1% l'host **calcola**
+> o **attende** i worker. Le due corse che decidono: (a) nsys `--trace=cuda,osrt` o campionamento
+> CPU; (b) `--gpu-metrics` per sapere se le isole «busy» sono sature.
+
 ## 5.2 Ridurre i miss — l'unica strada quantificata verso i 20 t/s
 
 Dall'errata: servono **~30 miss/token invece di 119**, cioè **colpi ~88% invece di 51,5%**.

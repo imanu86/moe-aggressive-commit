@@ -1106,3 +1106,67 @@ le **proporzioni**.
 indipendenti anche a spec ON + K=2** (tre lanci di controllo identici). Prima di usarlo come
 cancello in un regime nuovo, **misura che quel banco riproduca** con due lanci di controllo: costa
 due corse corte e restituisce il cancello di correttezza più economico che esista.
+
+---
+
+## 9. ADDENDUM 30/8 — occupazione GPU nelle bolle: il fronte sync si chiude, il fronte vero si apre
+
+Misura in sola lettura sui due DB nsys del 24/8 (33k e 102k, `mode=ro`), aritmetica a UNION
+clippata (non somma dei kernel), calibrata contro gli artefatti e35/e36 allo 0,001%.
+
+| | 33k | 102k |
+|---|---|---|
+| parete decode | 22.733,5 ms | 24.191,8 ms |
+| GPU attiva (union kernel+memcpy+memset) | **61,13%** | **60,67%** |
+| bolle GPU vere | **38,87%** | **39,33%** |
+| finestre `cudaStreamSynchronize` (union) | 18,78% parete | 18,78% parete |
+| **GPU attiva DENTRO le finestre di sync** | **93,16%** | **94,10%** |
+| GPU ferma dentro il sync, in quota parete | 1,28% | 1,11% |
+
+**Verdetto pre-registrato: >90% => il fronte «sync = overhead» si CHIUDE su dati puliti.**
+Il `cudaStreamSynchronize` e' l'host che osserva lavoro GPU: la conclusione del braccio r44
+(contaminato dal baco R1) e' confermata per via indipendente. Caveat dichiarato: il 93-94% e'
+pesato sulla durata ed e' bimodale — l'1,6% delle sync (le lunghe) pesa l'88-93% del tempo.
+
+**MA la premessa dell'86% host-bound non e' riproducibile da nsys**: il sync e' il 18,78% della
+parete, non 50,5%; l'host dentro QUALUNQUE API CUDA e' il 44%. I contatori applicativi di
+`sched-profilo` misurano un'altra grandezza. E le finestre di sync spiegano solo l'1,1-1,3%
+della parete di GPU ferma: chiudere quel fronte non compra quasi nulla.
+
+### Il fronte vero: la GPU aspetta il ramo CPU
+
+Bolle >=20 us = 5-6% del numero ma **88,5-88,7% della massa**. I tre siti gia' noti fanno il
+64,5-64,9% della massa, tutti adiacenti a MEMCPY, tutti a dispatch nuovo. E la ripartizione
+dello stato host dentro le bolle dice la cosa nuova:
+
+- host dentro una API CUDA: 35,5-36,2% della massa di bolla
+- **host FUORI da ogni API CUDA: 64%** = **25,1% della parete intera**
+
+**Sito n.1 (35% della massa, ~21 occorrenze/forward, 14,3-14,9 ms/fwd)**: `quantize_q8_1` ->
+`mul_mat_vec_q_moe_maschera` -> **silenzio totale (host: zero chiamate CUDA)** -> H2D di 64/96 KiB
+su stream 14 -> sync. Il silenzio **scala col payload** (64 KiB -> 723 us mediani; 96 KiB ->
+1036 us; rapporto 1,44 contro 1,50 dei byte; CV 0,62-0,65): non e' latenza fissa, e' lavoro
+proporzionale al carico che accade altrove. Lettura: **la GPU finisce i suoi 4 esperti mascherati
+e aspetta i 2 del ramo CPU. L'overlap non sovrappone.** Il 66-70% della massa di bolla e'
+bracketata dal traffico di stream 14 (la corsia host<->device), i cui trasferimenti costano 159 ms
+su 22,7 s: il trasporto e' gratis, l'attesa attorno no.
+
+### Tetti misurati (216 forward per DB)
+
+```
+forward attuale               105,25 / 112,00 ms
+senza TUTTE le bolle           64,34 /  67,95 ms   = x1,64   (dal punto SOTA: ~21,8 t/s)
+senza le sole bolle stream-14  76,49 /  82,66 ms   = x1,36   (~18 t/s)
+```
+
+### Cio' che i DB non possono decidere (dichiarato, nessuna stima di ripiego)
+
+Tracciamento CUDA-only: niente OSRT, niente campionamento CPU. Per il 25,1% di parete con GPU
+ferma e host fuori da CUDA **non si distingue «l'host calcola» da «l'host attende i worker»**.
+Le due corse che decidono, entrambe singole: (a) nsys `--trace=cuda,osrt` (o campionamento CPU)
+=> sceglie fra *velocizzare la lane* e *ribilanciare la quota*; (b) `--gpu-metrics` => dice se
+il 61% di isole «busy» e' saturo o nasconde a sua volta margine.
+
+Converge con la diagnosi dell'11/8 («il join e' il 73%, la finestra e' un solo split»), ora
+quantificata al sito e con la prova di scala. Script di analisi nello scratchpad di sessione
+(b00..b50), riusabili.

@@ -186,3 +186,43 @@ volutamente NON-staged per restare verificabile con `git diff`).
 Nota delega: il sandbox Codex NON puo' scrivere fuori dal proprio progetto (due fermate pulite:
 dubious ownership + «writing outside of the project») ⇒ a Codex analisi/lettura, a opus le
 chirurgie sugli alberi D:\.
+
+---
+
+## ADDENDUM 30/8 sera — b52+resto64: build PASS, canary bit-esatto, coppia repro PERFETTA, L6 abortita per lineage
+
+**Build (fase b56)**: solo `llama.dll` rilinkata (l'innesto tocca solo `llama-context.{cpp,h}`):
+nuova `5452C48750C6501CB4A936B6DE9E119C990970AB2786B858F62392E275A485B5` (pre-innesto `350B4530…`),
+backup in `D:\b52\b\bin\backup_pre_resto64\`. CTest 4/4 come il gate B52 originale.
+**Scoperta: il lettore ha DIFETTO = 1** (`vram_fasi_resto_fix = (rf && *rf) ? atoi(rf) : 1`,
+`llama-context.cpp:2343-2344`, cancello a valore): il fix e' ON quando l'env e' assente — ecco
+perche' la produzione canonica sopravvive senza impostarlo.
+
+**Canary P25: PASS bit-esatto.** `message.content` = 639 byte, SHA `B2247804…14CE`, acceptance
+112/135 identica, `flip rinviato = 0` sul prompt corto (il contratto dell'innesto: non tocca i
+corti). L'innesto e' NON-REGRESSIVO sulla lineage P26.
+
+**Repro resto-64: la coppia falsificabile piu' pulita mai avuta.** Stesso prompt da **32.782 token
+esatti** (mod 2048 = 14), una sola variabile:
+- fix ON  → **due `flip rinviato`** («restano 13», «restano 3»), completion OK, zero OOM;
+- fix OFF → **`CUDA error: out of memory` a `mmq.cu:183`** in prefill, nello stesso istante in cui
+  il braccio ON rinvia il primo flip.
+**Il fix resto-64 e' PROVATO funzionante sulla lineage P26.**
+
+**L6 congelata: ABORT diagnosticato, nessun numero.** Prefill completato pulito (101.687 token,
+120,97 t/s ≈ riferimento; `flip rinviato = 0`: l'innesto non c'entra), poi
+`GGML_ASSERT(buffer)` a `ggml-backend.cpp:198` via `~llama_io_write_device`
+(`llama-context.cpp:3718/:3738`, e l'allocazione a `:3778` **non ha NULL-check**): prima scrittura
+di checkpoint ON_DEVICE. **Causa strutturale verificata staticamente**: la carta presuppone la
+lineage `b54c` (fallback B32.2 + phase-cold B51) che in b52 **non esiste** (zero occorrenze di
+`phase-cold`, `cattura_hot=0`); e b52 non ha nemmeno il fix B54.1 (i tre callsite draft sono
+ancora a `ON_DEVICE`). Modo di guasto DIVERSO da B54-clean (writer, non reader).
+**`CLOSE_ACCEPTANCE_TRACK` non pronunciabile**: il numero decisivo resta non misurato.
+
+**Autorizzato dal la regia il braccio derivato `b57_l6_nohot`** (L6 senza porto hot snapshot,
+deviazione dichiarata): ne' il prefill ne' il decode sintetico dipendono dal checkpoint, quindi il
+numero e' valido per la domanda; lettura pre-registrata: **decode < 20 ⇒ CLOSE_ACCEPTANCE_TRACK**.
+
+Trappola d'attrezzatura da manuale (registrata): su PS 5.1 `Get-Content` senza BOM decodifica in
+ANSI e **corrompe l'UTF-8** (643 byte e SHA diverso su un file da 639): per i gate binari usare
+`[IO.File]::ReadAllBytes` + `UTF8.GetString`.

@@ -1220,3 +1220,8 @@ Con thread e K chiusi, la composizione software residua sul fronte lane/bus è s
 (a) la linea b52/P26 con resto-64 innestato — build + canary + repro + **L6 congelata**;
 (b) le diagnostiche admin, se l'utente eleva; (c) il clock RAM; (d) ricerca: sovrapporre lo
 streaming DDR4 della lane al calcolo GPU attraverso la catena degli strati.
+
+**RISPOSTA UTENTE (30/8 sera) sulla nota RAM del §10**: i 96 GB sono un **kit misto 64+32**, e
+sopra i 3000 **non regge stabile**. La configurazione a 3000 è deliberata, non un XMP scivolato:
+**la pista hardware è CHIUSA**. Il muro DDR4 misurato (40-44 GB/s letti, lane a 31-41) è il tetto
+vero di questa macchina, e i tetti derivati (~30-32 t/s per il sottosistema esperti) restano.

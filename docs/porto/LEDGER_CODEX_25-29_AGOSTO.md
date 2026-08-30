@@ -294,3 +294,47 @@ witness (`:11681/:11698/:11780`).
 ⚠ L6 e' una sonda sintetica (accettazione forzata 100%, output non valido per costruzione): misura
 il SOFFITTO di costo, non la prestazione reale. Il prossimo numero che serve e' il **lungo REALE**
 con banca ON/OFF.
+
+---
+
+## ADDENDUM 31/8 — b59, il REALE: la banca INVERTE IL SEGNO. Verdetto finale della linea B
+
+| braccio | banca | controller | t/s | p1 | mean_len | forward (verify/single) |
+|---|---|---|---:|---:|---:|---|
+| B | ON W=4 | ON | **7,818** | 0,32174 | 1,066 | 1126 (46/**1066**) |
+| A | OFF | ON | **8,259** | 0,36585 | 1,067 | 1124 (41/**1075**) |
+| Z | OFF | OFF | **9,051** | 0,38163 | **2,537** | 473 (**381**/1) |
+| Y | ON | OFF | — | — | — | **RIFIUTATO dal server** (guardia S2/frontier) |
+
+**LA BANCA COSTA IL 5,34% SUL REALE** (B vs A, p1 entro 2σ ⇒ confronto valido). Il +5,72% della L6
+era **un artefatto del regime sintetico**: la banca paga su OGNI forward (arma le lane in continuo)
+ma incassa solo sulle VERIFICHE — e sul reale il **controller di accettazione spegne la
+speculazione** (`p1_floor=0,90` contro un p1 vero di 0,70-0,80 ⇒ **il 95-96% dei forward è
+singolo**). Su L6 il 100% dei round è verifica forzata: stessa banca, segno opposto, ampiezza
+dell'inversione **11,1 punti**. La L6 misura un regime che il carico reale non attraversa mai.
+
+Il controller da solo costa **−8,75%** (A vs Z); il pacchetto intero **−13,6%**. E **la cella
+banca-senza-controller NON ESISTE**: il server la rifiuta con una guardia esplicita («proseguendo,
+il banco misurerebbe un'altra configurazione») — l'esecutore correttamente non l'ha scavalcata.
+**La banca non è promuovibile separatamente dal pacchetto, e il pacchetto è −13,6%.**
+
+**Riproducibilità linea B: SUPERATA** — tre lanci di processo del corto **bit-identici**
+(`169F0A2A…`, spread t/s 0,59%). Lo SHA torna cancello anche sulla linea B; la divergenza dei tre
+bracci b58 era delle leve, non del banco.
+
+**I due reperti di Z (config nuda, la migliore della linea B)**: mean_len 2,537 ≈ 2,61 canonico ma
+`C_round` **280 ms contro ~207** ⇒ il divario residuo (−28% dal canonico) è **costo del round, non
+accettazione**; e `acc per pos = (0,76 0,53 0,33 0,19 0,09)` ⇒ le posizioni 4-5 rendono il 19% e il
+9%: **nmax=5 è una scelta sbagliata per questo carico**.
+
+Fase 2 (sweep W su L6) **deliberatamente non eseguita** con motivazione a verbale: la premessa era
+refutata dalla fase 1 — raffinare W su una sonda che inverte il segno avrebbe prodotto un numero da
+disclaimerare. Budget speso su Z (isola il controller) e Y (scopre il vincolo). Runner pronto se
+mai servisse.
+
+### VERDETTO FINALE LINEA B
+Miglior reale: **9,05 t/s** (nuda) contro 12,63 della canonica (−28%). Il divario è nel costo del
+round. La banca inverte il segno sul reale, il controller affonda la speculazione, la cella di
+riscatto è vietata dal server. **La linea B non è un concorrente: è stata un laboratorio** — e i
+suoi lasciti veri sono il resto-64 provato con coppia falsificabile, i fix 18/8 committati, la
+strumentazione dell'indice −1, il bug `graph_calls`, e la disciplina canary/oracolo.

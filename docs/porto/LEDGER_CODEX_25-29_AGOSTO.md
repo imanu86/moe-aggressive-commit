@@ -162,3 +162,27 @@ in modo da abilitare una L6 valida.**
   pretendono geometria `473/43/256`, il runtime attesta `473/64/256`
   (64 = `CACHE_ESPERTI_MAX_STRATI`; 43 = layer del modello). Applicata alla
   lettera, la regola invaliderebbe corse sane.
+
+---
+
+## ADDENDUM 30/8 — innesto resto-64 sulla lineage P26 (D:\b52): FATTO
+
+Chirurgo opus, solo editing, niente build/commit. Esito: **b52 conteneva gia' il 95% di
+`5804c9f`** — i compositi P26 portavano l'intero working tree chirurgo15 TRANNE i cinque
+identificatori del resto-64 (coerente col reperto «b20 = stesso working tree con i hunk del resto
+asportati»). Aggiunte solo **37 righe in `src/llama-context.cpp` + 2 in `src/llama-context.h`**,
+verificate in doppia direzione: ogni riga aggiunta byte-identica al patch canonico, ogni riga
+canonica non aggiunta gia' presente. Guardia anti-warmup `vram_fasi_taglia_prefill` presente e non
+semplificata; lettore env nel blocco one-shot (sentinella `< 0`), raggiungibile anche a leva spenta;
+graffe bilanciate; HEAD `98ee8c76` invariato; le 26 voci staged pre-esistenti intatte (il fix e'
+volutamente NON-staged per restare verificabile con `git diff`).
+
+**Cancelli pre-registrati per la build futura di b52** (quando la macchina si libera):
+1. canary P25 corto ancora **bit-esatto** `B2247804…` (il fix non tocca i prompt corti);
+2. repro resto-64: prompt 32.782 token ⇒ **due `flip rinviato`** e completion piena
+   (il binario pre-fix moriva OOM a `mmq.cu:183`, 3/3);
+3. solo dopo: la **L6 congelata** di B54-clean (decide se il programma W-bank puo' arrivare a 20).
+
+Nota delega: il sandbox Codex NON puo' scrivere fuori dal proprio progetto (due fermate pulite:
+dubious ownership + «writing outside of the project») ⇒ a Codex analisi/lettura, a opus le
+chirurgie sugli alberi D:\.

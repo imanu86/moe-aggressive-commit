@@ -1170,3 +1170,53 @@ il 61% di isole «busy» e' saturo o nasconde a sua volta margine.
 Converge con la diagnosi dell'11/8 («il join e' il 73%, la finestra e' un solo split»), ora
 quantificata al sito e con la prova di scala. Script di analisi nello scratchpad di sessione
 (b00..b50), riusabili.
+
+---
+
+## 10. ADDENDUM 30/8 sera — fronti THREAD e OVERLAP_K chiusi; il muro DDR4 confermato due volte
+
+Cinque fasi, esecutore unico, binario chirurgo16 verificato pre e post. Rumore del banco
+misurato: **0,37%** su coppia byte-identica (tre repliche su due giorni entro lo 0,6%) —
+i verdetti a −2% sono effetti reali.
+
+| tag | leva | decode t/s | Δ vs ctrl | p1 | SHA |
+|---|---|---:|---:|---:|---|
+| `r53_ctrl_t7` | controllo | 12,587 | — | 0,84073 | `A177DDAF` |
+| `r54_ctrl_k2` | controllo (replica) | 12,634 | +0,37% | 0,84073 | `A177DDAF` |
+| `r53_t14` | `-t 14` | 12,329 | **−2,23%** | 0,84073 | `A177DDAF` (identico!) |
+| `r54_k1` | `OVERLAP_K=1` | 12,352 | **−2,05%** | 0,80664 (−3,6σ) | diverge (legittimo) |
+| `r55_reuse` | `MMID_REUSE_SRC1=1` | 12,655 | +0,35% | 0,84073 | `A177DDAF` (identico) |
+
+- **FRONTE THREAD CHIUSO col numero previsto**: `calcolo` del worker 1,540 → **1,484 ms (−3,6%)**,
+  dentro la banda pre-registrata 1,45-1,56 ⇒ **muro di banda DDR4 confermato**. Il campionatore
+  esterno: +36% di thread Running e +33% di CPU per −2,2% di throughput. **SHA identico fra
+  t7/t14: validato il cancello «il conteggio thread non cambia l'accumulo».**
+- **FRONTE OVERLAP_K CHIUSO**: K=1 raggiungibile (`calcolo` −39,5%, lavori +20,7%) e **nullo**
+  (−2,05%), coerente con «i byte MIGRANO sullo stesso bus» (~−1,3% predetto). Il motore di copia
+  NON era fermo nei silenzi. In più K=1 **abbassa p1 di 3,6σ** (0,841→0,807).
+- **Freebie certificato**: `GGML_CPU_MMID_REUSE_SRC1=1` — testimone presente, **SHA bit-identico**,
+  +0,35% (dentro il rumore). Accendibile senza rischio.
+
+### Le due diagnostiche privilegiate: impossibili senza admin, e una MENTE
+
+`osrt` **non esiste su Windows**; `--cpuctxsw` e `--sample` richiedono admin e **nsys li disabilita
+IN SILENZIO uscendo 0 con un report dall'aspetto valido e vuoto** (provato con sonda da 10 s prima
+di sprecarci 30 minuti). `--gpu-metrics`: errore duro `ERR_NVGPUCTRPERM`. Sostituto non
+privilegiato (campionatore thread a 1 Hz): in **prefill l'host ATTENDE** (1,05 thread vivi su
+34-49), in **decode è OCCUPATO** (7,24 Running su -t 7) — riserva: parte del Running è SPIN.
+
+### Anomalie
+
+1. **Cancello «cambio fase VRAM < 100 ms» fallisce simmetricamente su OGNI braccio** (73-171 ms),
+   controlli inclusi: proprietà pre-esistente, il cancello va ritarato o la causa indagata.
+2. `calc CPU`/grafo = 0,238 ms stabile (non i ~0,05 della guida): da riconciliare.
+3. Driver dei bracci salvati in `lanciatori_salvati_20260825\` (`r53_arm.ps1` ecc.).
+4. **`ConfiguredClockSpeed = 3000`** ma la ripresa del 9/8 diceva «RAM a 3200»: **verificare
+   XMP in BIOS** — su un collo di banda, +6,7% di clock è la leva hardware più diretta.
+
+### Dove siamo
+
+Con thread e K chiusi, la composizione software residua sul fronte lane/bus è sottile. Restano:
+(a) la linea b52/P26 con resto-64 innestato — build + canary + repro + **L6 congelata**;
+(b) le diagnostiche admin, se l'utente eleva; (c) il clock RAM; (d) ricerca: sovrapporre lo
+streaming DDR4 della lane al calcolo GPU attraverso la catena degli strati.

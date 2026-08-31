@@ -1272,3 +1272,57 @@ C_round(L) = 81,4 + 48,4·L   ms      (L = mean_len; a L=2,61 → 207,7 contro 2
   `process()` vale ~1-3 ms. Il numero pulito è **`gen = 17,93 ms/round`**.
 - **Censimento lunghezze bozza al punto canonico** (mai fatto): `n_draft = 1/2/3` in
   **206/89/165** round su 460 (44,8%/19,4%/35,9%) — nel 44,8% dei round la bozza è UN token.
+
+---
+
+## 12. ADDENDUM 31/8 — RAGIONARE A ESPERTI: il verdetto, la correzione del muro, la cella mai misurata
+
+Direttiva utente: «dobbiamo ragionare a esperti». Progettista dedicato, simulazioni sulle tracce
+route vere (validate: 51,7% simulato contro 51,5% misurato in produzione).
+
+### ⚠ CORREZIONE AL MURO: è la SERIALIZZAZIONE, non la banda
+
+Dai DB nsys: il trasporto esperti **non passa dal motore DMA** — è `kern_fj_copia`, kernel
+SM-driven, e sta **all'81-84% sullo stream di CALCOLO** nonostante `FORK=2`. Solo il **19% del
+tempo di trasporto si sovrappone a calcolo**; 19-20 ms/forward sono ESPOSTI, contro 44 ms/forward
+di calcolo sotto cui nasconderli (rapporto 1,8: ci starebbe). E la DDR4 lavora a **duty ~26%**
+(~11 GB/s medi su ~43): coerente col carico_fantasma. **Il collo non è la banda: è che trasporto e
+calcolo non girano insieme sul device.** (Le pagine precedenti che dicevano «muro di banda» vanno
+lette con questa correzione: la lane nei suoi burst è al muro, ma il SISTEMA no.)
+
+### Il fronte esperti: la politica esiste già, la produzione la spegne, ed è misurata
+
+- **«Installare solo a credito» = `MASSA_AMMISSIONE`, default 1 NEL CODICE** (`cache-esperti.cu:2598`,
+  decisione a `:4393-4403`, contatore di credito per-esperto `c.massa` già esistente). La produzione
+  la spegne (`=0`) e la misura c'è: **15,08 contro 16,07 = −6,2%** (14/8), perché il rifiutato
+  finiva alla lettura MAPPATA (per riga). «Miss → lane» è già la politica, tagliata a K: la
+  partizione mette i NON residenti in testa e la lane prende i primi k_cpu.
+- **Simulazione a credito sulle tracce vere**: installati **−89,5%** (il churn muore), ma byte solo
+  **−17%** (l'esperto va comunque letto) e servirebbe lane a 2,19× (K=3 a 1,5× = −11,6%).
+- **Le destinazioni sono esaustive: {residente, installa, mappato, lane}. Non c'è una quarta porta.**
+- Predittore di route: VIVO (`W`, `cache_pf-<L>`), hits 44→78%, **netto −18,6/−37,2 ms/token**;
+  correlazione route fra strati adiacenti nello stesso token: **~2% = zero**.
+
+### L'ESCLUSIONE ARITMETICA dei 20 per via di residenza
+
+Servono −74,7% dei byte = 1,687 non-residenti/strato. **A 473 slot l'oracolo di BELADY — futuro
+noto — toglie il 43,5%: manca il bersaglio di un fattore 2,2.** Belady arriva a ~**1500 slot
+(9,89 GiB di slab)**; una politica reale a ~3200 (21 GiB). La 3060 ha 3,12 GiB di slab.
+E la simulazione SOTTOSTIMA la residenza reale ⇒ il verdetto è rafforzato.
+**Nessuna politica di ammissione/sfratto/predizione porta ai 20 su questa VRAM. Restano: più VRAM,
+o meno byte per esperto (quantizzazione più aggressiva del solo MoE).**
+
+### La crepa nel cimitero: FORK × W mai misurato
+
+`FORK` e `W` sono **mutuamente esclusivi per costruzione** (`cache-esperti.cu:3164-3170`): tutte le
+misure del predittore W sono state fatte sul cammino SERIALE. **`LLAMA_CACHE_ESPERTI_FORK_COMPONI=1`
+(`:3161`) toglie esattamente quel rifiuto: il prefetch sul fork stream non è mai stato misurato, ed
+è a due env var di distanza.** Piano a fasi con go/no-go pre-registrati:
+1. `FORK_SERIALE=1` (una corsa): se costa **<2%** la sovrapposizione attuale non compra niente ⇒ i
+   19-20 ms sono aggredibili (GO); se **>8%** ⇒ strutturali, fronte chiuso.
+2. `FORK=2 + FORK_COMPONI=1 + W=1/2` sul LUNGO: GO se `C_round` ≥ +3% contro W=0, cancello di
+   qualità DI CONTENUTO (non p1, non t/s), SHA atteso divergente (il fork non è bit-esatto).
+3. Solo se GO: anello di profondità 2 (~120-200 righe, un file) sugli otto buffer a strato singolo.
+
+Tetto onesto dichiarato di tutto il vivo, candidato incluso: **16-17 t/s**.
+Debito: `analyze_route_trace.py` non apre le tracce v1 `CESTRC1` (layout `<IhBBBBH6h6B2x6f` documentato).

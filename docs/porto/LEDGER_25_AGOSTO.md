@@ -1542,3 +1542,71 @@ K=5 toglie il 75% della domanda, il flip la azzera.
 Percorsi: bracci `…\lanciatori_salvati_20260825\r57_arm.ps1`, `…\r58_arm.ps1` (con `fork2massa0`
 pronto); riassunti `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_{r57_ctrl,r57_fserial,r57_w1componi,r58_tonline,r58_fork0massa0}_20260831.summary.txt`;
 log `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_<tag>_f2_b2048.server.log`.
+
+## 17. ADDENDUM 31/8 — r59: ENTRAMBE LE RICETTE FALSIFICATE. Il collo della CPU è la DEQUANTIZZAZIONE — la strada diventa `IQ2_XXS_R4`
+
+**La sessione decisiva del §15 è chiusa: B1 e B2 sono FALSIFICATE, con tutti i cancelli di
+raggiungibilità VERDI** — quindi misure valide, non corse mute. Macchina lasciata libera e pulita.
+
+| | **B0 ctrl** | **B1 `K=5`** | **B2 flip** |
+|---|---|---|---|
+| decode t/s | **12,69** | **9,93 (−21,7%)** | **8,18 (−35,5%)** |
+| ms/token | 78,80 | 100,70 | 122,25 |
+| C_round | 205,67 | 244,71 (+19,0%) | 310,51 (+51,0%) |
+| prefill t/s | 125,96 | 126,54 | **111,32 (−11,6%)** |
+| p1 / mean_len | 0,84073 / 2,61 | 0,80641 / 2,43 | 0,83659 / 2,54 |
+| SHA | `A177DDAF…A47479` | `F0922D64…7F6F3A` | `4CE7717A…4CFB25` |
+| CPU decode | 720% ±142 | 834% ±125 | **693% ±20 (7 thread PIATTI)** |
+
+**Cancelli B1 (tutti passati)**: `CPU/partizioni = 5,000` esatto (B0: 2,000); `domanda` 285.564 →
+173.470; `fork cronometro lanci` 2453 → 2987. **Cancelli B2 (tutti passati)**: blocco
+`cache-esperti:` assente (runtime mai nato); zero `kern_fj_copia`; `n_lavori = 0`; **VRAM libera
+3808 MiB contro 490** (+3318 = i 3194 MiB di slot mai allocati); `calc CPU` per grafo 0,231 →
+**5,769 ms (×25)**. §4.10: tre prose tecniche genuine (3580/3843/3904 char); il testo di B2
+descrive da dentro «256 esperti per strato e 6 attivi per token» ⇒ conferma `n_expert_used=6`,
+quindi K=5 era davvero il massimo utile.
+
+### Perché hanno fallito (meccanismo, dai contatori)
+
+**B1**: il trasporto È calato come da teoria (copie −42,6%) ma la lane CPU è diventata il cammino
+critico: `calcolo` per lavoro 1,537 → **3,118 ms (+103%)**, `join` 2,679 → **4,276 ms (+60%)**,
+lavori +23%. Si compra trasporto e si paga di più in calcolo lane + rendezvous.
+**B2**: il flip è avvenuto davvero, e il pool CPU è **inchiodato piatto a 693% = 7×100%** per
+tutta la finestra (dev.std 20 contro 142 di B0). **E NON è la banda**: due stime indipendenti
+concordano su 1,57-1,70 GiB/token da leggere; a 8,18 t/s sono **12,8 GiB/s contro un bus pratico
+di 33-37 (~38%)**. Con i thread saturi e il bus a un terzo, il collo è la **dequantizzazione
+IQ2_XXS**, non la DRAM. L'ottavo core (`-t 8`) varrebbe al più +14% → ~9,3, ancora −27% da B0.
+**L'assunzione di banda (`B_cpu ≥ 30 GiB/s a 6 esperti`) non è stata falsificata: non è mai stata
+RAGGIUNTA** — satura prima il calcolo. Il che punta esattamente dove mandava la lettura
+pre-registrata: **`IQ2_XXS_R4` è un repack per dequant CPU più veloce, quindi è la strada giusta.**
+
+### Tre previsioni del §15 SBAGLIATE, a registro
+
+1. «domanda −75%» → misurata **−39,3%** (per partizione −50,7%).
+2. «buchi vicini a zero» a K=5 → **falsa di suo**: buchi 119.067 → 68.396 (−42,6%) ma la frazione
+   miss quasi ferma (41,7% → 39,4%).
+3. «prefill INVARIATO» in B2 → **−11,6%** (125,96 → 111,32), non spiegato: il batch 2048 sta ben
+   sopra la soglia 8. Anomalia aperta, passata allo scoping.
+
+### Quarta e quinta trappola del lanciatore + prova di neutralità
+
+`SOGLIA`/`SLOT`/`BOZZA_SLOT` erano **inchiodate** a `p1b_conf.ps1:95-97`. Estese col pattern di
+casa (backup `p1b_conf.ps1.bak_20260831_pre_flip`, difetti invariati). **B0 ha restituito
+`A177DDAF…A47479` IDENTICO a r57_ctrl** con ogni contatore combaciante (domanda 285.564,
+partizioni 29.025, CPU 58.050, worker 12.642): estensioni neutre, provato. E una trappola evitata
+LEGGENDO il sorgente prima di correre: `ggml-cuda.cu:6600-6603` — `if (batch < soglia &&
+!cache_ammessa) return false;` ⇒ **finché la cache è accesa la soglia è INERTE**: alzare la sola
+`SOGLIA=8` sarebbe stata una corsa muta indistinguibile dal controllo; servivano tutte e tre.
+
+### Verdetto e coda
+
+Cancello pre-registrato «≤ B0 ⇒ fronte flip chiuso, strada `IQ2_XXS_R4`» — **scattato per
+entrambe**. Con il §16 (predittivo chiuso per capienza) la mappa è: lockstep al tetto, anticipo
+senza spazio, lane/flip dequant-bound. **I byte restano l'unico fronte, e ora con l'indirizzo
+preciso: il costo di SPACCHETTARLI, non di muoverli.** Dispacci: (1) esecutore sul disambiguatore
+`fork2massa0` (macchina libera, ~45 min, chiude il fascicolo (B)); (2) analista di scoping
+`IQ2_XXS_R4` a tavolino — inventario repack nel nostro albero, scope del layout nuovo, aritmetica
+onesta di dove atterrano flip/K5/SOTA con dequant ×1,9 (evidenza esterna ik_llama su Zen3/AVX2),
+scala di sonde pre-registrate dalla più economica. Tensione da risolvere: la lane a K=2 rendeva
+31-41 GB/s nella sua finestra, B2 continuo legge 12,8 — quanta parte è «B2 fa TUTTO il modello» e
+quanta è dequant?

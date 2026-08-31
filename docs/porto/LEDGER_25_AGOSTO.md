@@ -1326,3 +1326,36 @@ misure del predittore W sono state fatte sul cammino SERIALE. **`LLAMA_CACHE_ESP
 
 Tetto onesto dichiarato di tutto il vivo, candidato incluso: **16-17 t/s**.
 Debito: `analyze_route_trace.py` non apre le tracce v1 `CESTRC1` (layout `<IhBBBBH6h6B2x6f` documentato).
+
+---
+
+## 13. ADDENDUM 31/8 — r56: il corto passa a NO-THINK. Ancora nuova: 16,56 t/s / 60,40 ms/token
+
+Direttiva utente: reasoning SPENTO su tutti i banchi. Il lungo lo era gia'; il corto no.
+Estensione di `run_porto_hot.ps1` col pattern di casa (difetto = campo assente, protocollo storico
+byte-identico, non-regressione provata: A160 riproduce bit-esatto il controllo storico del 25/8).
+⚠ Lezione r40 confermata sul campo: il campo del corpo e' **`thinking_budget_tokens`**
+(`server-common.cpp:1119`); `reasoning_budget_tokens` e' il nome POST-traduzione e nel corpo
+verrebbe **ignorato in silenzio**.
+
+| protocollo | ctrl (thinking libero) | NO-THINK | Δ t/s |
+|---|---:|---:|---:|
+| corto 160 (finestra precoce) | 13,54 | 14,36 | **+6,1%** |
+| **corto 1200 (l'ancora)** | 16,51 | **16,56** | **+0,30%** |
+
+**Il blocco di thinking e' FISSO: 518 caratteri in ogni corsa di controllo.** A 160 token occupa
+l'80% del budget (⇒ +6%), a 1200 l'11% (⇒ +0,3% = nulla). **Il no-think non accelera la macchina:
+rimuove una quota fissa di testo.** I numeri certificati della campagna restano validi.
+**Ma la qualita' cambia**: a budget corto il controllo NON produce una riga di HTML (518 char di
+reasoning che parafrasa il prompt + 83 di preambolo); il no-think produce contenuto vero. §4.10
+pulito su tutti e quattro i bracci.
+
+**Nuova ancora del corto (politica no-think): 16,56 t/s = 60,40 ms/token.**
+
+Due fatti onesti a verbale:
+1. **Il pavimento e' sceso da solo**: il controllo di oggi a thinking libero fa 60,57 contro il
+   61,84 storico (−2,1%), e il modello additivo ora SOTTO-predice il lungo (chiusura da +0,27% a
+   −1,64%). Il no-think ne spiega solo 0,3 punti. **Deriva non attribuita, ~2%: aperta.**
+2. **BM=3 NON e' dichiarato immune dal bug indice −1**: a budget 0 il taglio scatta al PRIMO token
+   di decode (subito dopo il prefill), che NON e' la transizione a meta' stream dove viveva il
+   crash di BM=4. Per esercitarla serve un **budget > 0** (64/128): fronte aperto, economico.

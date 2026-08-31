@@ -1825,3 +1825,59 @@ toccata, riparato in corsa) — onestà a registro.
 3. P3 (cancello AVX-512→AVX2 su Q2_K) — facoltativo: predetto inutile, chiuderebbe la famiglia.
 Dispacciato a seguire: **sweep `MASSA`/`soglia_micro`** (ultima leva env-only), cancelli di
 qualità pre-registrati, ancora fresca in testa.
+
+## 21. ADDENDUM 31/8 — SWEEP `LLAMA_ACCEPTMOE_SOGLIA`: l'ultima leva env-only è CHIUSA. Il guadagno di C_round NON è incassabile
+
+**Verdetto: NO-GO sull'aggressivo, PARCHEGGIO sul moderato.** Tre corse pulite, zero anomalie,
+ancora riprodotta bit-identica (contatori inclusi), macchina libera.
+
+**FASE 0 — la leva è raggiungibile e il suo VERSO è controintuitivo.** `soglia_micro` è
+alimentata da **`LLAMA_ACCEPTMOE_SOGLIA`** (letta una volta per processo,
+`llama-graph.cpp:2273-2277`; catena fino a `kern_acceptmoe`, azione a `cache-esperti.cu:7809-7821`).
+Difetto del codice **0**, difetto della PRODUZIONE **0.75** — inchiodato in `Set-SotaEnvironment`
+(sesta trappola, parametrizzata: backup `…bak_20260831_pre_amsoglia`, difetto invariante).
+**Non è un taglio: è un RIPESCAGGIO** — dopo il filtro di residenza il blocco rimette DENTRO
+esperti non residenti finché la massa tenuta copre la frazione richiesta. Soglia alta = più
+fedele e più lento; bassa = più veloce a rischio qualità; **0 = blocco spento = tetto superiore
+di ciò che la leva può comprare.**
+
+| braccio | soglia | t/s | Δt/s | p1 | mean_len | C_round | ΔC_round | scartati% | byte a domanda | SHA |
+|---|---|---|---|---|---|---|---|---|---|---|
+| ancora | 0.75 | 12,73 | — | 0,84073 | 2,61 | **205,10** | — | 39,70% | 785,27 GiB | `A177DDAF` |
+| mod | 0.50 | 12,74 | **+0,12%** | 0,78842 | 2,26 | **177,38** | **−13,51%** | 78,67% | 536,01 (−31,7%) | `D728686F` |
+| agg | 0 | 11,91 | **−6,41%** | 0,69330 | 1,97 | **165,40** | **−19,35%** | 100% | 434,41 (−44,7%) | `119D947F` |
+
+**Raggiungibilità con testimone elegante**: `tenuti per soglia` 67.536 → 22.998 → **esattamente
+0** — e lo zero è prova che il blocco non è mai entrato (`cont[3]` si incrementa solo dentro
+`if (soglia_micro > 0)`).
+
+**Qualità §4.10 — il cancello decisivo.** Ancora: zero difetti. **Moderato: 2 difetti morfologici**
+(`infrastura`, `espliterà`) con fedeltà tecnica INTATTA (cita testualmente il commento DwarfStar,
+riproduce `cache_vittima` e il bit 30 di TRANSITO correttamente). **Aggressivo: ~15 difetti e i
+FATTI sono CORROTTI**: «Architellura», «MoE (Miardi di Esperti)», «cache-esmarter.cu»,
+«Scolnikhorn» per Sinkhorn, «LR» per LRU, gibberish («prefesh as hand»), una cifra inventata.
+**Un testo che sbaglia il nome del file che sta descrivendo non è un saggio più veloce: è un
+saggio sbagliato.** Il moderato è PARCHEGGIO e non GO perché i suoi due difetti sono lo stesso
+modo di guasto dell'aggressivo preso più a monte, e un solo campione non distingue «refusi» da
+«inizio della discesa» (e il banco è deterministico: una replica darebbe lo stesso testo).
+
+**IL PUNTO CHE CHIUDE LA FAMIGLIA — il guadagno di C_round non è incassabile in t/s.**
+`tempo totale = C_round × n_round = (ms/token × mean_len) × (1200 / mean_len) = ms/token × 1200`:
+**mean_len si semplifica.** Abbassare la soglia rende ogni round più economico (byte −31,7%,
+colpi 58,3→69,8%) ma accorcia i round nella stessa proporzione, perché gli esperti scartati
+peggiorano la predizione e la speculazione accetta meno (mean_len 2,61→2,26→1,97). Moderato:
+C_round −13,51%, t/s **+0,12%** (piatto). Aggressivo: il compenso si rompe e va in perdita
+(−6,41%). **La macchina si può alleggerire del 13-19%, ma la leva paga in accettazione e in
+fedeltà, e il saldo è nullo o negativo.** La lezione ammissione-0,25 si ripete sull'ennesima
+leva della famiglia. Corollario di metrica: per questa famiglia il cancello di velocità va posto
+su **ms/token a qualità intatta**, mai su C_round da solo.
+
+**Nota contatori**: il dump acceptmoe è cumulativo e RIPETUTO più volte per corsa — confrontare
+sempre ultimo-con-ultimo (i «42495/65071» citati nello scoping erano il penultimo di r59_ctrl;
+il finale è 44464/67536).
+
+**Con questo la coda macchina è VUOTA PER COSTRUZIONE**: ogni leva software di questa campagna è
+misurata, limitata o chiusa. Restano (1) la coda d'igiene di strumentazione (build, §20) e (2) le
+due decisioni utente della mappa §18: scambio qualità/velocità più fine altrove, o VRAM.
+Percorsi: `sw_arm.ps1` accanto agli altri; summary/log/testi
+`…sw_{ctrl,mod,agg}_20260831…` in `D:\ds4_work\llama_run\`.

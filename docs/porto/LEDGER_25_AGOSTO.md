@@ -1453,3 +1453,92 @@ Se siamo unpack-bound come Zen3 esterno, (c) si ferma a ~18,5 e la strada divent
 
 **Sessione B0/B1/B2 ordinata** (lungo, 1200, B-first): B1 `K=5` (testimone `CPU = 5 × partizioni`),
 B2 flip puro (testimone `domanda = 0`, zero `kern_fj_copia`), B0 controllo.
+
+## 16. ADDENDUM 31/8 — r58: il fronte predittivo è CHIUSO PER MISURA, e la ragione è la CAPIENZA
+
+**Campagna r57+r58 conclusa, sei corse, zero contaminazione** (sorveglianza attiva per l'intera
+durata). Reasoning budget 0 dichiarato e verificato ovunque; §4.10 superato su tutte le corse
+eseguite (saggi tecnici veri, 3578-4018 caratteri, `finish=length`); zero assert/OOM/CUDA error;
+`CPU model buffer size = 1010.00 MiB` ovunque.
+
+| corsa | t/s | ms/token | p1 | mean_len | C_round | ΔC_round | SHA |
+|---|---|---|---|---|---|---|---|
+| `r57_ctrl` | 12,711 | 78,674 | 0,84073 | 2,61 | **205,34** | — | `A177DDAF` |
+| `r57_fserial` | 12,520 | 79,875 | 0,84073 | 2,61 | **208,47** | **+1,53%** | `A177DDAF` (identico) |
+| `r57_w1componi` | 7,416 | 134,848 | 0,79788 | 2,31 | 311,50 | +51,70% | `556D0694` |
+| `r58_fork0` | — | — | — | — | — | — | **NON CARICA** (combinazione illegale) |
+| `r58_tonline` | 11,561 | 86,496 | 0,78467 | 2,38 | **205,86** | **+0,25%** | `A2C3FB16` |
+| `r58_fork0massa0` | 11,275 | 88,690 | 0,87011 | 2,71 | 240,35 | +17,05% | `72FE0060` |
+
+### Braccio 2 — TRASPORTO_ONLINE con budget: FRONTE CHIUSO, e il contatore dice PERCHÉ
+
+**Correzione al brief di regia (l'esecutore ha grep-ato il lettore, come da regola)**: la env è
+**`LLAMA_TRASPORTO_ONLINE`** SENZA prefisso `CACHE_ESPERTI_` (`cache-esperti.cu:2545`) — col nome
+del brief la corsa sarebbe stata muta e spacciata per controllo. Budget:
+**`LLAMA_TRASPORTO_ONLINE_BUDGET`** (`:2552-2554`), unità = prenotazioni/token, difetto 24, 0 =
+illimitato. Scelto **24, non 60**: il commento a `:2549-2551` misura ~16 miss veri/token, e
+l'illimitato storico fece ~72/token con 95,4% sfratti — 60 sarebbe stato 3,75× il fabbisogno,
+cioè l'eccesso che nel legacy costò il 42%. `PF_LEGACY=0` forzato CONFERMATO, due testimoni
+(`:2586` e `:3085`).
+
+**Cancello di raggiungibilità PASSATO** (dettato dal sorgente a `:8495-8497`: `emesse > 0` E
+`in tempo > 0`): `budget=24, previsti=40965, prenotati=187, emesse=259 (1,71 GiB), in tempo=29,
+tardive=28, sfratti=132, in volo max=8 (tetto 255), rifiutate_pressione=19885, banda H2D=8,81
+GiB/s`. Il budget morde: **187 prenotazioni contro le 202.268 del legacy.** Braccio valido.
+
+**C_round +0,25% contro cancello pre-registrato di −3%: CHIUSO PER MISURA.** E la ragione è
+**strutturale, non di taratura**: `rifiutate_pressione=19885` su 40965 previsioni — quasi ogni
+prenotazione rifiutata perché l'unica vittima disponibile era **un residente vivo**. Solo 29 copie
+in tempo nell'intera corsa. L'anello mai pieno (`in volo max=8` su 255) ⇒ non è il canale: **non
+c'è SPAZIO dove mettere l'anticipo. I 473 slot sono saturi di lavoro utile.** Nota di secondo
+ordine: banda H2D 8,81 GiB/s, sotto la soglia dei 10 che il sorgente chiama «submission WDDM»
+(`:8509-8511`).
+
+**Distinzione dal cimitero**: le v0/v0.1/v0.2 a Δ0,00% girarono con W che escludeva il fork
+(cammino seriale, niente budget). Questa cella (fork attivo + componi + budget + legacy spento)
+**non era mai esistita**: il verdetto è confermato in condizioni nuove, non ereditato.
+
+**Forma del dato che valida la metrica**: t/s −9,04% ma C_round piatto, perché mean_len scende
+2,61→2,38 — la perdita in t/s è di speculazione/traiettoria (p1 0,785 fuori banda, SHA divergente,
+confronto a traiettorie diverse dichiarato), il costo della macchina non si muove. È il caso per
+cui C_round è la metrica giusta, e dice: **niente**.
+
+### Braccio 1 — FORK=0 non eseguibile; ma il bivio (B)/(C) è GIÀ DECISO da fserial
+
+`FORK=0` sotto la SOTA **non carica**: `MASSA=2 CHIESTA MA SPENTA: richiede FORK=1|2…`
+(`cache-esperti.cu:3414-3419`) — **MASSA=2 e fork sono ACCOPPIATI** (lo zero-copy della massa
+globale È la terza passata mascherata del fork), e una combinazione illegale uccide il processo
+per progetto. Eseguito il ripiego `FORK=0 + MASSA=0` (MASSA=0 e non 1: con `massa==1` anche
+`SFRATTO_PAR` diventa inerte, `:2651`): SHA `72FE0060` divergente, C_round +17,05% — **ma due
+leve cambiate ⇒ la divergenza NON è attribuibile al fork da sola**; il dato non decide nulla.
+Disambiguatore `fork2massa0` PRONTO in `r58_arm.ps1` (se desse `A177DDAF`, MASSA è output-neutra
+e la divergenza è del fork); non lanciato perché alle 07:20:24 la macchina è passata a r59.
+
+**Il bivio però non ne ha bisogno**: con `SERIALE=1` la copia è finita al 100% prima di ogni join
+— nessuna colonna PUÒ leggere uno slot mentre la copia lo riscrive — e l'uscita è rimasta
+**bit-identica**. Se (C) (race copia/lettura) producesse la divergenza, serializzare l'avrebbe
+cambiata. Non l'ha cambiata: **(C) è refutata a leva singola, (B) è l'unica superstite.**
+
+### Terza trappola del lanciatore, e la raccomandazione
+
+Dopo `W` (r57) e `FORK`, anche **`MASSA`** era inchiodata in `Set-SotaEnvironment`. Tre parametri
+aggiunti a difetto invariante (`-CacheEspertiW 0`, `-CacheEspertiFork 2`, `-CacheEspertiMassa 2`),
+backup `p1b_conf.ps1.bak_20260831_pre_w`; neutralità provata dal controllo r57 (SHA bit-identico
+a r54 dal lanciatore non modificato). L'estensione parallela di r59
+(`-CacheEspertiSlot`/`-CacheBozzaSlot`/`-MappedIbridoSoglia`) convive senza conflitti.
+**Raccomandazione a registro: bonifica sistematica di `Set-SotaEnvironment`** — inchioda ~40 env
+var e ogni fronte nuovo paga la sua trappola (tre in una sola sessione).
+
+### Bilancio dei due fronti — e dove punta
+
+**Fase 1 GO, fase 2 NO-GO, cella nuova piatta.** La finestra esiste (77,9% dei join aspetta ancora
+la copia) e tenerla aperta costa 1,53%; ma **nessuno dei due canali predittivi la riempie**: il
+legacy per ECCESSO (202k prenotazioni, −42%), l'online per ASSENZA DI SPAZIO (19.885 rifiuti da
+pressione, +0,25%). **La famiglia «anticipare col predittore» è esaurita in entrambe le
+direzioni.** Se il fronte trasporto ha una strada, non passa per l'anticipo: passa per **liberare
+capienza** — cioè per i byte — che è esattamente dove punta la sessione B0/B1/B2 in volo (§15):
+K=5 toglie il 75% della domanda, il flip la azzera.
+
+Percorsi: bracci `…\lanciatori_salvati_20260825\r57_arm.ps1`, `…\r58_arm.ps1` (con `fork2massa0`
+pronto); riassunti `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_{r57_ctrl,r57_fserial,r57_w1componi,r58_tonline,r58_fork0massa0}_20260831.summary.txt`;
+log `D:\ds4_work\llama_run\sota_ctx150000_densefa_stage_hc5_<tag>_f2_b2048.server.log`.

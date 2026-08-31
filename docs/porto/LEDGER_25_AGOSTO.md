@@ -1610,3 +1610,161 @@ onesta di dove atterrano flip/K5/SOTA con dequant ×1,9 (evidenza esterna ik_lla
 scala di sonde pre-registrate dalla più economica. Tensione da risolvere: la lane a K=2 rendeva
 31-41 GB/s nella sua finestra, B2 continuo legge 12,8 — quanta parte è «B2 fa TUTTO il modello» e
 quanta è dequant?
+
+## 18. ADDENDUM 31/8 — SCOPING `IQ2_XXS_R4`: la strada è SBARRATA DALL'ARITMETICA prima di aprirla. E tre riparazioni di misura
+
+**Consegna dell'analista di scoping (solo analisi, zero corse, zero build). Raccomandazione: NON
+aprire il cantiere `_R4`.** I due pilastri del rapporto sono stati **verificati dalla regia sul
+sorgente**: `cudaHostAlloc(…, cudaHostAllocMapped|Portable)` a `ggml-cuda.cu:1427` (col commento
+:1324-1331 che spiega `is_host=false` e la lettura PCIe) e il cancello AVX-512 su Q2_K a
+`repack.cpp:4627-4631`.
+
+### La scomposizione che chiude allo 0,3% — e il tetto con lane GRATUITA
+
+Il ciclo del worker è esattamente `attesa + evento + calcolo` (`ggml-backend.cpp:840-960`);
+`n_lavori × somma` riproduce la parete decode di B0 E B1 con **residuo 0,3%** su entrambi.
+Scomposizione del +19% di B1: **`calcolo` (lane) +28,97 s = il 110% del degrado**; `evento`
+invariante a K (+1,4%); e `join − (evento+calcolo) = −0,05 ms/lavoro in ENTRAMBI i bracci` ⇒
+**il rendezvous vero costa ZERO e la sovrapposizione è ~0: il ramo CPU è interamente sul cammino
+critico.** Il trasporto era stato comprato davvero (copie −40,7%, `copia già finita` 21,2→60,3%)
+— solo che non stava sul cammino critico.
+
+**Test del tetto — lane a costo ZERO (non ×1,9: infinita):**
+
+| architettura | parete − calcolo lane | **t/s tetto** |
+|---|---|---|
+| K=2 SOTA | 94,56 − 19,43 s | **15,97** |
+| K=5 | 120,85 − 48,40 s | **16,56** |
+| flip | 146,66 − ~84,5 s | **18,0-19,3** |
+
+**Nessuna architettura raggiunge i 20 con una lane GRATUITA ⇒ `IQ2_XXS_R4` non può portare ai 20
+in nessuna cella, a nessun fattore.** Verifica incrociata col modello `C_round(L)=81,4+48,4·L`:
+il `calcolo` è il 33,5% del marginale ⇒ azzerarlo dà 15,78 — due modelli indipendenti, stesso
+numero. (Converge col «tetto onesto del vivo 16-17» del §12, per terza via.)
+
+### Il «×1,9» NON trasferisce — e la metà Q2_K ha margine ZERO
+
+Composizione esatta (dal log): per strato **gate+up IQ2_XXS = 61,1%** dei byte, **down Q2_K =
+38,9%** (non 1/3). Dal microbanco 21/8 (`HANDOFF_DS4_T24.md:296-302`), lane a 7 thread, forme
+reali: gate/up IQ2_XXS **23,4 GB/s** (86,8% del tempo lane), down Q2_K **97,4 GB/s** (13,3% del
+tempo pur essendo il 38,9% dei byte); terna **33,2 GB/s** — working set in L3, quindi è **ritmo
+di SPACCHETTAMENTO puro, ed è GIÀ al muro DDR4-3000 (33-37 pratici)**. ikawrakow ottiene 1,995×
+su un 5975WX a **8 canali** (~200 GB/s) partendo dall'11% del bus. Da noi: IQ2_XXS ha 1,4-1,6× di
+margine prima di sbattere anch'essa sul DDR4; sulla lane intera **1,3-1,5×**, e **ripaccare Q2_K
+non compra NULLA** (gira già a 2,6-2,9× la banda del bus). Tabella onesta: SOTA+_R4(1,4×) =
+**13,48 (+6,2%)**; K5 = 11,21; flip = 9,79. Tutte FUORI dai 20.
+
+### Repack ⊥ cache VRAM — e la buona notizia collaterale
+
+Gli stessi byte hanno **due consumatori con layout incompatibili**: la lane (vorrebbe
+interlacciato) e `kern_fj_copia` che copia gli slot **verbatim** in VRAM (6,75 MiB/copia esatti
+dal log) per una `mul_mat_id` CUDA che pretende blocchi canonici. Un layout ripaccato in RAM =
+**spazzatura ai kernel CUDA**; una seconda copia = +28,2 GiB (solo Q2_K) su ~7 GiB liberi.
+⇒ **il repack compone SOLO col flip (`slot=0`), il braccio più lento.** Buona notizia: il buffer
+da 74.304 MiB **non è mmap del GGUF** ma RAM pinnata privata riempita da memcpy
+(`ggml-cuda.cu:1307-1310`) ⇒ il rischio «+24 GiB di RAM» NON esiste, un repack si infilerebbe
+nella `set_tensor` a costo zero (come fa upstream, `repack.cpp:4733-4743`).
+
+### `IQ2_XXS_R4` ESISTE GIÀ (correzione al §15) — ma abbandonato dal suo stesso autore
+
+Mirror locale: `C:\Users\imanu\Documents\Codex\2026-08-20\riprendi-la-chat-recupero-sessioni-codex\ik-llama-upstream\`
+(commit `8337e4cd`). `GGML_TYPE_IQ2_XXS_R4 = 216`, blocco 4-righe che conserva la taglia e spezza
+i `qs` in piani di byte. **PR 154 CHIUSA dall'autore**: «I was getting constantly confused about
+shuffling signs and scales, so at the end gave up» — il rischio di correttezza è esattamente lì.
+Scope onesto nel nostro albero: **700-1000 righe**, 2/3 in una coppia gemv/gemm AVX2 difficile,
+più la parte rischiosa d'instradamento (il buft mappato non è il buft repack). Validazione senza
+SHA (l'ordine di somma cambia): `test-backend-ops` NMSE → PPL/KL → §4.10.
+
+### Tre misure RIPARATE dal rapporto
+
+1. **Tensione 31-41 vs 12,8 GiB/s: RISOLTA — tre denominatori, un solo numero fisico.** 31-41 e
+   33,2 = ritmo lane *mentre calcola* (muro DDR4); 12,8 di B2 = byte/parete INTERA con duty CPU
+   57,6%; corretto per duty = **24,1 GiB/s**, stessa banda. **La lane è al muro DDR4 in ogni
+   braccio; non è mai stata al 38% del bus.**
+2. **Prefill B2 −11,6%: SPIEGATO.** Il cancello-fusione di `MUL_MAT_ID` (`ggml-cuda.cu:2213-2217`)
+   legge `ggml_cuda_cache_esperti_percorso_gpu_richiesto()` = pura lettura di `SLOT>0 ||
+   BOZZA_SLOT>0` (`cache-esperti.cu:975-978`), **senza consapevolezza di fase**: B2 con slot=0 ha
+   la fusione ACCESA nel prefill, che rilegge la RAM mappata dal PCIe. Grafo identico (splits 5,
+   buffer identici), +106 s finiti in tempo di kernel. **Artefatto di strumentazione, non
+   proprietà del flip** — e il flip non è MAI misurabile coi kernel di B0 senza un fix da 2 righe.
+3. **`-ser 5` non è una leva nuova: CE L'ABBIAMO GIÀ.** `kern_acceptmoe` con `massa=2` è una
+   riduzione esperti per soglia di massa (`cache-esperti.cu:7676`, soglia :7809-7811) ed è ATTIVA
+   nel SOTA: ctrl scarta **39,5%** degli esperti sulle righe mascherate (42.495 scartati / 65.071
+   tenuti). Il margine di `-ser` è solo ciò che `MASSA` non ha già preso; la sonda giusta è uno
+   **sweep di `MASSA`/`soglia_micro`** (cancello §4.10 obbligatorio: cambia l'uscita).
+
+### Scala di sonde PRE-REGISTRATE (non eseguite)
+
+- **P1** (~2 min, zero build, non tocca il banco): `test-quantize-perf --op vec_dot_q --type
+  iq2_xxs --type q2_K` a 7 thread. **GO/NO-GO: ≥33 GB/s su IQ2_XXS ⇒ lane già al muro ⇒ `_R4`
+  MORTO e fronte chiuso; ≤25 ⇒ margine ~1,4× confermato.** Predizione: ~23,4 / ~97 GB/s.
+- **P2** (1 corsa lunga, zero build): `slot=0 + soglia=2` (fusione accesa come B2, decode su GPU
+  come B0) — isola il cancello-fusione a variabile singola sul PREFILL (≤115 ⇒ meccanismo
+  confermato e **i numeri di B2 vanno ri-baseline**; ≥124 ⇒ diagnosi sbagliata). Bonus: il decode
+  di questo braccio = zero-copy PCIe senza cache, cella mai misurata.
+- **P3** (1 riga + 1 build): aprire il cancello AVX-512→AVX2 su Q2_K e misurare con
+  `test-backend-ops perf`. Predizione: NON batte i nostri kernel (già 97 GB/s) ⇒ chiuderebbe la
+  famiglia repack per sempre. Backup DLL obbligatorio.
+- **P4** (il prototipo `_R4`, 700-1000 righe): SOLO se P1 ≤25 E P3 passa. **Anche a pieno
+  successo: +6% sul SOTA, tetto assoluto 15,97.**
+- Scartate con motivo: llama-bench CPU-only (misura banda, non spacchettamento; 80,76 GiB non
+  stanno); flip+repack-Q2_K (doppio cancello, e varrebbe zero); VTune su B2 (i bucket chiudono già
+  al 99%); portare `-ser` (già in casa via acceptmoe).
+
+### La mappa dei tetti, a valle di §16+§17+§18
+
+| via | tetto | stato |
+|---|---|---|
+| speculazione (asintoto L→∞) | 20,7 | al tetto (§11) |
+| lockstep + politica esperti (Belady 473 slot) | fuori bersaglio 2,2× | chiuso con oracolo (§12) |
+| anticipo predittivo | +0,25% | chiuso per capienza (§16) |
+| K=5 / flip / lane gratuita | 15,97-19,3 | falsificati/limitati (§17-§18) |
+| `IQ2_XXS_R4` a pieno successo | 13,48 (+6,2%) | sbarrato (§18) |
+| «senza trasporto» (slab 9,9-21 GiB) | 24,2 | **richiede VRAM che la 3060 non ha** |
+| sweep `MASSA`/`soglia_micro` | ignoto (pochi %?) | **unica leva env-only rimasta, quality-gated** |
+
+**Sui questa macchina e questo quant, ogni strada software misurata o limitata sta sotto i 20.**
+Le vie residue sono: lo sweep di massa (cambia l'uscita), o la VRAM (l'aritmetica del §12 ora
+quantifica esattamente cosa comprerebbe: slab ≥9,9 GiB con oracolo, ~21 GiB con politica reale).
+In coda macchina: P1+P2 dopo la consegna di `fork2massa0`.
+
+## 19. ADDENDUM 31/8 — `fork2massa0`: verdetto (ii), la coppia a leva singola che mancava, e il router a tre vie che si spegne A COSTO ZERO
+
+**Braccio eseguito pulito in 18 min (08:29-08:47), zero anomalie, macchina lasciata libera.**
+
+| braccio | FORK | MASSA | t/s | p1 | mean_len | C_round | ΔC_round | SHA |
+|---|---|---|---|---|---|---|---|---|
+| `r57/r59_ctrl` | 2 | 2 | 12,71 | 0,84073 | 2,61 | **205,34** | — | `A177DDAF` |
+| **`r58_fork2massa0`** | **2** | **0** | 11,46 | 0,79062 | 2,36 | **205,85** | **+0,25%** | **`0F15893B`** |
+| `r58_fork0massa0` | 0 | 0 | 11,28 | 0,87011 | 2,71 | 240,35 | +17,05% | `72FE0060` |
+
+**Verdetto (ii) del cancello pre-registrato: SHA DIVERGENTE ⇒ MASSA NON è output-neutra a
+FORK=2** ⇒ `fork0massa0` non dice nulla sul fork attraverso il confronto col controllo. Il bivio
+(B)/(C) resta deciso da fserial. **Ma il braccio crea la coppia a leva singola che prima non
+esisteva**: `fork2massa0` vs `fork0massa0` differiscono SOLO in FORK (MASSA=0 e `SFRATTO_PAR=1`
+in entrambi, verificato dai manifesti) e i loro SHA divergono ⇒ **FORK cambia l'uscita, confermato
+OGGI a MASSA invariata** — la premessa regge per una via diversa da quella immaginata dal
+cancello (i). Raggiungibilità: il braccio ha le righe fork (`lanci=2941`, `join visti=21844`),
+`fork0massa0` nessuna.
+
+**Attribuzione dei costi, ora pulita**: MASSA=0 a fork invariato = **+0,25% di C_round (rumore)**
+⇒ i +17,05% di `fork0massa0` sono di FORK=0 da solo. Il −9,8% di t/s del braccio non è macchina:
+è il crollo di mean_len (2,61→2,36) sulla traiettoria diversa — la firma «l'uscita è cambiata, la
+macchina no».
+
+**Il reperto strutturale**: MASSA=0 **spegne l'intero router a tre vie** — partizioni 29.025→0,
+CPU 58.050→0, copie 119.067→0 — e il traffico si riversa sulla cache VRAM (colpi 58,3→51,3%, byte
+a domanda +101 GiB = +12,9%) **con C_round PIATTO. Il costo MIGRA, non si somma**: a K=2 l'intera
+macchineria fork+lane+copia è ~neutra sulla parete rispetto alla cache pura. Converge con la
+sovrapposizione ~0 misurata dallo scoping (§18) e con «lane e trasporto sono lo stesso controller
+DDR4» (§10): togliere un canale non libera tempo, lo sposta.
+
+**§4.10**: 4055 char di prosa tecnica genuina — e stavolta il testo descrive fedelmente il NOSTRO
+codice (`kern_decidi <<<1,1>>>`, le tabelle `dove/chi/usato/mano/lista`, l'anello in
+`cudaHostAlloc`, UVA): qualità piena. **Nota operativa a registro**: l'esecutore ha intercettato
+PRIMA di correre che `p1b_conf.ps1` era stato modificato alle 07:19 dalla sessione r59, ha
+verificato col diff sul backup che la modifica è puramente parametrica a difetti invariati, e ha
+la prova d'inerzia indipendente (`r59_ctrl` delle 08:19 riproduce `A177DDAF` esatto). Percorsi:
+`…r58_fork2massa0_20260831.summary.txt` e log accanto. Dispacciate a seguire le sonde **P1**
+(spacchettamento puro) e **P2** (cancello-fusione sul prefill + cella zero-copy-senza-cache) del
+§18, stesso esecutore.

@@ -1768,3 +1768,60 @@ la prova d'inerzia indipendente (`r59_ctrl` delle 08:19 riproduce `A177DDAF` esa
 `…r58_fork2massa0_20260831.summary.txt` e log accanto. Dispacciate a seguire le sonde **P1**
 (spacchettamento puro) e **P2** (cancello-fusione sul prefill + cella zero-copy-senza-cache) del
 §18, stesso esecutore.
+
+## 20. ADDENDUM 31/8 — P1 NON AGGIUDICABILE (e un nuovo strumento che mente); P2: il meccanismo-fusione CONFERMATO AL TERZO DECIMALE
+
+### P1 — il cancello resta APERTO, e l'esecutore ha rifiutato di fabbricare il numero
+
+**`test-quantize-perf.exe` NON ha la famiglia IQ2 compilata** (l'elenco di `--help` va da f16 a
+q2_0, nessun `iq2_*`) e — caso nuovo per il fascicolo «strumenti che mentono in silenzio» — con
+`--type iq2_xxs` **esce con codice 0 e output VUOTO**: chi non avesse letto `--help` avrebbe
+registrato «nessun risultato» come misura fatta. Il ripiego `test-backend-ops perf -o MUL_MAT_ID`
+espone solo `iq2_xs` (non `xxs`), e il tentativo di usarlo come surrogato **si è
+auto-falsificato**: stessa cella, 31,06 GB/s dentro lo sweep (pesi caldi in L3) contro 12,2
+isolata a 8 core contro 4,01 a 1 core — spread 2,5× con lo stato di cache, scaling 8c/1c di solo
+3,04× ⇒ MUL_MAT_ID include il traffico DRAM, che è esattamente la variabile che P1 doveva
+escludere. **Ciò che P1 ha ancorato**: Q2_K = 14,51-14,56 GB/s/thread in L2 ⇒ **×7 = 101,2 GB/s,
+contro i ~97 predetti dal microbanco 21/8 (scarto 4%)** — la definizione della metrica e il
+percorso di misura sono validati. Il cancello su IQ2_XXS richiede una build (compilare IQ2_XXS
+nel tool); **DEPRIORITIZZATO**: l'aritmetica del §18 sbarra la strada `_R4` qualunque cosa P1
+risponda (a pieno successo +6%).
+
+### P2 — VERDETTO: 111,25 t/s ⇒ ≤115 ⇒ MECCANISMO CONFERMATO, e più pulito del previsto
+
+| braccio | leve | prefill | decode | C_round | SHA |
+|---|---|---|---|---|---|
+| `r59_ctrl` | slot 473, soglia 2 | 125,96-126,56 | 12,69 | 205,68 | `A177DDAF` |
+| **`p2_fusione_slot0`** | **slot 0**, soglia 2 | **111,25 (−11,68%)** | 8,55 | 300,65 | `736B73D4` |
+| `r59_flip` | slot 0, soglia 8, K=0 | 111,32 (−11,62%) | 8,18 | 310,44 | `4CE7717A` |
+
+**Il reperto forte: P2 e flip hanno il prefill identico a tre cifre (111,2457 vs 111,3235 =
+−0,070%) con P2 che muove DUE leve delle tre del flip** ⇒ il degrado di prefill del flip era
+**interamente** il cancello-fusione; K=0 e soglia=8 non contribuiscono al prefill per nulla. Gli
+split lo provano: prefill = **5 in tutti e tre i bracci** (stessa collocazione, cambia solo la
+fusione dentro lo stesso grafo). E la prova sperimentale della non-consapevolezza di fase: il
+CONTROLLO esegue il prefill con lo slab **fisicamente vuoto** (`cache 473 -> 0 slot` in prefill)
+eppure fa 126 — `cache_ammessa` legge la env var, non lo stato. **I numeri di prefill di B2 sono
+ri-baseline: il −11,6% non è una proprietà del flip.**
+
+**Bonus NON isolato (rischio pre-annunciato, materializzato)**: con soglia=2 il predicato
+`batch(1) < soglia(2) && !cache_ammessa` è vero ⇒ le op a batch 1 scivolano su CPU identicamente
+al flip (split @ bs=1 = **88** in entrambi, ctrl 45). Il decode di P2 (8,55) è una MISCELA
+(batch 1 → CPU, batch 2-4 → GPU zero-copy senza cache), non la cella pulita — che
+richiederebbe soglia ≤1. **Deprioritizzata**: i vicini la limitano a ~8,5-10, irrilevante per il
+bersaglio. Nota di valore: la miscela zero-copy sta a +4,5% dal flip puro — anche il decode GPU
+senza cache resta nella stessa classe di costo del decode CPU (stesso bus mappato).
+
+Raggiungibilità di P2: **zero righe `cache-esperti:`** nell'intero log (ctrl: 326), il runtime
+non nasce; VRAM libera al carico 3800 MiB. §4.10: 3993 char genuini (cita perfino DwarfStar e le
+«598 letture/token»); p1 0,84429 quasi sovrapposto al ctrl nonostante SHA diverso. Zero anomalie;
+22 min 31 s. L'esecutore dichiara un bug del proprio poller (9 min di visibilità persa, corsa non
+toccata, riparato in corsa) — onestà a registro.
+
+### Coda d'igiene aggiornata (per la prossima finestra di build, backup DLL obbligatorio)
+1. **Fix cancello-fusione consapevole di fase** (~2 righe: `cache_ammessa` deve guardare lo stato
+   di fase, non la env) — ripara la misurabilità del flip e il prefill di ogni braccio slot=0.
+2. Compilare IQ2_XXS in `test-quantize-perf` (chiude P1) — facoltativo, deprioritizzato.
+3. P3 (cancello AVX-512→AVX2 su Q2_K) — facoltativo: predetto inutile, chiuderebbe la famiglia.
+Dispacciato a seguire: **sweep `MASSA`/`soglia_micro`** (ultima leva env-only), cancelli di
+qualità pre-registrati, ancora fresca in testa.

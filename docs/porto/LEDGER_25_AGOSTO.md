@@ -1359,3 +1359,46 @@ Due fatti onesti a verbale:
 2. **BM=3 NON e' dichiarato immune dal bug indice −1**: a budget 0 il taglio scatta al PRIMO token
    di decode (subito dopo il prefill), che NON e' la transizione a meta' stream dove viveva il
    crash di BM=4. Per esercitarla serve un **budget > 0** (64/128): fronte aperto, economico.
+
+---
+
+## 14. ADDENDUM 31/8 — r57: la cella FORK×W misurata. Fase 1 GO, fase 2 NO-GO — e la composizione FUNZIONA
+
+| corsa | t/s | C_round | Δ | p1 | SHA |
+|---|---:|---:|---:|---:|---|
+| `r57_ctrl` | 12,711 | 205,34 | — | 0,84073 | `A177DDAF` (= r54 di ieri: sessione ri-ancorata) |
+| `r57_fserial` | 12,520 | 208,47 | **+1,53%** | 0,84073 | **identico al ctrl** |
+| `r57_w1componi` | 7,416 | 311,50 | **+51,7%** | 0,79788 | diverge |
+| `r57_w2componi` | — | — | — | — | saltata (regola pre-registrata) |
+
+**FASE 1 — GO.** `FORK_SERIALE=1` costa **+1,53%** (< soglia 2%) con **traiettoria bit-identica**
+(SHA/p1/mean_len uguali: la differenza è pura macchina). Sonda diretta: join con copia già finita
+22,1% → 100%, cioè sovrapposizione portata a ZERO — e costa 1,5%. **La sovrapposizione che il fork
+compra oggi vale ~1,2 ms/token contro 34 di trasporto: i 19-20 ms esposti sono aggredibili, il
+meccanismo attuale non li sta prendendo.**
+
+**FASE 2 — NO-GO netto su W=1** (−41,7% t/s), con TUTTI i cancelli di raggiungibilità passati
+(rifiuto assente, `FORK_COMPONI` attivo, `prefetch prenotati 202.268, saltati 36%`): il braccio era
+vivo, e vivo era il veleno. **Ma il reperto di meccanismo vale più del numero: LA COMPOSIZIONE
+FUNZIONA** — con `COMPONI=1` il fork non si rompe e MIGLIORA (sovrapposizione 22,1→26,6%, durata
+copia 1,276→1,011 ms). Non è la convivenza a costare: è **il consumatore legacy del prefetch**
+(`kern_prenota` + thread di servizio). La domanda si sposta da «si possono comporre?» (sì, chiuso)
+a «quale carico mettere nella finestra?».
+
+**Diagnosi (B)/(C)**: `SERIALE` bit-identico a `FORK=2` ⇒ la corsa (C) è sfavorita, la mappa (B)
+sopravvive — presupposto ereditato: **una corsa `FORK=0` chiude la questione (16 min)**.
+
+**Trappola evitata a monte**: `p1b_conf.ps1` inchiodava `W='0'` dentro `Set-SotaEnvironment` — una
+env dal wrapper sarebbe stata sovrascritta IN SILENZIO e si sarebbero misurati tre controlli
+credendoli leve. Esteso con `-CacheEspertiW` (difetto 0, backup, neutralità provata dal ctrl
+bit-identico). **E `FORK_COMPONI` non è nella tabella del manifesto** (`server.cpp`): leva che
+cambia comportamento senza lasciare traccia — la trappola nota, da sanare.
+
+**Coda autorizzata dalla regia (due bracci, poi il fronte si chiude in un senso o nell'altro):**
+1. `FORK=0` — diagnostica di correttezza (B)/(C).
+2. **`TRASPORTO_ONLINE` sopra `FORK_COMPONI=1` con `TRASPORTO_ONLINE_BUDGET`** — distinzione dal
+   cimitero DICHIARATA: le v0/v0.1/v0.2 (Δ 0,00%) furono misurate quando W escludeva il fork, cioè
+   sul cammino seriale e senza budget; e `TRASPORTO_ONLINE` forza `PF_LEGACY=0`, cioè **spegne
+   esattamente il consumatore che è appena costato il 42%**. Cella mai esistita. Se ≤ +3%, il
+   fronte «riempire la finestra col canale predittivo» è chiuso per misura e il tetto onesto
+   16-17 t/s resta il verdetto finale della campagna.

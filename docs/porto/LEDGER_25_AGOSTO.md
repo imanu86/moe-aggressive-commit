@@ -1402,3 +1402,54 @@ cambia comportamento senza lasciare traccia — la trappola nota, da sanare.
    esattamente il consumatore che è appena costato il 42%**. Cella mai esistita. Se ≤ +3%, il
    fronte «riempire la finestra col canale predittivo» è chiuso per misura e il tetto onesto
    16-17 t/s resta il verdetto finale della campagna.
+
+---
+
+## 15. ADDENDUM 31/8 — IL VIDEO TROVATO, ik_llama letto, e LE DUE RICETTE CON I 20 DENTRO IL TETTO
+
+**Il video dell'utente**: mai salvato su file — vive nella sessione Codex
+`.codex\sessions\2026\08\26\rollout-…-01a03c29….jsonl` **riga 5501** (incollato dall'utente il 27/8,
+~16 KB: «lavoro di altro dev su Qwen… intuizioni che possono interessarci»). Tesi = la direttiva:
+**slot-esperto, non strati**; kernel che SALTA i non-residenti (ritorna zeri), MoE eseguito DUE
+volte (residenti GPU + residenti RAM) e sommato, le due catene CONCORRENTI per costruzione; insieme
+residente **STATICO** («On a PCIe bus, missing isn't what hurts you. **Loading is.**»); il suo
+scheduler coalesceva i pezzi e ritrascinava i pesi VRAM→CPU (~80 MB/strato nel verso sbagliato):
+curato con un puro riordino, 6 → 44 t/s; poi 42-45 → **80 di picco su una RTX 3060** (35B MoE, 124
+slot ≈ meta' degli esperti). ⚠ La sua stessa regola di scala CI ESCLUDE dal nucleo residente: sotto
+il ~15-20% di frazione residente il set fisso muore, noi siamo al **4,3%** — coerente con il nostro
+Belady. **Quello che trasferisce: loading-not-missing + i buchi si CALCOLANO sulla CPU.**
+
+**ik_llama (mirror del 20/8)**: `-ser 5` su topologia identica alla nostra = **+20% TG** (conferma
+esterna della cella 6→5 mai provata); layout `_R4` = **~1,9× di TG su Zen3/AVX2 a 8 thread** (il
+collo la' e' lo SPACCHETTAMENTO, non la DRAM) — `Q2_K` (down, 1/3 dei byte) e' ripaccabile OGGI nel
+nostro albero, `IQ2_XXS` (2/3) non lo e' da nessuna parte; e soprattutto **ik_llama NON SOVRAPPONE
+NULLA** («the GPU sits idle while the CPU is computing», misura strumentata additiva esatta, join
+per strato): **il nostro fork/worker e' OLTRE il loro stato dell'arte.**
+
+**La CPU e' FERMA il 76,1% del token** (57,4 ms/token senza lavoro) — la direttiva quantificata.
+
+### Le architetture (aritmetica completa nella consegna del progettista)
+
+| | tetto/banda | costo | 20 dentro? |
+|---|---|---|---|
+| (a) riordino D2H | 14,75 (gia' fatto in codice: resta il tetto mmvq) | — | no |
+| (b) pool task-esperto | **18,03 misurato** (×1,36) | settimane | no |
+| **(c) TUTTI gli esperti a CPU nel decode** | **18,5-25,7, centro ~21** | **4 env var, zero build** | **SI'** |
+| **(c′) `OVERLAP_K=5`** (GPU tiene solo il piu' residente) | **20-27, centro ~24** | **UNA env var** | **SI', con margine** |
+
+**(c)**: `K=0 + SLOT=0 + BOZZA_SLOT=0 + MAPPED_IBRIDO_SOGLIA=8` — la soglia di batch lascia il
+PREFILL su GPU (12288 ≥ 8) e manda il DECODE (≤3 righe) sulla CPU, sugli STESSI byte mappati: zero
+trasporto, zero install, zero join. `-ot` NON si tocca (`…=CPU`/`-ncmoe` manderebbero anche il
+prefill sulla CPU: OOM misurato).
+**(c′)**: la partizione ordina GIA' per residenza (`cache-esperti.cu:6895-6920`): a K=5 la GPU
+tiene il singolo esperto piu' residente per riga ⇒ domanda alla cache −75% e quasi-solo-colpi.
+**Lo split-per-residenza del video esiste gia' nel nostro albero: manca solo renderlo statico.**
+⚠ TRAPPOLE VERIFICATE: `K=6` SPEGNE il fork (`llama-graph.cpp:1901`), il massimo utile e' 5;
+lo SHA divergera' LEGITTIMAMENTE (device diversi) e NON e' il cancello (p1/mean_len/lettura testo);
+le misure storiche `-cmoe` 6,6-6,9 t/s erano SSD-bound o DDR-2133 senza speculazione: ritirate come
+stime di questa architettura (riscalate ~21-24).
+**Assunzione che decide**: `B_cpu ≥ 30 GiB/s con 6 esperti su 7 thread` (misurata 27-38 con 2).
+Se siamo unpack-bound come Zen3 esterno, (c) si ferma a ~18,5 e la strada diventa `IQ2_XXS_R4`.
+
+**Sessione B0/B1/B2 ordinata** (lungo, 1200, B-first): B1 `K=5` (testimone `CPU = 5 × partizioni`),
+B2 flip puro (testimone `domanda = 0`, zero `kern_fj_copia`), B0 controllo.

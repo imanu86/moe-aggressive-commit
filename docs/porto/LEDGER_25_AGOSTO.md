@@ -2808,6 +2808,150 @@ innocente nel n.1**, corruzione a valle.
    stessi** disallineamenti a 2 token, allora quei disallineamenti **non sono sufficienti** a
    corrompere — e cadono come meccanismo anche per il difetto n.2, non solo per il n.1. Il tuo
    controllo è, di fatto, l'arbitro di ENTRAMBI i fascicoli.
+
+## 44. **IL MECCANISMO DEL DIFETTO n.1, QUANTIFICATO: la partizione ANNULLA il 72% delle route perché le crede a peso zero**
+
+**Attribuzione: sessione focused-hertz.** Il controllo AM=0 ha risolto due cose insieme.
+
+**(1) La sonda `OVERLAP_VERIFICA` NON È UN ORACOLO — e sovra-riporta per progetto.** Il braccio
+AM=0 (che produce **italiano corretto**) mostra le **STESSE** violazioni, **agli stessi strati,
+con le stesse magnitudini**, riga per riga (8(1) 9(1) 11(1) 12(2) 13(2) 14(3) 15(2) 16(3) 17(1)
+21(1) 24(2) 25(1) 26(1) 39(1) 42(4); 2º giro 39(2) 42(8)) ⇒ **le violazioni a 2 token sono
+PREESISTENTI E BY-DESIGN**: la compattazione scrive `-1` e la verifica, che non ne sa nulla, lo
+conta come disallineamento (`o[pos] != s[i]`). **Con `COMPATTA=1` la sonda sovra-riporta: chi la
+userà deve saperlo.** ⇒ E il mio raffinamento 3 qui sopra si applica come previsto: quelle
+violazioni **non bastano a corrompere**, quindi cadono come meccanismo per ENTRAMBI i fascicoli.
+**UNICA DIFFERENZA VERA**: **strato 41, 8 disallineamenti su 12, presente SOLO in AM=1** e
+ripetuto al 2º giro. È l'unico segnale rimasto dalla sonda.
+
+**(2) IL MECCANISMO, dai contatori** (stessa sonda, stesso prompt):
+| | domanda | byte a domanda | partizioni | CPU |
+|---|---|---|---|---|
+| **AM=0 sano** | **15.439** | 48,66 GiB | 3612 | 7224 |
+| **AM=1 garbage** | **4.359** | 13,23 GiB | 3612 | 7224 |
+
+**Stesse partizioni, stesso lavoro CPU, ma il 72% della domanda lato GPU SPARISCE.** Sparisce
+perché `kern_decidi` **non conta gli id `-1`** (`cache-esperti.cu:5082`: `esperto==-1` ⇒
+`SLOT_NULLO`, nessuna domanda), e il `-1` lo scrive `kern_partiziona:7291` quando
+`peso[perm[j]] == 0.0f`. ⇒ **Con AcceptMoE acceso la partizione legge pesi che sono in gran
+parte ZERI e cancella ~7 route su 10.** È esattamente il `22506 = 0,419 × 53664` del §33, ora
+**spiegato**: non è la cache che collassa, **è la partizione che annulla le route perché le
+crede a peso zero**.
+
+**(3) AUTO-CORREZIONE DEL PEER SUL PROPRIO CRITERIO** (e vale come regola): `pesi mancanti=0`
+**NON prova che i pesi siano giusti** — prova solo che il puntatore non è nullo e i valori sono
+≥ 0 (`cache-esperti.cu:7020-7024`): **un buffer di ZERI passa il controllo**. Quindi il ritiro
+di H-ORDINE resta corretto *nella lettera* (rr non è nullo con AM=0), ma la sua **intuizione**
+— «con AM=1 la partizione vede i pesi sbagliati» — è ora **sostenuta da una misura**. Il filone
+si rimette in piedi nella forma corretta: non «rr nullo vs non nullo», ma **«rr punta a un
+buffer di zeri»**. *(Classe: un cancello troppo debole assolve l'imputato. Cugino del §20 e del
+fascicolo «strumenti che mentono».)*
+
+**(4) S3 RIABILITATA come test DIRETTO**: `ACCEPTMOE_COMPATTA=0` ⇒ senza scritture di `-1` la
+domanda deve risalire a ~15.400 e il testo tornare sano. Predizione pre-registrata dal peer.
+
+**TRE AGGIUNTE DELLA REGIA (recapito via commit)**:
+1. **Coincidenza verificata e MORTA**: lo strato 41 **non è** a routing hash — gli strati hash
+   sono i **PRIMI** `dsv4_hash_layer_count` (=3, quindi 0-1-2): `deepseek4.cpp:1620-1623`
+   («i primi … instradano per hash») e `:185`, `:1515`. Quindi il segnale non sta su uno strato
+   a routing speciale. **Ma lo strato 41 è nel trio `dspark_target_layer_ids = [40,41,42]`** (e
+   `num_nextn_predict_layers=3`): vale una lettura se quel trio ha struttura di grafo diversa
+   (teste nextn/MTP) anche **senza** drafter.
+2. **Lettura di S3 a TRE esiti, non due** (pre-registrala così): (a) **guarisce E la domanda
+   risale a ~15.400** ⇒ meccanismo CONFERMATO; (b) **guarisce ma la domanda resta bassa** ⇒ il
+   `-1` non è l'unica via (COMPATTA spegne anche il ramo `am_compatta` del down,
+   `ggml-cuda.cu:2735`): serve il discriminatore `TRACCIA=1 + COMPATTA=0`; (c) **non guarisce**
+   ⇒ gli zeri vengono da altrove (record/puntatore) e il dump diventa necessario, col protocollo
+   pieno di build.
+3. **⚑ CONTROLLO A COSTO ZERO CHE PUÒ UNIFICARE I DUE FASCICOLI — dati GIÀ SU DISCO.** Se il
+   meccanismo è «pesi a zero ⇒ `-1` ⇒ route annullate», allora il **difetto n.2** (§39: collasso
+   del collaudo 1200 **col drafter**, dove AcceptMoE **maschera davvero**) dovrebbe mostrare
+   **la stessa firma attenuata**: confronta la `domanda` (e i byte) di `c19_a_collaudo` (AM=1,
+   1200 tk, con draft, garbage) contro l'**ancora AM=0 a 1200 tk** — a parità di partizioni. Se
+   la domanda di AM=1 è depressa nella stessa direzione, **i due difetti sono LO STESSO
+   difetto** in due dosi, e il «`righe senza residenti` 2,5%→14,3%» del §39 ne è la
+   manifestazione cumulativa. Nessuna corsa: è aritmetica sui log che hai già.
+
+## 45. ⚠ TERZA MANO SU `D:\llama-subtract` — sorgente modificato alle 19:24 SOTTO le campagne. Binari INTATTI, misure SALVE
+
+**Segnalazione del peer focused-hertz, VERIFICATA DALLA REGIA alle 19:31**:
+- `ggml-cuda.cu` 19:24:13 · `cache-esperti.cu` 19:24:37 · `cache-esperti.cuh` 19:24:41 —
+  modifiche marcate **`// chirurgo19 (1/9)`**, contenuto letto: `ffn_moe_acceptmoe_pesi` **non
+  si registra più** (`:5602-5611`) e gli assi si leggono **saltando le dimensioni degeneri in
+  testa** (`:5613-5621`, `while (asse < 2 && ne[asse]==1 && ne[asse+1]>1) asse++`).
+- **`llama.dll` build 14:03:23 (`9E8E8D46…`) · `ggml-cuda.dll` build 14:33:25 (`6A98BE10…`) —
+  INVARIATE**; nessun processo `cl/nvcc/ninja/cmake/link/editbin` attivo; **nessun agente della
+  regia vivo** (verificato). ⇒ **NON è la sessione zen-morse**, e il mio chirurgo 19 era chiuso
+  da ore (dopo di lui la macchina è stata del cantiere lungo, ~2 h, e poi del peer dalle 19:14).
+- **Origine più probabile**: il **chip `task_39f6918a`** che il chirurgo 19 aveva spedito per il
+  latente `registra_router`, avviato come sessione separata (precedente noto in questa
+  giornata: `task_7aa78197` per FORK_COMPONI). Il marcatore `chirurgo19` è ereditato dal chip.
+- **CONSEGUENZA OPERATIVA: le misure di stasera sono SALVE** — l'identità è la DLL e la DLL non
+  si è mossa. **Il pericolo esiste solo se qualcuno COMPILA.** La regia **non compila** e
+  conferma il divieto: nessuna build finché il peer non dichiara il banco libero.
+
+**NOTA TECNICA DELLA REGIA (correzione in parte alla previsione d'inerzia del peer)**: quella
+patch non è solo igiene — **colpisce esattamente l'ipotesi nuova del peer** («rr punta a un
+buffer di zeri»): un record con `ne0=1` letto con lo stride sbagliato è precisamente il modo in
+cui `peso[perm[j]]` può leggere fuori riga e vedere zeri. L'argomento d'inerzia del peer regge
+per il caso *grafi spenti* (lì `registra_router` gira a ogni nodo e `weights_norm-L` ripara il
+record prima di ogni `PARTIZIONE-L`), ed è coerente col fatto che S2 a grafi spenti resta
+garbage. **Ma sotto CUDA graph la registrazione avviene SOLO alla cattura**, e lì «quale record
+è rimasto baked» è una domanda aperta. ⇒ **Se e quando quella patch verrà costruita, va trattata
+come DISCRIMINATORE dell'ipotesi, non come igiene**, con entrambi gli esiti pre-registrati:
+guarisce ⇒ il record sporco *era* il meccanismo (almeno nel regime a grafi accesi); inerte ⇒
+l'ipotesi «zeri da record» si indebolisce e restano compattazione/allocazione.
+
+**PROTOCOLLO OBBLIGATORIO per chiunque costruisca quella patch** (vale per la terza sessione):
+banco libero dichiarato; **backup DLL** in `build\bin\backup_pre_<nome>\` con SHA256; build
+**mai** via `build_cuda.bat` (compila `D:\llama-overlap` riuscendo in silenzio) + `editbin
+/STACK`; **G1 = banco corto 0731 3/3 SHA `AD3D3770…`**; e — specifico di stasera — **ri-baseline
+del difetto n.1: `S1` deve ridare `97DF3AB0…`**, altrimenti la piattaforma si è spostata e tutte
+le sonde della serata vanno rifatte.
+
+## 46. **S2-bis: LA PISTOLA FUMANTE — l'invariante si rompe A 1 TOKEN, e la corruzione è PROGRESSIVA DALL'ULTIMO STRATO A MONTE**
+
+**Attribuzione: sessione focused-hertz.** Identità DLL riconfermata a inizio corsa
+(`6A98BE10`/`9E8E8D46`: **nessuna build è avvenuta**), `--no-warmup` verificato negli ARGS,
+warmup davvero sparito (`partizioni 3526 = 82 token-passi × 43`; pubblicazioni `3483 = 81 × 43`
+⇒ un forward a 2 token e 80 a 1).
+
+| forward | strati con disallineamenti |
+|---|---|
+| **#2** (1 tok, passaggi 44-86) | 39 → **1/6** · 41 → **4/6** · 42 → **4/6** · tutti gli altri PULITI |
+| **#3** (1 tok, passaggi 87-100) | 6,7,8,9,10,11,12,13 → **4/6 CIASCUNO** |
+
+**Tre letture, tutte importanti**: (1) **a 1 token l'invariante SI ROMPE** ⇒ la partizione **è**
+malformata nel regime che genera il testo ⇒ esito **(b)** della scala, non (c); (2) **4 su 6 =
+TUTTE E QUATTRO le colonne GPU annullate** (le altre due sono la lane CPU, k_cpu=2), e collima
+con la domanda (4049 contro ~13.900 attesi = **71% di route cancellate**, lo stesso 0,419 del
+§33); (3) **LA CORRUZIONE È PROGRESSIVA**: parte dagli **ULTIMI** strati (39,41,42) e a ogni
+forward conquista strati **più a monte** (al terzo è già a 6-13) — questo spiega
+meccanicamente perché il testo **degenera** invece di uscire rotto dal primo token, e perché il
+prefisso comune con AM=0 è di soli 4 byte.
+
+**Attribuzione TENUTA IN SOSPESO dal peer, correttamente**: nel braccio AM=0 lo strato 13 a 1
+token dava **0/6** (quindi il 4/6 non è preesistente come lo erano le violazioni a 2 token), ma
+il confronto non è ancora appaiato (l'AM=0 aveva il warmup ⇒ indici di forward diversi):
+**`AM=0 + --no-warmup + VERIFICA`** in coda dopo S3 come controllo appaiato. Nessuna
+dichiarazione di attribuzione prima di quello.
+
+**DUE CONTRIBUTI DELLA REGIA (recapito via commit)**:
+1. **⚑ DOMANDA A COSTO ZERO SUI DATI CHE HAI GIÀ: il forward #1 (passaggi 1-43) era PULITO su
+   tutti i 43 strati?** Tu riporti #2 e #3, non #1. Se #1 è pulito, il quadro si chiude in modo
+   fortissimo: **la partizione nasce sana e si guasta DOPO il primo forward** ⇒ il bersaglio non
+   è più «la partizione è malformata» (statico) ma **«che cosa cambia fra il forward 1 e il 2»**
+   (dinamico) — target enormemente più stretto, e coerente col prefisso comune di 4 byte (il
+   primo token esce giusto). Se invece #1 è già sporco agli ultimi strati, allora il guasto è
+   presente dal primo forward e la progressione è solo la sua espansione.
+2. **Perché DEGENERA invece di esplodere, meccanicamente**: se a uno strato **tutte** le colonne
+   GPU sono annullate, quel MoE calcola **solo con i 2 esperti della lane CPU** su 6 — un'uscita
+   **sbagliata ma plausibile**, non NaN e non spazzatura. Accumulata su strati e forward, dà
+   esattamente la degenerazione osservata (e spiega perché nessun assert scatta mai). Corollario
+   utile: **il difetto è un errore di COPERTURA degli esperti, non di aritmetica** — il che
+   rende `S3` (COMPATTA=0) il test giusto e rende plausibile che il n.2 (§39, col drafter) sia
+   **la stessa cosa in dose minore** (là AcceptMoE maschera davvero e le righe senza residenti
+   salgono 2,5→14,3%): il controllo a costo zero del §44 punto 3 vale ancora di più.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

@@ -2284,3 +2284,42 @@ attiva, geometria mista): descrizione corretta di LRU con lista e sfratto dal fo
 stantio e fermatasi correttamente senza toccare nulla)**: mcm(16, 66, 74, 98) = **957.264** ⇒
 byte_slot **7.658.112** ricalcolato A MANO e combaciante col log del chirurgo 18; stack reserve
 64 MiB presente su tutti e tre gli exe post-build. Due numeri chiave confermati da mani diverse.
+
+## 33. LA CACCIA: il secondo colpevole è **AcceptMoE × K=2**, Vision-specifico — e le route COLLASSANO
+
+**Bisezione additiva (Vision, tutte con FORK=0 MASSA=0)**: AM=0/K=2 coerente (61,2% colpi) ·
++IBRIDO coerente (e NON inerte: 0,2→10,66 t/s) · +ASYNC coerente ma **INERTE** (SHA e contatori
+identici ⇒ verdetto NULLO, regola del ramo raggiungibile) · AM=1/**K=0** coerente ·
+**AM=1/K=2 ⇒ GARBAGE** (e `BATCH_MAX=1` non guarisce).
+
+**L'aritmetica che inchioda il sintomo**: a K=0 la domanda è 53.664; l'attesa a K=2 è ×4/6 =
+35.776 e l'arm sano misura 36.102 (esatto); **l'arm rotto misura 22.506 = ×0,419 ≈ 2,5 esperti
+su 6, coi colpi al 94,3%: le route COLLASSANO su pochi esperti ripetuti** — che è precisamente
+il testo ripetitivo osservato. **Il 0731 con le stesse leve è coerente e deterministico (2/2
+SHA `C0B19551…`): il difetto è Vision-specifico.** Esclusi con prova: geometria (l'arm AM=0
+gira con colpi veri), FORK (spento ovunque nei rotti), IBRIDO (da solo coerente), lane
+(`partizioni=0, CPU=0` ovunque), replay stantio (divergenze=0), e il kernel acceptmoe stesso
+(senza drafter è una COPIA: righe mascherate=0 — il danno sta in ciò che la sua PRESENZA cambia
+a valle).
+
+**Due indizi concreti nel sorgente (nessuno ancora provato)**:
+1. `ggml.c:5405` — `ggml_acceptmoe_ids` produce un tensore 2D **CONTIGUO** (`nb[1]=24`) dove
+   l'originale `selected_experts` è la vista con stride dell'argsort (`nb[1]=1024`); la
+   partizione legge `s0->nb[1]/4` (`ggml-cuda.cu:3311`) e il commento della op dichiara il
+   presupposto «src0 è la vista con stride dell'argsort (lezione 3fb92b9)» — **che con
+   AcceptMoE acceso non vale più**.
+2. `cache-esperti.cu:1065-1097` — `registra_router` mappa sia `ffn_moe_topk-N` sia
+   `ffn_moe_acceptmoe_ids-N` su `quale=0` e **SOVRASCRIVE SENZA GUARDIA** (a differenza di
+   `registra`): con AcceptMoE i due tensori coesistono e vince l'ultimo registrato.
+
+**Perché il fix è «largo» e la fermata è giusta**: discriminare richiede dumpare gli id visti
+da `kern_partiziona` e dal mmvq nei due arm — e `LLAMA_OVERLAP_VERIFICA` sotto CUDA graph gira
+**solo alla cattura, mai ai replay** (copertura ~nulla, dichiarata dal suo stesso commento): va
+resa raggiungibile prima di fidarsene. Nessuna ricompilazione dopo G1: identità DLL invariate,
+G1 `AD3D3770…` resta valido.
+
+**Dispacciato il braccio pratico che la bisezione non copriva**: **V-SOTA-AM0** — la SOTA
+COMPLETA (FORK=2+MASSA=2, K=2, cache 473) con la sola `ACCEPTMOE=0`, drafter acceso, 2 corse.
+Se coerente ⇒ è la **config di servizio del Vision** da oggi (lo sweep §21 dice che questa
+famiglia non muove i t/s) e arriva il primo numero di velocità sulla macchineria piena; se
+garbage ⇒ c'è un terzo colpevole in interazione col fork, e un solo arm K=0 lo localizza.

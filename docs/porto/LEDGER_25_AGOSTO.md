@@ -3191,6 +3191,56 @@ ri-baseline `S1 = 97DF3AB0…`), leggendo per primi quei due bracci.
 (dare alla partizione un arco su `weights_norm`, come fa TRACCIA) oppure **tenere vivo il
 tensore**; e il dump dovrà stampare, oltre a `perm[j]`/id/peso, **il nome del tensore che ha
 registrato il record e l'intervallo di vita del suo buffer**.
+
+## 51. **COLLAUDO A/B: il NO-GO del §39 ERA IL DIFETTO, NON LA LEVA.** AcceptMoE con COMPATTA=0 passa tutti e quattro i cancelli
+
+**Attribuzione: sessione focused-hertz.** Prompt verificato (sha `4FDF82C2`, lo stesso del §39),
+identità DLL confermata, `reasoning_chars=0` su 4/4 corse.
+
+| | **A** (AM=1, COMPATTA=0) | **B** (AM=0, COMPATTA=0) | ancora (AM=0, COMPATTA=1) |
+|---|---|---|---|
+| t/s | **12,69 / 12,71** | 12,57 / 12,08 | 12,70-12,73 |
+| p1 | **0,72693 / 0,71934** | 0,70988 / 0,73274 | 0,72830 |
+| char | 4538 / 4713 | 4517 / 4635 | 4633 |
+| dom/partizioni | **4,0169 (deficit −2064)** | 4,0168 (−2064) | — |
+| byte a domanda | **868,98 GiB** | 1140,38 GiB | — |
+| colpi | **75,2%** | 67,5% | — |
+
+**I QUATTRO CANCELLI SU A: TUTTI PASSATI.** (i) **§4.10 PIENO** — riletto in UTF-8: **zero
+caratteri non latini** (il conteggio precedente era un artefatto del lettore PowerShell: altra
+istanza della classe «strumenti che mentono»), italiano tecnico corretto fino alla coda, nessun
+loop, terminologia esatta, **diversità lessicale 0,52-0,56 contro 0,513 dell'ancora**; unica
+sbavatura il refuso «sfatta» che **era GIÀ NELL'ANCORA (§35)** ⇒ tic del modello, non
+regressione. (ii) deficit ≈ 0 ✓. (iii) p1 0,727/0,719 contro 0,728 ✓ — **nessuna traccia della
+firma 0,94-0,95**. (iv) t/s in parità con l'ancora ✓.
+
+**LA LETTURA DI MERITO — ed è il risultato della serata**: **il NO-GO del §39 era il DIFETTO,
+non la leva.** Con COMPATTA=0 AcceptMoE lavora sul serio (61.933 righe mascherate, 95.420
+esperti scartati) e il testo resta sano. **Il beneficio esiste ed è misurato, ma non dove lo
+cercavamo**: A muove il **24% di byte in meno** di B (869 vs 1140 GiB) con **colpi 75,2% contro
+67,5%** ⇒ il guadagno viene dalla **RESIDENZA** (il duplicato dell'id raggruppa i token sugli
+stessi esperti), non dallo skip delle route. In t/s però **non si converte**: A = ancora. ⇒
+**AcceptMoE con COMPATTA=0 è GRATIS e più efficiente nei byte, non più veloce.**
+
+**Sulla mia regola di decisione «se B è pari o più veloce vince B»**: B **non** è pari — è più
+lento e muove il 31% di byte in più. Cautela dichiarata dal peer: n=2 e il 12,08 di B r2 puzza
+di rumore (con la regola di casa servirebbe una tripletta) — ma **quel che è solido è che B non
+batte A**. ⇒ **B esce; il candidato è A.**
+
+**RATIFICA IN CORSO (compito riservato alla regia)**: dispacciata la `V-ANCORA-CORTO-A` — 3
+cicli load-freddo come **processi separati** (§36), cancello di quiete 3×40 s, verifica dei
+testimoni `OVERRIDE` prima di lasciar correre, e i 5 cancelli (3 SHA identici · §4.10 in UTF-8 ·
+deficit ≈ 0 · p1 ≈ 0,73 · t/s vs ancora). **Se 3/3, A diventa la config di servizio del Vision**:
+stessa velocità, **immune per costruzione** (senza compattazione i `-1` non esistono) e **−24%
+di byte**. Debito dichiarato: l'ancora **LUNGA** (§41) è stata presa con AM=0/COMPATTA=1 — se A
+viene promossa, il lungo va ri-ancorato (≈1 h di macchina, non urgente).
+
+**Nota di squadra**: il peer ha lasciato il banco libero e pulito, ha declinato di eseguire lui
+l'esperimento decisivo del §50 (correttamente: è una build, e il divieto valeva per entrambi), e
+ha aggiornato il fascicolo con misure, refutazioni, protocollo e il vincolo a quattro righe per
+chi farà il dump. Bilancio della sua serata: **5 sonde, 4 ipotesi proprie proposte e ritirate da
+sé con falsificatori trovati nei dati**, e il meccanismo del difetto n.1 portato da «ignoto» a
+«un solo vincolo residuo, con l'esperimento che lo decide già disegnato».
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

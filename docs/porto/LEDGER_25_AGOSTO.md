@@ -2357,3 +2357,46 @@ In coda: (1) cantiere fix AcceptMoE (i due indiziati del §33; prerequisito: ren
 prima, poi il lungo con l'aritmetica slot rifatta); (3) test vero sul testo dispacciato
 (saggio 1200 no-think + §4.10 esteso). Binari fermi (`9E8E8D46…`/`6A98BE10…`), G1 valido,
 produzione intatta.
+
+## 35. **VISION COLLAUDATO SUL TESTO** — saggio 1200 no-think, §4.10 pieno, due riserve riportate alla virgola
+
+| | r1 | r2 |
+|---|---|---|
+| t/s | 12,74 | 12,70 |
+| p1 / mean_len | 0,72830 / 1,93 | 0,71092 / 1,92 |
+| C_round | 152,8 ms | 154,8 ms |
+| content / reasoning | **4633 / 0** | **4662 / 0** |
+
+**`reasoning_chars = 0` su entrambe: il budget 0 ha morso.** E una raffinazione di regime: il
+«blocco thinking fisso ~518 char» del banco corto era il regime a budget ASSENTE — a budget 0
+il thinking è AZZERATO (regimi diversi, come da §4.10). Entrambi i testi SOPRA la barra 0731
+(3578-4055 char). **E la transizione di fine-reasoning è stata attraversata SENZA assert** —
+prima volta su questo binario (a `BATCH_MAX=3` il bug dell'indice −1 non si presenta, coerente
+col fascicolo).
+
+**§4.10 esteso, entrambi i testi**: lingua sana ✓, zero loop ✓, pertinenza ✓, nessuna
+degradazione ✓, terminologia corretta e non inventata, **zero cifre inventate**, nessun
+gibberish classe «Scolnikhorn». Estratti che colgono punti tecnici veri (la sequenzialità del
+decode che impedisce l'ammortamento del trasferimento; lo slot come unità atomica «perché il
+calcolo richiede tutte e tre le matrici»). **Due difetti di fedeltà, verbatim e non
+arrotondati**: r1 attribuisce la non-linearità al ramo *up* invece che *gate* (SwiGLU — r2 lo
+descrive giusto); r1 ha un refuso singolo «sfatta»→sfratta. Imprecisioni locali di grado umano:
+riportate perché il §4.10 chiede di riportare, non di assolvere. **VERDETTO: COLLAUDATO SUL
+TESTO in config di servizio.** Contatori in banda (colpi 67,7%, lane attiva CPU=2×partizioni,
+zero assert/CUDA error). A 1200 token i saggi si fermano a metà §3 con taglio netto
+`finish_reason: length` (il saggio intero chiederebbe ~2000).
+
+**Config di servizio COMPLETA a registro** (dalla consegna, riga per riga): modello Vision
+IQ2_XXS + draft `DSpark-draft-Q2K`; CLI `-c 4096 -ub 64 -np 1 -ngl 99 -t 7 --no-mmap --fit off`
++ `-ot ffn_(gate|up|down)_exps\.weight=CUDA0_Mapped` + draft `-ngld 99 --spec-type draft-dspark
+--spec-draft-n-max 2 --spec-draft-ubatch-size 16 --spec-draft-conf-min 0.80` + `-otd` di casa;
+env SOTA integrale (SLOT=473, FORK=2, FORK_BLOCCHI=8, MASSA=2, MASSA_AMMISSIONE=0, LRU=1,
+SFRATTO_PAR=1, BATCH=8, W=0, K=2, ASYNC=1, BATCH_MAX=3, PIN=1, MAPPED_IBRIDO=1, KV_RING=1,
+VRAM_A_FASI=0, PORTO_SPEC_NMAX=2) **con l'unica differenza `LLAMA_ACCEPTMOE=0`**.
+
+**Nota di metodo dell'esecutore, a registro con lode**: il primo lancio era partito SENZA
+l'override (stava girando la SOTA piena = la config del garbage); se n'è accorto
+dall'**ASSENZA della riga `OVERRIDE` nel log**, ha fermato e rilanciato verificando entrambi i
+testimoni (`OVERRIDE: LLAMA_ACCEPTMOE=0` e `REASONING-BUDGET: 0`) prima di lasciar correre —
+«il manifesto non è la configurazione», applicata a se stesso. Macchina libera (GPU 464 MiB),
+binari invariati, G1 valido, produzione intatta.

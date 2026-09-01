@@ -2507,3 +2507,41 @@ config di servizio a AM=1**: collaudo 1200 no-think (§4.10 esteso) + se pieno V
 (3 load freddi) + le due sonde sul difetto residuo. Binari invariati, macchina coordinata col
 cancello di quiete (il chirurgo ha pagato la sua istanza alle 16:28 e ha messo controllo e
 lancio NELLO STESSO PROCESSO: `c19_attendi_e_lancia.ps1`).
+
+## 39. FASE A: **NO-GO 2/2 — la promozione a AM=1 è MORTA sul collaudo. E p1 alto è un ALLARME, non un premio**
+
+| | ancora AM=0 | AM=1 r1 | AM=1 r2 |
+|---|---|---|---|
+| t/s | 12,70-12,73 | **16,91** | **16,20** |
+| p1 | 0,72830 | **0,94932** | **0,93980** |
+| §4.10 | pieno | **NO-GO** (loop «rate constant», 18 parole distinte su 1170) | **NO-GO** (loop cinese, UNA parola latina) |
+
+Controllo perfetto (stesso prompt sha `4FDF82C2…`, stesso budget 0, stessa env, testimoni
+`OVERRIDE`/`REASONING-BUDGET` presenti): l'unica differenza è AM 0→1. **Il collaudo da 1200 ha
+colto ciò che i G2 da 200 token non potevano vedere.**
+
+**REGOLA NUOVA DI BANCO (la firma del guasto)**: su questo banco **p1 molto sopra l'ancora
+(0,95 vs 0,73) e t/s +33% sono SINTOMI DI CORRUZIONE** — un testo degenere e ripetitivo è
+banale da indovinare per il drafter, quindi accettazione e velocità schizzano *perché* il
+testo è rotto. È la replica quantificata del 22° esemplare («la degenerazione si traveste da
+successo»): nessun numero di velocità vale senza aver letto il testo.
+
+**Auto-correzione dell'esecutore, a registro con lode**: la raccomandazione della consegna
+precedente («riaprire la config a AM=1») era SBAGLIATA — generalizzava da 120-200 token a tutto
+il regime, esattamente il salto contro cui mette in guardia il fascicolo del taglio del
+reasoning. **La config di servizio RESTA `LLAMA_ACCEPTMOE=0`** (quella dell'ancora 4/4).
+Sopravvive della consegna §38: i FATTI (bisezione senza drafter, AcceptMoE inerte lì, indiziati
+esclusi con prova). Non sopravvive: la conclusione. **Il verdetto operativo originale «AM=1
+inservibile sul Vision» era GIUSTO; era sbagliata la ragione documentata, non l'esito.**
+
+**I difetti ora sono DUE, separati puliti**:
+1. **Senza drafter, 200 tk** → garbage con AcceptMoE INERTE ⇒ effetto della sola PRESENZA dei
+   nodi nel grafo (fase C in corso: sonde CERCA_CPU/ASYNC sul riconoscitore posizionale).
+2. **Con drafter, 1200 tk, budget 0** → garbage con AcceptMoE che MASCHERA davvero; meccanismo
+   coerente coi contatori: `righe senza residenti` **2,5% → 14,3%** al crescere della corsa —
+   la residenza peggiora sotto pressione di cache (621 GiB mossi su 473 slot) e
+   l'approssimazione degrada cumulativamente fino al collasso. Stessa famiglia di `SOGLIA=0`
+   (§21), presa più a monte.
+Follow-up raccomandato e NON eseguito (fuori mandato): 1200 tk con thinking LIBERO a AM=1, per
+separare «pressione di cache/lunghezza» da «transizione di fine-reasoning a budget 0» (il
+fascicolo dell'indice −1). Binari fermi, fase C in corso sulla macchina.

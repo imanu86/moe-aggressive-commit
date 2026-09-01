@@ -2431,3 +2431,35 @@ verificato esplicitamente prima.
 Macchina LIBERA a fine corsa (GPU 463 MiB); in coda scattano foto test e chirurgia AcceptMoE.
 NB per chi legge: l'ancora è del CORTO (ctx 4096); il ri-ancoraggio del LUNGO (100k/kv150)
 resta il prossimo cantiere dopo la coda attuale, con l'aritmetica slot da rifare.
+
+## 37. FOTO VERA (banco visivo, build B) — OCR PERFETTO a riduzione 18×, ma «non sa» di guardare una foto
+
+Immagine dell'utente: 3024×4032 (12,2 Mpx) fotografata col telefono su uno schermo — ridotta
+**~18×** dal preprocessore (tetto 677k px), codifica visiva 8,4-8,8 s/corsa. Tre corse
+(descrizione libera, OCR mirato, sfondo — la terza aggiunta dall'esecutore di sua iniziativa
+perché il budget aveva tagliato la prima esattamente sull'intestazione «Sfondo»).
+
+**Rubrica**: **(b) PERFETTA** — `REIMPOSTA-OKTOCGC` esatto carattere per carattere in **3
+occorrenze su 3** (confronto case-sensitive), senza bisogno del crop preparato; e il paragrafo
+d'avviso trascritto quasi parola per parola, «DEFINITIVAMENTE» maiuscolo incluso. **(c)
+superata** (eliminazione definitiva multi-device, distinzione siti a mano/predefiniti,
+non-annullabilità, conferma per digitazione). **(d) superata con riserva** (betsson nominato,
+bonus William Hill riconosciuto nel contenuto; Marathonbet/Eurobet mai raggiunti per budget).
+**(a) FALLITA — l'unica netta**: la tratta da SCREENSHOT («schermata di un computer Windows»),
+nessun accenno a fotografia/riflessi/moiré. **(e) due nei, nessun oggetto inventato**: dice il
+campo di conferma «vuoto con placeholder» mentre è GIÀ COMPILATO (errore di STATO — proprio il
+dettaglio che distingue «istruzione» da «pronto all'invio»), e inventa l'abilitazione dei
+pulsanti (pure rovesciata). Segnale di disciplina: «testo non leggibile» dove non legge,
+invece di inventare. Nota il bordo rosa/viola del dialogo colto correttamente.
+
+**Profilo che ne esce**: lettore di testo in-immagine fortissimo (OCR esatto a 18× di
+riduzione), comprensione semantica piena; debole sulla META-percezione del mezzo (foto vs
+screenshot) e sullo STATO dei controlli UI. Per l'uso da «leggi questo schermo» è già
+affidabile; per giudizi di stato UI serve prudenza.
+
+**Regola operativa nuova (pagata quasi-cara)**: i controlli ISTANTANEI di macchina-libera
+MENTONO — fra due load consecutivi esistono finestre di pochi secondi. Cancello nuovo per ogni
+coordinamento macchina: condizione stabile per **3 controlli consecutivi a 40 s** (~2 min)
+prima di qualunque load; senza, un carico da 80 GiB sarebbe partito addosso al ri-ancoraggio.
+Già propagata al chirurgo 19. Minori: `]` spurio in testa a una risposta; «100% Subito» fonde
+due scritte vicine. Log: `foto_{1,2,3}*.log` nello scratchpad. Macchina libera dalle 16:29.

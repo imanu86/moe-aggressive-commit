@@ -2210,3 +2210,40 @@ TVIS a budget 512 (taglie campione diverse, già nel calcolo degli errori standa
 SENZA l'hunk spurio della bisezione; protocollo: baseline corta PRE, backup DLL, build, **G1 =
 regressione 0731 bit-esatta**, **G2 = il Vision carica e parla nel fork con la cache attiva**.
 Immagini per ora dalla build upstream; mtmd nel fork = decisione successiva.
+
+## 31. CHIRURGO 17 — G1 VERDE (0731 bit-esatto), il Vision CARICA nel fork… e LA CACHE LO CORROMPE: geometria mista scoperta
+
+**Porto vl-routing eseguito pulito**: 7 aggiunte marcate (`llama-arch.h:428`, `llama-arch.cpp:407,789`,
+`llama-model.h:338`, `deepseek4.cpp:195,1511-1524`, `dflash.cpp:200`), ricostruita SOLO
+`llama.dll` (ggml-* byte-identiche al backup), 43 s di build, zero warning nuovi. **G1: SHA
+`AD3D3770…BFCBFE11` IDENTICO su 6 corse (3 baseline + 3 post)** — il banco corto si è dimostrato
+deterministico da solo. Identità nuova: llama.dll **`9E8E8D46…`** (chirurgo17), backup completo
+in `backup_pre_chirurgo17\`.
+
+**Reperto sulla numerica di casa**: le tre `ggml_build_forward_expand(residual/post/comb)` di
+`dee2a846b` **NON esistono nel nostro deepseek4.cpp** (né attive né commentate) — il fork è già
+sul lato «senza expand», lo stesso EFFETTO dell'hunk spurio della patch. Quindi la nostra ancora
+numerica corrisponde al lato «A» del bivio upstream. Non toccato (l'ancora non si cambia in un
+porto), ma da sapere per futuri confronti di qualità con la build upstream-B.
+
+**G2: carica (1371 tensori, esperti su `CUDA0_Mapped = 74704 MiB`, 25 righe `cache-esperti:`)
+MA CON LA CACHE ATTIVA L'OUTPUT È SPAZZATURA** (96 `<` di fila). Matrice di isolamento a 4 corse:
+env SOTA ⇒ garbage · env pulito ⇒ coerente · upstream ⇒ coerente · **env SOTA +
+`CACHE_ESPERTI_SLOT=0` ⇒ coerente** ⇒ colpevole certa la cache. **Causa trovata nel sorgente**:
+`cache-esperti.cu:1913-1920` — «la prima terna completa dà le taglie»: passo/tipo presi dal
+PRIMO strato e applicati a TUTTI, senza verifica di uniformità. Sul 0731 (down tutti Q2_K) è
+mascherato; sul Vision i down sono **MISTI (IQ2_XS ×23, IQ3_XXS ×20)** ⇒ 23 strati letti con
+stride e tipo sbagliati IN SILENZIO. Il punto presidia già due ALTRI rischi di troncamento
+silenzioso: l'omissione stona, e oggi **cache e correttezza sul Vision si escludono a vicenda**
+(`SLOT=0` = unico modo sicuro di servirlo col fork).
+
+Note collaterali: i due checkpoint divergono su 746 tensori comuni (Q8_0→Q6_K ×344, F16→Q6_K
+×315, `ffn_gate_inp` F16→**BF16** ×43, `token_embd`→Q8_0) — il router BF16 non ha dato problemi
+nelle corse buone; `build_cuda.bat` dell'albero punta a `D:\llama-overlap` (albero SBAGLIATO):
+trappola nota da oggi, usare la procedura sull'albero giusto.
+
+**Dispacciato CHIRURGO 18 — geometria PER-STRATO nella cache**: slot uniformi alla taglia max
+(~7,19 MiB sul Vision, aritmetica slot rifatta nel budget), array per-strato tipo/passo/byte
+per copia e lettura mmvq, **guardia esplicita anti-corruzione-silenziosa** (rifiuto + fallback
+senza cache), cammino 0731 degenere INVARIATO. Cancelli: G1 bit-esatto `AD3D3770…`, G2 Vision
+COERENTE con cache attiva e contatori sensati, G3 primo assaggio con drafter.

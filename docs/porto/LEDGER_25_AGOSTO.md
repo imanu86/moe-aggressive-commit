@@ -2001,3 +2001,12 @@ unico); `Q2K-GateUp` 92,86 conservare salvo rinuncia al filone; famiglia DSpark 
 memmap 81,84 + qwen3-bonusx 59,5); dati campagne luglio (q1_pilot 49,32 + gptq 36,69 +
 round2 29,6); ISO ubuntu 6,2. Censimento completo e log cancellazioni nella consegna
 dell'analista (`deletions.log` nello scratchpad di sessione).
+
+**ESITO BONIFICA (1/9 sera)**: voci 1-2 eseguite — 408 file, **+53,69 GiB ⇒ D: a 117,69 GiB
+liberi**. Il download Vision (~80) entra con 37,7 di margine SENZA toccare modelli. Il filtro
+per estensione (mai cartelle alla cieca) ha salvato `w3_L39` in `pod_captures_backup\captures\`:
+l'**unica cattura completa del round**, 0,13 GiB non rigenerabili senza rilanciare il pod — ora
+è l'unico contenuto della cartella, da NON cancellare in future pulizie. Log: 445 righe in
+`deletions.log`. Residui cosmetici segnalati e non toccati (0,055 GiB: 3 `.incomplete` HF sotto
+i 200 MB + 4 `.partial` in `c7_local1k\capture\failed_*`): stessa categoria già approvata,
+autorizzabili a piacere, irrilevanti per l'obiettivo.

@@ -2247,3 +2247,35 @@ trappola nota da oggi, usare la procedura sull'albero giusto.
 per copia e lettura mmvq, **guardia esplicita anti-corruzione-silenziosa** (rifiuto + fallback
 senza cache), cammino 0731 degenere INVARIATO. Cancelli: G1 bit-esatto `AD3D3770…`, G2 Vision
 COERENTE con cache attiva e contatori sensati, G3 primo assaggio con drafter.
+
+## 32. CHIRURGO 18 — la geometria è GUARITA (e il difetto vero erano 38 BYTE). Ma sotto c'era un SECONDO colpevole
+
+**Diagnosi più fine dell'ipotesi**: gli array per-strato ESISTEVANO già (`reg[strato]`, 43 voci;
+la vista ombra mmvq eredita già `src0->type` dello strato). Il difetto vero, provato
+aritmeticamente: **`allinea` nasceva dal mcm della SOLA terna dello strato 0** ⇒ sul Vision
+(strato 0 = IQ3_XXS) `byte_slot` = 7.554.624, **NON multiplo di 74** = type_size(IQ2_XS); e
+`mmvq.cu:1254` fa `s02 = nb[2]/ts` in divisione INTERA ⇒ sui 23 strati IQ2_XS lo slot k veniva
+letto a `k·7.554.586` invece di `k·7.554.624`: **deriva di 38 byte per slot, senza assert né
+errore**. Fix in `cache-esperti.cu` (:146-151, :1920-2086): censimento su TUTTI gli strati,
+`byte_max[]` per posizione, `allinea` = mcm su tutte le taglie, **guardia esplicita**
+(slot incapiente o `byte_slot` non multiplo di una taglia ⇒ cache spenta A VOCE ALTA, server
+prosegue). Aritmetica dal log: Vision = 2 terne (20× IQ3_XXS + 23× IQ2_XS), byte_slot
+**7.658.112 (7,3033 MiB)**, 473 slot = 3.454,5 MiB — **CI STANNO** (il Vision ha il model
+buffer CUDA0 1,9 GiB più piccolo del 0731: 5.484 vs 7.384 MiB, attn Q6_K vs Q8_0).
+
+**G1 VERDE** (3/3 SHA `AD3D3770…` byte-per-byte; il degenere stampa esattamente il byte_slot di
+oggi). **G2 ROSSO ma il fix è VALIDATO dalla bisezione**: cache spenta ⇒ coerente · **cache 473
++ acceleratori spenti ⇒ COERENTE con colpi 55-76%** (la slab e la lettura mmvq sono corrette
+sulla geometria mista) · cache + FORK/MASSA spenti + resto SOTA ⇒ garbage (riproduce i `<`) ·
+SOTA completa ⇒ garbage non deterministico. ⇒ **SECONDO difetto indipendente**, colpevole fra
+gli acceleratori sopra la cache (sospetti: `ACCEPTMOE_SOGLIA`, `MAPPED_IBRIDO`,
+`OVERLAP_ASYNC`); caccia additiva dispacciata (stesso chirurgo, base positiva + una env alla
+volta, drafter acceso come stabilizzatore — **il Vision senza drafter è NON deterministico**,
+coerente con [[determinismo-viene-dalla-speculazione]]).
+
+Identità: `llama.dll` invariata `9E8E8D46…`; **`ggml-cuda.dll` `6EF5B781…` → `6A98BE10…`**
+(backup `backup_pre_chirurgo18\`). ⚠ TRAPPOLA A REGISTRO: **`build_cuda.bat` fa
+`cd /d D:\llama-overlap`** — costruirebbe un ALTRO worktree riuscendo in silenzio; procedura
+corretta a mano + `editbin /STACK` obbligatorio. E il cancello STRICT ferma la corsa se
+MASSA e FORK si muovono separatamente: si spengono INSIEME. Completion positiva verbatim (cache
+attiva, geometria mista): descrizione corretta di LRU con lista e sfratto dal fondo.

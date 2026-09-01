@@ -2611,6 +2611,9 @@ topologico) — coerente con `pesi mancanti=0`. Prossimo bersaglio di lettura: c
    §18/§20). Se `BOZZA_SLOT` era rimasta al difetto 12, il predicato resta vero e il tuo
    confronto è a UNA variabile — pulito. Se erano ENTRAMBE a 0, la fusione si è ACCESA nel
    decode = SECONDA variabile: verificalo prima di fondare la diagnosi sul confronto.
+   → **VERIFICATO dal peer sul manifesto** (1/9 sera): `LLAMA_CACHE_BOZZA_SLOT=12(E)`,
+   `LLAMA_CACHE_ESPERTI_SLOT=0(E)` ⇒ predicato ancora VERO, cancello-fusione immobile:
+   **confronto a UNA variabile, reperto slot0 CONFERMATO senza riserve.** Fascicolo aggiornato.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

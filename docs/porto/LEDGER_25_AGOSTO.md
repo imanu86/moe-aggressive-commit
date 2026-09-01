@@ -3290,6 +3290,55 @@ validazione di A sul banco lungo (prompt 101.691, ctx 150k, `-OtDraft …=CPU` o
 tetto pinnato), con gli stessi 5 cancelli e un'attesa dichiarata: **sul lungo A potrebbe essere
 MIGLIORE**, perché è lì che il difetto n.2 cresceva con la lunghezza e COMPATTA=0 lo previene.
 Riferimento da battere: 11,764/11,870/11,871 t/s, p1 0,80914.
+
+## 53. ⭐ **SUL LUNGO A NON È PARI: È MIGLIORE. +3,6…+5,3%** — l'attesa pre-registrata è confermata
+
+**Attesa dichiarata nel §52 e CENTRATA.** Banco lungo (101.691 / ctx 150k / 1200 tk / budget 0),
+2 corse, **2/2 SHA identici** (`B2B8F84E…`), testi byte-identici, contatori cache **bit-identici**
+fra le due.
+
+| | **A** (AM=1, COMPATTA=0) | ancora §41 (AM=0) | Δ |
+|---|---|---|---|
+| **decode t/s** | **12,300 / 12,384** | 11,764 / 11,870 / 11,871 | **+3,6 … +5,3%** |
+| ms/token | 81,30 / 80,78 | 84,24-85,03 | −3,5 … −4,1% |
+| C_round | 204,07 / 202,75 | 205,54-207,48 | −1,3 … −2,3% |
+| mean_len | 2,51 | 2,44 | +2,9% |
+| p1 | 0,82683 | 0,80914 | +2,2% |
+| colpi | **63,4%** | 58,0% | **+5,4 punti** |
+| byte a domanda | **717,41 GiB** | 835,44 GiB | **−14,1%** |
+| partizioni | 36.722 | 36.722 | **identiche alla cifra** |
+| pesi mancanti | 36.722 (= partizioni) | 0 | testimone COMPATTA=0 ✓ |
+
+**Scomposizione del guadagno**: metà da **round più economici** (C_round −1,3…−2,3%) e metà da
+**catene accettate più lunghe** (mean_len +2,9%). ⇒ **Sul LUNGO i byte SI convertono in tempo,
+sul corto no** — coerente col working set: a 101k il tasso di colpi è più basso (58→63,4%) e
+ogni byte risparmiato pesa. Contatori AcceptMoE tutti >0 (lanci 19.120, mascherate 32.270,
+scartati 45.822) contro 0 nell'ancora ⇒ **ramo raggiungibile e leva che lavora**. Zero assert,
+zero divergenze di replay, prefill invariato (la leva è di solo decode).
+
+**⚠ NONA TRAPPOLA DEL LANCIATORE, intercettata PRIMA di correre** — e valeva la misura intera:
+`p1b_conf.ps1:208` scriveva a mano `$env:LLAMA_ACCEPTMOE_COMPATTA = '1'` **dentro**
+`Set-SotaEnvironment` (che gira nel ciclo delle shape) ⇒ impostarla dall'esterno era **INERTE**:
+il braccio avrebbe misurato la SOTA piena credendo di misurare COMPATTA=0, e avremmo pubblicato
+un +4% falso. Riparata col pattern di casa (parametro `-AcceptmoeCompatta`, **difetto '1' =
+comportamento precedente byte-per-byte**, backup `…bak_20260901_pre_compatta`). **Nona istanza
+nello stesso file**: la bonifica sistematica di `Set-SotaEnvironment` (a registro dal §16) non è
+più un'igiene rimandabile.
+
+**CORREZIONE DI TARATURA su uno strumento nuovo**: il cancello «`domanda/partizioni` ≈ 4,0» del
+§47 è una cifra del banco **CORTO**; sul lungo l'ancora *sana* vale già **7,597** (il prefill da
+101k aggiunge domanda senza partizioni). **Il criterio vero è il segno del deficit**, non il
+valore del rapporto: qui **−127.968** (negativo, come l'ancora), contro il **+27.182** del
+guasto.
+
+**DUE DEBITI DICHIARATI**: (1) **2/2, non 3/3** — dispacciato il terzo load freddo per la
+ratifica piena `V-ANCORA-LUNGO-A`; (2) **`righe senza residenti` all'8,09%** contro il 2,16% del
+corto, con progressione cumulativa 5,71→7,01→8,09 — **unico numero sensibilmente più alto**, e
+**senza nessun'altra firma del difetto** (deficit negativo, p1 normale, testo sano, SHA
+riproducibile, t/s migliore). Poiché i contatori sono **bit-identici fra le corse**, la
+progressione è **deterministica** ⇒ proprietà riproducibile del carico (473 slot contro un
+contesto da 101k), non una deriva; conferma richiesta sul terzo load, poi il dubbio si chiude
+senza spendere altre corse.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

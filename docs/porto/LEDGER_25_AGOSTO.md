@@ -2400,3 +2400,34 @@ dall'**ASSENZA della riga `OVERRIDE` nel log**, ha fermato e rilanciato verifica
 testimoni (`OVERRIDE: LLAMA_ACCEPTMOE=0` e `REASONING-BUDGET: 0`) prima di lasciar correre —
 «il manifesto non è la configurazione», applicata a se stesso. Macchina libera (GPU 464 MiB),
 binari invariati, G1 valido, produzione intatta.
+
+## 36. **V-ANCORA-CORTO: ESISTE, E REGGE 4/4** — l'ancora del Vision è il primo colpo a freddo
+
+```
+V-ANCORA-CORTO: 88031A83F3950ACCB3A396A529FD76227CF7B998ACD71DD2F8A7D10A7773C1F1 @ config §35
+```
+
+Tre cicli completi **(load → UNA richiesta → shutdown, ognuno come PROCESSO SEPARATO)**: SHA
+identico 3/3, t/s 12,70-12,73, **p1 0,72830 identico alla 5ª cifra**, mean_len 1,93, content
+4633 / reasoning 0 su tutti. **E un quarto punto gratis**: il testo è byte-identico anche alla
+r1 del collaudo (§35), presa ORE prima in sessione diversa ⇒ l'ipotesi «primo colpo a freddo è
+deterministico» passa su QUATTRO load indipendenti a 1200 token. Contatori sani (domanda
+39.387, colpi 64,7-64,8%, lane attiva, zero assert). §4.10: giudizi del collaudo validi per
+costruzione (testo identico), **incluse le due imprecisioni note che ORA SONO NELL'ANCORA** —
+chi in futuro vedrà una divergenza saprà che non erano regressioni.
+
+**Regola di banco nuova, pagata con uno stallo**: su questo banco il ciclo load→richiesta→
+shutdown va invocato come **processo separato, mai iterato dentro una sola sessione
+PowerShell** — al secondo giro iterato il server era su e `/health` rispondeva, ma il runner
+non emetteva mai la POST (sospetto dichiarato e non provato: il `FreeConsole()`/`AttachConsole()`
+della chiusura graziosa avvelena l'iterazione successiva). E `"$c:"` in PowerShell si legge
+come drive: `${c}`.
+
+**Reperto incidentale prezioso**: il censimento per-strato del chirurgo 18 copre anche la
+**cache della bozza** — terza geometria distinta (gate/up q2_K + down q3_K, 1 strato, slot
+9.110.640 B = 8,69 MiB), calcolata correttamente. Il fix vale anche per il drafter, mai
+verificato esplicitamente prima.
+
+Macchina LIBERA a fine corsa (GPU 463 MiB); in coda scattano foto test e chirurgia AcceptMoE.
+NB per chi legge: l'ancora è del CORTO (ctx 4096); il ri-ancoraggio del LUNGO (100k/kv150)
+resta il prossimo cantiere dopo la coda attuale, con l'aritmetica slot da rifare.

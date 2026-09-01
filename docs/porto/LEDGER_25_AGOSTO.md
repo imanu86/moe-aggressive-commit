@@ -3069,6 +3069,65 @@ guarisce**. Radice ultima **DICHIARATA APERTA** (localizzazione certa: compattaz
 a `-1` ⇒ ~71% dei `peso[perm[j]]` valgono esattamente 0,0f; nello stato osservabile (sano) sono
 lo 0,4%. **Un fattore ~175×**: che la memoria letta nei due stati sia diversa è già quantificato,
 anche senza il dump. Quel che manca è **quale** memoria, o **quale indice**.
+
+## 49. **IL n.2 È BY DESIGN**; la mia ipotesi «indice» è REFUTATA; e **non ci si può più fidare del sorgente per interpretare questi binari** — con snapshot e una risoluzione della contraddizione
+
+**(1) MIA IPOTESI «INDICE» — REFUTATA dal peer a costo zero, e correttamente**: `kern_acceptmoe`
+**non riordina**: scrive posizione per posizione (`out_ids[t*ne0+i] = tieni[i] ? riga_id[i] :
+riga_id[primo]`, `out_pesi[…] = tieni[i] ? w*rinorm : 0.0f`, `cache-esperti.cu:7980-7988`) ⇒
+`perm` e `peso` vivono nello stesso ordinamento, il disallineamento d'indice non si produce.
+**Resta valida la conseguenza operativa**: il dump dovrà comunque stampare INSIEME `perm[j]`,
+l'id in quella posizione e il peso letto.
+
+**(2) IL DIFETTO n.2 È BY DESIGN — riformulazione importante.** AcceptMoE mette **`0.0f` sulle
+posizioni scartate** (`:7983`) e vi duplica l'id del primo tenuto (`:7985`) per congelare le
+forme; con COMPATTA=1 la partizione traduce quegli zeri in `-1` e la cache non li domanda:
+**è la catena PROGETTATA, non un guasto.** ⇒ Nel collaudo lungo col drafter il «deficit 6,3%»
+è **in gran parte il meccanismo che LAVORA**; il guasto è che **la quota di scarto CRESCE**
+(«righe senza residenti 2,5%→14,3%») finché l'approssimazione collassa. Il braccio A del
+collaudo misura quindi esattamente la cosa giusta: **COMPATTA=0 conserva le route (pagandole in
+byte) invece di annullarle.** Attesa del peer: A più lento e più sano; **se A fosse sano E
+veloce, lo scarto stava buttando lavoro utile** — che sarebbe un reperto di prima grandezza.
+
+**(3) ⚠ ESPOSIZIONE DI METODO: il sorgente non è più affidabile per interpretare questi
+binari.** Il peer ha una contraddizione che regge a tre riletture («rr→pesi = weights_norm ⇒
+pesi positivi ⇒ niente −1» contro il 70% di −1 misurati, con `guasti=0` che esclude id fuori
+range) ⇒ **una premessa sul BINARIO è falsa**, e la più fragile è proprio la lettura del
+sorgente: `cache-esperti.cu` è stato letto alle 17:30 ma **riscritto dalla terza mano alle
+19:24**, e non esiste snapshot del sorgente al momento della build (14:33) — `backup_pre_*`
+contiene **solo DLL**.
+✔ **AZIONE DELLA REGIA, ESEGUITA SUBITO**: snapshot datato in
+**`D:\ds4_work\snapshot_sorgente_20260901_2145\`** (4,4 MB: tutti i `.cu/.cuh` di ggml-cuda,
+i `.cpp/.h` di `src/` + `models/deepseek4.cpp` e `dflash.cpp`, più `MTIME_INVENTARIO.txt`).
+**Reperto dall'inventario**: `deepseek4.cpp` e `dflash.cpp` sono fermi a **13:55**, coerenti con
+`llama.dll` costruita alle **14:03** ⇒ **il lato `src/` del binario è verificabile**; sono i tre
+file CUDA (19:24) a essere **provabilmente avanti** rispetto a `ggml-cuda.dll` (14:33). Se
+fossero stati toccati anche PRIMA delle 17:30 non è più recuperabile.
+**REGOLA NUOVA A REGISTRO**: *un fascicolo che mescola misure e letture di codice deve citare
+l'mtime del file letto*; e **ogni backup DLL deve portare accanto la copia del sorgente** da cui
+è nato (da oggi il protocollo build lo richiede).
+
+**(4) ⚑ RISOLUZIONE CANDIDATA DELLA CONTRADDIZIONE — e non richiede né dump né sorgente
+affidabile.** Il commento della terza mano dice: «`ffn_moe_acceptmoe_pesi` **NON si registra
+più**» ⇒ **prima si registrava**. E la build sotto test è delle 14:33, **precedente** al fix
+delle 19:24 ⇒ **nel binario in prova `acceptmoe_pesi` REGISTRA `quale=1`**. La sua uscita ha
+`0.0f` esattamente sulle posizioni scartate (§49.2) ⇒ **`rr→pesi` non era `weights_norm`: era
+l'uscita MASCHERATA**, e il ~70% di `-1` è esattamente il tasso di scarto. **La contraddizione
+si scioglie senza postulare memoria corrotta.** ⚠ Obiezione aperta da verificare: nell'ordine
+intra-strato `weights_norm-(L+1)` dovrebbe *riparare* il record prima di `partizione-(L+1)` —
+il pattern **progressivo dagli ULTIMI strati** (§46) è il candidato indizio (dopo
+`acceptmoe_pesi-42` non c'è un `weights_norm-43` che ripari).
+
+**(5) RITRATTO LA MIA PREVISIONE DEL §48.3.** Avevo pre-registrato: «dopo il fix, S4/TRACCIA
+deve TORNARE ROTTO». **Sbagliata**: conflondeva «`pesi_validi` vero» con «molti `-1`». Col
+modello nuovo, dopo il fix il record resta `weights_norm` **con pesi positivi** ⇒ pochi `-1` ⇒
+**S4 resta SANO**. **Previsioni corrette, pre-registrate per quella build**:
+   (a) **il braccio ROTTO (AM=1, COMPATTA=1, senza TRACCIA) deve GUARIRE** ⇒ il fix della terza
+       mano non è igiene: **è il fix del difetto n.1**;
+   (b) **S4/TRACCIA resta sano**, ma con un cancello quantitativo netto: **`pesi mancanti` deve
+       crollare da 1760/1892 a ~0** (il record resta coerente);
+   (c) il difetto n.2 si riduce alla sola quota by-design.
+   Se (a) fallisce, il modello del §49.4 è falso e si torna al dump.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

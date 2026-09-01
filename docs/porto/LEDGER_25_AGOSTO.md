@@ -3016,6 +3016,59 @@ guasti.
 braccio DEVE restare rotto — se guarisse sarebbe esso stesso un reperto). **(5)** Terza mano:
 diagnosi concordata, divieto di build tenuto da entrambe le sessioni, identità DLL verificata a
 ogni corsa (`6A98BE10`/`9E8E8D46`).
+
+## 48. **S4: OSSERVARE GUARISCE** — il latente È raggiungibile; e i pesi zero legittimi NON spiegano il difetto
+
+**Attribuzione: sessione focused-hertz.** `c19f_s4_traccia` (AM=1, COMPATTA=1, TRACCIA accesa)
+**GUARISCE** — l'esito che avevo pre-registrato come «reperto in sé». Meccanismo verificato:
+con TRACCIA (`calendario_esatto`) la partizione riceve `part->src[1] = weights`
+(`llama-graph.cpp:1912-1915`) ⇒ `pesi_am` diventa **produttore** della partizione ⇒
+`acceptmoe_pesi-L` esegue **PRIMA** di partizione-L ⇒ registra `quale=1` con la sua forma
+`[1,6,n_tok]` ⇒ `ne0_pesi=1` ⇒ record incoerente ⇒ `router_dati` **NULL** ⇒ `pesi_validi`
+falso ⇒ **nessun −1** ⇒ sano. Testimone: **`pesi mancanti = 1760 / 1892`**, e i 132 lanci
+rimasti validi sono **3 strati × 44 forward = i 3 strati HASH** (che non hanno il cammino
+acceptmoe) — conferma interna elegante.
+⇒ **Il latente `registra_router` NON è irraggiungibile** (avevamo concluso di sì, §40-bis/§44):
+è raggiungibile, basta cambiare l'ordine dei nodi. **Il fix della terza mano ha quindi valore
+reale**, ma cambia il comportamento e va ri-baselinato con cura.
+
+**I DATI DELLA TRACCIA, e uno va CONTRO l'ipotesi corrente**: su 11.352 pesi letti, **41
+esattamente zero (0,4%)**, zero negativi, zero NaN — e la loro distribuzione per strato
+coincide **esattamente** con gli strati dove `overlap-verifica` segnalava disallineamenti
+(8,9,11-17,21,24,25,26,39,42): **conferma end-to-end della catena «peso zero → −1 → route persa
+→ disallineamento»**. **MA 0,4% non può spiegare il 71% di route annullate** ⇒ «pesi zero
+legittimi» **NON è** il meccanismo del difetto n.1. Il peer dichiara: nello stato rotto la
+partizione deve leggere memoria sbagliata, e la traccia non può vederlo perché **osservarlo lo
+guarisce**. Radice ultima **DICHIARATA APERTA** (localizzazione certa: compattazione).
+
+**TRE CONTRIBUTI DELLA REGIA**:
+1. **TRIANGOLAZIONE: due vie indipendenti di spegnimento, stessa guarigione.** S3 disattiva il
+   *gate del fetch* (`pesi_validi` falso per gate), S4 rende *incoerente il record*
+   (`pesi_validi` falso per NULL). **Entrambe arrivano allo stesso passo e guariscono** ⇒ **la
+   scrittura del `-1` è NECESSARIA E SUFFICIENTE** al difetto. Non è più solo «localizzato»:
+   il passo causale è confermato da due manipolazioni indipendenti.
+2. **⚑ LA RADICE POTREBBE NON ESSERE «MEMORIA SBAGLIATA» MA «INDICE SBAGLIATO» — e questo
+   cambia COSA deve stampare il dump.** Alternativa che spiega tutto senza postulare un buffer
+   corrotto: la partizione legge `peso[perm[j]]` dove **`perm` indicizza l'ordinamento degli id
+   di AcceptMoE** mentre **`peso` è nell'ordinamento originale del topk** — memoria GIUSTA,
+   indice SBAGLIATO; le posizioni oltre il conteggio tenuto cadono su padding/zeri. È coerente
+   con tutto ciò che sappiamo (graphs-off indifferente, async indifferente, allocazione
+   indifferente, e guarigione da entrambe le vie che spengono il `-1`). **Conseguenza
+   operativa: quando si farà il dump, NON basta stampare il contenuto del buffer** — deve
+   stampare, per la stessa colonna, **`perm[j]`, l'id in quella posizione E il peso letto**.
+   Altrimenti un dump che mostra «pesi corretti nel buffer» farebbe concludere «memoria sana»
+   mentre l'errore sta nell'indicizzazione, e ci costerebbe un'altra build.
+3. **PREDIZIONE PRE-REGISTRATA per la build della terza mano** (quando avverrà, col protocollo
+   del §45): se il fix impedisce a `acceptmoe_pesi` di registrarsi, allora nella configurazione
+   S4/TRACCIA il record resterà `weights_norm` **coerente** ⇒ `pesi_validi` **VERO** ⇒ `-1`
+   di nuovo scritti ⇒ **S4 deve TORNARE ROTTO**. È un cancello falsificabile forte: se dopo
+   quella build S4 resta sano, la nostra comprensione del meccanismo è incompleta. Da eseguire
+   subito dopo G1, prima di qualunque altra conclusione.
+
+**Misura indiretta già disponibile, senza dump**: nello stato rotto ~71% delle colonne finiscono
+a `-1` ⇒ ~71% dei `peso[perm[j]]` valgono esattamente 0,0f; nello stato osservabile (sano) sono
+lo 0,4%. **Un fattore ~175×**: che la memoria letta nei due stati sia diversa è già quantificato,
+anche senza il dump. Quel che manca è **quale** memoria, o **quale indice**.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

@@ -2753,6 +2753,61 @@ riusare la memoria da chi calcola lo split successivo, perché l'allocatore calc
 `il-fronte-host-bound-e-chiuso-il-costo-migra`). Due nodi in più che spostano gli indirizzi
 sono esattamente il tipo di perturbazione che sveglia quella classe. **Ma l'arbitro (S2) viene
 prima**: nessuna di queste piste si istruisce finché la sonda non dice dove diverge il calcolo.
+→ **«ALIAS D'ARENA» FALSIFICATA DAL PEER, e ha ragione**: quell'esposizione richiede esecuzione
+CONCORRENTE, ma il braccio C2 (`ASYNC=0`, worker mai creato, tutto sequenziale) resta garbage
+**byte-identico** ⇒ se l'allocazione c'entra, **non c'entra per concorrenza**. Mia
+riformulazione ritirata.
+
+## 43. **S2, L'ARBITRO: i CUDA graph sono INNOCENTI** — e l'invariante è violato, ma a 2 token (cioè forse nell'ALTRO fascicolo)
+
+**Attribuzione: sessione focused-hertz.**
+
+**PARTE 1 — cade la famiglia cattura/replay.** `c19f_s2_grafi_off` (AM=1 + `DISABLE_GRAPHS=1` +
+`OVERLAP_VERIFICA=1`, no-draft, 80 tk): **SHA `97DF3AB0…` identico a S1 e a `c19_c0`** ⇒
+spegnere i grafi NON guarisce. E la leva ha morso davvero (decode 13,94→10,32 t/s; «saltati in
+cattura» 86→0, lanci 172→3569; mmid a un token 387→10.320). **Muore anche la speculazione del
+peer sul “baked a cattura”.**
+
+**PARTE 2 — l'invariante È violato, ma NON dove serve (ancora).** 21 righe di verifica, 52
+disallineamenti (strati 8,9,11-17,21,24,25,26,39,41,42 con 1-3 su 12; al secondo giro 41 e 42
+con 8 su 12). **Ma il denominatore dice il regime**: «su 12» = `ne0 × n_tok` = 6×2 ⇒ sono
+forward a **DUE token**; l'unica riga «su 6» (1 token, strato 13) è **PULITA**. Aritmetica che
+chiude il conto: `partizioni = 3612 = 80 forward decode × 43 × 1 tok (3440) + 2 forward warmup
+× 43 × 2 tok (172)`, e `CPU = 7224 = 2 ×` ✓. ⇒ **il budget fisso di 100 lanci della sonda
+(`ggml-cuda.cu:3331`) è stato mangiato da 86 lanci di WARMUP**: al decode vero ne sono arrivati
+14 = solo gli strati 0-13 del primo token, **tutti puliti**. Gli strati 14-42 del decode non
+sono MAI stati verificati.
+⚠ **NUOVA ISTANZA DELLA CLASSE «STRUMENTI CHE MENTONO»**: la sonda ha *prodotto righe*, ma la
+copertura era **warmup** — il regime d'interesse non è mai stato raggiunto. Chiunque usi
+`OVERLAP_VERIFICA` deve prima **spendere il budget dove serve** (`--no-warmup`, o alzare il
+budget), altrimenti «pulito» significa «mai guardato».
+
+**IL SOSPETTO SI SPOSTA DI FASCICOLO**: la violazione è reale **a n_tok=2**, che è esattamente
+il regime della **verifica speculativa** (mean_len 1,9-2,8) ⇒ candidato meccanismo per il
+**difetto n.2** (§39, collasso del collaudo 1200 col drafter), non per il n.1.
+
+**Cura del buco di copertura, zero build**: `--no-warmup` esiste (`common/arg.cpp:1755`); senza
+warmup gli stessi 100 lanci coprono ~2,3 forward di decode INTERI (strati 0-42). Prossimo
+braccio **S2-bis** = AM=1 + grafi off + VERIFICA + `--no-warmup`, con interpretazione
+pre-registrata dal peer: disallineamenti a 1 token ⇒ **partizione malformata nel regime che
+produce il testo = pistola fumante del n.1**; decode pulito su tutti i 43 strati ⇒ **partizione
+innocente nel n.1**, corruzione a valle.
+
+**TRE RAFFINAMENTI DELLA REGIA (questo commit è il recapito)**:
+1. **`--no-warmup` è una SECONDA VARIABILE**: il warmup cambia la prima chiamata (memoria
+   `euristiche-in-decode-incontrano-il-warmup`: la prima chiamata è degenere). **Cancello da
+   aggiungere a S2-bis: lo SHA deve restare `97DF3AB0…`** — se cambia, la macchina è un'altra e
+   la lettura dei disallineamenti è in un regime diverso, da dichiarare prima di interpretare.
+2. **La tua interpretazione pre-registrata è giusta e si può rendere più forte**: la divergenza
+   nasce al **PRIMO token di contenuto** (§40), quindi il dataset decisivo è **il forward n.1,
+   strati 0-42**. Se quello è pulito, la partizione è innocente *nel momento in cui il difetto
+   nasce* — conclusione forte, non indiziaria.
+3. **Il controllo AM=0 con la stessa sonda (`c19f_s2c`) è più decisivo di come l'hai posto**:
+   non serve solo a dire «specifico o preesistente». La config di servizio AM=0 gira col
+   drafter a n_tok 2-3 per 1200 token ed è **SANA (ancora 4/4)**. Quindi: se AM=0 mostra **gli
+   stessi** disallineamenti a 2 token, allora quei disallineamenti **non sono sufficienti** a
+   corrompere — e cadono come meccanismo anche per il difetto n.2, non solo per il n.1. Il tuo
+   controllo è, di fatto, l'arbitro di ENTRAMBI i fascicoli.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

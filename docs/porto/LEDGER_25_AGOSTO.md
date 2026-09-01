@@ -2010,3 +2010,16 @@ l'**unica cattura completa del round**, 0,13 GiB non rigenerabili senza rilancia
 `deletions.log`. Residui cosmetici segnalati e non toccati (0,055 GiB: 3 `.incomplete` HF sotto
 i 200 MB + 4 `.partial` in `c7_local1k\capture\failed_*`): stessa categoria già approvata,
 autorizzabili a piacere, irrilevanti per l'obiettivo.
+
+**SECONDA TRANCHE (1/9, autorizzata dall'utente: «staticQ4 togli, iq1_s togli, sposta lo
+spostabile»)**: (1) cancellato `ds4-staticQ4.gguf` (80,76); (2) cancellata la coppia split IQ1_S
+(57,31) col **merged verificato presente e intatto** (61.540.805.248 B) — cartella vuota rimossa,
+`iq1s-proper` tenuta (conteneva una `.cache` HF da 452 B fuori autorizzazione); (3) **spostato**
+`DS4-0731-GateUp-MXFP4Down.gguf` (112,07 GiB) C:→`D:\ds4-models\` con protocollo asset unico:
+robocopy `/J` (942,6 s) + **SHA256 completo su entrambi i lati COMBACIANTE**
+(`4793B0928229…674DAC`) → solo allora cancellata la sorgente. **Stato finale: C: 143,83 GiB
+liberi · D: 143,70** (a inizio sessione: 31,77 / 60,45; recuperati 195,3 su D: e 112 su C:).
+Misura di passaggio utile: **C: legge ~3× D:** (hash dello stesso file: 161 vs 485 s ⇒ ~745
+contro ~250 MB/s) — pesa sui tempi di CARICAMENTO modello, non sul runtime (RAM pinnata).
+Restano in attesa utente le voci 4-7, 9, 11-16 della tabella. `deletions.log`: 412 percorsi
+totali con byte e motivo.

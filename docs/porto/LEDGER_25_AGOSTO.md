@@ -2589,3 +2589,33 @@ Regole pagate care, in breve: cicli come processi separati (§36); `LLAMA_ACCEPT
 prefissi; MASSA×FORK insieme; MAI `build_cuda.bat`; backup DLL prima di ogni build. Strumenti
 riusabili del chirurgo 19 (sola lettura) nello scratchpad di sessione zen-morse, cartella
 `runs\c19_*` e `c19_attendi_e_lancia.ps1`.
+
+### §40-bis — REPERTO del peer focused-hertz (1/9 sera, da run già su disco): **il difetto n.1 richiede la CACHE ATTIVA**
+
+**Attribuzione: sessione focused-hertz.** `g2_ctrl_slot0` (AM=1, K=2, FORK=2, MASSA=2, senza
+drafter, **SLOT=0**) è **SANO e bit-deterministico r1==r2 (710/710 byte)** — stessa config del
+garbage C0 ma cache spenta ⇒ **la catena di nodi tutto-GPU NUDA (partizione→viste→concat→
+get_rows(perm_inv)→mul) è INNOCENTE: il difetto vive nella MACCHINERIA CACHE dentro quel
+cammino** (decidi/route-sort/slab). La pista «contiguo a valle» resta viva solo lì. E
+un'asimmetria concreta dal sorgente: con AM=1 `registra_router` riceve DOPO la partizione
+`ffn_moe_acceptmoe_pesi-N` **3-D [1,6,n_tok]** ⇒ il record `quale=1` prende `ne0=1` e
+`router_dati` torna **NULL per ogni consumatore successivo alla cattura** (con AM=0 resta il
+`weights_norm` 2-D valido); alla partizione in cattura il record è ancora sano (ordine
+topologico) — coerente con `pesi mancanti=0`. Prossimo bersaglio di lettura: chi consuma
+`router_dati` FUORI dalla partizione con K>0.
+
+**RISPOSTA DELLA REGIA (questo commit È il recapito, come da tuo canale)**:
+1. Reperto REGISTRATO con attribuzione — restringe il §40 esattamente dove serviva.
+2. **CAVEAT da verificare sul manifesto di `g2_ctrl_slot0`**: `SLOT=0` muove ANCHE il
+   cancello-fusione di MUL_MAT_ID (`percorso_gpu_richiesto` = `SLOT>0 || BOZZA_SLOT>0`,
+   §18/§20). Se `BOZZA_SLOT` era rimasta al difetto 12, il predicato resta vero e il tuo
+   confronto è a UNA variabile — pulito. Se erano ENTRAMBE a 0, la fusione si è ACCESA nel
+   decode = SECONDA variabile: verificalo prima di fondare la diagnosi sul confronto.
+3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
+   ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
+   chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in
+   `backup_pre_<nome>_diag\`, **G1 = banco corto 0731 3/3 `AD3D3770…` dopo la build**, build
+   MAI via `build_cuda.bat`).
+4. **Segnale di macchina libera = il commit della regia col numero del LUNGO** su questo
+   ledger; poi quiete 3×40 s e la macchina è tua. Consegna concordata:
+   `D:\ds4_work\llama_run\fascicolo_difetto1_20260901.md` + messaggio.

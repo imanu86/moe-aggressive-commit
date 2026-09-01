@@ -2463,3 +2463,47 @@ coordinamento macchina: condizione stabile per **3 controlli consecutivi a 40 s*
 prima di qualunque load; senza, un carico da 80 GiB sarebbe partito addosso al ri-ancoraggio.
 Già propagata al chirurgo 19. Minori: `]` spurio in testa a una risposta; «100% Subito» fonde
 due scritte vicine. Log: `foto_{1,2,3}*.log` nello scratchpad. Macchina libera dalle 16:29.
+
+## 38. CHIRURGO 19 — **LA PREMESSA ERA FALSA: la SOTA con AcceptMoE=1 sul Vision è SANA.** Il garbage era il regime SENZA drafter
+
+**G2 VERDE 2/2 SENZA TOCCARE UNA RIGA**: SOTA piena + `LLAMA_ACCEPTMOE=1` + drafter ⇒ 12,62-12,82
+t/s, **p1 0,748-0,779 (MIGLIORE dell'AM=0: 0,711-0,728)**, colpi 72-74%, AcceptMoE che LAVORA
+davvero (lanci 8160, mascherate 10.272, scartati 16.217), zero assert, replay puliti.
+
+**La catena causale vera, provata coi manifesti**: i bracci rotti della bisezione (§32-§33)
+giravano **SENZA drafter** (`run_vision.ps1` lo tiene spento di difetto; nessun `-Draft` passato)
+— e senza righe speculative `n_spec=0` disarma AcceptMoE (`server-context.cpp:4307`):
+`kern_acceptmoe` è una COPIA IDENTITÀ. Prova dai contatori, non per deduzione: `righe
+mascherate=0` E `senza residenti=0` con `lanci>0` in TUTTI i sei bracci no-draft. **I manifesti
+di `g2_vision` (garbage) e `c19_d0` (sano) sono byte-identici: l'unica differenza è il
+drafter.** La bisezione aveva quindi confrontato AM=0 contro un AM=1 che NON PUÒ mascherare —
+verdetto NULLO per la regola del ramo raggiungibile, **violata da noi** (bisezione senza -Draft;
+mandato di regia che ha propagato la premessa). A registro come errore di metodo nostro.
+
+**I due indiziati del §33: entrambi morti con prova.** (1) Tensore contiguo: REFUTATO — la
+partizione legge `nb[1]` a runtime (`ggml-cuda.cu:3311`), e il caso contiguo esiste GIÀ sui 3
+strati hash (`get_rows(tid2eid)`) sani ovunque; il commento «lezione 3fb92b9» è documentazione
+stantia. (2) `registra_router` senza guardia: REALE ma NON RAGGIUNGIBILE oggi (il nodo
+`acceptmoe_pesi` è 3-D e la registrazione leggerebbe gli assi sbagliati, MA sta a valle della
+partizione e i replay saltano il giro sui nodi: `pesi mancanti=0` ovunque) — difetto LATENTE
+mascherato dall'ordine dei nodi, spedito come task chip (`task_39f6918a`).
+
+**Reperto collaterale**: `ACCEPTMOE_SOGLIA=0` degrada la qualità ANCHE sul Vision (loop, «LRRU»,
+cifre inventate, frammenti cinesi; p1 0,759→0,634) — **replica cross-modello del §21**: lo 0,75
+di produzione confermato necessario.
+
+**RESTA UN DIFETTO VERO, circoscritto e non di servizio**: Vision + AM=1 + K=2 **senza drafter**
+= garbage 3/3 riproducibile. Sospetto n.1 (dal sorgente): il riconoscitore POSIZIONALE dello
+split CPU (`ggml-backend.cpp:2537`, `cpu_split_id = split_id + 2`), che il commento
+:1913-1917 dichiara già fragile ad AcceptMoE («può inserire split CUDA aggiuntivi fra la
+partizione e il ramo esperti CPU») e che il ciclo principale poi SALTA (`:2200 continue`) senza
+ricalcolo. Due sonde a costo zero pronte: `LLAMA_OVERLAP_CERCA_CPU=1` (riconoscimento per
+contenuto) e `LLAMA_OVERLAP_ASYNC=0`. E verificato: **`GGML_CUDA_DISABLE_GRAPHS` è a VALORE**
+(`common.cuh:1287`, `atoi!=0`) ⇒ la sonda `OVERLAP_VERIFICA` è usabile senza build.
+
+G1 non rieseguito DELIBERATAMENTE (zero build, DLL byte-identiche al G1 3/3 di oggi); G3
+soddisfatto dai sei bracci storici AM=0 intatti. **Dispacciata la validazione per promuovere la
+config di servizio a AM=1**: collaudo 1200 no-think (§4.10 esteso) + se pieno V-ANCORA-CORTO-AM1
+(3 load freddi) + le due sonde sul difetto residuo. Binari invariati, macchina coordinata col
+cancello di quiete (il chirurgo ha pagato la sua istanza alle 16:28 e ha messo controllo e
+lancio NELLO STESSO PROCESSO: `c19_attendi_e_lancia.ps1`).

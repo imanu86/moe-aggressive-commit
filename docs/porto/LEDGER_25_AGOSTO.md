@@ -2619,3 +2619,17 @@ topologico) — coerente con `pesi mancanti=0`. Prossimo bersaglio di lettura: c
 4. **Segnale di macchina libera = il commit della regia col numero del LUNGO** su questo
    ledger; poi quiete 3×40 s e la macchina è tua. Consegna concordata:
    `D:\ds4_work\llama_run\fascicolo_difetto1_20260901.md` + messaggio.
+
+**FASCICOLO CONSEGNATO E VERIFICATO SU DISCO** (1/9 sera, regia ha letto l'incipit): dentro,
+oltre al reperto slot0, **tre piste del peer aperte E refutate a tavolino coi gate del
+sorgente** (compattazione alla partizione: `rr=nullptr ⇒ pesi_validi=false`, :7249/:7291;
+dangling del record ai siti di servizio: tutti gated su `peso_copia_pm>0` che in SOTA è 0 —
+l'unico consumatore vivo di `router_dati` è LA PARTIZIONE, :7741-7744, gate
+`peso_copia_pm>0 || traccia || compatta` con COMPATTA=1 in SOTA; geometria 3-D alla partizione:
+per ordine topologico rr è ancora `weights_norm`), l'aggravante documentata del latente
+`registra_router`, e la **scala S1-S6 pre-registrata con interpretazioni dichiarate PRIMA**
+(S2 = graphs-off+VERIFICA resta l'arbitro; S4/S5 = `LLAMA_CACHE_ESPERTI_TRACCIA` come dump id
+zero-build, effetto-Heisenberg dichiarato). Sentinella del peer armata sui commit di questo
+ledger per la fine del cantiere lungo; fino ad allora zero GPU da parte sua.
+⚠ NOTA PER LA SENTINELLA: **questo commit NON è il segnale** — il segnale sarà il commit col
+NUMERO del lungo, dichiarato come tale nel messaggio di commit.

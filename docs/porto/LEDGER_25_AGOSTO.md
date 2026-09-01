@@ -2051,3 +2051,30 @@ routing, CUDA SM86 — zero contatto con gli alberi del fork.
 
 **La produzione resta su `DS4-0731-IQ2XXS` finché il nuovo non è provato** — il `.bat` e i
 lanciatori non si toccano in questa fase.
+
+## 26. BUILD «VIA A» PRONTA IN 6 MINUTI — e nella patch c'era un ESPERIMENTO ALTRUI acceso
+
+**Build OK** (1/9, 12:28-12:34, 481/481, zero errori, zero warning sui file toccati):
+`D:\llama-vision-upstream\build\bin\` — PR #28133 pinnata a **`9c9a1546d`** (merge-base master
+`458681e1d`), patch `dsv4-vision-routing.patch` applicata PULITA (6/6 file, 48+/5−), MSVC
+19.44 + CUDA 12.6.85, SM86. Testimone che la patch è viva: la stringa `blk.%d.exp_probs_b_vl`
+è nella `llama.dll` (1 occorrenza). `mmproj-…-F16.gguf` già scaricato e byte-esatto
+(933.258.368 B). Load del modello rinviato: il download delle 4 parti GGUF era in corso
+(~1,9 GiB/min).
+
+**IL RILIEVO CHE CONTA — la patch di prometheusAIR contiene una bisezione lasciata dentro**: in
+`src/models/deepseek4.cpp` COMMENTA tre `ggml_build_forward_expand` (residual/post/comb sugli
+strati hash-routed) con commento dell'autore «LOCAL (bisect experiment…): the other half of
+dee2a846b's deepseek4 change. Disabled to test whether graph node ordering rather than backend
+pinning is what shifts the numerics». Cioè: **la ricetta dimostrata gira con metà di un fix di
+grafo upstream (`dee2a846b`, «dsv4 graph fixes») DISABILITATA per un esperimento numerico di
+qualcun altro**, estraneo al routing vision. Decisione di regia: variante `pr28133-fixrestored`
+con le tre righe ripristinate, build separata in `build-fix\`, e **A/B deterministico fra le due
+al completamento del download** (stesso prompt, temp 0, seed 1) — nessuna misura di qualità si
+fa su una build con fix upstream spenti da terzi senza prima vedere se la numerica diverge.
+
+Minori a registro: web UI non pinnata (asset `b10734` irraggiungibile, fallback `latest`);
+OpenSSL assente ⇒ server senza HTTPS (irrilevante in locale); il riferimento del README a
+`2b5621094` riguarda kernel IQ rotti solo su Blackwell sm_120, irrilevante per SM86. Comando di
+smoke pronto a valle del download, con guardia «nessun llama-server in esecuzione» (il load a
+`-ngl 0` occupa ~80 GiB di RAM).

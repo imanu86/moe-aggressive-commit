@@ -2115,3 +2115,33 @@ only: works, slowly» / «48 GB + offload: fattibile». Header GGUF: `deepseek4`
 indexer top_k 512. Limiti dichiarati: visibilità in-span NON implementata (fallback causale),
 multi-immagine e contesti lunghi non misurati. Nel repo esiste anche un `IQ3_XXS` MONCO (solo
 parte 1 di 4): inservibile, non scaricato.
+
+## 28. IL MODELLO PARLA — e l'A/B DIVERGE: le tre righe cambiano la numerica. DECISIONE: variante B
+
+**Via A: OBIETTIVO RAGGIUNTO.** Su entrambe le varianti il loader accetta i **1371 tensori**
+(esattamente il conteggio che lo stock rifiuta), riconosce tutti i **43 `exp_probs_b_vl.bias`**
+(blk.0…blk.42), `arch=deepseek4`, 284,33B parametri, e il modello genera italiano coerente
+(smoke `-ngl 0`, tutto CPU: prompt ~5 t/s, generazione ~3,3 — non è un banco).
+
+**L'A/B deterministico DIVERGE dai primissimi token**: A (as-is prometheusAIR) e B
+(fix-restored) sono ciascuna riprodotta identica su doppio lancio (A=A, B=B, A≠B) ⇒ **i tre
+`ggml_build_forward_expand` di `dee2a846b` cambiano la numerica su questo modello** — non era
+un dettaglio innocuo. Varianti: A = `build\bin` (banner `b10734-9c9a1546d`, llama.dll
+`F3EB9B20…`); B = `build-fix\bin` (`b10736-5c8e5d50b`, `316A1CBC…`; branch locale
+`pr28133-fixrestored`, 2 commit: patch verbatim + revert del hunk spurio, regione byte-identica
+alla PR pristina).
+
+**DECISIONE DI REGIA (registrata)**: **B è la build di lavoro** — è l'unica coerente con
+l'intento upstream (`dee2a846b` è un FIX di grafo mergiato, il disable era l'esperimento
+personale dell'autore della patch, sfuggito nell'export). **A si conserva intatta** come
+riferimento: la validazione end-to-end pubblicata da prometheusAIR (didascalia, tabella 135,8 /
+129,4 t/s) fu prodotta con A, quindi ogni confronto coi loro numeri passa da lì. Il conflitto
+«pubblicato vs upstream-corretto» è reale e va tenuto a mente se emergono anomalie di qualità:
+la coppia A/B pronta è l'arma per deciderlo in tre minuti.
+
+Nota d'esercizio dal fumo: a 48 token il modello spende TUTTO il budget in reasoning
+(`[Start thinking]…`) senza arrivare alla risposta — per i capability test servono budget
+maggiori o il no-think lato server. Dispacciato il passo successivo: **prima immagine** su B
+(test a contenuto noto generato localmente: cerchio rosso + quadrato blu + scritta «DS4»), con
+cross-check su A se B abortisse (sospetto di famiglia: l'assert `i01 >= 0` del §27), e a
+seguire un riferimento di velocità upstream con esperti su CPU (`--n-cpu-moe`) se la VRAM regge.

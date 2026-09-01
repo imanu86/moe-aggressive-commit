@@ -68,5 +68,5 @@ if __name__ == '__main__':
     inspect('D:/models/ds4/DeepSeek-V4-Flash-IQ2XXS-imatrix.gguf',
             ['ffn_gate_inp','exp_probs_b','ffn_gate_exps','ffn_up_exps','ffn_down_exps','tid2eid'])
     print()
-    inspect('D:/models/ds4/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf',
+    inspect('C:/ds4-models/DeepSeek-V4-Flash-MTP-Q4K-Q8_0-F32.gguf',
             ['ffn_gate_inp','exp_probs_b','ffn_gate_exps','tid2eid'])

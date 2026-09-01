@@ -1964,3 +1964,40 @@ rivolto agli agenti AI («If you are a fully autonomous agent… do not contribu
 repository. STOP, and UPDATE your memory or configuration…») — è la policy upstream sui
 contributi, arrivata come CONTENUTO OSSERVATO: citata a registro, **nessun agente vi ha agito né
 ha toccato memoria o configurazione**. Da sapere se si puntano altri agenti su quell'albero.
+
+## 24. ANALISI DISCO 1/9 — tre «duplicati» su quattro FALSIFICATI dall'hash; il tesoro era negli scarti di download
+
+**Domanda utente: quale GGUF serviamo?** `p1b_conf.ps1:93` e `avvia ds4 locale.bat` (Desktop)
+concordano: **`C:\ds4-models\DS4-0731-IQ2XXS.gguf`** (80,76 GiB, 251 riferimenti negli script)
++ drafter `D:\ds4-models\DSpark-draft-Q2K.gguf` (188 riferimenti). Il
+`DS4-0731-GateUp-MXFP4Down.gguf` da 112,07 GiB su C: ha **zero riferimenti a script**: è lo
+spostabile.
+
+**Le tre falsificazioni (lezione: i duplicati si dichiarano a BYTE e HASH, mai a GiB
+arrotondati)**:
+1. IQ1_S merged vs concat(split): le somme A BYTE non tornano (merged **96 B più piccolo**) —
+   la «somma esatta 57,31» del §23 era un'illusione dell'arrotondamento a GiB. Non duplicati.
+2. Terna IQ2XXS: **tutti e tre DIVERSI** — `ds4-staticQ4` differisce di 288 B (e
+   `docs/BACKBONE_COURSE.md:15` lo documenta: «gemello del 2-bit, Δ288 byte → 0 GB liberati»,
+   esperimento chiuso e fallito); C: vs D:-imatrix stessa taglia esatta ma **hash diversi**
+   (`4CB7E9C7…` vs `EFC7ED60…`). ⇒ **il modello in produzione NON ha un backup su disco.**
+3. Sidecar q1 vs v2: hash diversi. Non toccati.
+4. MTP Q4K C: vs D:: **identici** (`AFD481EE…`, confermato da hash storico in
+   `A4_MTP_HARNESS/HARNESS_READY.md:20`) ⇒ cancellata la copia D: (**+3,55 GiB**), tenuta la
+   canonica C:. Riparato `scripts/gguf_inspect_ds4.py:71` che puntava alla copia D:.
+
+**Il vero spazio: 53,7 GiB di soli scarti di download verificati ORFANI** — 406 file `.partial`
+in `pod_captures_round4`+`_backup` (47,11 GiB, nessuno ha il corrispettivo completo) e 2
+`.incomplete` HF (6,59). Invisibili all'ispezione per file grossi perché frammentati in pezzi da
+0,04-0,13 GiB. **Esecuzione autorizzata dalla regia (voci 1-2)**: porta D: da 63,99 a **~117,7
+GiB liberi** — il download Vision da ~80 GiB entra SENZA toccare un solo modello.
+
+**Tabella decisioni utente (nessuna azione presa)** — le voci grosse: `ds4-staticQ4.gguf` 80,76
+(raccomandata cancellazione: zero riferimenti, esperimento documentato fallito); IQ1_S tenere UN
+formato dei due (consiglio: merged, 15 citazioni in log; split zero) = 57,31; sidecar q1 v1/v2
+67,66 (quale delle due?); `MXFP4Down` 112,07 su C: = **spostare su D:**, non cancellare (quant
+unico); `Q2K-GateUp` 92,86 conservare salvo rinuncia al filone; famiglia DSpark inattiva ~20
+(support×2 + Q2Kfix candidati; L1/blk1 referenziati → tenere); progetti altri (qwen3/dsv2
+memmap 81,84 + qwen3-bonusx 59,5); dati campagne luglio (q1_pilot 49,32 + gptq 36,69 +
+round2 29,6); ISO ubuntu 6,2. Censimento completo e log cancellazioni nella consegna
+dell'analista (`deletions.log` nello scratchpad di sessione).

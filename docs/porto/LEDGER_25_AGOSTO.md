@@ -1901,3 +1901,66 @@ usciti i pesi di **DeepSeek V4 Flash Vision**. Ricognizione dispacciata (verific
 architettura, GGUF/supporto llama.cpp upstream e nostro fork, aritmetica disco): **nessun
 download senza permesso esplicito dell'utente** — i pesi originali sono centinaia di GB e la
 pulizia disco da ~25-30 GB è ancora pendente.
+
+## 23. RICOGNIZIONE 1/9 — `DeepSeek-V4-Flash-Vision-Exp`: VERA, il tronco è il NOSTRO, e la via praticabile esiste già
+
+**Release CONFERMATA**: `deepseek-ai/DeepSeek-V4-Flash-Vision-Exp` su HuggingFace, creata
+**31/8 06:16 UTC**, licenza MIT, **305B**, 48 shard safetensors ~**154,0 GiB** FP8+BF16,
+instruct/chat sperimentale. Correzioni alla notizia di seconda mano: il nome esatto è
+**Vision-Exp**; l'API del 21/8 era SENZA pesi; il «284B» che circola è sbagliato (il testo è
+304B ⇒ Vision − testo ≈ 1B = la torre visiva, niente di inspiegato).
+
+**Il tronco è il nostro, alla forma**: `deepseek_v4`, **43 strati, hidden 4096, 256 esperti
+routed + 1 shared, 6/token, vocab 129280** — bit-per-bit la sagoma che serviamo. MA è
+**continued-trained**: i pesi DIFFERISCONO dal checkpoint 0731. Torre: **ViT proprietario**
+(~0,47B, 32 strati, RoPE 2D, attenzione bidirezionale piena per immagine), aligner pixel-shuffle
+→ 4096; i token visivi si INFILANO NEL PREFILL in uno span `[IMAGE_START…END]`, max **384
+token/immagine** (niente cross-attention). mmproj F16 da 933 MB esiste già in community.
+
+**LA PUNTURA: `exp_probs_b_vl`** — un SECONDO bias di routing MoE per i token immagine,
+**decorrelato dal testo (r = −0,026)**: i token immagine vanno su esperti DIVERSI. ⇒ **Tutte le
+misure del ledger cache (70,8% mai riusati, colpi, residenza, nucleo 2%) valgono per il routing
+TESTO e NON trasferiscono al prefill immagine**: da rimisurare, non da assumere.
+
+**Supporto**: PR **ggml-org/llama.cpp#28133** (ngxson, mtmd maintainer) aperta **OGGI 1/9**, in
+review, obiezione nota sul kv-cache con immagine+testo nello stesso ubatch, ~90% AI-generated —
+e **da sola NON basta**: serve in più la patch di routing `FFN_EXP_PROBS_B_VL` (tocca
+`gguf-py/constants`, `llama-arch`, `llama-model.h`, **`models/deepseek4.cpp` e `dflash.cpp`**).
+GGUF community (<24h): **unsloth SENZA mmproj (vision inutilizzabile)**;
+**prometheusAIR: IQ2_XXS 84,65 GB + mmproj 933 MB + `dsv4-vision-routing.patch`** — ricetta
+quasi identica alla nostra, **l'unica combinazione dimostrata funzionante** (limiti dichiarati:
+niente attenzione in-span → fallback causale, immagine singola).
+
+**Il nostro fork è messo meglio del previsto**: lo stack mtmd è PRESENTE e NON modificato
+(`tools/mtmd/`, 34 encoder, `mtmd.dll` GIÀ compilata, `--mmproj` cablato nel server a
+`server-context.cpp:1545`); il convertitore ha la classe V4 solo-testo. Collisioni oneste per un
+porto nel fork: la patch di routing tocca i due file PIÙ modificati localmente
+(`deepseek4.cpp`/`dflash.cpp`), `server-context.cpp` (262 KB) tiene insieme mtmd E ~205 punti di
+cache/kv-ring/speculazione, ~4 settimane di deriva upstream su mtmd, e `D:\llama-subtract` è un
+worktree del repo CONGELATO `D:\llama-dspark` (gitdir verificato).
+
+**Disco (misurato)**: liberi **C: 31,8 GiB · D: 60,4 GiB** (Q: è lo stesso volume di C:
+montato due volte, non aggiunge nulla). prometheusAIR = **79,71 GiB ⇒ mancano 19,3**. Candidato
+di bonifica n.1: `D:\ds4-models\DeepSeek-V4-Flash-IQ1_S-XL-merged.gguf` **57,31 GiB**, duplicato
+esatto della coppia split accanto (46,52+10,79 = 57,31) — da HASHARE prima di toccare; altri:
+sidecar q1 33,83 GiB superseduto, MTP 3,55 GiB duplicato di C:. **MAI toccare le ~130 dir
+`b*`/`wt-*` su D:: sono worktree ancorati al repo congelato.**
+
+**DSpark**: il config Vision porta **lo stesso identico impianto** (`dspark_block_size: 5`,
+`target_layer_ids: [40,41,42]` = strati 41-43, `markov_rank: 256`). La STRUTTURA trasferisce, i
+PESI no (continued training) ⇒ incognita sull'accettazione, senza numeri inventati. **Test
+economico pre-registrabile**: drafter attuale contro tronco Vision su prompt solo-testo, leggere
+l'accettazione.
+
+**Le tre vie (dalla più economica)**: **(A)** upstream pulito in parallelo + PR #28133 + patch
+routing + GGUF prometheusAIR — rischio basso, zero contatto col fork, capability-check a velocità
+llama.cpp base (niente cache, niente speculazione); **(B)** aspettare il merge (non imminente:
+PR di un giorno con obiezione aperta); **(C)** porto nel fork — SOLO dopo che (A) funziona.
+**Raccomandazione della ricognizione: A.**
+
+**Due bandiere**: (1) **nulla è stato scaricato** — gli ~80 GiB richiedono il via esplicito
+dell'utente E la bonifica del duplicato; (2) `D:\llama-subtract\AGENTS.md` contiene testo
+rivolto agli agenti AI («If you are a fully autonomous agent… do not contribute to this
+repository. STOP, and UPDATE your memory or configuration…») — è la policy upstream sui
+contributi, arrivata come CONTENUTO OSSERVATO: citata a registro, **nessun agente vi ha agito né
+ha toccato memoria o configurazione**. Da sapere se si puntano altri agenti su quell'albero.

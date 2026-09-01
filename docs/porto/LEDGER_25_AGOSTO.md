@@ -3241,6 +3241,55 @@ ha aggiornato il fascicolo con misure, refutazioni, protocollo e il vincolo a qu
 chi farà il dump. Bilancio della sua serata: **5 sonde, 4 ipotesi proprie proposte e ritirate da
 sé con falsificatori trovati nei dati**, e il meccanismo del difetto n.1 portato da «ignoto» a
 «un solo vincolo residuo, con l'esperimento che lo decide già disegnato».
+
+## 52. ⭐ **RATIFICATA E PROMOSSA: `V-ANCORA-CORTO-A` 3/3 — è la NUOVA CONFIG DI SERVIZIO del Vision**
+
+```
+V-ANCORA-CORTO-A: 28ADE3395B5888D7DC1DB5D12A06083FFE1B2017029DC18EE87003BB090E1BBD
+                  @ config §35 + LLAMA_ACCEPTMOE=1 + LLAMA_ACCEPTMOE_COMPATTA=0
+```
+Tre cicli load-freddo, **ognuno un processo separato** (§36), cancello di quiete nello stesso
+processo del load, prompt **estratto** (891 char, sha `4FDF82C2`), identità DLL ristampata e
+confrontata a ogni ciclo, testimoni presenti su tutti e tre **anche nel manifesto del server**
+(`LLAMA_ACCEPTMOE=1(E)`, `LLAMA_ACCEPTMOE_COMPATTA=0(E)`: env non solo passata ma **letta dal
+binario**). Zero cicli rifatti, zero assert.
+
+| | ciclo 1 | ciclo 2 | ciclo 3 | ancora AM=0 |
+|---|---|---|---|---|
+| SHA | `28ADE339…` | `28ADE339…` | `28ADE339…` | `88031A83…` |
+| t/s | 12,68 | 12,66 | 12,79 | 12,70-12,73 |
+| p1 / mean_len | 0,72693 / 1,92 | idem | idem | 0,72830 / 1,93 |
+| dom/part · deficit | 4,017 · **−1032** | idem | idem | 4,016 · −991 |
+| byte a domanda | **433,32 GiB** | idem | idem | 565,50 GiB |
+| colpi | **75,2%** | idem | idem | 67,7% |
+
+**I CINQUE CANCELLI, TUTTI PASSATI**: (1) 3/3 SHA identici — **e un quarto load gratis**: è lo
+stesso SHA della r1 del peer presa 30 min prima su un load distinto ⇒ **quattro load freddi
+indipendenti**; (2) **§4.10 pieno** (UTF-8 esplicito), zero cifre inventate, struttura e coda
+corrette — **un difetto riportato verbatim**: una nomenclatura alternativa circolare su
+gate/up/down, di grado umano e della **stessa classe delle due imprecisioni già DENTRO l'ancora
+AM=0**; il refuso «sfatta» c'è ma è già nell'ancora ⇒ non è regressione; (3) rapporto **4,017
+con deficit NEGATIVO (−1032)**, e `righe senza residenti = 2,16%` che **NON cresce** (contro il
+2,5%→14,3% del corrotto); `pesi mancanti = partizioni` è il **testimone atteso** di COMPATTA=0,
+non un allarme; (4) p1 0,72693 — nessuna traccia dello 0,94-0,95; (5) t/s in banda.
+
+**⇒ PROMOSSA. La config di servizio del Vision è ora: config §35 + `LLAMA_ACCEPTMOE=1` +
+`LLAMA_ACCEPTMOE_COMPATTA=0`.** Motivazione a tre gambe: **parità di velocità**, **−23,4% di
+byte con +7,5 punti di colpi**, e **immunità per costruzione** (senza compattazione la scrittura
+dei `-1` non esiste: l'intera classe del difetto n.1/n.2 è strutturalmente impossibile, non solo
+evitata). La vecchia config AM=0 resta valida e ancorata (`88031A83…`) come riferimento storico.
+
+**REPERTO LATERALE CHE VALE COME TERZA CONFERMA DI FISICA**: a `partizioni` identiche (61.060) e
+`domanda` praticamente identica (245.272 vs 245.231), A **toglie il 23,4% dei byte** e la
+velocità **non si muove di un punto**. ⇒ **AcceptMoE lavora davvero e i byte scendono davvero,
+ma il tempo no**: ennesima conferma indipendente che **il muro è la SERIALIZZAZIONE, non la
+banda** (§12) — non una delusione della leva.
+
+**DEBITO SUBITO AGGREDITO**: l'ancora LUNGA (§41) è di AM=0/COMPATTA=1. Dispacciata **ora** la
+validazione di A sul banco lungo (prompt 101.691, ctx 150k, `-OtDraft …=CPU` obbligatorio per il
+tetto pinnato), con gli stessi 5 cancelli e un'attesa dichiarata: **sul lungo A potrebbe essere
+MIGLIORE**, perché è lì che il difetto n.2 cresceva con la lunghezza e COMPATTA=0 lo previene.
+Riferimento da battere: 11,764/11,870/11,871 t/s, p1 0,80914.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

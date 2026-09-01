@@ -2712,6 +2712,47 @@ S2 (grafi spenti + `OVERLAP_VERIFICA`) in corsa come arbitro.
    regge, vale la pena tracciare a valle CHI consuma quegli id**: un `-1` che raggiunge un
    `get_rows` senza bounds-check è lettura fuori tabella silenziosa. Possibile che i tre
    fascicoli siano lo stesso fascicolo.
+
+### §42-bis — **H-ORDINE RITIRATA DAL PEER, senza spendere una corsa** (e la nuova candidata (c))
+
+**Falsificatore trovato nei log già su disco** — il metodo migliore possibile. Il contatore
+`router_pesi_mancanti` s'incrementa **esattamente quando `pesi_validi` è falso**
+(`cache-esperti.cu:7263-7265`, nel blocco che con MASSA=2 gira sempre), e vale **0 in TUTTI i
+bracci di entrambe le famiglie** (AM=0: partizioni 31.218 / 122.679 / 61.060; AM=1: 6.149 /
+107.242 / 3.612) ⇒ **`pesi_validi` è VERO ovunque ⇒ rr NON è nullo con AM=0 ⇒ il cuore di
+H-ORDINE è falso**. La ragione a posteriori: **nel PREFILL i nodi `weights_norm` girano
+comunque** (lì la partizione non è nemmeno inserita, cancello `n_tokens ≤ 3`), quindi il record
+`quale=1` è già registrato quando comincia il decode, in ENTRAMBI i bracci — **l'ordine DFS è
+reale ma viene LAVATO DAL PREFILL**. Regola che ne esce, generale: *un'ipotesi
+sull'ordine di registrazione dentro il decode deve prima escludere che il prefill l'abbia già
+soddisfatta.*
+
+**Conseguenze**: i siti `:7033/:7249/:7291` si comportano UGUALI nei due bracci ⇒ non sono più
+candidati (e con essi decadono S3/S3-bis e il mio raffinamento 2 qui sopra: il `-1` c'è in
+entrambi, quindi non spiega la differenza — resta valido solo come esposizione latente da
+guardare un giorno). Il raffinamento 1 (discriminatore `TRACCIA=1 + COMPATTA=0`) resta come
+metodo.
+
+**Resta di diverso a valle del prefill**: (a) due nodi identità in più; (b) ids contiguo vs
+vista con stride — **indebolito**: a 1 token si legge sempre la riga 0; (c) **LAYOUT DI
+ALLOCAZIONE diverso** (le uscite acceptmoe pretendono buffer e l'allocatore sposta gli
+indirizzi a valle) ← nuova candidata del peer, con aggancio: il fork **salva PUNTATORI fra
+dispatch** (`salva->src0_ombra/ids_ombra/src1/dst`, `ggml-cuda.cu:2653-2658`) e li riusa nelle
+fasi 1-2, col commento a `cache-esperti.cu:6694-6697` che dichiara già la consapevolezza del
+riciclo indirizzi del pool.
+
+**FALSIFICATORE DELLA REGIA PER (c), da verificare sui manifesti PRIMA di correre**: l'aggancio
+del fork non regge, perché **il difetto si riproduce ANCHE con `FORK=0 MASSA=0`** — i bracci
+`g2_bis_fork0b` e `b_batchmax1` del §33 sono garbage con il fork SPENTO, dove `salva->*_ombra`
+non è nemmeno popolato. Se i manifesti lo confermano, **(c) va riformulata come layout
+d'allocazione PURO** (indirizzi di arena/slab che si spostano), non come riciclo di puntatori
+del fork. E in quella forma (c) tocca una nostra esposizione latente già a registro dal 30/8:
+**«alias d'arena»** — un tensore il cui ultimo lettore è uno split concorrente può vedersi
+riusare la memoria da chi calcola lo split successivo, perché l'allocatore calcola le vite
+**assumendo esecuzione sequenziale** (`ggml-backend.cpp:2082-2086`, memoria
+`il-fronte-host-bound-e-chiuso-il-costo-migra`). Due nodi in più che spostano gli indirizzi
+sono esattamente il tipo di perturbazione che sveglia quella classe. **Ma l'arbitro (S2) viene
+prima**: nessuna di queste piste si istruisce finché la sonda non dice dove diverge il calcolo.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

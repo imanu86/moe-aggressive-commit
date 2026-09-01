@@ -2279,3 +2279,8 @@ Identità: `llama.dll` invariata `9E8E8D46…`; **`ggml-cuda.dll` `6EF5B781…` 
 corretta a mano + `editbin /STACK` obbligatorio. E il cancello STRICT ferma la corsa se
 MASSA e FORK si muovono separatamente: si spengono INSIEME. Completion positiva verbatim (cache
 attiva, geometria mista): descrizione corretta di LRU con lista e sfratto dal fondo.
+
+**Verifica indipendente (1/9, sessione parallela charming-faraday, dispacciata su un chip
+stantio e fermatasi correttamente senza toccare nulla)**: mcm(16, 66, 74, 98) = **957.264** ⇒
+byte_slot **7.658.112** ricalcolato A MANO e combaciante col log del chirurgo 18; stack reserve
+64 MiB presente su tutti e tre gli exe post-build. Due numeri chiave confermati da mani diverse.

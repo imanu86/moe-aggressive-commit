@@ -2023,3 +2023,31 @@ Misura di passaggio utile: **C: legge ~3× D:** (hash dello stesso file: 161 vs 
 contro ~250 MB/s) — pesa sui tempi di CARICAMENTO modello, non sul runtime (RAM pinnata).
 Restano in attesa utente le voci 4-7, 9, 11-16 della tabella. `deletions.log`: 412 percorsi
 totali con byte e motivo.
+
+## 25. DECISIONE UTENTE 1/9 — **PIVOT: `Vision-Exp` DIVENTA IL MODELLO DI DEFAULT DEL PROGETTO**
+
+Parole dell'utente: «Sì, lo sposterei su C anche perché **deve diventare il nuovo modello di
+default sul quale lavorare**». Conseguenze operative registrate:
+
+**Autorizzato ed eseguito il dispaccio doppio**: (1) **download** del bundle
+`prometheusAIR/DeepSeek-V4-Flash-Vision-Exp-GGUF` (GGUF IQ2_XXS ~84,65 GB + mmproj F16 933 MB +
+`dsv4-vision-routing.patch`) in **`C:\ds4-models\Vision-Exp-GGUF\`** — verifica SHA256 contro
+gli oid LFS, download diretto senza doppia copia, sorveglianza attiva; (2) **build «via A»** in
+albero NUOVO `D:\llama-vision-upstream\`: upstream + PR #28133 pinnata a commit + patch di
+routing, CUDA SM86 — zero contatto con gli alberi del fork.
+
+**La strada verso il «default di lavoro» (fasi, in ordine)**:
+1. Capability-check sulla build upstream (testo, poi immagine singola).
+2. **Test drafter pre-registrato**: il drafter DSpark attuale (estratto dal checkpoint testo)
+   contro il tronco Vision su prompt SOLO TESTO — leggere l'accettazione. Se regge, niente
+   ri-estrazione; se degrada, download mirato dei soli shard nextn dal checkpoint originale.
+3. Decisione di porto nel fork (via C): serve per cache esperti + speculazione = tutta la
+   velocità costruita finora. Tocca `deepseek4.cpp`/`dflash.cpp` (i più chirurgizzati) +
+   `server-context.cpp`.
+4. **Ri-ancoraggio dei banchi sul nuovo default**: la mappa dei tetti (§18) è stata misurata su
+   DS4-0731 — architettura identica ⇒ la STRUTTURA trasferisce, ma i numeri (SOTA 12,7,
+   accettazione speculazione, distribuzione di routing) vanno RI-MISURATI, non assunti. E i
+   token immagine usano il router `exp_probs_b_vl`: territorio nuovo per la cache.
+
+**La produzione resta su `DS4-0731-IQ2XXS` finché il nuovo non è provato** — il `.bat` e i
+lanciatori non si toccano in questa fase.

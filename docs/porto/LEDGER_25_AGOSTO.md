@@ -2323,3 +2323,37 @@ COMPLETA (FORK=2+MASSA=2, K=2, cache 473) con la sola `ACCEPTMOE=0`, drafter acc
 Se coerente ⇒ è la **config di servizio del Vision** da oggi (lo sweep §21 dice che questa
 famiglia non muove i t/s) e arriva il primo numero di velocità sulla macchineria piena; se
 garbage ⇒ c'è un terzo colpevole in interazione col fork, e un solo arm K=0 lo localizza.
+
+## 34. **IL VISION È IN SERVIZIO SULLA MACCHINERIA PIENA: 12,4-12,9 t/s, accettazione 0,70-0,73**
+
+**V-SOTA-AM0: VERDE sulla coerenza** — 4/4 corse coerenti (lette davvero), zero assert, e
+stavolta la lane è INGAGGIATA: `partizioni=30.917, CPU=61.834 (=2×, k_cpu=2)`, colpi **64,6%**
+(in banda), copie 44.528, `acceptmoe lanci=0` ✓, replay puliti. **Decode 12,4-12,9 t/s**
+(0731 sul corto: 13,3-14,3 — stesso ordine, un filo sotto, coerente con slot 7,30 vs 6,75 MiB e
+colpi più bassi), accettazione draft 0,70-0,73. Numeri indicativi (ctx 4096, prompt corto), non
+banco. **AcceptMoE confermato UNICO colpevole anche a fork/massa PIENI**: nessuna interazione
+fork×altro.
+
+**CONFIG DI SERVIZIO DEL VISION (da oggi)**: SOTA integrale con UNA differenza —
+**`LLAMA_ACCEPTMOE=0`**. ⚠ Il nome è `LLAMA_ACCEPTMOE`, NON `LLAMA_CACHE_ESPERTI_ACCEPTMOE`
+(quel nome non ha lettori: sarebbe stato assente in silenzio e il braccio avrebbe misurato la
+SOTA piena — l'esecutore ha grep-ato il lettore e corretto il mandato di regia; ennesima
+istanza della regola). Le dipendenti `ACCEPTMOE_*` restano inerti sotto l'interruttore maestro,
+nessun rifiuto STRICT. `-c 4096` con 473 slot: VRAM ~10/11,8 GiB; **ctx maggiori richiedono di
+rifare l'aritmetica slot** (nota per il ri-ancoraggio del lungo).
+
+**Il determinismo NON si chiude — e la diagnosi CORREGGE una convinzione di casa**: la PRIMA
+richiesta dopo un load freddo è bit-riproducibile fra server distinti (r1 = r1, SHA
+`E7547ABB…`, p1 alla 5ª cifra); è la SECONDA a divergere, e **nemmeno `porto_hot_snapshot`
+basta**: la residenza della cache esperti evolve fra le richieste e (sul Vision) il restore non
+la copre ⇒ partizione diversa ⇒ ordine di riduzione diverso ⇒ divergenza FP amplificata su 300
+token greedy. **Il determinismo del 0731 veniva dal RESTORE (residenza compresa), non dalla
+speculazione da sola** — converge col reperto mask=8 del 25/8 («la residenza decide QUALE
+traiettoria si prende»). Sul Vision il cancello d'identità fra richieste successive resta
+aperto finché il restore non copre la cache nuova.
+
+In coda: (1) cantiere fix AcceptMoE (i due indiziati del §33; prerequisito: rendere
+`OVERLAP_VERIFICA` raggiungibile ai replay); (2) ri-ancoraggio dei banchi sul Vision (corto
+prima, poi il lungo con l'aritmetica slot rifatta); (3) test vero sul testo dispacciato
+(saggio 1200 no-think + §4.10 esteso). Binari fermi (`9E8E8D46…`/`6A98BE10…`), G1 valido,
+produzione intatta.

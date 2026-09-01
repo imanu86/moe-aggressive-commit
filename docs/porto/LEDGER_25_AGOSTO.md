@@ -2952,6 +2952,70 @@ dichiarazione di attribuzione prima di quello.
    rende `S3` (COMPATTA=0) il test giusto e rende plausibile che il n.2 (§39, col drafter) sia
    **la stessa cosa in dose minore** (là AcceptMoE maschera davvero e le righe senza residenti
    salgono 2,5→14,3%): il controllo a costo zero del §44 punto 3 vale ancora di più.
+
+## 47. **S3: GUARIGIONE BIT-IDENTICA** — difetto n.1 localizzato nella COMPATTAZIONE. E **i due difetti sono LO STESSO, in due dosi**
+
+**Attribuzione: sessione focused-hertz.**
+
+**(1) `COMPATTA=0` GUARISCE, e in modo perfetto**: `c19f_s3_compatta0` (AM=1 **acceso**,
+COMPATTA=0, no-draft) ⇒ SHA `9F67629A…` **BIT-IDENTICO al braccio sano AM=0** (278 byte,
+italiano corretto). Contatori tornati sani: **domanda 15.480** (rotto 4.359 · sano AM=0 15.439),
+byte 48,93 GiB (13,23 / 48,66), e il testimone che chiude il cerchio **`pesi mancanti=3612`** —
+con COMPATTA=0 il fetch di rr si spegne (gate tutto falso) ⇒ `pesi_validi` false ⇒ **nessuna
+scrittura di `-1`**. Predizione pre-registrata CENTRATA. Nota che conferma il §39: **il garbage
+era più VELOCE del sano** (13,94 vs 12,81 t/s).
+⇒ **DIFETTO n.1 LOCALIZZATO: interamente nel cammino di COMPATTAZIONE.** Richiede la terna
+`K>0` (esiste il nodo partizione) × `COMPATTA=1` (scrive i −1) × `AM=1` (fa leggere pesi zero) —
+coerente col §33 (a K=0 nessun nodo partizione ⇒ nessun −1 ⇒ sano).
+✔ **Il mio raffinamento 1 decade correttamente**: temevo l'ambiguità «rr vs ramo down», ma la
+guarigione è **bit-identica** al sano — se il colpevole fosse il ramo down avremmo avuto un
+testo sano *diverso*, non lo stesso SHA. Discriminatore `TRACCIA+COMPATTA=0` non più necessario.
+
+**(2) IL CONTROLLO A COSTO ZERO HA RETTO: i due difetti sono LO STESSO, in due dosi.** Rapporto
+`domanda/partizioni` (atteso 4,0 a k_cpu=2):
+| braccio | tk | rapporto | deficit | esito |
+|---|---|---|---|---|
+| `v_saggio_nothink` AM=0 | 1200 | 4,016 | −2018 | sano |
+| `v_ancora_c1` AM=0 | 1200 | 4,016 | −991 | sano |
+| `c19_d0` AM=1 | 120 | 4,159 | −975 | sano (scartati 4.850) |
+| `c19_g2` AM=1 | 200 | 4,100 | −2002 | sano (scartati 16.217) |
+| **`c19_a_collaudo` AM=1** | **1200** | **3,747** | **+27.182** | **GARBAGE** (scartati 70.441) |
+
+**Il deficit compare SOLO nel braccio che produce garbage**, e i due bracci AM=1 *sani* hanno
+scarti by-design in quantità **senza** deficit ⇒ lo scarto by-design NON spiega il deficit.
+**Dosi: n.1 = 70% di route annullate, n.2 = 6,3%, e cresce con la lunghezza** — la stessa curva
+del «righe senza residenti 2,5%→14,3%» del §39. ⇒ **Nuovo strumento diagnostico a costo zero
+per tutta la famiglia: il rapporto `domanda/partizioni` deve valere ~4,0 (a k_cpu=2); un
+deficit positivo È la firma del difetto**, leggibile senza aprire il testo.
+
+**(3) AUTORIZZAZIONE E DISEGNO DELLA REGIA — l'esperimento tocca la config di servizio, quindi
+i cancelli li metto io.** Sì, **lancialo tu** (banco caldo, strumenti tuoi, disciplina provata).
+Ma la domanda giusta **non è «guarisce?»**: è **«batte quello che ho già?»** — perché
+`COMPATTA=0` spegne anche un'ottimizzazione, quindi va PREZZATA. **Tre bracci, ~12 min**:
+- **A** = 1200 no-think **+ drafter + AM=1 + COMPATTA=0** (la tua proposta).
+- **B** = 1200 no-think **+ drafter + AM=0 + COMPATTA=0** ← **aggiunta della regia**: prezza
+  COMPATTA sulla config di servizio ATTUALE. Vale perché con `COMPATTA=0` **la scrittura dei
+  −1 non esiste più: il difetto diventa STRUTTURALMENTE IMPOSSIBILE** invece che evitato. Se B
+  costa ~0, la config di servizio diventa **immune per costruzione**, non sana per fortuna.
+- **Riferimento**: l'ancora AM=0/COMPATTA=1 già misurata (12,70-12,73 t/s, p1 **0,72830**,
+  4633 char, `V-ANCORA-CORTO 88031A83…`) — non serve rifarla.
+
+**CANCELLI PRE-REGISTRATI (tutti, per ogni braccio)**: (i) **§4.10 esteso sul testo intero** —
+è ciò che ha ucciso la promozione nel §39, e resta il cancello sovrano; (ii) **`domanda/
+partizioni` ≈ 4,0 con deficit ≈ 0** (il tuo strumento nuovo: cancello quantitativo che non
+richiede di leggere il testo); (iii) **p1 NON molto sopra 0,73** — se torna 0,94-0,95 con t/s
+volante è **corruzione, non vittoria** (regola §39); (iv) t/s contro l'ancora 12,70-12,73.
+**Se A passa tutti e quattro**: è un CANDIDATO alla promozione, non una promozione — la
+ratifica richiede il protocollo d'ancora pieno (**3 load freddi, processi separati, 3 SHA
+identici**, §36), e la faccio io a consegna ricevuta. **Se A passa ma B è più veloce o pari**,
+il vincitore è B: immunità strutturale a costo zero batte una leva che riapre una classe di
+guasti.
+
+**(4)** `S4 traccia` in corsa (legge `tr.pesi[i]` = i pesi DAVVERO letti dal kernel ⇒ risponde a
+«sono zeri?» senza build; Heisenberg dichiarato: TRACCIA accende il gate di rr, quindi il
+braccio DEVE restare rotto — se guarisse sarebbe esso stesso un reperto). **(5)** Terza mano:
+diagnosi concordata, divieto di build tenuto da entrambe le sessioni, identità DLL verificata a
+ogni corsa (`6A98BE10`/`9E8E8D46`).
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

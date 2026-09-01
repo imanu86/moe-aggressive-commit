@@ -1881,3 +1881,23 @@ misurata, limitata o chiusa. Restano (1) la coda d'igiene di strumentazione (bui
 due decisioni utente della mappa §18: scambio qualità/velocità più fine altrove, o VRAM.
 Percorsi: `sw_arm.ps1` accanto agli altri; summary/log/testi
 `…sw_{ctrl,mod,agg}_20260831…` in `D:\ds4_work\llama_run\`.
+
+## 22. NOTA 1/9 — manifesto riparato da sessione parallela; guardia ROSSA a 59 leve; notizia VISION
+
+**Da sessione parallela (worktree ecstatic-volhard, consegna incrociata)**:
+`LLAMA_CACHE_ESPERTI_FORK_COMPONI` aggiunta alla tabella manifesto (`tools/server/server.cpp:148`,
+sotto FORK_SERIALE, difetto "0" coerente col lettore `cache-esperti.cu:3161-3162`) — **solo a
+disco, NESSUNA build**: la llama.dll di campagna (`12BF6E66…`) è intatta, la riga apparirà al
+prossimo rebuild schedulato. Verifica read-only con `scripts/manifesto_check.py`: 136→137 voci.
+**Scoperta collaterale che pesa**: la guardia è ROSSA con **59 leve vive non stampate** (fra cui
+`LLAMA_TRASPORTO_ONLINE`, `LLAMA_SCHED_CPU_BUFT_MAPPED`, `LLAMA_VRAM_FASE_RESTO_FIX`, famiglia
+`CALENDARIO`) e **non è eseguita da nessun cancello**: COMPONI non era sfuggita a un parser, il
+controllo semplicemente non girava. Chip di task lasciato per la riconciliazione delle 59; finché
+la lista non è vuota, il manifesto perde fino a 59 leve — vale doppia la regola: **mai
+ricostruire una config dal manifesto, sempre lo script lanciatore.**
+
+**Notizia dall'utente (riferita dalla sessione parallela, NON ancora verificata)**: sarebbero
+usciti i pesi di **DeepSeek V4 Flash Vision**. Ricognizione dispacciata (verifica release,
+architettura, GGUF/supporto llama.cpp upstream e nostro fork, aritmetica disco): **nessun
+download senza permesso esplicito dell'utente** — i pesi originali sono centinaia di GB e la
+pulizia disco da ~25-30 GB è ancora pendente.

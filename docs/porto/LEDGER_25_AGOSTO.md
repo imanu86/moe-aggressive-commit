@@ -3339,6 +3339,58 @@ riproducibile, t/s migliore). Poiché i contatori sono **bit-identici fra le cor
 progressione è **deterministica** ⇒ proprietà riproducibile del carico (473 slot contro un
 contesto da 101k), non una deriva; conferma richiesta sul terzo load, poi il dubbio si chiude
 senza spendere altre corse.
+
+## 54. ⭐⭐ **`V-ANCORA-LUNGO-A` RATIFICATA 3/3** — ed entrambi i debiti del §53 sono chiusi
+
+```
+V-ANCORA-LUNGO-A: B2B8F84E96ED34679C53E1F194B48DB4BE54C1789462DFFAE8ACD43169FFEE8D
+  @ config §35 + LLAMA_ACCEPTMOE=1 + LLAMA_ACCEPTMOE_COMPATTA=0
+    + OtDraft 'ffn_(gate|up|down)_exps\.weight=CPU'
+    (ctx 150000, b/ub 2048, nmax 3, conf 0.70, 1200 tk, budget 0, KV_GATHER=1)
+```
+**3/3 SHA identici, contatori BIT-IDENTICI alla cifra, testi identici byte-per-byte.** t/s
+12,300 / 12,384 / **12,394** (dispersione 0,76%) contro l'ancora AM=0 11,764-11,871 ⇒
+**+3,6 … +5,3% confermato su tre load freddi indipendenti**; C_round 202,58-204,07 contro
+205,5-207,5. Testimoni verificati prima di ogni corsa, quiete 3×40 s nello stesso processo del
+load, zero assert.
+
+**IL DUBBIO SULLE `righe senza residenti`: CHIUSO, ed era lo STRUMENTO.** I totali finali sono
+**identici alla cifra su 3/3** (2.610 / 32.270 = 8,09%). La «progressione 5,71→7,01→8,09» che
+sembrava una deriva **era il CAMPIONAMENTO, non il fenomeno**: i dump intermedi escono a
+**battito d'orologio** (`BATTITO=45`) e cadono in punti diversi della corsa (al terzo dump:
+lanci 9.160 / 9.240 / 9.250), dando 5,71 / 6,16 / 6,20%; l'intervallo di coda vale 21,6 / 20,8 /
+19,9% in r1/r2/r3 — **la stessa curva letta con tre righelli spostati**. La frazione sale
+monotona lungo il decode ed è una proprietà del carico (473 slot contro un contesto da 101k),
+identica a ogni corsa. **Nessuna corsa in più necessaria.**
+⇒ **Lezione (famiglia «strumenti che mentono»)**: *una sonda campionata A TEMPO produce
+«andamenti» che sono artefatti del righello; prima di leggere una progressione, verificare se il
+campionamento è a tempo o a evento.* Cugina diretta della trappola del §43 (il budget della
+sonda mangiato dal warmup): in entrambi i casi **è dove guarda lo strumento a produrre il
+fenomeno**.
+
+---
+### 🏁 BILANCIO DELLA GIORNATA 1/9 (§22-§54)
+**Da «i pesi sono usciti ieri» a un modello di default misurato, ancorato, collaudato e
+servito con una config immune per costruzione**, in un giorno:
+- **Disco**: da 31,8/60,4 GiB liberi a 143,8/143,7 (+195 su D:, +112 su C:), con tre
+  «duplicati» falsificati dall'hash e il vero spazio trovato negli scarti orfani (§24).
+- **Vision**: release verificata, 80,15 GiB scaricati e SHA-controllati, build upstream
+  (PR #28133 + patch) con l'A/B che ha scoperto l'esperimento sporco dentro la patch (§26-§28).
+- **Capability**: parla (§28), **vede 3/3 su test noto** (§29), **legge una foto vera con OCR
+  esatto a riduzione 18×** (§37), **collaudato sul testo** (§35).
+- **Porto nel fork**: vl-routing in 7 aggiunte con 0731 **bit-esatto** (§31); geometria
+  per-strato guarita — **il difetto erano 38 byte di allineamento** (§32).
+- **Ancore**: corto `88031A83` (§36) → **`28ADE339` config A** (§52); lungo `1596D3B3` (§41) →
+  **`B2B8F84E` config A** (§54). Quattro ancore, tutte a load freddi indipendenti.
+- **Numeri**: baseline upstream 5,5 → fork 12,7 (corto) e **12,39 (lungo, 101k/kv150)**.
+- **Caccia al difetto** (con la sessione peer): 9 sonde, **8 ipotesi proposte e ritirate dai
+  proponenti stessi** con falsificatori trovati nei dati, il meccanismo isolato
+  (`-1` necessario e sufficiente, §47/§48) e **un solo vincolo residuo** con l'esperimento che
+  lo decide già disegnato (§50).
+- **Nove trappole del lanciatore** (l'ultima avrebbe pubblicato un +4% falso, §53) e **cinque
+  nuove istanze di «strumenti che mentono»** (§20, §37, §43, §49, §54).
+**Aperti**: la radice ultima del difetto (serve build + dump, §50); la bonifica di
+`Set-SotaEnvironment`; il porto mtmd nel fork; la terza mano su `D:\llama-subtract` (§45).
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

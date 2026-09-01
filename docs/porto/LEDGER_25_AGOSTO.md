@@ -2078,3 +2078,40 @@ OpenSSL assente ⇒ server senza HTTPS (irrilevante in locale); il riferimento d
 `2b5621094` riguarda kernel IQ rotti solo su Blackwell sm_120, irrilevante per SM86. Comando di
 smoke pronto a valle del download, con guardia «nessun llama-server in esecuzione» (il load a
 `-ngl 0` occupa ~80 GiB di RAM).
+
+## 27. DOWNLOAD COMPLETO E VERIFICATO — e il crash su immagine del README È IL NOSTRO BUG
+
+**8/8 file in `C:\ds4-models\Vision-Exp-GGUF\`, SHA256 combacianti uno a uno con gli oid LFS**:
+4 parti IQ2_XXS (84,65 GB) + mmproj F16 + imatrix + patch + README = **80,15 GiB totali**, 49,4
+min a 27,7 MiB/s medi (un solo reset di rete, retry+resume validato empiricamente: la parte
+colpita ha passato lo SHA). **C: 143,83 → 63,64 GiB liberi**; `DS4-0731-IQ2XXS.gguf` di
+produzione intatto (mtime invariato). Niente cache HF, zero file estranei.
+
+**I tre reperti della consegna**:
+1. **La patch viene da un working tree sporco** — conferma indipendente della bisezione del §26,
+   più un indizio: il commento rimanda a una «l_out note below» che NELLA PATCH NON ESISTE.
+   Regola confermata: una patch di terzi si legge riga per riga, mai dal titolo. (La variante
+   `fixrestored` era già ordinata.)
+2. **IL CRASH SU IMMAGINE È LA NOSTRA STESSA CLASSE DI BUG.** Il README attribuisce l'abort a
+   `llm_graph_input_embd::set_input` che popola il tensore dei token **solo se `ubatch->token`
+   è impostato**: sui layer hash-routed il gather `tid2eid[t_inp_tokens]` legge memoria non
+   inizializzata e muore in `ggml_compute_forward_get_rows` su
+   `GGML_ASSERT(i01 >= 0 && i01 < ne01)` — **stesso assert e stesso meccanismo del nostro
+   fascicolo aperto «indice −1 nella testa Markov al taglio del reasoning»** (`ops.cpp:4831`,
+   `OVERLAP_BATCH_MAX=4`). Classe comune: *un batch col tensore token non popolato che raggiunge
+   un get_rows su `tid2eid`*. Movente forte per riaprire quel fronte con una pista concreta.
+3. **La parte 4 è condivisa fra i tre quant del repo ED È LEGITTIMO**: header GGUF parsato —
+   `split.no=3`, 1239/1371 tensori = tutti i NON-esperti (identici fra ricette); i quant
+   differiscono solo nelle parti 1-3. E il 1371 conferma l'aritmetica: 1328 + 43 bias `_vl`.
+   **Compatibilità chiave dal codice della patch**: `exp_probs_b_vl` è `TENSOR_NOT_REQUIRED`
+   («Absent from text-only checkpoints (0731)») ⇒ **il binario patchato carica ANCHE il modello
+   di produzione 0731** — un solo binario per entrambi, rilevante per il porto nel fork.
+
+**Riferimenti hardware del README (NON trasferibili al nostro banco)**: misure su RTX PRO 6000
+Blackwell 96 GB — 129,4 t/s in decode **con bozza DSpark Q2_K al 63,9% di accettazione** (punto
+di riferimento per la domanda «il drafter trasferisce?»); per la classe 3060 il README dà «CPU
+only: works, slowly» / «48 GB + offload: fattibile». Header GGUF: `deepseek4`, 43 blocchi,
+256/6 esperti, 3 layer hash-routed, ctx 1.048.576, hyper_connection 4, sliding window 128,
+indexer top_k 512. Limiti dichiarati: visibilità in-span NON implementata (fallback causale),
+multi-immagine e contesti lunghi non misurati. Nel repo esiste anche un `IQ3_XXS` MONCO (solo
+parte 1 di 4): inservibile, non scaricato.

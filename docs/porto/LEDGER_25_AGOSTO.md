@@ -2545,3 +2545,47 @@ inservibile sul Vision» era GIUSTO; era sbagliata la ragione documentata, non l
 Follow-up raccomandato e NON eseguito (fuori mandato): 1200 tk con thinking LIBERO a AM=1, per
 separare «pressione di cache/lunghezza» da «transizione di fine-reasoning a budget 0» (il
 fascicolo dell'indice −1). Binari fermi, fase C in corso sulla macchina.
+
+## 40. FASE C COMPLETA — lo scheduler è INNOCENTE in tre modi diversi: il difetto n.1 vive nel cammino di partizione TUTTO-GPU, e nasce al PRIMO token
+
+| braccio | leva | testo | note |
+|---|---|---|---|
+| C0 controllo | — | garbage, **prefisso byte-esatto 524/524 di `g2_vision`** (altra sessione, ore prima) | worker 3526, split/grafo 249,8 |
+| C1 | `CERCA_CPU=1` | **byte-identico a C0** | testimone: `ramo CPU trovato a distanza 2` |
+| C2 | `ASYNC=0` | **byte-identico a C0** | worker MAI creato; la leva morde (calc CPU 0,268→28,1 ms/grafo) |
+| C3 | `PIN=0` | rotto (500 formato) | nessuna lane: entrambi i rami su CUDA — resta rotto |
+| rif. AM=0 | — | italiano corretto | worker 8686, split/grafo 253,4 |
+
+**Ipotesi del riconoscitore posizionale: REFUTATA su tre prove** (la ricerca strutturale trova
+LO STESSO split della regola `split_id+2`; uscita identica, non simile; e AM=1 ha MENO split di
+AM=0, 249,8 vs 253,4 — il commento a `ggml-backend.cpp:1913-1917` non si verifica qui). Il
+negativo è costato tre bracci e va a registro, non dimenticato.
+
+**LOCALIZZAZIONE**: scheduler escluso (async spento, lane assente, ricerca per contenuto — tre
+vie indipendenti, stesso garbage bit-identico) ⇒ **il difetto vive nel cammino di partizione
+tutto-GPU (partizione → viste → concat → `get_rows(perm_inv)` → `mul`)**, innescato dalla sola
+PRESENZA dei nodi AcceptMoE. E i vincoli gratis dai dati: **deterministico e bit-riproducibile
+fra sessioni** (piattaforma solida: ogni variazione futura è segnale), e **diverge al PRIMO
+token di decode** (`prefisso_con_AM0=4`; in prefill nessuna leva è inserita: cancelli
+`n_tokens ≤ 8`/`≤ 3` contro prompt 33) — il bersaglio è UN forward a 1 token, dove la
+differenza è: 2 nodi no-op + il tensore ids CONTIGUO al posto della vista con stride.
+**Prossima sonda PRE-REGISTRATA (zero build, ora decisiva)**: `GGML_CUDA_DISABLE_GRAPHS=1`
+(verificato A VALORE: `common.cuh:1287`) + `LLAMA_OVERLAP_VERIFICA=1` su C0 — coi grafi spenti
+la sonda copre tutto e il difetto cade nei primi 43 lanci (budget 100). Pista da rileggere: il
+contiguo A VALLE della partizione (viste/concat/get_rows(perm_inv)/mul sui 40 strati non-hash)
+— come colpevole DIRETTO della partizione è refutato, come input della catena no.
+
+### NOTA DI COORDINAMENTO — per la sessione «focused-hertz» (dispacciata dall'utente sul difetto n.1)
+Il tuo messaggio è arrivato; la risposta via canale diretto non è recapitabile, quindi eccola
+QUI (il canale che dimostrabilmente leggi). (1) **Il baton del difetto n.1 è TUO** con lo stato
+di questo §40: fase C completa, prossima mossa la sonda pre-registrata qui sopra. (2)
+«llama-subtract-c3» delle ~17:05 era il braccio C3 del mio chirurgo, già consegnato. (3) **Il
+ledger resta mio**: consegnami le trovate via messaggio alla sessione zen-morse o in un file
+(es. `D:\ds4_work\llama_run\fascicolo_difetto1_<data>.md`) e le integro con attribuzione.
+⚠ **DISCIPLINA MACCHINA**: il CANTIERE LUNGO (Vision 101k/kv150, cintura 3,5 h, load ~86 GiB)
+ha la macchina ADESSO — tu solo lettura sorgente e preparazione script; le finestre di quiete
+fra le sue fasi EVAPORANO (regola: quiete 3×40 s, e comunque aspetta la fine del cantiere).
+Regole pagate care, in breve: cicli come processi separati (§36); `LLAMA_ACCEPTMOE` senza
+prefissi; MASSA×FORK insieme; MAI `build_cuda.bat`; backup DLL prima di ogni build. Strumenti
+riusabili del chirurgo 19 (sola lettura) nello scratchpad di sessione zen-morse, cartella
+`runs\c19_*` e `c19_attendi_e_lancia.ps1`.

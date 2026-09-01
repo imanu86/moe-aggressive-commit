@@ -2145,3 +2145,29 @@ maggiori o il no-think lato server. Dispacciato il passo successivo: **prima imm
 (test a contenuto noto generato localmente: cerchio rosso + quadrato blu + scritta «DS4»), con
 cross-check su A se B abortisse (sospetto di famiglia: l'assert `i01 >= 0` del §27), e a
 seguire un riferimento di velocità upstream con esperti su CPU (`--n-cpu-moe`) se la VRAM regge.
+
+## 29. IL MODELLO VEDE: didascalia 3/3 al primo colpo. E la baseline upstream è 5,5 t/s
+
+**Capability immagine su B: RIUSCITO, exit 0, nessun assert** (il caso critico ipotizzato — le
+tre righe ripristinate che rompono il cammino immagine — NON si è materializzato; cross-check
+su A non necessario). Immagine di test generata in locale (448×448, contenuto noto verificato
+al pixel: cerchio rosso alto-sx, quadrato blu basso-dx, «DS4» nero al centro). **Didascalia
+verbatim**: «L'immagine mostra un cerchio rosso in alto a sinistra, un quadrato blu in basso a
+destra e la scritta "DS4" in nero al centro.» — **3 su 3, posizioni e colori esatti, OCR
+corretto, zero allucinazioni, riprodotta identica su due corse.** Torre visiva: `Deepseek
+Vision`, 427 tensori, `CLIP using CPU backend` (`--no-mmproj-offload` onorato), 448×448 nativa
+→ **148 token visivi**, encode **2,70 s** su CPU; marcatori `<｜deepseek_image｜>` &co.
+caricati.
+
+**Riferimento di velocità upstream (B, testo, non-banco)**: `-ngl 999 --n-cpu-moe 43 -c 4096`
+⇒ `offloaded 44/44 layers to GPU`, **VRAM totale ~6,5 GiB su 12** (model 5485 MiB + KV 63,5 +
+compute 947), esperti in `CPU_Mapped` ~73,5 GiB. **Generazione 5,5 t/s** (identica su due
+corse; prompt 5,8-5,9), contro 3,3 a `-ngl 0` ⇒ l'offload standard vale 1,67× qui. **Termine
+di paragone per il porto**: il nostro fork sul 0731 fa 12,69 ⇒ **il valore del porto (cache
+esperti + DSpark) è ~2,3× sopra la baseline upstream** su questa macchina — da ri-verificare
+sul Vision a porto fatto.
+
+Dispacciata la **fase 2** (§25): accettazione del drafter attuale su DUE bersagli con lo stesso
+binario B (0731 = controllo, Vision = domanda), lettura dal `print_timing` (MAI dalla riga
+`statistics`, che mente), cancelli pre-registrati: Δ ≤10 punti ⇒ trasferisce; crollo >25 ⇒
+ri-estrazione da shard nextn mirati.

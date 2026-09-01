@@ -3128,6 +3128,69 @@ modello nuovo, dopo il fix il record resta `weights_norm` **con pesi positivi** 
        crollare da 1760/1892 a ~0** (il record resta coerente);
    (c) il difetto n.2 si riduce alla sola quota by-design.
    Se (a) fallisce, il modello del §49.4 è falso e si torna al dump.
+
+## 50. **LA CONTRADDIZIONE È SCIOLTA** (sul lato verificabile del sorgente) — e resta un solo candidato che spiega TUTTI e quattro i vincoli: **la VITA DEL BUFFER**
+
+**Quattro candidati proposti stasera, quattro refutati** (H-ORDINE, variante (i), variante (ii),
+multi-stream — quest'ultimo dal peer stesso: `ggml_backend_cuda_graph_optimize` esce subito se
+`GGML_CUDA_GRAPH_OPT != 1` e in SOTA vale **0**, confermato dal manifesto a runtime ⇒ macchina
+concurrent-events **inerte**, ramo irraggiungibile). Il peer dichiarava insolubile il fatto che
+«nessuna variante produce entrambi gli stati». **Non è insolubile: i due stati hanno REGISTRANTI
+DIVERSI.**
+
+**FATTO VERIFICATO — e sul lato AFFIDABILE del sorgente** (`src/llama-graph.cpp`, **mtime
+13:55**, coerente con `llama.dll` delle 14:03 ⇒ *questo* file descrive il binario in prova; regola
+mtime del §49.3 applicata):
+```
+:2230  weights = ggml_div(...)                    // [n_expert_used, n_tokens] = [6, n_tok]
+:2231  cb(weights, "ffn_moe_weights_norm", il);   // ← IL NOME STA SUL 2-D: ne0 = 6, COERENTE
+:2233  weights = ggml_reshape_3d(..., 1, n_expert_used, n_tokens);   // vista [1, 6, n_tok]
+:2291  pesi_am = ggml_acceptmoe_pesi(ctx0, weights, ...)             // ← riceve la VISTA 3-D
+:2293  cb(pesi_am, "ffn_moe_acceptmoe_pesi", il);                    // ⇒ ne0 = 1, DEGENERE
+```
+⇒ **Entrambe le misure sono spiegate da un solo quadro**: nel braccio **ROTTO** l'ultimo a
+registrare `quale=1` prima della partizione è `ffn_moe_weights_norm` (2-D, **ne0=6 ⇒
+COERENTE ⇒ `pesi mancanti=0` ✓**); nel braccio **TRACCIA** l'ordine cambia e registra
+`acceptmoe_pesi` (3-D, **ne0=1 ⇒ INCOERENTE ⇒ 1760/1892 ✓**). Le varianti (i) e (ii) erano
+**ciascuna vera per un braccio diverso**, non due alternative per lo stesso.
+
+**⇒ LA DOMANDA RESIDUA È ORA ESATTA**: perché lo **stesso puntatore, con la stessa forma
+coerente**, porta pesi giusti con AM=0 e zeri con AM=1?
+
+**⚑ CANDIDATO n.5 DELLA REGIA — LA VITA DEL BUFFER (out-of-band read).** Il commento a
+`llama-graph.cpp:2294-2295` lo dice esplicitamente: con AM=1 «da qui in giù **TUTTO il valle** —
+partizione, MUL_MAT_ID, domanda della cache, fork/join, pesatura — consuma» le uscite di
+AcceptMoE. ⇒ **In AM=1 l'ULTIMO CONSUMATORE DI GRAFO di `weights_norm` si sposta in TESTA allo
+strato** (`acceptmoe_ids`/`acceptmoe_pesi`), mentre in AM=0 resta **in coda** (la pesatura
+finale). Ma **la cache legge `rr→pesi` FUORI BANDA, con un puntatore grezzo e senza arco di
+grafo**: l'allocatore non sa di quel lettore. ⇒ **In AM=1 il buffer di `weights_norm` è già
+libero e RICICLATO quando la partizione lo legge; in AM=0 è ancora vivo.**
+
+**Spiega TUTTI i vincoli, incluso «il più stringente»**: record coerente + contenuto nullo nel
+rotto ✓ · AM=0 sano con lo stesso puntatore e la stessa forma ✓ · TRACCIA sano (aggiunge
+`part->src[1] = weights`, cioè **proprio l'arco mancante**, e insieme rende incoerente il
+record) ✓ · COMPATTA=0 sano (non legge affatto) ✓ · grafi on/off indifferente (la pianificazione
+delle vite non cambia) ✓ · ASYNC/PIN/fork indifferenti (**non è concorrenza**) ✓ · multi-stream
+inerte ✓ · **e il pattern PROGRESSIVO dagli ULTIMI strati** ✓✓ — la pressione di riuso
+dell'arena cresce lungo il grafo, quindi il riciclo colpisce prima gli strati finali e risale.
+È il **fratello non-concorrente** dell'esposizione «alias d'arena» già a registro dal 30/8
+(`ggml-backend.cpp:2082-2086`): là il pericolo era la concorrenza, qui è **un lettore che
+l'allocatore non vede**.
+
+**⚑ TEST DECISIVO GIÀ DISPONIBILE — la build della terza mano DISCRIMINA i due modelli
+superstiti**, con predizioni opposte e pre-registrate:
+| | §49.5 (registrazione di `acceptmoe_pesi` colpevole) | §50 (vita del buffer) |
+|---|---|---|
+| braccio ROTTO dopo il fix | **GUARISCE** | **RESTA ROTTO** (il registrante era già weights_norm) |
+| braccio TRACCIA dopo il fix | resta sano, `pesi mancanti`→~0 | **DIVENTA ROTTO** (record torna coerente ⇒ si rilegge il buffer morto) |
+**Ritiro quindi la mia previsione §49.5(a) come certezza e la declasso a uno dei due esiti**: la
+build che la terza mano ha preparato non è più «probabilmente il fix», è **l'esperimento che
+decide**. Da eseguire col protocollo del §45 (snapshot accanto alle DLL, G1 `AD3D3770…`,
+ri-baseline `S1 = 97DF3AB0…`), leggendo per primi quei due bracci.
+**Se vince il §50**, il fix vero non è togliere una registrazione: è **dichiarare la dipendenza**
+(dare alla partizione un arco su `weights_norm`, come fa TRACCIA) oppure **tenere vivo il
+tensore**; e il dump dovrà stampare, oltre a `perm[j]`/id/peso, **il nome del tensore che ha
+registrato il record e l'intervallo di vita del suo buffer**.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

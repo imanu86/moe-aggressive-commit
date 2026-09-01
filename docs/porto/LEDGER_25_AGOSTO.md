@@ -2171,3 +2171,42 @@ Dispacciata la **fase 2** (§25): accettazione del drafter attuale su DUE bersag
 binario B (0731 = controllo, Vision = domanda), lettura dal `print_timing` (MAI dalla riga
 `statistics`, che mente), cancelli pre-registrati: Δ ≤10 punti ⇒ trasferisce; crollo >25 ⇒
 ri-estrazione da shard nextn mirati.
+
+## 30. FASE 2 — **IL DRAFTER TRASFERISCE** (Δ 0,64 punti). E DSpark è cittadino upstream
+
+| | T0731 (controllo) | TVIS (Vision) | Δ |
+|---|---:|---:|---:|
+| draft acceptance (print_timing, verbatim) | **0,66146** (127/192) | **0,65504** (338/516) | **−0,64 pt** |
+| mean len accettata | 2,98 | 2,97 | −0,01 |
+| accettazione per posizione | 0,797/0,672/0,516 | 0,831/0,657/0,477 | ≈ (pos-1 meglio su TVIS) |
+
+**Cancelli**: T0731 sano (66,15% > 50) ✓; **Δ 0,64 punti contro soglia 10 ⇒ TRASFERISCE, non è
+zona grigia: è INDISTINGUIBILE** (errori standard ±3,4/±2,1 punti: regge anche al netto del
+campione). **Niente ri-estrazione, niente shard nextn.** Coerente col riferimento esterno
+prometheusAIR (63,9% immagine / 68,2% testo). Stessa build B, stesso drafter, `-ngl 999
+--n-cpu-moe 43 -ngld 0`, temp 0, prompt identico.
+
+**Le tre scoperte collaterali che pesano sul porto**:
+1. **DSpark è upstream A PIENO TITOLO**: `DSpark-draft-Q2K.gguf` (arch `dflash`, 81 tensori)
+   carica senza conversioni e viene **auto-riconosciuto** («auto-detected speculative type
+   'draft-dspark' from the draft model metadata», discriminato dalla presenza della testa
+   Markov, `speculative.cpp:2312`). Ricetta nel repo stesso: `docs/speculative.md` §DSpark
+   (il README HF invece NON documenta il comando — buco loro).
+2. **La riga `statistics` upstream NON mente**: numeri coerenti col print_timing + accettazione
+   per posizione gratis. Il bug dell'1.000 fisso è DEL NOSTRO FORK ⇒ **al porto è un
+   differenziale da recuperare, non da replicare.**
+3. **Sulla baseline la speculazione NON compra velocità**: 5,46/5,04 t/s con bozza contro 5,5
+   senza, ad accettazione 65% — la macchina upstream è byte-bound e i colpi non pagano.
+   **È la quantificazione del perché serve il porto: è la NOSTRA cache a far fruttare la
+   speculazione** (il fork sul 0731: 12,69).
+
+Note: `--spec-draft-n-max` rimasto al difetto 3 (confronto interno valido; il valore assoluto
+non è comparabile 1:1 col 63,9% esterno a n-max ignoto); T0731 fermo a 192 per fine sequenza,
+TVIS a budget 512 (taglie campione diverse, già nel calcolo degli errori standard). Log:
+`spec_T0731.log`/`spec_TVIS.log` nello scratchpad di sessione.
+
+**Dispacciata la FASE 3 — porto MINIMO nel fork** (chirurgo17): solo il vl-routing
+(arch/model/deepseek4/dflash, tensore `NOT_REQUIRED`, ramo `is_image_ubatch` inerte su testo),
+SENZA l'hunk spurio della bisezione; protocollo: baseline corta PRE, backup DLL, build, **G1 =
+regressione 0731 bit-esatta**, **G2 = il Vision carica e parla nel fork con la cache attiva**.
+Immagini per ora dalla build upstream; mtmd nel fork = decisione successiva.

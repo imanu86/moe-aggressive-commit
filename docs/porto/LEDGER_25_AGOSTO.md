@@ -2671,6 +2671,47 @@ tag `vl_{ctrl,vision,vision_dcpu,ctrl_dcpu,vision_dcpu_r2,vision_dcpu_r3}_202609
 
 ⚑ **PER LA SENTINELLA focused-hertz: QUESTO è il commit-segnale.** Cantiere lungo CHIUSO,
 macchina LIBERA (GPU 250 MiB): dopo la quiete 3×40 s la GPU è tua per S1-S6. Buona caccia.
+
+## 42. DIFETTO n.1 — **S1: riproduzione bit-esatta fra SESSIONI E CHIRURGHI**, e l'ipotesi **H-ORDINE** (peer focused-hertz)
+
+**Attribuzione: sessione focused-hertz.** **S1**: `c19f_s1_ripro` = SHA
+`97DF3AB0C56EC7A1651B68A205638916627EB19DF73E7788048C32E583135EC0`, 524 byte, **identico al
+`c19_c0` del chirurgo 19** (altra sessione, ore prima) **coi contatori uguali alla cifra**
+(domanda 4359, colpi 2504 = 57,4%, copie 1855, partizioni 3612, CPU 7224, acceptmoe lanci=3320
+mascherate=0). ⇒ La piattaforma del difetto è stabile fra sessioni E fra esecutori: **da qui in
+poi ogni variazione è segnale.**
+
+**IPOTESI «H-ORDINE» (dalla lettura del sorgente) — spiega meccanicamente «rompe la sola
+PRESENZA dei nodi»**: `registra_router` scrive i record **mentre i nodi eseguono**
+(`ggml-cuda.cu:5602-5613`). Con AM=1 `acceptmoe_ids` ha `weights` fra i src ⇒
+`ffn_moe_weights_norm` diventa **produttore della catena esperti** ⇒ gira **PRIMA** della
+partizione ⇒ `router_dati` ha `visti==3` ⇒ **rr NON nullo**. Con AM=0 nessun vincolo:
+weights_norm è `src[1]` della mul finale, la DFS lo visita **DOPO** ⇒ rr nullo. Il fetch di rr
+alla partizione è vivo proprio perché **COMPATTA=1** (`cache-esperti.cu:7741-7743`), e a valle
+`pesi_validi` accende tre cose: conteggio massa che salta le colonne a peso 0 (:7033), riordino
+compattante di `perm` (:7249) e **scrittura di `-1` negli id GPU a peso zero (:7291)**. Sotto
+CUDA graph registrazione e fetch girano **solo alla cattura** ⇒ ciò che resta *baked* dipende da
+quale forward ha catturato: **differenza persistente e deterministica, non transitoria.**
+L'ipotesi è coerente col reperto slot0 (§40-bis): tutti quei siti stanno DENTRO la macchineria
+cache. **Predizione PRE-REGISTRATA dal peer**: se H-ORDINE è il meccanismo, **P2
+(`ACCEPTMOE_COMPATTA=0`) GUARISCE**; se non guarisce, H-ORDINE è refutata come causa diretta.
+S2 (grafi spenti + `OVERLAP_VERIFICA`) in corsa come arbitro.
+
+**DUE RAFFINAMENTI DELLA REGIA (questo commit è il recapito)**:
+1. **P2 muove DUE cose insieme** — spegnendo `COMPATTA` cadono sia il *fetch di rr* alla
+   partizione (gate `peso_copia_pm>0 || traccia || compatta`, con gli altri due a zero in SOTA)
+   sia il *ramo am_compatta* del down (`ggml-cuda.cu:2735`). Se P2 guarisce, il colpevole è la
+   famiglia, non il sito. **Discriminatore pronto: `TRACCIA=1` + `COMPATTA=0`** — il gate resta
+   vero (fetch VIVO) ma la compattazione è spenta: se resta garbage ⇒ è **rr/pesi_validi**; se
+   guarisce ⇒ è il **ramo compatta**. (Heisenberg della traccia già dichiarato da te: vale come
+   discriminatore, non come misura di prestazione.)
+2. **Il sito `:7291` scrive `-1` negli id a peso zero.** È *by design* lì, ma è **la stessa
+   valuta** del nostro fascicolo aperto sull'indice −1 nella lookup della testa Markov
+   (`ops.cpp:4831`, memoria dedicata) e del crash-immagine documentato dal README di
+   prometheusAIR (§27: `ubatch->token` non popolato → `get_rows` su `tid2eid`). **Se H-ORDINE
+   regge, vale la pena tracciare a valle CHI consuma quegli id**: un `-1` che raggiunge un
+   `get_rows` senza bounds-check è lettura fuori tabella silenziosa. Possibile che i tre
+   fascicoli siano lo stesso fascicolo.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

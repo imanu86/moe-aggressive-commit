@@ -2614,6 +2614,63 @@ topologico) — coerente con `pesi mancanti=0`. Prossimo bersaglio di lettura: c
    → **VERIFICATO dal peer sul manifesto** (1/9 sera): `LLAMA_CACHE_BOZZA_SLOT=12(E)`,
    `LLAMA_CACHE_ESPERTI_SLOT=0(E)` ⇒ predicato ancora VERO, cancello-fusione immobile:
    **confronto a UNA variabile, reperto slot0 CONFERMATO senza riserve.** Fascicolo aggiornato.
+
+## 41. **IL NUMERO DEL LUNGO: Vision 11,76-11,87 t/s** (−8,0% dal 0731 appaiato) — e il muro nuovo è la MEMORIA PINNATA. ⚑ QUESTO COMMIT È IL SEGNALE: cantiere chiuso, macchina libera
+
+**FASE 1 — neutralità BIT-ESATTA**: il controllo 0731 dal lanciatore esteso (`-Model`/`-Draft`/
+`-Acceptmoe` a difetto invariato) riproduce **`A177DDAF…` con p1/mean_len alla 5ª cifra e
+CONTATORI IDENTICI** (domanda 285.564, colpi 166.497, byte 785,27 GiB). Estensione neutra
+provata nel modo più duro.
+
+**LA SCOPERTA — il Vision sul lungo NON carica per la MEMORIA PINNATA, non per la VRAM**: i
++400 MiB di mappata del Vision (74.704 vs 74.304) portano il totale pinnato a **76,09 GiB, che
+FALLISCE** (`cudaHostAlloc di 2224 MiB fallita` sul drafter) dove i 75,70 del 0731 passano ⇒
+**il tetto pinnato di casa (9/8: «74,7 sì, 76,9 no») è ora stretto a ±400 MiB: ~75,7-76,1.**
+Di VRAM invece ne AVANZA (buffer CUDA0 del Vision 1.899 MiB più piccolo; in decode 1481 MiB
+liberi dove il 0731 ha 0). La scala `-CacheEspertiSlot` non poteva servire (quella è VRAM) e il
+buffer mappato non è rendibile paginabile da env (verificato: `ggml-cuda.cu:1440-1467`).
+**Sfogo**: `-OtDraft 'ffn_(gate|up|down)_exps\.weight=CPU'` — gli esperti del drafter dalla
+mappata alla CPU liscia. Cambio di macchina ⇒ **controllo 0731 appaiato rifatto**: e lo sfogo
+NON penalizza, anzi **0731 draft-CPU = 12,788 t/s, +1,10% sul mappato** (replica il reperto 9/8
+«380+0 batte 380+32») — **candidato di promozione anche per il 0731**, SHA legittimamente
+divergente (`A0F49B89`), da validare a parte.
+
+**FASE 2 — il numero, con controllo appaiato**:
+| | 0731 draft-CPU | **VISION draft-CPU** | Δ |
+|---|---|---|---|
+| decode | 12,788 | **11,764-11,871** | **−8,0%** |
+| p1 / mean_len | 0,83624 / 2,51 | 0,80914 / 2,44 | −3,2% / −2,8% |
+| C_round | 196,27 | 207,41 | +5,7% |
+| prefill | 134,66 | 137,86 | +2,4% |
+
+**Il −8% è del modello e torna col meccanismo**: byte_slot +8,16% (7,30 vs 6,75 MiB), byte a
+domanda **835,44 vs 718,67 GiB — il rallentamento SEGUE I BYTE**: byte-bound confermato
+cross-modello. Aritmetica slot dal vivo quadrata (473 × 7.658.112 = i 3.454 MiB dei cambi di
+fase, 30,0/6,5 ms). Cancelli tutti verdi (1371 tensori, 43 bias vl, `ACCEPTMOE=0(E)` con
+lanci=0, colpi 58,0%, lane 2× esatto, replay puliti, zero assert).
+
+**§4.10 PIENO — e il testo migliore mai uscito dal banco**: diversità lessicale 0,513 (0731:
+0,338), nomi del codice tutti reali, l'estratto su LRU/orologio/DwarfStar tecnicamente esatto
+(«un debito dichiarato»). UN difetto verbatim: un congiuntivo per indicativo. E la regola §39
+applicata al contrario: p1 SOTTO l'appaiato con t/s SOTTO = nessuna firma di corruzione.
+
+**FASE 3 — `V-ANCORA-LUNGO: 3/3`**:
+```
+1596D3B3C97A5B22B77C7D2DF58FD865734D72B9D5BC06730C3C9F723F2E9EE3
+@ config §35 + LLAMA_ACCEPTMOE=0 + OtDraft='ffn_(gate|up|down)_exps\.weight=CPU'
+  (ctx 150000, b/ub 2048, nmax 3, conf 0.70, 1200 tk, budget 0, KV_GATHER=1)
+```
+Tre load freddi come processi separati: SHA, testo (4173 byte), p1 alla 5ª cifra e **contatori
+bit-identici 3/3**; t/s 11,764/11,870/11,871 (dispersione 0,90%).
+
+**Decisioni aperte per la regia/utente**: (1) `OtDraft=CPU` anche nella config di servizio del
+CORTO (sul lungo è obbligata, sul 0731 è più veloce; sul corto non misurata); (2) promozione
+`OtDraft=CPU` per il 0731 lungo (+1,10%, da validare con replica); (3) memoria del tetto
+pinnato ~75,7-76,1 GiB per ogni modello futuro. Percorsi: `vl_arm.ps1` accanto ai lanciatori;
+tag `vl_{ctrl,vision,vision_dcpu,ctrl_dcpu,vision_dcpu_r2,vision_dcpu_r3}_20260901`.
+
+⚑ **PER LA SENTINELLA focused-hertz: QUESTO è il commit-segnale.** Cantiere lungo CHIUSO,
+macchina LIBERA (GPU 250 MiB): dopo la quiete 3×40 s la GPU è tua per S1-S6. Buona caccia.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

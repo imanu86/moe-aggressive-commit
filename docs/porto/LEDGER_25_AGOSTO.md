@@ -4237,3 +4237,58 @@ ESTRAE da qui**, 891 char, sha `4FDF82C2…`), `ratifica_A.ps1`, **`ratifica_A_c
 `ratifica_A_leggi.ps1` (i cinque cancelli), log `ratifica_A*.log`, output
 `runs\v_ratifica_A_c{1,2,3}.*`. ⚠ **Directory temporanea di sessione: non durevole** — se quegli
 script servono oltre oggi vanno copiati in `D:\ds4_work\llama_run\lanciatori_salvati_20260825\`.
+
+## 64. ⚑ CERTIFICAZIONE DEL BINARIO `18444E20` (2/9, fase i) — **G1 3/3 (già fatto dal chirurgo 20) + non-regressione Vision corto A 1/1 BIT-ESATTA. Binario CERTIFICATO su entrambi i cammini. QUESTO COMMIT È IL SEGNALE: macchina libera per la fase (ii)**
+
+**Decisione utente (a questa sessione, ~10:20)**: «una cosa non esclude l'altra» ⇒ si TIENE il
+binario ricostruito alle 07:25 e lo si valida; le altre attività procedono in parallelo, con una
+sola variabile per volta sulla macchina. Sequenza concordata con zen-morse (§63-quater):
+**(i)** certificare `18444E20` → **(ii)** i due bracci del bivio §49/§50 (zen-morse, col via del
+suo utente) → **(iii)** seconda build contatori + guardia della lane adattiva (§63-ter), con G1
+e S1 propri. Verifica indipendente: la build è di zen-morse, la certificazione di questa sessione.
+
+### G1 (0731, banco corto): ERA GIÀ PASSATO — reperto su disco
+`…\handoff-nuova-chat-15-agosto-md-3\work\runs\c20_g1.summary.json` (07:31), server avviato
+alle 07:27 (DLL delle 07:25:26): **3/3 SHA `AD3D3770C7D13885AE5292442D42CC0338500B82435146AC299A5436BFCBFE11`**,
+p1 0,77670, mean_len 2,01, content 83 / reasoning 518, eval 13,43 / 14,07 / 14,08 t/s (chirurgo18_g1:
+13,26 / 14,27 / 14,35). Il chirurgo 20 l'aveva completato prima dell'interruzione; «G1 non
+completato» del §62 era un'inferenza dall'interruzione (corretta da zen-morse in §62-bis).
+
+### Non-regressione della config di servizio del Vision (corto, `V-ANCORA-CORTO-A`)
+Stesso script che ha prodotto l'ancora: `ratifica_A_ciclo.ps1 -Ciclo 1` (un ciclo = un processo;
+prompt ESTRATTO da `ancora_vision.ps1` e verificato: 891 char, sha `4FDF82C2`; quiete 3×40 s nello
+stesso processo del load; `run_vision.ps1 … -MaxTokens 1200 -Repetitions 1 -Draft -ThinkingBudget 0
+-Extra 'LLAMA_ACCEPTMOE=1;LLAMA_ACCEPTMOE_COMPATTA=0'`). Identità DLL prima del lancio e nel log:
+`llama.dll 9E8E8D46…`, **`ggml-cuda.dll 18444E20BE90538F…`**. Nove testimoni su nove
+(OVERRIDE AM=1 / COMPATTA=0, REASONING-BUDGET 0, manifesto `AM=1(E)`/`COMPATTA=0(E)`, drafter,
+473 slot da 7,30 MiB, output). Ciclo 10:44:33 → 10:47:51, stderr vuoto, chiusura graziosa.
+
+| | ancora (1/9, binario 6A98BE10) | **misurato (2/9, 18444E20)** |
+|---|---|---|
+| SHA output | `28ADE3395B5888D7DC1DB5D12A06083FFE1B2017029DC18EE87003BB090E1BBD` | **IDENTICO** |
+| byte / char | 4.568 / 4.538 | 4.568 / 4.538 |
+| p1 / mean_len | 0,72693 / 1,92 | 0,72693 / 1,92 |
+| colpi · domanda · partizioni | 75,2% · 245.272 · 61.060 (rapporto 4,017, deficit −1.032) | identici |
+| byte a domanda | 433,32 GiB | 433,32 |
+| acceptmoe lanci/mascherate/scartati/tenuti/senza res. | 25.120 / 30.972 / 48.070 / 44.047 / 668 | identici alla cifra |
+| eval t/s | 12,66-12,79 | 12,65 (parete; traiettoria identica) |
+| assert / OOM / fail-loud | 0 | 0 |
+**Interpretazione pre-registrata (A): NON-REGRESSIONE PASSATA — il cammino di servizio del Vision è
+invariato sul binario `18444E20`.** ⇒ Le modifiche della terza mano (contatore `router_rifiuti`,
+contratti delle corsie, `acceptmoe_pesi` non registrato) **non toccano né il cammino 0731 né quello
+di servizio del Vision**: sono confinate, come previsto, al cammino del difetto n.1.
+
+### Percorsi canonici (copie durevoli, dal scratchpad zen-morse che non è durevole)
+`D:\ds4_work\llama_run\lanciatori_salvati_20260825\vision_corto\` — `run_vision.ps1`,
+`ancora_vision.ps1`, `ratifica_A_ciclo.ps1`, `ratifica_A.ps1`, `ratifica_A_leggi.ps1`,
+`ORIGINE.txt` (mtime + SHA256 degli originali), `DIFF.txt` (git diff --no-index: **solo** le righe
+di percorso `$run`/`$sp`, il commento in testa e — in `ratifica_A.ps1` — le identità attese
+trasformate in **parametri a difetto invariato** `param([string] $AttesaLlama = '9E8E8D46', [string]
+$AttesaCuda = '18444E20')`, regola del 25/8: mai aggiornare un hash cablato per far passare un
+cancello). Run: `D:\ds4_work\llama_run\vision_corto_runs\` (`v_ratifica_A_c1.*`, `nr_c20_ciclo1.stdout.txt`).
+Debito minimo: nella copia di `ratifica_A.ps1` (non eseguita) la riga `$run = Join-Path $sp 'runs'` va
+ripuntata a `vision_corto_runs` prima di riusarla come regia a tre cicli.
+
+**Stato**: binario `18444E20` **certificato** (0731 3/3, Vision A 1/1). Macchina LIBERA dalle 10:48.
+⚑ **Segnale per zen-morse**: fase (ii) vostra appena avete il via; se il via non c'è, la (iii)
+parte (compilazione isolata della patch, poi seconda build col protocollo pieno).

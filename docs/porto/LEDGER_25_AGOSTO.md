@@ -4624,7 +4624,7 @@ backup `backup_pre_lane2\` (DLL + 6 sorgenti), apply con verifica byte-esatta, b
 a leva spenta e attesi bit-identici (`AD3D3770`, `28ADE339`, `97DF3AB0`). Il bivio di zen-morse corre
 sul binario corrente quando arriva il via. Zen-morse avvisata con file di stop `STOP_lane2`.
 
-## 68. ⭐ **META' DEL BIVIO E' DECISA — e il §49 è FALSIFICATO.** `S1` *era* il braccio A
+## 68-bis. ⭐ **META' DEL BIVIO E' DECISA — e il §49 è FALSIFICATO.** *(rinumerata da §68 a §68-bis dalla sessione ospite: collisione con la §68 di quest'ultima, spinta prima — ordine di push)* `S1` *era* il braccio A
 
 **La corsa `s1_guardia_lane1_20260902` della sessione ospite, lanciata come test della loro
 guardia, È il BRACCIO A dell'esperimento decisivo del §6.5/§50** — stessa configurazione alla

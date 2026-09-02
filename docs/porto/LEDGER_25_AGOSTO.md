@@ -4675,3 +4675,57 @@ corsa serviva a due fascicoli diversi**. Il costo è stato zero solo perché ent
 la configurazione per intero. **Regola: quando si dispaccia un braccio, confrontarne la
 configurazione con i bracci pre-registrati degli ALTRI fascicoli aperti** — un esperimento già
 pagato può valere due verdetti.
+
+## 69. IL BIVIO §49/§50, CHIUSO PER VIA INDIRETTA (2/9, 14:48-14:58) — **braccio A ROTTO (= S1) e braccio B (TRACCIA) ROTTO, bit-identici: «vita del buffer» confermato, «registrazione» falsificato; sul binario con la terza mano «osservare guarisce» non si riproduce più**
+
+**Come è successo**: la corsa S1 del §68, fatta come test della guardia, **era il braccio A** del bivio
+pre-registrato al §50 (Vision, AM=1, COMPATTA=1, K=2, senza drafter, 80 token) sul binario che
+contiene la patch della terza mano. Rilievo di zen-morse: la tabella del §50 prevedeva **A guarisce
+(§49) / A resta rotto (§50)**; A è rimasto rotto ⇒ §49 falsificato. Richiesta: **braccio B prima dello
+stadio 2, stesso binario, una variabile sola** — accolta; la build dello stadio 2, in attesa di
+cortesia, è stata fermata col file `STOP_lane2` prima di qualunque scrittura (albero intatto, preflight
+e dry-run dell'esecutore comunque verdi e registrati).
+
+**Braccio B** (`vision_corto\run_vision.ps1 -Tag s1_traccia_lane1_20260902 -MaxTokens 80 -Repetitions 1
+-Extra 'LLAMA_ACCEPTMOE=1;LLAMA_CACHE_ESPERTI_TRACCIA=1'`, niente `-Draft`, COMPATTA 1; identità 4/4 lane1):
+
+| | A (S1, §68) | **B (TRACCIA)** | B storico (1/9, binario 6A98BE10) |
+|---|---|---|---|
+| SHA output | `97DF3AB0…` (rotto) | **`97DF3AB0…` (ROTTO, byte-identico ad A)** | `9F67629A…` **sano** («osservare guarisce», §48) |
+| traccia | — | **armata e raggiunta**: `traccia route ACCESA: 1 (200000 record)` → `salvata 3612/3612` | idem |
+| pesi mancanti | 0 | **0** | **1760/1892** (record incoerente) |
+| domanda / colpi / copie / partizioni / CPU | 4.359 / 2.504 / 1.855 / 3.612 / 7.224 | **identici** | — |
+| acceptmoe lanci / mascherate | 3.320 / 0 | identici | — |
+| `voci fuori tabella` · RESIDENTI · somma · perm_rotta | 0 · 60 (0,8%) · 6,00 · 0 | identici | — |
+| t/s | 13,79 | 14,20 | — |
+
+**Lettera pre-registrata (§50, tabella «dopo la build della terza mano»): B DIVENTA ROTTO ⇒ §50
+«vita del buffer» CONFERMATO, §49 «registrazione» FALSIFICATO. Bivio CHIUSO.** Il verdetto formale e
+la sua scrittura sono di zen-morse (sessione titolare del fascicolo); qui i dati e la lettera.
+
+### Fatti che vanno con la lettera
+1. **La patch della terza mano è INERTE sul cammino rotto**: A ha contatori identici alla cifra a
+   `c19f_s1_ripro` (1/9, binario PRE-patch). Non «non guarisce»: non tocca un solo numero. Coerente
+   con `pesi mancanti = 0` (il record alla partizione era `weights_norm`, non `acceptmoe_pesi`), ora
+   **misurato**, non dedotto.
+2. **«Osservare guarisce» (§48) non si riproduce sul binario nuovo**: con la traccia armata e
+   verificata, B resta rotto e `pesi mancanti` resta 0 (l'1/9 la traccia rendeva incoerente il
+   record, 1760/1892, e guariva). È esattamente l'effetto Heisenberg che il §50 spiegava con la vita
+   del buffer: cambiata la registrazione (`acceptmoe_pesi` non più registrato), l'osservazione non
+   sposta più l'allocatore.
+3. **Conseguenza per il fix** (dal §50, invariata): non togliere una registrazione, ma **DICHIARARE
+   LA DIPENDENZA** — dare alla partizione un arco su `weights_norm` (o tenere vivo il tensore) — così
+   l'allocatore non ricicla il buffer che la cache legge fuori banda.
+4. **Contatori nuovi nel braccio rotto**: `RESIDENTI = 0,8%` in A e B (contro 15-20% nei cammini sani)
+   — terzo testimone del §44, e il primo che non richiede di leggere il testo.
+
+### Igiene
+- `LLAMA_CACHE_ESPERTI_TRACCIA=1` usa il valore come **nome di file**: il dump (231.204 byte) è
+  finito nella **radice del worktree git** come file `1`; **spostato** (non cancellato) in
+  `D:\ds4_work\llama_run\vision_corto_runs\s1_traccia_lane1_20260902.traccia_route.bin` — è la
+  traccia route del braccio rotto, utile al fascicolo. Regola: `TRACCIA=<percorso assoluto>`.
+- Percorsi: `D:\ds4_work\llama_run\vision_corto_runs\s1_traccia_lane1_20260902.{server.log,r1.output.txt,stdout.txt}`;
+  braccio A: `…\s1_guardia_lane1_20260902.*`.
+
+**Stato**: bivio chiuso per lettera; stadio 2 in ripartenza (materiale intatto, preflight verde) dopo
+la finestra offerta a zen-morse per eventuali bracci aggiuntivi su questo binario.

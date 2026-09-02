@@ -4491,3 +4491,27 @@ produzione. ⇒ l'invariante che la leva inverte è appoggiata da **un solo cons
 diagnostico**: la patch 2 è molto meno rischiosa di come appariva quando l'invariante è stata
 scoperta. Il grep chiesto dalla regia ha fatto il suo lavoro: ha trasformato un rischio ignoto in
 un rischio quantificato e piccolo.
+
+### §66-bis — PRE-REGISTRAZIONE della replica a freddo del 473 lane1 (scritta PRIMA di correre): «la strumentazione è gratis in USCITA, ma è gratis in TEMPO?»
+
+**Il fatto**: decode 12,148 contro 12,300/12,384/12,394/12,331 dell'ancora **a lavoro identico** (SHA e
+ogni contatore alla cifra) ⇒ differenza di puro tempo di parete. La dispersione propria dell'ancora
+lunga è **0,76%**, quella del corto 0,37% ⇒ **−1,2…−1,9% sta FUORI dal rumore misurato**. Lo stadio 1
+ha aggiunto conteggio + tre atomiche per riga in `kern_partiziona`, lanciato 36.722 volte per corsa.
+**Discriminante già in mano**: il prefill, che i contatori non toccano, è **136,89** contro
+137,0-138,5 delle corse precedenti sullo stesso banco ⇒ invariato mentre il decode cala.
+
+**Letture pre-registrate (replica a freddo, `vl_arm vision_A -Slot 473`, quiete lunga, nessuna
+build/corsa immediatamente prima)**:
+- **(a) decode ≥ 12,30** ⇒ era stato della macchina (build + G1 + corto senza quiete): strumentazione
+  gratis, lo stadio 2 si misura contro l'ancora `B2B8F84E` (12,30-12,39).
+- **(b) decode ≈ 12,15** (e prefill invariato) ⇒ **i contatori costano ~1,5% di tempo**: la
+  strumentazione **NON entra nella config di servizio** (resta build diagnostica), lo stadio 2 si
+  misura **contro la baseline strumentata** (12,15), e il premio netto sul servizio è quello della
+  leva **meno** il costo dei contatori se restassero a bordo. Conseguenza operativa per la build
+  successiva: il blocco di conteggio in coda a `kern_partiziona` sotto una env a valore
+  (`LLAMA_CACHE_ESPERTI_LANE_CONTA`, difetto 0 = nessuna atomica), mentre la guardia in `ggml-cpu.c`
+  resta sempre (un confronto per id): guardia e contatori viaggiano separati.
+- **(c) decode ≈ 12,15 e prefill calato** ⇒ macchina, non strumentazione: si ripete a freddo.
+
+**Sequenza**: S1 + bivio (zen-morse, in corso) → replica a freddo (questa) → stadio 2.

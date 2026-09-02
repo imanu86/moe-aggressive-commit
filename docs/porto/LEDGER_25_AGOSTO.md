@@ -3712,3 +3712,72 @@ la config di servizio resta §52/§54 (473 slot, AM=1, COMPATTA=0). 623 slot «r
 Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_sonde_{T2_s623_st150,T1_s623,M1a_emi16,M1b_emi256}_20260902.summary.txt`,
 `…\sota_ctx150000_densefa_stage_hc5_vl_sonde_<tag>_f2_b2048.server.log`, testi `…_q1.output.txt`,
 stdout `…\vl_sonde_vl_sonde_<tag>.stdout.txt`.
+
+## 59. CONTROLLO `wsolo` (2/9, 06:51-07:08) — **il predittore è GRATIS (−1,0%, traiettoria BIT-IDENTICA a T0): l'8% è tutto del CONSUMATORE online.** ⚑ **QUESTO COMMIT È IL SEGNALE: campagna chiusa, macchina LIBERA**
+
+Braccio `wsolo` di `vl_sonde_arm.ps1`: `-CacheEspertiW 1` + `LLAMA_CACHE_ESPERTI_FORK_COMPONI=1` +
+`LLAMA_CACHE_ESPERTI_PF_LEGACY=0` esplicito (senza online il codice non lo forza: il consumatore
+legacy sarebbe costato il −42% del 31/8), `TRASPORTO_ONLINE` azzerata, 623 slot. Produttore
+acceso, consumatori spenti entrambi. Testimoni: manifesto `LLAMA_CACHE_ESPERTI_W=1(E)` e
+`FORK_COMPONI=1(E)`; `PREFETCH LEGACY SOPPRESSO` presente (unico testimone di `PF_LEGACY=0`: la
+variabile non è nel manifesto); `prefetch LEGACY forzato SPENTO`, `TRASPORTO ONLINE` e
+`trasporto-online ->` ASSENTI; `prefetch prenotati 0`. DLL `9E8E8D46`/`6A98BE10`. Nessun
+processo residuo. Il cancello `FORK` di `cache-esperti.cu:3317-3325` (esige W=0 senza componi)
+è la ragione per cui `COMPONI=1` è obbligatorio, non cosmetico.
+
+| | **T0** 623 puro | **wsolo** 623 + W=1 | **T1** 623 + W + online | **T2** 623 + W + online + stage150 |
+|---|---|---|---|---|
+| decode t/s | 12,467 | **12,344 (−1,0%)** | 11,454 (−8,1%) | 12,192 (−2,2%) |
+| ms/token | 80,21 | 81,01 | 87,31 | 82,02 |
+| C_round | 199,7 | 201,7 | 215,7 | 205,1 |
+| SHA · p1 · mean_len | `BDCE6E51` · 0,81829 · 2,49 | **`BDCE6E51` · 0,81829 · 2,49 (IDENTICI)** | `11DB44B1` · 0,83372 · 2,47 | `2FD489B7` · 0,81705 · 2,50 |
+| domanda / colpi / byte | 278.296 / 67,2% / 650,91 | **identici alla cifra** | 272.620 / 67,1% / 639,10 | 282.768 / 68,4% / 637,92 |
+| partizioni · acceptmoe | 36.034 · 19.320/46.674/58.912/1.753 | **identici** | 36.679 · 19.480/44.490/57.397/2.123 | 34.056 · 19.200/47.025/58.612/2.041 |
+| copie in anticipo | 0 | 0 | 386 (2,52 GiB) | 11.592 (75,35 GiB) |
+| worker calcolo / join / attesa-lavoro | n.d. | 1,872 / 2,829 / 3,511 ms | 1,790 / 2,732 / 3,878 | 1,825 / 2,773 / 3,934 |
+| VRAM libera decode | 385 | 385 | 385 | 385 |
+
+### Lettura — l'attribuzione è chiusa a una variabile
+1. **`wsolo` = T0 al bit**: stesso SHA, stesso testo (3902 char), stessi p1/mean_len, stessi
+   contatori alla cifra. Il nodo predittore (`cache_pf-<L+1>`, 43 per forward) **non tocca
+   l'uscita** e costa **−1,0% di decode** (deriva a traiettoria identica misurata 0,4-0,9%: al
+   bordo del rumore). Conferma la stima del 5/8 (memoria `predittore-route-gate-strato-dopo`:
+   0,2% di calcolo). **Produrre le previsioni è gratis.**
+2. **Il consumatore online costa −7,2% da solo** (T1 contro `wsolo`: 12,344 → 11,454, C_round
+   +6,9%) **muovendo 386 copie**: è un costo FISSO, non proporzionale ai byte. `confini=62.518`
+   (≈ 43 strati × forward) ⇒ **~70 µs per confine di strato**: il pattern «indicizzazione lato
+   device, trasporto lato host» (l'unico possibile su GeForce/WDDM, memoria
+   `previsione-compra-il-meccanismo`) paga una sincronizzazione a ogni confine per leggere gli id
+   predetti. **Correzione al §16**: `r58_tonline` (31/8) non era «C_round piatto, perdita di
+   traiettoria»; era questo costo, nascosto dal calo di mean_len.
+3. **L'atterraggio vale +6,4%** (T2 contro T1) con 150 slot di staging e 54% di copie in tempo;
+   saldo T2 contro `wsolo` = −1,2%. **Tetto della strada se il consumatore fosse gratuito: ~13,3
+   t/s** su questa VRAM (la lane non può crescere: 385 MiB liberi). Non è una via ai 20.
+4. **Implicazione d'ingegneria, quantificata**: l'unica cosa che varrebbe la pena costruire sul
+   trasporto è **togliere il costo per confine del consumatore** (leggere gli id predetti senza
+   sincronizzare a ogni strato: batch di confini, o consumo device-side che le API non danno).
+   Premio massimo ≤ +6% al meglio. Da mettere a coda con questo tetto scritto accanto.
+
+### Chiusura della campagna «tutte le altre strade» (2/9, 04:00-07:08, otto bracci, zero guasti)
+
+| via | esito | dove |
+|---|---|---|
+| slot 573/623 | piatto (−3,1% / +1,1%), byte −15/−9%, traiettoria domina | §56 |
+| trasporto online + staging | capienza risolta (rifiutate 0), consumatore −7,2% fisso, atterraggio +6,4%, saldo −1,2% | §58, §59 |
+| trasporto online senza staging | −8,1%: chiuso per la seconda volta | §58 |
+| massa emivita 16/256 | byte +10/+14%: 64 è l'ottimo | §58 |
+| predittore W | gratis (−1%, uscita identica) | §59 |
+| IQ1 / sub-bit | **escluso a priori dall'utente** | — |
+
+**Nessuna promozione. Config di servizio e ancore invariate (§52/§54).** Nuovo strumento:
+`lanciatori_salvati_20260825\vl_sonde_arm.ps1` (bracci `online` / `massa` / `wsolo`, guardie sui
+clamp, testimoni in intestazione). **Coda che questa campagna lascia**: (1) un metro a
+traiettoria fissa prima di qualunque fronte di residenza (§56); (2) rete di ripiego di `SLOT`
+(~3 righe, build); (3) manifesto che stampi `TRASPORTO_*`/`MASSA_*`/`PF_LEGACY`/`USATO_INVECCHIA`
+(build); (4) correggere §16 e §18 p.3 come da §57-§59; (5) il consumatore online senza sync per
+confine, con tetto +6% dichiarato. **I 20 t/s restano dove erano il 31/8: nella VRAM.**
+
+Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_sonde_W1_s623_20260902.summary.txt`,
+`…\sota_ctx150000_densefa_stage_hc5_vl_sonde_W1_s623_20260902_f2_b2048.server.log`, testo `…_q1.output.txt`.
+⚑ **Per zen-morse: QUESTO commit è il segnale.** Macchina libera dalle 07:09 (GPU 588 MiB, nessun
+processo llama); quiete 3×40 s e il banco è vostro.

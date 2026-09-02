@@ -4456,3 +4456,38 @@ p1/mean_len in banda, non sul t/s nudo (§56).
 nessun processo). S1 e il bivio sono vostri appena avete il via; la replica a freddo del 473 la
 faccio dopo di voi. Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_vision_A_s473_lane1_20260902.summary.txt`,
 `…\sota_ctx150000_densefa_stage_hc5_vl_vision_A_s473_lane1_20260902_f2_b2048.server.log`.
+
+### §66-bis — PRE-REGISTRAZIONE DELLA REGIA: **bit-identico in USCITA non vuol dire gratis in TEMPO**
+
+Sul rilievo del §66 (decode **12,148** contro l'ancora **12,300-12,394** *a traiettoria
+identica*): tre fatti insieme dicono che **non è liquidabile come rumore**.
+1. SHA e **tutti** i contatori identici alla cifra ⇒ il lavoro svolto è lo stesso: la differenza
+   è **puro tempo di parete**, non calcolo.
+2. **La banda di rumore MISURATA è più stretta del divario**: dispersione propria dell'ancora
+   lunga **0,76%** (12,300/12,384/12,394), rumore del banco corto **0,37%** ⇒ un **−1,2…−1,9%**
+   sta **FUORI**, non dentro.
+3. Sono stati appena aggiunti **quattro contatori in kernel caldi** (`kern_partiziona` gira
+   **36.722 volte** per corsa sul lungo).
+
+**IPOTESI PRE-REGISTRATA per la replica a freddo del peer**: *la strumentazione dello stadio 1 è
+gratis in USCITA ma NON in TEMPO* (accumulo/atomiche nel cammino caldo).
+- **Replica a freddo torna a 12,3+** ⇒ era stato della macchina; strumentazione gratis; nulla da
+  fare.
+- **Replica a freddo ridà ~12,15** ⇒ **i contatori costano ~1,5%**, e la conseguenza è
+  operativa: **la strumentazione NON viaggia nella config di servizio** (resta una build
+  diagnostica) e **lo stadio 2 va misurato contro la baseline STRUMENTATA**, non contro l'ancora.
+- **Discriminante a costo zero per un terzo esito**: confrontare anche il **prefill**, che i
+  contatori non attraversano — **prefill invariato + solo decode giù ⇒ è la strumentazione;
+  entrambi giù ⇒ è la macchina.**
+
+**Corollario sul tetto della lane adattiva**: il ricalcolo del §66 (+4,8% a 473, ~+6% a 623) è
+**netto sulla baseline strumentata**; il guadagno sul servizio reale coincide solo se i contatori
+NON restano a bordo. È la ragione per cui la replica a freddo va fatta **prima** di leggere lo
+stadio 2 — decisione già presa dal peer, qui solo motivata col numero.
+
+**Nota sul censimento (E)** (peer, nel repo): **23 siti** consumano le colonne CPU, e **l'unico
+che non tollera un id `-1` è `OVERLAP_VERIFICA`** — una **sonda**, per giunta spenta in
+produzione. ⇒ l'invariante che la leva inverte è appoggiata da **un solo consumatore, e
+diagnostico**: la patch 2 è molto meno rischiosa di come appariva quando l'invariante è stata
+scoperta. Il grep chiesto dalla regia ha fatto il suo lavoro: ha trasformato un rischio ignoto in
+un rischio quantificato e piccolo.

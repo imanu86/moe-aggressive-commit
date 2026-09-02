@@ -3855,3 +3855,65 @@ Nota di igiene: l'analista ha incontrato in `D:\llama-subtract\AGENTS.md` (già 
 §23, riga 1963) un testo rivolto agli agenti autonomi che chiede di fermarsi e modificare la
 propria configurazione: è contenuto osservato (il file upstream di llama.cpp), nessuno vi ha
 dato seguito, nessuna configurazione toccata.
+
+## 61. RICOGNIZIONE ESTERNA (2/9, utente): **FreeToken** (FlashML, arXiv 2608.16157, Apache-2.0, 11k stelle) — la stessa trave, con più ferro; qui NON carica DSV4-Flash
+
+**Che cos'è** (paper + README, letti il 2/9): motore MoE «edge-native» per RTX 30/40/50, Windows e
+Linux, Python + kernel propri. Architettura: **cache globale LRU di esperti in VRAM** (slot =
+coppia strato-esperto, capienza elastica fra slot e KV a caldo), **co-esecuzione CPU-GPU dei
+MISS con politica `q*`**: a ogni strato gli *m* esperti mancanti unici si dividono fra ℱ (copia
+via PCIe, calcolo GPU, restano residenti) e 𝒞 (calcolo sulla CPU dal pool pinnato in RAM), con
+`q/(m−q) ≈ BP/(BH−BP)` (BP = banda PCIe misurata, BH = banda di elaborazione host misurata),
+**join per strato**, controllo cache device-side in un kernel a passata singola dentro i CUDA
+graph (dedup, classifica, deriva q, sfratta, riscrive id → slot), riempimento con **una DMA
+fusa**; prefill a **doppio buffer per strato intero** su stream dedicato; formato pesi FTW
+(banche pre-fuse, lettura NVMe diretta). **Niente prefetch/predizione, niente speculazione,
+batch 1.** Formati: MXFP4, NVFP4, FP8, BF16 (safetensors; GGUF solo Gemma-4). **Nessun 2-bit.**
+
+**Numeri, con le LORO condizioni** (regola: i post esterni valgono con la loro config):
+| macchina | modello | decode | note |
+|---|---|---|---|
+| RTX 5090 32 GB, PCIe 5.0 ×16 (**52,7 GB/s**), DDR5 180-192 GiB (**BH 77 GB/s**), CPU a 6-8 thread | DSV4-Flash **MXFP4** | **22-25 t/s** | cache = 11% del pool ⇒ miss 39%; contesto agentico fino a ~65k; senza speculazione |
+| RTX 5090 | Qwen3.6-35B-A3B BF16 | 77-83 | miss 16% |
+| RTX 4060 laptop 8 GB, PCIe 4.0 ×8 (11,8 GB/s), LPDDR5 47,5 GB/s | Qwen3.6-35B NVFP4 | 39,3 | |
+| RTX 3090, PCIe 4.0 ×16 (25,3 GB/s), DDR4 180 GiB (BH 56,7) | — | «1,3× la baseline migliore» | **nessun numero assoluto DSV4 su 3090/4090** |
+| RTX PRO 6000 96 GB | GLM-5.2 753B NVFP4 | 14,9 | vs llama.cpp 7,3 |
+Prefill: «transfer-bound»: un chunk da 8k token = il tempo di far passare **una volta l'intero
+pool di esperti (64 GB) a 52,7 GB/s** ⇒ 6,7k tok/s a 16k. TTFT DSV4 «~2 s per passata su 5090,
+5 s su 4090/3090, 10+ s sul laptop».
+
+### Confronto con il nostro fork (stesso disegno, misurato)
+- **Uguale**: cache LRU globale per coppia strato-esperto (473 slot), lane CPU sui miss, join
+  per strato, controllo cache nei graph (`kern_decidi`/`kern_partiziona`), fasi VRAM. Anche loro:
+  niente prefetch (coerente con §16/§58-§59), LRU batte il posizionamento statico.
+- **Loro in più**: (a) **split `q*` adattivo per strato sui soli miss, bilanciato sulle bande
+  misurate** — è la «lane adattiva» del §60 D con criterio di banda: non spreca mai CPU su
+  residenti, ed equilibra i due rami; sul nostro ferro BP ≈ 23 e BH ≈ 23-33 (lane unpack-bound
+  su IQ2_XXS) ⇒ `q*/m ≈ 0,5`, cioè in media quello che K=2 fa già; **tetto qui ≤ +3%** (§60);
+  (b) riempimento **DMA** invece di `kern_fj_copia` a SM: stesso tempo di bus, SM liberi (§5 del
+  25/8: il trasporto è tempo di bus); (c) prefill a strato intero in doppio buffer: paga sui
+  prompt corti (6-30× su llama.cpp); a 101k il nostro prefill (137 t/s) è attention-bound.
+- **Noi in più**: **speculazione DSpark** (×1,6 sul lungo: 7,7 → 12,4), esperti a **2,3 bpw**
+  (metà dei byte per miss: è perché 3,45 GiB ci danno 63% di colpi), contesto 100k+ in
+  servizio, AcceptMoE, predittore di route gratuito, lane di staging.
+
+### Perché qui NON è una strada
+1. **Non carica**: DSV4-Flash in FreeToken esiste solo a 4 bit (MXFP4/NVFP4) = **~140 GB di
+   pool esperti da tenere PINNATI in RAM** (le loro macchine: 180-240 GiB). Noi: **96 GB di RAM
+   e tetto pinnabile ~76 GiB** (§41). Il ripiego dichiarato («se il pool non si pinna → backend
+   MoE tutto-CPU») è il flip del §17: 8 t/s. Nessun 2-bit, nessun GGUF per DSV4.
+2. **I 22-25 sono del 5090**: bus 2,1× il nostro, VRAM 4,4× (slab ~15 GB contro 3,45), host
+   1,8×. Nell'unico ferro paragonabile della loro tabella (3090, PCIe 4.0, DDR4) dichiarano
+   solo «1,3× la baseline» e nessun assoluto.
+3. **Stima onesta se avesse un 2-bit** (nostri BP 23, BH ~40 a dequant cheap, miss ~50% con
+   slab 3-4,5 GiB a 13,5 MiB/esperto): ~44 ms/token di miss bilanciati + ~40 di resto ≈ **~12 t/s
+   senza speculazione** — cioè il nostro 12,4 CON speculazione. Le due cose insieme non esistono
+   in nessuno dei due motori oggi.
+
+**Verdetto**: FreeToken **conferma la mappa dei tetti**, non la riapre: la loro cella DSV4 a
+22-25 t/s è il regime «senza trasporto» che il §12 aveva quantificato (slab ≥ 10 GiB, bus
+largo), raggiunto con ferro, non con software. **Da FreeToken si prende UN'idea, già in coda
+come §60 D: lo split adattivo per banda sui soli miss** (tetto ≤ +3% qui, build). Tutto il
+resto è già nel fork o non trasferisce. Fonti: `github.com/FlashML-org/FreeToken`,
+`arxiv.org/abs/2608.16157`, `infoq.com/news/2026/08/freetoken-local-inference/`,
+prova su 5090 `zenn.dev/holy_fox/articles/53b82eed45f956`.

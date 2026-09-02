@@ -534,3 +534,49 @@ dei tetti di §5.1 è confermata su un secondo modello. I 20 t/s restano nella V
 **Coda aggiunta a §10**: metro a traiettoria fissa · rete di ripiego di `SLOT` (build) ·
 manifesto che stampi `TRASPORTO_*`/`MASSA_*`/`PF_LEGACY` (build) · consumatore online senza
 sync per confine (tetto +6%) · correggere §16/§18 nel ledger come da §57-§59.
+
+
+## 12-bis. AGGIORNAMENTO 2/9 (pomeriggio) — binario `lane1` certificato, stadio 1 della lane adattiva dentro, stadio 2 pronto
+
+**Decisione utente (~10:20)**: «una cosa non esclude l'altra» ⇒ tenuto il binario ricostruito alle
+07:25 dal chirurgo 20 (sorgente «terza mano») e validato; tutto il resto in parallelo, una variabile
+per volta sulla macchina. Sequenza concordata con zen-morse: (i) certificazione → (ii) S1 + bivio
+§49/§50 (zen-morse) → (iii) stadio 1 lane adattiva → replica a freddo → stadio 2. Ledger §62-§66-ter.
+
+**Binario del banco (dalle 13:18)** — l'identità è la DLL, al plurale:
+| DLL | SHA256 | note |
+|---|---|---|
+| `llama.dll` | `9E8E8D469A7B047F…` (1/9 14:03) | invariata |
+| `ggml-cuda.dll` | **`D783DBE13F5FA893…`** (2/9 13:18) | terza mano + stadio 1 |
+| `ggml-cpu.dll` | **`9F00A975C8A6574E…`** | guardia sull'indice −1 in `mul_mat_id` |
+| `ggml-base.dll` | **`CB2E8E376B1F222C…`** | contatore `voci fuori tabella` |
+Backup completo con sorgenti: `D:\llama-subtract\build\bin\backup_pre_lane1\` (e `backup_pre_chirurgo20\` per lo stato precedente).
+**Certificato bit-identico su tre banchi**: G1 0731 corto 3/3 `AD3D3770`, Vision corto A `28ADE339`
+(contatori identici alla cifra), Vision lungo A `B2B8F84E` (§66). ⇒ **le ancore §52/§54 e i numeri
+§56-§59 valgono sul binario attuale senza ri-ancoraggio**. La terza mano non tocca i cammini di
+servizio: può manifestarsi solo nei bracci del bivio a `COMPATTA=1`.
+
+**Righe nuove nei log (stadio 1, §65)**: `sched-worker-lane: voci fuori tabella=N` (sul worker,
+SEMPRE stampata, anche a 0: distingue «mai raggiunto» da «raggiunto e nullo») e, sulla riga `tre vie
+router/massa`, `CPU=… (di cui RESIDENTI=…, %) … lane adattiva: cpu_vive=…, gpu_colonne=…, somma=…
+(6.00 per partizione), perm_rotta=…`. **Misure**: RESIDENTI = **15,1%** sul lungo a 473 (caso
+peggiore, §66), 18,7% sul 0731 corto, 20,4% sul Vision corto. Tetto della leva coi numeri veri:
+**~+4,8% a 473, ~+6% a 623** (§66). Riserva aperta: decode 12,148 contro 12,331 di S0 (§56, stessa config/giorno) = −1,48%, mentre il
+prefill fa 137,11 → 136,89 = −0,16% (fattore 9: i contatori, non la macchina) ⇒ **replica a freddo obbligata** con letture pre-registrate
+(§66-bis/ter): (a) ≥ 12,30 ⇒ macchina; (b) ≈ 12,15 ⇒ i contatori costano ~1,5% ⇒ MAI nella config
+di servizio, stadio 2 misurato contro la baseline strumentata, prossima build con env sul conteggio.
+
+**Stadio 2 (la leva) — PRONTO, NON APPLICATO**: `docs/porto/lane_adattiva_20260902/chirurgia/lane_adattiva_2_leva.patch`
+(dry-run pulito sull'albero, compilato in isolamento, riga difensiva sul contesto bozza), disegno
+completo + otto deviazioni (D1-D10) in `APPLICA.md`, censimento (E) dei consumatori delle colonne
+CPU (`SEZIONE_E_censimento.md`: 23 siti, solo `LLAMA_OVERLAP_VERIFICA` non tollera, spenta e
+dichiarata non valida a livello 2). Env `LLAMA_OVERLAP_K_MIN_NONRES` (0 = spenta byte-identica,
+1 = sonda, 2 = decide; rifiuta di armarsi con `OVERLAP_K < 1`). ⚠ Cambia la traiettoria: verdetto
+sui contatori di macchina (`RESIDENTI = 0` esatto, `calcolo` della lane −15% a 473, `copie ±1%`,
+`lavori ±3%`, p1/mean_len in banda), mai sul t/s nudo (§56).
+
+**Percorsi canonici nuovi**: banco corto Vision `lanciatori_salvati_20260825\vision_corto\`
+(`ratifica_A_ciclo.ps1 -Ciclo N` = un processo per ciclo; identità attese come parametri; run in
+`D:\ds4_work\llama_run\vision_corto_runs\`); piattaforma del difetto n.1
+`lanciatori_salvati_20260825\difetto1_piattaforma\` (zen-morse, script `c19_*` verbatim);
+sonde lunghe `vl_sonde_arm.ps1` (bracci `online`/`massa`/`wsolo`). Summary del lungo = **UTF-16LE**.

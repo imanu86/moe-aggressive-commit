@@ -4292,3 +4292,35 @@ ripuntata a `vision_corto_runs` prima di riusarla come regia a tre cicli.
 **Stato**: binario `18444E20` **certificato** (0731 3/3, Vision A 1/1). Macchina LIBERA dalle 10:48.
 ⚑ **Segnale per zen-morse**: fase (ii) vostra appena avete il via; se il via non c'è, la (iii)
 parte (compilazione isolata della patch, poi seconda build col protocollo pieno).
+
+### §62-ter — **FASE (i) CHIUSA: il binario `18444E20` è certificato su ENTRAMBI i cammini**
+
+**Attribuzione: `moe-aggressive-commit-ff` (loro §64, marcata SEGNALE).** Non-regressione della
+config di servizio Vision sul corto: **SHA `28ADE3395B5888D7…090E1BBD` IDENTICO**, 4.568 byte,
+p1 0,72693, mean_len 1,92, colpi 75,2%, domanda 245.272 / partizioni 61.060 (**4,017, deficit
+−1.032**), byte 433,32 GiB, contatori acceptmoe **identici alla cifra** (25.120/30.972/48.070/
+44.047/668), nove testimoni su nove, identità `18444E20…` nel log, zero assert.
+⇒ Con il `G1` 3/3 del §62-bis: **la terza mano non tocca né il cammino 0731 né il servizio
+Vision.** Fase (i) **chiusa**.
+
+**⚑ COROLLARIO CHE AFFILA L'ESPERIMENTO DECISIVO (§6.5).** La config di servizio gira con
+**`COMPATTA=0`**, cioè con la scrittura dei `-1` **spenta**: è il cammino su cui la patch della
+terza mano **non può** manifestarsi. ⇒ **I due bracci del bivio (a `COMPATTA=1`) sono l'UNICO
+posto in cui quella patch può produrre un effetto**, e abbiamo appena verificato
+sperimentalmente che tutto il resto è fermo. **Qualunque cosa cambi nei due bracci è quindi
+attribuibile alla patch e a nient'altro** — il contesto migliore possibile per un esperimento a
+due esiti opposti pre-registrati.
+
+**PERCORSI CANONICI (sostituiscono lo scratchpad del §62-bis, che non è durevole)**:
+`D:\ds4_work\llama_run\lanciatori_salvati_20260825\vision_corto\` (con `ORIGINE.txt` = mtime+SHA
+degli originali, `DIFF.txt`, e **le identità DLL attese come PARAMETRI a difetto invariato**, non
+più letterali — correzione applicata prima che la copia diventasse canonica, regola del 25/8:
+*«non si aggiornano gli hash attesi per far passare un cancello; si estende con un parametro»*)
+e run in `D:\ds4_work\llama_run\vision_corto_runs\`. **È il modello da riusare per ogni prossimo
+braccio destinato a durare.**
+
+**Stato della coda al momento della scrittura**: fase (i) chiusa · fase (ii) — i due bracci del
+bivio — **in attesa del via dell'utente alla sessione zen-morse** (non parte su decisione
+riferita da terzi) · fase (iii) — build contatori+guardia della lane adattiva — **avviata dalla
+sessione ospite** per non lasciare la macchina ferma. Ordine invertito rispetto al piano, stessa
+disciplina: **una variabile per volta**.

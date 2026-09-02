@@ -4535,3 +4535,45 @@ leva stessa può introdurre. Una guardia dietro l'interruttore delle misure spar
 3. **contatori di misura** (`RESIDENTI`, statistiche): dietro `LANE_CONTA`, difetto 0 = niente atomiche.
 
 Il chirurgo rigenera la patch 2 su questo disegno (D12). Regola a registro, vale oltre questa patch.
+
+## 67. REPLICA A FREDDO DEL 473 `lane1` (2/9, 14:22-14:39) — **lettura (a): ERA LA MACCHINA. Decode 12,456 e prefill 138,58, contatori bit-identici, lane `calcolo` −5,8%: la strumentazione dello stadio 1 non si misura. Regola: quiete lunga prima di ogni corsa da confrontare**
+
+Stesso braccio del §66 (`vl_arm vision_A -Slot 473 -DraftSoloCpu`, tag `…_lane1_r2`), identità 4/4
+(`9E8E8D46` / `D783DBE1` / `9F00A975` / `CB2E8E37`), **GPU ferma da 26 min** prima del preflight (49 °C),
+RAM libera 87,75 GiB, nessuna build né corsa nel frattempo. Attesa di cortesia con file di stop mai
+comparso; zen-morse ha dato il via esplicito.
+
+| | S0 §56 (6A98BE10) | lane1 r1 (13:41, dopo build+G1+corto) | **lane1 r2 (14:39, a freddo)** |
+|---|---|---|---|
+| decode t/s | 12,331 | 12,148 | **12,456** (+1,0% su S0, +2,5% su r1) |
+| prefill t/s | 137,11 | 136,89 | **138,58** (+1,1% / +1,2%) |
+| SHA · p1 · mean_len | `B2B8F84E` · 0,82683 · 2,51 | identici | **identici** |
+| RESIDENTI · somma · perm_rotta · fuori tabella | — | 15,1% · 6,00 · 0 · 0 | **identici** (11.123/73.444) |
+| worker: calcolo / evento / attesa / join (ms) | n.d. | 1,983 / 0,993 / 3,489 / 2,934 | **1,868** / 0,981 / 3,456 / 2,806 |
+| lavori · copie · byte · acceptmoe | — | 15.222 · 100.588 · 717,41 · 19.120/… | **identici alla cifra** |
+| ms/token · C_round | 81,10 · 203,5 | 82,32 · 206,6 | **80,28 · 201,5** |
+
+### Lettura
+1. **Pre-registrazione §66-bis/ter, esito (a)**: decode ≥ 12,30 e prefill SALITO ⇒ il −1,5% di r1 era
+   **stato della macchina**, non i contatori. La strumentazione dello stadio 1 è gratis in uscita e
+   **non misurabile in tempo** (r2 è la corsa più veloce mai vista a 473 su questo prompt).
+2. **Il meccanismo della deriva, ora visibile**: a lavoro identico, la lane CPU è passata da 1,983 a
+   **1,868 ms per lavoro (−5,8%)**; evento/attesa/join quasi fermi. La lane è **CPU-bound** e sente lo
+   stato termico/di frequenza della CPU: r1 è partita subito dopo una build (8 core al 100%), G1 e il
+   corto Vision; r2 dopo 26 min di quiete. **Il decode è più sensibile del prefill** (che è GPU-bound):
+   il «fattore 9» del §66-bis era il segno di questo, non dei contatori.
+3. **Correzione a §66-bis (regia) e §66-ter (ospite)**: il discriminante «prefill invariato ⇒
+   strumentazione» **non regge** — la deriva colpisce asimmetricamente decode e prefill perché hanno
+   colli diversi. Il discriminante giusto era la replica a freddo, ed è quello che ha deciso.
+4. **Regola di banco nuova, a registro**: **una corsa da confrontare parte solo dopo ≥ 20 min di quiete
+   della CPU** (nessuna build, nessuna corsa corta immediatamente prima), oppure si confronta solo
+   con una corsa nelle stesse condizioni. La banda del 473 lane1 su due load è ora **12,15-12,46**
+   (2,5%), più larga della dispersione a freddo dell'ancora (0,76%): per leggere lo stadio 2
+   (+4,8% di carta) servono **condizioni di quiete uguali** e il confronto sul `calcolo` della lane
+   (1,868 ms a freddo) prima che sul t/s.
+5. **Conseguenza per la patch 2**: la separazione a tre livelli (§66-quater, D12) resta giusta per
+   igiene e per la guardia in produzione, ma **non è più motivata da un costo misurato** dei contatori.
+
+**Stato**: macchina LIBERA dalle 14:39. Coda: S1 (test della guardia) + bivio → stadio 2 (patch D12
+nel repo, dry-run pulito). Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_vision_A_s473_lane1_r2_20260902.summary.txt`,
+`…_lane1_r2_20260902_f2_b2048.server.log`.

@@ -47,7 +47,11 @@ danno file **byte-identici** a `mod\` su tutti e nove i file.
    Uscita **bit-identica per costruzione**: nessuna forma cambia, nessuna env
    nuova, nessun valore calcolato cambia. Cancello: G1 `AD3D3770…FE11` 3/3 e
    `voci fuori tabella == 0`.
-2. **`lane_adattiva_2_leva.patch`** (405 righe, 6 file) — si applica **SOPRA** il primo.
+2. **`lane_adattiva_2_leva.patch`** (415 righe, 6 file) — si applica **SOPRA** il primo.
+   **Rigenerato il 2/9 contro l'albero di OGGI**, cioe' con lo stadio 1 gia'
+   dentro (verificato: i nove file dell'albero vivo sono byte-identici a
+   `mod1\`). Dry-run stretto sull'albero vivo: `patch -p1 --binary --fuzz=0
+   --dry-run` **esce 0 su tutti e sei i file**, e l'albero resta intatto.
    A `LLAMA_OVERLAP_K_MIN_NONRES` assente o 0 resta anch'esso bit-identico
    (vedi §4e); a 1 = sonda; a 2 = decide.
 
@@ -85,7 +89,7 @@ backend CUDA per un contatore — vedi D1).
 | `ggml/src/ggml-cuda/cache-esperti.cu` | 7755, 7798-7814 | parametro del lanciatore + **quattro istanziazioni** (+50 / −16) |
 | `ggml/src/ggml-cuda/ggml-cuda.cu` | 3305-3315 | legge `op_params[2]` e lo passa (+8 / −1) |
 | `src/llama-graph.cpp` | 18 | `#include <cstdio>` (+1) |
-| `src/llama-graph.cpp` | dopo 1868 | **la leva**: env a valore, rifiuto con `K < 1`, testimone stderr (+45) |
+| `src/llama-graph.cpp` | dopo 1868 | **la leva**: env a valore, **rifiuto sul contesto BOZZA**, rifiuto con `K < 1`, testimone stderr (+55) |
 | `src/llama-graph.cpp` | 1886, 1910 | i due `ggml_cache_esperti_partiziona` col quinto argomento (+3 / −2) |
 | `src/llama-graph.cpp` | 1918-1923 | `ids_gpu` a sei colonne **solo a livello 2** (+13 / −2) |
 
@@ -306,6 +310,44 @@ invece di 144 a `n_tokens = 3`.
 con la stessa formulazione, piu' `#include <cstdio>` (non c'era; `LLAMA_LOG_*`
 sarebbe filtrabile dal callback del server — la lezione del chirurgo 16).
 
+### D9 — la leva NON deve poter armarsi sul contesto BOZZA (§E.1, ACCOLTA)
+
+Il censimento (E) ha stabilito che il drafter **non riceve le colonne CPU**, e non
+per fortuna: il cancello di `llama-graph.cpp:2346` vuole `LLM_ARCH_DEEPSEEK4`, e
+l'header GGUF della bozza (`DSpark-draft-Q2K.gguf`) dice
+`general.architecture = dflash` (il bersaglio dice `deepseek4`). Quindi
+`build_moe_ffn_overlap` non e' mai chiamata per la bozza e `kern_partiziona` non
+gira mai sul runtime `bozza`.
+
+**Ma quello e' un fatto del MODELLO, non del codice**: se un domani la bozza
+fosse un `deepseek4` distillato, il confinamento cadrebbe in silenzio. Su
+decisione di regia la riga entra nella patch 2, dentro la lambda della leva,
+subito dopo `if (lv == 0) { return 0; }`:
+
+```cpp
+        if (cparams.ctx_other != nullptr) {
+            return 0;
+        }
+```
+
+`cparams` e' gia' in scope (usato a `:1936` per `cparams.warmup`), ed e' **lo
+stesso predicato** con cui `llama-context.cpp:1904` sceglie il runtime `bozza`
+della cache esperti.
+
+### D10 — `LLAMA_OVERLAP_VERIFICA` NON e' valida a livello 2 (a REGISTRO, non in patch)
+
+La sonda di `ggml-cuda.cu:3316-3374` verifica l'invariante **vecchia**
+`o[o[ne0+i]] == s[i]`, che la leva cambia: `perm_inv` indicizza il concat largo
+`k_cpu+ne0`, quindi ogni colonna GPU da' `pos >= ne0`, e una colonna ceduta da'
+`o[pos] == -1`. La sonda conterebbe disallineamenti su ogni riga. Non c'e'
+overflow (`parte` e' dimensionata a meta' e legge solo A|B), ma il blocco C non
+viene mai letto.
+
+**Decisione di regia: nessuna modifica nella patch 2.** La sonda resta spenta ed
+e' dichiarata **non valida a livello 2**. La riscrittura corretta — che conta e
+non corregge, e collassa sul codice di oggi a livello 0 — resta documentata in
+**§E.5 di `SEZIONE_E_censimento.md`** per chi volesse accenderla.
+
 ### D8 — il bilancio delle destinazioni entra GIA' nello stadio 1 (ACCOLTA)
 
 Il mandato iniziale diceva «62-64 possono essere dichiarati ma restano 0»; il
@@ -339,11 +381,14 @@ misurato a leva spenta**, come chiedeva §C.5.
 
 ## 5. Rischi residui, dichiarati
 
-1. **`ggml_dsv4_moe_decode`** (`llama-graph.cpp:1940`) riceve `ids_gpu`. A livello 2
-   `ids_gpu` passa da `ne0-k_cpu` a `ne0` colonne. Il nodo non ha assert sulla
-   larghezza, ma il **kernel** potrebbe assumerla. La leva `LLAMA_DSV4_DECODE_TILE`
-   e' spenta di difetto; **se si accende insieme alla lane adattiva va verificata
-   a parte**.
+1. ~~`ggml_dsv4_moe_decode` potrebbe assumere `ne0-k_cpu`~~ — **CHIUSO dal
+   censimento (E)**: `ggml_cuda_dsv4_moe_decode_supported` (`ggml-cuda.cu:3153`)
+   ammette **esplicitamente `ids->ne[0] >= 1 && <= 6`**, e l'op usa
+   `n_routes = ids->ne[0]` e `ids->nb[1]/sizeof(int32_t)` in modo generico. Il
+   costo a sei colonne e' `mid` da 96 a 144 KiB per strato a `n_tok=3`, dal pool.
+   Resta solo: **non fondere tile e lane adattiva nella stessa misura**, perche'
+   il tile cambia il kernel che consuma `ids_gpu` e i due effetti non sarebbero
+   separabili. La leva `LLAMA_DSV4_DECODE_TILE_VRES` e' comunque spenta.
 2. **`n_lav < n_tok`** (replay stantio): le righe `t >= n_lav` del blocco C
    restano non inizializzate, come gia' oggi succede al blocco A. Nessuna
    esposizione nuova, ma nemmeno risolta.
@@ -370,3 +415,27 @@ misurato a leva spenta**, come chiedeva §C.5.
 | `perm_rotta` | 0 (non ancora scritto) | 0 | 0 | **0** |
 | copie / `kern_fj_copia` | — | — | — | **±1%** |
 | `lavori` | — | — | — | **±3%** |
+
+
+---
+
+## 7. Sezione (E) — censimento dei consumatori delle colonne CPU
+
+Consegnata a parte in **`SEZIONE_E_censimento.md`** (da appendere al documento
+del disegno dopo la sezione D). Ventitre siti censiti con verdetto
+«tollera / NON tollera / non raggiunto / non riceve le colonne CPU».
+
+Esiti che ricadono su questa patch:
+
+- **Il drafter non riceve le colonne CPU** (arch `dflash`, non `deepseek4`) ⇒
+  la riga difensiva di **D9** entra comunque nella patch 2.
+- **I due `-1` non si intersecano mai**: AcceptMoE solo in `j >= k_cpu`
+  (`:7316`), la cessione solo in `j < k_cpu`; consumatori fisicamente diversi.
+- **La GPU non vede mai la parte CPU**: `assicura` riceve `ids->data` del nodo
+  MUL_MAT_ID **CUDA**, cioe' `ids_gpu`; con lo stadio 2 e' il blocco C a sei
+  colonne con id validi. Piu' otto guardie `esperto < 0` gia' presenti.
+- **La chiave di riuso dei grafi non cambia**: la forma di `part` e' funzione di
+  (livello statico, `n_tokens`), deterministica per taglia.
+- **Il rischio tile e' chiuso** (vedi §5.1).
+- **`LLAMA_OVERLAP_VERIFICA` non e' valida a livello 2** ⇒ **D10**, a registro,
+  fuori dalla patch.

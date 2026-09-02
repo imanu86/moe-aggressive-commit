@@ -90,7 +90,7 @@
 +// ESISTE nel binario, e nessuna riga preesistente del kernel e' stata
 +// toccata (solo questa firma, il blocco in coda, e le istanziazioni al
 +// lancio). E' lo stesso idioma gia' pagato per la classe 4 di ADAPTIVE-K,
-+// :7199-7203. Il difetto `= false` fa si' che `kern_partiziona<true>` e
++// :7208-7212. Il difetto `= false` fa si' che `kern_partiziona<true>` e
 +// `kern_partiziona<false>` restino scritture valide.
 +// `lane_ad` e' il LIVELLO a runtime (0/1/2), non un secondo interruttore:
 +// serve a distinguere SONDA (1, conta e non decide) da DECIDE (2) dentro
@@ -119,7 +119,7 @@
 +        // chiave[perm[j]], NON con k_vivo = min(k_cpu, n_miss) come nel
 +        // disegno: quella formula presuppone che le prime k_cpu colonne
 +        // della permutazione siano i non-residenti, e non e' vero quando
-+        // AcceptMoE ha riordinato perm[] per peso zero (:7265-7275, attivo
++        // AcceptMoE ha riordinato perm[] per peso zero (:7274-7284, attivo
 +        // in produzione con COMPATTA=1). Col criterio per colonna il
 +        // cancello «di cui RESIDENTI = 0 esatto» e' vero per costruzione:
 +        // ceduta <=> chiave != 0 <=> contata in lane_cpu_residenti.
@@ -133,7 +133,7 @@
 +            //     [n_tok, 2*n_tok) del tensore, passo di riga invariato.
 +            int32_t * g = out + (size_t) (n_tok + t) * 2 * ne0;
 +            // Prima le colonne che la GPU calcola davvero -- le cedute e le
-+            // sue -- con la STESSA regola di :7307, cosi' la compattazione a
++            // sue -- con la STESSA regola di :7316, cosi' la compattazione a
 +            // peso zero di AcceptMoE continua a valere anche sul blocco C
 +            // (senza questo, la leva ricaricherebbe colonne matematicamente
 +            // nulle: rischio 3 del disegno, qui chiuso).
@@ -176,7 +176,7 @@
 +
 +            // BIGEZIONE DI perm_inv: sei valori distinti, ognuno in una
 +            // colonna davvero ASSEGNATA. E' l'idioma del «guasto muto» di
-+            // :7255-7263: se salta, lo strato calcola meno di sei esperti e
++            // :7264-7272: se salta, lo strato calcola meno di sei esperti e
 +            // l'uscita e' spazzatura PLAUSIBILE, senza un solo assert.
 +            if (c.lane_ad_perm_rotta) {
 +                uint32_t visto = 0;
@@ -308,7 +308,7 @@
  #include <cstring>
  #include <numeric>
  #include <sstream>
-@@ -1867,6 +1868,51 @@
+@@ -1867,6 +1868,61 @@
      const bool forma_ammessa = n_tokens <= batch_max && selected_experts->type == GGML_TYPE_I32 &&
          up_exps != nullptr && gate_exps != nullptr && down_exps != nullptr && il >= 0;
  
@@ -329,9 +329,19 @@
 +        if (lv == 0) {
 +            return 0;
 +        }
++        // lane-adattiva (2/9): mai sul contesto BOZZA. Oggi la bozza non
++        // arriva nemmeno qui -- la sua arch e' `dflash`, non `deepseek4`,
++        // e il cancello di :2346 la esclude -- ma quello e' un fatto del
++        // MODELLO, non del codice: se un domani la bozza fosse un deepseek4
++        // distillato, il confinamento cadrebbe in SILENZIO. Stesso predicato
++        // con cui llama-context.cpp:1904 sceglie il runtime `bozza` della
++        // cache esperti.
++        if (cparams.ctx_other != nullptr) {
++            return 0;
++        }
 +        // RIFIUTO DI ARMARSI con LLAMA_OVERLAP_K < 1. Sotto 1 la Bresenham
 +        // di :1846-1847 da' k_cpu == 0 su qualche strato, e li' il ramo K0
-+        // del kernel (:7108-7143) scrive gia' -1 nelle colonne a peso zero,
++        // del kernel (:7117-7152) scrive gia' -1 nelle colonne a peso zero,
 +        // con un significato DIVERSO (compattazione AcceptMoE) da quello
 +        // della cessione alla GPU. Due -1 nelle stesse colonne e nessun
 +        // consumatore capace di distinguerli: la leva non si arma.
@@ -360,7 +370,7 @@
      // Il planner globale K0 deve osservare/replayare le stesse route finali
      // senza costruire i due rami CPU/GPU. Inserisce quindi il solo nodo
      // testimone di partizione (K=0), espanso come side effect, mentre il MoE
-@@ -1883,8 +1929,9 @@
+@@ -1883,8 +1939,9 @@
      }();
      if (k_cpu <= 0) {
          if (calendario_k0 && forma_ammessa) {
@@ -371,7 +381,7 @@
              if (calendario_esatto) testimone->src[1] = weights;
              cb(testimone, "ffn_moe_calendar_k0", il);
              // K0 conserva l'ordine originale ma sostituisce con -1 le route
-@@ -1908,17 +1955,28 @@
+@@ -1908,17 +1965,28 @@
      // di partizione (primi k_cpu alla CPU) + permutazione inversa. k sta nei
      // parametri dell'op ma NON nel kernel: cambiare K non ricattura i graph.
      ggml_tensor * part = ggml_cache_esperti_partiziona(

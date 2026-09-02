@@ -3391,6 +3391,54 @@ servito con una config immune per costruzione**, in un giorno:
   nuove istanze di «strumenti che mentono»** (§20, §37, §43, §49, §54).
 **Aperti**: la radice ultima del difetto (serve build + dump, §50); la bonifica di
 `Set-SotaEnvironment`; il porto mtmd nel fork; la terza mano su `D:\llama-subtract` (§45).
+
+---
+
+## 55. PASSAGGIO DI CONSEGNE — 2/9: il banco va alla sessione `moe-aggressive-commit-ff`
+
+**Direttiva utente 2/9**: «proviamo tutte le altre strade» verso i 20 t/s, **IQ1 escluso a
+priori**. Il banco lungo è di quella sessione per ~2,5 h; questa sessione (zen-morse) **non
+compila, non lancia, non tocca la macchina** fino al suo commit-segnale.
+
+**Sequenza dichiarata**: `S0 473` (controllo, deve ridare `B2B8F84E…`) → `S1 573` → `S2 623` →
+**trasporto-online al conteggio più alto che regge** → **massa**. Binari attesi invariati
+(`9E8E8D46` / `6A98BE10`), con `Get-FileHash` delle due DLL **prima di ogni braccio** (stop se
+diverge — copre anche il rischio della terza mano, §45).
+
+**Materiale passato dalla regia** (ledger §16, §41, §53; handoff §5, §8, §9):
+1. **L'ordine dei bracci è la cosa più preziosa del piano.** `TRASPORTO_ONLINE` fu chiuso il
+   31/8 (§16) **per CAPIENZA, non per il canale**: `rifiutate_pressione = 19.885 / 40.965`,
+   anello mai pieno (in volo max 8 su 255). ⇒ **testarlo a 473 slot ripeterebbe un esperimento
+   chiuso; ha senso SOLO al conteggio più alto**, e il **cancello primario è
+   `rifiutate_pressione` che crolla** (+ `in tempo` che sale), non il t/s.
+2. **Cancelli**: lo **SHA NON è il cancello** (cambiare gli slot cambia la residenza ⇒ la
+   traiettoria); valgono §4.10 in **UTF-8 esplicito**, il **SEGNO del deficit**
+   (`domanda − 7,597·partizioni` — sul lungo il valore sano è **7,6**, non il 4,0 del corto), e
+   **p1 molto sopra 0,83 con t/s volante = corruzione**. Riferimento: `V-ANCORA-LUNGO-A`
+   `B2B8F84E…`, 12,300/12,384/12,394, p1 0,82683, colpi 63,4%, byte 717,41 GiB, partizioni
+   36.722.
+3. **Aspettativa pre-registrabile sullo sweep**: a 473 slot nemmeno **BELADY** toglie i byte
+   necessari ai 20 — arriva al bersaglio a **~1500 slot (9,89 GiB di slab)**. 573/623 sono
+   +21%/+32%: **la curva lì è piatta per costruzione**. Giudicare su **byte a domanda e
+   C_round**, non sui colpi (correlazione colpi→t/s = 0,20 su 349 corse) — ricordando però che
+   **sul LUNGO i byte SI convertono parzialmente** (§53: −14,1% ⇒ +3,6…+5,3%).
+4. **Nomi**: `LLAMA_TRASPORTO_ONLINE` **senza** prefisso `CACHE_ESPERTI_`; budget
+   `LLAMA_TRASPORTO_ONLINE_BUDGET` (difetto 24, fabbisogno vero ~16 miss/token: **non alzarlo a
+   60**, è l'eccesso che nel legacy costò −42%); `PF_LEGACY` forzato a 0 (testimoni `:2586`,
+   `:3085`); `MASSA=2` **esige** `FORK=1|2`; `MASSA_AMMISSIONE` ha **difetto 1 nel codice** e la
+   produzione la spegne (−6,2% via mappato, 14/8).
+
+**Nota di disegno della regia**: la sessione sta verificando il lettore di
+`LLAMA_TRASPORTO_STAGE_SLOT` come **secondo asse** (dare capienza all'anticipo senza toccare il
+pool residente). Se quel pool esiste ed è separato, allora **il braccio `623 slot + tonline`
+fonde DUE variabili** (più residenza *e* più spazio per l'anticipo): il disegno pulito è
+**`473 + stage` contro `473 puro`** — una variabile sola, e isola *quale* capienza mancava.
+Consigliato farlo **prima** del braccio a 623.
+
+**Convenzioni per la scrittura del ledger** (concordate): la sessione ospite scriverà qui i
+propri esiti **a fine campagna**, un commit per sezione, percorsi espliciti, `git pull` prima di
+committare. **HEAD al passaggio: `c7a47a4`; ultima sezione: questa (§55) ⇒ partire da §56.**
+Handoff di riferimento: `docs/porto/HANDOFF_1_SETTEMBRE.md`.
 3. **Scala sonde APPROVATA** (P1 = DISABLE_GRAPHS+VERIFICA, decisiva; P2 = `ACCEPTMOE_COMPATTA=0`,
    ben mirata sul fetch di rr; P3 = controllo SLOT=0 in-sessione). L'eventuale dump
    chi[slot]-vs-richiesto a valle di P1: SOLO col protocollo pieno (backup DLL in

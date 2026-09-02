@@ -4623,3 +4623,55 @@ backup `backup_pre_lane2\` (DLL + 6 sorgenti), apply con verifica byte-esatta, b
 `ggml-base ggml-cpu ggml-cuda llama`, editbin, poi **G1 3×, Vision A ciclo 3, S1 ri-baseline** — tutti
 a leva spenta e attesi bit-identici (`AD3D3770`, `28ADE339`, `97DF3AB0`). Il bivio di zen-morse corre
 sul binario corrente quando arriva il via. Zen-morse avvisata con file di stop `STOP_lane2`.
+
+## 68. ⭐ **META' DEL BIVIO E' DECISA — e il §49 è FALSIFICATO.** `S1` *era* il braccio A
+
+**La corsa `s1_guardia_lane1_20260902` della sessione ospite, lanciata come test della loro
+guardia, È il BRACCIO A dell'esperimento decisivo del §6.5/§50** — stessa configurazione alla
+lettera: Vision, `LLAMA_ACCEPTMOE=1`, `COMPATTA=1` (difetto), `K=2`, **senza drafter**, ctx 4096,
+80 token. Nessuno se n'era accorto finché la regia non ha confrontato le due schede.
+
+**Esito: SHA `97DF3AB0…` IDENTICO** su un binario che **contiene** la patch della terza mano
+⇒ **il braccio A NON è guarito.** Contro la tabella pre-registrata del §50:
+
+| braccio | §49 «registrazione» | §50 «vita del buffer» | **misurato** |
+|---|---|---|---|
+| **A. ROTTO** | GUARISCE | **RESTA ROTTO** | **RESTA ROTTO** ✔ |
+| B. TRACCIA | resta sano | DIVENTA ROTTO | *da fare* |
+
+⇒ **§49 FALSIFICATO. Sopravvive il §50 («vita del buffer»): la cache legge FUORI BANDA, con un
+puntatore che l'allocatore non vede, un buffer di `weights_norm` già riciclato.**
+
+**E il dato è più forte di «non ha guarito»**: i contatori sono **identici alla cifra** a
+`c19f_s1_ripro`, che girava su `6A98BE10` — **prima** che la patch della terza mano fosse
+compilata (domanda 4359, colpi 2504 = 57,4%, copie 1855, partizioni 3612, CPU 7224, lanci 3320,
+mascherate 0, pesi mancanti 0). ⇒ **quella patch è COMPLETAMENTE INERTE su questo cammino**, non
+solo insufficiente. Coerente con ciò che sapevamo per deduzione (`pesi mancanti = 0` diceva già
+che il record alla partizione era `weights_norm`, non `acceptmoe_pesi`), **ora misurato**.
+
+**Contatori nuovi nel braccio rotto** (dallo stadio 1, vivi per la prima volta qui):
+`voci fuori tabella = 0` (letta per prima, come pre-registrato: **la guardia NON è stata
+raggiunta** — conferma della lettura `j >= k_cpu`: i `-1` restano nelle colonne GPU e non
+arrivano mai alla CPU); `RESIDENTI = 60 = 0,8%` (nel braccio rotto **la cessione quasi sparisce**,
+coerente col 70% di route annullate); `somma 6,00`, `perm_rotta 0`.
+**⇒ Certificazione dello stadio 1 estesa al QUARTO cammino** (0731 corto, Vision corto, Vision
+lungo, **braccio rotto**): bit-identico anche **dove i `-1` esistono in massa** — la prova più
+forte delle quattro, perché è l'unico cammino che li produce.
+**Nuova quantificazione del difetto, più netta del 71%**: `domanda/partizioni = 1,207` nel braccio
+rotto contro **4,0** nel sano ⇒ **69,8% delle route annullate**, letto da un rapporto invece che
+da una differenza.
+
+**RICHIESTA ALLA SESSIONE OSPITE (inviata)**: eseguire **il braccio B** (stessa corsa + solo
+`LLAMA_CACHE_ESPERTI_TRACCIA=1`) **PRIMA** dello stadio 2, che tocca `ggml.h` e **cambia
+`llama.dll`**: cinque minuti sul binario su cui A è stato misurato valgono più di un'ora di
+ricostruzione dell'attribuzione dopo. **Lettura pre-registrata invariata**: B rotto ⇒ §50
+confermato e **bivio CHIUSO**, col fix vero identificato (**dichiarare la dipendenza**: un arco
+di grafo dalla partizione a `weights_norm`, oppure tenere vivo il tensore); B sano ⇒ nessuno dei
+due modelli regge, radice riaperta ma con un vincolo in più. Riferimento storico del braccio B:
+`pesi mancanti` valeva **1760/1892**.
+
+**Nota di metodo**: due sessioni hanno corso per ore accanto senza accorgersi che **la stessa
+corsa serviva a due fascicoli diversi**. Il costo è stato zero solo perché entrambe registravano
+la configurazione per intero. **Regola: quando si dispaccia un braccio, confrontarne la
+configurazione con i bracci pre-registrati degli ALTRI fascicoli aperti** — un esperimento già
+pagato può valere due verdetti.

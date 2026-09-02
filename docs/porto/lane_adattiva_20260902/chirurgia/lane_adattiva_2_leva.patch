@@ -59,7 +59,30 @@
      result->op     = GGML_OP_CACHE_ESPERTI_PARTIZIONA;
 --- a/ggml/src/ggml-cuda/cache-esperti.cuh
 +++ b/ggml/src/ggml-cuda/cache-esperti.cuh
-@@ -624,11 +624,16 @@
+@@ -270,6 +270,22 @@
+     //   - kern_partiziona<false>     -> senza CALENDARIO_TRACE il ramo non
+     //                                   esiste NEMMENO nel binario (if constexpr).
+     int       k_adattivo;
++    // lane-adattiva (2/9): LLAMA_CACHE_ESPERTI_LANE_CONTA, a VALORE, difetto 0.
++    //
++    // I quattro contatori della lane (lane_cpu_residenti, lane_ad_cpu_vive,
++    // lane_ad_gpu_colonne, lane_ad_perm_rotta) sono MISURA, non meccanismo, e
++    // la misura COSTA: la strumentazione dello stadio 1, a lavoro identico, ha
++    // pesato -1,48% sul decode contro -0,16% sul prefill (S0 §56). A 0 il
++    // blocco di conteggio in coda a kern_partiziona NON esegue -- nessun
++    // ciclo, nessuna atomica -- e la riga `tre vie` torna al formato di prima.
++    //
++    // NON governa la cessione: a leva 2 il blocco C, i -1 sulle colonne cedute
++    // e la riscrittura di perm_inv avvengono comunque, perche' testano
++    // `chiave[perm[j]]` e non leggono un solo contatore.
++    //
++    // NON governa la guardia di ggml-cpu.c, che resta SEMPRE attiva (un
++    // confronto per id), ne' la riga `sched-worker-lane: voci fuori tabella=`.
++    int       lane_conta;
+     // DEADLINE PER (strato, esperto), dal campo `scadenza` del piano PORTCAL1:
+     // e' un INDICE DI STRATO, come `rilascio`. -1 = nessuna deadline nota, ed e'
+     // il valore di riempimento. Tabella sparsa a indicizzazione diretta
+@@ -624,11 +640,16 @@
  // k alla CPU per ordine di slot, il resto alla GPU. Chi legge il grafo in
  // quella configurazione deve aspettarsi questo, non un errore.
  // Un thread per token, un blocco: n_tok e' il batch stretto del decode.
@@ -79,7 +102,31 @@
  // ---- ACCEPTMOE (GGML_OP_ACCEPTMOE_IDS / _PESI) ----------------------------
 --- a/ggml/src/ggml-cuda/cache-esperti.cu
 +++ b/ggml/src/ggml-cuda/cache-esperti.cu
-@@ -6916,14 +6916,26 @@
+@@ -2611,6 +2611,23 @@
+             runtime->cache.scudo_transito = (st && *st && atoi(st) != 0) ? 1 : 0;
+         }
+         {
++            // lane-adattiva (2/9): LANE_CONTA. Cancello a VALORE, non a
++            // presenza -- `=0` deve restare indistinguibile dall'assenza, o il
++            // braccio di controllo non e' un controllo. Solo `=1` accende;
++            // qualunque altro valore vale 0.
++            //
++            // Spegne SOLO la strumentazione (il blocco di conteggio in coda a
++            // kern_partiziona e i quattro campi sulla riga `tre vie`). Non
++            // tocca la cessione della lane adattiva, ne' la guardia di
++            // ggml-cpu.c, ne' la riga `sched-worker-lane`.
++            const char * lc = getenv("LLAMA_CACHE_ESPERTI_LANE_CONTA");
++            runtime->cache.lane_conta = (lc && *lc && atoi(lc) == 1) ? 1 : 0;
++            if (runtime->cache.lane_conta) {
++                fprintf(stderr, "%s: lane_conta=1\n", cache_nome(runtime));
++                fflush(stderr);
++            }
++        }
++        {
+             // ADAPTIVE-K v0. Cancello a VALORE, non a presenza: 0/assente =
+             // comportamento di oggi bit per bit. 1 = sonda (conta e non
+             // decide), 2 = decide. Qualunque altro valore vale 0: una leva che
+@@ -6916,14 +6933,26 @@
  // il primo B ha mostrato che cambiare quali colonne vanno a CPU altera lo SHA,
  // il p1 e il numero di grafi, impedendo di misurare il solo trasporto
  // copia/zero-copy contro il SOTA.
@@ -108,14 +155,41 @@
      const int t = (int) (blockIdx.x * blockDim.x + threadIdx.x);
      __shared__ uint32_t traccia_base;
      __shared__ uint32_t calendario_base;
-@@ -7352,6 +7364,89 @@
+@@ -7328,14 +7357,19 @@
+     // 13,4% del 15/8 e' un punto FREDDO (fixture 64 token).
+     //
+     // Blocco SEPARATO e in CODA di proposito: cosi' non tocca una sola riga
+-    // del bilancio di :7289-7302 ne' del resto del kernel -- kern_partiziona
++    // del bilancio di :7298-7311 ne' del resto del kernel -- kern_partiziona
+     // e' la piattaforma di riproduzione bit-esatta del difetto n.1 e non deve
+-    // spostarsi. Non e' guardato da nessuna leva (ne' `attiva`, ne' la
+-    // politica router che invece guarda il blocco `router_*`): un contatore
+-    // che si spegne quando cambia un'altra leva non e' una misura.
+-    // Deve stare DOPO il riordino a peso zero di AcceptMoE (:7265-7275),
++    // spostarsi.
++    // Deve stare DOPO il riordino a peso zero di AcceptMoE (:7274-7284),
+     // perche' e' quella la permutazione che la CPU consuma davvero.
+-    if (c.lane_cpu_residenti) {
++    //
++    // DIETRO `lane_conta` (2/9, decisione di regia). Non e' un ripensamento
++    // sulla regola dei contatori muti: e' che la MISURA COSTA. Lo stadio 1,
++    // a lavoro identico, ha pesato -1,48% sul decode contro -0,16% sul
++    // prefill (S0 §56) -- il ciclo e l'atomica per riga sono sul cammino piu'
++    // caldo che abbiamo. A LANE_CONTA=0 qui non gira nulla; il contatore
++    // continua a NON dipendere da nessun'ALTRA leva, che era il punto.
++    if (c.lane_conta && c.lane_cpu_residenti) {
+         int spr = 0;
+         for (int j = 0; j < k_cpu && j < ne0; j++) {
+             if (chiave[perm[j]] != 0) spr++;
+@@ -7352,11 +7386,115 @@
      // bilancio, e abbassa questa variabile delle colonne cedute.
      int lane_ad_vive = k_cpu < ne0 ? k_cpu : ne0;
  
 +    // ---- lane-adattiva (2/9): LA LEVA. -----------------------------------
 +    // Non esiste nell'istanziazione <planner_trace, false>.
 +    if constexpr (adattiva) {
-+        // QUALI colonne cede la CPU. Si decide COLONNA PER COLONNA su
++        // ---- IL MECCANISMO. Non legge NESSUN contatore. -------------------
++        // QUALI colonne cede la CPU si decide COLONNA PER COLONNA su
 +        // chiave[perm[j]], NON con k_vivo = min(k_cpu, n_miss) come nel
 +        // disegno: quella formula presuppone che le prime k_cpu colonne
 +        // della permutazione siano i non-residenti, e non e' vero quando
@@ -123,11 +197,11 @@
 +        // in produzione con COMPATTA=1). Col criterio per colonna il
 +        // cancello «di cui RESIDENTI = 0 esatto» e' vero per costruzione:
 +        // ceduta <=> chiave != 0 <=> contata in lane_cpu_residenti.
-+        int ceduti = 0;
-+        for (int j = 0; j < k_cpu && j < ne0; j++) {
-+            if (chiave[perm[j]] != 0) ceduti++;
-+        }
-+
++        //
++        // La cessione NON dipende da LANE_CONTA: ogni scrittura qui sotto
++        // testa `chiave[perm[j]]` direttamente e non legge un solo contatore.
++        // I contatori sono MISURA, non meccanismo -- e con la misura spenta
++        // la leva deve rendere ESATTAMENTE come con la misura accesa.
 +        if (lane_ad == 2) {
 +            // (1) BLOCCO C: i sei id per la lane GPU. Sta nelle righe
 +            //     [n_tok, 2*n_tok) del tensore, passo di riga invariato.
@@ -172,24 +246,43 @@
 +            }
 +            // Le colonne cedute passano dalla lane CPU a quella GPU: il
 +            // bilancio qui sotto resta a somma ne0, come deve.
-+            lane_ad_vive -= ceduti;
++        }
 +
-+            // BIGEZIONE DI perm_inv: sei valori distinti, ognuno in una
-+            // colonna davvero ASSEGNATA. E' l'idioma del «guasto muto» di
-+            // :7264-7272: se salta, lo strato calcola meno di sei esperti e
-+            // l'uscita e' spazzatura PLAUSIBILE, senza un solo assert.
-+            if (c.lane_ad_perm_rotta) {
-+                uint32_t visto = 0;
-+                bool rotta = false;
-+                for (int j = 0; j < ne0; j++) {
-+                    const int v = o[ne0 + j];
-+                    if (v < 0 || v >= k_cpu + ne0 || v >= 32) { rotta = true; break; }
-+                    if (v < k_cpu && chiave[perm[v]] != 0) { rotta = true; break; }
-+                    if (visto & (1u << v)) { rotta = true; break; }
-+                    visto |= 1u << v;
-+                }
-+                if (rotta) {
-+                    atomicAdd((unsigned long long *) c.lane_ad_perm_rotta, 1ull);
++        // ---- LA MISURA, dietro LANE_CONTA. --------------------------------
++        // A LANE_CONTA=0 qui non gira ne' un ciclo ne' un'atomica: la cessione
++        // sopra e' gia' avvenuta comunque. `ceduti` serve SOLO al bilancio
++        // delle destinazioni -- il meccanismo non lo usa mai.
++        //
++        // ⚠ DICHIARATO: a LANE_CONTA=0 anche la BIGEZIONE tace, quindi in
++        // produzione il rilevatore del «guasto muto» e' spento. E' un cancello
++        // di COLLAUDO: il braccio della leva va corso con LANE_CONTA=1, e
++        // `lane_ad_perm_rotta == 0` va verificato li'. La correttezza della
++        // cessione non dipende da lui -- e' un testimone, non una difesa.
++        if (c.lane_conta) {
++            int ceduti = 0;
++            for (int j = 0; j < k_cpu && j < ne0; j++) {
++                if (chiave[perm[j]] != 0) ceduti++;
++            }
++            if (lane_ad == 2) {
++                lane_ad_vive -= ceduti;
++
++                // BIGEZIONE DI perm_inv: sei valori distinti, ognuno in una
++                // colonna davvero ASSEGNATA. E' l'idioma del «guasto muto» di
++                // :7264-7272: se salta, lo strato calcola meno di sei esperti
++                // e l'uscita e' spazzatura PLAUSIBILE, senza un solo assert.
++                if (c.lane_ad_perm_rotta) {
++                    uint32_t visto = 0;
++                    bool rotta = false;
++                    for (int j = 0; j < ne0; j++) {
++                        const int v = o[ne0 + j];
++                        if (v < 0 || v >= k_cpu + ne0 || v >= 32) { rotta = true; break; }
++                        if (v < k_cpu && chiave[perm[v]] != 0) { rotta = true; break; }
++                        if (visto & (1u << v)) { rotta = true; break; }
++                        visto |= 1u << v;
++                    }
++                    if (rotta) {
++                        atomicAdd((unsigned long long *) c.lane_ad_perm_rotta, 1ull);
++                    }
 +                }
 +            }
 +        }
@@ -197,8 +290,17 @@
 +
      // IL BILANCIO DELLE DESTINAZIONI -- chi CALCOLA, non chi e' RESIDENTE.
      // La somma deve fare ne0 esatto per riga e restare IDENTICA a leva spenta
-     // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis, e va
-@@ -7769,7 +7864,7 @@
+-    // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis, e va
+-    // misurato adesso, perche' il numero a leva spenta e' il riferimento.
+-    if (c.lane_ad_cpu_vive && c.lane_ad_gpu_colonne) {
++    // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis.
++    // Anche questo dietro `lane_conta`: si misura nel braccio di collaudo,
++    // non a ogni token del servizio.
++    if (c.lane_conta && c.lane_ad_cpu_vive && c.lane_ad_gpu_colonne) {
+         atomicAdd((unsigned long long *) c.lane_ad_cpu_vive,
+                   (unsigned long long) lane_ad_vive);
+         atomicAdd((unsigned long long *) c.lane_ad_gpu_colonne,
+@@ -7769,7 +7907,7 @@
          cache_esperti_runtime * runtime,
          const int32_t * ids, int ne0, int passo_riga, int n_tok,
          const float * pesi_traccia, int passo_pesi_traccia,
@@ -207,7 +309,7 @@
          int32_t * out, cudaStream_t stream) {
      if (ne0 <= 0 || ne0 > 16 || n_tok <= 0) {
          return;   // fuori contratto: il cancello d'ammissione sta nel grafo
-@@ -7812,22 +7907,52 @@
+@@ -7812,22 +7950,52 @@
      if (rr && (rr->ids != ids || rr->ne0_ids != ne0)) rr = nullptr;
      const bool planner_trace = runtime &&
              (runtime->cache.calendario != nullptr || runtime->cache.traccia != nullptr);
@@ -274,6 +376,81 @@
      }
      if (runtime && runtime->calendario_trasporto && strato == 0) {
          kern_calendario_prepara<<<1, 1, 0, stream>>>(
+@@ -8462,33 +8630,47 @@
+             runtime->cache.politica_massa, runtime->cache.scudo,
+             (unsigned long long) v[20], (unsigned long long) v[21],
+             (unsigned long long) v[22]);
+-    fprintf(stderr, "cache-esperti: tre vie router/massa -> soglia_copia_pm=%d, copie_min=%d, cpu_leggeri=%d, partizioni=%llu, "
+-                    "pesi mancanti=%llu, CPU=%llu (di cui RESIDENTI=%llu, %.1f%%), zero-copy=%llu, copie=%llu (forzate=%llu), rifiuti registro=%llu"
+-                    " | lane adattiva: cpu_vive=%llu, gpu_colonne=%llu, somma=%llu (%.2f per partizione, deve fare ne0), perm_rotta=%llu\n",
+-            runtime->cache.peso_copia_pm, runtime->cache.copie_min_riga, runtime->cache.cpu_leggeri,
+-            (unsigned long long) v[56], (unsigned long long) v[57],
+-            (unsigned long long) v[58],
+-            // lane-adattiva (2/9): il numero del primo braccio. Il denominatore
+-            // e' v[58] (router_cpu, += k_cpu per partizione): stessa unita',
+-            // esperti-riga dati alla CPU. Se v[58] e' zero la politica router
+-            // e' spenta e la percentuale non ha denominatore: si stampa 0,0 e
+-            // il valore assoluto resta leggibile.
+-            (unsigned long long) v[55],
+-            v[58] ? 100.0 * (double) v[55] / (double) v[58] : 0.0,
+-            (unsigned long long) v[59],
+-            (unsigned long long) v[60], (unsigned long long) v[61],
+-            (unsigned long long) runtime->router_rifiuti,
+-            // lane-adattiva (2/9): il bilancio delle DESTINAZIONI. Gia' vivo
+-            // nel primo braccio: «per partizione» deve leggere esattamente
+-            // 6,00, e lo stesso valore deve uscire a leva accesa. perm_rotta
+-            // resta 0 finche' la leva non esiste (stadio 2), e deve restare 0
+-            // anche dopo. NB: il rapporto ha senso solo se `partizioni` e'
+-            // vivo, cioe' se MASSA=2 o PESO_COPIA_PM>0; le destinazioni
+-            // invece si contano sempre.
+-            (unsigned long long) v[62], (unsigned long long) v[63],
+-            (unsigned long long) (v[62] + v[63]),
+-            v[56] ? (double) (v[62] + v[63]) / (double) v[56] : 0.0,
+-            (unsigned long long) v[64]);
++    // lane-adattiva (2/9): DUE FORMATI. A LANE_CONTA=0 la riga torna esatta a
++    // quella storica, cosi' i log del servizio non cambiano e nessun parser a
++    // valle va toccato; i quattro campi della lane escono solo quando la
++    // misura e' accesa (e allora sono veri, non zeri muti).
++    if (runtime->cache.lane_conta) {
++        fprintf(stderr, "cache-esperti: tre vie router/massa -> soglia_copia_pm=%d, copie_min=%d, cpu_leggeri=%d, partizioni=%llu, "
++                        "pesi mancanti=%llu, CPU=%llu (di cui RESIDENTI=%llu, %.1f%%), zero-copy=%llu, copie=%llu (forzate=%llu), rifiuti registro=%llu"
++                        " | lane adattiva: cpu_vive=%llu, gpu_colonne=%llu, somma=%llu (%.2f per partizione, deve fare ne0), perm_rotta=%llu\n",
++                runtime->cache.peso_copia_pm, runtime->cache.copie_min_riga, runtime->cache.cpu_leggeri,
++                (unsigned long long) v[56], (unsigned long long) v[57],
++                (unsigned long long) v[58],
++                // lane-adattiva (2/9): il numero del primo braccio. Il denominatore
++                // e' v[58] (router_cpu, += k_cpu per partizione): stessa unita',
++                // esperti-riga dati alla CPU. Se v[58] e' zero la politica router
++                // e' spenta e la percentuale non ha denominatore: si stampa 0,0 e
++                // il valore assoluto resta leggibile.
++                (unsigned long long) v[55],
++                v[58] ? 100.0 * (double) v[55] / (double) v[58] : 0.0,
++                (unsigned long long) v[59],
++                (unsigned long long) v[60], (unsigned long long) v[61],
++                (unsigned long long) runtime->router_rifiuti,
++                // lane-adattiva (2/9): il bilancio delle DESTINAZIONI. Gia' vivo
++                // nel primo braccio: «per partizione» deve leggere esattamente
++                // 6,00, e lo stesso valore deve uscire a leva accesa. perm_rotta
++                // resta 0 finche' la leva non esiste (stadio 2), e deve restare 0
++                // anche dopo. NB: il rapporto ha senso solo se `partizioni` e'
++                // vivo, cioe' se MASSA=2 o PESO_COPIA_PM>0; le destinazioni
++                // invece si contano sempre.
++                (unsigned long long) v[62], (unsigned long long) v[63],
++                (unsigned long long) (v[62] + v[63]),
++                v[56] ? (double) (v[62] + v[63]) / (double) v[56] : 0.0,
++                (unsigned long long) v[64]);
++    } else {
++        fprintf(stderr, "cache-esperti: tre vie router/massa -> soglia_copia_pm=%d, copie_min=%d, cpu_leggeri=%d, partizioni=%llu, "
++                        "pesi mancanti=%llu, CPU=%llu, zero-copy=%llu, copie=%llu (forzate=%llu), rifiuti registro=%llu\n",
++                runtime->cache.peso_copia_pm, runtime->cache.copie_min_riga, runtime->cache.cpu_leggeri,
++                (unsigned long long) v[56], (unsigned long long) v[57],
++                (unsigned long long) v[58], (unsigned long long) v[59],
++                (unsigned long long) v[60], (unsigned long long) v[61],
++                (unsigned long long) runtime->router_rifiuti);
++    }
+     fprintf(stderr, "cache-esperti: cura=%d, spin=%d, lanci=%llu, transiti riusati=%llu, "
+                     "spin esauriti=%llu, promozioni sorpassate=%llu, "
+                     "predetti consumati=%llu, scaduti=%llu\n",
 --- a/ggml/src/ggml-cuda/ggml-cuda.cu
 +++ b/ggml/src/ggml-cuda/ggml-cuda.cu
 @@ -3304,6 +3304,12 @@

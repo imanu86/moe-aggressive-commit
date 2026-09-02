@@ -47,7 +47,7 @@ danno file **byte-identici** a `mod\` su tutti e nove i file.
    Uscita **bit-identica per costruzione**: nessuna forma cambia, nessuna env
    nuova, nessun valore calcolato cambia. Cancello: G1 `AD3D3770…FE11` 3/3 e
    `voci fuori tabella == 0`.
-2. **`lane_adattiva_2_leva.patch`** (415 righe, 6 file) — si applica **SOPRA** il primo.
+2. **`lane_adattiva_2_leva.patch`** (592 righe, 6 file) — si applica **SOPRA** il primo.
    **Rigenerato il 2/9 contro l'albero di OGGI**, cioe' con lo stadio 1 gia'
    dentro (verificato: i nove file dell'albero vivo sono byte-identici a
    `mod1\`). Dry-run stretto sull'albero vivo: `patch -p1 --binary --fuzz=0
@@ -90,6 +90,10 @@ backend CUDA per un contatore — vedi D1).
 | `ggml/src/ggml-cuda/ggml-cuda.cu` | 3305-3315 | legge `op_params[2]` e lo passa (+8 / −1) |
 | `src/llama-graph.cpp` | 18 | `#include <cstdio>` (+1) |
 | `src/llama-graph.cpp` | dopo 1868 | **la leva**: env a valore, **rifiuto sul contesto BOZZA**, rifiuto con `K < 1`, testimone stderr (+55) |
+| `ggml/src/ggml-cuda/cache-esperti.cuh` | dopo `k_adattivo` | **`int lane_conta`** (+16) |
+| `ggml/src/ggml-cuda/cache-esperti.cu` | dopo il blocco SCUDO_TRANSITO | lettore `LLAMA_CACHE_ESPERTI_LANE_CONTA` a valore + testimone `lane_conta=1` (+17) |
+| `ggml/src/ggml-cuda/cache-esperti.cu` | coda del kernel | i **tre punti di conteggio dello stadio 1** passano dietro `c.lane_conta`; la MISURA della leva (`ceduti`, `lane_ad_vive`, biiezione) va in un blocco separato, dopo il meccanismo |
+| `ggml/src/ggml-cuda/cache-esperti.cu` | riga `tre vie` | **due formati**: esteso a `lane_conta=1`, altrimenti **il formato storico verbatim** |
 | `src/llama-graph.cpp` | 1886, 1910 | i due `ggml_cache_esperti_partiziona` col quinto argomento (+3 / −2) |
 | `src/llama-graph.cpp` | 1918-1923 | `ids_gpu` a sei colonne **solo a livello 2** (+13 / −2) |
 
@@ -310,6 +314,43 @@ invece di 144 a `n_tokens = 3`.
 con la stessa formulazione, piu' `#include <cstdio>` (non c'era; `LLAMA_LOG_*`
 sarebbe filtrabile dal callback del server — la lezione del chirurgo 16).
 
+### D11 — i CONTATORI dietro env, la GUARDIA sempre (decisione di regia 2/9)
+
+**Dato nuovo**: la strumentazione dello stadio 1 **costa tempo** — decode
+**−1,48%** contro prefill **−0,16%** rispetto a S0 §56, **a lavoro identico**.
+Il ciclo su `k_cpu` e le tre atomiche per riga stanno sul cammino piu' caldo che
+abbiamo, e una MISURA non deve pesare sul servizio.
+
+**Decisione, recepita nella patch 2**: il blocco di conteggio in coda a
+`kern_partiziona` va dietro `c.lane_conta`, letto a init da
+`LLAMA_CACHE_ESPERTI_LANE_CONTA` (a VALORE, difetto 0, solo `=1` accende),
+con testimone `cache-esperti: lane_conta=1` quando acceso. Restano **sempre
+attive** la guardia di `ggml-cpu.c` (un confronto per id) e la riga
+`sched-worker-lane: voci fuori tabella=`.
+
+I tre vincoli, verificati sul codice generato:
+
+1. **A `LANE_CONTA=0` + leva 0**: i tre punti di conteggio sono
+   `if (c.lane_conta && …)`; nessun ciclo, nessuna atomica. Il cammino e' quello
+   del binario ratificato **piu' la sola guardia CPU**. Nota: `lane_adattiva_1`
+   e' gia' nel binario, quindi **la patch 2 modifica righe che la patch 1 aveva
+   aggiunto** — e' voluto e visibile nel diff.
+2. **La cessione NON dipende da `lane_conta`.** Verificato sul sorgente generato:
+   nel blocco del MECCANISMO (`mod:7392-7451`) **non compare un solo
+   `c.lane_*`, `atomicAdd` o `ceduti`** — ogni scrittura (blocco C, `-1` sulle
+   colonne cedute, `perm_inv`) testa `chiave[perm[j]]` direttamente. I contatori
+   sono misura, non meccanismo.
+3. **La riga `tre vie` ha due formati**: a `lane_conta=1` quello esteso coi
+   quattro campi; altrimenti **il formato storico**, verificato testualmente
+   identico a quello pre-stadio-1 (a meno del rientro). I log del servizio non
+   cambiano e nessun parser a valle va toccato.
+
+**⚠ Conseguenza dichiarata**: a `LANE_CONTA=0` tace anche la **biiezione di
+`perm_inv`** (`lane_ad_perm_rotta`), cioe' il rilevatore del «guasto muto» e'
+spento in produzione. E' un cancello di **COLLAUDO**: il braccio della leva va
+corso con `LANE_CONTA=1` e `perm_rotta == 0` va verificato li'. La correttezza
+della cessione non dipende da lui — e' un testimone, non una difesa.
+
 ### D9 — la leva NON deve poter armarsi sul contesto BOZZA (§E.1, ACCOLTA)
 
 Il censimento (E) ha stabilito che il drafter **non riceve le colonne CPU**, e non
@@ -409,7 +450,8 @@ misurato a leva spenta**, come chiedeva §C.5.
 |---|---|---|---|---|
 | G1 corto 0731 | `AD3D3770…FE11` | idem | idem | diverge, legittimo |
 | ri-baseline S1 | `97DF3AB0…5EC0` | idem | idem | idem |
-| `voci fuori tabella` | **0** | 0 | 0 | > 0, ≈ colonne cedute |
+| `voci fuori tabella` (sempre attivo) | **0** | 0 | 0 | > 0, ≈ colonne cedute |
+| i quattro contatori della lane | — | **richiedono `LANE_CONTA=1`** | idem | idem |
 | `di cui RESIDENTI=` | ~30% atteso | ~30% | ~30% | **0 esatto** |
 | `cpu_vive + gpu_colonne` | **`6,00`/partizione** ← il riferimento | `6,00` | `6,00` | `6,00` |
 | `perm_rotta` | 0 (non ancora scritto) | 0 | 0 | **0** |

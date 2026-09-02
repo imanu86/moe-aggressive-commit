@@ -10,6 +10,10 @@
 
 # 0. ⚠ LEGGERE PRIMA DI TOCCARE QUALSIASI COSA
 
+> **AGGIORNAMENTO 2/9 (notte)**: la campagna «tutte le altre strade» verso i 20 t/s è **CHIUSA** —
+> otto bracci, ogni via env-only sul Vision sta in ±2% dell'ancora, **nessuna promozione**, config e
+> ancore INVARIATE. Vedi **§12** in fondo e ledger §56-§59. Le tre sessioni di §0.1 risultano offline.
+
 ## 0.1 Tre sessioni indipendenti sono attive sullo stesso albero
 L'utente ha avviato da chip, la sera dell'1/9, tre sessioni parallele:
 
@@ -469,3 +473,49 @@ coda) · `MASSA=2` esige `FORK=1|2` · con `COMPATTA=1` la sonda di verifica **s
 
 *Documento generato il 1/9/2026. Cronaca completa: `docs/porto/LEDGER_25_AGOSTO.md` §22-§54.
 Handoff precedente (campagna 20 t/s): `docs/porto/HANDOFF_26_AGOSTO.md`.*
+
+
+---
+
+# 12. AGGIORNAMENTO 2/9 (notte) — la campagna «tutte le altre strade» verso i 20 t/s: CHIUSA
+
+**Direttiva utente**: «proviamo a spingere questo modello a 20 t/s?» → «iq1 escluso a priori» →
+«proviamo tutte le altre strade». Otto bracci sul banco lungo (04:00-07:08), zero guasti, DLL
+invariate, ancora riprodotta al quarto load freddo (4/4). Cronaca: ledger **§56-§59**.
+
+| via | braccio migliore | decode | esito |
+|---|---|---|---|
+| slot sulla VRAM libera del Vision (1479 MiB) | 623 puro | 12,47 (+1,1%) | byte −9% ma la traiettoria domina; 623 regge (385 MiB liberi) |
+| trasporto online + 150 slot di staging (pool 473) | T2 | 12,19 | rifiutate 19.885 → **0**: la capienza ERA il vincolo del 31/8, ma i byte cambiano stream e non spariscono |
+| trasporto online senza staging | T1 | 11,45 | −8,1% a mean_len uguale: chiuso per la seconda volta |
+| massa, emivita 16 / 256 | M1a | 12,51 (traiettoria) | byte +10% / +14%: 64 è già l'ottimo |
+| solo predittore W | wsolo | 12,34 | **gratis**: uscita bit-identica a 623 puro, −1% |
+
+**Cosa cambia per chi subentra: NIENTE nella configurazione.** Config di servizio e ancore
+restano quelle di §2-§3. **Ogni strada env-only sul Vision sta in ±2% dell'ancora**: la mappa
+dei tetti di §5.1 è confermata su un secondo modello. I 20 t/s restano nella VRAM (§10, voce 11).
+
+**Fatti nuovi da tenere a mente**
+- **Il consumatore del trasporto online costa ~7% di macchina FISSI** (~70 µs per confine di
+  strato, anche con 386 copie); il predittore è gratis; l'atterraggio con staging vale +6,4%.
+  Tetto della strada a consumatore gratuito: ~13,3. Corregge la lettura «C_round piatto» del §16.
+- **Ogni leva di residenza cambia la traiettoria** (SHA diverge) e la bozzabilità del testo
+  muove il t/s di ±5%, più dell'effetto cercato; C_round scende con mean_len. Prima di riaprire
+  un fronte di residenza serve un metro a traiettoria fissa (ms/forward normalizzato, spec OFF, o
+  restore). Cancello del deficit riformulato: `domanda/partizioni ≥ 6,5` sano (ancora A 7,485),
+  difetto ≈ 3,7.
+- `LLAMA_TRASPORTO_STAGE_SLOT` **ritaglia** gli ultimi N slot dal pool (pool reattivo = SLOT−N)
+  ed è inerte senza `TRASPORTO_ONLINE≥1`; `kern_acceptmoe` scarta per RESIDENZA (la SOGLIA
+  ripesca; §18 p.3 impreciso); nella famiglia massa sono vive ed env-only solo `MASSA_EMIVITA`
+  e `MASSA_UNITA` (FLOOR/MARGINE inerti sotto `AMMISSIONE=0` inchiodata).
+- `SLOT` non ha rete di ripiego: se lo slab non entra la cache resta SPENTA (fail-loud `FALLITA,
+  cache spenta` / `ATTENZIONE, voluti`); i `*.summary.txt` sono **UTF-16LE**; `C_round` non è
+  stampato (= `1000/decode × mean_len`).
+
+**Strumenti nuovi**: `D:\ds4_work\llama_run\lanciatori_salvati_20260825\vl_sonde_arm.ps1`
+(bracci `online` / `massa` / `wsolo`, guardie sui clamp del codice, testimoni in intestazione);
+`docs/porto/AUDIT_SET_SOTA_ENVIRONMENT.md` (zen-morse: 62 env censite, 21 rosse).
+
+**Coda aggiunta a §10**: metro a traiettoria fissa · rete di ripiego di `SLOT` (build) ·
+manifesto che stampi `TRASPORTO_*`/`MASSA_*`/`PF_LEGACY` (build) · consumatore online senza
+sync per confine (tetto +6%) · correggere §16/§18 nel ledger come da §57-§59.

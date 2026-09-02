@@ -4729,3 +4729,51 @@ la sua scrittura sono di zen-morse (sessione titolare del fascicolo); qui i dati
 
 **Stato**: bivio chiuso per lettera; stadio 2 in ripartenza (materiale intatto, preflight verde) dopo
 la finestra offerta a zen-morse per eventuali bracci aggiuntivi su questo binario.
+
+## 69-bis. ⭐⭐ **VERDETTO DEL BIVIO: §49 FALSIFICATO, §50 «VITA DEL BUFFER» CONFERMATO. FASCICOLO DEL DIFETTO n.1 CHIUSO IN DIAGNOSI**
+
+Braccio B (`s1_traccia_lane1_20260902`, sessione ospite, stesso binario e stesso esecutore di A):
+**SHA `97DF3AB0…` = A, garbage byte per byte**, tutti i contatori identici ad A, traccia **armata
+e raggiunta** (3612/3612 record). Contro la tabella pre-registrata il 1/9 sera (§50): **A resta
+rotto ✔ · B diventa rotto ✔** ⇒ **§50.**
+
+**IL CARDINE NON È IL GARBAGE: È `pesi mancanti = 0`.** L'1/9, sul binario vecchio, B **guariva**
+perché il record diventava **INCOERENTE** (**1760/1892**: `acceptmoe_pesi` registrava con forma
+degenere ⇒ `router_dati` NULL ⇒ niente `-1`). La patch della terza mano gli ha tolto la
+registrazione ⇒ oggi **il record resta `weights_norm` e COERENTE (0 su 3612)** — che è **la cella
+che discrimina**:
+- **§49**: record coerente ⇒ si legge `weights_norm` ⇒ pesi **POSITIVI** ⇒ pochi `-1` ⇒ **sano**.
+- **§50**: record coerente ⇒ si legge il **buffer MORTO** di `weights_norm` ⇒ zeri ⇒ `-1` di
+  massa ⇒ **rotto**.
+**Misurato: coerente E rotto** ⇒ **§49 cade.** E A e B bit-identici lo dicono da due direzioni.
+
+**L'obiezione ovvia a §50 si risolve e lo CONFERMA.** «TRACCIA aggiunge `part->src[1] = weights`:
+con l'arco, l'allocatore terrebbe vivo il buffer». No: a quel punto **`weights` è stato
+RIASSEGNATO a `pesi_am`** (`llama-graph.cpp:2233` lo rimodella, `:2291` lo consuma) ⇒ **TRACCIA
+tiene vivo il tensore SBAGLIATO**, mentre il record punta a `ffn_moe_weights_norm`, che resta
+**senza consumatori dichiarati** e quindi riciclabile. Tolta la guarigione accidentale (record
+incoerente), l'arco che TRACCIA aggiunge non serve a nulla. **Corollario**: il §48 («osservare
+guarisce») **non si riproduce più** su questo binario — spiegato, non contraddetto.
+
+**⇒ SPECIFICA DEL FIX, precisa e falsificabile**: l'arco va sul **tensore 2-D nominato
+`ffn_moe_weights_norm`** (`llama-graph.cpp:2230-2231`, `ne0=6`), **NON** sulla variabile `weights`
+a valle, che dopo AcceptMoE è un altro tensore; in alternativa, tenere vivo quel tensore fino
+alla partizione. **Predizione pre-registrata per la prossima build: con l'arco su
+`weights_norm`, il braccio A DEVE guarire** (SHA ≠ `97DF3AB0`, testo sano, `domanda/partizioni`
+da 1,207 verso 4,0).
+**Onestà sul residuo**: §50 è confermato **come famiglia** («il buffer letto non contiene i pesi
+vivi»); il sotto-meccanismo esatto — *buffer proprio riciclato* vs *indirizzo riassegnato a un
+altro tensore* — **non è ancora distinto**, e **il fix non ne dipende**.
+
+**⚑ E LA TRACCIA DI QUESTA CORSA È IL DUMP CHE CREDEVAMO DI NON POTER AVERE.**
+`…\vision_corto_runs\s1_traccia_lane1_20260902.traccia_route.bin` (231.204 byte, 3612 record)
+è stata presa **MENTRE il braccio produceva garbage**: ieri la traccia era inutile per la radice
+perché **osservare guariva**; oggi, tolta quella guarigione, **è armata DENTRO lo stato rotto**.
+⇒ **Analisi pre-registrata, senza macchina**: se `tr.pesi[]` mostra **~70% di zeri** (contro lo
+**0,19%** misurato l'1/9 nello stato sano) è la **misura diretta** che la partizione legge
+memoria priva dei pesi vivi — **radice provata invece che dedotta**. Layout `CESTRC2`, 64
+byte/record; `D:\ds4_work\adk\analyze_route_trace.py` rifiuta le v1, la v2 dovrebbe passare.
+
+**Bilancio del fascicolo n.1** (aperto il 1/9 alle 20:00, chiuso il 2/9 alle 15:00): **9 sonde,
+8 ipotesi proposte e ritirate dai proponenti stessi**, due sessioni, e il verdetto arrivato da
+una corsa lanciata **per un altro fascicolo**. La regola del §68 ha pagato entro l'ora.

@@ -4097,3 +4097,33 @@ la regia scriveva il §62 «stato dei binari» — **due sezioni con lo stesso n
 senza conflitto testuale. Rinumerata dalla regia in **§63** (l'ordine è quello di push:
 `98e4e9c` prima, `5abdc7a` poi). Per evitare il ripetersi: **prima di aprire una sezione, un
 `git pull` e un `grep '^## '` sulla coda del file.**
+
+**AGGIORNAMENTO §63-bis (correzione del peer + tre vincoli della regia).** Il peer corregge il
+modello della regia, **peggiorando il quadro**: nel loro disegno **`k_cpu` host resta 2** (nessun
+ramo `k_cpu==0`), ma **la CPU SALTA le colonne cedute tramite id `-1` nelle sue due colonne** ⇒
+con ~30% di lavoro CPU su residenti **il `-1` entra in `ggml-cpu.c:1632` PER PROGETTO, decine di
+migliaia di volte per corsa**. Non è un caso limite: **è il meccanismo**. ⇒ la guardia
+`continue`+contatore «sta nella stessa build o non c'è patch» (parole loro, condivise).
+Dispacciata da loro la lettura preliminare: (a) ramo `k_cpu==0` oggi + ri-verifica della nota del
+30/8; (b) prova che nessuna colonna saltata (dst non inizializzato) entri nella riduzione dopo
+`concat`+`get_rows(perm_inv)` e che nessuna copia D2H legga quel dst.
+
+**TRE VINCOLI DELLA REGIA sul disegno**:
+1. **⚑ CEDERE ≠ ELIMINARE — è la modalità di guasto del difetto n.1, rifatta a mano.** La leva
+   toglie una colonna alla CPU *perché la GPU ce l'ha residente*: allora **la GPU deve davvero
+   calcolarla**. Se la colonna sparisce dalla CPU e nessuno la raccoglie, si riproduce
+   esattamente il §44 (route annullate ⇒ strato calcolato con meno esperti ⇒ uscita
+   *sbagliata ma plausibile* ⇒ degenerazione, **senza un solo assert**). **Cancello
+   pre-registrabile e a costo zero: il conteggio di esperti calcolati per riga deve restare 6**,
+   invariato fra leva spenta e accesa — un contatore, non un'ispezione.
+2. **La correttezza non deve dipendere da una proprietà A VALLE.** Il check (b) chiede «la
+   colonna saltata entra nella riduzione?». Se la risposta è no *oggi*, resta una **invariante
+   non dichiarata**, che una modifica futura può rompere in silenzio. Alternativa più robusta:
+   **azzerare esplicitamente il `dst` della colonna ceduta** (semantica locale e definita)
+   invece di affidarsi al fatto che nessuno lo legga. Costo: una scrittura di riga; beneficio:
+   la patch non si rompe se il cammino a valle cambia. **Valutare il trade-off, non subirlo.**
+3. **Se il dst NON è azzerato, non assumere che contenga zeri.** Il §50 ha già stabilito che
+   l'allocatore del grafo **ricicla i buffer**: un `dst` mai scritto contiene **memoria d'arena
+   riusata**, non zeri. ⇒ nel check (b) la domanda non è solo «entra nella riduzione» ma
+   **«che cosa contiene se ci entra»** — e la risposta probabile è «i valori di un altro
+   tensore». Stessa famiglia del difetto n.1, per la terza volta in due giorni.

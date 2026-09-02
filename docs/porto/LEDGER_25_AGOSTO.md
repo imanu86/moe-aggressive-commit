@@ -3542,3 +3542,81 @@ meccanica dei byte è confermata**, 623 resta il tetto pratico e viene usato dal
 trasporto. Non promuovere. Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_vision_A_s{473,573,623}_20260902.summary.txt`,
 `…\sota_ctx150000_densefa_stage_hc5_vl_vision_A_s{473,573,623}_20260902_f2_b2048.server.log`,
 testi `…_q1.output.txt`, stdout `…\vl_arm_vl_vision_A_s*_20260902.stdout.txt`.
+
+## 57. SCOPING STRADE «TRASPORTO ONLINE + STAGING» E «MASSA» (2/9, analista in sola lettura) — tre reperti che correggono il piano, e uno che corregge il §18
+
+Analista opus, zero corse, zero build; sorgente = snapshot `D:\ds4_work\snapshot_sorgente_20260901_2145\`
+(19:24 dell'1/9, **avanti alle DLL delle 14:33**: i NOMI e i lettori valgono, i marcatori
+`chirurgo19 (1/9)` stanno tutti nel cammino router/acceptmoe-pesi, nessuno nel trasporto né nella
+massa). ⚠ La numerazione del §16/§18 (31/8) è slittata di ~150 righe: `TRASPORTO_ONLINE` :2545→**2697**,
+budget :2552→**2704-2707**, soglia acceptmoe :7809→**7962**, `MASSA=2⇒FORK` :3414→**3556-3561**.
+Rapporto integrale nello scratchpad di sessione (`SCOPING_strade_2_3_20260902.md`); estratto in
+memoria `staging-ritaglia-dal-pool-acceptmoe-scarta-per-residenza`.
+
+### R1 — Gli slot di staging RITAGLIANO il pool, non lo estendono (e sono già nei binari)
+`LLAMA_TRASPORTO_STAGE_SLOT` (lettore `cache-esperti.cu:2711-2713`, difetto 0) è **inerte senza
+`LLAMA_TRASPORTO_ONLINE≥1`**; `cache_slot_principali()` (`:4115-4118`) = `n_slot − stage`: la lane
+sono gli **ultimi N slot dello slab**, nessun byte in più. Con staging>0 la prenotazione sceglie
+la vittima **solo nella lane e senza il veto `fredda`** (`:4345-4387`) — cioè attacca esattamente
+il meccanismo dei 19.885 `rifiutate_pressione` del §16 (veto `:4067-4072`, contatore `to_cont[7]`
+con due siti: `:4069` staging=0, `:4375` lane esaurita). Cap: `stage ≥ n_slot` ⇒ exit(1). Non
+serve `DMA=1`. Il rimontaggio `VRAM_A_FASI` rilegge tutto (`forse_init`), quindi la lane segue.
+**Prova che il ramo è nel binario del 14:33**: `stage=0` compare già nel dump del 31/8 e, dal vivo
+alle 05:14 di oggi, il braccio T2 stampa `TRASPORTO ONLINE v2 STAGING: 150 slot isolati [473,623),
+cache reattiva=473 slot; nessuno sfratto incrociato`.
+⇒ **La nota di disegno del §55 («473 + stage contro 473 puro») è SUPERATA da questa lettura**
+(riconosciuto da zen-morse): «473 + stage» RIDURREBBE il pool reattivo. **La cella a una variabile
+è `SLOT=623 + STAGE=150`: pool reattivo 473 = l'ancora, più una lane fredda di 150.** Il 2×2 con
+`623 puro` (= S2 del §56) e `623 + online senza stage` isola *stage* da *più reattivo* a VRAM
+totale costante.
+
+### R2 — `kern_acceptmoe` NON ha una soglia di scarto: scarta per RESIDENZA, la SOGLIA ripesca
+`:7930-7942`: `tieni[i] = residente(strato, e)`; `soglia_micro` (`LLAMA_ACCEPTMOE_SOGLIA` →
+`op_params[1]`) **rimette dentro** non residenti finché la massa coperta raggiunge la frazione
+(`:7961-7971`). `kern_acceptmoe` non legge mai `c.massa[]`. ⇒ **il §18 punto 3 («riduzione
+esperti per soglia di massa») è impreciso**: massa e acceptmoe sono **due stadi in serie** (la
+massa decide chi è residente, acceptmoe scarta i non residenti). **Confermato, non nuovo: il §21
+diceva già «non è un taglio, è un ripescaggio»** — due letture indipendenti. Il «39,5% scartati»
+è una misura di residenza (Vision A: 45.822/(45.822+63.787) = 41,8%). Un `-ser` vero (taglio)
+non esiste nel binario: richiederebbe build.
+
+### R3 — Famiglia massa: cosa è vivo senza build
+Chiave di sfratto nel cammino parallelo (`:4477-4482`): `(1<<63) | (massa<<31) | ultimo` — la
+massa domina, LRU è il tiebreak. **Vive, env-only, NON inchiodate in `Set-SotaEnvironment`**:
+`LLAMA_CACHE_ESPERTI_MASSA_EMIVITA` (difetto 64, clamp 1..4096: `massa >>= 1` ogni emivita
+forward), `LLAMA_CACHE_ESPERTI_MASSA_UNITA` (difetto 4, clamp 1..1024: `massa += unita`),
+`LLAMA_CACHE_ESPERTI_USATO_INVECCHIA` (0). **INERTI in produzione**: `MASSA_FLOOR`,
+`MASSA_MARGINE` (letti solo sotto `massa_ammissione`, che il lanciatore inchioda a `'0'` alla
+riga 217 mentre il difetto del CODICE è 1 — la decima trappola dell'audit di zen-morse,
+`docs/porto/AUDIT_SET_SOTA_ENVIRONMENT.md`). `MASSA_AMMISSIONE=1` è un cambio di macchina
+(ribalta `peso_attivo`, matmul `mul_mat_vec_q_mista`), atteso perdente (−6,2% il 14/8).
+Testimone: `massa globale ACCESA: emivita=X cicli, unita=Y, …` col valore DOPO il clamp (fuori
+intervallo stampa 64 e il braccio è muto). **Il manifesto NON stampa** `LLAMA_TRASPORTO_*`,
+`MASSA_*`, `PF_LEGACY`, `USATO_INVECCHIA`: unico testimone = righe `cache-esperti:` su stderr.
+
+### R4 — `SLOT` senza rete di ripiego
+Lettore `:977-980` (`atoi`, nessun cap, getenv vivo); `VRAM_A_FASI_SLOT_MAX=1024` ⇒ 623 legale;
+in decode `voluti = SLOT` esatto (`:2367-2388`). **Ma a `voluti == slot_base` il ripiego
+`:2432-2437` non scatta**: se lo slab non entra, **la cache resta SPENTA per tutta la richiesta**
+(decode ~8 t/s) con due testimoni fail-loud: `cudaMalloc … FALLITA, cache spenta` (`:2917`) e
+`vram-a-fasi: ATTENZIONE, voluti … ottenuti` (`:2461`). Fix da ~3 righe, in coda build.
+
+### Bracci armati (script nuovo `vl_sonde_arm.ps1`, accanto a `vl_arm.ps1`, validato: parser 0
+errori, 17 nomi env tutti in lista, 25 parametri del lanciatore verificati riga per riga su
+`p1b_conf.ps1`; `vl_arm.ps1`/`p1b_conf.ps1` intatti)
+- **T2** `online -Slot 623 -Stage 150` (pool 473 + lane 150) · **T1** `online -Slot 623 -Stage 0` ·
+  **T0** = S2 del §56 · **M1a** `massa -Slot 473 -Emivita 16` · **M1b** `massa -Emivita 256`.
+- Cella online = `LLAMA_TRASPORTO_ONLINE=1` + `_BUDGET=24` (mai 60) + `LLAMA_CACHE_ESPERTI_FORK_COMPONI=1`
+  + `-CacheEspertiW 1` (obbligatorio: senza `cache_pf-` il codice si auto-rifiuta, `:2720-2726`);
+  `PF_LEGACY` forzato a 0 dal codice (`:2739`, `:3237`). Attribuzione dichiarata: vs T0 cambiano
+  W, COMPONI e ONLINE insieme; a 473 il pacchetto è già misurato piatto (§16, +0,25%).
+- **Cancelli pre-registrati**: G1 raggiungibilità `emesse motore>0 E in tempo>0` (`:8646-8650`),
+  T2 anche la riga `v2 STAGING`; **G2 primario: `rifiutate_pressione` < 5.000 e < 15% dei
+  previsti (31/8: 19.885/40.965 = 48,5%), `in tempo` ≥ 150 (31/8: 29)**; G3 effetto: ms/token e
+  C_round vs T0, sempre con mean_len; G4 qualità: §4.10, p1 0,80-0,85 (alto = allarme), mean_len
+  2,40-2,60. Massa: testimone coi valori chiesti; residenza mossa (colpi > 2 pt o rapporto
+  acceptmoe > 1 pt dal 41,8%); attese pre-registrate da zen-morse (§12: installati in crollo,
+  byte solo ~−17%, **costo che migra sulla lane CPU** — leggere `calcolo`/`join` del worker).
+- Interpretazione pre-registrata di G2: fallisce anche a 623 ⇒ la pressione NON era capienza ⇒
+  fronte trasporto chiuso per la seconda volta; passa in T2 e non in T1 ⇒ conta la partizione;
+  passa in entrambi ⇒ era capienza.

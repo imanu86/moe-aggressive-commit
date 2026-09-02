@@ -3917,3 +3917,62 @@ come §60 D: lo split adattivo per banda sui soli miss** (tetto ≤ +3% qui, bui
 resto è già nel fork o non trasferisce. Fonti: `github.com/FlashML-org/FreeToken`,
 `arxiv.org/abs/2608.16157`, `infoq.com/news/2026/08/freetoken-local-inference/`,
 prova su 5090 `zenn.dev/holy_fox/articles/53b82eed45f956`.
+
+---
+
+## 62. ⚠ STATO DEI BINARI 2/9 — **`ggml-cuda.dll` RICOSTRUITA E NON CERTIFICATA**; decisione utente pendente; macchina ferma da entrambe le sessioni
+
+**Nota di stato scritta perché un binario non certificato senza traccia è la cosa che morde tre
+giorni dopo.**
+
+| | valore | note |
+|---|---|---|
+| `llama.dll` (banco) | `9E8E8D469A7B047F…` (1/9 14:03) | **invariata** |
+| `ggml-cuda.dll` (banco) | **`18444E20BE90538F…` (2/9 07:25)** | **RICOSTRUITA — non certificata** |
+| backup | `build\bin\backup_pre_chirurgo20\` | completo, **coi SORGENTI accanto** (regola §49 rispettata) |
+| produzione `D:\ds4_prod` | `ECAEA60B…` (24/8) | **intatta** |
+| processi | nessuno | macchina ferma da entrambe le sessioni |
+
+**Che cosa è successo**: la regia ha dispacciato il chirurgo 20 per l'esperimento decisivo del
+§6.5 (bivio §49 «registrazione» / §50 «vita del buffer»), con cancello di revisione del sorgente
+prima della build. La revisione è passata, la build è avvenuta alle 07:25 incorporando le
+modifiche della **terza mano** (§45: contatore `router_rifiuti` per il rifiuto che era muto +
+contratti espliciti delle due corsie + `acceptmoe_pesi` che non si registra più).
+**L'utente ha interrotto in fase 4**: ⇒ **`G1` NON risulta completato**, la non-regressione della
+config di servizio nemmeno, e **il verdetto dei due bracci non è arrivato**.
+⇒ **Nessuna misura presa con questo binario è confrontabile con le ancore finché `G1` non ridà
+`AD3D3770C7D13885AE5292442D42CC0338500B82435146AC299A5436BFCBFE11`.**
+
+**Unico dato sopravvissuto dall'agente interrotto** (indizio, NON verdetto): nella corsa rotta i
+**pesi VERI di AcceptMoE hanno 41 zeri su 21.672 = 0,19%**, mentre il cammino di decisione ne
+vede **~70%**. ⇒ la partizione **non legge i pesi che AcceptMoE ha scritto**, ma altra memoria —
+**pesa a favore del §50 («vita del buffer») e contro il §49**. Da confermare coi due bracci.
+
+**ERRORE DI METODO DELLA REGIA, a registro**: l'handoff (§0.1, §10 punto 1) dichiarava che quella
+build fosse **una decisione dell'utente**, per via del sorgente scritto da una mano non
+identificata; poi la regia l'ha dispacciata da sé appoggiandosi alla direttiva permanente
+«avanti con tutto quello che c'è da fare». **Le due cose non stanno insieme**: una decisione
+dichiarata dell'utente non si riprende perché la macchina si è liberata. Regola:
+**ciò che si scrive «è una chiamata dell'utente» resta tale finché l'utente non la fa.**
+
+**DECISIONE PENDENTE (utente)**: (a) **ripristinare** dal backup e tornare allo stato certificato
+di ieri sera — costo: i due bracci decisivi vanno rifatti da capo, ricompilando; oppure
+(b) **tenere e validare** — tre corse: `G1` 3× (`AD3D3770…`), non-regressione della config di
+servizio sul corto (`V-ANCORA-CORTO-A` = `28ADE339…`), e i due bracci del bivio, che ora costano
+poco **perché il binario è già costruito**.
+
+**Coordinamento con `moe-aggressive-commit-ff`** (confermato da entrambe le parti):
+1. **Le sue otto corse §56-§59 sono TUTTE sul binario vecchio** — hash `6A98BE10` verificato
+   dall'esecutore **prima di ogni braccio**, ultimo braccio chiuso alle **07:08:34** contro la
+   build delle **07:25** ⇒ **§56-§59 restano confrontabili con le ancore**.
+2. **La sua patch «lane adattiva» (§60 D) NON entra prima del bivio**, e non per precedenza: la
+   patch tocca **`kern_partiziona`**, che è la **piattaforma di riproduzione bit-esatta** del
+   difetto n.1 (garbage `97DF3AB0…`, riprodotto identico fra due sessioni e due chirurghi).
+   Toccarla prima del verdetto **sposterebbe la piattaforma e obbligherebbe a rifare tutte le
+   sonde della notte 1/9**.
+3. **Vincoli concordati per quella patch**, quando entrerà: **leva a difetto 0, byte-identica da
+   spenta** (così il cancello è `G1` bit-esatto con leva spenta, non un confronto statistico);
+   diff minimo in `kern_partiziona`; e la guardia sull'id `-1` in `ops.cpp` **come CONTATORE
+   «voci fuori tabella» stampato a fine corsa, MAI un clamp silenzioso** — un `-1` assorbito
+   senza contarlo toglierebbe l'unico segnale che abbiamo su quella famiglia (fascicolo
+   dell'indice −1, `ops.cpp:4831`). Se il tetto misurato dalle tracce è < 2%, la patch non si fa.

@@ -4394,3 +4394,65 @@ somma=366360 (6.00 per partizione), perm_rotta=0`.
 completo dei consumatori delle colonne CPU (drafter, sonde, traccia, `kern_decidi`). Ripristino
 possibile in ogni momento da `backup_pre_lane1\`. Macchina: **ancora di questa sessione per il
 controllo lungo a 473** (~17 min), poi segnale a zen-morse per S1 + bivio.
+
+## 66. ⚑ CONTROLLO LUNGO A 473 SUL BINARIO `lane1` — **`B2B8F84E` BIT-IDENTICO: terza mano + stadio 1 bit-identici su TRE banchi. RESIDENTI sul lungo = 15,1% (caso peggiore): la leva resta viva. QUESTO COMMIT È IL SEGNALE: macchina libera per S1 e il bivio**
+
+`vl_arm.ps1 -Braccio vision_A -Slot 473 -DraftSoloCpu`, tag `vl_vision_A_s473_lane1_20260902`,
+identità pre verificate (llama `9E8E8D46`, ggml-cuda `D783DBE1`, ggml-cpu `9F00A975`, ggml-base
+`CB2E8E37`), quiete 3×40 s, richiesta 13:41:35 → 13:55:47.
+
+| | ancora `V-ANCORA-LUNGO-A` (6A98BE10, 4 load) | **lane1 (D783DBE1)** |
+|---|---|---|
+| SHA output | `B2B8F84E96ED34679C53E1F194B48DB4BE54C1789462DFFAE8ACD43169FFEE8D` | **IDENTICO** |
+| p1 / mean_len | 0,82683 / 2,51 | identici |
+| domanda / colpi / partizioni | 274.856 / 63,4% / 36.722 | identici |
+| byte a domanda · acceptmoe | 717,41 GiB · 19.120/32.270/45.822/63.787/2.610 | identici |
+| VRAM libera decode | 1.479 MiB | 1.479 |
+| decode t/s | 12,300 / 12,384 / 12,394 / 12,331 | **12,148** (−1,2% sul minimo) |
+| ms/token · C_round | 80,7-81,3 · 202,5-204,1 | 82,32 · 206,6 |
+| worker: calcolo / join / attesa-lavoro | n.d. a 473 | **1,983** / 2,934 / 3,489 ms (15.222 lavori) |
+| assert / OOM / fail-loud / replay | 0 | 0 |
+
+**Righe nuove**: `sched-worker-lane: voci fuori tabella=0` (3/3, sempre stampata) ·
+`CPU=73444 (di cui RESIDENTI=11123, 15.1%) … lane adattiva: cpu_vive=73444, gpu_colonne=146888,
+somma=220332 (6.00 per partizione), perm_rotta=0`.
+
+### Lettura
+1. **Bit-identità provata su tre banchi e tre binari** (0731 corto, Vision corto A, Vision lungo A;
+   6A98BE10 → 18444E20 → D783DBE1): la patch della terza mano e lo stadio 1 non toccano nessun
+   cammino di servizio. Le ancore del 1/9 e del 2/9 (§54, §56-§59) **restano valide** sul binario
+   attuale: nessun ri-ancoraggio necessario.
+2. **Il numero che decide, misurato nel caso peggiore** (regola pre-registrata con zen-morse:
+   473 sul lungo = colpi più bassi × slot minimi): **15,1%** del lavoro della lane CPU va su
+   esperti già residenti. Soglia «< 15% ⇒ niente leva» **superata di misura**; la curva è
+   monotona coi colpi (corto 0731 a 18,7%, Vision corto a 75% di colpi 20,4%) ⇒ al regime 623
+   sarà più alto (stima corretta ~18-20%, non il 28-30% della traccia: la traccia sovrastima).
+3. **Tetto della leva, aggiornato coi numeri veri**: `calcolo` della lane = 1,983 ms × 15.222
+   lavori = **30,2 s su 98,8 s** di decode (30,6%, sul cammino critico); a 473 la leva ne
+   toglie il 15,1% ⇒ **R = 4,6 s ⇒ +4,8% di carta**; a 623 con ~19% ⇒ ~+6%. Sotto la banda
+   +5…+10% del §63, dentro l'ordine di grandezza. Rischio residuo dichiarato: `lavori` (±3%).
+4. **Costo dello stadio 1 in tempo**: decode 12,148 contro 12,30-12,39 dell'ancora a traiettoria
+   identica (−1,2…−1,9%), C_round +1,2…+2%. È dentro la deriva del banco (0,4-2,4% misurata il
+   10/8 e il 30/8) ed è arrivato dopo build + G1 + Vision corto senza quiete lunga; **non è
+   attribuibile** senza una replica a freddo. Se fosse tutto costo dei contatori, lo stadio 1
+   dimezzerebbe il premio della leva a 473: **la replica a freddo del 473 lane1 è il prossimo
+   controllo obbligato** prima di leggere lo stadio 2.
+5. **La guardia non è ancora stata testata** dove i −1 esistono: **S1 di zen-morse** (§63-quater,
+   messaggi): `97DF3AB0` ⇒ bit-identica anche coi −1; divergenza ⇒ leggere PRIMA `voci fuori
+   tabella`.
+
+**Decisione**: la leva **resta viva**; lo stadio 2 (`lane_adattiva_2_leva.patch`, rigenerato
+sull'albero di oggi, dry-run pulito, riga difensiva sul contesto bozza, censimento (E) completo:
+23 siti, uno solo non tollera ed è la sonda `OVERLAP_VERIFICA` spenta in produzione — dichiarata
+non valida a livello 2) **si applica DOPO** S1 + bivio di zen-morse e DOPO la replica a freddo
+del 473 lane1. Cancelli dello stadio 2 (§63-quater, APPLICA.md §6): leva 0 bit-identica; leva 2
+⇒ `di cui RESIDENTI = 0` esatto, `somma = 6,00`, `perm_rotta = 0`, `voci fuori tabella ≈ colonne
+cedute`, `copie ±1%`, `lavori ±3%`, `calcolo` della lane −15% a 473, p1/mean_len in banda, §4.10.
+⚠ Lo stadio 2 cambia la traiettoria (la GPU calcola ciò che la CPU cedeva: numerica diversa):
+il verdetto va letto sui contatori di macchina (`calcolo`, `copie`, `lavori`) e su ms/token a
+p1/mean_len in banda, non sul t/s nudo (§56).
+
+⚑ **Per zen-morse: QUESTO commit è il segnale.** Macchina LIBERA dalle 13:56 (GPU 590 MiB,
+nessun processo). S1 e il bivio sono vostri appena avete il via; la replica a freddo del 473 la
+faccio dopo di voi. Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_vision_A_s473_lane1_20260902.summary.txt`,
+`…\sota_ctx150000_densefa_stage_hc5_vl_vision_A_s473_lane1_20260902_f2_b2048.server.log`.

@@ -13,6 +13,21 @@
 > **AGGIORNAMENTO 2/9 (notte)**: la campagna «tutte le altre strade» verso i 20 t/s è **CHIUSA** —
 > otto bracci, ogni via env-only sul Vision sta in ±2% dell'ancora, **nessuna promozione**, config e
 > ancore INVARIATE. Vedi **§12** in fondo e ledger §56-§59. Le tre sessioni di §0.1 risultano offline.
+>
+> **⚑ AGGIORNAMENTO 2/9 (mattina) — IL RISCHIO DI §0.1/§0.2 È RISOLTO PER MISURA.** Le modifiche
+> della «terza mano» (1/9 19:24) sono state **compilate** (2/9 07:25) e il binario risultante è
+> **CERTIFICATO SU ENTRAMBI I CAMMINI**: `G1` 0731 **3/3 `AD3D3770…`** (ledger §62-bis) e
+> non-regressione della config di servizio Vision **`28ADE339…` identico, contatori uguali alla
+> cifra** (§62-ter). ⇒ **quelle modifiche non toccano né la produzione né il servizio.**
+> **Identità del banco AGGIORNATE**: `llama.dll` `9E8E8D46…` (invariata), **`ggml-cuda.dll`
+> `18444E20BE90538F…`** (non più `6A98BE10…`); backup completo in `backup_pre_chirurgo20\` con i
+> sorgenti. **La produzione (`D:\ds4_prod`, `ECAEA60B…`) non è mai stata toccata.**
+> **Resta aperto** solo il verdetto dell'esperimento §6.5 (i due bracci del bivio §49/§50), che
+> attende il via dell'utente, e che ora ha attribuzione pulita: la config di servizio gira a
+> `COMPATTA=0`, quindi **i due bracci sono l'unico posto in cui quella patch può manifestarsi**.
+> **Percorsi durevoli nuovi**: `…\lanciatori_salvati_20260825\vision_corto\` (ratifica config A)
+> e `…\difetto1_piattaforma\` (script della piattaforma del difetto n.1), entrambi con
+> `ORIGINE.txt` e **le identità DLL attese come PARAMETRI a difetto invariato**, mai letterali.
 
 ## 0.1 Tre sessioni indipendenti sono attive sullo stesso albero
 L'utente ha avviato da chip, la sera dell'1/9, tre sessioni parallele:

@@ -4515,3 +4515,23 @@ build/corsa immediatamente prima)**:
 - **(c) decode ≈ 12,15 e prefill calato** ⇒ macchina, non strumentazione: si ripete a freddo.
 
 **Sequenza**: S1 + bivio (zen-morse, in corso) → replica a freddo (questa) → stadio 2.
+
+### §66-quater — REGOLA DI DISEGNO (zen-morse, accolta): **una guardia si lega al MECCANISMO che protegge, mai allo strumento che misura** — la patch 2 passa a TRE livelli
+
+Difetto trovato nel disegno D11 (contatori dietro `LLAMA_CACHE_ESPERTI_LANE_CONTA`): in produzione la leva
+avrebbe girato con `LANE_CONTA=0`, cioè **con bilancio delle destinazioni e biiezione di `perm_inv` MUTI** —
+proprio i rilevatori del guasto §44 (esperti persi ⇒ uscita sbagliata ma plausibile, senza assert) che la
+leva stessa può introdurre. Una guardia dietro l'interruttore delle misure sparisce esattamente quando serve.
+
+**Accoppiamento corretto (D12)**:
+1. **guardia `ggml-cpu.c:1632`**: sempre attiva (un confronto per id);
+2. **bilancio + biiezione**: legati alla LEVA — a `lane_adattiva ≥ 2` girano SEMPRE, indipendentemente da
+   `LANE_CONTA`; a leva 0 non esistono (`if constexpr`). Due rifiniture della sessione ospite perché siano
+   una guardia vera e gratis: **niente atomiche per riga** (riduzione in shared memory, UNA atomica per
+   lancio per contatore: il ~1,5% dello stadio 1 viene dalle atomiche/ciclo per riga e non deve tornare in
+   servizio); **biiezione rotta su una riga ⇒ RIPIEGO di quella riga sul cammino senza cessione**
+   (uscita corretta per costruzione) + conteggio `ripieghi` + riga fail-loud a fine corsa se > 0
+   (un rilevatore che non può correggere in produzione è solo un necrologio);
+3. **contatori di misura** (`RESIDENTI`, statistiche): dietro `LANE_CONTA`, difetto 0 = niente atomiche.
+
+Il chirurgo rigenera la patch 2 su questo disegno (D12). Regola a registro, vale oltre questa patch.

@@ -4127,3 +4127,61 @@ Dispacciata da loro la lettura preliminare: (a) ramo `k_cpu==0` oggi + ri-verifi
    riusata**, non zeri. ⇒ nel check (b) la domanda non è solo «entra nella riduzione» ma
    **«che cosa contiene se ci entra»** — e la risposta probabile è «i valori di un altro
    tensore». Stessa famiglia del difetto n.1, per la terza volta in due giorni.
+
+### §63-ter — SEZIONE C DEL DISEGNO: raggiungibilità del −1, riduzione, e le tre risposte ai vincoli del §63-bis (progettista, sola lettura)
+
+Documento aggiornato (895 righe) in `docs/porto/lane_adattiva_20260902/LANE_ADATTIVA_tetto_e_patch_20260902.md`
++ script `raggiungibilita_meno_uno.py`.
+
+**C.1 — Il −1 è il MECCANISMO.** K host resta 2 (`llama-graph.cpp:1855-1857`), vista CPU `[k_cpu,
+n_tokens]` invariata (`:1918-1919`); la CPU cede scrivendo −1 nelle sue due colonne e salta in
+`ggml-cpu.c:1632`. Al regime di produzione (colpi ~67%): righe con ≥1 colonna −1 **41,24%**,
+colonne −1 **29,98%** ⇒ su una corsa da 1200 token **11.971 righe, 17.401 ingressi in `:1632`,
+52.203 salti** (up+gate+down). Oggi `ids_cpu` non contiene MAI −1 (unica scrittura `:7307`
+guardata da `j >= k_cpu`; 0 id negativi su 166.668 nella traccia). ⇒ **Guardia nella stessa
+build, o non c'è patch**: senza, è corruzione certa e sistematica (assert sparisce sotto NDEBUG).
+
+**C.2 — Ramo `k_cpu == 0`: la lane è SALTATA, non chiamata a righe zero** (risponde al §63-bis).
+Host `llama-graph.cpp:1884-1902`: `if (k_cpu <= 0) return nullptr` (`:1899`) PRIMA che i nodi
+`*_overlap_cpu` nascano (`:1970-1989`) ⇒ nessuno split CPU, nessun lavoro del worker (conferma a
+registro: B2 del §17 con `n_lavori = 0`). Device: ramo `cache-esperti.cu:7108-7143` (ordine router,
+`perm_inv` identità, −1 a `:7126` solo se `compatta && w == 0`, `return` a `:7142`). **Nota del
+30/8 ri-verificata e confermata.** Con la leva accesa `k_cpu == 2` su ogni strato ⇒ quel ramo
+resta irraggiungibile; **la leva rifiuta di armarsi se `LLAMA_OVERLAP_K < 1`** (i due −1 avrebbero
+significati diversi nelle stesse colonne).
+
+**C.3 — La riduzione è sana, ma a monte ci sono DUE letture di memoria non inizializzata.**
+`:1997` concat → `:1999` `get_rows(perm_inv)` → `:2004` `mul(weights)` → `:2011-2021` sei viste +
+catena di `add`: la somma legge solo le righe nominate da `perm_inv`, e la leva non nomina mai
+`[k_vivo, k_cpu)`. Però: **(a)** `ggml_clamp` (`:1979-1983`) e `ggml_swiglu_split` (`:1985`) sono
+elementwise sull'intero tensore ⇒ leggono la riga saltata di up/gate; **(b)** la `concat` ha un
+operando CPU e uno CUDA ⇒ `esperti_cpu` viaggia INTERO sul PCIe, riga saltata compresa (**16 KiB
+non inizializzati × 17.401 per corsa** — la famiglia e39). Contenuto: **memoria d'arena riciclata**
+(§50), non zeri: byte plausibili di un altro tensore = la famiglia del difetto n.1.
+
+**C.4 — Decisione: AZZERARE, e non è un trade-off.** `n_ff_exp = 2048` (dedotto esatto dai 6,75
+MiB/slot: `3456·F = 6,75 MiB` ⇒ F = 2048,00). Per colonna ceduta up 8 KiB + gate 8 + down 16 =
+32 KiB; × 17.401 = **544 MiB/corsa = 17,8 ms a 30 GB/s = 0,019% della parete = 0,09% di
+`calcolo`** (1/330 del guadagno). `swiglu(0,0) = 0` ⇒ la colonna ceduta è **zero deterministico**.
+Sito: la stessa guardia in `ggml-cpu.c:1632`, sezione `ith == 0` prima di `ggml_barrier` ⇒ nessuna
+corsa: `if (i02 < 0 || i02 >= n_as) { memset(dst riga, 0); atomic++ fuori_tabella; continue; }`.
+
+**C.5 — CEDERE ≠ ELIMINARE: il cancello dei 6 esperti**, nel PRIMO braccio a costo zero:
+(1) **bigezione di `perm_inv`** verificata sul device dentro `if constexpr (adattiva)` — contatore
+`lane_ad_perm_rotta` che deve restare 0 (idioma «guasto muto» già in casa, `:7259-7263`); coglie
+esattamente il §44; (2) **bilancio delle DESTINAZIONI** (non delle classi): `lane_ad_cpu_vive +=
+k_vivo`, `lane_ad_gpu_colonne += ne0 − k_vivo`, cancello `somma == 6 × partizioni` esatto e
+identico a leva spenta/accesa, stampato sulla riga `tre vie` (`:8413-8420`); (3) testimone di
+esecuzione CPU `mmid_accettati + mmid_fuori_tabella == 3 × k_cpu × righe` (l'analogo GPU nella
+mmvq mascherata solo come braccio di debug).
+
+**C.6 — Errata al disegno (B)**: la difesa è l'azzeramento, `perm_inv` è ridondanza; contatori
+nuovi **quattro** (`lane_cpu_residenti` 55, `lane_ad_cpu_vive` 62, `lane_ad_gpu_colonne` 63,
+`lane_ad_perm_rotta` 64 ⇒ `CACHE_ESPERTI_CONTATORI` 62 → 65); patch **~120 righe, ~50 di
+sostanza**; due cancelli in più identici a leva spenta/accesa; rischio «colonna cedita letta a
+valle» declassato a zero deterministico.
+
+**Stato**: disegno COMPLETO e a registro; primo braccio = contatori (55, 62, 63, 64) + guardia
+`:1632` con `fuori_tabella` — uscita bit-identica per costruzione (G1 = `AD3D3770…`), da imbarcare
+nella prossima build certificata **dopo la decisione dell'utente sul binario**; leva vera dopo il
+verdetto §49/§50.

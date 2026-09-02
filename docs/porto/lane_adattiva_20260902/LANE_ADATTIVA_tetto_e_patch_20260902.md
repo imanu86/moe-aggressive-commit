@@ -665,3 +665,231 @@ idioma già pagato nel file per la classe 4 di ADAPTIVE-K (`cache-esperti.cu:719
   traiettoria del testo (`lavori` +20,7% su K=1). Va nei cancelli.
 - Il primo braccio costa **~10 righe e zero rischio**: il contatore. Prima si misura il 30%
   sul banco, poi si spende la patch.
+
+---
+
+# (C) Raggiungibilità del −1 e riduzione
+
+Verifica di sola lettura richiesta dalla regia PRIMA di qualunque riga di patch.
+CUDA dallo snapshot; `ggml-cpu.c` / `ggml-backend.cpp` / `llama-graph.cpp` dal repo vivo
+`D:\llama-subtract` (mai git). Script: `raggiungibilita_meno_uno.py`.
+
+## C.1 Conferma e quantificazione: il −1 è il MECCANISMO, non un'eccezione
+
+**Confermato**: nel disegno (i) il `k_cpu` dell'host **resta 2** — la Bresenham di
+`llama-graph.cpp:1855-1857` non si tocca — e la vista CPU **resta di forma `[k_cpu, n_tokens]`**
+(`llama-graph.cpp:1918-1919`). La CPU cede una colonna scrivendoci **−1 dentro le sue due
+colonne**, e la salta in `ggml-cpu.c:1632`.
+
+Colonne CPU che portano −1 (= colonne cedute = `max(0, k_cpu − non_residenti)`):
+
+| regime | 0 col. −1 | 1 col. | 2 col. | righe con ≥1 −1 | colonne −1 |
+|---|---:|---:|---:|---:|---:|
+| traccia, 473 slot (colpi 56,63%) | 68,82% | 18,19% | 12,99% | **31,18%** | **22,08%** |
+| **produzione, colpi ~67%** (7 strati della traccia) | 58,76% | 22,53% | 18,71% | **41,24%** | **29,98%** |
+
+Scala alla corsa da 1200 token (29.025 partizioni, 58.050 esperti-riga CPU, §17 B0):
+
+| | traccia 473 slot | **produzione ~67%** |
+|---|---:|---:|
+| righe che portano almeno un −1 | 9.049 | **11.971** |
+| ingressi −1 in `ggml-cpu.c:1632` | 12.819 | **17.401** |
+| salti totali (up + gate + down usano lo STESSO `ids_cpu`) | 38.456 | **52.203** |
+
+**Dichiarazione esplicita**: con la leva accesa il −1 entra nel cammino CPU **decine di
+migliaia di volte per corsa**, su **due righe su cinque**. Non è un caso limite: è il
+meccanismo stesso della leva. **La guardia (`continue` + azzeramento + contatore) è parte del
+meccanismo, non un accessorio, e va nella STESSA build.** Senza guardia la leva non è
+«rischiosa»: è una corruzione di memoria **certa e sistematica** — `assert` sparisce sotto
+`NDEBUG` e `MMID_MATRIX_ROW(-1, …)` scrive **fuori** dall'array `matrix_rows`.
+
+**Oggi `ids_cpu` non contiene MAI −1.** Prova: l'unica scrittura di −1 nella partizione è
+`cache-esperti.cu:7307`, guardata da `j >= k_cpu`, quindi cade **solo in colonne GPU**.
+Controprova sulla traccia: **0 id negativi su 166.668** (`leggi_cestrc.py`).
+
+## C.2 Il ramo `k_cpu == 0`: la lane è SALTATA, non chiamata a vuoto
+
+**Host** — `llama-graph.cpp:1884-1902`:
+
+```
+if (k_cpu <= 0) {
+    if (calendario_k0 && forma_ammessa) { … solo il nodo TESTIMONE, nessun ramo CPU … }
+    return nullptr;                                                        // :1899
+}
+if ((int64_t) k_cpu >= n_expert_used || !forma_ammessa) return nullptr;    // :1901-1902
+```
+
+I nodi `ffn_moe_*_overlap_cpu` sono costruiti **dopo** queste uscite (`:1970-1989`): con
+`k_cpu == 0` **nessun nodo CPU esiste nel grafo**. Il chiamante, `llama-graph.cpp:2355-2358`:
+
+```
+if (moe_out_overlap != nullptr) return moe_out_overlap;
+selected_experts = selected_experts_k0;      // altrimenti: percorso classico, INTOCCATO
+```
+
+⇒ **la lane è SALTATA**. Nessuna vista vuota, nessuna chiamata al worker con zero righe: lo
+scheduler non crea alcuno split CPU per il MoE, quindi il worker (`ggml-backend.cpp:856`
+`n_lavori`, incrementato a `:917`) non riceve alcun lavoro.
+**Conferma sperimentale già a registro**: cancello B2 del §17 — «zero `kern_fj_copia`;
+**`n_lavori = 0`**» quando il fork non c'è.
+Stessa uscita per `n_tokens > LLAMA_OVERLAP_BATCH_MAX` (`:1901-1902`): sui forward troppo
+larghi la lane non gira affatto.
+
+**Device** — il ramo è `cache-esperti.cu:7108-7143`. Scrive gli id in ordine **router
+originale** (`o[j] = riga[j]`, `:7135`), `perm_inv` identità (`o[ne0 + j] = j`, `:7140`), e
+mette `−1` a `:7126` (`o[j] = c.calendario_slot_diretti ? 0 : -1`) **solo** quando
+`compatta && w == 0.0f`. Esce con `return` a `:7142`.
+
+**Ri-verifica della nota del 30/8 sul codice attuale: CONFERMATA.** A K=2 l'unico −1 è
+`:7307` con `j >= k_cpu` ⇒ solo colonne GPU; l'unico punto che può mettere −1 in `j < k_cpu`
+è il ramo K0, che però ritorna a `:7142` **prima che una vista CPU esista**. Con la leva
+accesa (K host = 2) `k_cpu == 2` su **ogni** strato — la Bresenham con `k_medio` intero dà
+esattamente l'intero su tutti gli strati (`:1855-1857`) — quindi **quel ramo resta
+irraggiungibile**.
+
+**Guardia da aggiungere** (una riga, idioma di `cache-esperti.cu:3564-3576`): la leva
+**RIFIUTA di armarsi** se qualche strato riceverebbe `k_cpu == 0`, cioè se
+`LLAMA_OVERLAP_K < 1`. Motivo: il −1 del ramo K0 e il −1 della leva occuperebbero le stesse
+colonne con **significati diversi** (compattazione AcceptMoE contro cessione alla GPU), e
+nessuno dei due consumatori potrebbe distinguerli.
+`cache_leva_rifiutata("LANE_ADATTIVA", "richiede LLAMA_OVERLAP_K >= 1 su ogni strato")`.
+
+## C.3 La riduzione finale, riga per riga
+
+| riga (`llama-graph.cpp`) | nodo | forma |
+|---|---|---|
+| **1997** | `esperti = ggml_concat(ctx0, esperti_cpu, esperti_gpu, 1)` | ordine di PARTIZIONE |
+| **1999** | `esperti = ggml_get_rows(ctx0, esperti, perm_inv)` | ordine di SLOT originale, 6 colonne |
+| **2004** | `esperti = ggml_mul(ctx0, esperti, weights)` | pesi in ordine ORIGINALE |
+| **2011-2015** | 6 × `ggml_view_2d(esperti, n_embd, n_tokens, nb[2], i*nb[1])` | una vista per esperto |
+| **2017-2021** | `moe_out = add(add(… cur_esperti[i] …))` | somma dei 6 contributi |
+
+**Dimostrazione che nessuna colonna CPU saltata entra nella somma.** La somma di `:2017-2021`
+legge **solo** `cur_esperti[0..5]`, che sono viste (`:2012-2013`) del tensore prodotto da
+`get_rows(perm_inv)` a `:1999`. `ggml_get_rows` **materializza esattamente le righe nominate
+da `perm_inv`**: ciò che non è nominato non viene letto. Nel blocco della leva `perm_inv[i]`
+vale `j` (colonna CPU) **solo per `j < k_vivo`**, cioè solo per colonne che la CPU ha davvero
+calcolato, e `k_cpu + j` (colonna GPU) in tutti gli altri casi. Gli indici delle colonne
+cedute, `[k_vivo, k_cpu)`, **non compaiono mai in `perm_inv`**. Quindi non raggiungono né
+`ggml_mul` né le sei `add`. Non esiste altro consumatore: il `ggml_cont` di `:2024` scatta
+solo con `n_expert_used == 1` (qui è 6).
+
+### MA: due letture di memoria non inizializzata restano A MONTE di `get_rows`
+
+**(a) `ggml_clamp` (`:1979-1983`) e `ggml_swiglu_split` (`:1985`) sono ELEMENTWISE** sull'intero
+`[n_ff_exp, k_cpu, n_tokens]`: **leggono** la riga che `mul_mat_id` ha saltato per `up` e
+`gate`. Il risultato resta nella riga saltata di `a`, che la `mul_mat_id` di `down` salta a
+sua volta (stesso `ids_cpu`) ⇒ **non propaga**. Ma la lettura c'è: ~34.800 righe da 8 KiB
+per corsa.
+
+**(b) La copia di confine di `esperti_cpu`.** La `concat` di `:1997` ha un operando CPU e uno
+CUDA ⇒ lo scheduler trasferisce `esperti_cpu` **per intero, riga saltata compresa**. È la
+famiglia già a registro: «e39 FALSIFICATO: le copie sono ATTIVAZIONI del ramo CPU —
+16384 = n_embd × 4B». Quindi **16 KiB non inizializzati attraversano davvero il PCIe 17.401
+volte per corsa**.
+
+### Che cosa contiene quella riga, se ci entra
+
+**Non zeri.** L'allocatore del grafo **ricicla i buffer d'arena** (§50): la riga contiene i
+byte di **un altro tensore** di questo o di un forward precedente — valori finiti, del giusto
+ordine di grandezza, **plausibili**. Nessun NaN a fare da allarme.
+**È esattamente la famiglia del difetto n.1**: un'uscita sbagliata ma verosimile, senza assert,
+che degenera progressivamente. Un NaN sarebbe stato un regalo; questo no.
+
+## C.4 Decisione: AZZERARE. Costo, e perché non è un trade-off
+
+Accolgo il punto (2) della regia: **«nessuno legge il dst della colonna saltata» è
+un'invariante non dichiarata**, e una modifica futura a valle la romperebbe in silenzio.
+
+**Ingressi del costo.** `n_embd = 4096` (`print_info: n_embd = 4096` nei log di corsa);
+**`n_ff_exp = 2048`**, dedotto con provenienza dai **6,75 MiB/slot esatti** del §18
+(`kern_fj_copia` copia gate+up+down verbatim): con gate/up IQ2_XXS a 2,0625 bpw e down Q2_K a
+2,625 bpw, `(n_embd/8)·(2·2,0625 + 2,625)·F = 3456·F = 6,75 MiB` ⇒ **F = 2048,00 esatto**.
+
+| tensore | riga da azzerare | byte |
+|---|---|---:|
+| `up` (`:1970`) | `n_ff_exp` f32 | 8 KiB |
+| `gate` (`:1972`) | `n_ff_exp` f32 | 8 KiB |
+| `down` = `esperti_cpu` (`:1989`) | `n_embd` f32 | **16 KiB** |
+| **totale per colonna ceduta** | | **32 KiB** |
+
+Colonne cedute per corsa da 1200 token: **17.401**; lavori: **12.642** (§17 B0).
+
+| variante | byte/corsa | ms/corsa @30 GB/s | % della parete 94,56 s | ms/lavoro | % di `calcolo` 1,537 ms |
+|---|---:|---:|---:|---:|---:|
+| solo `esperti_cpu` (la sola copiata H2D) | 272 MiB | 8,9 | 0,009% | 0,0007 | **0,05%** |
+| **tutte e tre** | **544 MiB** | **17,8** | **0,019%** | **0,0014** | **0,09%** |
+
+**Raccomandazione: azzerare tutte e tre.** Costa lo **0,09% del `calcolo`** contro il **~30%**
+che la leva risparmia: **1/330 del guadagno**. Non è un trade-off, è gratis. Si compra:
+nessuna lettura di memoria non inizializzata, nessun trasferimento PCIe di arena riciclata,
+nessuna invariante a valle da mantenere — e `swiglu(0,0) = 0` rende la colonna ceduta
+**deterministicamente zero**, così che anche un consumatore futuro leggerebbe **zero**, non
+«un'altra attivazione plausibile». La formulazione onesta è quindi **«robusto e non costa
+niente»**, non «funziona finché nessuno tocca il valle».
+
+**Sito**: la stessa guardia di `ggml-cpu.c:1632`. L'indirizzo di riga è già provato dal codice
+esistente (`:1502-1503` `i1 = id`, `i2 = i12`; `:1514`
+`dst_col = dst->data + i1*nb1 + i2*nb2`), quindi è calcolabile dal loop di raggruppamento:
+
+```c
+        if (i02 < 0 || i02 >= n_as) {
+            // VOCI FUORI TABELLA: colonna CEDUTA dalla lane adattiva.
+            // Si SALTA, si AZZERA e si CONTA -- tutte e tre.
+            // L'azzeramento non e' cosmetico: senza, la riga resta memoria
+            // d'ARENA RICICLATA (par.50), cioe' l'attivazione plausibile di un
+            // altro tensore -- stessa famiglia del difetto n.1 -- e viene
+            // comunque COPIATA H2D dalla concat di llama-graph.cpp:1997.
+            memset((char *) dst->data + id*nb1 + iid1*nb2, 0, ne0*sizeof(float));
+            atomic_fetch_add_explicit(&ggml_mmid_fuori_tabella, 1, memory_order_relaxed);
+            continue;
+        }
+```
+
+Gira nella sezione `if (ith == 0)` (`:1624-1638`), monothread e prima di `ggml_barrier`
+(`:1648`): **nessuna corsa**.
+
+## C.5 CEDERE ≠ ELIMINARE: il cancello «6 esperti calcolati per riga»
+
+Il rischio nominato dalla regia è il §44 rifatto a mano: la CPU cede, la GPU **non** raccoglie,
+lo strato calcola 5 esperti su 6, l'uscita è sbagliata ma plausibile e degenera senza assert.
+Tre testimoni; **i primi due nello STESSO primo braccio di `lane_cpu_residenti`**:
+
+1. **Bigezione di `perm_inv`, sul device, dentro `if constexpr (adattiva)`.** Dopo aver scritto
+   `perm_inv`, verificare che i 6 valori siano **distinti** e che ognuno cada in una colonna
+   **assegnata** (`< k_vivo` oppure `>= k_cpu`). Contatore **`lane_ad_perm_rotta`**, che
+   **deve restare 0**. È l'idioma del «guasto MUTO» già in casa
+   (`cache-esperti.cu:7259-7263`, `k_ad_perm_rotta`, col commento «la permutazione perde
+   esperti … l'uscita è spazzatura PLAUSIBILE»): costa 36 confronti in un kernel che ne fa già
+   O(ne0²), e coglie **esattamente** la colonna che non è di nessuno.
+2. **Bilancio delle DESTINAZIONI** — non delle classi: `lane_cpu/lane_gpu/lane_scudati` contano
+   le classi (`:7284-7302`), non chi calcola. Nuovi: **`lane_ad_cpu_vive += k_vivo`** e
+   **`lane_ad_gpu_colonne += ne0 − k_vivo`**. Cancello aritmetico a fine corsa:
+   `lane_ad_cpu_vive + lane_ad_gpu_colonne == 6 × partizioni` **esatto**, e **identico a leva
+   spenta e accesa** (a leva spenta `k_vivo == k_cpu`). Stampato sulla riga
+   `tre vie router/massa` (`:8413-8420`).
+3. **Testimone di ESECUZIONE lato CPU**: nel loop di raggruppamento contare anche gli id
+   **accettati** (`mmid_accettati`). Ogni id accettato entra in `matrix_row_counts` ⇒ **sarà**
+   calcolato da `one_chunk`. Cancello:
+   `mmid_accettati + mmid_fuori_tabella == 3 × k_cpu × righe`; il fattore 3 sono
+   `up`/`gate`/`down`, che condividono `ids_cpu`.
+   L'analogo lato GPU richiede di toccare `mul_mat_vec_q_moe_maschera` (`mmvq.cu:1344`) con un
+   parametro template `bool conta` e un `atomicAdd` prima della scrittura del dst:
+   **solo braccio di debug, MAI in produzione** — l'istanziazione `<…, false>` resta identica
+   istruzione per istruzione, ma un'atomica per colonna su quel kernel non si lascia accesa.
+
+## C.6 Errata alle sezioni (B) precedenti
+
+- **§B.3**: la guardia su `ggml-cpu.c:1632` **azzera** oltre a saltare e contare. La frase
+  «è innocuo perché `perm_inv` non la seleziona mai» resta **vera ma non è più la difesa**:
+  la difesa è l'azzeramento. L'invariante di `perm_inv` diventa **ridondanza**, non fondamento.
+- **§B.4 / §B.6**: i contatori nuovi sono **quattro**, non uno: `lane_cpu_residenti` (slot 55,
+  l'unico libero), `lane_ad_cpu_vive` (62), `lane_ad_gpu_colonne` (63), `lane_ad_perm_rotta`
+  (64) ⇒ **`CACHE_ESPERTI_CONTATORI` 62 → 65** (`cache-esperti.cu:83`).
+  Righe stimate: **+8** in `cache-esperti.cu`, **+4** in `.cuh`, **+6** in `ggml-cpu.c`
+  (memset + due contatori). Totale della patch: **~120 righe**, ~50 di sostanza.
+- **§B.5**: due cancelli in più, entrambi **identici a leva spenta e accesa**:
+  `lane_ad_cpu_vive + lane_ad_gpu_colonne == 6 × partizioni`, e `lane_ad_perm_rotta == 0`.
+  Più il rifiuto di armarsi con `LLAMA_OVERLAP_K < 1` (§C.2).
+- **§B.7 rischio 5**: declassato. Non è più «invariante da mantenere» ma **ridondanza**, perché
+  le colonne cedute sono **zero deterministici**.

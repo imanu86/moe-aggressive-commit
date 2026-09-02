@@ -1,0 +1,405 @@
+--- a/ggml/include/ggml.h
++++ b/ggml/include/ggml.h
+@@ -2422,11 +2422,22 @@
+     // con usato==0, poi il resto; mai duplicati); righe ne0..2*ne0-1 =
+     // permutazione INVERSA (slot originale -> posizione di partizione), per
+     // il riordino al join. Deterministica: stessa entrata, stessa uscita.
++    // lane-adattiva (2/9): `lane_adattiva` 0 = comportamento storico (uscita
++    // [2*ne0, n_tok], byte per byte come prima); 1 = SONDA (forme invariate,
++    // il kernel conta e non decide); 2 = DECIDE. A livello 2 l'uscita
++    // RADDOPPIA IN RIGHE, non in colonne: [2*ne0, 2*n_tok]. Le prime n_tok
++    // righe restano esattamente com'erano (id in ordine di partizione +
++    // permutazione inversa, passo di riga 2*ne0 INVARIATO); le n_tok righe
++    // successive portano il BLOCCO C, cioe' ne0 id per la lane GPU, che a
++    // leva accesa vede sei colonne invece di ne0-k_cpu. Raddoppiare le righe
++    // invece della larghezza e' cio' che tiene invariato il passo di riga --
++    // e quindi ogni indirizzo gia' calcolato dentro il kernel.
+     GGML_API struct ggml_tensor * ggml_cache_esperti_partiziona(
+             struct ggml_context * ctx,
+             struct ggml_tensor  * selected,
+             int                   strato,
+-            int                   k_cpu);
++            int                   k_cpu,
++            int                   lane_adattiva);
+ 
+     // ACCEPTMOE (verifica speculativa mascherata): per le righe t >= stato[1]
+     // del batch, quando stato[0] != 0, gli id NON residenti nella cache
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -5381,15 +5381,27 @@
+         struct ggml_context * ctx,
+         struct ggml_tensor  * selected,
+         int                   strato,
+-        int                   k_cpu) {
++        int                   k_cpu,
++        int                   lane_adattiva) {
+     GGML_ASSERT(selected->type == GGML_TYPE_I32);
+     GGML_ASSERT(k_cpu >= 0 && k_cpu <= selected->ne[0]);
+     GGML_ASSERT(selected->ne[2] == 1 && selected->ne[3] == 1);
++    GGML_ASSERT(lane_adattiva >= 0 && lane_adattiva <= 2);
++
++    // lane-adattiva (2/9): SOLO il livello 2 cambia la forma, e la cambia in
++    // RIGHE. Il passo di riga resta 2*ne0 elementi, quindi l'indirizzo
++    // `out + t*2*ne0` gia' presente nel kernel resta corretto senza toccare
++    // una riga; il blocco C sta nelle righe [n_tok, 2*n_tok).
++    // A livello 0 e 1 la forma e' identica a prima: 2*ne0 x n_tok.
++    const int64_t n_righe = selected->ne[1] * (lane_adattiva == 2 ? 2 : 1);
+ 
+     struct ggml_tensor * result = ggml_new_tensor_2d(ctx, GGML_TYPE_I32,
+-            selected->ne[0]*2, selected->ne[1]);
++            selected->ne[0]*2, n_righe);
+ 
+-    int32_t params[2] = { strato, k_cpu };
++    // A lane_adattiva == 0 i primi 8 byte sono identici a prima e i 4 byte in
++    // piu' valgono 0, cioe' esattamente cio' che op_params conteneva gia'
++    // (azzerato alla creazione del tensore): op_params resta BYTE-IDENTICO.
++    int32_t params[3] = { strato, k_cpu, lane_adattiva };
+     ggml_set_op_params(result, params, sizeof(params));
+ 
+     result->op     = GGML_OP_CACHE_ESPERTI_PARTIZIONA;
+--- a/ggml/src/ggml-cuda/cache-esperti.cuh
++++ b/ggml/src/ggml-cuda/cache-esperti.cuh
+@@ -624,11 +624,16 @@
+ // k alla CPU per ordine di slot, il resto alla GPU. Chi legge il grafo in
+ // quella configurazione deve aspettarsi questo, non un errore.
+ // Un thread per token, un blocco: n_tok e' il batch stretto del decode.
++// lane-adattiva (2/9): `lane_adattiva` arriva dall'op (op_params[2]) e non
++// da una getenv del device. SORGENTE UNICA DELLA VERITA': chi decide le
++// forme e' llama-graph.cpp; se host e device leggessero due variabili
++// diverse, le forme e i contenuti non combacerebbero e l'uscita sarebbe
++// spazzatura plausibile.
+ void ggml_cuda_cache_esperti_partiziona_lancia(
+         struct cache_esperti_runtime * runtime,
+         const int32_t * ids, int ne0, int passo_riga, int n_tok,
+         const float * pesi_traccia, int passo_pesi_traccia,
+-        int strato, int k_cpu,
++        int strato, int k_cpu, int lane_adattiva,
+         int32_t * out, cudaStream_t stream);
+ 
+ // ---- ACCEPTMOE (GGML_OP_ACCEPTMOE_IDS / _PESI) ----------------------------
+--- a/ggml/src/ggml-cuda/cache-esperti.cu
++++ b/ggml/src/ggml-cuda/cache-esperti.cu
+@@ -6916,14 +6916,26 @@
+ // il primo B ha mostrato che cambiare quali colonne vanno a CPU altera lo SHA,
+ // il p1 e il numero di grafi, impedendo di misurare il solo trasporto
+ // copia/zero-copy contro il SOTA.
+-template <bool planner_trace>
++// lane-adattiva (2/9): SECONDO parametro template, difetto `false`. Tutto il
++// codice della leva sta in `if constexpr (adattiva)`: nell'istanziazione
++// <planner_trace, false> -- la produzione a leva spenta -- quel blocco NON
++// ESISTE nel binario, e nessuna riga preesistente del kernel e' stata
++// toccata (solo questa firma, il blocco in coda, e le istanziazioni al
++// lancio). E' lo stesso idioma gia' pagato per la classe 4 di ADAPTIVE-K,
++// :7199-7203. Il difetto `= false` fa si' che `kern_partiziona<true>` e
++// `kern_partiziona<false>` restino scritture valide.
++// `lane_ad` e' il LIVELLO a runtime (0/1/2), non un secondo interruttore:
++// serve a distinguere SONDA (1, conta e non decide) da DECIDE (2) dentro
++// l'unica istanziazione <_, true>.
++template <bool planner_trace, bool adattiva = false>
+ __global__ static void kern_partiziona(
+         cache_esperti c, int attiva, const int32_t * __restrict__ ids,
+         int ne0, int passo_riga, int n_tok, int strato,
+         const float * __restrict__ pesi, int passo_pesi, int k_cpu, int compatta,
+         const float * __restrict__ pesi_traccia, int passo_pesi_traccia,
+         int32_t * __restrict__ out, int8_t * __restrict__ calendario_maschera,
+-        const unsigned long long * pub, unsigned long long * div) {
++        const unsigned long long * pub, unsigned long long * div,
++        int lane_ad) {
+     const int t = (int) (blockIdx.x * blockDim.x + threadIdx.x);
+     __shared__ uint32_t traccia_base;
+     __shared__ uint32_t calendario_base;
+@@ -7352,6 +7364,89 @@
+     // bilancio, e abbassa questa variabile delle colonne cedute.
+     int lane_ad_vive = k_cpu < ne0 ? k_cpu : ne0;
+ 
++    // ---- lane-adattiva (2/9): LA LEVA. -----------------------------------
++    // Non esiste nell'istanziazione <planner_trace, false>.
++    if constexpr (adattiva) {
++        // QUALI colonne cede la CPU. Si decide COLONNA PER COLONNA su
++        // chiave[perm[j]], NON con k_vivo = min(k_cpu, n_miss) come nel
++        // disegno: quella formula presuppone che le prime k_cpu colonne
++        // della permutazione siano i non-residenti, e non e' vero quando
++        // AcceptMoE ha riordinato perm[] per peso zero (:7265-7275, attivo
++        // in produzione con COMPATTA=1). Col criterio per colonna il
++        // cancello «di cui RESIDENTI = 0 esatto» e' vero per costruzione:
++        // ceduta <=> chiave != 0 <=> contata in lane_cpu_residenti.
++        int ceduti = 0;
++        for (int j = 0; j < k_cpu && j < ne0; j++) {
++            if (chiave[perm[j]] != 0) ceduti++;
++        }
++
++        if (lane_ad == 2) {
++            // (1) BLOCCO C: i sei id per la lane GPU. Sta nelle righe
++            //     [n_tok, 2*n_tok) del tensore, passo di riga invariato.
++            int32_t * g = out + (size_t) (n_tok + t) * 2 * ne0;
++            // Prima le colonne che la GPU calcola davvero -- le cedute e le
++            // sue -- con la STESSA regola di :7307, cosi' la compattazione a
++            // peso zero di AcceptMoE continua a valere anche sul blocco C
++            // (senza questo, la leva ricaricherebbe colonne matematicamente
++            // nulle: rischio 3 del disegno, qui chiuso).
++            int dup = -1;
++            for (int j = 0; j < ne0; j++) {
++                if (j < k_cpu && chiave[perm[j]] == 0) continue;   // la tiene la CPU
++                g[j] = compatta && pesi_validi && peso[perm[j]] == 0.0f
++                        ? -1 : riga[perm[j]];
++                if (dup < 0 && g[j] >= 0) dup = g[j];
++            }
++            // Le colonne che la CPU TIENE non devono restare vuote (ids_gpu
++            // le legge comunque) e non possono portare -1 (mmvq.cu:1408
++            // legge l'id come uint32_t -> 0xFFFFFFFF, e il cammino CUDA
++            // generico di ggml-cuda.cu:2924 aborta). Ci va un id VALIDO
++            // DUPLICATO, e non uno qualunque: il primo id che la GPU sta
++            // gia' calcolando in questa riga. Cosi' la colonna in piu' non
++            // aggiunge NEMMENO UN esperto alla domanda della cache -> zero
++            // copie PCIe nuove, che e' l'intera tesi della leva.
++            if (dup < 0) dup = riga[perm[lane_ad_vive < ne0 ? lane_ad_vive : 0]];
++            for (int j = 0; j < k_cpu && j < ne0; j++) {
++                if (chiave[perm[j]] == 0) g[j] = dup;
++            }
++            // (2) Le colonne CPU cedute: -1. La mul_mat_id CPU le salta, le
++            //     AZZERA e le CONTA (ggml-cpu.c, guardia dello stadio 1).
++            for (int j = 0; j < k_cpu && j < ne0; j++) {
++                if (chiave[perm[j]] != 0) o[j] = -1;
++            }
++            // (3) perm_inv verso il concat largo k_cpu + ne0: per lo slot
++            //     originale perm[j] la copia buona sta nella colonna CPU j
++            //     se la CPU la calcola, altrimenti nella colonna GPU j, che
++            //     nel concat e' k_cpu + j. Le colonne cedute e le colonne
++            //     GPU duplicate NON compaiono mai qui.
++            for (int j = 0; j < ne0; j++) {
++                const bool tiene = j < k_cpu && chiave[perm[j]] == 0;
++                o[ne0 + perm[j]] = tiene ? j : k_cpu + j;
++            }
++            // Le colonne cedute passano dalla lane CPU a quella GPU: il
++            // bilancio qui sotto resta a somma ne0, come deve.
++            lane_ad_vive -= ceduti;
++
++            // BIGEZIONE DI perm_inv: sei valori distinti, ognuno in una
++            // colonna davvero ASSEGNATA. E' l'idioma del «guasto muto» di
++            // :7255-7263: se salta, lo strato calcola meno di sei esperti e
++            // l'uscita e' spazzatura PLAUSIBILE, senza un solo assert.
++            if (c.lane_ad_perm_rotta) {
++                uint32_t visto = 0;
++                bool rotta = false;
++                for (int j = 0; j < ne0; j++) {
++                    const int v = o[ne0 + j];
++                    if (v < 0 || v >= k_cpu + ne0 || v >= 32) { rotta = true; break; }
++                    if (v < k_cpu && chiave[perm[v]] != 0) { rotta = true; break; }
++                    if (visto & (1u << v)) { rotta = true; break; }
++                    visto |= 1u << v;
++                }
++                if (rotta) {
++                    atomicAdd((unsigned long long *) c.lane_ad_perm_rotta, 1ull);
++                }
++            }
++        }
++    }
++
+     // IL BILANCIO DELLE DESTINAZIONI -- chi CALCOLA, non chi e' RESIDENTE.
+     // La somma deve fare ne0 esatto per riga e restare IDENTICA a leva spenta
+     // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis, e va
+@@ -7769,7 +7864,7 @@
+         cache_esperti_runtime * runtime,
+         const int32_t * ids, int ne0, int passo_riga, int n_tok,
+         const float * pesi_traccia, int passo_pesi_traccia,
+-        int strato, int k_cpu,
++        int strato, int k_cpu, int lane_adattiva,
+         int32_t * out, cudaStream_t stream) {
+     if (ne0 <= 0 || ne0 > 16 || n_tok <= 0) {
+         return;   // fuori contratto: il cancello d'ammissione sta nel grafo
+@@ -7812,22 +7907,52 @@
+     if (rr && (rr->ids != ids || rr->ne0_ids != ne0)) rr = nullptr;
+     const bool planner_trace = runtime &&
+             (runtime->cache.calendario != nullptr || runtime->cache.traccia != nullptr);
++    // lane-adattiva (2/9): QUATTRO istanziazioni invece di due. Il ramo
++    // `lane_ad == 0` istanzia <planner_trace, false>, che e' identica
++    // ISTRUZIONE PER ISTRUZIONE a prima della patch: il blocco della leva non
++    // si compila. Il livello (0/1/2) viaggia come argomento dell'op, mai come
++    // getenv del device.
++    const int lane_ad = (lane_adattiva == 1 || lane_adattiva == 2) ? lane_adattiva : 0;
+     if (planner_trace) {
+-        kern_partiziona<true><<<1, n_thread, 0, stream>>>(
+-                runtime ? runtime->cache : vuota, runtime && runtime->attiva ? 1 : 0,
+-                ids, ne0, passo_riga, n_tok, strato,
+-                rr ? rr->pesi : nullptr, rr ? rr->passo_pesi : 0,
+-                k_cpu, compatta ? 1 : 0, pesi_traccia, passo_pesi_traccia, out,
+-                runtime ? runtime->calendario_maschera : nullptr,
+-                runtime ? runtime->pub : nullptr, runtime ? runtime->div : nullptr);
++        if (lane_ad > 0) {
++            kern_partiziona<true, true><<<1, n_thread, 0, stream>>>(
++                    runtime ? runtime->cache : vuota, runtime && runtime->attiva ? 1 : 0,
++                    ids, ne0, passo_riga, n_tok, strato,
++                    rr ? rr->pesi : nullptr, rr ? rr->passo_pesi : 0,
++                    k_cpu, compatta ? 1 : 0, pesi_traccia, passo_pesi_traccia, out,
++                    runtime ? runtime->calendario_maschera : nullptr,
++                    runtime ? runtime->pub : nullptr, runtime ? runtime->div : nullptr,
++                    lane_ad);
++        } else {
++            kern_partiziona<true, false><<<1, n_thread, 0, stream>>>(
++                    runtime ? runtime->cache : vuota, runtime && runtime->attiva ? 1 : 0,
++                    ids, ne0, passo_riga, n_tok, strato,
++                    rr ? rr->pesi : nullptr, rr ? rr->passo_pesi : 0,
++                    k_cpu, compatta ? 1 : 0, pesi_traccia, passo_pesi_traccia, out,
++                    runtime ? runtime->calendario_maschera : nullptr,
++                    runtime ? runtime->pub : nullptr, runtime ? runtime->div : nullptr,
++                    lane_ad);
++        }
+     } else {
+-        kern_partiziona<false><<<1, n_thread, 0, stream>>>(
+-                runtime ? runtime->cache : vuota, runtime && runtime->attiva ? 1 : 0,
+-                ids, ne0, passo_riga, n_tok, strato,
+-                rr ? rr->pesi : nullptr, rr ? rr->passo_pesi : 0,
+-                k_cpu, compatta ? 1 : 0, pesi_traccia, passo_pesi_traccia, out,
+-                runtime ? runtime->calendario_maschera : nullptr,
+-                runtime ? runtime->pub : nullptr, runtime ? runtime->div : nullptr);
++        if (lane_ad > 0) {
++            kern_partiziona<false, true><<<1, n_thread, 0, stream>>>(
++                    runtime ? runtime->cache : vuota, runtime && runtime->attiva ? 1 : 0,
++                    ids, ne0, passo_riga, n_tok, strato,
++                    rr ? rr->pesi : nullptr, rr ? rr->passo_pesi : 0,
++                    k_cpu, compatta ? 1 : 0, pesi_traccia, passo_pesi_traccia, out,
++                    runtime ? runtime->calendario_maschera : nullptr,
++                    runtime ? runtime->pub : nullptr, runtime ? runtime->div : nullptr,
++                    lane_ad);
++        } else {
++            kern_partiziona<false, false><<<1, n_thread, 0, stream>>>(
++                    runtime ? runtime->cache : vuota, runtime && runtime->attiva ? 1 : 0,
++                    ids, ne0, passo_riga, n_tok, strato,
++                    rr ? rr->pesi : nullptr, rr ? rr->passo_pesi : 0,
++                    k_cpu, compatta ? 1 : 0, pesi_traccia, passo_pesi_traccia, out,
++                    runtime ? runtime->calendario_maschera : nullptr,
++                    runtime ? runtime->pub : nullptr, runtime ? runtime->div : nullptr,
++                    lane_ad);
++        }
+     }
+     if (runtime && runtime->calendario_trasporto && strato == 0) {
+         kern_calendario_prepara<<<1, 1, 0, stream>>>(
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -3304,6 +3304,12 @@
+                 const ggml_tensor * s1 = dst->src[1];
+                 const int strato = ((const int32_t *) dst->op_params)[0];
+                 const int k_cpu  = ((const int32_t *) dst->op_params)[1];
++                // lane-adattiva (2/9): il livello viaggia nell'op, non in una
++                // getenv del device. A 0 (che e' anche cio' che op_params
++                // conteneva PRIMA della patch, essendo azzerato alla
++                // creazione del tensore) il lanciatore istanzia il kernel
++                // identico a prima.
++                const int lane_ad = ((const int32_t *) dst->op_params)[2];
+                 ggml_cuda_cache_esperti_partiziona_lancia(
+                         ctx.cache_esperti,
+                         (const int32_t *) s0->data,
+@@ -3312,7 +3318,7 @@
+                         (int) s0->ne[1],
+                         s1 ? (const float *) s1->data : nullptr,
+                         s1 ? (int) (s1->nb[2] / sizeof(float)) : 0,
+-                        strato, k_cpu, (int32_t *) dst->data, ctx.stream());
++                        strato, k_cpu, lane_ad, (int32_t *) dst->data, ctx.stream());
+ 
+                 // LLAMA_OVERLAP_VERIFICA: controllo D2H dell'invariante
+                 // (per ogni slot i: out[out[ne0+i]] == selected[i]) sui
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -15,6 +15,7 @@
+ 
+ #include <cassert>
+ #include <cmath>
++#include <cstdio>   // lane-adattiva (2/9): fprintf del testimone/rifiuto leva
+ #include <cstring>
+ #include <numeric>
+ #include <sstream>
+@@ -1867,6 +1868,51 @@
+     const bool forma_ammessa = n_tokens <= batch_max && selected_experts->type == GGML_TYPE_I32 &&
+         up_exps != nullptr && gate_exps != nullptr && down_exps != nullptr && il >= 0;
+ 
++    // lane-adattiva (2/9): LA LEVA, e la sua SORGENTE UNICA DELLA VERITA'.
++    // Il livello si legge QUI -- dove si decidono le forme -- e viaggia al
++    // kernel come parametro dell'op. Mai due getenv indipendenti: se host e
++    // device divergessero, forme e contenuti non combacerebbero e l'uscita
++    // sarebbe spazzatura plausibile, che e' esattamente la famiglia di
++    // difetti che questa campagna ha gia' pagato tre volte.
++    //
++    // Cancello a VALORE, non a presenza: 0/assente = comportamento di oggi
++    // byte per byte; 1 = SONDA (conta, forme invariate); 2 = DECIDE;
++    // qualunque altro valore vale 0 -- un refuso non deve accendere una leva.
++    static const int lane_adattiva = [&] {
++        const char * v = getenv("LLAMA_OVERLAP_K_MIN_NONRES");
++        const int liv = (v && *v) ? atoi(v) : 0;
++        const int lv  = (liv == 1 || liv == 2) ? liv : 0;
++        if (lv == 0) {
++            return 0;
++        }
++        // RIFIUTO DI ARMARSI con LLAMA_OVERLAP_K < 1. Sotto 1 la Bresenham
++        // di :1846-1847 da' k_cpu == 0 su qualche strato, e li' il ramo K0
++        // del kernel (:7108-7143) scrive gia' -1 nelle colonne a peso zero,
++        // con un significato DIVERSO (compattazione AcceptMoE) da quello
++        // della cessione alla GPU. Due -1 nelle stesse colonne e nessun
++        // consumatore capace di distinguerli: la leva non si arma.
++        if (k_medio < 1.0) {
++            fprintf(stderr,
++                    "cache-esperti: LEVA RIFIUTATA LANE_ADATTIVA -- richiede "
++                    "LLAMA_OVERLAP_K >= 1 su ogni strato (k_medio=%.3f): sotto 1 "
++                    "il -1 del ramo K0 e il -1 della cessione occuperebbero le "
++                    "stesse colonne con significati diversi\n", k_medio);
++            fflush(stderr);
++            return 0;
++        }
++        fprintf(stderr,
++                "cache-esperti: LANE ADATTIVA livello %d (%s): k_cpu = min(%d, non "
++                "residenti per riga), viste gpu %d->%d colonne, concat %d colonne\n",
++                lv, lv == 1 ? "SONDA: conta e non decide"
++                            : "DECIDE: la CPU salta i residenti",
++                k_cpu,
++                (int) (n_expert_used - k_cpu),
++                lv == 2 ? (int) n_expert_used : (int) (n_expert_used - k_cpu),
++                lv == 2 ? (int) (k_cpu + n_expert_used) : (int) n_expert_used);
++        fflush(stderr);
++        return lv;
++    }();
++
+     // Il planner globale K0 deve osservare/replayare le stesse route finali
+     // senza costruire i due rami CPU/GPU. Inserisce quindi il solo nodo
+     // testimone di partizione (K=0), espanso come side effect, mentre il MoE
+@@ -1883,8 +1929,9 @@
+     }();
+     if (k_cpu <= 0) {
+         if (calendario_k0 && forma_ammessa) {
++            // lane-adattiva (2/9): il testimone K0 non e' la lane: livello 0.
+             ggml_tensor * testimone = ggml_cache_esperti_partiziona(
+-                    ctx0, selected_experts, il, 0);
++                    ctx0, selected_experts, il, 0, 0);
+             if (calendario_esatto) testimone->src[1] = weights;
+             cb(testimone, "ffn_moe_calendar_k0", il);
+             // K0 conserva l'ordine originale ma sostituisce con -1 le route
+@@ -1908,17 +1955,28 @@
+     // di partizione (primi k_cpu alla CPU) + permutazione inversa. k sta nei
+     // parametri dell'op ma NON nel kernel: cambiare K non ricattura i graph.
+     ggml_tensor * part = ggml_cache_esperti_partiziona(
+-            ctx0, selected_experts, il, k_cpu);
++            ctx0, selected_experts, il, k_cpu, lane_adattiva);
+     // Solo il banco trace/calendario rende esplicita la dipendenza dal peso
+     // finale AcceptMoE. Il kernel continua a usare il peso storico per la
+     // partizione, ma puo' registrare/replayare i bit F32 realmente consumati.
+     if (calendario_esatto) part->src[1] = weights;
+     cb(part, "ffn_moe_overlap_part", il);
+ 
++    // lane-adattiva (2/9): `ids_cpu` e `perm_inv` hanno forma INVARIATA a
++    // ogni livello -- la CPU continua a ricevere k_cpu colonne e cede
++    // scrivendoci -1 dentro, e la permutazione inversa resta di ne0 valori.
++    // Cambia solo `ids_gpu`, e solo a livello 2: da ne0-k_cpu colonne prese
++    // dalla coda del blocco A, a ne0 colonne prese dal BLOCCO C, che sta
++    // nelle righe [n_tokens, 2*n_tokens) del tensore. Il passo di riga e'
++    // lo stesso -- e' per questo che il blocco C sta in righe e non in
++    // colonne: nessun indirizzo gia' calcolato nel kernel si sposta.
+     ggml_tensor * ids_cpu = ggml_view_2d(ctx0, part, k_cpu, n_tokens,
+             part->nb[1], 0);
+-    ggml_tensor * ids_gpu = ggml_view_2d(ctx0, part, n_expert_used - k_cpu, n_tokens,
+-            part->nb[1], (size_t) k_cpu * part->nb[0]);
++    ggml_tensor * ids_gpu = lane_adattiva == 2
++            ? ggml_view_2d(ctx0, part, n_expert_used, n_tokens,
++                    part->nb[1], (size_t) n_tokens * part->nb[1])
++            : ggml_view_2d(ctx0, part, n_expert_used - k_cpu, n_tokens,
++                    part->nb[1], (size_t) k_cpu * part->nb[0]);
+     ggml_tensor * perm_inv = ggml_view_2d(ctx0, part, n_expert_used, n_tokens,
+             part->nb[1], (size_t) n_expert_used * part->nb[0]);
+ 

@@ -1,0 +1,267 @@
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -32,6 +32,42 @@
+ #endif
+ 
+ 
++// lane-adattiva (2/9): il contatore «voci fuori tabella» della mul_mat_id CPU.
++//
++// Vive QUI (ggml-base) e non in ggml-cpu per un motivo di link, non di gusto:
++// la riga che lo stampa e' quella del worker, che sta in questo file, e la
++// dipendenza fra le due librerie e' a SENSO UNICO -- ggml/src/CMakeLists.txt
++// :283 «target_link_libraries(BACKEND PRIVATE ggml-base)». ggml-base NON puo'
++// chiamare ggml-cpu (simbolo irrisolto al link); ggml-cpu puo' chiamare
++// ggml-base. Quindi: incremento da ggml-cpu.c, definizione e lettura qui.
++//
++// Le due dichiarazioni stanno QUI e non in ggml-impl.h di proposito:
++// ggml-impl.h e' incluso da tutto l'albero e una riga li' ricompilerebbe
++// l'intero backend CUDA per un contatore. `ggml-cpu.c` porta la sua
++// dichiarazione `extern` locale, accanto agli include.
++//
++// A leva SPENTA questo contatore deve leggere ESATTAMENTE 0: e' il rilevatore
++// pre-registrato del ledger 25 §63-quater p.1 -- se leggesse > 0 sarebbe la
++// prova che un id -1 raggiunge GIA' oggi la mul_mat_id CPU in Release, dove
++// l'assert() di ggml-cpu.c sparisce sotto NDEBUG.
++extern "C" {
++GGML_API void     ggml_mmid_fuori_tabella_inc(void);
++GGML_API uint64_t ggml_mmid_fuori_tabella_get(void);
++}
++
++// L'atomica serve davvero: il worker della lane overlap gira su un thread suo,
++// in parallelo al threadpool principale, e la mul_mat_id CPU e' raggiunta da
++// entrambi.
++static std::atomic<uint64_t> g_mmid_fuori_tabella{0};
++
++void ggml_mmid_fuori_tabella_inc(void) {
++    g_mmid_fuori_tabella.fetch_add(1, std::memory_order_relaxed);
++}
++
++uint64_t ggml_mmid_fuori_tabella_get(void) {
++    return g_mmid_fuori_tabella.load(std::memory_order_relaxed);
++}
++
+ // backend buffer type
+ 
+ const char * ggml_backend_buft_name(ggml_backend_buffer_type_t buft) {
+@@ -2783,6 +2819,19 @@
+                 fflush(stderr);
+             }
+         }
++        // lane-adattiva (2/9): SEMPRE, anche a ZERO. La regola dei contatori
++        // muti: a leva spenta lo zero e' il testimone che nessun id -1 e'
++        // entrato nella mul_mat_id CPU; se un giorno leggesse > 0 a leva
++        // spenta, il difetto e' vivo e invisibile da prima di questa patch
++        // (ledger 25 §63-quater p.1).
++        // NON dipende: dal profilo (ggml_sched_profilo_attivo), da n_lavori,
++        // ne' dalla lane adattiva -- e' fuori da tutti e tre i cancelli qui
++        // sopra. Dipende SOLO dall'esistenza del worker, che e' la stessa
++        // condizione sotto cui la lane CPU esiste: senza worker non c'e'
++        // ids_cpu, quindi non c'e' -1 possibile su questo cammino.
++        fprintf(stderr, "sched-worker-lane: voci fuori tabella=%llu\n",
++                (unsigned long long) ggml_mmid_fuori_tabella_get());
++        fflush(stderr);
+         ggml_sched_worker_ferma(sched->worker);
+         delete sched->worker;
+         sched->worker = NULL;
+--- a/ggml/src/ggml-cpu/ggml-cpu.c
++++ b/ggml/src/ggml-cpu/ggml-cpu.c
+@@ -15,6 +15,14 @@
+ #include "ggml.h"
+ #include "common.h"
+ 
++// lane-adattiva (2/9): definita in ggml-backend.cpp (ggml-base). Dichiarata
++// QUI e non in ggml-impl.h di proposito: quell'header e' incluso da tutto
++// l'albero e una riga li' ricompilerebbe l'intero backend CUDA per un
++// contatore. GGML_API e' gia' visibile via ggml.h qui sopra e vale
++// __declspec(dllimport) in questa libreria (ggml-cpu non definisce
++// GGML_BUILD), che e' esattamente il verso giusto: ggml-cpu -> ggml-base.
++GGML_API void ggml_mmid_fuori_tabella_inc(void);
++
+ #if defined(_MSC_VER) || defined(__MINGW32__)
+ #include <malloc.h> // using malloc.h with MSC/MINGW
+ #elif !defined(__FreeBSD__) && !defined(__NetBSD__) && !defined(__OpenBSD__)
+@@ -1629,6 +1637,40 @@
+             for (int id = 0; id < n_ids; ++id) {
+                 const int32_t i02 = *(const int32_t *) ((const char *) ids->data + iid1*ids->nb[1] + id*ids->nb[0]);
+ 
++                // lane-adattiva (2/9): VOCI FUORI TABELLA. Si SALTA, si
++                // AZZERA e si CONTA -- tutte e tre, e in quest'ordine.
++                //
++                // SALTARE: l'`assert` qui sotto e' la macro C, non GGML_ASSERT.
++                // Sotto NDEBUG (Release) SPARISCE, e MMID_MATRIX_ROW(-1, ...)
++                // scrive FUORI dall'array `matrix_rows` (indice negativo),
++                // come `matrix_row_counts[-1]`. Corruzione silenziosa, non un
++                // crash. E' la terza esposizione latente della famiglia
++                // dell'indice -1, e la prima che e' una SCRITTURA.
++                //
++                // AZZERARE: la colonna saltata non viene piu' scritta da
++                // ggml_compute_forward_mul_mat_id_one_chunk, quindi resterebbe
++                // memoria d'ARENA RICICLATA -- l'attivazione plausibile di un
++                // altro tensore, non zeri -- e verrebbe comunque copiata H2D
++                // dalla concat del ramo overlap (llama-graph.cpp:1997). La
++                // difesa e' l'azzeramento, non l'invariante «tanto nessuno la
++                // legge». swiglu(0,0) = 0: la colonna ceduta diventa zero
++                // deterministico anche per un consumatore futuro.
++                // Indirizzo di riga identico a quello di one_chunk (:1514):
++                // i1 = id, i2 = iid1, dst e' f32 e contiguo in dim0
++                // (GGML_ASSERT(nb0 == sizeof(float)) qui sopra).
++                //
++                // CONTARE: mai un clamp silenzioso. Un -1 assorbito senza
++                // contarlo toglierebbe l'unico segnale che abbiamo su questa
++                // famiglia di difetti.
++                //
++                // Sezione `ith == 0`, monothread e prima di ggml_barrier:
++                // nessuna corsa fra i thread del threadpool.
++                if (i02 < 0 || i02 >= n_as) {
++                    memset((char *) dst->data + id*nb1 + iid1*nb2, 0, ne0*sizeof(float));
++                    ggml_mmid_fuori_tabella_inc();
++                    continue;
++                }
++
+                 assert(i02 >= 0 && i02 < n_as);
+ 
+                 MMID_MATRIX_ROW(i02, matrix_row_counts[i02]) = (struct mmid_row_mapping) {id, iid1};
+--- a/ggml/src/ggml-cuda/cache-esperti.cuh
++++ b/ggml/src/ggml-cuda/cache-esperti.cuh
+@@ -418,6 +418,28 @@
+     uint64_t * k_ad_senza_piano;  // 52 nessuna deadline nota -> come oggi
+     uint64_t * k_ad_perm_rotta;   // 53 n != ne0 dopo le fasi: guasto MUTO
+ 
++    // lane-adattiva (2/9): i quattro contatori della lane adattiva.
++    // 55 e' l'UNICO indice libero del blocco storico (54 = usato_spazzate,
++    // 56..61 = router_*); 62..64 sono nuovi e alzano CACHE_ESPERTI_CONTATORI
++    // da 62 a 65.
++    //
++    // `lane_cpu_residenti` e' il numero del PRIMO BRACCIO: quanti dei k_cpu
++    // esperti presi dalla testa della permutazione NON erano di classe 0,
++    // cioe' quanto lavoro la lane CPU spende su esperti gia' in VRAM.
++    //
++    // `lane_ad_cpu_vive` + `lane_ad_gpu_colonne` e' il BILANCIO DELLE
++    // DESTINAZIONI (chi CALCOLA), non delle classi (chi e' RESIDENTE, che e'
++    // il compito di lane_cpu/lane_gpu/lane_scudati). Deve fare ne0 esatto per
++    // riga e restare IDENTICO a leva spenta e accesa: e' il cancello
++    // «CEDERE != ELIMINARE». Si contano gia' nel primo braccio, proprio
++    // perche' il valore a leva spenta e' il riferimento.
++    //
++    // `lane_ad_perm_rotta` resta a ZERO finche' la leva non esiste (stadio 2).
++    uint64_t * lane_cpu_residenti;   // 55 esperti dati alla CPU gia' RESIDENTI
++    uint64_t * lane_ad_cpu_vive;     // 62 colonne davvero calcolate dalla CPU
++    uint64_t * lane_ad_gpu_colonne;  // 63 colonne lasciate alla GPU
++    uint64_t * lane_ad_perm_rotta;   // 64 perm_inv non biiettiva: guasto MUTO
++
+     struct cache_esperti_traccia_record * traccia;
+     uint32_t * traccia_n;
+     uint32_t   traccia_cap;
+--- a/ggml/src/ggml-cuda/cache-esperti.cu
++++ b/ggml/src/ggml-cuda/cache-esperti.cu
+@@ -80,7 +80,11 @@
+ #define ANELLO_N        256
+ #define ANELLO_VOCI_MAX 16
+ #define ANELLO_PASSO    (2 + 2 * ANELLO_VOCI_MAX)
+-#define CACHE_ESPERTI_CONTATORI 62
++// lane-adattiva (2/9): 62 -> 65. I tre indici nuovi sono 62/63/64
++// (lane_ad_cpu_vive, lane_ad_gpu_colonne, lane_ad_perm_rotta); il quarto
++// contatore della lane, lane_cpu_residenti, sta nel 55, l'unico indice
++// rimasto libero nel blocco storico.
++#define CACHE_ESPERTI_CONTATORI 65
+ 
+ // ------------------------------- TRASPORTO ONLINE v0 (LLAMA_TRASPORTO_ONLINE)
+ //
+@@ -3029,6 +3033,11 @@
+     runtime->cache.router_zero_copy                 = runtime->cache.colpi + 59;
+     runtime->cache.router_copia                     = runtime->cache.colpi + 60;
+     runtime->cache.router_copia_forzata             = runtime->cache.colpi + 61;
++    // lane-adattiva (2/9). 55 e' l'unico libero sotto 56; 62..64 sono nuovi.
++    runtime->cache.lane_cpu_residenti              = runtime->cache.colpi + 55;
++    runtime->cache.lane_ad_cpu_vive                = runtime->cache.colpi + 62;
++    runtime->cache.lane_ad_gpu_colonne             = runtime->cache.colpi + 63;
++    runtime->cache.lane_ad_perm_rotta              = runtime->cache.colpi + 64;
+     cudaMalloc(&runtime->cache.am_cont, 8 * sizeof(uint64_t));
+     if (!runtime->bozza) {
+         const char * path = getenv("LLAMA_CACHE_ESPERTI_TRACCIA");
+@@ -7310,6 +7319,49 @@
+     for (int j = 0; j < ne0; j++) {
+         o[ne0 + perm[j]] = j;       // permutazione inversa: slot -> posizione
+     }
++
++    // ---- lane-adattiva (2/9): LA MISURA, non la leva. ---------------------
++    // Quanti dei k_cpu esperti che la CPU si prende dalla testa della
++    // permutazione erano gia' RESIDENTI (classe != 0), cioe' quanto del lavoro
++    // della lane e' speso su esperti che la GPU avrebbe servito senza copia.
++    // Atteso ~30% al punto di lavoro di produzione (623 slot, colpi 67%); il
++    // 13,4% del 15/8 e' un punto FREDDO (fixture 64 token).
++    //
++    // Blocco SEPARATO e in CODA di proposito: cosi' non tocca una sola riga
++    // del bilancio di :7289-7302 ne' del resto del kernel -- kern_partiziona
++    // e' la piattaforma di riproduzione bit-esatta del difetto n.1 e non deve
++    // spostarsi. Non e' guardato da nessuna leva (ne' `attiva`, ne' la
++    // politica router che invece guarda il blocco `router_*`): un contatore
++    // che si spegne quando cambia un'altra leva non e' una misura.
++    // Deve stare DOPO il riordino a peso zero di AcceptMoE (:7265-7275),
++    // perche' e' quella la permutazione che la CPU consuma davvero.
++    if (c.lane_cpu_residenti) {
++        int spr = 0;
++        for (int j = 0; j < k_cpu && j < ne0; j++) {
++            if (chiave[perm[j]] != 0) spr++;
++        }
++        if (spr) {
++            atomicAdd((unsigned long long *) c.lane_cpu_residenti,
++                      (unsigned long long) spr);
++        }
++    }
++
++    // Quante colonne calcola DAVVERO la lane CPU. Senza leva e' k_cpu: ed e'
++    // proprio questo il valore di RIFERIMENTO che serve misurare a leva
++    // spenta. Lo stadio 2 inserisce il suo blocco QUI SOTTO, prima del
++    // bilancio, e abbassa questa variabile delle colonne cedute.
++    int lane_ad_vive = k_cpu < ne0 ? k_cpu : ne0;
++
++    // IL BILANCIO DELLE DESTINAZIONI -- chi CALCOLA, non chi e' RESIDENTE.
++    // La somma deve fare ne0 esatto per riga e restare IDENTICA a leva spenta
++    // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis, e va
++    // misurato adesso, perche' il numero a leva spenta e' il riferimento.
++    if (c.lane_ad_cpu_vive && c.lane_ad_gpu_colonne) {
++        atomicAdd((unsigned long long *) c.lane_ad_cpu_vive,
++                  (unsigned long long) lane_ad_vive);
++        atomicAdd((unsigned long long *) c.lane_ad_gpu_colonne,
++                  (unsigned long long) (ne0 - lane_ad_vive));
++    }
+ }
+ 
+ __global__ static void kern_calendario_prepara(
+@@ -8411,12 +8463,32 @@
+             (unsigned long long) v[20], (unsigned long long) v[21],
+             (unsigned long long) v[22]);
+     fprintf(stderr, "cache-esperti: tre vie router/massa -> soglia_copia_pm=%d, copie_min=%d, cpu_leggeri=%d, partizioni=%llu, "
+-                    "pesi mancanti=%llu, CPU=%llu, zero-copy=%llu, copie=%llu (forzate=%llu), rifiuti registro=%llu\n",
++                    "pesi mancanti=%llu, CPU=%llu (di cui RESIDENTI=%llu, %.1f%%), zero-copy=%llu, copie=%llu (forzate=%llu), rifiuti registro=%llu"
++                    " | lane adattiva: cpu_vive=%llu, gpu_colonne=%llu, somma=%llu (%.2f per partizione, deve fare ne0), perm_rotta=%llu\n",
+             runtime->cache.peso_copia_pm, runtime->cache.copie_min_riga, runtime->cache.cpu_leggeri,
+             (unsigned long long) v[56], (unsigned long long) v[57],
+-            (unsigned long long) v[58], (unsigned long long) v[59],
++            (unsigned long long) v[58],
++            // lane-adattiva (2/9): il numero del primo braccio. Il denominatore
++            // e' v[58] (router_cpu, += k_cpu per partizione): stessa unita',
++            // esperti-riga dati alla CPU. Se v[58] e' zero la politica router
++            // e' spenta e la percentuale non ha denominatore: si stampa 0,0 e
++            // il valore assoluto resta leggibile.
++            (unsigned long long) v[55],
++            v[58] ? 100.0 * (double) v[55] / (double) v[58] : 0.0,
++            (unsigned long long) v[59],
+             (unsigned long long) v[60], (unsigned long long) v[61],
+-            (unsigned long long) runtime->router_rifiuti);
++            (unsigned long long) runtime->router_rifiuti,
++            // lane-adattiva (2/9): il bilancio delle DESTINAZIONI. Gia' vivo
++            // nel primo braccio: «per partizione» deve leggere esattamente
++            // 6,00, e lo stesso valore deve uscire a leva accesa. perm_rotta
++            // resta 0 finche' la leva non esiste (stadio 2), e deve restare 0
++            // anche dopo. NB: il rapporto ha senso solo se `partizioni` e'
++            // vivo, cioe' se MASSA=2 o PESO_COPIA_PM>0; le destinazioni
++            // invece si contano sempre.
++            (unsigned long long) v[62], (unsigned long long) v[63],
++            (unsigned long long) (v[62] + v[63]),
++            v[56] ? (double) (v[62] + v[63]) / (double) v[56] : 0.0,
++            (unsigned long long) v[64]);
+     fprintf(stderr, "cache-esperti: cura=%d, spin=%d, lanci=%llu, transiti riusati=%llu, "
+                     "spin esauriti=%llu, promozioni sorpassate=%llu, "
+                     "predetti consumati=%llu, scaduti=%llu\n",

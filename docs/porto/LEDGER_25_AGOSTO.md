@@ -4324,3 +4324,73 @@ bivio — **in attesa del via dell'utente alla sessione zen-morse** (non parte s
 riferita da terzi) · fase (iii) — build contatori+guardia della lane adattiva — **avviata dalla
 sessione ospite** per non lasciare la macchina ferma. Ordine invertito rispetto al piano, stessa
 disciplina: **una variabile per volta**.
+
+## 65. FASE (iii), STADIO 1 «LANE ADATTIVA» (contatori + guardia) — **APPLICATO, COSTRUITO, RATIFICATO** (2/9, 13:16-13:40): G1 3/3, Vision A ciclo 2 BIT-IDENTICA, contatori vivi: **il 18,7-20,4% del lavoro CPU del banco corto è su RESIDENTI**, voci fuori tabella = 0
+
+**Che cosa è entrato** (patch `lane_adattiva_1_contatori_guardia.patch`, 267 righe, 4 file, marcatore
+`// lane-adattiva (2/9)`): contatore atomico `ggml_mmid_fuori_tabella` in **ggml-base**
+(`ggml-backend.cpp`, definizione + stampa `sched-worker-lane: voci fuori tabella=` sul worker,
+SEMPRE anche a zero), incremento da `ggml-cpu.c` con **la guardia** in `mul_mat_id` (`:1632`:
+`continue` + azzeramento della riga dst + conteggio; nessun clamp), quattro contatori nuovi in
+`cache-esperti` (`lane_cpu_residenti` slot 55, `lane_ad_cpu_vive` 62, `lane_ad_gpu_colonne` 63,
+`lane_ad_perm_rotta` 64; `CACHE_ESPERTI_CONTATORI` 62→65) con conteggio in un blocco separato in
+coda a `kern_partiziona` (**zero righe esistenti del kernel toccate**) e stampa sulla riga `tre vie
+router/massa`. Nessun header condiviso (decisione di regia: `ggml-impl.h` avrebbe ricompilato tutto
+il backend CUDA), extern locali; D8 accolta (bilancio delle destinazioni già nello stadio 1).
+Disegno e otto deviazioni motivate (D1-D8) in `docs/porto/lane_adattiva_20260902/`; compilazione
+isolata preventiva pulita (nvcc sm_86 + cl, controllo negativo con errore iniettato).
+
+**Protocollo eseguito**: preflight (nessun processo, SHA dei 4 sorgenti = base 19:24 dell'1/9,
+dry-run di `patch -p1 --binary --fuzz=0` pulito) → **backup `build\bin\backup_pre_lane1\`** (92
+DLL/exe + `SHA256.txt`, `sorgente\` con i 4 file + `ggml-cuda.cu` + `llama-graph.cpp` allo stato
+terza mano, `NOTA.txt`, `IDENTITA_post_lane1.txt`) → apply (4/4 byte-identici a `comp1\`, marcatori
+2/2/1/5) → build a mano (`cmake --build … --target ggml-base ggml-cpu ggml-cuda --parallel 8` +
+`editbin /STACK`; **11 s**: `cache-esperti.cuh` è incluso solo da `cache-esperti.cu` e
+`ggml-cuda.cu`; 7/7 passi ninja, zero warning nuovi, 6×`#177-D` + 3×`#221-D` preesistenti).
+
+**Identità (al plurale — l'identità è la DLL, e ne cambiano TRE)**:
+| DLL | prima | dopo |
+|---|---|---|
+| `llama.dll` | `9E8E8D46…` | **INVARIATA** `9E8E8D469A7B047FDAF863E384EE1A6EEC37C54C062FF9A412D3D2787F6D7131` |
+| `ggml-cuda.dll` | `18444E20…` (07:25) | **`D783DBE13F5FA8936D022149B853DB8DB30BEA069A08B674F1BC0F97589E98AC`** (13:18:23) |
+| `ggml-cpu.dll` | `D2A3D79C…` (21/8) | **`9F00A975C8A6574E7F2DBEE2B03FEA50405AD0D092F3F3EF5A490F65B7C90BC9`** (13:18:14) |
+| `ggml-base.dll` | `D52DA12E…` (25/8) | **`CB2E8E376B1F222CAF45915085F575387A4B43EF850A980BBA2F069072950C56`** (13:18:14) |
+| `ggml.dll` | `9DE6C3B1…` | invariata |
+
+**G1 (0731 corto, `lane1_g1`)**: 3/3 `AD3D3770C7D13885AE5292442D42CC0338500B82435146AC299A5436BFCBFE11`,
+p1 0,77670, mean_len 2,01, eval 13,28/14,27/14,29. Riga nuova: `sched-worker-lane: voci fuori
+tabella=0`. Riga `tre vie`: `partizioni=23693, … CPU=47386 (di cui RESIDENTI=8869, 18.7%) … | lane
+adattiva: cpu_vive=47386, gpu_colonne=94772, somma=142158 (6.00 per partizione), perm_rotta=0`.
+(Avviso preesistente e innocuo di `run_porto_hot.ps1`: «DLL NON CANONICA, attesa ECAEA60B» — la
+guardia è tarata sulla llama.dll di produzione.)
+
+**Vision A corto, ciclo 2** (`v_ratifica_A_c2`, identità `ggml-cuda D783DBE1…` nel log): SHA
+`28ADE3395B5888D7DC1DB5D12A06083FFE1B2017029DC18EE87003BB090E1BBD` **identico**, p1 0,72693,
+mean_len 1,92, domanda 245.272 / colpi 75,2% / partizioni 61.060 / byte 433,32 / acceptmoe
+25.120/30.972/48.070/44.047/668 **identici alla cifra al ciclo 1 delle 10:47 (binario 18444E20)**:
+ogni campo preesistente uguale, le sole differenze sono le aggiunte. Righe nuove: `voci fuori
+tabella=0`; `CPU=122120 (di cui RESIDENTI=24860, 20.4%) … cpu_vive=122120, gpu_colonne=244240,
+somma=366360 (6.00 per partizione), perm_rotta=0`.
+
+### Lettura
+1. **Bit-identico dove promesso**, su tre binari in fila (6A98BE10 → 18444E20 → D783DBE1) e su
+   entrambi i cammini: la guardia c'è, non è mai scattata (0 = «raggiunta e nulla», non «mai
+   raggiunta»: si stampa sempre), e la piattaforma del difetto n.1 (`kern_partiziona`) non è stata
+   toccata in nessuna riga esistente.
+2. **Primo numero della leva, misurato sul banco vero**: **18,7%** (0731 corto, 160 tok) e
+   **20,4%** (Vision A corto, colpi 75,2%) del lavoro CPU va su esperti già residenti. La soglia
+   pre-registrata «< 15% ⇒ niente leva» è **superata**. La stima dalle tracce (22% a 473 slot,
+   ~30% al regime 623/67% del LUNGO) resta da verificare sul lungo: **la corsa che decide è il
+   controllo a 473 sul lungo con questo binario**, che serve comunque come nuova ancora
+   (`B2B8F84E` atteso bit-identico; una divergenza sarebbe informativa sulla terza mano, non un
+   guasto della patch).
+3. **Corollario di zen-morse, ora provato due volte**: il servizio gira a `COMPATTA=0`, dove i
+   `-1` non esistono; i bracci del bivio §49/§50 (`COMPATTA=1`) sono l'unico posto dove la patch
+   della terza mano può manifestarsi, e ora anche l'unico dove `fuori tabella` può diventare > 0:
+   **S1 dopo questa build è il test della guardia** (esiti pre-registrati in §63-quater e nei
+   messaggi: `97DF3AB0` ⇒ bit-identica anche coi `-1`; divergenza ⇒ leggere PRIMA `fuori tabella`).
+
+**Stato**: stadio 2 (la leva) NON applicato; sua precondizione ancora aperta: il censimento (E)
+completo dei consumatori delle colonne CPU (drafter, sonde, traccia, `kern_decidi`). Ripristino
+possibile in ogni momento da `backup_pre_lane1\`. Macchina: **ancora di questa sessione per il
+controllo lungo a 473** (~17 min), poi segnale a zen-morse per S1 + bivio.

@@ -1,0 +1,73 @@
+BUILD_START 13:18:13,49
+[1/7] Building C object ggml\src\CMakeFiles\ggml-cpu.dir\ggml-cpu\ggml-cpu.c.obj
+[2/7] Building CXX object ggml\src\CMakeFiles\ggml-base.dir\ggml-backend.cpp.obj
+[3/7] Linking CXX shared library bin\ggml-base.dll
+[4/7] Linking CXX shared library bin\ggml-cpu.dll
+[5/7] Building CUDA object ggml\src\ggml-cuda\CMakeFiles\ggml-cuda.dir\ggml-cuda.cu.obj
+D:\llama-subtract\ggml\src\ggml-cuda\common.cuh(611): warning #221-D: floating-point value does not fit in required floating-point type
+              return -((float)(1e+300)) ;
+                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+D:\llama-subtract\ggml\src\ggml-cuda\common.cuh(613): warning #221-D: floating-point value does not fit in required floating-point type
+              return make_half2(-((float)(1e+300)) , -((float)(1e+300)) );
+                                  ^
+
+D:\llama-subtract\ggml\src\ggml-cuda\common.cuh(613): warning #221-D: floating-point value does not fit in required floating-point type
+              return make_half2(-((float)(1e+300)) , -((float)(1e+300)) );
+                                                       ^
+
+ggml-cuda.cu
+tmpxft_000015fc_00000000-10_ggml-cuda.cudafe1.cpp
+[6/7] Building CUDA object ggml\src\ggml-cuda\CMakeFiles\ggml-cuda.dir\cache-esperti.cu.obj
+D:\llama-subtract\ggml\src\ggml-cuda\common.cuh(611): warning #221-D: floating-point value does not fit in required floating-point type
+              return -((float)(1e+300)) ;
+                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+D:\llama-subtract\ggml\src\ggml-cuda\common.cuh(613): warning #221-D: floating-point value does not fit in required floating-point type
+              return make_half2(-((float)(1e+300)) , -((float)(1e+300)) );
+                                  ^
+
+D:\llama-subtract\ggml\src\ggml-cuda\common.cuh(613): warning #221-D: floating-point value does not fit in required floating-point type
+              return make_half2(-((float)(1e+300)) , -((float)(1e+300)) );
+                                                       ^
+
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu(6928): warning #177-D: variable "traccia_base" was declared but never referenced
+      __declspec(__shared__) uint32_t traccia_base;
+                                      ^
+          detected during instantiation of "void kern_partiziona<planner_trace>(cache_esperti, int, const int32_t *, int, int, int, int, const float *, int, int, int, const float *, int, int32_t *, int8_t *, const unsigned long long *, unsigned long long *) [with planner_trace=false]" at line 7824
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu(6929): warning #177-D: variable "calendario_base" was declared but never referenced
+      __declspec(__shared__) uint32_t calendario_base;
+                                      ^
+          detected during instantiation of "void kern_partiziona<planner_trace>(cache_esperti, int, const int32_t *, int, int, int, int, const float *, int, int, int, const float *, int, int32_t *, int8_t *, const unsigned long long *, unsigned long long *) [with planner_trace=false]" at line 7824
+
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu(6930): warning #177-D: variable "calendario_usa" was declared but never referenced
+      __declspec(__shared__) int calendario_usa;
+                                 ^
+          detected during instantiation of "void kern_partiziona<planner_trace>(cache_esperti, int, const int32_t *, int, int, int, int, const float *, int, int, int, const float *, int, int32_t *, int8_t *, const unsigned long long *, unsigned long long *) [with planner_trace=false]" at line 7824
+
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu(6935): warning #177-D: variable "k_ad_coda" was declared but never referenced
+      __declspec(__shared__) int k_ad_coda;
+                                 ^
+          detected during instantiation of "void kern_partiziona<planner_trace>(cache_esperti, int, const int32_t *, int, int, int, int, const float *, int, int, int, const float *, int, int32_t *, int8_t *, const unsigned long long *, unsigned long long *) [with planner_trace=false]" at line 7824
+
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu(7044): warning #177-D: variable "stato" was declared but never referenced
+      uint8_t stato[16] = {};
+              ^
+          detected during instantiation of "void kern_partiziona<planner_trace>(cache_esperti, int, const int32_t *, int, int, int, int, const float *, int, int, int, const float *, int, int32_t *, int8_t *, const unsigned long long *, unsigned long long *) [with planner_trace=false]" at line 7824
+
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu(6458): warning #177-D: function "kern_pf_lista" was declared but never referenced
+  __declspec(__global__) static void kern_pf_lista(
+                                     ^
+
+cache-esperti.cu
+tmpxft_0000379c_00000000-10_cache-esperti.cudafe1.cpp
+[7/7] Linking CUDA shared library bin\ggml-cuda.dll
+BUILD_OK 13:18:24,13
+EDITBIN_OK

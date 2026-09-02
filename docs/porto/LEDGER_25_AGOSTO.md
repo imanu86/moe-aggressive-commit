@@ -3977,7 +3977,7 @@ poco **perché il binario è già costruito**.
    senza contarlo toglierebbe l'unico segnale che abbiamo su quella famiglia (fascicolo
    dell'indice −1, `ops.cpp:4831`). Se il tetto misurato dalle tracce è < 2%, la patch non si fa.
 
-## 62. LANE ADATTIVA — tetto MISURATO dalle tracce e patch pronta (2/9, progettista in sola lettura): **+5,3…+9,6% (centro +6,5%), zero byte nuovi sul PCIe; il §60 D sotto-stimava**
+## 63. LANE ADATTIVA — tetto MISURATO dalle tracce e patch pronta (2/9, progettista in sola lettura): **+5,3…+9,6% (centro +6,5%), zero byte nuovi sul PCIe; il §60 D sotto-stimava**
 
 Progettista opus, zero build, zero corse. Consegna integrale + script (`leggi_cestrc.py`,
 `tetto_lane_adattiva.py`, `tetto_raffinato.py`, `estrapola_623.py`, `bilancio_finale.py`,
@@ -4064,3 +4064,36 @@ anche miss veri (= canale K=1) e K oscilla nel 49,9% dei passi ⇒ ricattura del
 si fa; se conferma ~30%, la leva (~90 righe) entra nella finestra dopo il verdetto del difetto n.1.
 **Stato**: build ferma da entrambe le sessioni in attesa della decisione utente sul binario
 (tenere `18444E20` e completare G1, o ripristinare `backup_pre_chirurgo20`).
+
+### §63-bis — RILIEVO DELLA REGIA SULLA LANE ADATTIVA: **la leva stessa potrebbe APRIRE la terza esposizione che avete appena trovato**
+
+**Attribuzione del reperto: sessione `moe-aggressive-commit-ff`.** Il sito CPU della `mul_mat_id`
+è **`ggml-cpu.c:1632`** (non `ops.cpp:4831`, che è `get_rows_q` = la testa Markov) e lì c'è **solo
+un `assert()`**: sotto `NDEBUG` sparisce, e `MMID_MATRIX_ROW(-1, …)` **scrive FUORI ARRAY in
+silenzio in Release**. È la **terza esposizione latente** della famiglia dell'indice −1 — e la
+prima che è una **SCRITTURA**, non una lettura.
+
+**⚠ RILIEVO DELLA REGIA — l'interazione che rende quel reperto urgente per chi progetta la
+leva.** La memoria di casa (30/8, `la-lane-cpu-e-al-muro-di-banda`, **da ri-verificare sul codice
+attuale**) registra: *«l'indice −1 di AcceptMoE non può raggiungere la lane a K=2 — solo sul ramo
+`k_cpu==0` di `kern_partiziona`»*. Ma la lane adattiva è definita come
+**`k_cpu = min(K, non residenti della riga)`** ⇒ **una riga i cui esperti sono TUTTI residenti dà
+`k_cpu = 0`**. E la misura del §63 dice che quel caso non è raro ma **sistematico**: ~30% del
+lavoro CPU è su residenti a 623 slot, e **sette strati sono già interamente residenti (29,98%)**.
+⇒ **La leva trasformerebbe un ramo oggi eccezionale nel ramo NORMALE per decine di migliaia di
+righe** — cioè attiverebbe proprio il cammino in cui la scrittura fuori array è raggiungibile.
+
+**Conseguenza di progetto (non un veto, un prerequisito)**: la guardia sull'indice `-1` in
+`ggml-cpu.c:1632` **non è un accessorio della patch: è la sua precondizione**, e va nella STESSA
+build della leva (o prima). Confermato il vincolo già concordato: **contatore «voci fuori
+tabella» stampato a fine corsa, MAI un `clamp` silenzioso** — un `-1` assorbito senza contarlo
+toglierebbe l'unico segnale della famiglia. Da verificare in fase di disegno: sul ramo
+`k_cpu==0` la lane viene proprio *saltata* (nessuna chiamata) oppure viene chiamata con zero
+righe? Nel primo caso l'esposizione resta irraggiungibile anche con la leva; nel secondo no.
+**Quella verifica va fatta PRIMA di scrivere la patch**, non dopo.
+
+**Nota di numerazione**: questa sezione era stata scritta come «§62» dalla sessione ospite mentre
+la regia scriveva il §62 «stato dei binari» — **due sezioni con lo stesso numero**, unite da git
+senza conflitto testuale. Rinumerata dalla regia in **§63** (l'ordine è quello di push:
+`98e4e9c` prima, `5abdc7a` poi). Per evitare il ripetersi: **prima di aprire una sezione, un
+`git pull` e un `grep '^## '` sulla coda del file.**

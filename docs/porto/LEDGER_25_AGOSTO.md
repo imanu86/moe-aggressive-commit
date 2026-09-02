@@ -4207,3 +4207,33 @@ verdetto §49/§50.
    col suo G1 e la sua ri-baseline S1. Se G1 fallisse su una build fusa non si saprebbe quale dei
    due gruppi l'ha rotto. Il primo braccio della lane resta bit-identico per costruzione ⇒ la
    (iii) è la più economica delle tre.
+
+### §62-bis — **CORREZIONE: `G1` ERA GIÀ PASSATO.** Il cancello duro del binario `18444E20` è verde
+
+**Reperto della sessione `moe-aggressive-commit-ff`, trovato SUL DISCO.** Il §62 dichiarava
+«`G1` non risulta completato»: **era una mia inferenza dall'interruzione, non un fatto**, e va
+corretta. Il chirurgo 20 **aveva completato G1** prima di essere fermato:
+`…\work\runs\c20_g1.summary.json` (mtime **07:31**), server.log avviato alle **07:27** — cioè
+**dopo** la DLL delle **07:25:26** ⇒ è il binario nuovo. Esito: **3 ripetizioni, SHA
+`AD3D3770C7D13885AE5292442D42CC0338500B82435146AC299A5436BFCBFE11` identico 3/3**, p1 0,77670,
+mean_len 2,01, content 83 / reasoning 518 char, eval **13,43 / 14,07 / 14,08 t/s** — stessa banda
+di `chirurgo18_g1` (13,26 / 14,27 / 14,35).
+
+⇒ **Il cammino 0731 del binario `18444E20` è CERTIFICATO**: le modifiche della terza mano
+**non toccano il modello vecchio**. Della fase (i) resta **solo** la non-regressione della config
+di servizio del Vision sul corto (`V-ANCORA-CORTO-A` = `28ADE339…`).
+
+**Lezione di metodo, la seconda in due giorni sulla stessa classe**: quando un agente viene
+interrotto, **il suo lavoro sul disco sopravvive alla sua consegna**. Prima di dichiarare
+«non fatto», **cercare gli artefatti**: qui un `summary.json` con l'mtime giusto valeva più di
+qualunque inferenza. (Cugina della regola del 1/9: «un dispaccio stantio si verifica sul disco
+prima di agire».)
+
+**Percorsi della ratifica A** (erano introvabili perché **non** stanno in `llama_run`: la
+ratifica è girata dallo scratchpad della sessione zen-morse). Canonici finché non copiati:
+`…\a961cb2b-578b-4f4e-bec0-9f71e48bcef0\scratchpad\` → `ancora_vision.ps1` (**il prompt si
+ESTRAE da qui**, 891 char, sha `4FDF82C2…`), `ratifica_A.ps1`, **`ratifica_A_ciclo.ps1`**
+(un ciclo = un processo: implementazione della regola §36, riusabile tale e quale),
+`ratifica_A_leggi.ps1` (i cinque cancelli), log `ratifica_A*.log`, output
+`runs\v_ratifica_A_c{1,2,3}.*`. ⚠ **Directory temporanea di sessione: non durevole** — se quegli
+script servono oltre oggi vanno copiati in `D:\ds4_work\llama_run\lanciatori_salvati_20260825\`.

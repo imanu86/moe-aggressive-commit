@@ -4577,3 +4577,49 @@ comparso; zen-morse ha dato il via esplicito.
 **Stato**: macchina LIBERA dalle 14:39. Coda: S1 (test della guardia) + bivio → stadio 2 (patch D12
 nel repo, dry-run pulito). Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_vision_A_s473_lane1_r2_20260902.summary.txt`,
 `…_lane1_r2_20260902_f2_b2048.server.log`.
+
+## 68. S1 SUL BINARIO `lane1` (2/9, 14:48) — **`97DF3AB0` BIT-IDENTICO, `voci fuori tabella = 0`: quarto cammino su quattro, la guardia è raggiunta-e-nulla dove i −1 esistono in massa. Decisione: STADIO 2 senza aspettare il bivio**
+
+Esecuzione della sessione ospite su mandato di zen-morse (verifica indipendente, come G1): runner durevole
+`vision_corto\run_vision.ps1 -Tag s1_guardia_lane1_20260902 -MaxTokens 80 -Repetitions 1 -Extra
+'LLAMA_ACCEPTMOE=1'` — **niente `-Draft`** (è la variabile che fa il braccio), `COMPATTA` al difetto 1,
+prompt di default; parametri verificati contro §42, il fascicolo (righe 56-58, 134-136, 193) e
+`c19_fase_c.ps1` (braccio `c19_c0_nodraft_ctrl`). Identità 4/4 (`9E8E8D46`/`D783DBE1`/`9F00A975`/`CB2E8E37`).
+
+| | riferimento `c19f_s1_ripro` (1/9, 6A98BE10) | **lane1 (2/9)** |
+|---|---|---|
+| SHA output | `97DF3AB0C56EC7A1651B68A205638916627EB19DF73E7788048C32E583135EC0`, 524 byte | **IDENTICO**, 524 byte |
+| domanda / colpi / copie / partizioni / CPU | 4.359 / 2.504 (57,4%) / 1.855 / 3.612 / 7.224 | identici |
+| acceptmoe lanci / mascherate / scartati / pesi mancanti | 3.320 / 0 / 0 / 0 | identici |
+| manifesto | `AM=1(E)`, `COMPATTA=1(E)` | idem |
+| **`sched-worker-lane: voci fuori tabella`** | — | **0** (letta per prima) |
+| RESIDENTI · somma · perm_rotta | — | **60 (0,8%)** · 6,00 · 0 |
+| t/s | 13,94 | 13,79 (tempo, non bit) |
+| assert / fail-loud / replay | 0 | 0 |
+
+### Lettura
+1. **Terza mano + stadio 1 bit-identici su QUATTRO cammini** (0731 corto, Vision corto A, Vision lungo
+   A, braccio rotto S1) e su tre binari. La piattaforma di riproduzione del difetto n.1 **non si è
+   mossa**: il bivio §49/§50 può correre su questo binario.
+2. **La guardia di `ggml-cpu.c:1632` è raggiunta e nulla anche dove i −1 esistono in massa** (70% delle
+   colonne GPU): conferma empirica della lettura del codice (§63-ter, C.1: l'unica scrittura di −1 è
+   guardata da `j >= k_cpu`). Lo zero di S1 vale più di quelli di G1 e Vision A (che a `COMPATTA=0`
+   non producono −1).
+3. **Reperto sui contatori nuovi nel braccio rotto**: `RESIDENTI = 0,8%` (contro 15-20% nei cammini
+   sani). Coerente col meccanismo del §44: con il 70% delle route annullate (domanda/partizioni
+   1,207 contro ~4,0 sano sul corto) quasi nessuna riga ha esperti residenti da cedere. Il contatore
+   è un terzo testimone del difetto, gratis.
+4. **Nota sul cancello del deficit**: sul CORTO il rapporto sano è ~4,0 (k_cpu=2), sul LUNGO ~7,5;
+   il coefficiente unico 7,597 non serve a nulla sul corto (dà −23.081 anche al braccio rotto).
+   Forma corretta: **rapporto ≥ ~3,5 (corto) / ≥ 6,5 (lungo) = sano**; il braccio rotto sta a 1,2.
+
+**Decisione (mandato utente «avanti su tutto», via per il bivio non arrivato)**: si costruisce **lo
+STADIO 2 ADESSO** (patch D12, `docs/porto/lane_adattiva_20260902/chirurgia/lane_adattiva_2_leva.patch`,
+716 righe, 6 file, dry-run pulito, compilata in isolamento): leva `LLAMA_OVERLAP_K_MIN_NONRES` a
+difetto 0 byte-identica per costruzione (`if constexpr`), nessuna riga esistente di `kern_partiziona`
+toccata. ⚠ Tocca `ggml.h`/`ggml.c` (quinto parametro di `ggml_cache_esperti_partiziona`) ⇒
+ricompilazione larga e **cambia anche `llama.dll`**: cinque identità da registrare. Protocollo:
+backup `backup_pre_lane2\` (DLL + 6 sorgenti), apply con verifica byte-esatta, build a mano dei target
+`ggml-base ggml-cpu ggml-cuda llama`, editbin, poi **G1 3×, Vision A ciclo 3, S1 ri-baseline** — tutti
+a leva spenta e attesi bit-identici (`AD3D3770`, `28ADE339`, `97DF3AB0`). Il bivio di zen-morse corre
+sul binario corrente quando arriva il via. Zen-morse avvisata con file di stop `STOP_lane2`.

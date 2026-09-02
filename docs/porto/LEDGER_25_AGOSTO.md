@@ -3461,3 +3461,84 @@ zero-build, effetto-Heisenberg dichiarato). Sentinella del peer armata sui commi
 ledger per la fine del cantiere lungo; fino ad allora zero GPU da parte sua.
 ⚠ NOTA PER LA SENTINELLA: **questo commit NON è il segnale** — il segnale sarà il commit col
 NUMERO del lungo, dichiarato come tale nel messaggio di commit.
+
+## 56. SWEEP `SLOT` SUL VISION (2/9, 04:00-05:07) — **NO-GO come leva: +1,1% al massimo; la meccanica dei byte funziona, la TRAIETTORIA domina**
+
+**Direttiva utente 2/9**: «proviamo a spingere questo modello a 20 t/s?» → «iq1 escluso a priori» →
+«proviamo tutte le altre strade». Regia: sessione `moe-aggressive-commit-ff` (Fable); esecutori
+opus; banco ceduto da zen-morse (§55). **Verdetto preliminare della regia, scritto PRIMA della
+campagna** (memoria `vision-20tps-aritmetica-e-slot-liberi`): sull'ancora Vision A (80,7 ms/token)
+il trasporto vale ~25 ms (82 miss × 7,30 MiB a 23 GiB/s), la lane CPU ~16, il resto ~40 ⇒ i 20 t/s
+(50 ms) esigono −75% di trasporto+lane INSIEME; a 473 slot nemmeno Belady toglie il 43%. **Il
+Vision NON cambia la mappa dei tetti del 31/8** (la peggiora del 3% per lo slot +8%); porta UNA
+risorsa nuova: **1479 MiB di VRAM liberi in decode** (0731: 0) = 150-200 slot mai misurati.
+Questa sezione li misura.
+
+**Protocollo**: `vl_arm.ps1 -Braccio vision_A -DraftSoloCpu -Slot N`, tre processi separati,
+cancello di quiete 3×40 s dentro lo script, **Get-FileHash delle DLL prima di S0 e di S2**
+(`llama.dll 9E8E8D46…`, `ggml-cuda.dll 6A98BE10…`: invariate, nessuna ricompilazione sotto le
+misure), testimoni `LLAMA_ACCEPTMOE=1(E)`/`COMPATTA=0(E)` e `cache-esperti-slot=N` nel summary
+verificati su tutti e tre. Prompt 101.691 / ctx 150.016 / 1200 token / budget 0.
+
+| | **S0** 473 (controllo) | **S1** 573 | **S2** 623 |
+|---|---|---|---|
+| decode t/s | **12,331** | **11,950 (−3,10%)** | **12,467 (+1,10%)** |
+| ms/token | 81,10 | 83,69 | 80,21 |
+| prefill t/s | 137,11 | 136,92 | 137,02 |
+| p1 / mean_len | 0,82683 / 2,51 | **0,78201 / 2,30** | 0,81829 / 2,49 |
+| C_round = ms/token × mean_len | 203,5 | **192,5 (−5,4%)** | 199,7 (−1,9%) |
+| SHA output | `B2B8F84E…` (= ancora) | `95613176…` | `BDCE6E51…` |
+| colpi | 63,4% (174.268) | **69,1%** (190.905) | 67,2% (187.032) |
+| byte a domanda | 717,41 GiB | **608,57 (−15,2%)** | 650,91 (−9,3%) |
+| domanda / partizioni | 274.856 / 36.722 | 276.232 / **40.936** | 278.296 / 36.034 |
+| righe senza residenti | 2.610 | 1.621 | 1.753 |
+| durata media copia (fork cronometro) | 0,803 ms | 0,947 | 0,665 |
+| copia già finita al join | 24,7% | 34,1% | 31,0% |
+| VRAM libera in decode | 1.479 MiB | 749 | **385** |
+| assert / OOM / `FALLITA, cache spenta` / `ATTENZIONE, voluti` | 0 | 0 | 0 |
+| divergenze replay | 0 | 0 | 0 |
+| §4.10 (UTF-8) | saggio tecnico vero, 4152 char | vero, 4433 | vero, 3902 |
+
+**S0 = quarto load freddo dell'ancora `V-ANCORA-LUNGO-A`: 4/4** — SHA bit-esatto, p1/mean_len alla
+5ª cifra, **contatori identici alla cifra** (domanda 274.856, colpi 174.268, byte 717,41, partizioni
+36.722, acceptmoe 19.120/45.822/63.787/2.610). La sessione riproduce; il cammino del parametro
+`-Slot` è lo stesso dell'ancora (vl_arm passa sempre `-CacheEspertiSlot`).
+
+### Lettura
+1. **La meccanica fa quel che deve**: +100 slot ⇒ colpi +5,7 punti e byte −15%; +150 ⇒ +3,8 punti e
+   −9%. Prefill invariato (a `VRAM_A_FASI=2` il prefill non vede `SLOT`), come pre-registrato.
+2. **Il tempo NON segue i byte, e la ragione è la TRAIETTORIA**: gli SHA divergono legittimamente
+   (la residenza decide quali esperti vanno alla lane CPU ⇒ numerica ⇒ token), e il testo di S1
+   è meno bozzabile: **p1 0,782 contro 0,827 ⇒ mean_len 2,30 contro 2,51 ⇒ +9% di round per gli
+   stessi 1200 token** (partizioni +11,5%, l'unico contatore che si muove COL decode). Tolto
+   questo, S1 costa MENO per round (C_round −5,4%) e S2 −1,9%. Ma C_round non è un metro pulito
+   quando cambia mean_len: `C_round(L)=81,4+48,4·L` — round più corti sono anche round più
+   economici (§21). **Sul metro onesto, ms/token, la famiglia vale fra −3% e +1%: sotto il
+   cancello del +3%.** Coerente con l'attesa pre-registrata da zen-morse (§55: «curva piatta per
+   costruzione») e con la mia (+3…+6%) solo nel verso, non nella grandezza.
+3. **Lezione di metodo (nuova, e costa a ogni leva di residenza)**: su questo banco **ogni leva
+   che tocca la residenza cambia la traiettoria, e la bozzabilità del testo sposta il t/s di
+   ±5%**, più dell'effetto cercato. Per misurare il costo di macchina a traiettoria divergente
+   servono (a) il tempo per FORWARD normalizzato per righe, oppure (b) il banco a spec OFF
+   (L=1, un token per round), oppure (c) il restore a traiettoria fissa. Nessuno dei tre esiste
+   oggi come cancello; da mettere in coda prima di riaprire qualunque fronte di residenza.
+4. **Correzione al cancello «segno del deficit» del §53**: con la config A l'ancora misura
+   `domanda/partizioni = 7,4848`, non 7,597 (quello è dell'ancora AM=0). Il rapporto varia
+   6,75-7,72 al variare di mean_len (il prefill aggiunge domanda senza partizioni, i round in
+   più aggiungono partizioni), quindi **il segno con coefficiente fisso non è robusto**: S2 dà
+   +4.546 da sano. Cancello riformulato: **rapporto ≥ 6,5 = sano; la firma del difetto è ~3,7**
+   (§47: 3,747 con +27.182).
+5. **623 slot REGGONO** (385 MiB liberi in decode, nessun fail-loud, replay puliti): è il
+   conteggio massimo praticabile sul Vision, e il pool su cui corre la famiglia trasporto (§58).
+
+### Strumenti che mentono, due istanze nuove
+- I `*.summary.txt` del lanciatore sono **UTF-16LE con BOM**: `grep` e `Get-Content -Encoding UTF8`
+  non trovano NIENTE e non danno errore. Leggerli con `Get-Content` senza encoding o `-Encoding
+  Unicode`; il `server.log` e l'`_q1.output.txt` sono UTF-8.
+- **`C_round` non è stampato in nessun log**: va calcolato (`1000/decode × mean_len`).
+
+**Verdetto**: `SLOT` sul Vision = **NO-GO come leva verso i 20** (≤ +1,1%, sotto il +3%), **la
+meccanica dei byte è confermata**, 623 resta il tetto pratico e viene usato dalla famiglia
+trasporto. Non promuovere. Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_vision_A_s{473,573,623}_20260902.summary.txt`,
+`…\sota_ctx150000_densefa_stage_hc5_vl_vision_A_s{473,573,623}_20260902_f2_b2048.server.log`,
+testi `…_q1.output.txt`, stdout `…\vl_arm_vl_vision_A_s*_20260902.stdout.txt`.

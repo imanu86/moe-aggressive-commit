@@ -3976,3 +3976,91 @@ poco **perché il binario è già costruito**.
    «voci fuori tabella» stampato a fine corsa, MAI un clamp silenzioso** — un `-1` assorbito
    senza contarlo toglierebbe l'unico segnale che abbiamo su quella famiglia (fascicolo
    dell'indice −1, `ops.cpp:4831`). Se il tetto misurato dalle tracce è < 2%, la patch non si fa.
+
+## 62. LANE ADATTIVA — tetto MISURATO dalle tracce e patch pronta (2/9, progettista in sola lettura): **+5,3…+9,6% (centro +6,5%), zero byte nuovi sul PCIe; il §60 D sotto-stimava**
+
+Progettista opus, zero build, zero corse. Consegna integrale + script (`leggi_cestrc.py`,
+`tetto_lane_adattiva.py`, `tetto_raffinato.py`, `estrapola_623.py`, `bilancio_finale.py`,
+`opzione_ii_per_strato.py`) nello scratchpad di sessione `LANE_ADATTIVA_tetto_e_patch_20260902.md`.
+
+### Due correzioni di fatto, prima dei numeri
+1. **Le tracce route sono `CESTRC2` v2, record da 64 byte** (`<IhBBBBH 6h 6B 6B 4x 6f>`: il layout
+   «`<IhBBBBH6h6B2x6f` = 56 byte» della memoria omette `fork[6]`; `cache-esperti.cuh:106-121`,
+   `static_assert(==64)` a `cache-esperti.cu:2538`). `analyze_route_trace.py` le legge: il «debito»
+   della memoria `ragionare-a-esperti-verdetto` è chiuso. Lo `stati[6]` del record è la classe
+   di residenza **al momento della partizione** (`:7059-7094`): niente simulazione LRU necessaria.
+2. **Il sito CPU dell'indice −1 NON è `ops.cpp:4831`** (quello è `get_rows_q`, la testa Markov):
+   è **`ggml-cpu.c:1632`**, dentro la `mul_mat_id` CPU. E lì il difetto è peggiore di un assert:
+   `assert()` sparisce sotto `NDEBUG` ⇒ `MMID_MATRIX_ROW(-1, …)` **scrive fuori array in Release,
+   in silenzio**. Terza esposizione latente della famiglia «−1» (accanto alle due del 30/8).
+
+### (A) Il tetto, con formula e ingressi
+Tracce `D:\ds4_work\adk\adk_trace_b1200_k2_nmax3_20260817.cestrc` (+ v2), K=2, 473 slot:
+| grandezza | valore | prova |
+|---|---|---|
+| righe con 0 non residenti su 6 | **12,99%** | conteggio diretto sullo `stati[6]` |
+| righe con 1 non residente | **18,19%** | idem |
+| **esperti dati alla CPU che erano RESIDENTI** | **12.268 / 55.556 = 22,08%** (2ª traccia 21,34%) | controprova con la maschera `fork` consumata dal MMVQ: 27.245 righe coerenti, 0 incoerenti |
+| stesso, a esperto unico (la lane è dequant-bound) | 21,68% | il modello è immateriale |
+| **al regime di produzione (623 slot, colpi 67,2%)** | **~30%** | sette strati della traccia girano già a ~67% di colpi e mostrano **29,98%** di spreco |
+| diagnostica 15/8 (13,4%) | punto FREDDO (fixture 64 token) | la curva a 50% di colpi prevede 13,78%: coerente |
+**Tetto**: `guadagno = R / (P − R)`, `R = 0,30 × C`, con `(P, C)` = (94,56 s; 19,43 s) da §17-§18 e
+(97 s; 28,38 s) da §58-§59 ⇒ **+6,5% … +9,6%**; banda bassa **+5,3%** con la correzione GPU
+pienamente additiva (0,060 ms per esperto residente ricalcolato). Coerente per terza via col
+«lane a costo ZERO = 15,97». ⇒ **Il «≤ +3%» del §60 D ereditava la sotto-stima del 15/8: va
+letto +5…+10%.** Cancello «< 2% ⇒ niente build» superato.
+
+**Il discriminante contro `r54_k1`** (calcolo −39,5%, resa −2,05%: i byte migrarono sul bus):
+| regola | copie uniche | esperti-riga CPU | copie NUOVE |
+|---|---:|---:|---:|
+| oggi K=2 | 26.660 | 55.556 | — |
+| **lane adattiva** `k=min(2, non residenti)` | **26.660** | 43.288 | **+0** |
+| K=1 | 43.351 | 27.778 | +16.691 |
+| K=0 | 59.971 | 0 | +33.311 |
+**La leva toglie alla CPU SOLO residenti: zero byte PCIe nuovi.** Il canale che ha ucciso K=1
+le è precluso per costruzione. Rischio residuo vero, non misurabile a tavolino: `lavori`
+(+20,7% in K=1 mangiò tutto) ⇒ cancello `lavori ±3%`, `copie ±1%`.
+
+**`q*` di FreeToken sui nostri numeri**: oggi la CPU assorbe il **62,2%** dei miss unici per
+strato; `q/(m−q) = BP/(BH−BP)` con BP=23 ne vorrebbe 23,3% (BH=30), 30,7% (BH=33,2 misurata),
+1,7% (BH=23,4), **0% se BH ≤ BP**. Nessuna calibrazione dice di dare PIÙ miss alla CPU: q* e la
+lane adattiva sono **ortogonali** (q* riparte i miss, la leva toglie i residenti) e puntano nello
+stesso verso. **Opzione «K per strato dal conteggio dello strato prima»: scartata** — taglia
+anche miss veri (= canale K=1) e K oscilla nel 49,9% dei passi ⇒ ricattura del grafo.
+
+### (B) La patch (disegno pronto, NON applicata; ~100 righe, ~40 di sostanza)
+- **Meccanismo (opzione i)**: `part` da `[2·ne0]` a `[3·ne0]` **solo a leva accesa**; `ids_cpu` e
+  `perm_inv` di forma invariata; `ids_gpu` da 4 a 6 colonne; `concat`/`get_rows` invariati come
+  nodi. Perno: **`perm_inv` non seleziona mai le colonne inutili**, quindi nulla da azzerare.
+- **Sul lato GPU non si scrive mai −1**: `mul_mat_vec_q_moe_maschera` esclude per `maschera`
+  non per id (`mmvq.cu:1385-1402`); un −1 oltre la maschera è letto `uint32_t` = `0xFFFFFFFF` ⇒
+  lettura fuori slab (`mmvq.cu:1408`), e il cammino CUDA generico aborta (`ggml-cuda.cu:2924`).
+  AcceptMoE se la cava perché i suoi −1 sono sanificati in `kern_decidi` e la colonna ha PESO
+  ZERO; qui il peso non è zero ⇒ **id valido duplicato** nelle colonne cedute.
+- **Leva a difetto 0, byte-identica**: `template <bool planner_trace, bool adattiva>` con il
+  codice nuovo in `if constexpr (adattiva)` (idioma già pagato a `:7199-7203`): a leva spenta il
+  blocco **non esiste nel binario**; **nessuna riga esistente di `kern_partiziona` modificata**
+  (solo firma + blocco in coda): la scrittura dei −1 (`:7307`), il `perm_inv` (`:7311`) e il
+  bilancio (`:7289-7302`) restano invariati ⇒ la piattaforma di riproduzione del difetto n.1
+  (`97DF3AB0…`) non si sposta con la leva spenta.
+- **Guardia CPU**: `ggml-cpu.c:1632` ⇒ `continue` + contatore **«voci fuori tabella»** (idioma
+  `cache-esperti.cu:1770`), stampato sulla riga del worker (`ggml-backend.cpp:2772-2776`) sempre,
+  anche a zero. Mai clamp.
+- **Contatore nuovo `lane_cpu_residenti`** su `colpi + 55` (unico slot libero: 54 = `usato_spazzate`,
+  56-61 = `router_*`, `CACHE_ESPERTI_CONTATORI = 62`), scritto a `:7289-7302`, stampato sulla riga
+  `tre vie router/massa` (`:8413-8420`).
+- **Env**: `LLAMA_OVERLAP_K_MIN_NONRES` (proposta), lettore a valore, difetto 0; testimone stderr
+  all'avvio; contatore finale.
+- **Cancelli**: leva 0 ⇒ G1 `AD3D3770…` bit-esatto e S1 `97DF3AB0…`; leva 1 ⇒ SHA diverge
+  legittimamente, `calcolo` della lane −30% ± , **copie ±1%**, **lavori ±3%**, p1/mean_len in banda,
+  §4.10, `voci fuori tabella` stampato.
+- **Protocollo**: si parte **dal sorgente che avrà superato G1** (la DLL `18444E20…` delle 07:25 non
+  è certificata), backup DLL + sorgente in `backup_pre_<nome>\`, mai `build_cuda.bat`, G1 3/3,
+  ri-baseline S1.
+
+### Raccomandazione operativa
+**Primo braccio = il SOLO contatore** (~10 righe, uscita bit-identica, rischio zero): misura il
+30% sul banco vero dentro la prossima build certificata. Se il banco dice **< 15%** il resto non
+si fa; se conferma ~30%, la leva (~90 righe) entra nella finestra dopo il verdetto del difetto n.1.
+**Stato**: build ferma da entrambe le sessioni in attesa della decisione utente sul binario
+(tenere `18444E20` e completare G1, o ripristinare `backup_pre_chirurgo20`).

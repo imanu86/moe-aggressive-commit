@@ -59,22 +59,23 @@
      result->op     = GGML_OP_CACHE_ESPERTI_PARTIZIONA;
 --- a/ggml/src/ggml-cuda/cache-esperti.cuh
 +++ b/ggml/src/ggml-cuda/cache-esperti.cuh
-@@ -270,6 +270,22 @@
+@@ -270,6 +270,23 @@
      //   - kern_partiziona<false>     -> senza CALENDARIO_TRACE il ramo non
      //                                   esiste NEMMENO nel binario (if constexpr).
      int       k_adattivo;
 +    // lane-adattiva (2/9): LLAMA_CACHE_ESPERTI_LANE_CONTA, a VALORE, difetto 0.
 +    //
-+    // I quattro contatori della lane (lane_cpu_residenti, lane_ad_cpu_vive,
-+    // lane_ad_gpu_colonne, lane_ad_perm_rotta) sono MISURA, non meccanismo, e
-+    // la misura COSTA: la strumentazione dello stadio 1, a lavoro identico, ha
-+    // pesato -1,48% sul decode contro -0,16% sul prefill (S0 §56). A 0 il
-+    // blocco di conteggio in coda a kern_partiziona NON esegue -- nessun
-+    // ciclo, nessuna atomica -- e la riga `tre vie` torna al formato di prima.
++    // Governa SOLO il LIVELLO 3, la statistica: `lane_cpu_residenti` e il
++    // bilancio a leva spenta. La misura COSTA -- la strumentazione dello
++    // stadio 1, a lavoro identico, ha pesato -1,48% sul decode contro -0,16%
++    // sul prefill (S0 §56), e il costo veniva dal ciclo e dall'atomica PER
++    // RIGA sul cammino piu' caldo che abbiamo.
 +    //
-+    // NON governa la cessione: a leva 2 il blocco C, i -1 sulle colonne cedute
-+    // e la riscrittura di perm_inv avvengono comunque, perche' testano
-+    // `chiave[perm[j]]` e non leggono un solo contatore.
++    // NON governa il LIVELLO 2 (bilancio delle destinazioni e biiezione di
++    // perm_inv), che e' legato alla LEVA e non allo strumento: una guardia si
++    // lega al MECCANISMO che protegge. Con la leva armata quelle due girano
++    // SEMPRE, e costano una sola atomica globale per lancio grazie alla
++    // riduzione in shared.
 +    //
 +    // NON governa la guardia di ggml-cpu.c, che resta SEMPRE attiva (un
 +    // confronto per id), ne' la riga `sched-worker-lane: voci fuori tabella=`.
@@ -82,7 +83,7 @@
      // DEADLINE PER (strato, esperto), dal campo `scadenza` del piano PORTCAL1:
      // e' un INDICE DI STRATO, come `rilascio`. -1 = nessuna deadline nota, ed e'
      // il valore di riempimento. Tabella sparsa a indicizzazione diretta
-@@ -624,11 +640,16 @@
+@@ -624,11 +641,16 @@
  // k alla CPU per ordine di slot, il resto alla GPU. Chi legge il grafo in
  // quella configurazione deve aspettarsi questo, non un errore.
  // Un thread per token, un blocco: n_tok e' il batch stretto del decode.
@@ -102,19 +103,17 @@
  // ---- ACCEPTMOE (GGML_OP_ACCEPTMOE_IDS / _PESI) ----------------------------
 --- a/ggml/src/ggml-cuda/cache-esperti.cu
 +++ b/ggml/src/ggml-cuda/cache-esperti.cu
-@@ -2611,6 +2611,23 @@
+@@ -2611,6 +2611,21 @@
              runtime->cache.scudo_transito = (st && *st && atoi(st) != 0) ? 1 : 0;
          }
          {
-+            // lane-adattiva (2/9): LANE_CONTA. Cancello a VALORE, non a
-+            // presenza -- `=0` deve restare indistinguibile dall'assenza, o il
-+            // braccio di controllo non e' un controllo. Solo `=1` accende;
-+            // qualunque altro valore vale 0.
++            // lane-adattiva (2/9): LANE_CONTA, livello 3 (la STATISTICA).
++            // Cancello a VALORE, non a presenza -- `=0` deve restare
++            // indistinguibile dall'assenza, o il braccio di controllo non e'
++            // un controllo. Solo `=1` accende.
 +            //
-+            // Spegne SOLO la strumentazione (il blocco di conteggio in coda a
-+            // kern_partiziona e i quattro campi sulla riga `tre vie`). Non
-+            // tocca la cessione della lane adattiva, ne' la guardia di
-+            // ggml-cpu.c, ne' la riga `sched-worker-lane`.
++            // Non tocca il livello 2 (bilancio + biiezione, legati alla leva),
++            // ne' la guardia di ggml-cpu.c, ne' la riga `sched-worker-lane`.
 +            const char * lc = getenv("LLAMA_CACHE_ESPERTI_LANE_CONTA");
 +            runtime->cache.lane_conta = (lc && *lc && atoi(lc) == 1) ? 1 : 0;
 +            if (runtime->cache.lane_conta) {
@@ -126,7 +125,7 @@
              // ADAPTIVE-K v0. Cancello a VALORE, non a presenza: 0/assente =
              // comportamento di oggi bit per bit. 1 = sonda (conta e non
              // decide), 2 = decide. Qualunque altro valore vale 0: una leva che
-@@ -6916,14 +6933,26 @@
+@@ -6916,14 +6931,26 @@
  // il primo B ha mostrato che cambiare quali colonne vanno a CPU altera lo SHA,
  // il p1 e il numero di grafi, impedendo di misurare il solo trasporto
  // copia/zero-copy contro il SOTA.
@@ -155,152 +154,246 @@
      const int t = (int) (blockIdx.x * blockDim.x + threadIdx.x);
      __shared__ uint32_t traccia_base;
      __shared__ uint32_t calendario_base;
-@@ -7328,14 +7357,19 @@
+@@ -6933,12 +6960,30 @@
+     // solo blocco per lancio (griglia fissa <<<1, n_thread>>>), quindi la
+     // shared copre tutti i token. Usata solo dall'istanziazione <true>.
+     __shared__ int k_ad_coda;
++    // lane-adattiva (2/9): accumulatori di BLOCCO del LIVELLO 2. Un solo
++    // blocco per lancio (griglia fissa <<<1, n_thread>>>), quindi la shared
++    // copre tutti i token. Usati solo dall'istanziazione <_, true>.
++    //   [0] colonne calcolate dalla CPU   [1] colonne lasciate alla GPU
++    //   [2] righe RIPIEGATE               [3] thread arrivati in fondo
++    __shared__ unsigned int lane_acc[4];
+ 
+     // RILEVATORE: quello che l'host ha pubblicato ADESSO contro quello che
+     // questo lancio si porta dietro dalla CATTURA. Se divergono, stiamo
+     // eseguendo un grafo stantio. Si conta una volta per lancio (thread 0),
+     // separando taglia e puntatori, e sulla taglia si lavora sul MINIMO cosi'
+     // la divergenza non diventa anche una scrittura fuori dal tensore.
++    // lane-adattiva (2/9): azzeramento degli accumulatori del livello 2, QUI
++    // e non piu' in basso. E' l'unico punto in cui TUTTI i thread del blocco
++    // sono ancora vivi: sotto ci sono due uscite anticipate divergenti
++    // (`t >= n_lav` e il ramo `k_cpu == 0`) e dopo una di quelle una barriera
++    // si impicca -- e' la regola gia' pagata in questo progetto sulle barriere
++    // che devono stare sullo STESSO sito. Il riversamento in fondo NON usa
++    // barriere: usa il pattern «ultimo thread arrivato».
++    if constexpr (adattiva) {
++        if (threadIdx.x < 4) lane_acc[threadIdx.x] = 0u;
++        __syncthreads();
++    }
++
+     int n_lav = n_tok;
+     if (pub != nullptr && strato >= 0 && strato < CACHE_ESPERTI_STRATI_MAX) {
+         const unsigned long long * p = pub + (size_t) strato * CACHE_ESPERTI_PUB_PER_STRATO;
+@@ -7327,15 +7372,17 @@
+     // Atteso ~30% al punto di lavoro di produzione (623 slot, colpi 67%); il
      // 13,4% del 15/8 e' un punto FREDDO (fixture 64 token).
      //
-     // Blocco SEPARATO e in CODA di proposito: cosi' non tocca una sola riga
+-    // Blocco SEPARATO e in CODA di proposito: cosi' non tocca una sola riga
 -    // del bilancio di :7289-7302 ne' del resto del kernel -- kern_partiziona
-+    // del bilancio di :7298-7311 ne' del resto del kernel -- kern_partiziona
-     // e' la piattaforma di riproduzione bit-esatta del difetto n.1 e non deve
+-    // e' la piattaforma di riproduzione bit-esatta del difetto n.1 e non deve
 -    // spostarsi. Non e' guardato da nessuna leva (ne' `attiva`, ne' la
 -    // politica router che invece guarda il blocco `router_*`): un contatore
 -    // che si spegne quando cambia un'altra leva non e' una misura.
 -    // Deve stare DOPO il riordino a peso zero di AcceptMoE (:7265-7275),
-+    // spostarsi.
-+    // Deve stare DOPO il riordino a peso zero di AcceptMoE (:7274-7284),
-     // perche' e' quella la permutazione che la CPU consuma davvero.
+-    // perche' e' quella la permutazione che la CPU consuma davvero.
 -    if (c.lane_cpu_residenti) {
++    // LIVELLO 3, LA STATISTICA. Blocco SEPARATO e in CODA di proposito: non
++    // tocca una sola riga del bilancio di :7298-7311 ne' del resto del kernel
++    // -- kern_partiziona e' la piattaforma di riproduzione bit-esatta del
++    // difetto n.1 e non deve spostarsi. Deve stare DOPO il riordino a peso
++    // zero di AcceptMoE (:7274-7284), perche' e' quella la permutazione che la
++    // CPU consuma davvero.
 +    //
-+    // DIETRO `lane_conta` (2/9, decisione di regia). Non e' un ripensamento
-+    // sulla regola dei contatori muti: e' che la MISURA COSTA. Lo stadio 1,
-+    // a lavoro identico, ha pesato -1,48% sul decode contro -0,16% sul
-+    // prefill (S0 §56) -- il ciclo e l'atomica per riga sono sul cammino piu'
-+    // caldo che abbiamo. A LANE_CONTA=0 qui non gira nulla; il contatore
-+    // continua a NON dipendere da nessun'ALTRA leva, che era il punto.
++    // Dietro LANE_CONTA: e' MISURA, e la misura costa (ciclo + atomica per
++    // riga, il ~1,5% dello stadio 1). Non e' il livello 2: quello sta sopra,
++    // legato alla leva, e gira comunque.
 +    if (c.lane_conta && c.lane_cpu_residenti) {
          int spr = 0;
          for (int j = 0; j < k_cpu && j < ne0; j++) {
              if (chiave[perm[j]] != 0) spr++;
-@@ -7352,11 +7386,115 @@
+@@ -7351,12 +7398,175 @@
+     // spenta. Lo stadio 2 inserisce il suo blocco QUI SOTTO, prima del
      // bilancio, e abbassa questa variabile delle colonne cedute.
      int lane_ad_vive = k_cpu < ne0 ? k_cpu : ne0;
- 
++    // A leva spenta e' `false` a COMPILAZIONE: il ramo del livello 2 non
++    // esiste e il bilancio di riferimento qui sotto resta quello di oggi.
++    bool lane_ad_armata = false;
++    if constexpr (adattiva) { lane_ad_armata = lane_ad > 0; }
++
 +    // ---- lane-adattiva (2/9): LA LEVA. -----------------------------------
 +    // Non esiste nell'istanziazione <planner_trace, false>.
++    //
++    // TRE LIVELLI, e la differenza non e' cosmetica:
++    //   (1) la guardia di ggml-cpu.c e' SEMPRE attiva (sta la', non qui);
++    //   (2) due cose DIVERSE, e vanno chiamate con due nomi diversi:
++    //
++    //       GUARDIA = la biiezione di perm_inv, verificata PER RIGA, QUI
++    //       dentro, sul risultato appena calcolato e PRIMA che gli id e
++    //       perm_inv diventino visibili a un qualunque consumatore (maschera
++    //       a 6 bit in registri, costo fisso, nessuna atomica). Se fallisce,
++    //       la riga si riscrive sul cammino SENZA CESSIONE e si incrementa
++    //       `ripieghi`. E' l'unico controllo che puo' CAMBIARE l'uscita, ed e'
++    //       per questo che deve stare a monte della pubblicazione: a valle
++    //       (dump, o aggregato di fine lancio) non sarebbe implementabile,
++    //       perche' i consumatori avrebbero gia' letto.
++    //
++    //       AUDIT   = il bilancio `cpu_vive + gpu_colonne == ne0 x partizioni`.
++    //       E' un aggregato di FINE LANCIO e NON puo' innescare ripieghi: e'
++    //       un cancello di fine corsa, non una difesa per riga. Riduzione in
++    //       shared piu' una sola atomica per lancio, e fail-loud a fine corsa
++    //       se non torna.
++    //
++    //       Entrambi sono legati alla LEVA, non a LANE_CONTA: una guardia si
++    //       lega al MECCANISMO che protegge, mai allo strumento che misura.
++    //       Costano UNA atomica globale per lancio, non una per riga -- il
++    //       ~1,5% dello stadio 1 veniva proprio dalle atomiche per riga;
++    //   (3) la statistica (`lane_cpu_residenti`) sta dietro LANE_CONTA, sotto.
 +    if constexpr (adattiva) {
 +        // ---- IL MECCANISMO. Non legge NESSUN contatore. -------------------
 +        // QUALI colonne cede la CPU si decide COLONNA PER COLONNA su
 +        // chiave[perm[j]], NON con k_vivo = min(k_cpu, n_miss) come nel
-+        // disegno: quella formula presuppone che le prime k_cpu colonne
-+        // della permutazione siano i non-residenti, e non e' vero quando
-+        // AcceptMoE ha riordinato perm[] per peso zero (:7274-7284, attivo
-+        // in produzione con COMPATTA=1). Col criterio per colonna il
-+        // cancello «di cui RESIDENTI = 0 esatto» e' vero per costruzione:
-+        // ceduta <=> chiave != 0 <=> contata in lane_cpu_residenti.
-+        //
-+        // La cessione NON dipende da LANE_CONTA: ogni scrittura qui sotto
-+        // testa `chiave[perm[j]]` direttamente e non legge un solo contatore.
-+        // I contatori sono MISURA, non meccanismo -- e con la misura spenta
-+        // la leva deve rendere ESATTAMENTE come con la misura accesa.
++        // disegno: quella formula presuppone che le prime k_cpu colonne della
++        // permutazione siano i non-residenti, e non e' vero quando AcceptMoE
++        // ha riordinato perm[] per peso zero (:7274-7284, attivo in produzione
++        // con COMPATTA=1). Col criterio per colonna il cancello «di cui
++        // RESIDENTI = 0 esatto» e' vero per costruzione.
++        int vive = k_cpu < ne0 ? k_cpu : ne0;
 +        if (lane_ad == 2) {
-+            // (1) BLOCCO C: i sei id per la lane GPU. Sta nelle righe
++            // (0) LA GUARDIA. Biiezione di perm_inv verificata PER RIGA e
++            //     PRIMA DI SCRIVERE: tutta in REGISTRI (<= 36 confronti,
++            //     maschera a 6 bit, nessuna memoria, nessuna atomica).
++            //     Verifica che i sei valori che perm_inv STA PER prendere
++            //     siano distinti e cadano ognuno in una colonna davvero
++            //     ASSEGNATA del concat largo k_cpu + ne0.
++            //
++            //     POSIZIONE, ed e' il punto: questo controllo sta PRIMA della
++            //     prima scrittura di `g[]` (blocco C), PRIMA dei -1 in `o[]` e
++            //     PRIMA della riscrittura di `o[ne0 + ...]`. Nessun consumatore
++            //     puo' aver letto: i lettori di questi id sono kernel
++            //     successivi sullo stesso stream. Un controllo a valle -- nel
++            //     dump o in un aggregato di fine lancio -- arriverebbe dopo la
++            //     pubblicazione e non potrebbe piu' correggere niente.
++            uint32_t visto = 0;
++            bool rotta = false;
++            for (int j = 0; j < ne0; j++) {
++                const int slot = perm[j];
++                if (slot < 0 || slot >= ne0) { rotta = true; break; }
++                const bool tiene = j < k_cpu && chiave[slot] == 0;
++                const int v = tiene ? j : k_cpu + j;
++                if (v < 0 || v >= k_cpu + ne0 || v >= 32) { rotta = true; break; }
++                if (visto & (1u << v)) { rotta = true; break; }
++                visto |= 1u << v;
++            }
++            // (1) IL RIPIEGO. Se la bigezione non torna, questa riga NON cede
++            //     nulla: si comporta come a leva spenta (sulle forme larghe).
++            //     La CPU si tiene le sue k_cpu colonne SENZA -1, il blocco C
++            //     porta i sei id router con le colonne CPU duplicate, e
++            //     perm_inv e' quella della leva spenta. L'uscita resta
++            //     CORRETTA -- e' il §44 evitato, non solo contato. Contare e
++            //     basta lascerebbe uno strato con meno di sei esperti e
++            //     un'uscita sbagliata ma PLAUSIBILE.
++            const bool cede = !rotta;
++
++            // (2) BLOCCO C: i sei id per la lane GPU, nelle righe
 +            //     [n_tok, 2*n_tok) del tensore, passo di riga invariato.
 +            int32_t * g = out + (size_t) (n_tok + t) * 2 * ne0;
-+            // Prima le colonne che la GPU calcola davvero -- le cedute e le
-+            // sue -- con la STESSA regola di :7316, cosi' la compattazione a
-+            // peso zero di AcceptMoE continua a valere anche sul blocco C
-+            // (senza questo, la leva ricaricherebbe colonne matematicamente
-+            // nulle: rischio 3 del disegno, qui chiuso).
++            // Prima le colonne che la GPU calcola davvero, con la STESSA
++            // regola di :7316, cosi' la compattazione a peso zero di AcceptMoE
++            // continua a valere anche sul blocco C.
 +            int dup = -1;
 +            for (int j = 0; j < ne0; j++) {
-+                if (j < k_cpu && chiave[perm[j]] == 0) continue;   // la tiene la CPU
++                if (j < k_cpu && (!cede || chiave[perm[j]] == 0)) continue;  // la tiene la CPU
 +                g[j] = compatta && pesi_validi && peso[perm[j]] == 0.0f
 +                        ? -1 : riga[perm[j]];
 +                if (dup < 0 && g[j] >= 0) dup = g[j];
 +            }
-+            // Le colonne che la CPU TIENE non devono restare vuote (ids_gpu
-+            // le legge comunque) e non possono portare -1 (mmvq.cu:1408
-+            // legge l'id come uint32_t -> 0xFFFFFFFF, e il cammino CUDA
-+            // generico di ggml-cuda.cu:2924 aborta). Ci va un id VALIDO
-+            // DUPLICATO, e non uno qualunque: il primo id che la GPU sta
-+            // gia' calcolando in questa riga. Cosi' la colonna in piu' non
-+            // aggiunge NEMMENO UN esperto alla domanda della cache -> zero
-+            // copie PCIe nuove, che e' l'intera tesi della leva.
-+            if (dup < 0) dup = riga[perm[lane_ad_vive < ne0 ? lane_ad_vive : 0]];
-+            for (int j = 0; j < k_cpu && j < ne0; j++) {
-+                if (chiave[perm[j]] == 0) g[j] = dup;
-+            }
-+            // (2) Le colonne CPU cedute: -1. La mul_mat_id CPU le salta, le
-+            //     AZZERA e le CONTA (ggml-cpu.c, guardia dello stadio 1).
-+            for (int j = 0; j < k_cpu && j < ne0; j++) {
-+                if (chiave[perm[j]] != 0) o[j] = -1;
-+            }
-+            // (3) perm_inv verso il concat largo k_cpu + ne0: per lo slot
-+            //     originale perm[j] la copia buona sta nella colonna CPU j
-+            //     se la CPU la calcola, altrimenti nella colonna GPU j, che
-+            //     nel concat e' k_cpu + j. Le colonne cedute e le colonne
-+            //     GPU duplicate NON compaiono mai qui.
++            // Le colonne che la CPU TIENE non devono restare vuote (ids_gpu le
++            // legge comunque) e non possono portare -1 (mmvq.cu:1408 legge
++            // l'id come uint32_t -> 0xFFFFFFFF, e il cammino generico di
++            // ggml-cuda.cu:2924 aborta). Ci va un id VALIDO DUPLICATO, e non
++            // uno qualunque: il primo id che la GPU sta gia' calcolando in
++            // questa riga, cosi' la colonna in piu' non aggiunge NEMMENO UN
++            // esperto alla domanda della cache.
++            if (dup < 0) dup = riga[perm[vive < ne0 ? vive : 0]];
++            vive = 0;
 +            for (int j = 0; j < ne0; j++) {
-+                const bool tiene = j < k_cpu && chiave[perm[j]] == 0;
++                const bool tiene = j < k_cpu && (!cede || chiave[perm[j]] == 0);
++                if (!tiene) continue;
++                g[j] = dup;
++                vive++;
++            }
++            // (3) Le colonne CPU cedute: -1. La mul_mat_id CPU le salta, le
++            //     AZZERA e le CONTA (ggml-cpu.c, guardia dello stadio 1). Su
++            //     una riga ripiegata non se ne cede nessuna, quindi qui non
++            //     si scrive niente e `o[]` resta quello di :7316.
++            if (cede) {
++                for (int j = 0; j < k_cpu && j < ne0; j++) {
++                    if (chiave[perm[j]] != 0) o[j] = -1;
++                }
++            }
++            // (4) perm_inv verso il concat largo k_cpu + ne0.
++            for (int j = 0; j < ne0; j++) {
++                const bool tiene = j < k_cpu && (!cede || chiave[perm[j]] == 0);
 +                o[ne0 + perm[j]] = tiene ? j : k_cpu + j;
 +            }
-+            // Le colonne cedute passano dalla lane CPU a quella GPU: il
-+            // bilancio qui sotto resta a somma ne0, come deve.
++            // il conto dei RIPIEGHI e' della GUARDIA, non dell'audit
++            if (!cede) atomicAdd(&lane_acc[2], 1u);
 +        }
 +
-+        // ---- LA MISURA, dietro LANE_CONTA. --------------------------------
-+        // A LANE_CONTA=0 qui non gira ne' un ciclo ne' un'atomica: la cessione
-+        // sopra e' gia' avvenuta comunque. `ceduti` serve SOLO al bilancio
-+        // delle destinazioni -- il meccanismo non lo usa mai.
-+        //
-+        // ⚠ DICHIARATO: a LANE_CONTA=0 anche la BIGEZIONE tace, quindi in
-+        // produzione il rilevatore del «guasto muto» e' spento. E' un cancello
-+        // di COLLAUDO: il braccio della leva va corso con LANE_CONTA=1, e
-+        // `lane_ad_perm_rotta == 0` va verificato li'. La correttezza della
-+        // cessione non dipende da lui -- e' un testimone, non una difesa.
-+        if (c.lane_conta) {
-+            int ceduti = 0;
-+            for (int j = 0; j < k_cpu && j < ne0; j++) {
-+                if (chiave[perm[j]] != 0) ceduti++;
-+            }
-+            if (lane_ad == 2) {
-+                lane_ad_vive -= ceduti;
++        // ---- L'AUDIT: il bilancio delle destinazioni, in SHARED. ----------
++        // NON e' una guardia e non puo' innescare ripieghi: e' un aggregato di
++        // fine lancio, e quando si potrebbe leggere la riga e' gia' pubblicata.
++        // E' il cancello di FINE CORSA «CEDERE != ELIMINARE» del ledger
++        // §63-bis: `cpu_vive + gpu_colonne` deve fare ne0 x partizioni esatto,
++        // identico a leva spenta e accesa. Nessuna atomica GLOBALE per riga:
++        // si accumula nel blocco e si riversa una volta sola.
++        atomicAdd(&lane_acc[0], (unsigned int) vive);
++        atomicAdd(&lane_acc[1], (unsigned int) (ne0 - vive));
 +
-+                // BIGEZIONE DI perm_inv: sei valori distinti, ognuno in una
-+                // colonna davvero ASSEGNATA. E' l'idioma del «guasto muto» di
-+                // :7264-7272: se salta, lo strato calcola meno di sei esperti
-+                // e l'uscita e' spazzatura PLAUSIBILE, senza un solo assert.
-+                if (c.lane_ad_perm_rotta) {
-+                    uint32_t visto = 0;
-+                    bool rotta = false;
-+                    for (int j = 0; j < ne0; j++) {
-+                        const int v = o[ne0 + j];
-+                        if (v < 0 || v >= k_cpu + ne0 || v >= 32) { rotta = true; break; }
-+                        if (v < k_cpu && chiave[perm[v]] != 0) { rotta = true; break; }
-+                        if (visto & (1u << v)) { rotta = true; break; }
-+                        visto |= 1u << v;
-+                    }
-+                    if (rotta) {
-+                        atomicAdd((unsigned long long *) c.lane_ad_perm_rotta, 1ull);
-+                    }
-+                }
++        // IL RIVERSAMENTO, senza barriere. Qui siamo gia' oltre l'uscita
++        // divergente `t >= n_lav`: una __syncthreads() si impiccherebbe. Il
++        // fence ordina le scritture sugli accumulatori PRIMA dell'incremento
++        // del contatore di completamento, cosi' l'ultimo thread che arriva
++        // vede tutti i contributi. UNA atomica globale per contatore, per
++        // lancio, invece di una per riga.
++        // NB: se qualche thread uscisse prima (ramo `k_cpu == 0`) il conto non
++        // arriverebbe a n_lav e il lancio non riverserebbe -- misura persa,
++        // mai un valore sbagliato. Con la leva armata k_cpu >= 1 su ogni
++        // strato (la leva rifiuta di armarsi con LLAMA_OVERLAP_K < 1).
++        __threadfence_block();
++        if (atomicAdd(&lane_acc[3], 1u) + 1u == (unsigned int) n_lav) {
++            if (c.lane_ad_cpu_vive) {
++                atomicAdd((unsigned long long *) c.lane_ad_cpu_vive,
++                          (unsigned long long) lane_acc[0]);
++            }
++            if (c.lane_ad_gpu_colonne) {
++                atomicAdd((unsigned long long *) c.lane_ad_gpu_colonne,
++                          (unsigned long long) lane_acc[1]);
++            }
++            if (c.lane_ad_perm_rotta && lane_acc[2]) {
++                atomicAdd((unsigned long long *) c.lane_ad_perm_rotta,
++                          (unsigned long long) lane_acc[2]);
 +            }
 +        }
 +    }
-+
-     // IL BILANCIO DELLE DESTINAZIONI -- chi CALCOLA, non chi e' RESIDENTE.
-     // La somma deve fare ne0 esatto per riga e restare IDENTICA a leva spenta
+ 
+-    // IL BILANCIO DELLE DESTINAZIONI -- chi CALCOLA, non chi e' RESIDENTE.
+-    // La somma deve fare ne0 esatto per riga e restare IDENTICA a leva spenta
 -    // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis, e va
 -    // misurato adesso, perche' il numero a leva spenta e' il riferimento.
 -    if (c.lane_ad_cpu_vive && c.lane_ad_gpu_colonne) {
-+    // e accesa: e' il cancello «CEDERE != ELIMINARE» del ledger §63-bis.
-+    // Anche questo dietro `lane_conta`: si misura nel braccio di collaudo,
-+    // non a ogni token del servizio.
-+    if (c.lane_conta && c.lane_ad_cpu_vive && c.lane_ad_gpu_colonne) {
++    // IL BILANCIO A LEVA SPENTA -- il valore di RIFERIMENTO contro cui si
++    // confronta la leva accesa. A leva ARMATA lo scrive gia' la riduzione del
++    // livello 2 qui sopra: `lane_ad_armata` impedisce il doppio conteggio (a
++    // leva spenta e' una costante di compilazione `false`, quindi la
++    // condizione collassa e il cammino resta quello di oggi). Dietro
++    // LANE_CONTA perche' qui l'atomica e' PER RIGA: e' statistica, non guardia.
++    if (c.lane_conta && !lane_ad_armata && c.lane_ad_cpu_vive && c.lane_ad_gpu_colonne) {
          atomicAdd((unsigned long long *) c.lane_ad_cpu_vive,
                    (unsigned long long) lane_ad_vive);
          atomicAdd((unsigned long long *) c.lane_ad_gpu_colonne,
-@@ -7769,7 +7907,7 @@
+@@ -7769,7 +7979,7 @@
          cache_esperti_runtime * runtime,
          const int32_t * ids, int ne0, int passo_riga, int n_tok,
          const float * pesi_traccia, int passo_pesi_traccia,
@@ -309,7 +402,7 @@
          int32_t * out, cudaStream_t stream) {
      if (ne0 <= 0 || ne0 > 16 || n_tok <= 0) {
          return;   // fuori contratto: il cancello d'ammissione sta nel grafo
-@@ -7812,22 +7950,52 @@
+@@ -7812,22 +8022,52 @@
      if (rr && (rr->ids != ids || rr->ne0_ids != ne0)) rr = nullptr;
      const bool planner_trace = runtime &&
              (runtime->cache.calendario != nullptr || runtime->cache.traccia != nullptr);
@@ -376,7 +469,7 @@
      }
      if (runtime && runtime->calendario_trasporto && strato == 0) {
          kern_calendario_prepara<<<1, 1, 0, stream>>>(
-@@ -8462,33 +8630,47 @@
+@@ -8462,33 +8702,78 @@
              runtime->cache.politica_massa, runtime->cache.scudo,
              (unsigned long long) v[20], (unsigned long long) v[21],
              (unsigned long long) v[22]);
@@ -409,8 +502,8 @@
 -            (unsigned long long) v[64]);
 +    // lane-adattiva (2/9): DUE FORMATI. A LANE_CONTA=0 la riga torna esatta a
 +    // quella storica, cosi' i log del servizio non cambiano e nessun parser a
-+    // valle va toccato; i quattro campi della lane escono solo quando la
-+    // misura e' accesa (e allora sono veri, non zeri muti).
++    // valle va toccato; i campi della statistica escono solo quando la misura
++    // e' accesa (e allora sono veri, non zeri muti).
 +    if (runtime->cache.lane_conta) {
 +        fprintf(stderr, "cache-esperti: tre vie router/massa -> soglia_copia_pm=%d, copie_min=%d, cpu_leggeri=%d, partizioni=%llu, "
 +                        "pesi mancanti=%llu, CPU=%llu (di cui RESIDENTI=%llu, %.1f%%), zero-copy=%llu, copie=%llu (forzate=%llu), rifiuti registro=%llu"
@@ -447,6 +540,37 @@
 +                (unsigned long long) v[58], (unsigned long long) v[59],
 +                (unsigned long long) v[60], (unsigned long long) v[61],
 +                (unsigned long long) runtime->router_rifiuti);
++    }
++    // LIVELLO 2: questa riga esce SEMPRE a leva accesa, anche con LANE_CONTA=0.
++    // Il testimone e' il bilancio stesso: se la somma e' > 0 la riduzione del
++    // livello 2 ha girato, cioe' la leva era armata. Non serve propagare il
++    // livello della leva fin qui.
++    if (v[62] + v[63] > 0) {
++        // I DUE NOMI, sulla stessa riga e distinti: la GUARDIA agisce per riga
++        // dentro il kernel (e i suoi ripieghi si contano qui), l'AUDIT e' il
++        // bilancio aggregato che si legge solo a fine corsa.
++        fprintf(stderr, "cache-esperti: lane adattiva: guardia: ripieghi=%llu | "
++                        "audit: somma=%llu (%.2f per partizione)\n",
++                (unsigned long long) v[64], (unsigned long long) (v[62] + v[63]),
++                v[56] ? (double) (v[62] + v[63]) / (double) v[56] : 0.0);
++        if (v[64] > 0) {
++            // FAIL LOUD della GUARDIA. Un ripiego non e' un'uscita sbagliata
++            // -- la riga e' stata ricalcolata senza cessione -- ma e' la prova
++            // che la permutazione non era biiettiva, cioe' la famiglia del
++            // §44. Se esce, la leva va fermata e la riga va capita.
++            fprintf(stderr, "cache-esperti: ATTENZIONE lane adattiva: %llu righe ripiegate\n",
++                    (unsigned long long) v[64]);
++        }
++        if (v[56] > 0 && (v[62] + v[63]) % v[56] != 0) {
++            // FAIL LOUD dell'AUDIT. La somma delle destinazioni deve essere un
++            // multiplo ESATTO delle partizioni (e per DSV4 quel multiplo e' 6).
++            // Se non lo e', qualche riga ha perso o duplicato una colonna e il
++            // rapporto stampato sopra e' la misura del danno.
++            fprintf(stderr, "cache-esperti: ATTENZIONE lane adattiva: audit NON torna "
++                            "-- somma=%llu non e' multiplo di partizioni=%llu\n",
++                    (unsigned long long) (v[62] + v[63]), (unsigned long long) v[56]);
++        }
++        fflush(stderr);
 +    }
      fprintf(stderr, "cache-esperti: cura=%d, spin=%d, lanci=%llu, transiti riusati=%llu, "
                      "spin esauriti=%llu, promozioni sorpassate=%llu, "

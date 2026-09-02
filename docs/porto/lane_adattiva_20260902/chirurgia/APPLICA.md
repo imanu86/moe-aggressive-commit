@@ -47,7 +47,7 @@ danno file **byte-identici** a `mod\` su tutti e nove i file.
    Uscita **bit-identica per costruzione**: nessuna forma cambia, nessuna env
    nuova, nessun valore calcolato cambia. Cancello: G1 `AD3D3770…FE11` 3/3 e
    `voci fuori tabella == 0`.
-2. **`lane_adattiva_2_leva.patch`** (592 righe, 6 file) — si applica **SOPRA** il primo.
+2. **`lane_adattiva_2_leva.patch`** (716 righe, 6 file) — si applica **SOPRA** il primo.
    **Rigenerato il 2/9 contro l'albero di OGGI**, cioe' con lo stadio 1 gia'
    dentro (verificato: i nove file dell'albero vivo sono byte-identici a
    `mod1\`). Dry-run stretto sull'albero vivo: `patch -p1 --binary --fuzz=0
@@ -92,7 +92,8 @@ backend CUDA per un contatore — vedi D1).
 | `src/llama-graph.cpp` | dopo 1868 | **la leva**: env a valore, **rifiuto sul contesto BOZZA**, rifiuto con `K < 1`, testimone stderr (+55) |
 | `ggml/src/ggml-cuda/cache-esperti.cuh` | dopo `k_adattivo` | **`int lane_conta`** (+16) |
 | `ggml/src/ggml-cuda/cache-esperti.cu` | dopo il blocco SCUDO_TRANSITO | lettore `LLAMA_CACHE_ESPERTI_LANE_CONTA` a valore + testimone `lane_conta=1` (+17) |
-| `ggml/src/ggml-cuda/cache-esperti.cu` | coda del kernel | i **tre punti di conteggio dello stadio 1** passano dietro `c.lane_conta`; la MISURA della leva (`ceduti`, `lane_ad_vive`, biiezione) va in un blocco separato, dopo il meccanismo |
+| `ggml/src/ggml-cuda/cache-esperti.cu` | testa del kernel | `__shared__ unsigned int lane_acc[4]` + azzeramento con `__syncthreads()` **prima di ogni uscita divergente** (+14) |
+| `ggml/src/ggml-cuda/cache-esperti.cu` | coda del kernel | i **tre livelli**: GUARDIA per riga con RIPIEGO, AUDIT in shared con una atomica per lancio, statistica dietro `c.lane_conta` |
 | `ggml/src/ggml-cuda/cache-esperti.cu` | riga `tre vie` | **due formati**: esteso a `lane_conta=1`, altrimenti **il formato storico verbatim** |
 | `src/llama-graph.cpp` | 1886, 1910 | i due `ggml_cache_esperti_partiziona` col quinto argomento (+3 / −2) |
 | `src/llama-graph.cpp` | 1918-1923 | `ids_gpu` a sei colonne **solo a livello 2** (+13 / −2) |
@@ -314,6 +315,106 @@ invece di 144 a `n_tokens = 3`.
 con la stessa formulazione, piu' `#include <cstdio>` (non c'era; `LLAMA_LOG_*`
 sarebbe filtrabile dal callback del server — la lezione del chirurgo 16).
 
+### D12 — TRE LIVELLI: la guardia si lega al MECCANISMO, non allo strumento
+
+**Correzione di disegno (zen-morse, accolta).** La D11 legava *tutto* a
+`LANE_CONTA`, e sbagliava: a `LANE_CONTA=0` la leva sarebbe girata in produzione
+con bilancio e biiezione muti, cioe' **senza il rilevatore del guasto §44 che la
+leva stessa puo' introdurre**. Una guardia si lega al meccanismo che protegge,
+mai allo strumento che misura.
+
+**Tre livelli, e due nomi distinti per le due cose che prima erano una sola.**
+
+| livello | che cos'e' | quando gira | costo |
+|---|---|---|---|
+| **1** | la guardia di `ggml-cpu.c` (salta, azzera, conta) | **SEMPRE** | un confronto per id |
+| **2a — GUARDIA** | biiezione di `perm_inv` **per riga**, + **RIPIEGO** | **con la leva ≥ 2, sempre**, indipendente da `LANE_CONTA` | ≤ 36 confronti in registri, **zero atomiche** |
+| **2b — AUDIT** | bilancio `cpu_vive + gpu_colonne == ne0 × partizioni` | **con la leva ≥ 1, sempre** | shared + **una atomica globale per lancio** |
+| **3** | statistica (`lane_cpu_residenti`, bilancio a leva spenta) | dietro `LANE_CONTA=1` | ciclo + atomica **per riga** |
+
+#### GUARDIA — dove sta, e perche' li'
+
+**Per riga, dentro `kern_partiziona`, sul risultato appena calcolato e PRIMA che
+gli id e `perm_inv` diventino visibili a un qualunque consumatore.** Righe di
+`mod/ggml/src/ggml-cuda/cache-esperti.cu`:
+
+| riga | che cosa |
+|---|---|
+| **7445-7477** | **LA GUARDIA**: costruisce i sei valori che `perm_inv` *sta per* prendere e ne verifica la biiezione con una maschera a 6 bit in registri. Legge solo `perm[]` e `chiave[]` — array locali, nessuna memoria globale, nessuna atomica |
+| **7478** | `const bool cede = !rotta;` — la decisione |
+| 7482 | `int32_t * g = out + …` (puntatore, nessuna scrittura) |
+| **7489** | **prima scrittura** di `g[]` (blocco C) |
+| 7505 | `g[j] = dup` (colonne che la CPU tiene) |
+| **7514** | `o[j] = -1` (colonne cedute) — solo `if (cede)` |
+| **7520** | `o[ne0 + perm[j]] = …` (riscrittura di `perm_inv`) |
+
+La guardia è **33 righe sopra la prima scrittura**. I lettori di questi id sono
+kernel successivi sullo stesso stream: nessuno può aver letto. Un controllo a
+valle — nel dump, o in un aggregato di fine lancio — arriverebbe dopo la
+pubblicazione e **non potrebbe più correggere niente**: sarebbe un referto, non
+una guardia.
+
+**Il RIPIEGO.** Con `cede == false` il predicato di cessione degenera in
+`tiene(j) = (j < k_cpu)`, cioè il cammino **senza cessione** sulle forme larghe:
+nessun `-1` nelle colonne CPU (il blocco `if (cede)` non gira), blocco C con le
+colonne CPU duplicate, `perm_inv` quella della leva spenta. **L'uscita resta
+corretta**: è il §44 evitato, non solo contato. Contare e basta lascerebbe uno
+strato con meno di sei esperti e un'uscita sbagliata ma plausibile.
+
+#### AUDIT — aggregato, e non può innescare ripieghi
+
+`cpu_vive + gpu_colonne` accumulati **in shared** (`lane_acc[0..1]`) e riversati
+**una volta sola per lancio** col pattern «ultimo thread arrivato»
+(`mod:7533-7534`, flush a `mod:7547`). Non è una difesa per riga: quando lo si
+potrebbe leggere, la riga è già pubblicata. È il cancello di **fine corsa**
+«CEDERE ≠ ELIMINARE», con fail-loud se la somma non è un multiplo esatto delle
+partizioni.
+
+#### Perche' NIENTE atomiche per riga nel livello 2
+
+Il ~1,5% dello stadio 1 veniva **proprio** dal ciclo e dall'atomica per riga sul
+cammino piu' caldo. Il livello 2 quindi: la GUARDIA sta tutta in registri (zero
+memoria), e l'AUDIT accumula in shared e fa **una** `atomicAdd` globale per
+contatore per lancio.
+
+**La riduzione senza barriere.** Gli accumulatori si azzerano **in testa al
+kernel** (`mod:7434-7437`), l'unico punto in cui tutti i thread del blocco sono
+ancora vivi — sotto ci sono due uscite divergenti (`t >= n_lav` e il ramo
+`k_cpu == 0`) e dopo una di quelle una `__syncthreads()` si impicca (regola di
+casa sulle barriere «sullo stesso sito»). Il riversamento in fondo **non usa
+barriere**: `__threadfence_block()` ordina i contributi, poi l'ultimo thread ad
+arrivare (`atomicAdd(&lane_acc[3],1)+1 == n_lav`) fa le atomiche globali.
+
+#### La riga finale, a leva accesa (sempre, anche con `LANE_CONTA=0`)
+
+```
+cache-esperti: lane adattiva: guardia: ripieghi=N | audit: somma=S (X.XX per partizione)
+cache-esperti: ATTENZIONE lane adattiva: N righe ripiegate            [se N > 0]
+cache-esperti: ATTENZIONE lane adattiva: audit NON torna -- ...       [se S % partizioni != 0]
+```
+
+Il testimone è il bilancio stesso: se `somma > 0` la riduzione del livello 2 ha
+girato, cioè la leva era armata. Non serve propagare il livello fin qui.
+
+#### Le tre verifiche
+
+- **(i) leva 0 + `LANE_CONTA=0`**: `<_, false>` ⇒ ogni `if constexpr (adattiva)`
+  sparisce (accumulatori, barriera, meccanismo, guardia, audit);
+  `lane_ad_armata` è una costante di compilazione `false`; i due blocchi di
+  statistica sono `if (c.lane_conta && …)` ⇒ non eseguono. **Il cammino è quello
+  del binario attuale meno il ciclo e le atomiche dello stadio 1.**
+- **(ii) leva 2 + `LANE_CONTA=0`**: guardia e audit girano (`mod:7445`, `:7533`),
+  il riversamento pure (`:7547`), e la riga finale esce col testimone.
+- **(iii) nessuna decisione del meccanismo legge un contatore di misura**:
+  verificato sul sorgente generato — nel blocco `mod:7440-7524` non compare un
+  solo `c.lane_cpu_residenti`, `c.lane_ad_cpu_vive`, `c.lane_ad_gpu_colonne` né
+  `c.lane_conta`.
+
+**Doppio conteggio evitato**: a leva armata il bilancio lo scrive la riduzione
+del livello 2; il blocco di statistica a leva spenta è guardato da
+`!lane_ad_armata` (`mod:7569`), che a leva spenta è costante e fa collassare la
+condizione sul cammino di oggi.
+
 ### D11 — i CONTATORI dietro env, la GUARDIA sempre (decisione di regia 2/9)
 
 **Dato nuovo**: la strumentazione dello stadio 1 **costa tempo** — decode
@@ -451,7 +552,8 @@ misurato a leva spenta**, come chiedeva §C.5.
 | G1 corto 0731 | `AD3D3770…FE11` | idem | idem | diverge, legittimo |
 | ri-baseline S1 | `97DF3AB0…5EC0` | idem | idem | idem |
 | `voci fuori tabella` (sempre attivo) | **0** | 0 | 0 | > 0, ≈ colonne cedute |
-| i quattro contatori della lane | — | **richiedono `LANE_CONTA=1`** | idem | idem |
+| `lane_cpu_residenti` (statistica) | — | **richiede `LANE_CONTA=1`** | idem | idem |
+| GUARDIA `ripieghi` + AUDIT `somma` | — | — | attivi | **attivi anche con `LANE_CONTA=0`** |
 | `di cui RESIDENTI=` | ~30% atteso | ~30% | ~30% | **0 esatto** |
 | `cpu_vive + gpu_colonne` | **`6,00`/partizione** ← il riferimento | `6,00` | `6,00` | `6,00` |
 | `perm_rotta` | 0 (non ancora scritto) | 0 | 0 | **0** |

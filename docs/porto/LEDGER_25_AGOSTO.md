@@ -3620,3 +3620,95 @@ errori, 17 nomi env tutti in lista, 25 parametri del lanciatore verificati riga 
 - Interpretazione pre-registrata di G2: fallisce anche a 623 ⇒ la pressione NON era capienza ⇒
   fronte trasporto chiuso per la seconda volta; passa in T2 e non in T1 ⇒ conta la partizione;
   passa in entrambi ⇒ era capienza.
+
+## 58. STRADE «TRASPORTO ONLINE + STAGING» E «MASSA» MISURATE (2/9, 05:13-06:29) — **la capienza ERA il vincolo (rifiutate 19.885 → 0), ma il pacchetto costa l'8% e l'anticipo ne ricompra 6; la massa a emivita 64 è già l'ottimo. Tutte le strade env-only sul Vision stanno in ±2% dell'ancora**
+
+Esecutore opus n.2, script `vl_sonde_arm.ps1` (§57), quattro processi separati, DLL verificate
+prima di ogni braccio (`9E8E8D46`/`6A98BE10`, invariate), un solo server alla volta, stderr a
+0 byte. Slot per i bracci T scelto con la regola meccanica di §57 dal file di S2: `VRAM libera
+385 ≥ 200` e nessun fail-loud ⇒ **623 + staging 150** (pool reattivo 473 = l'ancora, confermato
+dal testimone `cache reattiva=473 slot`).
+
+| | ancora A (473) | **T0** = S2 (623) | **T2** 623+online+stage150 | **T1** 623+online | **M1a** 473 emi16 | **M1b** 473 emi256 |
+|---|---|---|---|---|---|---|
+| decode t/s | 12,300-12,394 | **12,467** | **12,192** | **11,454** | **12,509** | **11,984** |
+| ms/token | 80,7-81,3 | 80,21 | 82,02 | **87,31** | 79,94 | 83,45 |
+| p1 / mean_len | 0,82683 / 2,51 | 0,81829 / 2,49 | 0,81705 / 2,50 | 0,83372 / 2,47 | 0,84738 / **2,64** | 0,81109 / 2,49 |
+| C_round | 202,5-204,1 | 199,7 | 205,05 | **215,65** | 211,05 | 207,78 |
+| colpi | 63,4% | 67,2% | 68,4% | 67,1% | 61,5% | **59,4%** |
+| byte a domanda | 717,41 GiB | 650,91 | **637,92** | 639,10 | 788,61 | **815,38** |
+| byte in prefetch (motore) | 0 | 0 | **75,35** | 2,52 | 0 | 0 |
+| domanda / partizioni | 274.856 / 36.722 | 278.296 / 36.034 | 282.768 / 34.056 | 272.620 / 36.679 | 287.412 / 28.251 | 281.736 / 35.346 |
+| righe senza residenti | 2.610 | 1.753 | 2.041 | 2.123 | 2.913 | **4.796** |
+| previsti / prenotati / emesse | — | — | 26.978 / 11.520 / 11.592 | 44.689 / 314 / 386 | — | — |
+| **rifiutate_pressione** | 19.885 (48,5%, 31/8 a 473) | — | **0 (0,00%)** | **19.026 (42,6%)** | — | — |
+| in tempo / tardive / sfratti | 29 / 28 / 132 (31/8) | — | **6.279** / 47 / 11.323 | 73 / 1 / 241 | — | — |
+| in volo max · banda H2D | 8 · 8,81 GiB/s (31/8) | — | 1 · **19,67** | 1 · 14,21 | — | — |
+| worker: calcolo / join / attesa-lavoro | — | — | 1,825 / 2,773 / 3,934 ms | 1,790 / 2,732 / 3,878 | 1,887 / 2,830 / 4,902 | 1,871 / 2,832 / 3,838 |
+| VRAM libera decode | 1.479 | 385 | 385 | 385 | 1.479 | 1.479 |
+| SHA · §4.10 | `B2B8F84E` · vero | `BDCE6E51` · vero | `2FD489B7` · vero | `11DB44B1` · vero | `B90FCF07` · vero | `CFA4B5FE` · vero |
+| assert / OOM / fail-loud / replay div. | 0 | 0 | 0 | 0 | 0 | 0 |
+
+### Cancelli pre-registrati (§57)
+- **G1 raggiungibilità**: T2 `emesse 11.592, in tempo 6.279` ✔ · T1 `386 / 73` ✔ · T2 riga
+  `v2 STAGING: 150 slot isolati [473,623), cache reattiva=473` ✔ (il ramo È nel binario del 14:33).
+- **G2 primario (la pressione deve crollare)**: **T2 PASSA nel modo più netto possibile —
+  `rifiutate_pressione = 0` contro 19.885, `in tempo` ×216, anello mai oltre 1 in volo, banda
+  H2D 19,67 GiB/s (sopra la soglia WDDM dei 10)**. T1 FALLISCE (42,6%, in tempo 73): senza lane
+  isolata il veto `fredda` blocca tutto anche a 623, come a 473. ⇒ **L'ipotesi del §16 è
+  CONFERMATA: la chiusura del 31/8 era di capienza; e conta la PARTIZIONE (lane senza veto), non
+  il numero di slot** (interpretazione pre-registrata «passa in T2 e non in T1»).
+- **G3 effetto**: T2 **+2,3% di ms/token contro T0** (−2,2% t/s) e +1…+1,6% contro l'ancora;
+  C_round 205,05 contro 199,7 (T0). **NO-GO.** T1: **+8,8% di ms/token contro T0** con mean_len
+  2,47 ≈ 2,49 e p1 in banda ⇒ **stavolta la perdita NON è di traiettoria: è macchina**.
+- **G4 qualità**: tutti e quattro §4.10 pieni, p1 0,811-0,847, mean_len 2,47-2,64 (M1a fuori
+  banda in alto).
+
+### Lettura
+1. **Il meccanismo funziona e non compra tempo.** In T2 il motore ha mosso **75,35 GiB** in
+   anticipo (11.592 copie da 7,30 MiB) di cui **6.279 arrivate in tempo (54%)**; la domanda a
+   caldo è scesa a 637,92 GiB. **Somma: 713 GiB ≈ i 717 dell'ancora — i byte non spariscono,
+   cambiano stream.** La lane FIFO di 150 sfratta quasi ogni copia (sfratti 11.323 ≈ emesse).
+   T2 contro T1 (stesso pacchetto, ± lane) = **+6,4%**: è quanto vale l'atterraggio dell'anticipo
+   su questa VRAM. T1 contro T0 = **−8,1%**: è quanto costa il pacchetto `W=1 + FORK_COMPONI=1 +
+   TRASPORTO_ONLINE` da solo, quando NON atterra nulla (386 copie). Saldo T2 contro T0: −2,2%.
+2. **Correzione probabile al §16**: il 31/8 `r58_tonline` fece −9,04% di t/s con C_round +0,25% e
+   fu letto come «perdita di traiettoria, macchina piatta» (mean_len 2,61→2,38). Oggi T1 perde
+   l'8,1% **a mean_len invariata**: la stessa grandezza, senza il confondimento. **Il pacchetto
+   costa ~8% di macchina; il 31/8 la traiettoria l'ha nascosto.** Da attribuire (predittore `W`
+   o consumatore online?) col controllo `wsolo` (§59).
+3. **Tetto della strada, anche con pacchetto gratuito**: T0 × 1,064 ≈ **13,3 t/s**. La lane non
+   può crescere (VRAM a 385 MiB) e il predittore a 1 strato di anticipo serve il 54% delle sue
+   copie in tempo. È coerente con Belady (§12): l'anticipo non è dove stanno i 20.
+4. **Massa: emivita 64 è già l'ottimo.** Memoria corta (16) e lunga (256) peggiorano ENTRAMBE i
+   byte (+10% / +14%), i colpi (−1,9 / −4,0 pt) e le righe senza residenti (2.913 / 4.796 contro
+   2.610). M1a fa 12,509 (+1,4%) **solo per traiettoria**: mean_len 2,64 e C_round 211 (+3,7%).
+   Il costo NON migra sulla lane (`calcolo` 1,79-1,89 e `join` 2,73-2,83 ms in tutti e quattro:
+   la famiglia non tocca K). L'attesa di zen-morse (§55: installati in crollo, byte −17%, lane
+   ×2,19) era per il CREDITO di ammissione, che resta non misurabile senza parametro
+   (`MASSA_AMMISSIONE` inchiodata, §57 R3). `MASSA_UNITA` non spesa: con emivita che perde in
+   entrambi i versi, l'appiattimento della massa non ha un verso promettente.
+5. **Il cancello del deficit**: T2/M1a/M1b positivi col coefficiente 7,597 pur sani (rapporti
+   8,30 / 10,17 / 7,97; T1 7,43); conferma la riformulazione del §56 (**rapporto ≥ 6,5 = sano**,
+   difetto ≈ 3,7).
+
+### Bilancio della campagna «tutte le altre strade» (IQ1 escluso dall'utente)
+
+| strada | braccio migliore | t/s | ms/token vs ancora | esito |
+|---|---|---|---|---|
+| slot (VRAM libera del Vision) | 623 puro (T0) | 12,467 | **−1,1%** | piatto: byte −9%, la traiettoria domina (§56) |
+| trasporto online + staging | T2 | 12,192 | +1…+1,6% | capienza risolta, pacchetto costa 8%, atterraggio vale 6,4% |
+| trasporto online senza staging | T1 | 11,454 | +8% | chiuso per la seconda volta |
+| massa (emivita) | M1a | 12,509 | +1,4% t/s per traiettoria; C_round +3,7% | byte peggiori in entrambi i versi |
+
+**Verdetto**: **ogni strada env-only sul Vision sta dentro ±2% dell'ancora (12,30-12,39), e
+nessuna tocca il cancello del +3%.** La mappa dei tetti del 31/8 esce confermata su un secondo
+modello e con due meccanismi in più misurati (capienza dell'anticipo; emivita). **Le strade
+residue sono le stesse di ieri: ingegneria del trasporto host-driven con costo fisso da abbattere
+(ora quantificato: ~8%, tetto di carta 13,3 su questa VRAM), oppure VRAM.** Nessuna promozione:
+la config di servizio resta §52/§54 (473 slot, AM=1, COMPATTA=0). 623 slot «reggono» e valgono
++1,1% su un solo prompt: non promossi.
+
+Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_sonde_{T2_s623_st150,T1_s623,M1a_emi16,M1b_emi256}_20260902.summary.txt`,
+`…\sota_ctx150000_densefa_stage_hc5_vl_sonde_<tag>_f2_b2048.server.log`, testi `…_q1.output.txt`,
+stdout `…\vl_sonde_vl_sonde_<tag>.stdout.txt`.

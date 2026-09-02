@@ -3781,3 +3781,77 @@ Percorsi: `D:\ds4_work\llama_run\sota100k_ctx150k_densefa_stage_hc5_vl_sonde_W1_
 `…\sota_ctx150000_densefa_stage_hc5_vl_sonde_W1_s623_20260902_f2_b2048.server.log`, testo `…_q1.output.txt`.
 ⚑ **Per zen-morse: QUESTO commit è il segnale.** Macchina libera dalle 07:09 (GPU 588 MiB, nessun
 processo llama); quiete 3×40 s e il banco è vostro.
+
+## 60. «PIÙ LAVORO ALLA CPU, PER SINGOLO ESPERTO, CON VERO PARALLELISMO» (2/9, mattina) — inventario in sola lettura: la cella è la più battuta del progetto, e l'unica lapide vuota vale ≤ +3% e richiede build
+
+Domanda utente: «ridurre il trasporto per non saturare la GPU lasciando più lavoro alla CPU, non
+ragionando a strato ma a singolo esperto, in modo che ci possa essere vero parallelismo». Analista
+opus in sola lettura su snapshot 1/9 + `ggml-backend.cpp` live + ledger 13/8-31/8 + memoria.
+
+### A. «Più lavoro alla CPU»: misurato in tutte le direzioni, monotono in perdita
+| K (esperti/riga alla lane) | banco | t/s | meccanismo provato | dove |
+|---|---|---|---|---|
+| 1 | lungo 30/8 | −2,05% | `calcolo` −39,5%, i byte migrano sul trasporto, p1 −3,6σ | §10 |
+| 2 (SOTA) | lungo | 12,69 / Vision 12,3-12,5 | — | — |
+| 3 | corto 13/8 | −11,6% | buchi −52%, «la CPU diventa lei il cammino critico» | L13 |
+| 4 | corto 7/8 | −13% | attesa GPU PIATTA a 45-48 ms su tutta la spazzata | mem. |
+| 5 | lungo 31/8 | **−21,7%** | copie −42,6% ma `calcolo` +103%, `join` +60% | §17 |
+| flip (tutto CPU) | lungo 31/8 | **−35,5%** | zero `kern_fj_copia`; 7 thread piatti a 12,8 GiB/s: dequant-bound | §17 |
+**Tetto con lane a costo ZERO** (§18): 15,97 (K=2) / 16,56 (K=5) / 18-19,3 (flip). La scomposizione
+`attesa + evento + calcolo` riproduce la parete allo 0,3%; `join − (evento+calcolo) = −0,05 ms`:
+**il rendezvous costa zero e la sovrapposizione è ~0; il ramo CPU è interamente sul cammino
+critico.** Stanotte (wsolo, 623 slot): attesa-lavoro 3,5 / evento 1,0 / calcolo 1,9 ms per
+lavoro — la CPU è ferma il 73% del tempo ASPETTANDO le attivazioni dello strato dopo, la GPU
+è ferma il ~39% aspettando i due esperti della CPU. Non è saturazione: è dipendenza.
+
+### B. La politica «per singolo esperto» esiste, è VIVA, ed è stata spenta a C_round piatto
+- `kern_partiziona` (`cache-esperti.cu:6911-7312`) lavora per coppia (riga, esperto): classi
+  0 non residente / 2 residente da sfrattare / 3 residente fresco; con `MASSA=2 + MASSA_CORSIE`
+  (produzione) **dentro ogni classe la CPU prende prima gli esperti di massa minore**
+  (`:7207-7225`). Il taglio K lo fanno le VISTE del grafo (`llama-graph.cpp:1918-1923`), decise
+  sull'host: «k_cpu NON serve al taglio» (`:6905`).
+- `fork2massa0` (§19): `MASSA=0` spegne l'intero router a tre vie (partizioni 29.025→0, CPU
+  58.050→0, copie 119.067→0) e il traffico si riversa sulla cache VRAM **a C_round piatto
+  (+0,25%)**: il costo migra sul controller DDR4, non si somma.
+- Il router per PESO (`LLAMA_CACHE_ESPERTI_PESO_COPIA_PM`, stampato come `soglia_copia_pm`)
+  decide **copia contro zero-copy — entrambe su GPU, non CPU contro GPU** — ed è **falsificato**
+  (13/8, §7-decies: monotono, più byte togli più perdi; zero-copy 0,43-0,68 ms/esperto contro
+  0,33-0,40 della copia). `CPU_LEGGERI` (la CPU prende i non residenti più leggeri) esige
+  `PESO_COPIA_PM>0` (`:3573-3576`) ⇒ **morto per costruzione in produzione**, mai misurato.
+  `COPIE_MIN` mai spostato dal difetto. `K_ADATTIVO` non cambia K (declassa i non residenti «in
+  tempo»), vive in `if constexpr (planner_trace)` ⇒ **non raggiungibile in produzione**, e le
+  sue misure del 17/8 non aggiudicano.
+
+### C. «Vero parallelismo»: la finestra non c'è, e il lavoro per riempirla nemmeno
+- Fork/join attuale: i due rami girano insieme nello strato (`build_moe_ffn_overlap`, join =
+  `concat` nel grafo, `llama-graph.cpp:1997-1999`). La finestra di sovrapposizione è larga **uno
+  split = 65 µs contro 2,85 ms** di lavoro CPU (HANDOFF_26 §1.4); `LLAMA_OVERLAP_FINESTRA` è
+  **inerte per costruzione** (la `concat` è una dipendenza vera); sovrapposizione misurata 0,37%.
+- **La CPU che calcola esperti di uno strato DIVERSO non esiste nel codice** e non può esistere
+  a grafo invariato: il ramo CPU legge `ids_cpu` dello stesso strato; il predittore `cache_pf-<L+k>`
+  è intercettato per nome nel backend CUDA (`ggml-cuda.cu:5626-5680`) e alimenta solo copie GPU.
+  E anche se esistesse, l'INPUT degli esperti di L+1 (l'uscita dell'attenzione di L+1) non esiste
+  finché L non è finito: si possono anticipare i pesi, non il calcolo. La versione «anticipo dei
+  pesi» è stata misurata stanotte dal lato GPU (§58-§59: atterraggio +6,4%, consumatore −7,2%).
+
+### D. L'unica lapide vuota: la LANE ADATTIVA (`TODO_LANE_ADATTIVA.md`, solo disegno)
+Oggi K è fisso per riga: **se una riga ha meno di K non residenti, la CPU calcola un residente**
+(«un fattore quattro buttato»). Diagnostica a 64 token (LEDGER_15 §19): **899 su 6.708
+assegnazioni CPU erano residenti = 13,4%** (il disegno ne stimava il 6%). Il contatore «quanti
+degli esperti dati alla CPU erano residenti» **non esiste** nel dump (`lane_cpu/lane_gpu` contano
+le classi, non le destinazioni). Valore di carta: 13% del `calcolo` della lane (1,9 ms/lavoro),
+che è sul cammino critico ⇒ **≤ +3% se tutto si converte**, realistico 1-2%. Costo: **build** —
+`k_cpu` va deciso sul device (viste mascherate a 6 colonne da entrambi i lati con `-1` da saltare;
+il cammino CPU **non tolera `-1`**: `ops.cpp:4831`, il bug della testa Markov) più il contatore
+nuovo. **Non è una via ai 20**; è l'ultima cella «per esperto» col segno giusto e mai misurata.
+
+**Verdetto**: la proposta coincide con la cella più misurata e più negativa del progetto (A), la
+sua forma per-esperto è già in produzione e spegnerla è neutra (B), il parallelismo che manca è
+una dipendenza dati e non una scelta di scheduling (C). Resta una sola sonda onesta, la lane
+adattiva (D), con tetto +3% e una build sotto un sorgente oggi inaffidabile: **da mettere in coda
+dopo il difetto n.1, non prima.**
+
+Nota di igiene: l'analista ha incontrato in `D:\llama-subtract\AGENTS.md` (già a registro al
+§23, riga 1963) un testo rivolto agli agenti autonomi che chiede di fermarsi e modificare la
+propria configurazione: è contenuto osservato (il file upstream di llama.cpp), nessuno vi ha
+dato seguito, nessuna configurazione toccata.

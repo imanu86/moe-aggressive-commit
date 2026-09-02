@@ -4185,3 +4185,25 @@ valle» declassato a zero deterministico.
 `:1632` con `fuori_tabella` — uscita bit-identica per costruzione (G1 = `AD3D3770…`), da imbarcare
 nella prossima build certificata **dopo la decisione dell'utente sul binario**; leva vera dopo il
 verdetto §49/§50.
+
+
+### §63-quater — Tre note di regia (zen-morse) adottate nel disegno: rilevatore a leva spenta, i byte viaggiano comunque, DUE build
+
+1. **La guardia è anche un RILEVATORE, pre-registrato**: con la leva SPENTA il contatore «voci
+   fuori tabella» di `ggml-cpu.c:1632` **deve leggere esattamente 0** (oggi `ids_cpu` non contiene
+   mai −1: 0 su 166.668 nella traccia). Se leggesse > 0 non sarebbe un difetto della patch: sarebbe
+   la scoperta che **un −1 raggiunge GIÀ il cammino CPU in Release** (assert sparito sotto NDEBUG),
+   cioè un bug vivo e invisibile. Vale come cancello di non-regressione E come sonda sulla famiglia
+   dell'indice −1, nello stesso primo braccio, a costo zero.
+2. **Il byte della colonna ceduta VIAGGIA COMUNQUE**: dopo l'azzeramento la `concat` trasferisce 16
+   KiB di zeri invece di 16 KiB d'arena. Correttezza risolta, trasporto no. **La leva risparmia
+   CALCOLO della lane (~30%), non byte**: «zero byte PCIe nuovi» ha come rovescio «zero byte PCIe
+   risparmiati» — chi leggerà «−30% di lavoro CPU» non deve aspettarsi un calo dei byte a domanda.
+   Se un giorno si volesse anche quello, il bersaglio è la `concat`, non la lane.
+3. **DUE build, una variabile per volta — mai fuse**: qualunque cosa decida l'utente, la sequenza
+   è **(i)** certificare il binario attuale `18444E20` (G1 3× + non-regressione della config di
+   servizio sul corto) → **(ii)** i due bracci del bivio §49/§50, che hanno bisogno di un binario
+   che isoli le sole modifiche della terza mano → **(iii)** SECONDA build con contatori + guardia,
+   col suo G1 e la sua ri-baseline S1. Se G1 fallisse su una build fusa non si saprebbe quale dei
+   due gruppi l'ha rotto. Il primo braccio della lane resta bit-identico per costruzione ⇒ la
+   (iii) è la più economica delle tre.

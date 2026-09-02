@@ -4492,7 +4492,7 @@ diagnostico**: la patch 2 è molto meno rischiosa di come appariva quando l'inva
 scoperta. Il grep chiesto dalla regia ha fatto il suo lavoro: ha trasformato un rischio ignoto in
 un rischio quantificato e piccolo.
 
-### §66-bis — PRE-REGISTRAZIONE della replica a freddo del 473 lane1 (scritta PRIMA di correre): «la strumentazione è gratis in USCITA, ma è gratis in TEMPO?»
+### §66-ter — PRE-REGISTRAZIONE della sessione ospite (rinumerata: la regia aveva già scritto la §66-bis sullo stesso punto, con cui coincide) — replica a freddo del 473 lane1: «la strumentazione è gratis in USCITA, ma è gratis in TEMPO?»
 
 **Il fatto**: decode 12,148 contro 12,300/12,384/12,394/12,331 dell'ancora **a lavoro identico** (SHA e
 ogni contatore alla cifra) ⇒ differenza di puro tempo di parete. La dispersione propria dell'ancora

@@ -5068,3 +5068,80 @@ Avevo letto la risposta vuota come «divergenza permissiva» rispetto al 400 doc
 2. **`https://` per le immagini**: ricompilare con BoringSSL/LibreSSL se si vuole il metodo 2 dei doc. Aggiramento immediato: il client allega il contenuto in base64 (metodo 1), che funziona.
 3. **Multi-immagine oltre due** e immagini grandi (fino a 8.192 px / 32 MiB per i doc) non sono state provate; il tetto locale del download remoto e' **10 MB**, contro i 32 MiB dei doc.
 4. **Nessun banco del progetto usa prompt corti**: aggiungerne uno ai cancelli, o difetti come questo continueranno a passare.
+
+## 72. ⭐⭐ **IL DIFETTO DEL PROMPT CORTO E' RIPARATO ALLA RADICE** — il tetto d'ammissione della cache va preso sul MINIMO della terna. Certificato 3/3, `ggml-cuda.dll` nuova `C4301341`
+
+**Mandato** (utente, subito dopo la §71): «bisogna sistemarlo».
+
+### 72.1 La causa radice, in una riga
+Il cancello d'ingresso alla cache esperti (`ggml-cuda.cu`, dentro `ggml_cuda_mul_mat_id`) confronta il numero di righe del forward con un tetto **che dipende dal TIPO del singolo tensore**:
+```cpp
+dst->ne[2] <= get_mmvq_mmid_max_batch(src0->type, cc)
+```
+I tensori esperti del modello sono **129 = 43 strati × 3**, e i conti dei tipi tornano esatti: `iq2_xxs` 86 + `iq2_xs` 23 + `iq3_xxs` 20 = 129. Su Turing+ (la 3060 e' Ampere):
+
+| tipo | tetto |
+|---|---|
+| `iq2_xxs`, `iq2_xs` | **8** (default `MMVQ_MAX_BATCH_SIZE`) |
+| **`iq3_xxs`** | **7** |
+
+E la cache ammette fino a `LLAMA_CACHE_ESPERTI_BATCH=8` righe. ⇒ **a 8 righe ESATTE**, dentro lo stesso strato, i tensori `iq2_*` entravano nel fork e quelli `iq3_xxs` no: la terna `gate/up/down` si apriva e non si chiudeva, e la guardia abortiva il processo. Sotto le 8 righe passano tutti, sopra le 8 la cache non si attiva: **la finestra e' larga esattamente una taglia di batch**, ed e' per questo che e' sopravvissuta un mese.
+
+**L'invariante era dichiarato nel codice, e falso.** Il commento a `ggml-cuda.cu` diceva:
+> «`dst->ne[2]` … e' lo stesso per **TUTTI** i `MUL_MAT_ID` del grafo … quindi la terna gate/up/down **non puo' restare aperta a meta'** (la guardia di `fork_fase` non scatta).»
+
+Vero per `ne[2]`. Ma il cancello **non dipende solo da `ne[2]`**: dipende anche dal tipo, che varia **dentro** la terna. Il commento e' stato corretto nella patch.
+
+### 72.2 Predizione pre-registrata e verificata PRIMA di scrivere codice
+Se il meccanismo e' questo, chiudere il tetto a 7 deve far sparire il crash **senza toccare il binario**. Braccio env-only `LLAMA_CACHE_ESPERTI_BATCH=7`, lanciatore di testo:
+
+| prompt | con `BATCH=8` | con `BATCH=7` |
+|---|---|---|
+| 26 tok | OK | OK 12,63 |
+| 68 tok | OK | OK 13,64 |
+| 32 tok | OK | OK 13,39 |
+| **13 tok** | **SERVER MORTO** | **OK 13,25** |
+| **13 tok (ripetuto)** | — | **OK 11,82** |
+
+⇒ meccanismo **confermato**, e resta a verbale un **aggiramento a costo nullo che non richiede build**.
+
+### 72.3 La cura (marcatore `// porto-terna (3/9)`)
+Il tetto d'ammissione va preso sul **minimo della terna**, non sul tipo del tensore che si sta guardando. Il runtime i tipi li ha gia': `cache_esperti_reg::tipo[3]`.
+
+| file:riga | cosa |
+|---|---|
+| `cache-esperti.cuh:712` | dichiarazione di `ggml_cuda_cache_esperti_tipi_terna` |
+| `cache-esperti.cu:1170` | definizione: **specchio esatto di `basi()`**, vera solo con `visti == 7` |
+| `ggml-cuda.cu:2480` | lambda `tetto_mmid_terna` = `min` dei tre `get_mmvq_mmid_max_batch` |
+| `ggml-cuda.cu:2561` | `parse_nome` spostata PRIMA nella catena `&&` (serve `strato`), poi il tetto |
+
+**Perche' e' airtight anche in fase di apprendimento**: se la terna non e' ancora registrata, `tipi_terna` e' falsa e si ricade sul tipo visto — ma in quel caso `basi()` fallisce comunque **per tutti e tre**, quindi il blocco viene saltato in modo uniforme. Non esiste uno stato in cui due entrano e uno no.
+`parse_nome` e' pura (scrive solo `strato`/`quale`): spostarla prima nella catena non ha effetti collaterali.
+
+### 72.4 CERTIFICAZIONE — 3/3, sulla config VERA (`BATCH=8`, `.bat` non modificato)
+| cancello | atteso | misurato |
+|---|---|---|
+| prompt 13 token | deve passare | **OK 13,58 e 13,96 t/s** |
+| G1 (0731 corto, 3 corse) | `AD3D3770C7D13885…` | **3/3 BIT-IDENTICO** · p1 0,77670 · mean_len 2,01 · 83/518 char · 13,77 / 14,56 / 14,53 t/s |
+| Vision corto A (ciclo 4) | `28ADE3395B5888D7…` | **BIT-IDENTICO** · p1 0,72693 · mean_len 1,92 · 4.538 char · 12,87 t/s |
+| assert / OOM / righe E | 0 | **0** |
+
+**Il fix e' un no-op dove la finestra non si attraversa**, e i due banchi lo confermano bit-esatti. Reperto per contrapposizione, che vale la pena scrivere: **se G1 avesse deviato**, avrebbe voluto dire che i banchi attraversavano la terna spezzata **producendo numeri invece di abortire** — cioe' che parte delle misure di agosto era corrotta. Non e' cosi': la guardia scattava sempre, e sotto le 8 righe il cammino e' identico.
+
+### 72.5 ⚑ IDENTITA' NUOVA DEL BINARIO — `§12-bis` del handoff e' SUPERATO
+| DLL | prima (`lane1`, §12-bis) | ora |
+|---|---|---|
+| `llama.dll` | `9E8E8D469A7B047F…` | **invariata** |
+| `ggml-cpu.dll` | `9F00A975C8A6574E…` | **invariata** |
+| `ggml-base.dll` | `CB2E8E376B1F222C…` | **invariata** |
+| **`ggml-cuda.dll`** | `D783DBE13F5FA893…` | **`C430134167B8C8C3…`** |
+| `mtmd.dll` | — | `611F4A2F0BC4B015…` (§70) |
+| `llama-server-impl.dll` | — | `A711F28E08465B09…` (§70) |
+| `llama-server.exe` | — | `3D0F0D659F122A53…` (§70) |
+
+**Le ancore §52/§54 e i numeri §56-§59 restano validi**: entrambi i banchi sono bit-identici sul binario nuovo. Backup completo con sorgenti pre e post: `D:\llama-subtract\build\bin\backup_pre_terna\` (`NOTA.txt` con procedura di ripristino e l'aggiramento env-only).
+
+### 72.6 CODA
+1. **Nessun banco del progetto usa prompt corti** — e' il motivo per cui questo difetto e' vissuto un mese. Aggiungere un banco a prompt corto ai cancelli, altrimenti la prossima finestra stretta passera' uguale. **Materiale pronto**: `sonda_corta.py` (5 prompt da 13 a 68 token, ordine a sospetto crescente, rileva la morte del server come connessione caduta).
+2. **La stessa classe di difetto puo' esistere altrove**: ovunque un cancello per-tensore decida l'ingresso in una struttura che ha un contratto per-terna. `get_mmvq_mmid_max_batch` compare in altri due punti (`ggml-cuda.cu:2311` e `:2838`), li' **correttamente** per-tensore (scelta del kernel): non sono stati toccati.
+3. Il difetto era **preesistente al porto immagini** (§71): il porto lo ha solo fatto incontrare.

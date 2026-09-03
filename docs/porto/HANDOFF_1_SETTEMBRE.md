@@ -547,7 +547,7 @@ per volta sulla macchina. Sequenza concordata con zen-morse: (i) certificazione 
 | DLL | SHA256 | note |
 |---|---|---|
 | `llama.dll` | `9E8E8D469A7B047F…` (1/9 14:03) | invariata |
-| `ggml-cuda.dll` | **`D783DBE13F5FA893…`** (2/9 13:18) | terza mano + stadio 1 |
+| `ggml-cuda.dll` | ~~`D783DBE13F5FA893…`~~ ⇒ **`C430134167B8C8C3…`** (3/9 13:13) | terza mano + stadio 1 + **fix `porto-terna`** (ledger §72). Ri-certificato 3/3: G1 `AD3D3770` e Vision corto A `28ADE339` BIT-IDENTICI ⇒ ancore §52/§54 e numeri §56-§59 restano validi |
 | `ggml-cpu.dll` | **`9F00A975C8A6574E…`** | guardia sull'indice −1 in `mul_mat_id` |
 | `ggml-base.dll` | **`CB2E8E376B1F222C…`** | contatore `voci fuori tabella` |
 Backup completo con sorgenti: `D:\llama-subtract\build\bin\backup_pre_lane1\` (e `backup_pre_chirurgo20\` per lo stato precedente).

@@ -5234,3 +5234,40 @@ La §73.3 («slot pari, hit identica») era su un decode di **97 token** (il mod
 **Con un campione onesto gli slot a K=1.5 danno +2,6%** (673 vs 473), e la hit sale davvero (60,6→61,2): a decode lungo il working set NON sta più tutto in 473. La combinazione **slot alti + K basso è il meglio misurato: 11,269**, +3,8% sul punto di partenza `K=2/473` (10,855). K=0 perde contro K=1.5 (la GPU libera non basta a rendere gratis lo zero-offload). ⚠ Caveat: gli SHA differiscono per config (riduzione diversa), quindi una parte del +2,6% è traiettoria, non puro effetto-slot.
 **Vincolo pratico**: 673 lascia **313 MiB** di VRAM — sul filo per un server acceso a lungo. In servizio si tiene `SLOT=473` (sicuro); `673` disponibile per il +2,6% a chi accetta il margine stretto.
 **Nota di metodo (pagata in frustrazione)**: le àncore di controllo NON si rifanno se già misurate e in banda — l'utente ha dovuto fermarmi due volte. Un braccio = un punto nuovo.
+
+## 74. ⭐⭐ **LA BOZZA E' RIPARATA CON LE IMMAGINI — non piu' spenta.** Il §73 era sbagliato: la bozza vale ~+50% a contesto lungo, e il crash immagine si cura tenendola in passo, non togliendola
+
+### 74.1 Il §73 era un errore: «bozza gratis» misurato nel regime sbagliato
+Il §73 ha spento la bozza per il crash immagine, misurando che «rende ~0» — ma **solo a contesto CORTO e sulle immagini**. FALSO in generale. Numeri dello stesso giorno, mai messi insieme finche' l'utente non l'ha fatto notare («prima facevamo 12,5 a kv150»):
+- lungo **con** bozza (§54/§66): **12,1-12,4 t/s**
+- lungo **senza** bozza (banco/warmup 3/9 sera, 89k): **~8 t/s**
+
+⇒ spegnere la bozza tolse **~+50% al contesto lungo**. A 100k il forward e' carissimo e la speculazione genera piu' token per forward: li' ammortizza tantissimo. Regola: **il valore di una leva di speculazione si misura nel regime dove verra' usata**, non a contesto corto. (Il decode lungo senza bozza e' PIATTO dal token 1 — warmup/cache-fredda FALSIFICATO da streaming a 89k, §diagnostica — quindi il collo lungo e' il costo per-token dell'attenzione, che solo la bozza maschera.)
+
+### 74.2 Radice del crash immagine: la bozza SALTA le batch di embedding
+`common_speculative_impl_draft_dflash::process()` (`speculative.cpp`, is_dspark): `if (batch_in.token == nullptr || batch_in.embd != nullptr) return true;` — **salta di proposito le batch di EMBEDDING** (le immagini). La bozza non avanza sullo span, resta N posizioni indietro; il suo `begin()` lo sa e stampa `pos_max < N-1 ... Drafts may degrade`. Poi al primo passo speculativo `llama_decode(ctx_dft)` muore con `inconsistent sequence positions` (Y=posizione testo dopo immagine, X=KV bozza ferma prima). **Pezzo mai completato per i modelli immagine**, non difetto oscuro. Il §70 (disable) e il §73 (bozza via) erano cerotti sul sintomo.
+
+### 74.3 La cura: tenere la bozza in passo iniettando gli stati bersaglio dello span
+Reperto chiave dal codice: **`process()` NON usa i token in ingresso** — legge gli stati nascosti del BERSAGLIO (`llama_get_embeddings_layer_inp(ctx_tgt)`) alle posizioni della batch e li inietta nella KV bozza. **Quegli stati esistono anche per l'immagine** (il bersaglio l'ha decodificata). Le posizioni immagine sono **mrope** (4 canali), quindi non si passa la batch mtmd: si costruisce una batch con le posizioni di **SEQUENZA 1D** dello span e la si da' a `common_speculative_process`.
+Patch (`// porto-draftfix (3/9)`, **solo `server-context.cpp`** -> `llama-server-impl.dll`, NON `speculative.cpp`, NON `ggml-cuda`):
+1. `process_mtmd_chunk`, dopo il decode immagine (`return 0`): se `spec`, costruisce `llama_batch_init(n_tokens_out)` con `pos = pos_next()+i`, seq `{id}`, token segnaposto 0 (ignorato), e chiama `common_speculative_process` -> inietta gli stati immagine, bozza allineata.
+2. Rimosso l'arming `spec_off_media=true` del §70 (la bozza NON si disabilita piu'; il plumbing morto resta innocuo).
+Costo: bozze scarse sullo span, ma **verificate dal bersaglio** -> velocita', non correttezza. Ramo solo-immagine: testo puro invariato.
+
+### 74.4 CERTIFICAZIONE
+**Crash repro (il caso che moriva)** — conversazione 4 turni, immagine nello storico, `cache_prompt=true`:
+| turno | esito | risposta |
+|---|---|---|
+| T1 immagine | OK 13,0 t/s | descrizione corretta |
+| **T2 testo (moriva)** | **OK** 6,4 | «Rosso» (cerchio) |
+| T3 | OK 13,4 | «Blu» (quadrato) |
+| T4 | OK 7,2 | «3» (forme) |
+
+Zero crash, zero `GGML_ABORT`, zero `not extracted`: **l'estrazione dei layer durante il decode immagine FUNZIONA**, la bozza resta in passo, output corretti.
+**Payoff (contesto lungo con bozza, fix):** **9,708 t/s** (stesso prompt 89k+istruzione: senza bozza 8,0 -> con bozza 9,7 = **+21%**; il 12,x storico e' su generazione piu' bozzabile, reale ma task-dipendente). Nessun crash  (senza bozza era ~8).
+**Identita' binari:** tre DLL invarianti (`llama-common 2F2A8A96`, `ggml-cuda C4301341`, `llama 9E8E8D46`); ricostruiti `llama-server-impl A711F28E->ABEDEF66`, `llama-server.exe 3D0F0D65->DBDE22C2`. Backup `build\bin\backup_pre_draftfix\`.
+
+### 74.5 Coda
+- ⚠ Limite noto: il feed usa gli stati del BERSAGLIO freschi dopo il decode immagine; per immagini **multi-sub-batch** (>~2048 token visivi) solo l'ultimo sub-batch e' fresco — da rivedere se si usano immagini enormi. Le immagini di test (148/323 token) sono single-batch.
+- Il lanciatore DSH torna a **CON bozza** (`avvia ds4 vision immagini.bat`); il «SENZA BOZZA» resta come ripiego.
+- Non-regressione testo (G1 `AD3D3770`, Vision corto A `28ADE339`) attesa bit-identica (ramo immagine non toccato); da confermare.

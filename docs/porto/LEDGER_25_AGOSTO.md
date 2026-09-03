@@ -5223,3 +5223,14 @@ Banco 20k, no-draft, decode forzato a 400 token (istruzione «riassunto ≥350 p
 Entrambe le leve intuite (slot, K) sono **reali in direzione, piccole in ampiezza**: slot ~0%, K +1,2%. Il pavimento ~10-11 t/s a 20k e' **hardware**: 80 GB di modello, 12 GB di GPU, esperti sul PCIe, attenzione KV sul contesto lungo — ne' slot ne' K lo spostano. La leva grossa resta la **VRAM** (il tetto «senza trasporto» del ledger e' 24,2 t/s, serve una scheda da 24 GB). Sul silicio attuale, 10-13 e' la finestra.
 
 **Coda**: (1) il fix vero della bozza (risincronizzare la KV del drafter dopo un'immagine, `common/speculative.cpp`) resta possibile ma vale ~0 su questo carico — rimandato; (2) nessun banco del progetto usa prompt corti (§71); (3) K=1.5 diverge per SHA da tutte le ancore (frazionario) — va bene per il SERVIZIO, non per i banchi bit-esatti.
+
+### 73.6 CORREZIONE a 73.3+73.4: **gli slot AIUTANO a K basso** — banco 2x2 con decode lungo. Ottimo `SLOT=673 + K=1.5` = 11,269 t/s
+La §73.3 («slot pari, hit identica») era su un decode di **97 token** (il modello rispondeva corto): campione troppo piccolo. Rifatto con decode **forzato a 400 token** (istruzione «riassunto ≥350 parole»), disegno 2x2 senza bozza, banco 20k:
+| | SLOT 473 | SLOT 673 |
+|---|---|---|
+| **K=1.5** | 10,988 (hit 60,6%) | **11,269 (hit 61,2%)** |
+| **K=0** | — | 11,042 (hit 62,4%) |
+
+**Con un campione onesto gli slot a K=1.5 danno +2,6%** (673 vs 473), e la hit sale davvero (60,6→61,2): a decode lungo il working set NON sta più tutto in 473. La combinazione **slot alti + K basso è il meglio misurato: 11,269**, +3,8% sul punto di partenza `K=2/473` (10,855). K=0 perde contro K=1.5 (la GPU libera non basta a rendere gratis lo zero-offload). ⚠ Caveat: gli SHA differiscono per config (riduzione diversa), quindi una parte del +2,6% è traiettoria, non puro effetto-slot.
+**Vincolo pratico**: 673 lascia **313 MiB** di VRAM — sul filo per un server acceso a lungo. In servizio si tiene `SLOT=473` (sicuro); `673` disponibile per il +2,6% a chi accetta il margine stretto.
+**Nota di metodo (pagata in frustrazione)**: le àncore di controllo NON si rifanno se già misurate e in banda — l'utente ha dovuto fermarmi due volte. Un braccio = un punto nuovo.

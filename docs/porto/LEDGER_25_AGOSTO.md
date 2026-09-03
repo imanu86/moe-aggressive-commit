@@ -5145,3 +5145,43 @@ Il tetto d'ammissione va preso sul **minimo della terna**, non sul tipo del tens
 1. **Nessun banco del progetto usa prompt corti** — e' il motivo per cui questo difetto e' vissuto un mese. Aggiungere un banco a prompt corto ai cancelli, altrimenti la prossima finestra stretta passera' uguale. **Materiale pronto**: `sonda_corta.py` (5 prompt da 13 a 68 token, ordine a sospetto crescente, rileva la morte del server come connessione caduta).
 2. **La stessa classe di difetto puo' esistere altrove**: ovunque un cancello per-tensore decida l'ingresso in una struttura che ha un contratto per-terna. `get_mmvq_mmid_max_batch` compare in altri due punti (`ggml-cuda.cu:2311` e `:2838`), li' **correttamente** per-tensore (scelta del kernel): non sono stati toccati.
 3. Il difetto era **preesistente al porto immagini** (§71): il porto lo ha solo fatto incontrare.
+
+## 72-bis. ⚑ **CERTIFICAZIONE CHIUSA 3/3: anche il LUNGO è bit-identico.** `B2B8F84E` sul binario `C4301341`
+
+Debito dichiarato nella §72 e chiuso subito: il fix `porto-terna` era stato certificato sui due
+banchi CORTI (G1 e Vision corto A), ma `lane1` era certificato su **tre**, e il terzo — il **Vision
+lungo A a 473 slot** — è quello dove vive la configurazione di servizio reale a 150k di contesto.
+
+`vl_arm.ps1 -Braccio vision_A -Slot 473 -DraftSoloCpu`, tag `vl_vision_A_s473_terna_20260903`,
+quiete 3×40 s con controllo anche della VRAM libera, richiesta 14:45 → 15:01.
+
+| | ancora `V-ANCORA-LUNGO-A` | `lane1` (`D783DBE1`, §66) | **fix terna (`C4301341`)** |
+|---|---|---|---|
+| SHA output | `B2B8F84E96ED3467…` | IDENTICO | **IDENTICO** |
+| p1 / mean_len | 0,82683 / 2,51 | identici | **identici** |
+| caratteri | — | — | 4.152 |
+| prefill t/s | — | 138,58 | **138,54** |
+| decode t/s | 12,300 / 12,384 / 12,394 / 12,331 | 12,148 | **12,304** |
+| divergenze replay (taglia/ids/out/griglia) | 0 | 0 | **0** |
+| assert / OOM / fail-loud | 0 | 0 | **0** |
+
+**Due letture.**
+1. **Il fix è un no-op su tutti e tre i cammini di servizio.** Era la previsione: la finestra rotta
+   è larga una sola taglia di batch (8 righe) e nessuno dei tre banchi ci passa. Ora è misurato,
+   non previsto. ⇒ **le ancore §52/§54 e i numeri §56-§59 valgono sul binario `C4301341` senza
+   ri-ancoraggio**, esattamente come valevano su `D783DBE1`.
+2. Il decode torna **12,304**, dentro la banda dell'ancora (12,300-12,394) e **sopra** il 12,148
+   della corsa `lane1` del §66 — che infatti il §67 aveva già attribuito alla macchina e non alla
+   strumentazione. Nessuna informazione nuova sulla velocità: è la solita dispersione fra load.
+
+**Stato dei binari a fine giornata** (`D:\llama-subtract\build\bin`):
+```
+llama.dll              9E8E8D469A7B047F...   invariata dal 1/9
+ggml-cpu.dll           9F00A975C8A6574E...   invariata dal 2/9
+ggml-base.dll          CB2E8E376B1F222C...   invariata dal 2/9
+ggml-cuda.dll          C430134167B8C8C3...   NUOVA: fix porto-terna (§72)
+mtmd.dll               611F4A2F0BC4B015...   porto deepseek4v (§70)
+llama-server-impl.dll  A711F28E08465B09...   patch bozza-vs-immagine (§70)
+llama-server.exe       3D0F0D659F122A53...   idem
+```
+Backup con sorgenti pre e post: `backup_pre_mtmd\`, `backup_pre_mtmd_spec\`, `backup_pre_terna\`.

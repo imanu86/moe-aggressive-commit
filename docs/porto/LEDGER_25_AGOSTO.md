@@ -4777,3 +4777,219 @@ byte/record; `D:\ds4_work\adk\analyze_route_trace.py` rifiuta le v1, la v2 dovre
 **Bilancio del fascicolo n.1** (aperto il 1/9 alle 20:00, chiuso il 2/9 alle 15:00): **9 sonde,
 8 ipotesi proposte e ritirate dai proponenti stessi**, due sessioni, e il verdetto arrivato da
 una corsa lanciata **per un altro fascicolo**. La regola del §68 ha pagato entro l'ora.
+
+## 70. ⭐ **LE IMMAGINI SONO NEL FORK: `--mmproj` serve DeepSeek-V4-Flash-Vision-Exp dal `llama-server` di `llama-subtract`.** OCR esatto, didascalia 3/3, testo a 12,1 t/s — e il difetto vero era **la bozza contro lo span immagine**, non mtmd
+
+**Mandato** (utente, 3/9 mattina): portare mtmd/`--mmproj` dentro `D:\llama-subtract\build\bin\llama-server.exe`
+per usare il Vision in chat con testo e immagini **alla velocità del fork**. Fino a oggi le immagini
+si servivano solo dalla build upstream `D:\llama-vision-upstream\build-fix` (§29, §37), cioè a 5,5 t/s.
+
+### 70.0 Due sessioni sullo stesso mandato, e una consegna
+La sessione `moe-aggressive-commit-f4` aveva avviato lo stesso lavoro alle 09:48 e alle 10:04 aveva
+il server su. Questa sessione (`focused-hertz-dd1ef4`) ha verificato lo stato **sul disco prima di
+agire** ([[dispaccio-stantio-prima-verifica-lo-stato-su-disco]]), non ha toccato nulla, e ha riportato
+la collisione all'utente. **Decisione utente: subentro.** Consegna pulita: la peer ha chiuso il server
+in modo grazioso, non ha cancellato il backup, e la custodia di `MACCHINA_OCCUPATA_mtmd.txt` è passata
+per iscritto dentro il file stesso. Quiete stabile 3×40 s verificata prima del primo load.
+**Il lavoro della peer è stato tenuto integralmente**: la sua patch mtmd è corretta e non è stata
+riscritta. Questa sezione la certifica e aggiunge il pezzo che mancava.
+
+### 70.1 La previsione del §10.5 era sbagliata, in meglio: mtmd NON tocca `server-context.cpp`
+Il handoff §10 punto 5 temeva che il porto toccasse `server-context.cpp` (262 KB, ~205 punti di
+cache/kv-ring/speculazione). **Falso.** Il porto di `PROJECTOR_TYPE_DEEPSEEK4V` vive tutto in
+`tools\mtmd\*`: 7 file toccati + un `models\deepseek4v.cpp` nuovo (4.272 B) + una riga di CMakeLists.
+⇒ **`llama.dll` e le tre `ggml-*.dll` restano invarianti per costruzione**, e l'identità `lane1`
+certificata in §12-bis è preservata senza doverla ri-certificare.
+
+| file (`tools\mtmd\`) | punti | cosa |
+|---|---|---|
+| `clip-impl.h` | :135-137, :189-190, :365, :420, :521 | tensori sentinella `v.token_embd.img_{start,end,pad}`; enum + nome `deepseek4v`; `lead_pad`. Rinomina i due `TN_TOK_IMG_*` legacy in `TN_MM_IMG_*` (collisione di nome con `TN_TOK_IMG_END`) |
+| `clip-model.h` | :99-103, :526-530 | `dsv4_max_n_token` / `dsv4_max_wh_ratio`; i tre tensori sentinella |
+| `clip.cpp` | :987, :1422, :2347, :2527, :3432, :4112, :4699 | grafo; hparams (**`max_n_token = 384`**, `wh_ratio = 8`, bicubico, pad 127); caricamento tensori; `n_patches`; `layout_idx` (N-layout) |
+| `mtmd-image.h/.cpp` | :132, :1110-1216 | preprocessore `deepseek4v`: `grid_tokens` / `solve_resize_ratio` / `safe_resize`, porto fedele di `inference/image_processor.py` |
+| `mtmd.cpp` | :632, :1189 | scelta del preprocessore; **allineamento dello span a blocchi di 4** (`COMPRESS_PAD_TO`) via `lead_pad` calcolato su `n_past` |
+| `models/models.h` + `deepseek4v.cpp` | nuovo | `clip_graph_deepseek4v::build` |
+
+Coerenza verificata a mano: il conteggio di `n_patches` (`clip.cpp:3432`) combacia esattamente con
+i push di `layout_idx` (`clip.cpp:4112`) — `lead_pad + 1 + rows*row_len + pad_last + 1`.
+Testimone a runtime: `load_hparams: projector: deepseek4v`, `image_max_pixels: 677376` (il tetto
+dei 677k px del §37), `n_merge: 3`, `CLIP using CPU backend`, warmup 672×672 **senza assert**.
+
+### 70.2 ⚠ IL DIFETTO VERO: **la bozza non puo' seguire uno span immagine** — nessuno l'aveva previsto
+Col porto mtmd in piedi, la prima richiesta con immagine **muore**:
+```
+E init: the tokens of sequence 0 ... have inconsistent sequence positions:
+  - last position in the KV for sequence 0 is X = 1
+  - the tokens for sequence 0 in the input batch have a starting position of Y = 149
+  it is required that Y = X + 1
+E process: llama_decode(ctx_dft) failed rc=-1 (n_tokens=16, offset=0)
+E srv  update_slots: decode() failed: failed to process speculative batch
+```
+**Meccanismo.** Il visivo entra nella KV del **bersaglio** come EMBEDDING
+(`mtmd_helper_decode_image_chunk`, `decode_embd_batch`): 147 token visivi portano la posizione a 149.
+Il **drafter** (DSpark) e' un modello **testuale senza torre visiva**. La callback cablata in
+`process_mtmd_chunk` (`server-context.cpp:1056` -> `common_speculative_process`) gli passa quella
+batch, ma la batch ha **le posizioni e NON i token**: non puo' consumarla, e la sua KV resta a 1.
+Poi il testo che segue l'immagine arriva a 149 e il decode del drafter muore.
+⇒ **Non e' un difetto del porto mtmd**: e' un'incompatibilita' strutturale fra span immagine e bozza.
+La macchineria di sincronizzazione **esiste gia' nel fork** (la callback c'e'), ma non puo' funzionare
+con un drafter cieco.
+
+**Prova per isolamento** (braccio senza `-md`, resto identico, 10:23-10:26): il cammino immagine
+**funziona perfettamente**. Falsificazione pulita, una variabile sola.
+
+### 70.3 La cura, e il reperto che e' costato una build: **`can_speculate()` governa solo la GENERAZIONE**
+Primo tentativo (4 punti): flag `spec_off_media` sullo slot, armato in `process_mtmd_chunk`,
+letto da `can_speculate()`. **Costruito, e FALLITO identico.** La riga di raggiungibilita' compariva
+(il ramo era raggiunto), ma il guasto no si muoveva.
+
+> **Il reperto**: `can_speculate()` e i suoi derivati (`get_n_draft_max`, `common_speculative_begin`,
+> il ramo di campionamento) governano **solo la generazione**. L'**elaborazione del prompt** alimenta
+> la bozza da un sito completamente diverso e **incondizionato**: `server-context.cpp:4428`, dentro
+> il ciclo principale, che passa **ogni** `batch_view` a `common_speculative_process`. Un cancello
+> sulla generazione non tocca il prompt. **Regola generalizzabile**: in questo server la speculazione
+> ha DUE alimentazioni indipendenti; chi ne disarma una non ha disarmato l'altra.
+
+Cura definitiva, **5 punti** in `tools\server\server-context.cpp`, marcatore `// porto-mtmd (2/9)`:
+
+| riga | punto |
+|---|---|
+| :389 | nuovo membro di `server_slot`: `bool spec_off_media = false;` |
+| :560 | azzeramento **in cima** a `reset()` |
+| :692 | `can_speculate()` -> `return !!spec && !spec_off_media;` |
+| :1037 | armamento all'ingresso di `process_mtmd_chunk`, **prima** del decode, + riga di raggiungibilita' |
+| **:4406-4428** | **il punto che mancava**: nel ciclo principale, salta `common_speculative_process` per le batch che contengono sequenze gia' disattivate dall'immagine |
+
+**Tre decisioni che vale la pena scrivere.**
+1. **L'azzeramento va IN CIMA a `reset()`.** La pulizia dello stato speculativo dentro `reset()` e'
+   guardata da `if (can_speculate())` (:561): col flag ancora alto, `spec_draft`, `spec_i_batch` e
+   `spec_ckpt` resterebbero **sporchi per la richiesta successiva** — la stessa classe di difetto gia'
+   pagata col `spec_replay` residuo (commento a :565). Trappola evitata leggendo, non misurando.
+2. **Si arma PRIMA del decode.** Se il decode del chunk fallisce a meta', la desincronizzazione c'e'
+   lo stesso: armare dopo il successo lascerebbe il buco proprio nel caso peggiore.
+3. **Il salto a :4428 e' per-sequenza**, non globale: si controlla se la batch contiene token di uno
+   slot disattivato. A `-np 1` (config di servizio) e' esatto. ⚠ Con `-np > 1` e una batch mista, il
+   salto e' conservativo e priva della bozza anche gli altri slot di quella batch: **limite noto,
+   non raggiungibile nella config di servizio**, da riprendere se si passasse a piu' sequenze.
+
+**Contatore di raggiungibilita'** (§8.4): `porto-mtmd: span immagine, bozza disattivata per questa
+richiesta`, una volta per richiesta con immagine. Sul testo puro il ramo **non e' raggiungibile per
+costruzione** (serve `--mmproj` E un'immagine nel corpo) ⇒ la non-regressione e' strutturale.
+Verificata lo stesso con G1 e Vision corto A.
+
+**Costo noto e accettato**: la richiesta che contiene un'immagine perde la bozza. Poiche' in una chat
+l'immagine resta nello storico, **ogni turno successivo la ricontiene** ⇒ la bozza resta spenta per il
+resto della conversazione. **Coda aperta**: ri-sincronizzare la KV del drafter riempiendo lo span con
+token segnaposto — le bozze subito dopo l'immagine sarebbero pessime ma **il bersaglio le verifica**,
+quindi il costo sarebbe di velocita' e non di correttezza. Tocca `common/speculative.cpp` (raggio piu'
+largo: `llama-common.dll` e' condivisa da tutti i banchi), percio' e' stata deliberatamente rimandata.
+
+### 70.4 IDENTITA' DEI BINARI — le quattro DLL `lane1` sono INVARIATE, e non per fortuna
+Il porto vive in `tools\mtmd` e `tools\server`: **nessun file CUDA, nessun file `src/`**. La patch
+non puo' toccare i cammini di calcolo, e infatti non li tocca.
+
+| file | prima | dopo |
+|---|---|---|
+| `llama.dll` | `9E8E8D469A7B047F...` | **INVARIATA** |
+| `ggml-cuda.dll` | `D783DBE13F5FA893...` | **INVARIATA** |
+| `ggml-cpu.dll` | `9F00A975C8A6574E...` | **INVARIATA** |
+| `ggml-base.dll` | `CB2E8E376B1F222C...` | **INVARIATA** |
+| `mtmd.dll` | `4D76CCD7FD8A7F64...` | `611F4A2F0BC4B015...` |
+| `llama-server-impl.dll` | `DD419537A9549212...` | `A711F28E08465B09...` |
+| `llama-server.exe` | `3D3347D1A4E03CA1...` | `3D0F0D659F122A53...` |
+| `llama-common.dll` | `DD6689ECE4AE4053...` | `2F2A8A968C47DB4A...` (solo rilink di `build-info.cpp`) |
+
+Backup **con sorgenti** (regola §49): `build\bin\backup_pre_mtmd\` (mtmd, della peer, con
+`sorgente_pre\` e `sorgente_post\`) e `build\bin\backup_pre_mtmd_spec\` (server, di questa sessione,
+con `sorgente_pre\server-context.cpp` e `SHA256.txt`). Build a mano (vcvars64 + `cmake --build
+--target llama-server --parallel 8` + `editbin /STACK:67108864`), **mai** `build_cuda.bat`.
+
+### 70.5 I CANCELLI
+Tutte le prove: `temperature 0`, `cache_prompt false`, `thinking_budget_tokens 0`, config di
+servizio A completa a `ctx 150000`, torre visiva su CPU (`--no-mmproj-offload`).
+
+| cancello | atteso | **braccio di isolamento (senza `-md`)** | **con drafter (binario finale)** |
+|---|---|---|---|
+| didascalia `test_ds4.png` (§29) | 3/3 | **3/3** · 12,495 t/s | **3/3** · 12,711 t/s |
+| OCR `foto_test_utente.jpg` (§37) | `REIMPOSTA-OKTOCGC` | **esatto** · 10,649 t/s | **esatto** · 10,457 t/s |
+| decode testo | >= 12 t/s | 13,073 | **12,073** |
+
+Didascalia verbatim (identica nei due bracci, e identica in sostanza a quella del §29 prodotta dalla
+build upstream): «*In alto a sinistra c'e' un cerchio rosso pieno. In basso a destra c'e' un quadrato
+blu pieno. Al centro, tra le due forme, si trova il testo "DS4" in nero, scritto in maiuscolo e con
+carattere bold.*» — **posizioni e colori esatti, OCR corretto, zero allucinazioni**.
+OCR: `REIMPOSTA-OKTOCGC` **carattere per carattere**, sulla foto 3024x4032 ridotta ~18x, senza crop.
+Codifica visiva: 3,4 s per `test_ds4.png` (147 token visivi), 9,7 s per la foto (323 token visivi).
+
+### 70.6 NON-REGRESSIONE SUL TESTO PURO — **bit-esatta su entrambi i cammini**
+
+**G1** (0731, banco corto, `run_porto_hot.ps1 -Tag mtmd_g1`, 3 corse in un load, 10:39-10:44):
+
+| | atteso (§64) | **misurato** |
+|---|---|---|
+| SHA output | `AD3D3770C7D13885AE5292442D42CC0338500B82435146AC299A5436BFCBFE11` | **3/3 IDENTICO** |
+| p1 / mean_len | 0,77670 / 2,01 | **0,77670 / 2,01** |
+| content / reasoning | 83 / 518 char | **83 / 518** |
+| eval t/s | 13,43 / 14,07 / 14,08 | 13,44 / 14,17 / 14,23 |
+
+**Vision corto A** (`ratifica_A_ciclo.ps1 -Ciclo 4`, 10:46-10:52). Prompt ESTRATTO e verificato
+(891 char, sha `4FDF82C2`); testimoni `OVERRIDE: LLAMA_ACCEPTMOE=1` e `OVERRIDE:
+LLAMA_ACCEPTMOE_COMPATTA=0` presenti nel log:
+
+| | ancora (§52/§64) | **misurato** |
+|---|---|---|
+| SHA output | `28ADE3395B5888D7DC1DB5D12A06083FFE1B2017029DC18EE87003BB090E1BBD` | **IDENTICO** |
+| p1 / mean_len | 0,72693 / 1,92 | **0,72693 / 1,92** |
+| caratteri | 4.538 | **4.538** |
+| eval t/s | 12,66-12,79 | 12,70 |
+| `domanda / partizioni` (§8.8) | 4,017 | **4,027** |
+| assert / OOM / fail-loud / righe E | 0 | **0** |
+
+⚠ **Onesta' sui contatori**: i valori ASSOLUTI dei contatori cache-esperti **non** combaciano con
+quelli riportati in §64 (domanda 153.940 contro 245.272, partizioni 38.227 contro 61.060, byte
+280,04 GiB contro 433,32). **Non e' una regressione**: i dump escono **a battito d'orologio e per
+contesto** (tre dump distinti nel log: prefill, bozza, decode), non come totale cumulativo — la
+trappola gia' scritta in §9.2. Cio' che si confronta legittimamente e' la **traiettoria** (SHA, p1,
+mean_len, caratteri: tutti identici) e il **rapporto** `domanda/partizioni`, che e' il cancello
+pre-registrato e passa. **L'aggregazione esatta dietro i numeri del §64 non e' documentata**: chi
+vorra' confrontare contatori assoluti fra sezioni deve prima fissarla.
+
+⇒ **Il porto non tocca il testo.** Era atteso per costruzione (il ramo nuovo esige `--mmproj` E
+un'immagine), ed e' confermato a banco su due modelli e due banchi.
+
+### 70.7 COME SI USA (consegna operativa)
+```
+"%USERPROFILE%\Desktop\avvia ds4 vision immagini.bat"
+```
+E' `avvia ds4 vision.bat` **piu' due sole righe**, verificato con `Compare-Object`:
+```
+  --mmproj "%MMPROJ%" ^          MMPROJ = C:\ds4-models\Vision-Exp-GGUF\mmproj-DeepSeek-V4-Flash-Vision-Exp-F16.gguf
+  --no-mmproj-offload ^          la torre visiva sulla CPU: la VRAM e' gia' presa dai 473 slot
+```
+Qualunque cosa cambi nella config di servizio A, il lanciatore immagini la eredita: e' derivato, non
+ricopiato. **L'originale non e' stato modificato** (`95A49FFB62A116F5...`).
+Le immagini si mandano a `/v1/chat/completions` come content part
+`{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}`; funziona anche con testo
+nello stesso messaggio. Endpoint e chiave restano quelli di sempre (`:8100`).
+
+**Il valore, in una riga**: le immagini si servivano dalla build upstream a **5,5 t/s** (§29); ora le
+serve il fork a **12,1-12,7 t/s** — **2,2x**, con la cache esperti e (sul testo) la bozza.
+
+### 70.8 CODA APERTA lasciata da questa sezione
+1. **Ri-sincronizzare la bozza dopo l'immagine** (70.3): riempire lo span con token segnaposto nella
+   KV del drafter. Recupererebbe la bozza per le conversazioni con immagini nello storico, che oggi
+   girano senza. Tocca `common/speculative.cpp` ⇒ `llama-common.dll`, condivisa da tutti i banchi:
+   serve il protocollo pieno (G1 + Vision corto A + lungo).
+2. **Salto della bozza per-batch a `-np > 1`** (70.3 nota 3): oggi il salto e' conservativo su batch
+   miste. Non raggiungibile a `-np 1`; da rifare se si passa a piu' sequenze.
+3. **Il cammino immagine non e' mai stato misurato sul LUNGO** ne' con piu' immagini: qui si e'
+   collaudato a `ctx 150000` ma con prompt corti. Multi-immagine e contesti lunghi restano dichiarati
+   non misurati anche dal README del quantizzatore.
+4. **Anomalia minore da chiarire**: `avvia ds4 vision.bat` ha mtime **3/9 09:33:37**, cioe' toccato
+   stamattina prima che questa sessione iniziasse. Il contenuto e' coerente e combacia con §2.1 del
+   handoff (config A, quattro differenze dichiarate), ma **non esiste un backup** per confrontarlo.
+   Non bloccante; segnalato perche' il mandato chiedeva di non modificarlo.
+5. **§27 punto 2 si chiude a meta'**: il crash-immagine del README (`ubatch->token` non popolato ->
+   `get_rows` su `tid2eid`) **non si e' mai materializzato** nel fork — ne' in warmup 672x672, ne' su
+   due immagini reali. Resta aperto solo il fascicolo gemello dell'`OVERLAP_BATCH_MAX=4` al taglio del
+   reasoning: l'ipotesi «stesso fascicolo» **non e' confermata da questa campagna**.

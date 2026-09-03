@@ -448,7 +448,7 @@ coda) · `MASSA=2` esige `FORK=1|2` · con `COMPATTA=1` la sonda di verifica **s
 3. **Bonifica di `Set-SotaEnvironment`** (~40 env inchiodate) — nona trappola in un giorno.
 4. **Fix del cancello di fusione consapevole di fase** (~2 righe): ripara la misurabilità di
    ogni braccio a `slot=0`.
-5. **Porto mtmd nel fork**: oggi le immagini si servono dalla build upstream `build-fix`. Il
+5. ~~**Porto mtmd nel fork**~~ — **CHIUSA il 3/9, vedi §12-ter e ledger §70**. *(Il testo qui sotto e' superato: il porto NON ha toccato `server-context.cpp` per mtmd; l'unica modifica li' e' la disattivazione della bozza nello span immagine.)* Testo originale: oggi le immagini si servono dalla build upstream `build-fix`. Il
    fork ha lo stack mtmd **presente e non modificato** (`mtmd.dll` già compilata, `--mmproj`
    cablato a `server-context.cpp:1545`), ma il porto tocca `server-context.cpp` (262 KB, che
    contiene sia mtmd sia ~205 punti di cache/kv-ring/speculazione).
@@ -580,3 +580,40 @@ sui contatori di macchina (`RESIDENTI = 0` esatto, `calcolo` della lane −15% a
 `D:\ds4_work\llama_run\vision_corto_runs\`); piattaforma del difetto n.1
 `lanciatori_salvati_20260825\difetto1_piattaforma\` (zen-morse, script `c19_*` verbatim);
 sonde lunghe `vl_sonde_arm.ps1` (bracci `online`/`massa`/`wsolo`). Summary del lungo = **UTF-16LE**.
+
+## 12-ter. AGGIORNAMENTO 3/9 (mattina) — **LE IMMAGINI SONO NEL FORK**: `--mmproj` servito dal `llama-server` di `llama-subtract` (ledger §70)
+
+**Che cosa e' cambiato.** Fino a ieri le immagini si servivano solo dalla build upstream
+`D:\llama-vision-upstream\build-fix` (5,5 t/s). Da oggi le serve **il fork**, alla sua velocita'.
+La voce 5 della coda §10 e' **CHIUSA**.
+
+**Il lanciatore** (nuovo, sul Desktop, accanto a quello di testo che resta intatto):
+```
+"%USERPROFILE%\Desktop\avvia ds4 vision immagini.bat"
+```
+E' `avvia ds4 vision.bat` **piu' due sole righe** (`--mmproj` + `--no-mmproj-offload`), verificato
+con `Compare-Object`: qualunque cosa cambi nella config di servizio A, quella immagini la eredita.
+Le immagini si mandano a `/v1/chat/completions` come content part
+`{"type":"image_url","image_url":{"url":"data:image/jpeg;base64,..."}}`.
+
+**Identita' dei binari (3/9 10:27)** — le quattro DLL certificate `lane1` sono **INVARIATE**:
+| DLL | SHA256 | stato |
+|---|---|---|
+| `llama.dll` | `9E8E8D469A7B047F...` | **invariata** |
+| `ggml-cuda.dll` | `D783DBE13F5FA893...` | **invariata** |
+| `ggml-cpu.dll` | `9F00A975C8A6574E...` | **invariata** |
+| `ggml-base.dll` | `CB2E8E376B1F222C...` | **invariata** |
+| `mtmd.dll` | `4D76CCD7...` -> **`611F4A2F0BC4B015...`** | porto `PROJECTOR_TYPE_DEEPSEEK4V` |
+| `llama-server-impl.dll` | `DD419537...` -> **`A711F28E08465B09...`** | patch bozza-vs-immagine (5 punti) |
+| `llama-server.exe` | `3D3347D1...` -> **`3D0F0D659F122A53...`** | idem (+ `editbin /STACK`) |
+| `llama-common.dll` | `DD6689EC...` -> **`2F2A8A968C47DB4A...`** | solo rilink di `build-info.cpp` |
+Backup con sorgenti: `build\bin\backup_pre_mtmd\` (mtmd, della peer) e
+`build\bin\backup_pre_mtmd_spec\` (server, di questa sessione).
+
+**La trappola nuova, da sapere prima di toccare le immagini**: **il drafter non puo' seguire uno
+span immagine.** Il visivo entra nella KV del bersaglio come embedding; DSpark e' testuale e non
+puo' consumarlo, quindi la sua KV resta indietro e la batch speculativa muore
+(`inconsistent sequence positions`). La patch spegne la bozza **per la richiesta che contiene
+l'immagine** (`spec_off_media`, `server-context.cpp:389/560/692/1037/4428`). Conseguenza operativa:
+**una conversazione con un'immagine nello storico gira senza bozza**. La ri-sincronizzazione con
+token segnaposto e' in coda (ledger §70.3), tocca `common/speculative.cpp`.

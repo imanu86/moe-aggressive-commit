@@ -5185,3 +5185,41 @@ llama-server-impl.dll  A711F28E08465B09...   patch bozza-vs-immagine (§70)
 llama-server.exe       3D0F0D659F122A53...   idem
 ```
 Backup con sorgenti pre e post: `backup_pre_mtmd\`, `backup_pre_mtmd_spec\`, `backup_pre_terna\`.
+
+## 73. SERVIZIO DSH: **la bozza si SPEGNE** (una immagine ne desincronizza la KV per sempre), e senza bozza il banco slot×K — **slot pari, K=1.5 ottimo (+1,2%), split frazionario SANO a batch-1**
+
+**Contesto**: l'utente collega DSH Desktop al server locale (`http://192.168.1.30:8100/v1`) e lo usa in chat multimodale reale (contesti ~25k, tool calling). In servizio è emerso un crash e due leve di velocità sono state misurate nel regime nuovo.
+
+### 73.1 ⚠ IL §70 ERA INCOMPLETO: la bozza si riaccende ROTTA dopo un'immagine
+`decode() failed: failed to process speculative batch`, su turni di **solo testo**, uno o piu' dopo un'immagine. Il log: KV della bozza ferma a `X=24585`, il batch chiede `Y=25341` (buco di 756 token = lo span immagine che la bozza non ha visto).
+**Meccanismo completo**: il §70 spegne la bozza *durante* il turno con l'immagine (giusto), ma `reset()` azzera `spec_off_media` a fine turno; il turno dopo riusa la cache del bersaglio (l'immagine NON viene riprocessata), la KV della bozza resta indietro, e `can_speculate()` — di nuovo vero — riaccende una bozza desincronizzata. Il §70 diceva «la bozza resta spenta per la conversazione»: **falso**, si riaccende rotta. Poiche' l'immagine resta nello storico, **ogni turno successivo crasha**.
+
+### 73.2 DECISIONE: servizio SENZA bozza — ed e' la config giusta per questo carico, non un ripiego
+Misurato oggi (immagini, no-draft vs con-draft): didascalia 12,50 vs 12,71 · OCR 10,65 vs 10,46 · testo **13,07 vs 12,07**. Senza bozza e' **pari o piu' veloce**. La bozza DSpark e' tarata sul banco lungo di solo testo (accettazione alta li'); su chat interattiva multimodale accetta poco e il costo di girare+verificare mangia il guadagno. ⇒ **spenta = niente crash, stessa o migliore velocita'**. Lanciatore `Desktop\avvia ds4 vision immagini SENZA BOZZA.bat`.
+*(I 17 t/s storici erano 0731, contesto CORTO, solo testo: regime diverso, non confrontabile.)*
+
+### 73.3 SLOT 473 vs 673 senza bozza (banco pulito: SHA identico, cache esatta) — **PARI**
+Togliere il drafter libera ~370 MiB VRAM (1479→1833-1909 a 473 slot decode) = ~50 slot. **673 ora ENTRA** (con la bozza andava in OOM; il ledger §56 «673 NO» era coi 2224 MiB del drafter), ma solo **313 MiB di margine**: e' il tetto pratico.
+| | 473 | 673 |
+|---|---|---|
+| decode (prompt 20k) | 9,783 | 10,068 |
+| SHA | `5996606A` | **identico** |
+| hit rate | 60,6% | **60,6% (identica)** |
+La hit **identica** e' il verdetto: a 20k il working set del decode gia' sta in 473 slot; i 200 in piu' non tengono niente di nuovo. Il +2,9% e' rumore (97 token di decode, campione piccolo). **Slot esauriti a questo contesto.**
+
+### 73.4 ⭐ SWEEP `OVERLAP_K` senza bozza — **K=1.5 e' l'ottimo, e lo split FRAZIONARIO a batch-1 e' SANO**
+Il codice (`llama-graph.cpp:1826`) gia' predice un ottimo **frazionario** (Bresenham per strato) e un pareggio dei rami a K=2,33 con i costi dell'era-bozza, ma «K=2 da' 9,98 e K=3 10,02, indistinguibili» e il frazionario non era mai stato misurato — **perche' la guardia di correttezza lo teneva fuori dalla catena speculativa** (taglie alternate 1/2 → degenerazione). **Senza bozza la taglia e' sempre 1 = il regime sano**, quindi il frazionario e' ora misurabile.
+
+Banco 20k, no-draft, decode forzato a 400 token (istruzione «riassunto ≥350 parole»):
+| K | 1.0 | **1.5** | 2.0 | 2.33 | 2.67 | 3.0 |
+|---|---|---|---|---|---|---|
+| decode t/s | 10,959 | **10,988** | 10,855 | 10,433 | 10,304 | 9,859 |
+
+**L'ottimo si e' spostato in BASSO, a ~1,5** (non 2,33 come nell'era-bozza): senza il drafter la GPU non valida piu' e ha cicli liberi, quindi conviene lasciarle piu' esperti (K piu' basso). **+1,2% su K=2**; 1,0 e 1,5 in pratica pari (picco largo e piatto). La predizione «2,33 ottimo» del commento e' **superata dal cambio di regime**, esattamente l'ipotesi dell'utente.
+**Coerenza**: tutti gli SHA diversi (ogni K = split diverso = albero di riduzione diverso), ma il testo a K=1.5 e K=1.0 e' un **riassunto italiano pulito** (parole uniche 0,63, zero ripetizioni). ⇒ lo split frazionario a batch-1 e' **corretto**, gli SHA diversi sono arrotondamento benigno. La guardia serviva solo alla speculazione.
+**Promosso**: `OVERLAP_K=1.5` nel lanciatore di servizio DSH.
+
+### 73.5 LETTURA ONESTA
+Entrambe le leve intuite (slot, K) sono **reali in direzione, piccole in ampiezza**: slot ~0%, K +1,2%. Il pavimento ~10-11 t/s a 20k e' **hardware**: 80 GB di modello, 12 GB di GPU, esperti sul PCIe, attenzione KV sul contesto lungo — ne' slot ne' K lo spostano. La leva grossa resta la **VRAM** (il tetto «senza trasporto» del ledger e' 24,2 t/s, serve una scheda da 24 GB). Sul silicio attuale, 10-13 e' la finestra.
+
+**Coda**: (1) il fix vero della bozza (risincronizzare la KV del drafter dopo un'immagine, `common/speculative.cpp`) resta possibile ma vale ~0 su questo carico — rimandato; (2) nessun banco del progetto usa prompt corti (§71); (3) K=1.5 diverge per SHA da tutte le ancore (frazionario) — va bene per il SERVIZIO, non per i banchi bit-esatti.

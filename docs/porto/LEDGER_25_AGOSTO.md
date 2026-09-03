@@ -4993,3 +4993,78 @@ serve il fork a **12,1-12,7 t/s** — **2,2x**, con la cache esperti e (sul test
    `get_rows` su `tid2eid`) **non si e' mai materializzato** nel fork — ne' in warmup 672x672, ne' su
    due immagini reali. Resta aperto solo il fascicolo gemello dell'`OVERLAP_BATCH_MAX=4` al taglio del
    reasoning: l'ipotesi «stesso fascicolo» **non e' confermata da questa campagna**.
+
+## 71. ⚠⚠ **UN PROMPT DI 13 TOKEN UCCIDE IL SERVER — difetto PREESISTENTE del fork, provato con lo scambio dei binari.** E la matrice di compatibilita' con l'harness DeepSeek (DSH)
+
+**Mandato** (utente, 3/9 dopo il §70): «guarda come viene usato dall'harness di DeepSeek, che poi sara' dove usero' il mio server locale — verifica la documentazione». Il client bersaglio e' **DSH Desktop**, che ingloba l'harness ufficiale e si punta a un endpoint OpenAI-compatibile via `DEEPSEEK_BASE_URL`.
+
+### 71.1 Il buco documentale che il mandato ha scoperto
+`docs/porto/RIFERIMENTO_API_DEEPSEEK_V4.md` elenca **«Vision»** fra le pagine *«lette solo d'indice»*: nessuno aveva mai confrontato le forme documentate con quelle che il fork accetta. Il §70 ha collaudato **una sola** forma (base64 inline), scelta da me. Letta ora la pagina ufficiale, DeepSeek ne documenta **tre**, piu' vincoli che non conoscevamo:
+
+| documentato | valore |
+|---|---|
+| metodi di ingresso | base64 inline · URL esterno · Files API (`{"type":"file","file_id":…}`) |
+| formati | JPEG, PNG, GIF, WebP |
+| campo `detail` | `low` / `high` / `original` / `auto` |
+| immagini per richiesta | fino a **600** |
+| lato massimo | 8.192 px (4.096 con 15+ immagini) |
+| corpo richiesta | 48 MiB; singola immagine 32 MiB (64 via Files API) |
+| **regola** | **immagini SOLO nei messaggi `user`**: in `system`/`assistant` -> 400 |
+
+### 71.2 Matrice di compatibilita' misurata (11 casi, un solo load, 11:56-12:07)
+| # | forma | esito | nota |
+|---|---|---|---|
+| 1 | `data:image/...;base64,` (metodo 1) | **OK** 12,61 t/s | la forma di un file locale |
+| 2 | base64 grezzo, senza prefisso | **OK** 12,00 t/s | estensione llama.cpp, non nei doc |
+| 3 | URL `http://` remoto (metodo 2) | **OK** 12,77 t/s | il server SCARICA (tetto 10 MB, timeout 10 s, `server-common.cpp:846`) |
+| 4 | URL `https://` | **HTTP 500** | `HTTPS is not supported` |
+| 5 | campo `detail: "high"` | **OK** | letto e ignorato, nessun 400 |
+| 6 | immagine PRIMA del testo | **OK** 12,76 t/s | descrizione completa |
+| 7 | **due immagini in una richiesta** | **OK** 12,16 t/s | «Si', le due immagini sono identiche» |
+| 8 | immagine in messaggio `system` | 200, `content` vuoto | vedi la correzione in 71.5 |
+| 9 | `{"type":"file","file_id":…}` (metodo 3) | **400** `unsupported content[].type` | atteso: e' funzione di CLOUD |
+| 10 | `model: "deepseek-v4-flash-vision-exp"` | **OK** 12,75 t/s | il nome ufficiale non viene rifiutato |
+
+**Reperto nuovo**: **il multi-immagine FUNZIONA** (caso 7). Il README del quantizzatore lo dichiara «untested»; ora e' provato, con risposta corretta. **Il `--media-path` non e' impostato**, quindi `file://` e' chiuso (`server-common.cpp:860`) — irrilevante per DSH, che non lo usa.
+
+**Il buco vero: `https://` non c'e'.** `CMakeCache`: `LLAMA_OPENSSL=ON` ma **`OPENSSL_INCLUDE_DIR-NOTFOUND`**. Il server lo dice da solo e indica la cura: ricompilare con `-DLLAMA_BUILD_BORINGSSL=ON` / `-DLLAMA_BUILD_LIBRESSL=ON`, o installare i dev file di OpenSSL. Conta se il client passa un **link** invece del contenuto: e' il metodo 2 dei doc.
+
+**`reasoning_content` e' gia' a posto**: `common.h:639` porta `reasoning_format = COMMON_REASONING_FORMAT_DEEPSEEK` per difetto («pensieri in `message.reasoning_content`»), e il fork lo emette anche in streaming (`server-chat.cpp:464` e `:553`). Il nostro `.bat` non lo sovrascrive. E' il campo che l'harness legge (§2 del riferimento API).
+
+### 71.3 ⚠⚠ IL DIFETTO: **un prompt di 13 token uccide il server**, e NON e' del porto immagini
+Undicesimo caso della matrice — **solo testo, 13 token** — il server **aborta**:
+```
+D:\llama-subtract\ggml\src\ggml-cuda\cache-esperti.cu:6604:
+cache-esperti fork: terna dello strato 0 aperta senza join (arriva lo strato 1):
+grafo fuori dal contratto gate/up/down
+```
+**Sonda a lunghezza crescente**, sul lanciatore di **solo testo** (nessun `--mmproj` nel log, 0 occorrenze):
+
+| prompt | `prompt_n` | esito |
+|---|---|---|
+| «Scrivi un paragrafo di circa 200 parole…» | 26 | OK 12,37 t/s |
+| «Elenca e spiega cinque strutture dati…» | 68 | OK 13,47 t/s |
+| «Spiega in poche righe LRU vs LFU…» | 32 | OK 13,17 t/s |
+| **«Di' ciao in una riga.»** | **13** | **SERVER MORTO** |
+
+**Prova che e' PREESISTENTE** (scambio dei binari, 12:33-12:36): rimessi in `build\bin` i binari **pre-patch** dal backup (`llama-server-impl.dll DD419537…`, `llama-server.exe 3D3347D1…`, `llama-common.dll DD6689EC…`), la sonda da' **lo stesso identico esito**: 26/68/32 OK, 13 token **morto**, stesso assert, stessa riga, `task 162`. Ripristino verificato per SHA (`A711F28E…` / `3D0F0D65…` / `2F2A8A96…`).
+⇒ **Il difetto non e' del §70.** Colpisce **la configurazione di servizio del testo gia' in uso**, e nessun banco lo aveva mai visto perche' **G1 usa 68 token e Vision corto A 891 caratteri**: i banchi non hanno mai provato un prompt corto.
+
+**Il meccanismo, dal codice.** `ggml-cuda.cu:2588` dichiara l'invariante che l'assert difende:
+> «`dst->ne[2]` e' il numero di token del forward ed e' lo stesso per **TUTTI** i `MUL_MAT_ID` del grafo: o il fork prende l'intero forward o non ne prende nessuno strato, quindi la terna gate/up/down **non puo' restare aperta a meta'** (la guardia di `fork_fase` non scatta).»
+
+L'assert dimostra che **quell'invariante e' falso in questo regime**: `fj_fase == 1` significa che lo strato 0 ha fatto *gate* e *up* ma **non** *down* prima che arrivasse lo strato 1. `fj_fase`/`fj_strato` (`cache-esperti.cu:341-342`) sono stato del runtime, e la terna si spezza **dentro un solo grafo**. Il confine misurato sta fra 12 e 31 righe da elaborare.
+
+**Ipotesi FALSIFICATA, per non lasciarla in giro**: «e' il flip di fase di `vram_a_fasi` sulla coda di prefill corta» (c'e' pure un task chip aperto con quel titolo). Braccio con `LLAMA_VRAM_A_FASI=0`: **NON dice nulla**, perche' muore prima di `CUDA error: out of memory` in `cudaGraphInstantiate` (`ggml-cuda.cu:5784`) — e' proprio `VRAM_A_FASI=2` a liberare la cache di decode, quindi `=0` non e' una configurazione praticabile su questa macchina. Zero assert `terna` in quel log: **braccio invalido, non controprova**.
+
+### 71.4 ERRORE DI METODO MIO, a registro
+Dopo la corsa **senza `--mmproj`** ho scritto all'utente «il crash e' del fork, non del porto». **Non l'avevo dimostrato**: quella corsa girava comunque sui **miei** binari ricostruiti. Togliere `--mmproj` cambia la configurazione, non l'identita' del binario — e in questo progetto **l'identita' e' la DLL**. La conclusione era giusta, ma per fortuna: solo lo scambio dei binari del 71.3 la dimostra. Regola: *per attribuire o scagionare una patch si scambia il BINARIO, non si toglie un flag.*
+
+### 71.5 CORREZIONE al caso 8 (immagine in `system`)
+Avevo letto la risposta vuota come «divergenza permissiva» rispetto al 400 documentato. **Ritirato**: le mie sonde leggevano solo `choices[0].message.content`, e con `--reasoning on` il modello mette tutto in **`reasoning_content`**. Nella sonda di testo anche P1/P2/P3 tornano con `content` vuoto **pur essendo andate a buon fine a 12-13 t/s**. Non ho nessuna prova di un difetto sul caso 8: la sonda era cieca. Chi lo riprendera' deve leggere **entrambi** i campi.
+
+### 71.6 CODA
+1. **Il prompt corto che uccide il server e' la cosa piu' urgente sul tavolo** — precede in priorita' ogni leva di velocita': una chat reale con DSH manda continuamente messaggi brevi («ok», «vai avanti», «riprova»). Serve un repro minimale a livello di `llama-cli` e poi il fix nel fork. Materiale pronto: `scratchpad\sonda_corta.py`, log in `D:\ds4_work\llama_run\mtmd_sonda*.log.err`.
+2. **`https://` per le immagini**: ricompilare con BoringSSL/LibreSSL se si vuole il metodo 2 dei doc. Aggiramento immediato: il client allega il contenuto in base64 (metodo 1), che funziona.
+3. **Multi-immagine oltre due** e immagini grandi (fino a 8.192 px / 32 MiB per i doc) non sono state provate; il tetto locale del download remoto e' **10 MB**, contro i 32 MiB dei doc.
+4. **Nessun banco del progetto usa prompt corti**: aggiungerne uno ai cancelli, o difetti come questo continueranno a passare.

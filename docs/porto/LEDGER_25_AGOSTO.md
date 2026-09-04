@@ -5271,3 +5271,19 @@ Zero crash, zero `GGML_ABORT`, zero `not extracted`: **l'estrazione dei layer du
 - ⚠ Limite noto: il feed usa gli stati del BERSAGLIO freschi dopo il decode immagine; per immagini **multi-sub-batch** (>~2048 token visivi) solo l'ultimo sub-batch e' fresco — da rivedere se si usano immagini enormi. Le immagini di test (148/323 token) sono single-batch.
 - Il lanciatore DSH torna a **CON bozza** (`avvia ds4 vision immagini.bat`); il «SENZA BOZZA» resta come ripiego.
 - Non-regressione testo (G1 `AD3D3770`, Vision corto A `28ADE339`) attesa bit-identica (ramo immagine non toccato); da confermare.
+
+## 75. FIX del toggle reasoning per DSH — il server ora onora `thinking:{type:disabled}` (l'Off), che prima ignorava
+
+**Problema (utente via DSH)**: l'Off del reasoning in DSH (`thinkingFormat: deepseek` -> body `thinking:{type:"disabled"}`) non spegneva il ragionamento: il modello pensava sempre.
+
+**Radice, dal codice**: il campo `thinking` era gestito SOLO come `{type:"enabled"}` nel convertitore Anthropic->OpenAI (`server-chat.cpp:531`); il ramo `"disabled"` non faceva nulla, e il path OpenAI (`/v1/chat/completions`) non leggeva `thinking` affatto. ⇒ `disabled` ignorato su entrambi gli endpoint, resta il default `--reasoning on`.
+
+**Cura** (`// porto-thinking (4/9)`, solo `server-common.cpp` + `server-chat.cpp` -> `llama-server-impl.dll`; `llama-common`/`ggml-cuda` INVARIATE):
+1. `server-common.cpp` (in `oaicompat_chat_params_parse`, punto comune a entrambi gli endpoint): legge `body.thinking.type` e lo mappa. **Due trappole pagate a banco**:
+   - la guardia va sui **kwargs della RICHIESTA** (`chat_template_kwargs_object`), non su quelli fusi: `--reasoning on` pre-riempie `enable_thinking="true"`, che rendeva la guardia `enable_thinking_kwarg.empty()` sempre falsa;
+   - il template legge **`chat_template_kwargs["enable_thinking"]`**, NON `inputs.enable_thinking`: bisogna sovrascrivere il KWARG (a `"false"`/`"true"`), non solo il flag.
+2. `server-chat.cpp`: aggiunto `"thinking"` al passthrough del convertitore Anthropic, cosi' il campo raggiunge il punto comune anche via `/v1/messages`.
+
+**Verificato a banco (4 casi)**: `thinking:disabled` -> reasoning 0 char (NO-THINK); `thinking:enabled` -> ragiona; `chat_template_kwargs:{enable_thinking:false}` -> NO-THINK; default -> ragiona. Risposta corretta (51) in tutti.
+
+Precedenza: un `chat_template_kwargs.enable_thinking` esplicito nella richiesta vince sul campo `thinking`. Binario: `llama-server-impl ABEDEF66 -> 83F8D4BC` (porta anche il fix bozza §74). Backup `build\bin\backup_pre_thinkingfix\`.

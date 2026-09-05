@@ -5434,6 +5434,8 @@ Lanciatore `Desktop\avvia ds4 vision immagini.bat` (backup accanto `…bat.bak_2
 Il servizio gira sul binario `lane2` del build tree (`ggml-cuda E28CC5FA` ecc.), certificato bit-identico a leva spenta (G1 3/3, Vision A).
 Ripristino: copiare il `.bak_20260906_pre_lid` sul `.bat`; binari precedenti in `build\bin\backup_pre_lane2\` (SHA256.txt, sorgenti pre-patch).
 
+**Cronaca della promozione (6/9)**: primo tentativo 00:28 fallito (lo script leggeva il `.bat` con i fine riga normalizzati e non trovava l'ancora CRLF) ⇒ il servizio era ripartito con la config VECCHIA sul binario lane2; fermato 00:30, promozione applicata 00:32 (diff: +4 righe dopo `LLAMA_OVERLAP_K`, +4 dopo `LLAMA_KV_RING_VRAM_TOKEN`), **servizio riavviato 00:32, `/health` OK 00:33:26** (pid 4984, VRAM 10,2 GiB). Il backup `.bak_20260906_pre_lid` è la copia PRE-modifica delle 00:28. `MACCHINA_OCCUPATA_servizio.txt` aggiornato.
+
 ### 76.9 CODA (in ordine di valore)
 1. **Prefill: FA indicizzata per query** (forma 4-D di ggml + gather con n_tok grande): −175 s su 624 a 89k (+39%), poi il supergrafo
    per strato (streaming ×1 invece di ×44). `ub 4096` è chiuso (neutro).

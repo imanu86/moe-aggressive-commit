@@ -617,3 +617,7 @@ puo' consumarlo, quindi la sua KV resta indietro e la batch speculativa muore
 l'immagine** (`spec_off_media`, `server-context.cpp:389/560/692/1037/4428`). Conseguenza operativa:
 **una conversazione con un'immagine nello storico gira senza bozza**. La ri-sincronizzazione con
 token segnaposto e' in coda (ledger §70.3), tocca `common/speculative.cpp`.
+
+## 12-quater. AGGIORNAMENTO 5-6/9 — campagna «tutto quello che serve»: lane adattiva stadio 2 DENTRO e PROMOSSA (+7,1% sul servizio a 89k), LID in VRAM promossa (+2,3%, bit-identica), prefill = 37% attenzione densa (ledger §76)
+
+Binario `lane2` (`ggml-cuda E28CC5FA`, `llama FB1F6FA6`, `ggml-cpu 6D9D7D5C`, `ggml-base 8E24347A`, `llama-common B8CFF1D4`, `llama-server-impl 3F01F17F`), certificato bit-identico a leva spenta (G1 `AD3D3770` 3/3, Vision A `28ADE339`); backup con sorgenti pre-patch in `buildinackup_pre_lane2\`. Lanciatore di servizio `Desktopvvia ds4 vision immagini.bat` aggiornato (backup `.bak_20260906_pre_lid`): `LLAMA_KV_RING_VRAM_LID=150000`, `LLAMA_KV_RING_VRAM_CSA=0`, `LLAMA_OVERLAP_K_MIN_NONRES=2`. Il numero vissuto a 89k: 9,59 → 10,27 (lane2) e 9,81 (lid, bit-identica); attesa composta ~10,5. Il prefill sul Vision è lineare nella posizione (4,39 + 0,0579·pos/1000 ms/token): la carta è la FA indicizzata (−175 s su 624), non lo streaming (ub 4096 neutro). Coda e dettagli: ledger §76.

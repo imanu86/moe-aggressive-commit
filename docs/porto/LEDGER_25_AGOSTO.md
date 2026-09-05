@@ -5287,3 +5287,180 @@ Zero crash, zero `GGML_ABORT`, zero `not extracted`: **l'estrazione dei layer du
 **Verificato a banco (4 casi)**: `thinking:disabled` -> reasoning 0 char (NO-THINK); `thinking:enabled` -> ragiona; `chat_template_kwargs:{enable_thinking:false}` -> NO-THINK; default -> ragiona. Risposta corretta (51) in tutti.
 
 Precedenza: un `chat_template_kwargs.enable_thinking` esplicito nella richiesta vince sul campo `thinking`. Binario: `llama-server-impl ABEDEF66 -> 83F8D4BC` (porta anche il fix bozza §74). Backup `build\bin\backup_pre_thinkingfix\`.
+
+---
+
+## 76. 5/9 — «CARTE DA GIOCARE»: il numero VISSUTO scomposto (9,7 a 89k = 126 base + 17 drafter + 50/riga), i due profili nsys letti dal disco (prefill: 46% attenzione DENSA a 102k; decode: le copie nel grafo NON si sovrappongono), e la campagna A/B env-only sul prompt reale (bozza ibrida n-gram, LID in VRAM, ub 4096)
+
+**Contesto**: domanda dell'utente («kernel, grafi, driver da riscrivere per spingere molto di più?»), poi obiezione
+(«dicevi 4,5 impossibile, poi 10, siamo a 17»). Regola riaffermata: ogni tetto del ledger è **a meccanismo
+invariato**; i salti sono venuti da cambi di meccanismo. Il «16-17» era un tetto di carta sul banco testo (12,3),
+non il numero del servizio. Tutto ciò che segue è **misurato o letto dal sorgente**; le stime sono marcate.
+
+### 76.1 Il numero del servizio, scomposto con le corse del 3/9 (89k, config `avvia ds4 vision immagini.bat`)
+```
+spec OFF (bsk_s650_k0/k1_5, warmup_srv) : 126 ms/token = 7,9 t/s      = la MACCHINA
+spec ON  (cert_lungo, 400 token)         : 217 ms/round x 2,13 token/round = 9,7 t/s
+round = 126 base + 16,7 drafter (gen 16,69 ms/chiamata) + ~50 ms x 1,44 righe proposte
+DSpark #acc rate/pos = (0,750 / 0,282 / 0,090): su questo testo è una bozza da UN token;
+il cancello conf 0,80 propone 1,44/round ed è GIUSTO (lo 0,70 del banco lascerebbe entrare le posizioni 2-3)
+t/s = token/round / (base + drafter + 50 x righe)   ->  due moltiplicatori: la base (macchina) e i token/round (bozza)
+```
+Il costo per riga è in gran parte la LANE, che scala con le righe (2 esperti per RIGA per strato; sulle righe
+mascherate da AcceptMoE calcola residenti = i 15,1% dello stadio 1): lo stadio 2 della lane adattiva attacca
+proprio il costo per riga. K frazionario (§73.4) = **strati alterni**, non per riga (`llama-context.cpp:1857`);
+misurato a spec OFF: 21k K=0/1/1,5/2,33/3 = 11,04/10,96/10,99/10,43/9,86, 89k K=0/1,5 = 7,68/7,96 ⇒ macchina
+insensibile a K (±3%) = il metro a traiettoria fissa che §56 chiedeva.
+
+### 76.2 PROFILO DEL PREFILL — letto dalle tracce nsys del 24/8 (`D:\ds4_work\l3_nsys\e35_nsys{33k,102k}_20260824_b2048.sqlite`, 0731, ub 2048), nessuna corsa nuova
+Finestra = dai 20 s dopo il primo kernel all'inizio della finestra decode (`*.e35window.txt`).
+
+| kernel | 33k (204 s, GPU occupata 93%) | 102k (755 s, GPU occupata 97,5%) |
+|---|---:|---:|
+| `flash_attn_ext_f16` (attenzione DENSA su tutte le righe CSA, mask −inf sul 98%) | 23,4% (44 s) | **35,7% (263 s)** |
+| `mul_mat_q` (GEMM esperti + densi, int8 tensor core) | 30,5% (58 s) | 21,4% (158 s) |
+| `kern_layer_major_copia` (streaming esperti 74 GiB PER UBATCH, 24,8 GiB/s = al tetto PCIe) | 28,3% (54 s) | 20,3% (149 s) |
+| `lightning_indexer_kernel_wmma` | 4,4% (8 s) | 10,6% (78 s) |
+| resto (bcast, norm, quantize, concat, hc_post, sort…) | ~13% | ~12% |
+
+**Letture**: (a) il prefill è GPU-bound (nessuna bolla host); (b) a 102k **l'attenzione è il 46%** (FA+indexer) e
+cresce col contesto: la FA gira a 13,7 TFLOP/s ma su ~3.600 TFLOP DENSI per prompt (2048 query × ~12,8k righe medie ×
+64 teste × 512 × 4 × 21 strati × 50 ubatch) mentre il modello ne usa 512+128 per query: **con una FA INDICIZZATA per
+query (gather delle 640 righe scelte, tensor core) il costo scende ~20× (263 → ~13-20 s)**; il gather del decode (G1) è
+spento in prefill per costruzione (`deepseek4.cpp:842-848`: `n_sel_tok*n_tok_str < n_csa`); (c) lo streaming esperti
+paga 74 GiB × 50 passate: **ub 4096 dimezza le passate** (−75 s a 102k; buffer di calcolo ~3,4 GiB su 5,3 liberi in
+fase prefill); l'esecutore layer-major (`LLAMA_DSV4_PREFILL_LAYER_EXECUTOR=1`, HANDOFF_14 §12.2) le porterebbe a UNA
+ma è «meccanicamente lento» (−27%: sched_reset/alloc e input per mini-grafo; tetto ~198 t/s senza supergrafo per strato);
+(d) `mul_mat_q` è già a ~17 TOPS effettivi: non è il collo. **Carta di carta a 102k**: 755 − 248 (FA) − 75 (ub)
+≈ 430 s ⇒ ~235 t/s; con lo streaming nascosto dietro il GEMM (copia su stream/DMA a doppio buffer) ~285 t/s.
+**Conferma sul VISION, dal log del braccio `base` (89k, 43 chunk da 2048)**: il costo per token del prefill è
+LINEARE nella posizione, `ms/token = 4,39 + 0,0579 × pos/1000` (4,69 ms al chunk 1 → 9,37 ms al chunk 43): la quota
+proporzionale al contesto è **2,58 ms/token medi = 37% del prefill (231 s su 624)**; di questa, per il rapporto
+FA/indexer della traccia 102k (263/78), ~175 s sono la FA densa e ~55 l'indexer (che resta O(pos) per costruzione).
+⇒ FA indicizzata −175 s e ub 4096 −66 s (22 passate da 3,0 s in meno): 624 → ~385 s = **~230 t/s sul Vision a 89k** (+62%).
+**Come si farebbe la FA indicizzata senza un kernel nuovo** (letto in `deepseek4.cpp:858-905`): il gather del decode
+concatena le 512 righe di OGNI token in un compatto unico con maschera a blocchi diagonali ⇒ ogni query vede
+n_tok × 512 righe: a n_tok=2048 il compatto avrebbe 1M righe, peggio del denso. La forma giusta per il prefill è la
+4-D di ggml (ne[3] = una «sequenza» per query: q [512, 64, 1, n_q], k [512, 640, 1, n_q]) con il gather che scrive
+2048 × 640 righe (1,3 GiB f16 per strato-ubatch, transitorio); al ritmo della FA di decode (~4,6 TFLOP/s a
+1-3 query) 172 GFLOP per strato-ubatch ⇒ ~37 ms × 21 × 50 ≈ 40 s + gather ~8 s: **−215 s su 755 a 102k**, tutto
+a livello di grafo + gather con n_tok grande. ⚠ Compete per VRAM con ub 4096 (buffer 3,4 GiB + gather 2,6): una
+delle due, o gather per tile di query.
+
+### 76.3 PROFILO DEL DECODE — stessa traccia 102k (finestra 24,2 s, con bozza)
+GPU occupata 59,7% (unione intervalli). Kernel: `kern_fj_copia` 29,1% (4,50 s) · `mul_mat_vec_q` 19,0% · `mul_mat_vec_q_moe_maschera`
+13,9% · `materialize_all_kernel` 4,9% · `flash_attn_ext_f16` 4,7% · `mul_mat_f` 3,3% · `DeviceSegmentedRadixSort` 3,0% ·
+`lightning_indexer` 3,0% · `kern_copia` 2,8% (6.050 lanci da 1 µs = vuoto, come e39) · `mul_mat_vec_q_moe` 2,5% · `kern_decidi` 1,8%.
+**Il fork visto dal profilatore**: `kern_fj_copia` (griglia 8) sta per **3,77 s sullo stream 15 = dentro il GRAFO CUDA
+(graphNodeId non nullo, 4.150 lanci)** e per 0,73 s sullo stream 154 = lanci EAGER fuori grafo (950); anche quei 950
+si sovrappongono a kernel di altri stream solo per il **12%** del loro tempo. Le copie in-grafo valgono il **15,6% della
+parete decode** in serie col calcolo. Non è un difetto del fork: è la finestra (il lavoro residente dello stesso strato è
+più corto della copia). Corollario per la pipeline di prefetch: il meccanismo attuale non può nascondere nulla senza
+anticipo di UNO strato (predittore) e senza portare la copia FUORI dal cammino della terna.
+
+### 76.4 AUDIT VRAM DEL VISION (dal log di caricamento `ab_ngram_20260905/base.server.err` + gguf-py sui 4 shard)
+CUDA0 model buffer **5.484 MiB** = attention **Q6_K 3.953 MiB** + output Q8_0 ~537 (token_embd Q8_0 537 sta su CPU) +
+shared expert **Q6_K 847** + router BF16 86 + indexer Q6_K 39 + densi 13; drafter CUDA0 159 (esperti drafter su RAM liscia
+6.682 MiB); KV CUDA0 97+10,5+5+2,6; compute 1.691 (prefill) → ~108 (decode, `vram-a-fasi`); slab **3.454** (473 × 7,30);
+contesto driver ~556. Esperti mappati: IQ2_XXS 45.408 + IQ3_XXS 15.680 + IQ2_XS 13.616 = 74.704 MiB.
+**Leva di byte mai considerata** (NON è IQ1 sul MoE): attention Q6_K → Q4_K_M ≈ −1,2 GiB, shared Q6_K → Q4_K ≈ −0,26,
+output Q8_0 → Q6_K ≈ −0,12 ⇒ **~+225 slot (473 → ~700)**. Richiede i pesi sorgente (requant da GGUF = doppia
+quantizzazione) e un cancello di qualità; il valore in tempo è incerto (§56: gli slot muovono i byte, la traiettoria
+domina) — da misurare col metro a spec OFF.
+
+### 76.5 STRADE MAI MISURATE, verificate sul sorgente
+1. **Bozza ibrida n-gram + DSpark, zero build**: `speculative.cpp:2481-2513` ordina gli impl (ngram-* prima, draft-dspark
+   ultimo); `common_speculative_draft` (:2701-2747) prende la PRIMA bozza non vuota per round e `impl_last` tiene le
+   statistiche per impl; DSpark `accept()` è vuoto e `process()` viene alimentato comunque (§70) ⇒ resta in passo.
+   ⚠ **Trappola**: il server dimensiona output/batch su `common_speculative_n_max` = MAX fra i tipi
+   (`server-context.cpp:265`) e `get_n_draft_max` (:704) NON tronca a nmax; `ngram-mod` ha difetti `n_match 24 / n_max 64 /
+   n_min 48` (`common.h:356`) ⇒ **obbligatorio `--spec-ngram-mod-n-max 3 --spec-ngram-mod-n-min 1`**, altrimenti verifica a
+   >4 righe (crash `BATCH_MAX=4`, cammini mai esercitati). `ngram-mod::process()` è un TODO: tabella riempita in `begin()`
+   dal prompt e in `draft_one` dai token generati (a blocchi di 32).
+2. **MTP nativo — CHIUSA**: il GGUF Vision NON ha strati nextn (4 shard, `block_count 43`); il `config.json` HF dichiara
+   `num_nextn_predict_layers: 3` ma il model card raccomanda DSpark (SGLang `--speculative-algorithm DSPARK`) e non
+   menziona pesi MTP, come sul 0731 (PR #25784: «Deepseek did not ship MTP»; DIFF_DRAFTER_UFFICIALE §1.1). E anche con
+   una testa perfetta al 90% per posizione, a 89k il conto della riga (~50 ms) dà +4%: `2,45/(146+100)` = 10,0 t/s.
+   **Il vincolo sul numero vissuto è il costo per riga, non la qualità della bozza.**
+3. **LID in VRAM per deposito** (`LLAMA_KV_RING_VRAM_LID`/`_CSA`, `llama-kv-cache-dsv4.cpp:1303-1312`): il 24/8 due OOM sul
+   0731 a VRAM 0 (LEDGER_23 t22_repoint); il Vision ha 1.479 MiB liberi in decode ⇒ rimisurabile.
+4. **`-ub 4096`** in prefill (mai provato sul lungo).
+5. Prefill: FA indicizzata (kernel), supergrafo per strato (grafi) — §76.2. Decode: lane adattiva 2 (patch pronta),
+   tassa del contesto (LID/indexer/top-k), pipeline prefetch device-side. Linux nativo: mai misurato.
+
+### 76.6 CAMPAGNA A/B SUL PROMPT REALE (5/9 sera) — `D:\ds4_work\llama_run\ab_ngram_20260905\`
+Servizio DSH fermato alle 21:41 (chiusura graziosa; idle dal 4/9 08:18). Lanciatori `ab_*.bat` **derivati** dal
+`.bat` del servizio (diff in `ORIGINE.txt`: niente `pause`, log su file, `AB_EXTRA`); client `ab_client.py` (prompt
+276.901 caratteri = cache-esperti.cu[:160k] + deepseek4.cpp + llama-graph.cpp[:40k] + istruzione riassunto, costruito UNA
+volta; corpo come DSH: `thinking:{type:disabled}`, temperature 0, cache_prompt false, max_tokens 400); un processo
+PowerShell per braccio (`ab_run.ps1`), quiete 90-120 s, chiusura con `spegni_ds4_graceful.ps1`; analisi `ab_analisi.py`.
+Bracci: `base` (servizio: dspark, nmax 3, conf 0,80) · `ngram16` (`ngram-mod,draft-dspark`, n-max 3, n-min 1, n-match 16) ·
+`ngram8` (idem, n-match 8) · `lid` (VRAM_LID=150000, VRAM_CSA=0) · `ub4096` (-b/-ub 4096, PREFILL_MOE_UB 4096).
+Cancelli pre-registrati: stesso prompt_n; decode t/s; `#acc rate/pos` per impl; C_round dalle finestre 3 s; testo letto
+(§4.10); per `lid`/`ub4096`: nessun OOM, `VRAM libera` decode > 300 MiB; per `ub4096` la misura è il PREFILL (decode atteso invariato).
+Attese: ngram +0…+10% su questo testo (copia identificatori); ~0 su OCR (testo immagine = embedding); lid −2 ms/token;
+ub4096 prefill +10%.
+
+### 76.7 FASE BUILD — lane adattiva stadio 2 (`D:\ds4_work\llama_run\lane2_20260905\`, avvio 23:18)
+Backup `build\bin\backup_pre_lane2\` (10 binari) + `sorgenti\` (6 file PRE-patch) + `SHA256.txt` (16 righe). ⚠ Lo script di
+backup ha perso la copia dei sorgenti (regex `-replace '\\'` con backslash mangiato dal heredoc) e la patch era già applicata:
+i sorgenti pre-patch sono stati **ricostruiti con `patch -R` su copie** e verificati sulle identità registrate prima della
+patch (ggml.h `C8CE6BB9`, ggml.c `6FE30342`, cache-esperti.cuh `5EE710D8`, cache-esperti.cu `2DAA7330`, ggml-cuda.cu `D308F411`,
+llama-graph.cpp `2355850B`): **tutte e sei identiche**. Patch: 10 hunk, offset 19-29 righe rispetto al 2/9 (fix terna del 3/9),
+12 marcatori `lane-adattiva (2/9)` in cache-esperti.cu. Build: `cmake --build` senza target (ggml.h cambia), log `build_lane2.log`.
+**Build OK in 7 min** (573 passi Ninja, 23:18:03 → 23:25:11). Identità nuove (`lane2`): `llama.dll FB1F6FA6` · `ggml-cuda.dll E28CC5FA` ·
+`ggml-cpu.dll 6D9D7D5C` · `ggml-base.dll 8E24347A` · `llama-common.dll B8CFF1D4` · `llama-server-impl.dll 3F01F17F` · `llama-server.exe 9457546B`.
+Certificazione a leva spenta: **G1 `lane2_g1` = `AD3D3770` 3/3** (p1 0,77670, mean_len 2,01: bit-identico, 23:25-23:30) ✓ ·
+**Vision corto A ciclo 1 = `28ADE339`** (p1 0,72693, 4.538 char, 12,60 t/s, 23:30-23:35) ✓ ⇒ **binario `lane2` certificato bit-identico
+a leva spenta su entrambi i cammini corti**; poi bracci 89k `nodraft` (L0, metro di macchina) → `nodraft_lane2` (K_MIN_NONRES=2, LANE_CONTA=1) →
+`lane2` (servizio + L2).
+
+RISULTATI STADIO 2 (binario `lane2`, prompt 89.212, 400 token):
+| braccio | prefill | decode | ms/token | colpi | note |
+|---|---:|---:|---:|---|---|
+| `nodraft` L0 (23:36-23:51) | 145,32 | **7,786** | 128,4 | 57-69% | **la macchina a traiettoria fissa** (spec OFF, K=2, 473): = 126 ms del 3/9 (7,68-7,96 con slot 650/K 0-1,5). `partizioni=15112, CPU=30224, copie=22082`; VRAM libera decode 1.649; sha `46A3BA24` |
+| `nodraft_lane2` L2 (23:53-00:08) | 145,47 | 7,820 (+0,4%) | 127,9 | 70-80% | **leva RAGGIUNTA e sana**: testimone `LANE ADATTIVA livello 2 (DECIDE)`, `lane_conta=1`; `CPU=30346 di cui RESIDENTI=1665 (5,5%)`, `cpu_vive=28681`, `gpu_colonne=62357`, somma 6,00/partizione, `ripieghi=0`, `voci fuori tabella=48`, copie 22313 (+1%). **A UNA riga per forward la CPU cede solo il 5,5% del suo lavoro** (il 15,1% del §66 era a 2,5 righe con le righe mascherate): effetto entro il rumore, come l'aritmetica prevede (5,5% × 30% di cammino critico ≈ +1,6%). Il verdetto della leva è nel braccio `lane2` con la bozza. sha `746D17F6`, 1.479 char |
+| **`lane2`** = servizio (bozza ON) + L2 (00:11-00:26) | 143,61 | **10,274 (+7,1% sul `base` 9,590)** | **97,3** (C_round **215,8** vs 227,8 = −5,3%) | 77-80% | mean_len 2,22 (base 2,19), dspark acc/pos 0,771/0,324/0,134 (base 0,768/0,309/0,127): **traiettoria equivalente**, testo pulito (1.474 char, stesso incipit); guardie: `ripieghi=0`, audit 6,00/partizione, `voci fuori tabella` 30-48 (= le colonne cedute, attese). **La leva vale sulle righe mascherate della bozza, non a riga singola**: +7,1% misurato contro +4,8…+6% di carta (§63/§66). sha `A0B36DC3` |
+
+**Lettura dello stadio 2**: a spec OFF la CPU cede il 5,5% del lavoro (+0,4%); con la bozza le righe ≥1 sono mascherate da AcceptMoE
+(pochi non residenti) e la lane smetteva di calcolare residenti ⇒ il costo per riga scende e C_round cala del 5,3%: **è la prima leva
+di MACCHINA che muove il numero vissuto oltre la banda del banco dal 1/9**. Composta con `lid` (+2,3%, bit-identica) l'attesa del
+servizio a 89k è ~10,5 t/s (da 9,6). ⚠ Un solo braccio per cella (400 token): da replicare a freddo; SHA divergono per costruzione
+(split diverso ⇒ riduzione diversa), cancello = testo + p1/mean_len in banda.
+
+### 76.8 PROMOZIONI (6/9, 00:28) e stato del servizio
+Lanciatore `Desktop\avvia ds4 vision immagini.bat` (backup accanto `…bat.bak_20260906_pre_lid`): **+`LLAMA_KV_RING_VRAM_LID=150000`,
++`LLAMA_KV_RING_VRAM_CSA=0`** (braccio `lid`, bit-identica) e **+`LLAMA_OVERLAP_K_MIN_NONRES=2`** (braccio `lane2`; `LANE_CONTA` resta 0).
+Il servizio gira sul binario `lane2` del build tree (`ggml-cuda E28CC5FA` ecc.), certificato bit-identico a leva spenta (G1 3/3, Vision A).
+Ripristino: copiare il `.bak_20260906_pre_lid` sul `.bat`; binari precedenti in `build\bin\backup_pre_lane2\` (SHA256.txt, sorgenti pre-patch).
+
+### 76.9 CODA (in ordine di valore)
+1. **Prefill: FA indicizzata per query** (forma 4-D di ggml + gather con n_tok grande): −175 s su 624 a 89k (+39%), poi il supergrafo
+   per strato (streaming ×1 invece di ×44). `ub 4096` è chiuso (neutro).
+2. Replica a freddo di `lane2` e `lid` (3 cicli) e lettura §4.10 estesa; poi `ngram4` (`ab_ngram4.bat` pronto) su un carico che
+   ricopia il contesto; `nmax`/`conf` a costo di riga ridotto.
+3. Tassa del contesto residua (indexer O(pos), top-k argsort) e pipeline di prefetch device-side (il «+6%» di §59 era misurato con
+   copie serializzate nel grafo: §76.3).
+4. Requant NON-MoE (attention Q6_K→Q4_K: +225 slot) da misurare a spec OFF; MTP chiuso (§76.5).
+
+RISULTATI A/B:
+| braccio | prompt_n | prefill t/s | decode t/s | C_round (3 s) | mean_len | acc/pos | note |
+|---|---:|---:|---:|---:|---:|---|---|
+| `base` (21:45-21:58) | 89.212 | 142,86 | **9,590** | 227,8 | 2,19 | dspark 0,768/0,309/0,127 (181 round, 276 bozze, 218 acc) | = 3/9 (9,71 su 89.328): base riprodotta; VRAM libera decode 1.475; testo 1.457 char, sha `0477A823` |
+| `ngram16` (22:09-22:22) | 89.212 | 143,87 | 9,520 (−0,7%) | 228,4 | 2,17 | **ngram-mod: 3 bozze in 182 round, 5 token proposti, 2 accettati**; dspark 0,754/0,302/0,140 (179 round) | meccanismo SANO (due impl registrate, catena, nessun crash, testo pulito 1.418 char) ma **INERTE a n_match 16**: su un riassunto non esistono span di 16 token ricopiati. sha `5998320D` |
+| `lid` (22:41-22:57) | 89.212 | 143,77 | **9,811 (+2,3%)** | 223,3 (−2,0%) | 2,21 | dspark 0,768/0,309/0,127 (181/276/218: **IDENTICI al base**) | **USCITA BIT-IDENTICA al base** (sha `0477A823`, 1.457 char) ⇒ effetto di pura macchina: −2,3 ms/token, **esattamente la previsione B-2 di TASSA_ATTENZIONE §7.6** (LID residente 192,94 MiB, CSA caldo 5,25); nessun OOM: VRAM libera prefill 5.089, decode 1.291. **Candidata di promozione a zero build** (`LLAMA_KV_RING_VRAM_LID=150000` + `LLAMA_KV_RING_VRAM_CSA=0`) |
+| `ub4096` (22:59-23:15) | 89.212 | 143,63 (+0,5%) | 9,565 | — | — | dspark 219/273 | **PREFILL INVARIATO**: la parte fissa scende (a 4,39 → 4,11 ms/token = −25 s: le passate di streaming dimezzate valgono meno dei −66 s attesi ⇒ la copia è già in parte sovrapposta) ma la pendenza col contesto SALE (b 0,0579 → 0,0635 ms/token per 1000 pos = +22 s): l'attenzione densa è meno efficiente a tile da 4096 query. Saldo −3 s su 624. Nessun OOM (buffer di calcolo 3.287 MiB in prefill contro 1.691 a ub 2048; in decode torna a 110). **Conferma: la leva del prefill è la FA, non lo streaming.** |
+| `ngram8` (22:24-22:40) | 89.212 | 143,75 | **9,704 (+1,2%)** | 223,6 (−1,8%) | 2,15 | **ngram-mod: 10 bozze in 180 round, 28 proposti, 21 accettati, acc/pos 0,800/0,700/0,600, mean acc len 3,10**; dspark 0,735/0,294/0,129 (170 round) | **quando scatta è 3× DSpark per round** (precisione alta su TUTTE le posizioni), ma scatta nel 5,6% dei round: +1,2% = dentro la banda del banco. Il valore dipende dal carico: su testi che ricopiano il contesto (codice, citazioni) scatterebbe molto di più. sha `653B97D0`, 1.461 char |
+⚠ Il server del `base` NON è uscito col CTRL+C graziosa (WS 82,8 GiB fermo per 2 min, RAM libera 5,2): kill forzato alle
+22:03, RAM e VRAM rilasciate subito (88,6 GiB / 593 MiB). Stesso sintomo del 3/9 («shutdown: ctrl-c -> Stop-Process fallback»).
+Runner v2: attesa attiva del banco (RAM ≥ 82 ×3, VRAM ≤ 1200) + graziosa → 90 s → kill.
+⚠ **Incidente di regia (22:03-22:08), a registro**: fermare il task della sequenza NON ferma la catena figlia già
+lanciata (bash → powershell → cmd → llama-server): la prima sequenza aveva già avviato `ngram16` e la seconda ne ha
+lanciato un altro ⇒ un server, DUE client in coda, misura invalida. Chiuse entrambe le catene per PID, output
+`ngram16.*` cancellati, sequenza unica rilanciata alle 22:09. **Regola**: prima di rilanciare una sequenza, censire le
+catene con `Win32_Process` (CommandLine ~ ab_run|ab_client|ab_sequenza), mai fidarsi del solo stop del task.
+⚠ **Terzo strumento che mente (22:23)**: in PowerShell 5.1 con `$ErrorActionPreference='Stop'`, un `Write-Warning` dello
+script graziosa (AttachConsole fallita, errore 6) catturato da `2>$null` diventa `NativeCommandError` TERMINANTE ⇒ il runner
+abortiva prima dell'attesa e del kill, il server restava vivo (WS 83 GiB) e il braccio successivo aspettava un banco che non
+si liberava. Runner v3: la graziosa parte con `Start-Process -Wait` (niente cattura stderr). `ngram8` è partito con v2:
+chiusura manuale al suo `client rc=0`.

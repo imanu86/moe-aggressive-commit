@@ -5792,3 +5792,71 @@ K50 = +3…+5% in più, opt‑in. Servizio DSH riavviato alle 15:00 con questa c
 («che cazzo stiamo provando sennò?») **K50 per token ACCESO nel servizio** (`LLAMA_MASCHERA_ESPERTI=1.0` + `LLAMA_TAGLIO_TOKEN=0.5` +
 `LLAMA_TAGLIO_MIN=1`): il processo è partito alle 14:55:58, dopo la modifica del bat (14:55:47); /health OK 14:57:18; sanità su prompt corto:
 13,6 t/s, accettazione 109/144, testo coerente. Spegnere il K50 = `rem` davanti alle tre righe. `MACCHINA_OCCUPATA_servizio.txt` aggiornato.
+
+### 77.17 «Il K50 va inteso su una massa che si sposta ogni tot token, non di continuo» (utente, pomeriggio) — TAGLIO A INSIEME (modo 2)
+Definizione: ogni 32 TOKEN generati (utente; contati in posizioni, non in forward: con la speculazione un forward vale ~2 token) si
+fissa dalla massa decaduta della finestra, per strato, l'INSIEME degli esperti più pesanti che copre la frazione K delle attivazioni; nella
+finestra ogni token tiene solo le attivazioni dentro l'insieme (le altre si tolgono: peso 0 e id duplicato; almeno `taglio_min` per strato) e
+NON si rimpiazzano. L'insieme è stabile per 32 token ⇒ la cache lo tiene ⇒ il trasporto scende: è la differenza con il modo 1 (soglia di peso
+per token: l'insieme cambia a ogni token e il trasporto resta). Patch `taglio-insieme (6/9)`: tabella device `taglio_insieme[64*256]`
+(ponte `ggml_backend_cuda_cache_esperti_taglio_insieme`), `taglio_stato[2]` = modo, il kernel toglie chi è fuori dall'insieme; host
+`maschera_taglio_insieme` (massa via ponte, ordinamento per strato, copertura cumulativa), orologio in token (`pos_base`), default
+`ogni=riscaldo=32` col taglio. **AUTO-STRETTA** (utente: «un parametro che ci dica ogni tot quanto può essere stretta la maschera: se
+scrivo CSS mi basta un 20%»): `LLAMA_TAGLIO_AUTO=1` + `LLAMA_TAGLIO_MINIMO=0.2`: a ogni finestra, se l'accettazione DSpark regge
+(≥ base·(1−δ/2) per due finestre) la frazione si stringe di 0,05 fino al minimo; se cade sotto base·(1−δ) si allarga di 0,10. Leve per
+richiesta: `taglio_modo`, `taglio_auto`, `taglio_minimo`. Batteria 10 (bozza Q8): A×3, ti50×2, ti50 auto×2, ti30, t50 modo 1, ti70.
+Il servizio, riavviato alle 14:57 col modo 1, è fermo dalle 17:12 per build+batteria e riparte a fine batteria col modo 2 (default).
+**77.17-bis Prima partenza della batteria 10 (17:31) INVALIDA — il segnale sbagliato**: A Q8 = C638B954 (bit-identica: la build è inerte a
+leve spente), ma `ti50` (insieme a K50) è uscito a 15,09 t/s con testo DEGENERATO («colli di battitura», «cache-esterni.circli»), accettazione
+in caduta (0,85 → 0,31 → 0,10). Il log spiega: «dentro/strato=4,3 su vivi/strato=119, copertura 60%»: l'insieme aveva 4 esperti per strato.
+La MASSA della cache (MASSA=2) è il segnale sbagliato: AcceptMoE riporta le righe di bozza sui ~10 residenti, che accumulano quasi tutta la
+massa; l'insieme «a K50 di massa» diventa i residenti. Correzione (`taglio-uso (6/9)`): contatore device `uso[64*256]` incrementato in
+kern_acceptmoe SOLO sulle righe esatte con gli id ORIGINALI del router (prima dello scarto) = ciò che il router vuole sui token veri; letto e
+azzerato a ogni finestra, EMA (metà + finestra), insieme costruito da quello. Regola: la velocità senza testo non è un risultato (15 t/s di
+spazzatura); ogni braccio mascherato si legge prima di contarlo. Seconda partenza ~17:45.
+**77.17-ter Seconda partenza (17:48) ANCORA INVALIDA — la regola sbagliata**: con l'uso del router il segnale è giusto, ma «copertura del 50%
+della massa» in una finestra di 32 token (≈14 righe esatte × 6 = 84 attivazioni per strato su ~170 vivi) sono 12 esperti per strato: ti50
+16,8 t/s con testo in loop («Ho notato: Ho notato: …»). La K dell'utente è «il 30% degli ESPERTI totali per token», non della massa:
+n_keep = K × 256 esperti per strato scelti per uso recente (i mai visti nella finestra restano fuori). ti50 = 128, ti30 = 77, auto fino a 51.
+Terza partenza 17:52 (`llama.dll` nuova). Regola pagata due volte oggi: una velocità senza lettura del testo non esiste.
+**77.17-quater Terza partenza (18:02-18:08) — la regola giusta**: A Q8 = C638B954. `ti50` (128 esperti/strato per uso recente) 11,44 / 12,07:
+i 128 coprono il 99,8% delle attivazioni della finestra (vivi ~170-180): il taglio non toglie nulla. `ti50a` (auto 0,50→0,20) 12,02: il
+controllore oscilla 0,50↔0,60 senza mai stringere (accettazione per finestra di 32 token troppo rumorosa: 0,59 → 1,00 → 0,81). **`ti30` (77
+esperti/strato) = 12,49 (+6,3%), accettazione 81,8%, testo coerente (letto)**: i 77 coprono il 97‑98% delle attivazioni ma l'INSIEME STABILE
+riduce il churn della cache: è la tesi dell'utente che si vede. Promosso nel lanciatore: `LLAMA_TAGLIO_TOKEN=0.3` (modo 2). Batteria 11 in
+coda: ti15/ti20/ti25 e repliche, per trovare dove la coda di esperti comincia a costare accettazione.
+
+### 77.18 BATTERIA 10 (terza partenza, 18:02-18:07; bozza Q8; insieme = frazione degli ESPERTI per strato per uso, ogni 32 token)
+| braccio | decode t/s | accettazione | note |
+|---|---:|---:|---|
+| A_q8 ×3 | 11,743 / 11,642 / 11,469 | 79‑83% | media 11,62 |
+| ti50 ×2 (128 esperti/strato) | 11,435 / 12,065 | 77 / 80% | copertura 99,8%: toglie nulla |
+| ti50 auto ×2 (0,50→0,20) | 12,024 / 12,027 | 80 / 79% | il controllore oscilla 0,50↔0,60, mai sotto: accettazione per finestra troppo rumorosa |
+| **ti30 (77 esperti/strato)** | **12,486 (+7,5% sulla media A)** | 81,8% | copertura 97‑98%; testo letto, coerente |
+| ti70 (179) | 12,104 | 82,0% | |
+| **t50 modo 1 (soglia di peso per token)** | **12,899 (+11%)** | 83,0% | la migliore singola corsa del modo 1 (serie 11,7…12,9) |
+
+Lettura: (1) l'insieme stabile paga anche togliendo il 2‑3% delle attivazioni (ti30): è il churn della cache che scende, la tesi
+dell'utente; (2) la soglia di peso per token (modo 1) resta competitiva o migliore in singola corsa; (3) le due leve agiscono su cose
+diverse (residenza vs attivazioni leggere) ⇒ **modo 3 = insieme E peso** (aggiunto 18:10, `taglio_peso`), batteria 11 in corsa;
+(4) l'auto‑stretta va rifatta su finestre più lunghe (accettazione cumulata su ≥3 finestre) prima di fidarsene.
+Servizio: riavviato dalla catena con `LLAMA_TAGLIO_TOKEN=0.3` modo 2 (ti30), poi fermato di nuovo per build+batteria 11.
+
+### 77.19 BATTERIA 11 (18:19-18:36; bozza Q8; insieme per uso ogni 32 token, modo 3 = insieme E soglia di peso)
+| braccio | decode t/s | accettazione | note |
+|---|---:|---:|---|
+| A_q8 ×3 | 11,771 / 11,432 / 11,946 (media 11,72) | 80‑83% | |
+| ti30_r1 (77 esperti/strato) | 11,859 | 76,0% | la replica non conferma il +7,5% della prima corsa: ti30 = 12,49 / 11,86 |
+| ti20 (51) | 12,253 | 76,0% | |
+| **ti25 (64)** | **12,618 (+7,7%)** | **82,5%** | la migliore accettazione fra i mascherati |
+| **ti30p50 (modo 3: insieme 77 + peso 50%) ×2** | **12,841 / 12,617 (media 12,73, +8,6%)** | 77,7 / 77,0% | testo letto, coerente |
+| ti30p60 (insieme 77 + peso 60%) | 12,479 | 77,7% | |
+| ti20p50 (insieme 51 + peso 50%) | 12,002 | **67,6%** | troppo stretto |
+| t50 modo 1 replica | 12,409 | 75,0% | serie modo 1: 11,7…12,9 (media ~12,3) |
+
+Verdetto del pomeriggio: l'insieme stabile per strato (la K dell'utente) vale +4…+8% a 64‑77 esperti per strato con accettazione intatta
+(ti25 82,5%), la soglia di peso per token +5…+9% con accettazione −3…−5 punti, e le due insieme (modo 3) +7…+9% con accettazione 77‑78%.
+Sotto i 64 esperti o sommando le due leve a 51 l'accettazione cede (68‑76%). **Nel servizio dalle 18:38: modo 3 (insieme 30% + peso 50%,
+ogni 32 token)**: vissuto atteso 12,6‑12,8 t/s a 89k contro 10,26 stamattina (+24%), prefill 190. Con reasoning spento come in produzione.
+Aperto: (1) qualità sui prompt reali (accettazione 77% ≠ prova); (2) auto‑stretta da rifare su finestre cumulate; (3) i byte GPU dei
+duplicati (salto duplicati fallito); (4) contatori del taglio nel battito; (5) il modo 1 del mattino resta come `taglio_modo=1`.

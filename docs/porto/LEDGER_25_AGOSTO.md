@@ -5466,3 +5466,317 @@ script graziosa (AttachConsole fallita, errore 6) catturato da `2>$null` diventa
 abortiva prima dell'attesa e del kill, il server restava vivo (WS 83 GiB) e il braccio successivo aspettava un banco che non
 si liberava. Runner v3: la graziosa parte con `Start-Process -Wait` (niente cattura stderr). `ngram8` è partito con v2:
 chiusura manuale al suo `client rc=0`.
+
+## 77. 6/9 — «SOLO TEST FINO AI 20 SUL LUNGO»: seconda campagna env-only sul servizio promosso, ricognizione esterna (llama.cpp ha la FA SPARSA per DSV4 dal 2/9), porto della PR #27970, nuova bozza a Q8
+
+**Direttiva utente (05:47)**: «voglio solo test fino a che non arriviamo a 20 t/s sul lungo» + «fai anche delle ricerche web
+nei vari repo, dwarfstar, llama, deepseek, huggingface» + autorizzazioni: clone di upstream (1), PR #25952 «per dopo» (2),
+scaricare e testare la bozza a precisione più alta (5). Premessa dichiarata: le leve env-only sommate stanno a 14-15 di carta,
+non a 20.
+
+### 77.1 Campagna 2 (banco `D:\ds4_work\llama_run\ab2_20260906\`, base = lanciatore di servizio PROMOSSO: lane adattiva 2 + LID)
+Stesso prompt 89.212 token, stesso corpo, 400 token, un braccio per cella, binario `lane2`.
+
+| braccio | prefill | decode | note |
+|---|---:|---:|---|
+| `base2` = servizio promosso (05:52-06:07) | 142,70 | **10,255** | sha `A0B36DC3` = **identico al braccio `lane2` delle 00:26 (10,274)** ⇒ **LID sopra la lane adattiva vale ~0**: il +2,3% del braccio `lid` (contro il base freddo delle 21:45) non si compone; resta promossa perché bit-identica e innocua, ma il suo credito va tolto dalla somma. |
+
+| `dt` = base2 + `FORK_DOWN_TARDI=1` (06:10-06:25) | 142,18 | 10,232 (−0,2%) | testimone `porto-cb: … down_tardi=1` presente (leva raggiunta); **uscita bit-identica** (sha `A0B36DC3`), C_round 216,5 vs 215,8 ⇒ **nulla**: il +3,67% del 26/8 (r47, 0731, regime pre-lane-adattiva) non si ripete sul Vision con la lane adattiva. Non promossa. |
+
+| `gopt` = base2 + `GGML_CUDA_GRAPH_OPT=1` (06:30-06:45) | 142,24 | 10,256 (+0,0%) | sha `A0B36DC3` identico: **nulla** (l'ottimizzatore dei grafi CUDA non tocca il regime del decode con la cache esperti). Non promossa. |
+
+| `s573` = base2 + `LLAMA_CACHE_ESPERTI_SLOT=573` (06:48-07:03) | 143,32 | 9,864 (−3,8%) | sha `88CC1363` DIVERGENTE (leva di residenza: traiettoria diversa, 1510 caratteri contro 1474, accettazione 213/276 = 77,2% contro 79,4%) ⇒ confondente per costruzione; il segno resta negativo come nella mappa dei tetti (la VRAM libera batte gli slot). Non promossa. |
+
+| `nmax2` = base2 + `--spec-draft-n-max 2` (07:05-07:18) | 143,87 | 10,501 (+2,4%) | sha `4280DAB2` divergente (con AcceptMoE il numero di righe di bozza cambia la residenza ⇒ testo diverso, 1496 caratteri); accettati 207/259 (79,9%) contro 220/277: round più corti e più economici, meno token per round (2,07 contro 2,22). Dentro il rumore di traiettoria (±5%): da replicare a freddo prima di crederci. |
+
+| `conf70` = base2 + `--spec-draft-conf-min 0.70` (07:22-07:36) | 142,48 | 10,330 (+0,7%) | sha `4017D614` divergente (1462 caratteri); accettati 226/281 (80,4%): la soglia più bassa produce solo 4 righe di bozza in più e 6 accettati in più su 400. Rumore. Non promossa. |
+
+| `draftq8` = base2 con bozza `DSpark-Drafter-Q2_K-Q8_0-dflash.gguf` (07:41-07:56) | 143,66 | **10,710 (+4,4%)** | sha `D9C92A80` divergente (1456 caratteri); **accettati 228/267 = 85,4% contro 79,4%** (+6 punti, ~2σ su 270 bozze): e' un meccanismo (attenzione e teste della bozza a Q8 invece di Q2_K), non rumore di traiettoria; 2,33 token per round contro 2,22. Costo: +0,3 GB di RAM, caricamento 196 s contro 81-91 (file nuovo, cache disco fredda). **Candidata alla promozione dopo la replica `draftq8b`** (in coda alla campagna maschera). |
+
+| `t2d1` = base2 senza LID + `SLOT=623, TRASPORTO_STAGE_SLOT=150, TRASPORTO_ONLINE=1, ONLINE_BUDGET=24, FORK_COMPONI=1, PF_LEGACY=0, W=1` (07:59-08:14) | 143,80 | 9,894 (−3,5%) | sha `14976051` divergente (leve di residenza); accettati 214/273 (78,4%). Il trasporto anticipato a d=1 non paga sul Vision con la lane adattiva. Non promossa. |
+
+| `t2d3` = come t2d1 con `TRASPORTO_ONLINE=3, ONLINE_BUDGET=48` (08:17-08:32) | 143,80 | 9,967 (−2,8%) | sha `E7EAA0AF` divergente; accettati 221/265 (83,4%). Anticipare tre esperti per strato non paga: il trasporto online resta sotto la base sul Vision. Non promossa. |
+
+(repliche `draftq8b`, `nmax2b`: non più a freddo, entreranno in una batteria dedicata al drafter)
+
+### 77.2 Ricognizione esterna (6/9, WebSearch/WebFetch; fonti nel testo)
+- **llama.cpp PR #27970 «CUDA + ggml: add sparse-fa for DSV4/GLM», unita il 2/9 (commit `8e93a977`)**: le voci finite della maschera
+  diventano l'insieme sparso di K/V (`ggml_flash_attn_ext_set_n_kv_max`, `flash_attn_mask_to_sparse_indices`, kernel MMA con
+  `use_sparse`); si arma con `K->ne[1] >= max(4096, 2*n_kv_max)` e solo per DKQ=512/DV=512 (ncols1=1, ncols2=8) o 576/512. Numeri
+  loro (RTX PRO 6000): prefill 154k **1050 → 1263 t/s (+20%)**, decode 57,2 → 62,2 (+8,7%). Da noi la FA densa è il 37% del prefill a
+  89k (§76.2) ⇒ carta più grande che da loro. Issue #28454: la via sparsa non ha il cammino KV quantizzata (noi f16: non ci tocca).
+- **PR #25952 «cuda: fuse MoE weighted expert reduction»** (1/9): +3,6…+7% prefill su Qwen/Gemma; il nostro tail MoE è modificato
+  (acceptmoe/maschere): pattern probabilmente non combacia. **Per dopo** (decisione utente).
+- **PR #27861 (aperta): «GPU-resident LRU cache for host-offloaded MoE expert weights»** — upstream rifà la nostra cache esperti
+  (48 slot/strato, +15…+31% sui loro modelli), senza lane CPU, fork, AcceptMoE. Conferma la direzione, nulla da prendere.
+- **DwarfStar (antirez/ds4)**: su RTX PRO 6000 96 GB con tutto residente 43,6 t/s corti, 31,4 a 50k, prefill 262 t/s a 20k
+  (esperti IQ2_XXS+Q2_K, attenzione Q8) = il regime «senza trasporto» che il ledger stima 45-47 per la 3060. Commit del 5/9 su
+  Metal/ROCm/GLM. Nulla di portabile.
+- **DSpark su HF**: ufficiale `deepseek-ai/DeepSeek-V4-Flash-DSpark` (vLLM con 7 token speculativi); varianti GGUF: `alessandrobologna`
+  (MXFP4/Q8_0 10,9 GB; **Q2_K/Q8_0-dflash 7,0 GB**: esperti Q2_K, attenzione/teste Q8_0), `bleysg`, `singulared`. **Il nostro
+  `DSpark-draft-Q2K.gguf` ha attenzione, teste Markov/conf e output a Q2_K** (gguf-py: esperti Q2_K 4032 + Q3_K 2640 MiB, attn Q2_K
+  37,8, teste 99,5): la variante Q8 sulle parti non-MoE costa +0,3 GB di RAM (la MXFP4 +4,2: non ci sta con 74,7 GiB pinnati).
+  Scaricata `DSpark-Drafter-Q2_K-Q8_0-dflash.gguf` (6.976.490.112 B, sha256 `96f442f7…` = SHA256SUMS ufficiale).
+- DeepSpec: nessuna novità visibile; nessuna bozza per il Vision-Exp.
+
+### 77.3 Porto della PR #27970 nel fork (preparato in scratch, `port27970\`, installazione dopo la campagna)
+Clone parziale di upstream (`--filter=blob:none`). Divergenza dei 5 file FA del fork rispetto al padre della PR: 22/155/117/6/14
+righe, tutte (a) il kernel WMMA che upstream ha rimosso il 24/7 (#26046) e che a testa 512 non è mai usato, (b) il meccanismo
+Porto «block-sparse» (default-off, misurato inerte: §3 TASSA), (c) lo swizzle XOR del 31/8 (#25635) che il fork non ha. Tabelle
+CONFIG MMA 512/576 **identiche** fra fork, base e PR ⇒ si prendono i file upstream **così come sono** dopo la PR
+(`fattn.cu`, `fattn-common.cuh`, `fattn-mma-f16.cuh`, `fattn-vec.cuh`, `fattn-tile.cuh`, `fattn-tile.cu`, + `fattn-swizzle.cuh`),
+si tolgono `fattn-wmma-f16.cu/.cuh`; `lightning-indexer.cu` e i template-instances sono già identici a upstream; `mma/cp-async/convert`
+identici. Non-CUDA: `ggml.h/ggml.c` (API `set_n_kv_max`, op_params[4]) e `llama-graph.h/.cpp` (parametro `n_kv_max`, 6 siti) via patch;
+`deepseek4.cpp` a mano (marcatore `// porto-sparsefa (6/9)`): CSA/LID `n_kv_max = min(raw_mask->ne[0], n_swa) + top_k->ne[0]` = 640,
+HCA e strati raw 0. Col gather del decode il compatto sta sotto i 4096 ⇒ decode denso come oggi; nel prefill la via sparsa si
+arma da ~16k token di contesto. Attesa: G1 e Vision A bit-identici (contesto corto), SHA lungo divergente (somma sparsa), prefill +20…+35%.
+Script: `sparsefa_20260906\installa_sparsefa.sh` (backup `backup_pre_sparsefa` + copia LF→CRLF + build), `cert_sparsefa.sh`.
+
+### 77.4 La maschera «fatta al momento» — patch scritta (6/9, `D:\ds4_work\llama_run\maschera_20260906\`), in coda di build dopo la sparse-FA
+**Direttive utente** (in ordine): il trasporto non è un costo da sommare, va anticipato; la residenza deve ridurre miss e churn; «se la CPU fa
+in tempo lo facciamo fare a lei, se è già occupata un esperto marginale si può negare»; le maschere di luglio (metà modello, qualità intatta,
+oltre il 50) ma «la maschera va fatta al momento, ogni tot token, non in precedenza»; «evitando il trasporto solo dove il calcolo CPU lo rende
+sconveniente»; «il drafter DSpark ci dice quanto siamo lontani dalla baseline: se l'accettazione scende allarghiamo la maschera o la cambiamo
+più velocemente»; «anche la verifica passa dal router e tocca una marea di esperti: K70 anche solo sulla verifica, spinta a 7 token».
+
+**Fatti tecnici che vincolano il disegno**: (a) `dflash.block_size = 5` in entrambi i GGUF della bozza (Q2K e Q2_K/Q8_0) ⇒ n-max massimo 5, i 7
+token non esistono con questi drafter; (b) AcceptMoE limita già le righe di bozza ai residenti, MA col ripescaggio al 75% della massa di riga
+(`LLAMA_ACCEPTMOE_SOGLIA=0.75`): con ~10 residenti/strato su 256, quasi ogni riga di bozza ripesca 2-4 non residenti = trasporti veri; (c) la
+massa (MASSA=2) è già un contatore a decadimento per (strato, esperto) sul device: è il segnale d'uso «al momento» senza kernel nuovi.
+
+**Cosa fa la patch** (8 file, marcatori `maschera-adattiva (6/9)` / `acceptmoe-nega (6/9)`, tutto env-gated, a leve assenti nessuna op nuova nel
+grafo e nessun ramo nuovo nei kernel):
+1. *Maschera adattiva*: ogni `LLAMA_MASCHERA_OGNI` (64) forward di decode il contesto legge la massa (ponte `ggml_backend_cuda_cache_esperti_massa`),
+   ordina per strato e tiene la frazione `LLAMA_MASCHERA_ESPERTI` (0.30 = «K70»); agli altri somma `-LLAMA_MASCHERA_PENALITA` (1e30 dura, 0.3
+   morbida) sulle probabilità di selezione PRIMA del top-k (ingresso F32 `[n_expert, n_tokens, n_layer]`, op solo con n_tokens ≤ 8: il prefill
+   non la vede). Due livelli per riga: esatte / bozza (`LLAMA_MASCHERA_BOZZA`; il livello lo decide `acceptmoe_stato[1]` = n_esatte). Riscaldo
+   di `LLAMA_MASCHERA_RISCALDO` (64) forward liberi (la massa riparte a zero al confine prefill/decode); uno strato si maschera solo se ha
+   almeno n_keep esperti vivi. Solo il contesto bersaglio (`params.ctx_other == nullptr`).
+2. *Controllo sull'accettazione* (`LLAMA_MASCHERA_ACC_DELTA`): l'accettazione DSpark si deduce dalle posizioni (accettati = pos0 − pos0_prec − 1
+   sulle prev_n_tok−1 righe di bozza), baseline = finestra di riscaldo; sotto base·(1−δ) la maschera si allarga di 0,10 per livello, sopra
+   base·(1−δ/2) per tre finestre si stringe di 0,05 verso l'obiettivo.
+3. *Negazione dei marginali* (`LLAMA_ACCEPTMOE_NEGA` = frazione della massa di riga, `LLAMA_ACCEPTMOE_NEGA_K` = capienza della lane, default
+   OVERLAP_K): in `kern_acceptmoe`, sulle righe ESATTE, se i non residenti superano K si negano i più leggeri sotto soglia (peso 0 + id duplicato,
+   mai un residente, mai l'ultimo tenuto); contatori `am_cont[6]/[7]` nel dump.
+
+**Bracci** (dopo `mk_base` a leve spente, atteso bit-identico): `mb30` (K70 solo sulla verifica), `mk30`, `nega06`, `mk50`, `mk30s` (morbida 0.3),
+`mk30c` (controllo δ=0,10), `mb30n4`, `mb30n5`. Il verdetto è a tre voci: t/s, accettazione DSpark (draft a/b del client) e testo (sha + lettura).
+Sintassi MSVC di llama-context.cpp/llama-graph.cpp verificata (`cl /Zs`, RC=0); i .cu si vedono alla build.
+
+### 77.5 Il banco cambia: batterie a caldo (direttiva utente 08:20) e la domanda «su quali prompt, quale KV, in che punto»
+**Il banco di ieri e di stamattina, detto per intero**: un solo messaggio utente da 89.212 token («fai un riassunto dettagliato…» + i sorgenti
+`cache-esperti.cu` e altri, 276.901 caratteri), `cache_prompt: false`, `thinking: disabled`, temperatura 0, 400 token di completion; cache
+esperti FREDDA al confine prefill/decode (vram-a-fasi la ricrea), decode misurato SOLO alle posizioni 89.212→89.612; nessun turno successivo,
+nessun reasoning, nessuna immagine. La produzione (DSH: `--reasoning on --reasoning-preserve`, `-c 150000 -np 1`, `-ub 2048`) è multi-turno con
+riuso del prefisso KV: solo il delta del turno va in prefill e, sotto le 2048 token, la cache esperti NON viene ricreata (resta calda dal turno
+prima); le risposte sono reasoning + testo, migliaia di token. Un braccio freddo da 400 token vede i primi 2-3 ricalcoli di una maschera ogni 64
+forward: era il banco giusto per il meccanismo, non per il vissuto.
+
+**La batteria** (`maschera_20260906\batteria_run.ps1` + `batteria.py`): un server, un prefill; A a leve spente con `porto_hot_snapshot: true`
+(il banco caldo già nel server: cattura KV bersaglio+bozza, stato spec e cache esperti al confine dell'ultima ubatch, ripristino esatto a ogni
+richiesta identica, si ripaga solo la coda ≤2048 token); poi B…J con le leve per richiesta (`porto_cb` esteso con `nega_micro`/`nega_k`,
+nuovo campo `porto_maschera` → `llama_maschera_set`), infine A′ per la deriva. Il server va armato con `LLAMA_MASCHERA_ESPERTI=1.0` (op nel
+grafo, bias zero: la topologia non cambia mai). Bracci della batteria 1 (400 token, reasoning spento, per confrontarsi con la campagna 2):
+A, mb30, mk30, mk50, mk30s (morbida 0.3), mk30c (controllo δ=0,10), mk30o16 (ogni 16, riscaldo 32), nega06, nega12, mb30n06, A2.
+Costo: ~12 min di prefill + 11 × ~1 min, contro 11 × 17 min a freddo. Leve che NON cambiano a caldo (lette una volta dall'ambiente:
+OVERLAP_K, SLOT, soglie AcceptMoE, bozza): per quelle resta il riavvio, e il verdetto lo dice.
+**Aperto**: i prompt veri. Il servizio non logga le richieste (stdout in finestra, `-lv 4`); servono export di conversazioni reali o
+l'autorizzazione a registrare le richieste del servizio per un replay (multi-turno, reasoning, immagini).
+
+**77.3-bis Esito dell'installazione (08:34-09:00)**: la prima build è fallita al passo ninja (`fattn-wmma-f16.cu` rimosso ma ancora nelle
+regole: i `.cu` sono `file(GLOB)`), risolta con una ri-configurazione CMake (`configura.bat`) → build ok in 7 min. Identità: `llama.dll 079DE8C5`,
+`ggml-cuda.dll 19144C30`. **La previsione «G1 e Vision A bit-identici» è FALSIFICATA**: G1 3/3 deterministico su `62CF478A` (p1 0,77, mean_len
+1,95 in banda) ma diverso da AD3D3770; Vision A (saggio tecnico da 1200 token) `64757450`, testo coerente, p1 0,712, diverge dal riferimento
+28ADE339 dal 24° carattere. Causa: i kernel FA di upstream a 8e93a97 (swizzle XOR #25635, MMA riorganizzato) non sono numericamente identici
+ai nostri nemmeno sulla via densa. È un cambio di LIGNAGGIO, non un difetto dimostrato: la correttezza si giudica su (a) `test-backend-ops`
+FLASH_ATTN_EXT del binario nuovo, (b) accettazione DSpark e testo del braccio lungo `sfa_base2` (via sparsa attiva a 89k), (c) il prefill.
+Tutti gli sha di riferimento (A0B36DC3 sul lungo, AD3D3770, 28ADE339) restano validi solo per il lignaggio lane2.
+
+**77.3-ter Il braccio lungo `sfa_base2` (08:57-09:07, stesso prompt 89k, stessa config di servizio promossa, binario sparse-FA)**:
+**prefill 188,91 t/s contro 142,70 (+32,4%)** — dentro la forchetta prevista (+20…+35%): a 89k il prompt passa da 625 a 472 s; **decode 11,210
+contro 10,255 (+9,3%)** — non previsto: i kernel FA di upstream sono più veloci dei nostri anche sulla via densa del decode (la tassa
+d'attenzione era ~15 ms su 126); accettazione DSpark 216/272 = 79,4%, identica alla base (79,4%) ⇒ la distribuzione non è cambiata in modo
+visibile al drafter; 1497 caratteri, sha `CFC68A74` (lignaggio nuovo). Verdetto: **la carta del prefill è vera e porta anche il decode**;
+manca solo la prova di correttezza dei kernel (test-backend-ops) prima della promozione al servizio.
+**Correttezza dei kernel (09:25)**: `test-backend-ops test -o FLASH_ATTN_EXT -b CUDA0` sul binario sparse-FA: **2880/2880 prove passate** (2217
+combinazioni non supportate, normali), backend CUDA0 OK. Con G1 3/3 deterministico, Vision A coerente, accettazione invariata sul lungo e il
+prefill replicato (188,9 su `traccia`), **il lignaggio sparse-FA è accettato**: via libera alla patch maschera sopra di esso (09:27).
+Nota a margine: `LLAMA_CACHE_ESPERTI_TRACCIA` con vram-a-fasi salva due volte sullo stesso file (215 record dal runtime di prefill, poi 0/0 dal
+runtime di decode che sovrascrive): il file `vision_reale_89k_20260906.cestrc` è vuoto (36 byte). Difetto dello strumento, da riparare
+(nome file per fase o append), non del binario.
+
+**77.5-bis Il crash della batteria (10:00-10:54)**: il server con `LLAMA_MASCHERA_ESPERTI=1.0` moriva con access violation in `llama.dll`
+al decode di prova a 2 token dopo il mmproj (il warm-up, primo forward, passava). Sonda a stderr: crash fra `maschera_aggiorna` e il primo
+`set_input` sul cammino di riuso del grafo. Causa: l'ingresso `llm_graph_input_maschera_esperti` teneva un riferimento a `cparams`, ma in
+questo fork `llm_graph_params` porta una COPIA di `cparams` (e di `ubatch`) che vive solo dentro `process_ubatch`; al riuso il riferimento
+era morto. Correzione: l'ingresso tiene solo puntatori stabili posseduti dal contesto (`&maschera.pub`, `acceptmoe_stato_host`), come già
+fa AcceptMoE. Due sonde sono andate a vuoto per il lancio del bat (14+14 min persi): il lancio corretto da bash è `Start-Process cmd.exe /c "bat"`
+via PowerShell (`avvia_bat.ps1`), non `cmd //c start` né `Popen` staccato. Identità dopo la correzione: `llama.dll 553BB622`, `ggml-cuda.dll 3A2281B9`.
+
+### 77.6 BATTERIA 1 (11:00-11:13, binario sparse-FA + maschera v2 `llama.dll 553BB622`; prompt 89k, 400 token, reasoning spento; un prefill, poi 11 corse a caldo con `porto_hot_snapshot`: 4 token ripagati per corsa)
+| braccio | decode t/s | vs A | accettazione DSpark | caratteri | note |
+|---|---:|---:|---:|---:|---|
+| A (leve spente, maschera dormiente) | 11,250 | — | 79,4% (216/272) | 1497 | = `sfa_base2` (11,21, stessi accettati, stesso testo): la maschera dormiente è inerte; prefill 190,3 |
+| mb30 (K70 solo righe di bozza) | 11,206 | −0,4% | 73,5% | 1467 | il drafter vede la differenza, la velocità no |
+| **mk30 (K70 tutte le righe)** | **12,186** | **+8,3%** | **83,9%** | 1357 | testo coerente e specifico (letto) |
+| mk50 | 11,174 | −0,7% | 75,9% | 1515 | non monotono rispetto a mk30 |
+| mk30s (K70 morbida, penalità 0,3) | 11,515 | +2,4% | 78,2% | 1454 | |
+| **mk30c (K70 + controllo δ=0,10)** | **12,235** | **+8,8%** | **85,2%** | 1397 | controllore mai intervenuto (accettazione sopra la base) |
+| mk30o16 (ricalcolo ogni 16, riscaldo 32) | 11,118 | −1,2% | 74,7% | 1486 | finestra troppo sottile per 77 esperti su 256 |
+| nega06 | 11,086 | −1,5% | 77,3% | 1443 | la negazione da sola non paga |
+| nega12 | 11,451 | +1,8% | 79,3% | 1440 | |
+| mb30n06 | 11,760 | +4,5% | 80,8% | 1469 | |
+| A2 (leve spente, chiusura) | 11,241 | −0,1% | 76,8% | 1456 | nessuna deriva; testo ≠ A (il ripristino caldo + coda di 4 token non è bit-esatto: rumore di traiettoria interno alla batteria) |
+
+Lettura: (1) la batteria costa 6 minuti di misura per 11 bracci contro 3 ore a freddo, e l'A′ chiude a −0,1%; (2) le due corse K70 su tutte le righe
+stanno a +8,3/+8,8% con accettazione +4,5…+6 punti (il target mascherato è più prevedibile per il drafter: la metà del guadagno è round più
+lunghi); (3) K50 e la morbida no, e il ricalcolo veloce peggiora: la massa a 64 forward è il minimo per scegliere 77 esperti; (4) la negazione da
+sola è neutra o negativa; (5) le repliche sono in corsa (batteria 2: A×4, mk30×2, mk30c×2, mk20, mk40, mk30n12, mb30n06, nega12) perché A vs A2
+mostra che due traiettorie della stessa config differiscono in testo e accettazione. Il verdetto sulla qualità resta da fare su prompt reali.
+
+### 77.7 BATTERIA 2 (11:20-11:35, repliche; stesso banco)
+| braccio | decode t/s | accettazione | caratteri |
+|---|---:|---:|---:|
+| A (prefill 190,5) | 11,087 | 79,4% | 1497 (stesso sha dell'A di batteria 1: il prefill a freddo e' deterministico; la macchina oscilla ~1,5%) |
+| mk30_r1 | 12,037 | 80,8% | 1408 |
+| A_r1 | 11,292 | 79,9% | 1431 |
+| mk30c_r1 | 11,937 | 81,3% | 1368 |
+| mk30_r2 | 12,174 | 81,5% | 1317 |
+| mk20 (tiene 20%) | 11,950 | 78,3% | 1438 |
+| mk40 (tiene 40%) | 11,667 | 80,1% | 1491 |
+| A_r2 | 11,639 | 81,2% | 1401 |
+| mk30n12 | 11,788 | 80,3% | 1412 |
+| mb30n06_r1 | 11,268 | 74,3% | 1459 |
+| nega12_r1 | 11,895 | 83,8% | 1464 |
+| mk30c_r2 | **12,657** | **86,4%** | 1419 (testo letto: coerente, nessuna riga ripetuta) |
+| A_r3 | 11,019 | 76,2% | 1502 |
+
+**Aggregato delle due batterie (stesso prompt, stesso KV, 400 token)**: A × 6 corse = media **11,26** (11,02…11,64, ±2,8%); tiene‑30% (mk30 + mk30c)
+× 8 corse = media **12,20** (11,94…12,66); **+8,3% di media, le otto corse mascherate stanno tutte sopra cinque A su sei**. Curva per
+frazione tenuta: 20% → 11,95; 30% → 12,20; 40% → 11,67; 50% → 11,17; 60/70/80 in batteria 3. Accettazione DSpark: A 76‑81%, tiene‑30% 81‑86%:
+il target mascherato è più prevedibile per il drafter, e metà del guadagno passa da lì (round più lunghi). Negazione: sola o combinata, dentro
+il rumore. K70‑solo‑bozze: no. Ripristino caldo: le A da ripristino non ripetono il testo dell'A da prefill (coda di 4 token ricalcolata):
+rumore di traiettoria interno alla batteria ±3%, per questo le repliche. Nota di gergo (utente 11:35): «K» va definito — qui le etichette
+mkNN sono la frazione TENUTA per conteggio; da riallineare al suo uso (quota potata, quota tenuta, conteggio per strato o copertura di massa).
+
+### 77.8 «K riferito al token» — la definizione dell'utente (11:45) e il TAGLIO PER TOKEN
+Definizione (utente): **K30 = per ogni token si tengono solo il 30% degli esperti totali** (delle 258 attivazioni per token = 43 strati × 6),
+quelle a peso più alto; k e massa vanno riferiti al token, non allo strato. Inoltre: il reasoning su questo modello «fa quasi peggio che
+lasciarlo spento», in produzione non lo usa ⇒ il banco a reasoning spento è il regime di produzione (la batteria 4 con reasoning perde peso).
+Le etichette mkNN delle batterie 1-3 restano «frazione di CANDIDATI tenuta per strato» (maschera di route), non la K dell'utente.
+
+**Taglio per token (patch `taglio-token (6/9)`, nell'albero, sintassi MSVC+nvcc verificata, build in coda dopo le batterie 3-4)**: in
+`kern_acceptmoe` ogni riga accumula sul device l'istogramma dei pesi di route (300 bin su [0, 1.5], pesi normalizzati e scalati, PRIMA di
+ogni taglio: la soglia stima ciò che il router vuole, nessun auto-rinforzo); ogni 64 forward l'host legge l'istogramma, trova la soglia sotto
+cui cade la frazione (1 − taglio) delle attivazioni e la pubblica in memoria device (nessuna ricattura del grafo); il kernel toglie sotto soglia
+su TUTTE le righe (esatte e bozza), dal più leggero, tenendo almeno `taglio_min` attivazioni per strato — peso 0 e id duplicato, la forma dello
+scarto di AcceptMoE (nel percorso MMID il duplicato non rilegge i byte; nella partizione una colonna a peso 0 non è domanda di residenza né di
+trasporto). Renormalizzazione dei pesi tenuti come AcceptMoE. Leve: `LLAMA_TAGLIO_TOKEN` (frazione tenuta), `LLAMA_TAGLIO_MIN`; per richiesta
+`porto_maschera.taglio` / `taglio_min`. Il taglio non conosce in anticipo i pesi degli strati successivi: la «K per token» è una media sui token
+(la soglia è un quantile della finestra), non un conteggio esatto per token. Contatori `am_cont[8]/[9]` nel dump. Batteria 5: A, t50, t30, t70,
+A, t30 con min 2, t50, t30+mk30, t30, A.
+
+### 77.9 BATTERIA 3 (11:40-11:53; frazione di CANDIDATI per strato, etichette mkNN = frazione tenuta)
+| braccio | decode t/s | accettazione | caratteri |
+|---|---:|---:|---:|
+| A | 11,200 | 79,4% | 1497 |
+| mk60 | 11,158 | 78,3% | 1378 |
+| mk70 | 11,516 | 80,6% | 1506 |
+| mk80 | 11,227 | 76,5% | 1486 |
+| mk30_r3 | 12,006 | 82,1% | 1318 |
+| mk25 | 12,314 | 84,8% | 1404 |
+| mk35 | 11,223 | 75,7% | 1499 |
+| A_r1 | 11,165 | 77,2% | 1474 |
+
+Curva completa (tre batterie): tiene 20% 11,95 · 25% 12,31 · **30% 12,20 (media di 9 corse, 11,94…12,66)** · 35% 11,22 · 40% 11,67 · 50% 11,17 ·
+60% 11,16 · 70% 11,52 · 80% 11,23; A ×8 media 11,23 (11,02…11,64). Il buco a 35% e il 70% a +2,8% dicono che il rumore per singola corsa è ±3-4%
+e che la velocità segue l'accettazione DSpark corsa per corsa (r alto in tutte le batterie): il guadagno della maschera per strato passa
+soprattutto dal drafter (target più prevedibile ⇒ round più lunghi), non dai byte. Le maschere larghe (≥60%) non fanno nulla.
+
+### 77.10 BATTERIA 4 (12:00-12:17; reasoning ACCESO, 1200 token — per completezza: in produzione l'utente lo tiene spento)
+A 11,381 (reasoning chiuso a 2006 caratteri + 2160 di risposta) · mk30c 11,751 (+3,2%) · mk30 11,740 (+3,2%) · mk70 11,718 (+3,0%) · A_r1 11,208
+(reasoning NON chiuso: 3930 caratteri) · mk30c_r1 11,991 (+5,4%). Sui 1200 token il guadagno della maschera per strato scende a +3…+5%
+(accettazione 77‑81% per tutti). Il reasoning non chiuso nei bracci mascherati NON è un effetto della maschera: anche l'A da ripristino non
+chiude in 1200 token — il modello ragiona a lunghezza molto variabile (coerente con «il reasoning fa quasi peggio», utente).
+**77.8-bis Prima partenza della batteria 5 (12:34) INVALIDA**: il taglio non si attivava — `--apply-solo <marcatore>` aveva saltato in silenzio
+tre edit senza marcatore nel testo (i due ponti host↔device in cache-esperti.cu e il dispatch in ggml-cuda.cu: le funzioni statiche non
+referenziate non danno errore di link con /O2), e la richiesta JSON senza `riscaldo` lo passava come 0 (fix: 0 = default 64). Testimone nel log:
+«taglio-token: istogramma non leggibile». Corretto (marcatori espliciti, `riscaldo > 0 ? : 64`), ricompilato (`llama.dll 8351C846`,
+`ggml-cuda.dll 4421C69D`), seconda partenza 12:38. Regola: un apply filtrato deve stampare quanti edit ha applicato su quanti previsti.
+
+### 77.11 BATTERIA 5 (12:38-12:56; TAGLIO PER TOKEN = la K dell'utente; binario `llama.dll 8351C846`)
+| braccio | decode t/s | vs A | accettazione | caratteri | note |
+|---|---:|---:|---:|---:|---|
+| A | 11,237 | — | 79,4% | 1497 | soglia pubblicata 0 (testimone: nessuna riga «ricalcolo») |
+| **t50 (tiene il 50% delle attivazioni per token)** | **12,034** | **+7,1%** | 80,0% | 1443 | soglia 0,225 sui pesi (bin 45/300), tenute stimate 51% |
+| t30 | 11,577 | +3,0% | **69,9%** | 1460 | il drafter vede un modello diverso |
+| t70 | 11,500 | +2,3% | 77,8% | 1463 | |
+| A_r1 | 11,244 | +0,1% | 78,8% | 1455 | |
+| t30 con minimo 2 per strato | 12,036 | +7,1% | 75,1% | 1479 | il minimo salva parte dell'accettazione |
+| t50_r1 | 11,840 | +5,4% | 76,8% | 1493 | |
+| t30 + maschera 30% dei candidati | 11,049 | −1,7% | **62,9%** | 1448 | le due leve si sommano nel danno |
+| t30_r1 | 11,786 | +4,9% | 74,5% | 1443 | |
+| A_r2 | 11,317 | +0,7% | 80,6% | 1397 | |
+
+Lettura: (1) K50 per token = +5…+7% con accettazione intatta (2 corse); K30 = +3…+5% pagando 5‑10 punti di accettazione; K70 = +2%; (2) il
+guadagno è MENO di quanto promette l'aritmetica dei byte (metà attivazioni ⇒ metà esperti letti): la colonna a peso zero esce dal trasporto e
+dalla lane (la partizione non la conta come domanda) ma sulla GPU il duplicato resta nel matmul MMID (niente byte in meno finché non si compatta:
+`LLAMA_ACCEPTMOE_COMPATTA=1`, che ha il difetto n.1 aperto); (3) taglio per token e maschera per strato NON si sommano; (4) la stampa dei
+contatori del taglio manca nel battito (solo nel dump finale, che non c'è col kill): da sistemare.
+
+### 77.12 BATTERIA 6 (13:00-13:14; bozza Q2_K/Q8_0 + leve di route; reasoning spento)
+| braccio | decode t/s | vs A_q8 | accettazione |
+|---|---:|---:|---:|
+| A_q8 (bozza Q8, leve spente) ×3 | 11,777 / 11,895 / 11,718 (media 11,80) | — | 82,9 / 82,4 / 81,3% |
+| mk30_q8 ×2 | 11,902 / 11,870 | +0,8…+1,1% | 81,7 / 81,5% |
+| mk25_q8 | 11,703 | −0,6% | 77,9% |
+| mk30c_q8 | 11,569 | −1,8% | 78,1% |
+| **t50_q8 (K50 per token)** | **12,460** | **+5,8%** | 78,2% |
+| **t50m2_q8 (K50, minimo 2)** | **12,320** | **+4,6%** | 77,4% |
+
+Lettura: (1) la bozza Q8 vale +4,9% sull'A (11,80 contro 11,25), replica di stamattina; (2) la MASCHERA PER STRATO NON SI SOMMA alla bozza Q8
+(quattro corse a 0 ± 1%): il suo +8% passava dall'accettazione, e la bozza Q8 la prende già; (3) il TAGLIO PER TOKEN K50 SI SOMMA (+5…+6% sopra
+Q8): il suo guadagno è di trasporto e lane, non di accettazione. **Composizione migliore del giorno: sparse‑FA + bozza Q8 + K50 per token =
+12,3…12,5 t/s sul vissuto (10,26 stamattina, +21%)**, accettazione 77‑78% contro 79‑83% (quasi intatta), prefill 190 t/s (+33%).
+Da promuovere nel servizio senza dubbi: sparse‑FA (già nel binario) e bozza Q8 (+0,3 GB RAM, caricamento 196 s). K50: cambia l'uscita del
+modello (drafter d'accordo al 78%): decisione dell'utente, con prova di qualità sui suoi prompt.
+
+### 77.13 BATTERIA 7 (13:20-13:35; bozza Q8 + n-max 4; curva K per token)
+A_q8n4 ×3: 11,540 / 11,456 / 11,410 (n-max 4 PERDE contro n-max 3: 11,80) · **K50: 12,552 / 12,104** (+5…+9%) · K40 11,907 (acc 74,5%) · K45 11,909
+(76,3%) · K60 11,999 (80,8%) · K50 con ricalcolo ogni 32: 12,150 (= ogni 64). Verdetto: n-max resta 3; K50 è l'ottimo della curva per token
+(K40/45 perdono accettazione, K60 taglia poco); il ricalcolo a 32 non cambia. In assoluto K50 sta a 12,1…12,55 con qualunque n-max.
+
+### 77.14 BATTERIA 8 (13:40-13:52; bozza Q8 + `LLAMA_ACCEPTMOE_COMPATTA=1` + taglio) e il SALTO DEI DUPLICATI
+A_c1 ×3: 11,706 / 11,615 / 11,319 · K50 compattato: 11,939 / 12,109 (+2…+3%) · K60 11,757 · K50 min 2: 11,972. Nessun crash (il difetto n.1 non è
+scattato), ma la compattazione NON incassa i byte: K50 compattato sta SOTTO K50 non compattato (12,3‑12,5). Diagnosi dal kernel: il mat‑vec
+degli esperti (`mul_mat_vec_q_moe[_maschera]`, mmvq.cu) calcola ogni colonna di ids per (token, colonna) e ne rilegge i byte anche se la
+colonna è un DUPLICATO a peso zero (scarto AcceptMoE sulle righe di bozza, negazione, taglio per token): la compattazione agisce altrove.
+Patch «salta-duplicati (6/9)»: `LLAMA_MMVQ_SALTA_DUP=1` (simbolo device impostato alla creazione del runtime della cache) ⇒ nei due kernel una
+colonna con lo stesso id di una colonna precedente della riga salta il prodotto e scrive 0 (finito; il peso 0 la annulla). Il top‑k del router
+non produce duplicati ⇒ regola sicura. Vale anche per le righe di bozza di AcceptMoE, che oggi ricalcolano fino a 5 duplicati su 6.
+Batteria 9 (bozza Q8 + salto): A ×3, K50 ×3, K40, K60, K50 min 2.
+**77.14-bis Prima partenza della batteria 9 (14:08) INVALIDA — salto dei duplicati CORROTTO**: A_d 11,78 con testo degradato («fornido»,
+«três»: errori di token), K50 con accettazione 69%. Causa: nel kernel mascherato il vettore di ids della passata (slab o mappato) porta
+SENTINELLE (0/−1) per le colonne di altre classi, e il confronto di uguaglianza prendeva una colonna residente con slot 0 per duplicato di una
+colonna CPU: colonna vera saltata ⇒ corruzione. Correzione: duplicato = stesso id E stessa classe nella maschera per (token, colonna)
+(`ggml-cuda.dll 8D85CD32`), seconda partenza 14:12. Lezione: un «peso zero» nel grafo non implica «colonna innocua» nei kernel a valle
+che ragionano per classe; ogni salto va verificato col testo (sha + lettura), non solo col t/s.
+
+### 77.15 Chiusura del pomeriggio (14:45) — stato, cosa è vero, cosa resta aperto
+**Vissuto a 89k (prompt sintetico, 400 token, reasoning spento, stesso KV via banco caldo)**: 10,26 stamattina → 11,2 (sparse‑FA) → 11,8 (+ bozza
+Q8) → **12,3‑12,5 (+ K50 per token)**; prefill 142 → 190. Nove batterie a caldo in cinque ore (~11 corse a batteria, 40 s a corsa dopo l'unico
+prefill) contro le tre ore per undici bracci freddi del mattino.
+**Vero (replicato)**: sparse‑FA +32% prefill e +9% decode, accettazione invariata, test-backend-ops verde, lignaggio nuovo (G1 62CF478A, Vision A
+64757450); bozza Q8 +5%; K50 per token +5…+7% che si somma alla bozza Q8; maschera per strato al 25‑30% +8% ma NON si somma alla bozza Q8 (stessa
+carta: accettazione); K30 per token perde accettazione; negazione, compattazione, n-max 4, ricalcolo a 32: nulla.
+**Falso o non riuscito**: il «salto dei duplicati» nel mat‑vec (tre partenze della batteria 9): anche ristretto al kernel mascherato con
+controllo di classe, cambia l'uscita dell'A in modo deterministico (sha 6886B2E6 con «fornido»/«três») ⇒ i duplicati a peso 0 NON sono
+innocui nel cammino fork/mask della cache, per una ragione che non ho ancora letto nel codice; il codice resta nell'albero con la leva
+`LLAMA_MMVQ_SALTA_DUP` SPENTA (verifica in corso che a leva spenta l'A torni C638B954). Da riprendere leggendo le classi della maschera e chi
+consuma l'uscita delle colonne duplicate (sospetto: il join del fork o la passata «mista» rilegge la colonna prima della pesatura).
+**Aperto**: (1) qualità di K50 su prompt reali dell'utente (accettazione quasi intatta non è una prova); (2) i byte GPU del taglio (il salto
+duplicati fatto bene, o un MMID che riceva gli id originali); (3) i contatori del taglio nel battito; (4) `LLAMA_CACHE_ESPERTI_TRACCIA` con
+vram-a-fasi sovrascrive il file (215 record persi); (5) il servizio DSH è spento dalle 05:50: riavvio con sparse‑FA + bozza Q8, K50 opt‑in.
+Binario finale nell'albero: `llama.dll 8351C846`, `ggml-cuda.dll 4AF2DC5E` (sparse‑FA + maschera v2 + taglio + salto duplicati spento);
+backup: `backup_pre_sparsefa` (lane2), `backup_pre_maschera` (sparse‑FA pura). Script: `D:\ds4_work\llama_run\maschera_20260906\`
+(`applica_maschera.py` = sorgente di verità delle patch, `batteria_run.ps1` + `batteria.py` + `bracci_batteria*.json`, `genera_bracci.py`).

@@ -5780,3 +5780,15 @@ vram-a-fasi sovrascrive il file (215 record persi); (5) il servizio DSH è spent
 Binario finale nell'albero: `llama.dll 8351C846`, `ggml-cuda.dll 4AF2DC5E` (sparse‑FA + maschera v2 + taglio + salto duplicati spento);
 backup: `backup_pre_sparsefa` (lane2), `backup_pre_maschera` (sparse‑FA pura). Script: `D:\ds4_work\llama_run\maschera_20260906\`
 (`applica_maschera.py` = sorgente di verità delle patch, `batteria_run.ps1` + `batteria.py` + `bracci_batteria*.json`, `genera_bracci.py`).
+
+### 77.16 Verifica finale e correzione della stima di K50 (14:53)
+Verifica: binario finale con il salto duplicati SPENTO ⇒ A con bozza Q8 = **C638B954**, bit-identico alla base Q8 della batteria 6: il binario
+nell'albero è sicuro per il servizio. Nella stessa batteria K50 per token ha reso 11,709 (−0,3%, accettazione 74,9%): con questa corsa la
+serie K50-su-Q8 diventa 12,46 / 12,32 / 12,55 / 12,10 / 12,15 / 11,71 (media ~12,2) contro A_q8 11,72…11,90 (media ~11,8) ⇒ **la stima onesta di
+K50 sopra la bozza Q8 è +3…+5% con varianza alta (±4%)**, non il +5…+7% scritto in 77.12; il picco 12,55 non è la media. La composizione del
+giorno resta: sparse‑FA (+32% prefill, +9% decode, replicata) + bozza Q8 (+5%, replicata) = **11,8 t/s sicuri sul vissuto** contro 10,26;
+K50 = +3…+5% in più, opt‑in. Servizio DSH riavviato alle 15:00 con questa config (K50 spento).
+**Riavvio del servizio (14:56-14:57)**: lanciatore promosso con bozza Q8 (backup `.bak_20260906_pre_q8`); su richiesta esplicita dell'utente
+(«che cazzo stiamo provando sennò?») **K50 per token ACCESO nel servizio** (`LLAMA_MASCHERA_ESPERTI=1.0` + `LLAMA_TAGLIO_TOKEN=0.5` +
+`LLAMA_TAGLIO_MIN=1`): il processo è partito alle 14:55:58, dopo la modifica del bat (14:55:47); /health OK 14:57:18; sanità su prompt corto:
+13,6 t/s, accettazione 109/144, testo coerente. Spegnere il K50 = `rem` davanti alle tre righe. `MACCHINA_OCCUPATA_servizio.txt` aggiornato.

@@ -5860,3 +5860,38 @@ Sotto i 64 esperti o sommando le due leve a 51 l'accettazione cede (68‑76%). *
 ogni 32 token)**: vissuto atteso 12,6‑12,8 t/s a 89k contro 10,26 stamattina (+24%), prefill 190. Con reasoning spento come in produzione.
 Aperto: (1) qualità sui prompt reali (accettazione 77% ≠ prova); (2) auto‑stretta da rifare su finestre cumulate; (3) i byte GPU dei
 duplicati (salto duplicati fallito); (4) contatori del taglio nel battito; (5) il modo 1 del mattino resta come `taglio_modo=1`.
+
+### 77.20 «Il taglio mantiene la lane CPU? Che politica di ammissione in VRAM? Dentro la maschera chi resta in VRAM e chi in RAM?» (utente, sera)
+Dal codice: (1) il taglio agisce PRIMA della partizione; le colonne a peso zero non sono domanda (niente lane, trasporto, massa); sulle
+attivazioni tenute la lane adattiva prende fino a 2 non residenti per strato e il resto dei non residenti si trasporta: la lane resta.
+(2) L'ammissione in VRAM è l'LRU a orologio con merito di MASSA (`MASSA=2`): non conosce la maschera, e la massa è distorta da AcceptMoE
+(i residenti accumulano massa dalle righe di bozza): la protezione tende a tenere chi c'è già. (3) Dentro la maschera oggi nessuno decide
+VRAM contro RAM: LRU per la VRAM, ordine di colonna per la lane (`MASSA_CORSIE=0` nel servizio ⇒ la lane prende i PRIMI non residenti
+nell'ordine del router, cioè i più pesanti del token — il contrario del disegno «freddi ma rilevanti»).
+**Patch `residenza-uso (6/9)`** (env `LLAMA_RESIDENZA_USO=1`, per richiesta `residenza_uso`, `pin_per_strato`): merito per (strato, esperto)
+= EMA dell'uso del router sulle righe esatte (×16), pubblicato sul device a ogni finestra insieme a `soglia_pin[strato]` (merito del
+pin_per_strato‑esimo esperto più usato, default 6 su ~11 slot per strato); in `kern_partiziona` le corsie ordinano la fase 0 per merito
+crescente (la lane CPU prende i più freddi, il trasporto i più caldi che verranno riusati); in `cache_vittima` un residente col merito ≥ soglia
+del suo strato non è mai vittima (pin), e fra gli altri vince il merito d'uso minimo. Batteria 12: A×3, m3 (servizio) ×2, m3+residenza pin 6 ×2,
+pin 9, pin 3, insieme 25 + residenza.
+Sull'adattività: capita a metà — su questo prompt l'insieme al 25‑30% (64‑77 esperti) tiene l'accettazione, al 20% (51) la perde; il
+controllore automatico non stringe perché l'accettazione per finestra di 32 token oscilla di 20 punti: va cumulata su 3‑4 finestre con isteresi.
+Il «contesto specifico» è nel meccanismo (l'insieme viene dagli ultimi 32 token: scrivendo CSS è l'insieme del CSS); quanto stringerlo lì lo
+deve trovare il controllore, sui prompt reali dell'utente.
+
+### 77.21 BATTERIA 12 (19:00-19:17; residenza dall'uso: lane ai freddi + pin dei caldi; bozza Q8)
+| braccio | decode t/s | accettazione |
+|---|---:|---:|
+| A_q8 ×3 | 11,728 / 11,651 / 11,867 (media 11,75) | 80‑83% |
+| m3 (servizio: insieme 30% + peso 50%) ×2 | 12,437 / **13,070** (media 12,75, +8,5%) | 76 / 79% |
+| m3 + residenza‑uso pin 6 ×2 | 12,048 / 12,740 (media 12,39) | 70 / 80% |
+| m3 + residenza‑uso pin 9 | 12,058 | 71% |
+| m3 + residenza‑uso pin 3 | 12,857 | 78% |
+| insieme 25% + residenza‑uso pin 6 | 12,085 | 78% |
+
+Verdetto: la politica di residenza dall'uso (lane CPU ai non residenti più freddi, pin dei più usati per strato) NON batte l'LRU con massa a
+473 slot: media 12,4 contro 12,75, e più pin peggio (pin 9 = 12,06). Lettura: con 11 slot per strato e un insieme di 77, pinnarne 6‑9 toglie
+capacità di rotazione a 68‑71 esperti che si contendono 2‑5 slot; e mandare alla CPU i freddi sposta sul trasporto esperti che erano già i
+candidati caldi della LRU. La leva resta nel binario (`LLAMA_RESIDENZA_USO`, `pin_per_strato`) spenta; il servizio riparte col modo 3 senza
+residenza (bat invariato). Testi letti, coerenti. Per farla pagare servirebbe più VRAM per strato (slot) o insiemi più piccoli, cioè il punto
+dove oggi cede l'accettazione: è il limite di questa macchina, non della politica.

@@ -92,7 +92,7 @@ rilasciato (FP8) 0,1948 · **6 bit 0,1945 (indistinguibile)** · 4 bit 0,2090 (+
 | SGLang | `dev-dsv41` (#38798); il MixedQ2 mappa 245/245 tensori con patch, avvio non ancora riuscito; Engram sull'host (`SGLANG_ENABLE_DSV41_ENGRAM_HOST_TABLE=1`) |
 | MLX | porta PipeNetwork, parità 1e-6 sul `model.py`; ha trovato un bug del riferimento (l'indexer ai passi dispari legge le chiavi dello strato sbagliato, 0,67 di spostamento dei logit) |
 | ktransformers, ik_llama.cpp | nulla al 10/9 |
-| riferimento DeepSeek | `inference/model.py` TP8; il suo self-test costruisce un modello piccolo a pesi casuali ⇒ **oracolo di parità per un porto, senza scaricare pesi** |
+| riferimento DeepSeek | `inference/model.py` (TP8). Il self-test istanzia un modello piccolo a pesi NON inizializzati: controlla forme e kernel, non la numerica. Con pesi casuali fissati diventa un **oracolo di parità senza scaricare pesi**, come per la porta MLX (fp32, 1e-6). Da verificare se i kernel FP8/FP4 di `kernel.py` girano sulla 3060 |
 
 ## 5. Contro la nostra macchina (verificata 10/9)
 
@@ -105,11 +105,11 @@ RTX 3060 12 GB · **C: Lexar EQ790 NVMe, 310,8 GiB liberi** · **D: EMTEC X160 S
 - **L'Engram su SSD e' il pezzo facile**: 48 letture esatte per token (~10 KB a Q6_K), prefetchabili al
   campionamento; lo strato 14 ha 13 strati di margine. Il prefill ne fa 48 × token: con fault serializzati
   e' latency-bound, servono letture parallele o pre-caricate.
-- ⚠ **La trappola è la page cache, non la lettura.** Precedente di casa (8/9): Qwen3.8-Flash-Next UD-Q4_K_XL
+- ⚠ **Ipotesi da verificare: la trappola è la page cache, non la lettura.** Precedente di casa (8/9): Qwen3.8-Flash-Next UD-Q4_K_XL
   (111 GB) su 93 GB di RAM = **0,97 t/s** ⇒ «la tabella resta su disco gratis» falsificata quando il file supera
   la RAM. Col fork `--load-mode none` (esperti residenti, tabella mappata) andava, ma lì la tabella entrava
   comunque in page cache. **Una tabella n-gram servita davvero da SSD sotto pressione di memoria non e' mai
-  stata misurata qui.** Con V4.1 i fault dell'Engram su mmap ruberebbero page cache agli esperti.
+  stata misurata qui.** Se l'ipotesi regge, con V4.1 i fault dell'Engram su mmap ruberebbero page cache agli esperti.
 - Siamo tornati nel regime «il modello non entra», l'unico in cui il **gate SSD↔RAM a massa** pagava (5/8: a
   64 GB cancellava la coda, a 96 GB +0,7%).
 - Prefill: l'encoder da solo ha ~71,6 GiB di esperti a IQ2 ⇒ durante una lettura lunga può stare tutto in RAM.
@@ -125,7 +125,7 @@ RTX 3060 12 GB · **C: Lexar EQ790 NVMe, 310,8 GiB liberi** · **D: EMTEC X160 S
    tabella 26,9 GiB). Esperti residenti (fork `--load-mode none`), page cache ristretta finché la tabella non ci
    sta più, t/s a confronto con la cella libera. Copiarlo prima su C: (NVMe): su D: si misurerebbe il SATA.
 2. **Porto del grafo** (nuova arch nel fork o su upstream + #28696): CED, CSA2, Engram secondo lo schema qwen4exp,
-   `bias_vl` (già fatto per il Vision-Exp), DSpark a 128 esperti. Parità contro `model.py` a config piccola, su CPU.
+   `bias_vl` (già fatto per il Vision-Exp), DSpark a 128 esperti. Parità contro `model.py` a config piccola con pesi casuali fissati (percorso fp32; kernel da verificare sulla 3060).
 3. **Pesi**: IQ2 degli esperti convertito su pod, prima senza imatrix (l'imatrix richiede il runtime), Engram Q6_K,
    mmproj. Poi imatrix in casa e riquantizzazione.
 4. **Servizio**: denso + cache esperti in VRAM, gate a massa SSD↔RAM con `VirtualLock`, Engram letto da NVMe

@@ -122,7 +122,7 @@ RTX 3060 12 GB · **C: Lexar EQ790 NVMe, 310,8 GiB liberi** · **D: EMTEC X160 S
 ## 6. Piano (in ordine, nessun download fino al punto 3)
 
 1. **Test del principio a costo zero** su Qwen3.8-Flash-Next, già su disco (`D:\models\qwen38flashnext\UD-Q2_K_XL`,
-   tabella 26,9 GiB). Esperti residenti (fork `--load-mode none`), page cache ristretta finché la tabella non ci
+   tabella ~27 GiB = 29,2 GB). Esperti residenti (fork `--load-mode none`), page cache ristretta finché la tabella non ci
    sta più, t/s a confronto con la cella libera. Copiarlo prima su C: (NVMe): su D: si misurerebbe il SATA.
 2. **Porto del grafo** (nuova arch nel fork o su upstream + #28696): CED, CSA2, Engram secondo lo schema qwen4exp,
    `bias_vl` (già fatto per il Vision-Exp), DSpark a 128 esperti. Parità contro `model.py` a config piccola con pesi casuali fissati (percorso fp32; kernel da verificare sulla 3060).

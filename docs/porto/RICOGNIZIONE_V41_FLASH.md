@@ -173,6 +173,37 @@ Ricontrollo su 38 repo HF col nome V4.1 (`v41_flash/ricontrollo_quant.py`) e sul
   sotto i 128 GB di RAM ⇒ **l'Engram su NVMe è un modo di servizio che esiste già** (su 4× RTX PRO 6000).
   Da non confondere con il 4 bit affine MLX (+7,3%).
 
+## 9. Chi ha fatto i REAP di V4.1 e cosa tagliano (11/9)
+
+Il **metodo** è di Cerebras Research: REAP, Router-weighted Expert Activation Pruning (Lasby et al., arXiv 2510.13999,
+ICLR 2026, repo `CerebrasResearch/reap`). Cerebras ha pubblicato ~30 modelli REAP (GLM-4.x, MiniMax-M2.x,
+Qwen3-Coder, DeepSeek-V3.2) ma **nessun DeepSeek V4 o V4.1**. I REAP di V4.1 sono della comunità, tutti MLX:
+
+| build | autore | esperti tenuti | criterio e calibrazione | costo misurato |
+|---|---|---:|---|---|
+| REAP25 | Pipenetwork | 288/384 | peso di routing applicato × ‖uscita esperto‖₂, 65.536 token (wikitext-2 train, Wikipedia in 10 lingue, codice) | ppl ×1,028 [1,019-1,039]; saliency tenuta 90,4% (strato peggiore 87,7%) |
+| REAP37 (non pubblicato) | Pipenetwork | 242/384 | idem | ppl ×1,077 |
+| REAP50 | Pipenetwork | 192/384 | idem | ppl ×1,168, «stile di generazione visibilmente degradato»; saliency 72,7% (peggiore 68,3%) |
+| REAP12,5 2 bit | Rapid-MLX (raullenchai), sopra il 2 bit di Vontra | 336/384 | massa di routing «robusta», criterio prudente fra due metà, 2.048 token | massa tenuta 99,995% (peggiore 99,856%); qualità non misurata; 7,3 t/s su M3 Ultra, non esposto nel prodotto |
+
+- **Pipenetwork**: utente HF dal 12/4/2026 (141 modelli), org GitHub `PipeNetwork`, autore della porta MLX
+  `deepseek-v41-mlx` (parità 1e-6). Fa REAP in serie: DeepSeek-V4-Flash REAP25/37/50 (31/7), Qwen3.8-2.4T
+  reap50/60/75 (13/8), GLM-5.3 e GLM-5.3-Flash REAP25/37/50 (28/8).
+- **Cosa tagliano** (intestazioni + `scripts/prune_build.py`): **solo gli esperti instradati**, lungo l'asse degli
+  esperti dei tensori impilati `experts.{gate,up,down}_proj`, **e le stesse righe del router** (`gate.weight`
+  [192, 5120], `gate.bias` e `gate.bias_vl` [192]). Non è una maschera: gli esperti tolti spariscono, e il top-6
+  si sceglie fra i rimasti. **Stesso K in ogni strato** (i 40 strati sono tutti MoE), insieme diverso per
+  strato; gli esperti mai instradati in calibrazione escono per primi. Potatura fatta sui tensori già
+  quantizzati (equivalente a potare e riquantizzare).
+- **Intatti**: attenzione, esperto condiviso, tabelle Engram, embed/head, hyper-connections. DSpark/MTP assenti dai
+  build (tolti, non potati); visione portata ma runtime solo testo.
+- **La lista degli esperti tenuti non è pubblicata**: `saliency.npz` è citato nel config ma non è nel repo. Per un
+  GGUF bisognerebbe ricalcolare la saliency facendo girare il modello.
+- Confronto col nostro track REAP ds4 (5/7, V4-Flash): stessa idea, ma maschera di bias a −1e9 invece del taglio
+  fisico, saliency sul solo peso di gate, calibrazione di DOMINIO: K50 di dominio ×1,010 (CI attraverso 1),
+  casuale ×1,388. Non è un confronto alla pari (modelli e testi diversi), ma il ×1,168 di REAP50 su calibrazione
+  generica va nella direzione della lezione del collasso: conta QUALI esperti, e lo decide il dominio.
+
 ## Fonti
 
 - https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (card, config, `inference/`)

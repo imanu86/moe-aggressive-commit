@@ -141,6 +141,38 @@ RTX 3060 12 GB · **C: Lexar EQ790 NVMe, 310,8 GiB liberi** · **D: EMTEC X160 S
   anche `engram.wkv` (0,31B) fra le tabelle; nel testo sopra e' riattribuita.
 - `config.json` della release (rev `dba1be0a`).
 
+## 8. Aggiornamento 11/9 mattina — un IQ2 vero non c'è ancora
+
+Ricontrollo su 38 repo HF col nome V4.1 (`v41_flash/ricontrollo_quant.py`) e sulle intestazioni dei GGUF remoti
+(`v41_flash/gguf_header_remoto.py`: 22 MiB di intestazioni lette, nessun peso).
+
+- **Nessun GGUF IQ2 pubblicato.** L'unico IQ2_XXS resta dentro il MixedQ2 (quantizzato senza imatrix, senza Engram).
+- **Perché non può ancora uscire**: IQ2_XXS / IQ2_XS / IQ2_S (e Q2_K_S) vogliono l'imatrix, e l'imatrix si calcola
+  facendo girare il modello. Nessun runtime llama.cpp lo esegue: la PR #28696 è ancora bozza e solo convertitore
+  (aggiornata l'11/9 alle 02:02, +443 righe); ik_llama e ktransformers: nulla.
+- **vcruz305 Q2_K completo: 246,35 GiB**, arch `deepseek41`, 1.046 tensori, senza chiavi imatrix, senza DSpark né
+  visione. Composizione dalle intestazioni:
+
+| pezzo | tipo | GiB |
+|---|---|---:|
+| esperti gate + up | Q2_K | 110,74 |
+| esperti down | Q3_K | 72,51 |
+| **tabelle Engram** | **Q2_K (2,625 bpw)** | **60,08** |
+| denso, condiviso, proiezioni Engram, embed/head | Q2_K / Q3_K / Q6_K / BF16 | 3,01 |
+
+  ⚠ Engram a 2 bit affini: la scala MLX dava già +7,3% di divergenza a 4 bit. Nello stesso repo: Q8_0 completo
+  (473,07 GiB), Q3_K_M in caricamento. `AMAImedia/DeepSeek-V4.1-Flash-FP8-GGUF` è una copia del Q2_K.
+- **REAP, solo MLX** (pipenetwork, saliency REAP su 65.536 token): REAP25 tiene 288/384 esperti, perplessità
+  ×1,028 (peggio su 107/140 finestre); REAP50 tiene 192/384, ×1,168 (peggio su 138/140). rapid-mlx: 336/384 a 2 bit,
+  199 GiB, 7,3 t/s su M3 Ultra, 99,995% della massa di routing. **Proiezione a IQ2** (ricetta Vision-Exp):
+  REAP50 ~78 GiB (la taglia del Vision-Exp di oggi), REAP25 ~114, 336/384 ~132. ⚠ Potatura statica: vedi il
+  collasso per cambio di dominio del reap-loop.
+- **Engram HLWQ Q4** (caiovicentino1): rotazione di Hadamard + codebook Lloyd a 4 bit, 132 B/riga, ~101 GB le due
+  tabelle, coseno 0,9954. Stesso server: prosa invariata, codice +0,015 nats/token, needle fino a 52k +0,04 (5/5
+  recuperati), velocità invariata. Il loro adapter SGLang serve le tabelle da RAM oppure con `OFFLOAD_MODE=nvme`
+  sotto i 128 GB di RAM ⇒ **l'Engram su NVMe è un modo di servizio che esiste già** (su 4× RTX PRO 6000).
+  Da non confondere con il 4 bit affine MLX (+7,3%).
+
 ## Fonti
 
 - https://huggingface.co/deepseek-ai/DeepSeek-V4.1-Flash (card, config, `inference/`)

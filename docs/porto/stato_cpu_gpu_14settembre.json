@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p7_awaiting_mtp_reconnaissance",
+  "implementation_status": "p7_cell4_polling_and_draft_rows",
   "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
@@ -18,6 +18,13 @@
   "q4_status": "deferred",
   "production_changed": false,
   "new_benchmark_runs": 45,
+  "p7_cell3_result": {
+    "verify_row_ms": 15.66,
+    "mmvq_ms": 6.60,
+    "gather_ms": 6.53,
+    "gather_gib_s": 24.0,
+    "prefetch_max_coverage": 0.49
+  },
   "baseline_reference_free_tps": 24.44,
   "spec_reference_free_tps": 28.6646,
   "p7_cell1_result": {
@@ -54,7 +61,7 @@
     "fumo_delta_24_layers": -0.059,
     "plumbing_47_layers_ms": 2.78
   },
-  "next_action": "P7 cell 2 (D22) is COMPLETE: the unshared MTP head (mtp-Qwen3.8-Flash-Next-Q8_0.gguf) with a 1-token draft does not beat M1 on either t/s (22.6316 vs 28.6646, -21.03% raw) or first-position acceptance (0.7832 vs 0.7851, no gain). The raw t/s drop is an isolated system anomaly on 2 of 16 cases (L07/L08@ctx32k: decode 3-4x slower, free RAM below 4 GB, GPU power collapsed to 81W vs 135W at equal or higher clock -- a transport-stall signature, not thermal, not isolated experimentally); depurated t/s is 29.04 (+1.3%, within single-replica noise) but depurated acceptance stays at 0.7797, still below 0.7851 -- the verdict does not change even in the most favorable case. Fingerprints 18/18 identical to M1 (verification correctness confirmed). VRAM +302 MiB, RAM +1.03 GB. M5 not run (neither trigger condition met). Decision D23: the unshared head is not adopted -- draft accuracy is not improved by swapping the available head. New risk R-RAM: with the MTP head on and 32k context, free RAM drops to ~4-5 GB, and below 4 GB decode collapses (transport stall, not thermal); every future preset must log minimum free RAM during the run, and a cell with a minimum below 4 GB is not a clean speed measurement. Next: P7 cell 3 (cost of the verify row, 16.6 ms: 6.6 mmvq + 6.4 transfers) is in preparation, pending the GitHub MTP-acceptance reconnaissance (docs/porto/RICOGNIZIONE_MTP_ACCETTAZIONE_14_SETTEMBRE.md, being written by another agent -- do not create it from this task). The cache-hit-gap front (41% vs 75%) is still NOT the P7 front (D19).",
+  "next_action": "GitHub MTP-acceptance reconnaissance (commit 2ce6ce0) is COMPLETE: three promising levers ranked by expected gain/cost -- (1) --spec-draft-p-min + n-min, already wired upstream, off by default, worth little alone (~+1%) but unlocks n-max 3-4 on easy spans only if the 3-row verify assert is removed; (2) prefetching the verify row's expert transfers behind the draft head's forward pass (SP-MoE/DraftExpert), expected +5.4% if 4 of 6.4 ms of transfers are recovered; (3) FastMTP (head retrained on self-distilled generations), published pos2 0.48->0.62 on Qwen3-Next, but no head exists for Flash-Next and it does not pay off alone without lever 2. No draft trees. Our k=1 acceptance (0.785) is above the published aggregate for the same head (0.66). Method warning collected: vLLM #55357 documents episodic acceptance collapses to 0% lasting hours, invisible in a lifetime average -- log acceptance per window in future benches. P7 cell 3 (commit e74adb2) is COMPLETE: tested lever 2 (prefetch) and falsified it for two independent, individually sufficient reasons -- (1) nothing is knowable at head time (routes of the row-1 token depend on hidden states its own pass has not computed yet; coverage of next-cycle misses from the previous cycle is measured at 0.00%, structural, since anything used last cycle is already resident); (2) even with a perfect oracle the window is too small (5.67 ms at 24.0 GiB/s = 136 MiB capacity, ~86 MiB free after the head's own traffic, vs ~174 MiB the extra row moves -- max realistic coverage 49%). Decision D24: prefetch-during-head lever CLOSED. The cell also produced updated row anatomy: extra row costs 15.66 ms today (mmvq +6.60, expert gather +6.53 at 24.0 GiB/s i.e. PCIe-4.0-x16-saturated, k_get_rows +1.73, QSA-bias H2D +1.14 new term scaling with context depth, radix sort +0.73, GPU idle +2.17); the expert cache is engaged on the 2-row verify batch (confirmed via device counters and code path, no discard-under-max-batch gate exists in our tree); the MTP head has no cache of its own (n_moe_cache_slots=0) and evicts nothing. Decision D25: P7 cell 4 opened -- compose the P3/P4 CPU lane with MTP draft rows only (experts requested only by rows beyond the first are computed on CPU instead of transferred, -84.6% of the extra row's bytes on real traces), gated in two stages: stage 1 is a light plumbing variant (C9 from P4, never implemented) that replaces the two cudaLaunchHostFunc host nodes with polling on a mapped flag, gate <=15 us/layer at 47 layers cpu_max=0 (today 59.1 us, origin 112.4 us), identical fingerprints to off; stage 2 only if stage 1 passes -- CPU lane on draft rows only, gate on row cost R = cycle - T1 - H under 13 ms, ctx32k fingerprints identical to M1 (8/8); only then re-run B (solo_libero draft-1 and draft-2) against the 28.66 t/s reference. Expectation: +2.2% if the lane is half-exposed, +9.7% if covered; side effect: the 2nd-draft-position break-even drops from 0.633 to 0.501, below the 0.553 measured in cell 1 -- the 2-token draft (closed in D22) could become profitable again without touching acceptance. Next: open P7 cell 4, stage 1 (polling plumbing), gate <=15 us/layer before attempting stage 2. The cache-hit-gap front (41% vs 75%) is still NOT the P7 front (D19).",
   "phases": [
     {
       "id": "P0",
@@ -146,7 +153,9 @@
     "D20",
     "D21",
     "D22",
-    "D23"
+    "D23",
+    "D24",
+    "D25"
   ],
   "decisions_added": [
     {
@@ -200,6 +209,14 @@
     {
       "id": "D23",
       "summary": "The unshared MTP head is not adopted (P7 cell 2, COMPLETE 9/14, commit 07b07a1). M4 (unshared head, 1-token draft) beats M1 on neither t/s (22.6316 vs 28.6646, -21.03% raw) nor first-position acceptance (0.7832 vs 0.7851, no gain). The raw t/s collapse is an isolated system anomaly on 2 of 16 cases (L07/L08@ctx32k: decode 3-4x slower, free RAM below 4 GB, GPU power collapsed to 81W vs 135W at equal or higher clock -- a transport-stall signature, not thermal), not isolated experimentally. Depurated t/s is 29.04 (+1.3%, within single-replica noise) but depurated acceptance stays at 0.7797, still below M1 -- the decision does not change even in the most favorable case. Fingerprints 18/18 identical to M1. M5 not run: neither trigger condition met. New risk R-RAM: with the MTP head and 32k context, minimum free RAM during a run must be logged in every future preset; a cell with a minimum below 4 GB is not a clean speed measurement until R-RAM is falsified or confirmed in isolation."
+    },
+    {
+      "id": "D24",
+      "summary": "Prefetching the verify row's expert transfers behind the MTP draft head's forward pass is CLOSED (P7 cell 3, COMPLETE 9/14, commit e74adb2). Falsified for two independent, individually sufficient reasons: (1) nothing is knowable at head time -- the next verify row's routes depend on hidden states its own pass has not computed yet, and on the only available information (the previous cycle) measured coverage of next-cycle misses is 0.00%, structural (anything used last cycle is already resident, so it cannot be a miss now); (2) even with a perfect oracle the head's 5.67 ms window at the measured 24.0 GiB/s caps at 136 MiB capacity, ~86 MiB free after the head's own traffic, against the ~174 MiB the extra row moves -- max realistic coverage 49% (78% with a fully free bus). The cell also produced updated row anatomy on today's binary: extra verify row costs 15.66 ms (mul_mat_vec_q +6.60, expert gather +6.53 at 24.0 GiB/s, k_get_rows +1.73, QSA-bias H2D +1.14 new term scaling with context depth, radix sort +0.73, GPU idle +2.17); 60% of the row is transport and transport is bandwidth-saturated (three independent mechanisms measure 21-26 GiB/s, the practical PCIe 4.0 x16 ceiling). Two ten-minute checks both falsified as the 'trivial cause': get_mmvq_mmid_max_batch() returns 7/7/8 for IQ2_S/IQ3_XXS/IQ4_NL on sm_86 (MMVQ reachable at 2-3 rows, no -1), and the 2-row verify batch does pass through the expert cache (device counters show n_unique rising from 480/forward at 1 row to ~790 at 2 rows; no max-batch bypass gate exists in our tree; the draft head has n_moe_cache_slots=0 and evicts nothing)."
+    },
+    {
+      "id": "D25",
+      "summary": "P7 cell 4 opened: compose the P3/P4 CPU lane (general route closed in D18, but the mechanism remains sound) with MTP draft rows only, in two gated stages. On real traces, computing on CPU the non-resident experts requested only by rows beyond the first (instead of transferring them) cuts the extra row's traffic by 84.6% (from +140.2 to ~21.6 MiB), at a cost of 114.5 CPU experts/cycle (2.39/layer avg, p90 5, max 10). Stage 1: light plumbing (variant C9 from P4, described but never implemented because at one isolated layer it did not clear the 0.5 ms/token threshold) replaces the two cudaLaunchHostFunc host nodes with polling on a mapped flag; gate: cost <=15 us/layer at 47 layers cpu_max=0 (today 59.1 us after P4 cell 2's light plumbing, origin 112.4 us), fingerprints identical to off. Stage 2 only if stage 1 clears the gate: CPU lane on draft rows only; gate on row cost, not t/s -- R = cycle - T1 - H must drop under 13 ms, ctx32k fingerprints identical to M1 (8/8); only then re-run B (solo_libero draft-1 and draft-2) against the 28.66 t/s reference (D21). Expectation: +2.2% if the CPU lane is half-exposed, +9.7% if fully covered; quantified side effect: the 2nd-draft-position break-even drops from 0.633 to 0.501, below the 0.553 measured in cell 1 -- the 2-token draft (closed in D22) could become profitable again without any change to acceptance."
     }
   ]
 }

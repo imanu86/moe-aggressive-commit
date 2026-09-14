@@ -10,20 +10,39 @@
 // host si ottiene SOLO da `ggml_cuda_mapped_tensor_host_ptr` (ggml-cuda.cu:1387).
 // Su x86-64 i due coincidono (UVA) ma il codice non ci si appoggia.
 //
-// DA FARE IN P3: `ggml_cuda_mapped_tensor_host_ptr` non e' ancora nella tabella
-// dei proc-address (ggml-cuda.cu:6015-6030). Va aggiunta la voce, altrimenti la
-// risoluzione qui sotto fallisce e l'esecutore non si crea.
+// NOMI E FIRME VERIFICATI SULL'ALBERO REALE il 14 settembre (difetto E1 della
+// revisione: la versione precedente cercava `"ggml_backend_cuda_mapped_buffer_type"`
+// con firma `(int)`, che in tabella non esiste):
+//
+//   ggml-cuda.cu:6032-6033  "ggml_backend_cuda_mapped_buffer_type_for_device"
+//   ggml-cuda.cu:5987       static ggml_backend_buffer_type_t
+//                           ggml_backend_cuda_mapped_buffer_type_for_device(ggml_backend_dev_t dev);
+//
+// La funzione prende il DISPOSITIVO, non l'indice: internamente ritrova
+// l'indice scorrendo `ggml_backend_reg_dev_get(reg, i)` e chiama
+// `ggml_backend_cuda_mapped_buffer_type((int) i)` (righe 5987-5998). Passarle
+// un `int` avrebbe compilato e sarebbe esploso a runtime.
+//
+// DA FARE IN P3: `ggml_cuda_mapped_tensor_host_ptr` (definita a ggml-cuda.cu:1387)
+// NON e' nella tabella dei proc-address (verificato: la tabella a ~6000-6035
+// non la contiene). Va aggiunta la voce, altrimenti la risoluzione qui sotto
+// fallisce e l'esecutore non si crea. Il fallimento e' sicuro — messaggio e
+// nullptr, mai un puntatore device dereferenziato — ma resta BLOCCANTE per
+// l'inizio di P3.
 //
 // NON compilato dal test host-only.
 
 #include "moe_cpu_host_memory.h"
 
 #include "ggml.h"
-#include "ggml-backend.h"
+#include "ggml-backend.h"   // include a sua volta ggml-alloc.h (ggml_backend_alloc_ctx_tensors_from_buft)
+
+#include <string>
 
 namespace {
 
-using mapped_buft_fn = ggml_backend_buffer_type_t (*)(int);
+// Firma reale: ggml_backend_buffer_type_t (*)(ggml_backend_dev_t).
+using mapped_buft_fn = ggml_backend_buffer_type_t (*)(ggml_backend_dev_t);
 using mapped_host_fn = const void * (*)(const ggml_tensor *, size_t);
 
 class cuda_mapped_memory : public moe_cpu_host_memory {
@@ -36,27 +55,39 @@ public:
     ~cuda_mapped_memory() override { release(); }
 
     bool allocate(size_t size, size_t align, moe_cpu_host_block * out, std::string * err) override {
+        // `fail` rilascia cio' che questa chiamata ha gia' costruito: non si
+        // usa per il caso «gia' allocato», che non deve distruggere nulla.
         auto fail = [&](const char * m) { if (err) *err = m; release(); return false; };
-        if (buf_) return fail("gia' allocato");
-        (void) align;  // il buffer type allinea a 128 (ggml-cuda.cu:1479-1482)
+        if (buf_) { if (err) *err = "gia' allocato"; return false; }
+        // Il buffer type allinea a 128 (ggml-cuda.cu:1479-1482), quindi ogni
+        // richiesta fino a 128 byte e' soddisfatta per costruzione.
+        if (align > 128) { if (err) *err = "allineamento richiesto superiore a quello del buffer mappato"; return false; }
 
-        ggml_backend_dev_t dev = ggml_backend_dev_by_name(device_ == 0 ? "CUDA0" : nullptr);
+        ggml_backend_dev_t dev = nullptr;
+        {
+            const std::string name = "CUDA" + std::to_string(device_);
+            dev = ggml_backend_dev_by_name(name.c_str());
+        }
         if (!dev) {
             for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
                 ggml_backend_dev_t d = ggml_backend_dev_get(i);
                 if (ggml_backend_dev_type(d) == GGML_BACKEND_DEVICE_TYPE_GPU) { dev = d; break; }
             }
         }
-        if (!dev) return fail("nessun dispositivo CUDA");
+        if (!dev) { if (err) *err = "nessun dispositivo CUDA"; return false; }
 
         ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
-        auto buft_fn = (mapped_buft_fn) ggml_backend_reg_get_proc_address(reg, "ggml_backend_cuda_mapped_buffer_type");
-        auto host_fn = (mapped_host_fn) ggml_backend_reg_get_proc_address(reg, "ggml_cuda_mapped_tensor_host_ptr");
-        if (!buft_fn) return fail("buffer type mappato non esposto dal backend");
-        if (!host_fn) return fail("ggml_cuda_mapped_tensor_host_ptr non esposta: aggiungerla in P3");
+        if (!reg) { if (err) *err = "registro del backend assente"; return false; }
 
-        ggml_backend_buffer_type_t buft = buft_fn(device_);
-        if (!buft) return fail("buffer type mappato assente per questo dispositivo");
+        auto buft_fn = (mapped_buft_fn) ggml_backend_reg_get_proc_address(
+            reg, "ggml_backend_cuda_mapped_buffer_type_for_device");
+        auto host_fn = (mapped_host_fn) ggml_backend_reg_get_proc_address(
+            reg, "ggml_cuda_mapped_tensor_host_ptr");
+        if (!buft_fn) { if (err) *err = "ggml_backend_cuda_mapped_buffer_type_for_device non esposta dal backend"; return false; }
+        if (!host_fn) { if (err) *err = "ggml_cuda_mapped_tensor_host_ptr non esposta: aggiungerla alla tabella dei proc-address in P3"; return false; }
+
+        ggml_backend_buffer_type_t buft = buft_fn(dev);
+        if (!buft) { if (err) *err = "buffer type mappato assente per questo dispositivo"; return false; }
 
         ggml_init_params ip{};
         ip.mem_size   = ggml_tensor_overhead() * 2;

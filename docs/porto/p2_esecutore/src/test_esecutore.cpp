@@ -12,6 +12,16 @@
 //   T9  cambio di fase e distruzione senza stallo
 //   T10 nessun riuso anticipato del buffer fra job consecutivi
 //   T11 nessuna allocazione nuova a regime
+// e, aggiunte dopo la revisione del 14 settembre (difetti B1/B2, buchi D1-D5):
+//   T12 cancel() mentre compute() e' GENUINAMENTE in corso: il completamento
+//       tardivo non tocca i flag ne' l'uscita del job successivo
+//   T13 scadenza del wait con completamento tardivo: job irrecuperabile,
+//       submit rifiutati, riconoscimento del coordinatore, recupero
+//   T14 un annullamento di routine non contamina; un errore vero si;
+//       acknowledge_contamination() sblocca
+//   T15 distruzione con un job in volo, senza stallo
+//   T16 percorsi di fallimento di create()
+//   T17 register_layer: idempotenza e rifiuto di un puntatore cambiato
 //
 // Uso:
 //   test_esecutore.exe [--full] [--threads N] [--experts N] [--weights DIR]
@@ -36,6 +46,7 @@
 #include <fstream>
 #include <random>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -192,6 +203,19 @@ size_t unequal(const float * a, const float * b, int n) {
     return k;
 }
 
+void sleep_ms(int ms) { std::this_thread::sleep_for(std::chrono::milliseconds(ms)); }
+
+// Attende una condizione con scadenza, senza mai bloccare in eterno il banco.
+template <typename F>
+bool wait_until(F f, int timeout_ms) {
+    const auto t0 = clock_t_::now();
+    for (;;) {
+        if (f()) return true;
+        if (std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count() > timeout_ms) return false;
+        std::this_thread::yield();
+    }
+}
+
 } // namespace
 
 int main(int argc, char ** argv) {
@@ -222,17 +246,18 @@ int main(int argc, char ** argv) {
     caps.max_per_row = 2;
     caps.n_threads   = threads;
     caps.wait_timeout_us = 5000000;
-
-    std::string err;
-    auto ex = moe_cpu_executor::create(caps, moe_cpu_host_memory_plain(), &err);
-    if (!ex) { std::printf("creazione fallita: %s\n", err.c_str()); return 2; }
-    ex->set_phase(moe_cpu_phase::decode);
+    caps.ack_timeout_us  = 2000000;
 
     moe_cpu_bank bank;
     bank.gate = b.gate.data(); bank.gate_stride = b.gate_stride;
     bank.up   = b.up.data();   bank.up_stride   = b.up_stride;
     bank.down = b.down.data(); bank.down_stride = b.down_stride;
     bank.n_experts = s.E;
+
+    std::string err;
+    auto ex = moe_cpu_executor::create(caps, moe_cpu_host_memory_plain(), &err);
+    if (!ex) { std::printf("creazione fallita: %s\n", err.c_str()); return 2; }
+    ex->set_phase(moe_cpu_phase::decode);
     if (!ex->register_layer(7, bank, &err)) { std::printf("registrazione fallita: %s\n", err.c_str()); return 2; }
 
     // tabella delle allocazioni
@@ -299,6 +324,7 @@ int main(int argc, char ** argv) {
         for (int k = 0; k < s.K; ++k) zero = zero && ex->y_host()[k] == 0.0f;
         check(st == moe_cpu_state::ok && zero, "T4", "zero route: contributo nullo, esito valido");
         check(ex->flags_host()->poison.value == 0, "T4", "zero route: nessun veleno");
+        check(!ex->contaminated(), "T4", "nessuna contaminazione dopo soli esiti validi");
     }
 
     // ------------------------------------------------------------------- T5
@@ -316,20 +342,29 @@ int main(int argc, char ** argv) {
     }
 
     // ------------------------------------------------------------------- T6
+    // Dieci header non validi: i sei della prima stesura piu' i quattro
+    // segnalati come mancanti dalla revisione (n_routes negativo, peso
+    // infinito, attivazione non finita, indice di strato negativo).
     {
         struct bad { const char * what; int kind; };
         const bad cases_bad[] = {
             {"magic errato",              0},
             {"strato non registrato",     1},
             {"esperto fuori dai limiti",  2},
-            {"peso non finito",           3},
+            {"peso non finito (NaN)",     3},
             {"n_rows fuori dai limiti",   4},
             {"troppe route per token",    5},
+            {"n_routes negativo",         6},
+            {"peso infinito",             7},
+            {"attivazione non finita",    8},
+            {"indice di strato negativo", 9},
         };
         bool all_rejected = true, all_poisoned = true, all_untouched = true;
+        const float x0_saved = ex->x_host()[0];
         for (const auto & bc : cases_bad) {
             // sentinella: `y` non deve essere toccato da un job rifiutato
             for (int k = 0; k < s.K; ++k) const_cast<float *>(ex->y_host())[k] = -12345.0f;
+            ex->x_host()[0] = x0_saved;
             routes[0] = {{0, 1.0f}};
             fill_job(ex->job_host_mut(), 7, 1, s.K, s.H, routes);
             moe_cpu_job * j = ex->job_host_mut();
@@ -340,6 +375,10 @@ int main(int argc, char ** argv) {
                 case 3: j->weight[0] = std::nanf("");   break;
                 case 4: j->n_rows    = MOE_CPU_MAX_ROWS + 1; break;
                 case 5: j->n_routes[0] = MOE_CPU_MAX_PER_ROW + 1; break;
+                case 6: j->n_routes[0] = -1;            break;
+                case 7: j->weight[0] = HUGE_VALF;       break;
+                case 8: ex->x_host()[0] = HUGE_VALF;    break;
+                case 9: j->layer     = -1;              break;
             }
             const moe_cpu_state st = run_once(*ex);
             all_rejected  = all_rejected  && st == moe_cpu_state::rejected;
@@ -347,10 +386,11 @@ int main(int argc, char ** argv) {
             for (int k = 0; k < s.K; ++k) all_untouched = all_untouched && ex->y_host()[k] == -12345.0f;
             if (st != moe_cpu_state::rejected) std::printf("       non rifiutato: %s\n", bc.what);
         }
-        check(all_rejected,  "T6", "header non validi: rifiutati");
+        ex->x_host()[0] = x0_saved;
+        check(all_rejected,  "T6", "header non validi: rifiutati (10 casi)");
         check(all_poisoned,  "T6", "header non validi: risultato avvelenato");
         check(all_untouched, "T6", "header non validi: `y` non toccato, nessuno zero");
-        check(ex->contaminated(), "T6", "la contaminazione e' registrata e appiccicosa");
+        check(ex->contaminated(), "T6", "un header non valido contamina, e la marca e' appiccicosa");
     }
 
     // ------------------------------------------------------------------- T7
@@ -377,12 +417,22 @@ int main(int argc, char ** argv) {
     {
         routes[0] = {{0, 1.0f}};
         fill_job(ex->job_host_mut(), 7, 1, s.K, s.H, routes);
+        const uint64_t g1 = ex->submitted() + 1;      // job legittimo
         moe_cpu_executor::submit_hook(ex.get());
-        moe_cpu_executor::submit_hook(ex.get());   // secondo submit senza wait
+        const uint64_t g2 = ex->submitted() + 1;      // generazione del submit rientrante
+        moe_cpu_executor::submit_hook(ex.get());      // secondo submit senza wait
         const auto t0 = clock_t_::now();
         moe_cpu_executor::wait_hook(ex.get());
         const double us = std::chrono::duration<double, std::micro>(clock_t_::now() - t0).count();
         check(us < 200000.0, "T8", "submit concorrente: rifiutato, non accodato, senza stallo");
+        check(ex->state(g2) == moe_cpu_state::rejected, "T8", "il submit rientrante e' registrato come rifiutato");
+        check(ex->state(g1) == moe_cpu_state::ok, "T8", "il job legittimo non viene disturbato dal rientrante");
+        // Un secondo `wait` (quello abbinato al submit rifiutato) non deve
+        // trovare niente da attendere ne' rilasciare: `in_flight` e' gia' zero.
+        const auto t1 = clock_t_::now();
+        moe_cpu_executor::wait_hook(ex.get());
+        const double us2 = std::chrono::duration<double, std::micro>(clock_t_::now() - t1).count();
+        check(us2 < 200000.0, "T8", "il wait spaiato ritorna subito, senza attendere il vuoto");
         check(ex->quiesce(1000000, &err), "T8", "il pool torna quieto dopo la rientranza");
         ex->rearm();
     }
@@ -410,6 +460,79 @@ int main(int argc, char ** argv) {
     // ------------------------------------------------------------------ T11
     check(ex->allocated_bytes() == bytes_before, "T11", "nessuna allocazione nuova a regime");
 
+    // ------------------------------------------------------------------ T17
+    // register_layer: idempotente con gli stessi puntatori, errore se cambiano.
+    {
+        check(ex->register_layer(7, bank, &err), "T17", "register_layer e' idempotente con gli stessi puntatori");
+        moe_cpu_bank moved = bank;
+        moved.gate = bank.gate + 1;           // puntatore diverso, mai dereferenziato
+        const bool refused = !ex->register_layer(7, moved, &err);
+        check(refused, "T17", "un puntatore sorgente cambiato e' rifiutato, non aggiornato");
+        moe_cpu_bank broken = bank;
+        broken.down_stride = bank.down_stride + 64;
+        check(!ex->register_layer(9, broken, &err), "T17", "un passo incoerente con la forma e' rifiutato");
+        check(!ex->register_layer(-3, bank, &err),  "T17", "un indice di strato negativo e' rifiutato");
+    }
+
+    // ------------------------------------------------------------------ T12
+    // Annullamento mentre compute() e' GENUINAMENTE in corso.
+    //
+    // Il ritardo iniettato tiene il coordinatore dentro la finestra di calcolo
+    // (i worker sono gia' entrati in compute() e sono fermi alla prima
+    // barriera). Un secondo thread annulla a meta'. Si verifica che:
+    //  - il `wait` ritorna senza stallo;
+    //  - l'esito annunciato e' `cancelled`, avvelenato: mai `ok`;
+    //  - il completamento TARDIVO del coordinatore non promuove l'esito;
+    //  - il job successivo e' corretto e il suo `y` combacia col riferimento:
+    //    nessun flag e nessuna uscita del job successivo e' stata toccata.
+    {
+        check(ex->acknowledge_contamination(&err), "T12", "acknowledge_contamination riparte da pulito");
+        check(!ex->contaminated(), "T12", "dopo il riconoscimento la marca e' spenta");
+
+        const uint64_t failures_before = ex->failures();
+        ex->set_test_delay_us(120000);   // 120 ms di finestra di calcolo osservabile
+        for (auto & v : x) v = dist(rng);
+        std::memcpy(ex->x_host(), x.data(), (size_t) s.K * sizeof(float));
+        routes[0] = {{(int32_t) (2 % s.E), 1.0f}};
+        fill_job(ex->job_host_mut(), 7, 1, s.K, s.H, routes);
+
+        const uint64_t gen_slow = ex->submitted() + 1;
+        std::thread canceller([&] { sleep_ms(30); ex->cancel(); });
+        const auto t0 = clock_t_::now();
+        moe_cpu_executor::submit_hook(ex.get());
+        moe_cpu_executor::wait_hook(ex.get());
+        const double wait_ms = std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count();
+        const uint64_t result_seen = ex->flags_host()->result.value;
+        const uint64_t poison_seen = ex->flags_host()->poison.value;
+        canceller.join();                 // il riconoscimento del coordinatore avviene qui dentro
+        ex->set_test_delay_us(0);
+
+        check(wait_ms < 2000.0, "T12", "il wait ritorna senza stallo durante un calcolo lungo");
+        check(result_seen != (uint64_t) moe_cpu_state::ok && poison_seen == 1,
+              "T12", "l'esito del job annullato non e' mai `ok` ed e' avvelenato");
+        check(ex->state(gen_slow) == moe_cpu_state::cancelled, "T12", "il job annullato e' registrato come annullato");
+        check(!ex->unrecoverable(), "T12", "il coordinatore ha riconosciuto l'annullamento entro la scadenza");
+        check(!ex->contaminated(),  "T12", "un annullamento di routine non contamina");
+        check(ex->failures() == failures_before + 1, "T12", "l'annullamento resta contato fra i non-ok");
+        check(ex->quiesce(2000000, &err), "T12", "nessun job in volo dopo il riconoscimento");
+
+        // Job successivo: se il completamento tardivo avesse toccato flag o
+        // uscita, questo confronto fallirebbe.
+        ex->rearm();
+        for (auto & v : x) v = dist(rng);
+        std::memcpy(ex->x_host(), x.data(), (size_t) s.K * sizeof(float));
+        const int32_t e_next = (int32_t) (3 % s.E);
+        routes[0] = {{e_next, 1.0f}};
+        fill_job(ex->job_host_mut(), 7, 1, s.K, s.H, routes);
+        const moe_cpu_state st_next = run_once(*ex);
+        const int32_t ids_next[2] = {e_next, e_next};
+        ref.run(x.data(), ids_next, ref_out.data());
+        check(st_next == moe_cpu_state::ok, "T12", "il job successivo e' valido");
+        check(ex->flags_host()->poison.value == 0, "T12", "il job successivo non eredita il veleno");
+        check(nrmse(ex->y_host(), ref_out.data(), s.K) <= 1e-6,
+              "T12", "il completamento tardivo non ha toccato l'uscita del job successivo");
+    }
+
     // ------------------------------------------------------------------- T9
     {
         ex->set_phase(moe_cpu_phase::prefill);
@@ -420,6 +543,200 @@ int main(int argc, char ** argv) {
         const double ms = std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count();
         std::printf("       distruzione in %.1f ms\n", ms);
         check(ms < 2000.0, "T9", "distruzione senza stallo");
+    }
+
+    // ------------------------------------------------------------------ T13
+    // Scadenza del `wait` con completamento tardivo.
+    //
+    // Esecutore dedicato con una scadenza del `wait` di 3 ms e un calcolo da
+    // 300 ms: la scadenza scatta mentre il coordinatore sta calcolando.
+    // Il job diventa IRRECUPERABILE: `in_flight` resta alto, ogni submit e'
+    // rifiutato, e il completamento tardivo del coordinatore NON riscrive i
+    // flag — e' precisamente il difetto B1.
+    {
+        moe_cpu_caps c2 = caps;
+        c2.wait_timeout_us = 3000;
+        auto ex2 = moe_cpu_executor::create(c2, moe_cpu_host_memory_plain(), &err);
+        if (!ex2) { std::printf("creazione ex2 fallita: %s\n", err.c_str()); return 2; }
+        ex2->set_phase(moe_cpu_phase::decode);
+        if (!ex2->register_layer(7, bank, &err)) { std::printf("registrazione ex2 fallita: %s\n", err.c_str()); return 2; }
+        ex2->set_test_delay_us(300000);
+
+        for (auto & v : x) v = dist(rng);
+        std::memcpy(ex2->x_host(), x.data(), (size_t) s.K * sizeof(float));
+        routes[0] = {{0, 1.0f}};
+        fill_job(ex2->job_host_mut(), 7, 1, s.K, s.H, routes);
+
+        const uint64_t gen_to = ex2->submitted() + 1;
+        const auto t0 = clock_t_::now();
+        moe_cpu_executor::submit_hook(ex2.get());
+        moe_cpu_executor::wait_hook(ex2.get());
+        const double ms = std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count();
+
+        check(ms < 200.0, "T13", "il wait scade e ritorna, non aspetta la fine del calcolo");
+        check(ex2->state(gen_to) == moe_cpu_state::timeout, "T13", "la scadenza produce lo stato `timeout`");
+        check(ex2->contaminated(), "T13", "la scadenza contamina");
+        check(ex2->unrecoverable(), "T13", "il job scaduto resta marcato irrecuperabile");
+        check(!ex2->acknowledge_contamination(&err), "T13", "non si riconosce una contaminazione con un job irrecuperabile");
+
+        // Un submit durante la finestra irrecuperabile: rifiutato, e le celle
+        // condivise NON vanno toccate.
+        const uint64_t gen_ref = ex2->submitted() + 1;
+        moe_cpu_executor::submit_hook(ex2.get());
+        moe_cpu_executor::wait_hook(ex2.get());
+        check(ex2->state(gen_ref) == moe_cpu_state::rejected, "T13", "durante l'irrecuperabile ogni submit e' rifiutato");
+        check(ex2->flags_host()->result.value == (uint64_t) moe_cpu_state::timeout &&
+              ex2->flags_host()->poison.value == 1,
+              "T13", "il submit rifiutato non sovrascrive le celle del job abbandonato");
+
+        // Riconoscimento del coordinatore alla fine del calcolo tardivo.
+        const bool reaped = wait_until([&] { return !ex2->unrecoverable(); }, 5000);
+        check(reaped, "T13", "il coordinatore riconosce il job e riapre il servizio");
+        check(ex2->flags_host()->result.value == (uint64_t) moe_cpu_state::timeout &&
+              ex2->flags_host()->poison.value == 1,
+              "T13", "il completamento tardivo NON riscrive i flag del job abbandonato");
+        check(ex2->quiesce(2000000, &err), "T13", "dopo il riconoscimento il pool e' quieto");
+
+        // Recupero completo, come da contratto P1 §5.
+        check(ex2->acknowledge_contamination(&err), "T13", "acknowledge_contamination dopo il riconoscimento");
+        check(!ex2->contaminated(), "T13", "la marca di contaminazione e' spenta");
+        ex2->set_test_delay_us(0);
+        ex2->rearm();
+        for (auto & v : x) v = dist(rng);
+        std::memcpy(ex2->x_host(), x.data(), (size_t) s.K * sizeof(float));
+        const int32_t e_ok = (int32_t) (1 % s.E);
+        routes[0] = {{e_ok, 1.0f}};
+        fill_job(ex2->job_host_mut(), 7, 1, s.K, s.H, routes);
+        const moe_cpu_state st = run_once(*ex2);
+        const int32_t ids_ok[2] = {e_ok, e_ok};
+        ref.run(x.data(), ids_ok, ref_out.data());
+        check(st == moe_cpu_state::ok && nrmse(ex2->y_host(), ref_out.data(), s.K) <= 1e-6,
+              "T13", "dopo il recupero il pool torna a produrre risultati corretti");
+    }
+
+    // ------------------------------------------------------------------ T14
+    // Separazione fra annullamento di routine ed errore vero (difetto B2).
+    {
+        auto ex3 = moe_cpu_executor::create(caps, moe_cpu_host_memory_plain(), &err);
+        if (!ex3) { std::printf("creazione ex3 fallita: %s\n", err.c_str()); return 2; }
+        ex3->set_phase(moe_cpu_phase::decode);
+        if (!ex3->register_layer(7, bank, &err)) { std::printf("registrazione ex3 fallita: %s\n", err.c_str()); return 2; }
+        std::memcpy(ex3->x_host(), x.data(), (size_t) s.K * sizeof(float));
+
+        check(!ex3->contaminated(), "T14", "un esecutore appena creato non e' contaminato");
+
+        // 1. annullamento di routine, ripetuto: non deve contaminare mai.
+        for (int r = 0; r < 3; ++r) {
+            ex3->cancel();
+            routes[0] = {{0, 1.0f}};
+            fill_job(ex3->job_host_mut(), 7, 1, s.K, s.H, routes);
+            const moe_cpu_state st = run_once(*ex3);
+            if (st != moe_cpu_state::cancelled) { check(false, "T14", "l'annullamento produce lo stato `cancelled`"); break; }
+            ex3->rearm();
+        }
+        check(!ex3->contaminated(), "T14", "tre annullamenti di routine non contaminano");
+        check(ex3->failures() >= 3, "T14", "gli annullamenti restano contati fra i non-ok");
+
+        // 2. il pool serve ancora: la contaminazione non e' stata innescata.
+        routes[0] = {{0, 1.0f}};
+        fill_job(ex3->job_host_mut(), 7, 1, s.K, s.H, routes);
+        check(run_once(*ex3) == moe_cpu_state::ok, "T14", "dopo gli annullamenti il pool serve ancora");
+
+        // 3. errore vero: contamina, con la generazione giusta.
+        routes[0] = {{0, 1.0f}};
+        fill_job(ex3->job_host_mut(), 7, 1, s.K, s.H, routes);
+        ex3->job_host_mut()->magic = 0xdeadbeef;
+        const uint64_t gen_bad = ex3->submitted() + 1;
+        moe_cpu_executor::submit_hook(ex3.get());
+        moe_cpu_executor::wait_hook(ex3.get());
+        check(ex3->state(gen_bad) == moe_cpu_state::rejected, "T14", "un header non valido e' rifiutato");
+        check(ex3->contaminated(), "T14", "un errore vero contamina");
+        check(ex3->first_failed_generation() == gen_bad, "T14", "la prima generazione contaminante e' quella giusta");
+
+        // 4. riconoscimento: solo dopo aver buttato l'incarnazione.
+        const uint64_t failures_kept = ex3->failures();
+        check(ex3->acknowledge_contamination(&err), "T14", "acknowledge_contamination riesce a pool quieto");
+        check(!ex3->contaminated(), "T14", "dopo il riconoscimento la marca e' spenta");
+        check(ex3->first_failed_generation() == UINT64_MAX, "T14", "la prima generazione contaminante e' azzerata");
+        check(ex3->failures() == failures_kept, "T14", "il riconoscimento non riscrive il contatore storico");
+        routes[0] = {{0, 1.0f}};
+        fill_job(ex3->job_host_mut(), 7, 1, s.K, s.H, routes);
+        check(run_once(*ex3) == moe_cpu_state::ok, "T14", "dopo il riconoscimento il pool torna a servire");
+    }
+
+    // ------------------------------------------------------------------ T15
+    // Distruzione con un job genuinamente in volo, senza `wait` abbinato:
+    // e' il caso che la revisione segnala come R13 (join senza limite di
+    // tempo). I worker escono solo quando il coordinatore si ritira, quindi
+    // nessuna barriera puo' restare spaiata.
+    {
+        auto ex4 = moe_cpu_executor::create(caps, moe_cpu_host_memory_plain(), &err);
+        if (!ex4) { std::printf("creazione ex4 fallita: %s\n", err.c_str()); return 2; }
+        ex4->set_phase(moe_cpu_phase::decode);
+        if (!ex4->register_layer(7, bank, &err)) { std::printf("registrazione ex4 fallita: %s\n", err.c_str()); return 2; }
+        std::memcpy(ex4->x_host(), x.data(), (size_t) s.K * sizeof(float));
+        ex4->set_test_delay_us(150000);
+        routes[0] = {{0, 1.0f}};
+        fill_job(ex4->job_host_mut(), 7, 1, s.K, s.H, routes);
+        moe_cpu_executor::submit_hook(ex4.get());   // nessun wait: il job resta in volo
+        sleep_ms(20);                               // il coordinatore e' dentro la finestra di calcolo
+        const auto t0 = clock_t_::now();
+        ex4.reset();
+        const double ms = std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count();
+        std::printf("       distruzione con job in volo in %.1f ms\n", ms);
+        check(ms < 2000.0, "T15", "distruzione con un job in volo: nessuno stallo");
+    }
+
+    // ------------------------------------------------------------------ T16
+    // Percorsi di fallimento di create(). Nessuno di questi deve costruire un
+    // esecutore, e nessuno deve dereferenziare fuori dai limiti: in
+    // particolare `GGML_TYPE_COUNT`, che e' il valore di difetto di
+    // `moe_cpu_caps`, indicizzerebbe la tabella dei tratti CPU fuori dai
+    // limiti (ggml-cpu.c:418-420 non controlla nulla).
+    {
+        struct bad_caps { const char * what; moe_cpu_caps c; };
+        std::vector<bad_caps> bad;
+        {
+            moe_cpu_caps c;                       // tutti i tipi = GGML_TYPE_COUNT
+            c.n_embd = s.K; c.n_ff_exp = s.H; c.n_threads = threads;
+            bad.push_back({"tipi non impostati (GGML_TYPE_COUNT)", c});
+        }
+        {
+            moe_cpu_caps c = caps; c.type_up = GGML_TYPE_Q8_0;   // vec_dot_type diverso da IQ2_S
+            bad.push_back({"gate e up con tipo di attivazione diverso", c});
+        }
+        {
+            moe_cpu_caps c = caps; c.n_ff_exp = s.H + 1;         // non multiplo del blocco di down (32)
+            bad.push_back({"n_ff_exp non multiplo del blocco di down", c});
+        }
+        {
+            moe_cpu_caps c = caps; c.max_rows = MOE_CPU_MAX_ROWS + 1;
+            bad.push_back({"max_rows fuori dai limiti", c});
+        }
+        {
+            moe_cpu_caps c = caps; c.max_per_row = 0;
+            bad.push_back({"max_per_row nullo", c});
+        }
+        {
+            moe_cpu_caps c = caps; c.n_embd = 0;
+            bad.push_back({"forma nulla", c});
+        }
+        {
+            moe_cpu_caps c = caps; c.wait_timeout_us = 0;
+            bad.push_back({"scadenza del wait nulla", c});
+        }
+        bool all_failed = true, all_explained = true;
+        for (const auto & bc : bad) {
+            std::string m;
+            auto bad_ex = moe_cpu_executor::create(bc.c, moe_cpu_host_memory_plain(), &m);
+            if (bad_ex) { all_failed = false; std::printf("       creato per sbaglio: %s\n", bc.what); }
+            if (m.empty()) { all_explained = false; std::printf("       fallito senza messaggio: %s\n", bc.what); }
+        }
+        check(all_failed,    "T16", "ogni configurazione non valida fallisce la creazione");
+        check(all_explained, "T16", "ogni fallimento di create() porta un messaggio");
+        std::string m;
+        check(moe_cpu_executor::create(caps, nullptr, &m) == nullptr && !m.empty(),
+              "T16", "senza fornitore di memoria la creazione fallisce");
     }
 
     std::printf("\n%s: %d controlli falliti\n", g_failed ? "ESITO NEGATIVO" : "ESITO POSITIVO", g_failed);

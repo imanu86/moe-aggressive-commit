@@ -1,10 +1,12 @@
 # P2 — Esecutore CPU e durata degli oggetti
 
-Versione 1.0, 14 settembre 2026. Fase **P2** del [piano CPU/GPU](../PIANO_CPU_GPU_14_SETTEMBRE.md); il planner con cui questo esecutore deve combaciare è in [P1](../P1_CONTRATTO_CACHE_CPU_GPU_14_SETTEMBRE.md); misure e criteri nel [protocollo](../PROTOCOLLO_CPU_GPU_14_SETTEMBRE.md); decisioni D02, D03, D07, D09 nel [registro](../REGISTRO_CPU_GPU_14_SETTEMBRE.md).
+Versione 1.1, 14 settembre 2026. Fase **P2** del [piano CPU/GPU](../PIANO_CPU_GPU_14_SETTEMBRE.md); il planner con cui questo esecutore deve combaciare è in [P1](../P1_CONTRATTO_CACHE_CPU_GPU_14_SETTEMBRE.md); misure e criteri nel [protocollo](../PROTOCOLLO_CPU_GPU_14_SETTEMBRE.md); decisioni D02, D03, D07, D09 nel [registro](../REGISTRO_CPU_GPU_14_SETTEMBRE.md).
 
 Questo documento **progetta**. Non è una patch del motore, non contiene misure di velocità nuove e **non è stato compilato**: la compilazione è una fase separata. Le righe citate sono quelle lette il 14 settembre nell'albero sperimentale `C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_clean\source`, che questa fase **non modifica**, e nel prototipo `C:\Users\imanu\Documents\Codex\2026-09-13\rip\work\freetoken_hybrid`. Prima di scrivere codice nel motore si riverifica il manifest: una riga spostata invalida i riferimenti, non il contratto.
 
 Il codice sorgente prodotto è in [`src/`](src/); la prova host-only è [`src/test_esecutore.cpp`](src/test_esecutore.cpp); lo script di compilazione è [`build_test.cmd`](build_test.cmd) e **non va eseguito** finché la misura di baseline occupa la macchina.
+
+**Versione 1.1.** Il documento è stato rivisto dopo la revisione indipendente [`REVIEW_P2_14_SETTEMBRE.md`](REVIEW_P2_14_SETTEMBRE.md), che ha trovato due difetti di correttezza nella gestione di annullamento ed errore. Sono corretti: la macchina a stati di un job è ora in [§11.1](#111-la-macchina-a-stati-di-un-job-rivendicazione-e-riconoscimento), la separazione fra annullamento di routine e contaminazione in [§11](#11-errori-annullamento-chiusura) e [§5](#5-durata-degli-oggetti-e-ordine-di-distruzione), e la risposta punto per punto in [§17](#17-risposta-alla-revisione-del-14-settembre). Anche la versione 1.1 **non è stata compilata**.
 
 ---
 
@@ -85,16 +87,21 @@ static void wait_hook  (void * user);   // nodo host CUDA: attende con scadenza
 uint64_t      submitted() / completed() / failures();
 moe_cpu_state state(uint64_t generation);
 uint64_t      first_failed_generation();   bool contaminated();
+bool          unrecoverable();             uint64_t current_generation();
+bool          acknowledge_contamination(std::string * err);
 void          cancel();  void rearm();
 bool          quiesce(uint64_t timeout_us, std::string * err);
 void          set_phase(moe_cpu_phase);
+void          set_test_delay_us(uint64_t);   // solo per le prove
 ```
 
 `submit_hook` e `wait_hook` sono **le uniche due funzioni chiamabili da un nodo host**. Tutto il resto si chiama dal thread proprietario, fuori da una cattura.
 
-**Generazione e stato.** Ogni job accettato dal coordinatore prende una generazione (contatore monotono). Lo stato è conservato in un anello di 64 voci: `state(g)` restituisce `ok`/`rejected`/`cancelled`/`timeout`/`stopped`/`running`, oppure `unknown` se la generazione è uscita dalla finestra. In più c'è un flag **appiccicoso** `contaminated()` con la prima generazione fallita: è quello che `llama_context::decode()` deve interrogare, perché in un passo di decode ci sono fino a 47 job e non si vuole controllarne 47 stati.
+**Generazione e stato.** Ogni job prende una generazione (contatore monotono) **da `submit_hook`**, non dal coordinatore: chi serializza deve anche numerare, altrimenti `cancel()` e la scadenza del `wait` non sanno di quale job stanno parlando. Lo stato è conservato in un anello di 64 voci: `state(g)` restituisce `ok`/`rejected`/`cancelled`/`timeout`/`stopped`/`running`, oppure `unknown` se la generazione è uscita dalla finestra. In più c'è un flag **appiccicoso** `contaminated()` con la prima generazione **contaminante** — non «fallita»: la distinzione è in §11 — ed è quello che `llama_context::decode()` deve interrogare, perché in un passo di decode ci sono fino a 47 job e non si vuole controllarne 47 stati.
 
-**Ownership seriale.** Un solo job in volo. `submit_hook` fa `in_flight.exchange(1)`: se trova 1, il job è **rifiutato** e l'attesa viene sbloccata subito. Una seconda submit senza wait non viene accodata e non viene serializzata: è un errore di programma e deve emergere come tale. Dentro un job, il **coordinatore** è il proprietario seriale di `flat`, `xq`, `hq`, `x`, `y`: nessun altro thread li tocca fuori dalle due fasi delimitate dalle barriere.
+**Ownership seriale.** Un solo job in volo. `submit_hook` fa `in_flight.exchange(1)`: se trova 1, il job è **rifiutato** e non tocca nessuna cella condivisa, perché quelle appartengono al job ancora in volo. Una seconda submit senza wait non viene accodata e non viene serializzata: è un errore di programma e deve emergere come tale. Il `wait` spaiato che segue si accorge da solo che non c'è niente da attendere (`in_flight == 0`) e ritorna subito. Dentro un job, il **coordinatore** è il proprietario seriale di `flat`, `xq`, `hq`, `x`, `y`: nessun altro thread li tocca fuori dalle due fasi delimitate dalle barriere.
+
+**`in_flight` copre la durata REALE del calcolo.** È la proprietà su cui si regge tutto il resto, e la prima stesura la violava (§11.1): né `cancel()` né la scadenza del `wait` rilasciano `in_flight` prima che il coordinatore abbia riconosciuto di aver finito. Ne discende che `register_layer()` — che rifiuta con `in_flight != 0` — non può far scadere sotto il coordinatore il puntatore `cur_bank`, che punta dentro `std::unordered_map<int32_t, moe_cpu_bank>` e che un rehash invaliderebbe.
 
 **Un solo pool per contesto.** L'esecutore è un membro di `llama_context`. Gli strati sono seriali sullo stesso stream, quindi lo strato `il+1` non può pubblicare prima che il `wait` dello strato `il` sia ritornato: **un solo slot di job serve tutti e 48 gli strati**. Niente pool per strato (D09).
 
@@ -126,7 +133,8 @@ La scelta di non usare mai un mutex in questo percorso rende l'**invariante 6 ve
 | Scadenza | `std::abort()` dopo 10 s (`overlap_probe.cu:28`) | `MOE_CPU_RESULT_TIMEOUT`, veleno, ritorno | un server non aborta |
 | Insieme vuoto | `run(n=0)` **azzera** l'uscita (`fused_cpu.hpp:163`) | zero route è un esito **valido** con contributo nullo; un job **rifiutato** invece non tocca `y` | distinzione fra «il contributo corretto è zero» e «non c'è risultato» (invariante 7) |
 | Forme | costanti `K=2560, H=640, EMAX=10` (`fused_cpu.hpp:17`) | forme da `caps`, controllate a ogni job | lo stesso codice deve poter servire lo strato 2 in una estensione futura |
-| Annullamento | assente | `cancel()` / `rearm()` / `quiesce()` | serve al cambio di fase, al rollback e alla distruzione |
+| Annullamento | assente | `cancel()` / `rearm()` / `quiesce()` / `acknowledge_contamination()`, con riconoscimento a generazione | serve al cambio di fase, al rollback e alla distruzione; il riconoscimento serve a non lasciare mai due scrittori sulle stesse celle (§11.1) |
+| Uscita dei thread | il pool muore col chiamante | i worker escono su `pool_retire`, alzato **solo dal coordinatore** quando ha deciso di non entrare mai più in `compute()` | far uscire i worker su un flag che l'host può alzare in qualunque istante lascia barriere spaiate: è il rischio R13 della revisione, chiuso per costruzione |
 
 ---
 
@@ -155,7 +163,24 @@ llama_context::~llama_context()     (llama-context.cpp:496-498)
 
 **Ordine di dichiarazione dei membri.** L'esecutore va dichiarato in `llama-context.h` **prima** di `sched` (riga 344), perché i membri si distruggono in ordine inverso: così lo scheduler e i backend — che possiedono i `cudaGraphExec` — muoiono **prima** dell'esecutore e dei suoi buffer mappati. L'ordine sbagliato è un difetto silenzioso che si manifesta solo alla chiusura, quindi va messo per iscritto qui e verificato in revisione.
 
-**Incarnazioni della cache.** P1 §5, invariante 7, dice che un job fallito dopo il gather richiede di buttare l'incarnazione: il gather può avere già sovrascritto uno slot mentre la mappatura, differita, dichiara ancora residente il vecchio esperto. Il recupero è quindi: `cancel()` → decode fallito → `unbind`/`bind` dell'incarnazione (`moe-demand.cuh:142-157`, la via che `llama_moe_cache_set_device_active(false)` già percorre). L'esecutore non conosce la cache: espone `contaminated()` e il chiamante decide.
+**Incarnazioni della cache.** P1 §5, invariante 7, dice che un job fallito dopo il gather richiede di buttare l'incarnazione: il gather può avere già sovrascritto uno slot mentre la mappatura, differita, dichiara ancora residente il vecchio esperto. L'esecutore non conosce la cache: espone `contaminated()` e il chiamante decide. La catena completa del recupero, con i suoi punti nel codice:
+
+```
+decode() vede contaminated() == true          (llama-context.cpp:2124-2127)
+  → fallisce il decode                        — nessun risultato dubbio esce
+  → set_phase(idle); quiesce(...)             — il pool è quieto e non c'è più
+                                                nessuno scrittore su y
+  → unbind/bind dell'incarnazione             (moe-demand.cuh:142-157, la via che
+                                                llama_moe_cache_set_device_active(false)
+                                                già percorre)
+  → register_layer(...) per ogni strato       — la nuova incarnazione può avere
+                                                nuovi puntatori di destinazione
+  → executor->acknowledge_contamination(&err) — SOLO QUI, e solo dal thread
+                                                proprietario: mai da un nodo host
+  → rearm()                                   — si torna in servizio
+```
+
+**Chi chiama `acknowledge_contamination()` e quando.** Solo il thread proprietario, e solo **dopo** che l'incarnazione è stata buttata e ricreata. La funzione **rifiuta** se c'è un job in volo o se l'esecutore è irrecuperabile (§11.1): dichiarare pulito uno stato che il coordinatore può riscrivere un microsecondo dopo non significa niente. Non azzera `failures()`, che resta un contatore storico per il registro; azzera solo `first_failed_generation()`.
 
 **Registrazione degli strati.** `register_layer` va rifatta dopo ogni `bind`, perché una nuova incarnazione può avere nuovi puntatori di destinazione; i puntatori **sorgente** host non cambiano (sono i pesi del modello), ed è proprio per questo che un puntatore sorgente cambiato viene rifiutato come errore.
 
@@ -209,7 +234,15 @@ con, per i 47 strati supportati, `gate_src->nb[2] = up_src->nb[2] = row(IQ2_S, 2
 
 Se un giorno i pesi finissero in un buffer host pinnato ordinario invece che mappato (`ggml_backend_cuda_host_buffer_type`, `ggml-cuda.cu:1285`), `ggml_cuda_mapped_tensor_host_ptr` restituirebbe `nullptr` e `tensor->data` sarebbe già l'indirizzo host: P3 deve provare prima la funzione e poi il ripiego `ggml_backend_buffer_is_host(t->buffer) ? t->data : nullptr`, e **fallire** se nessuno dei due risponde, invece di dereferenziare un puntatore device.
 
-**Da fare in P3:** `ggml_cuda_mapped_tensor_host_ptr` non è dichiarata in nessun header pubblico e non è nella tabella dei proc-address (`ggml-cuda.cu:6015-6030`). Va aggiunta lì, come `ggml_backend_cuda_moe_demand_unbind` (usata via proc-address da `llama-moecache.cpp:461-466`). Senza quella voce l'esecutore non si crea.
+**Da fare in P3:** `ggml_cuda_mapped_tensor_host_ptr` (`ggml-cuda.cu:1387`) non è dichiarata in nessun header pubblico e non è nella tabella dei proc-address (`ggml-cuda.cu:~6000-6035`). Va aggiunta lì, come `ggml_backend_cuda_moe_demand_unbind` (usata via proc-address da `llama-moecache.cpp:461-466`). Senza quella voce l'esecutore non si crea.
+
+**Nome e firma del buffer type mappato, riverificati il 14 settembre** (difetto E1 della revisione). Il fornitore di memoria del server risolve per proc-address:
+
+| Voce in tabella | Firma reale | Dove |
+|---|---|---|
+| `"ggml_backend_cuda_mapped_buffer_type_for_device"` | `ggml_backend_buffer_type_t (ggml_backend_dev_t)` | tabella a `ggml-cuda.cu:6032-6033`, definizione a `5987-5998` |
+
+La funzione prende il **dispositivo**, non l'indice: ritrova l'indice da sola scorrendo `ggml_backend_reg_dev_get(reg, i)` e chiama `ggml_backend_cuda_mapped_buffer_type((int) i)` (`ggml-cuda.cu:1528`, che non è in tabella). La prima stesura cercava `"ggml_backend_cuda_mapped_buffer_type"` con firma `(int)`: una stringa che in tabella non esiste, con una firma che non sarebbe comunque combaciata. Il fallimento sarebbe stato sicuro — `nullptr` e messaggio, mai un puntatore device dereferenziato — ma il fornitore era **non operativo**. Corretto in `src/moe_cpu_host_memory_cuda.cpp`.
 
 ---
 
@@ -322,19 +355,70 @@ Resta a carico di P3, dal contratto P1: verificare che le fusioni CUDA della rid
 
 ## 11. Errori, annullamento, chiusura
 
-**Un errore invalida la richiesta; non si restituiscono zeri.** Tre casi distinti, con tre comportamenti distinti:
+**Un errore invalida la richiesta; non si restituiscono zeri.** Cinque casi distinti, con cinque comportamenti distinti. La colonna «contamina» è la correzione del difetto B2: non basta sapere che un job non è andato `ok`, serve sapere se lo stato è rimasto **coerente**.
 
-| Caso | Esito | `y` | Veleno | Che cosa deve fare il chiamante |
-|---|---|---|---|---|
-| Nessuna route CPU in questo passo | `ok` | azzerato | no | niente: zero **è** il contributo corretto |
-| Header non valido (magic, strato non registrato, esperto fuori dai limiti, peso o attivazione non finiti, `n_rows`/`n_routes` fuori dai limiti) | `rejected` | **non toccato** | sì | fallire il decode; l'incarnazione va buttata se il gather ha già scritto |
-| Scadenza del `wait`, oppure `cancel()` | `timeout` / `cancelled` | **non toccato** | sì | idem |
+| Caso | Esito | `y` | Veleno | Contamina | Che cosa deve fare il chiamante |
+|---|---|---|---|---|---|
+| Nessuna route CPU in questo passo | `ok` | azzerato | no | no | niente: zero **è** il contributo corretto |
+| Header non valido (magic, strato non registrato, esperto fuori dai limiti, peso o attivazione non finiti, `n_rows`/`n_routes` fuori dai limiti), oppure submit rientrante | `rejected` | **non toccato** | sì | **sì** | fallire il decode; l'incarnazione va buttata, perché il gather ha già scritto e il contributo CPU non esiste |
+| Scadenza del `wait` | `timeout` | indeterminato, mai consumato | sì | **sì** | idem, e in più l'esecutore resta irrecuperabile finché il coordinatore non riconosce |
+| `cancel()` di routine (cambio di fase, rollback speculativo) | `cancelled` | indeterminato, mai consumato | sì | **no** | niente di speciale: è il chiamante ad aver deciso di buttare il passo. `rearm()` quando vuole tornare in servizio |
+| Chiusura | `stopped` | indeterminato, mai consumato | sì | **no** | niente: si sta distruggendo |
+
+«Indeterminato» va letto insieme alla riga precedente della tabella: un `cancel()` che arriva mentre il coordinatore sta calcolando **non** ferma il calcolo — fermarlo richiederebbe di controllare una bandiera dentro le barriere, con una classe di stalli in cambio di nulla — quindi `y` può risultare scritto a metà. Non è un pericolo, per due ragioni indipendenti: il veleno è alzato, quindi il kernel di somma non consuma `y` (§10); e il job accettato successivo **riscrive `y` per intero** (`phase_down` copre tutte le righe, il ramo a zero route fa `memset`). Non c'è nessuno stato di `y` che sopravviva a un job valido.
 
 Il **fallback si sceglie prima dell'invio**, come prescrive l'invariante 7: lo strato 2 (IQ3_S, D07) e qualunque strato non registrato non generano job, perché il planner non produce route CPU per loro (`n_idonei = 0` in P1 §4.3 dà un piano identico a `cpu_max = 0`). Il rifiuto dell'esecutore è la **seconda** rete, non la prima.
 
-**Annullamento.** `cancel()` non interrompe un job in volo. La durata di un job è di decine di microsecondi: interromperlo a metà richiederebbe di controllare una bandiera dentro le barriere, con una classe di stalli in cambio di nulla. `cancel()` invece: marca lo stato, avvelena, sblocca un `wait` in corso, e **rifiuta ogni pubblicazione successiva** finché non si chiama `rearm()`. È la semantica giusta per un rollback speculativo o un cambio di fase: quello che conta è che nessun risultato dubbio venga consumato e che nessun thread resti appeso.
+**Perché la contaminazione non blocca i submit.** Si potrebbe pensare di rifiutare ogni job successivo a una contaminazione, come fa il simulatore di P1 («ogni piano successivo è rifiutato finché non si esegue la pulizia esplicita»). Qui non si fa, e la ragione è che il graph non si ferma a metà replay: i job dei 46 strati rimanenti partono comunque, e rifiutarli produrrebbe 46 `rejected` identici senza aggiungere una sola informazione. La barriera è **una sola e sta più in alto**: `decode()` interroga `contaminated()` e fallisce il passo (§5). L'unico caso in cui l'esecutore rifiuta davvero è quello irrecuperabile qui sotto, dove il rifiuto non è una politica ma una necessità: c'è ancora uno scrittore vivo sui buffer.
 
-**Chiusura senza stallo.** `~impl` alza `stopping`, sveglia il coordinatore alzando `request` e i worker incrementando `work`, e fa `join` di tutti. Il coordinatore, prima di uscire, pubblica `done = 1` una volta: se un `wait` era già accodato, si sblocca invece di scadere. I buffer si liberano dopo il `join`, e il `join` avviene dopo la distruzione dei graph per via dell'ordine dei membri di `llama_context` (§5).
+### 11.1 La macchina a stati di un job: rivendicazione e riconoscimento
+
+La prima stesura di P2 aveva qui un difetto di correttezza reale, trovato dalla revisione indipendente (§B1) e corretto: `cancel()` e il ramo di scadenza di `wait_hook` scrivevano `done = 1` sulle celle condivise e rilasciavano `in_flight` **senza sapere nulla** di quello che il coordinatore stava facendo. Se il coordinatore era dentro `compute()`, il job successivo poteva essere accettato mentre il vecchio calcolo era ancora in corso; il completamento tardivo riscriveva `result`/`poison`/`done`, e un `wait` del job nuovo poteva leggere `ok` con dentro il contributo del job **vecchio**. È esattamente il risultato «plausibile e sbagliato» che l'invariante 7 vieta. In più `register_layer()`, protetta solo da `in_flight == 0`, poteva far scadere sotto il coordinatore il puntatore `cur_bank`.
+
+La correzione è una macchina a stati con **una sola rivendicazione per job** e un **riconoscimento a generazione**.
+
+```
+                 submit_hook: gen = ++n_submitted; in_flight 0→1;
+                              claim = NESSUNO; request = 1
+   libero ───────────────────────────────────────────────────▶ in volo
+                                    │
+          ┌─────────────────────────┴──────────────────────────┐
+          │ il coordinatore ha FINITO                          │ cancel() oppure
+          │ CAS claim: NESSUNO → COORDINATORE                  │ scadenza del wait
+          ▼                                                    │ CAS: NESSUNO → HOST
+   pubblica result/poison/done, alza gen_reaped                 ▼
+          │                                              avvelena e alza done;
+   wait_hook vede claim = COORDINATORE                   wait_hook vede claim = HOST
+   e rilascia in_flight ──────────▶ libero               e NON tocca niente
+                                                                │
+                                        attesa del RICONOSCIMENTO (gen_reaped ≥ gen)
+                                        ┌───────────────────────┴────────────────┐
+                                        │ entro ack_timeout_us                   │ scaduta
+                                        ▼                                        ▼
+                                  in_flight 1→0 ──▶ libero              IRRECUPERABILE:
+                                                                        in_flight resta 1,
+                                                                        ogni submit è rifiutato,
+                                                                        `unrecoverable()` è vero.
+                                                                        Quando il coordinatore
+                                                                        finisce, è LUI a riaprire
+                                                                        il servizio.
+```
+
+Le regole che ne discendono, tutte verificabili leggendo il codice:
+
+1. **Chi non ha la rivendicazione non scrive.** Il coordinatore, alla fine di `finish()`, tenta il CAS; se lo perde non tocca né le celle condivise né `in_flight`: si limita ad alzare `gen_reaped` e a svegliare chi lo aspetta. Un completamento tardivo è quindi, per costruzione, invisibile al job successivo.
+2. **`in_flight` misura il calcolo vero, non l'attesa dell'host.** Finché il coordinatore non ha riconosciuto, nessun nuovo job entra. Questo chiude anche il secondo effetto di B1: `register_layer()` e `clear_layers()` rifiutano con `in_flight != 0`, quindi la mappa degli strati non può essere rimaneggiata mentre `cur_bank` punta dentro.
+3. **Il riconoscimento ha una scadenza, e la scadenza ha un nome.** `cancel()`, che gira sul thread proprietario, aspetta `ack_timeout_us` (proposta: 200 ms, cioè tre ordini di grandezza sopra la durata di un job). Il ramo di scadenza di `wait_hook` **non** aspetta: è il thread di callback del driver, e bloccarlo una seconda volta è ciò che l'invariante 6 vuole evitare; dichiara subito il job irrecuperabile e ritorna.
+4. **Irrecuperabile non vuol dire perso.** Il coordinatore, quando finalmente finisce, si accorge di essere l'ultimo interessato a quella generazione e rilascia lui `in_flight`. Il servizio si riapre da solo; resta la contaminazione, che richiede il riconoscimento esplicito di §5. Il caso in cui il servizio non si riapre mai è quello in cui il coordinatore è davvero bloccato — e allora `quiesce()` fallisce con un messaggio, che è esattamente ciò che si vuole.
+5. **La corsa fra «dichiaro orfano» e «ho finito» è chiusa in modo simmetrico.** Le due scritture (`orphan_gen` da un lato, `gen_reaped` dall'altro) e le due letture incrociate usano `seq_cst`: almeno uno dei due partecipanti vede l'altro, quindi il rilascio non si perde e non avviene due volte. È un pugno di operazioni su un percorso freddo.
+
+**Precondizione di `cancel()`, dichiarata perché non è deducibile.** Annullare non rende legale un nuovo submit. Fino a `rearm()` ogni job successivo esce `cancelled`, e il chiamante deve sincronizzare il dispositivo prima di riarmare (§5: `set_phase` → `quiesce` → `cudaDeviceSynchronize`). La ragione è che un nodo `wait` già accodato sullo stream appartiene al job vecchio, e l'esecutore — che vede solo due callback senza parametri (§12) — non ha modo di distinguerlo da quello del job nuovo. Il veleno `cancelled` è ciò che rende innocua la finestra.
+
+### 11.2 Chiusura senza stallo
+
+`~impl` alza `stopping` e sveglia il coordinatore alzando `request`. **Non tocca `work`**: un avanzamento di `work` significa «c'è un job» e un worker che lo vedesse dovrebbe entrare in `compute()`. I worker escono su `pool_retire`, alzato dal solo coordinatore quando ha deciso di non entrare mai più in `compute()`. È la differenza con la prima stesura, dove i worker uscivano su `stopping` e potevano quindi abbandonare una barriera che il coordinatore stava per attraversare: rischio R13 della revisione, chiuso per costruzione invece che per probabilità.
+
+Il coordinatore, prima di ritirarsi: se un job era stato pubblicato e non è ancora concluso, lo conclude come `stopped` passando dalla **stessa rivendicazione** degli altri esiti, così un `wait` già accodato si sblocca invece di scadere; altrimenti alza `done` una volta sola, e **solo se non c'è già un esito pubblicato da consumare** — sovrascriverlo sarebbe la stessa classe di difetto di B1, in versione teardown. I buffer si liberano dopo il `join`, e il `join` avviene dopo la distruzione dei graph per via dell'ordine dei membri di `llama_context` (§5).
 
 **Nessuna disattivazione globale dei CUDA graph.** Non si tocca `GGML_CUDA_DISABLE_GRAPHS`. Il `_putenv_s` della sonda (`overlap_probe.cu:193`) serviva a evitare una cattura annidata nel processo di prova ed è estraneo al server.
 
@@ -363,19 +447,28 @@ Il corollario da misurare: i nodi host restano nel graph anche quando `n_cpu = 0
 | 3 | La piastrellatura parallela non cambia il risultato | `reference_expert()` seriale a un thread contro il percorso a `n` thread; uguaglianza **esatta** | T3 |
 | 4 | Zero route CPU è un esito valido, non un errore | `y` azzerato, stato `ok`, veleno 0 | T4 |
 | 5 | Generazione e stato per job | la generazione cresce di uno per submit; `state(g)` corretto; `state(g+1000)` = `unknown`; `completed == submitted` dopo il wait | T5 |
-| 6 | Un errore invalida la richiesta, niente zeri | sei header non validi: tutti `rejected`, tutti avvelenati, `y` conserva la sentinella `-12345` | T6 |
+| 6 | Un errore invalida la richiesta, niente zeri | **dieci** header non validi (magic, strato non registrato, esperto fuori dai limiti, peso NaN, peso infinito, `n_rows` fuori dai limiti, troppe route, `n_routes` negativo, attivazione non finita, strato negativo): tutti `rejected`, tutti avvelenati, `y` conserva la sentinella `-12345`, e la contaminazione si accende | T6 |
 | 7 | Annullamento senza stallo, e riarmo | `cancel()` poi submit/wait: ritorna in meno di 200 ms, `y` intatto; dopo `rearm()` il pool torna a servire | T7 |
-| 8 | Nessuna chiamata concorrente allo stesso pool | due `submit` senza `wait`: il secondo è rifiutato, l'attesa non stalla, `quiesce` riesce | T8 |
+| 8 | Nessuna chiamata concorrente allo stesso pool | due `submit` senza `wait`: il secondo è rifiutato **senza toccare le celle del job in volo**, il job legittimo resta `ok`, il `wait` spaiato ritorna subito, `quiesce` riesce | T8 |
 | 9 | Cambio di fase e distruzione senza stallo | `set_phase(prefill)` → `set_phase(idle)` → `quiesce` → distruzione cronometrata sotto i 2 s | T9 |
 | 10 | Nessun riuso anticipato del buffer | otto job consecutivi con attivazioni diverse: ogni `y` combacia col **proprio** riferimento e differisce dal precedente | T10 |
 | 11 | Buffer persistenti, nessuna crescita | `allocated_bytes()` invariato dopo l'intera batteria | T11 |
-| 12 | Nessuna API CUDA né mutex nelle callback | controllo statico: nel corpo di `submit_hook`/`wait_hook` e in tutto ciò che chiamano non compaiono simboli `cuda*`/`cu*` né `std::mutex`/`lock_guard` (P1 §5, riga dell'invariante 6) | revisione + `grep` |
-| 13 | Riuso dei pesi host senza duplicazione | `register_layer` confronta i tre passi con `row_size * forma` e rifiuta un banco incoerente; nel server, controllo che i puntatori registrati siano esattamente `ggml_cuda_mapped_tensor_host_ptr(*_src, 0)` | T6 (passi) + P3 |
-| 14 | Ordine con lo stream e concorrenza reale | P3: confronto del tempo di blocco fra `wait` accodato dopo il lavoro GPU e `wait` accodato subito dopo `submit` — deve riprodurre il divario 253,5 / 339,5 del prototipo | P3 |
-| 15 | Cattura e replay con puntatori stabili | P3: contatore di ricatture del graph invariato su una corsa lunga; `cuda_graph_update_required` non deve scattare per colpa nostra | P3 |
-| 16 | Costo a CPU spenta | P4: A/B fra `cpu_max = 0` con i nodi host presenti e la build senza la funzione | P4 |
+| 12 | **Annullamento durante un `compute()` genuinamente in corso** (§11.1) | ritardo iniettato di 120 ms: i worker sono dentro `compute()`, fermi alla prima barriera; un secondo thread chiama `cancel()` a 30 ms. Si verifica che il `wait` ritorni, che l'esito non sia mai `ok`, che il completamento tardivo **non** promuova l'esito, e che il job successivo abbia flag puliti e `y` uguale al proprio riferimento | T12 |
+| 13 | **Scadenza del `wait` con completamento tardivo** | esecutore con `wait_timeout_us = 3 ms` e calcolo da 300 ms: la scadenza scatta a calcolo in corso. Si verifica `timeout` + contaminazione + `unrecoverable()`; che un submit in quella finestra sia rifiutato **senza toccare le celle**; che il completamento tardivo **non riscriva i flag**; che il coordinatore riapra il servizio; e il recupero completo con `acknowledge_contamination()` + `rearm()` | T13 |
+| 14 | **Routine contro errore, e riconoscimento** | tre `cancel()` di routine: stato `cancelled`, `failures()` cresce, `contaminated()` resta **falso**; poi un header non valido: `contaminated()` vero con la generazione giusta; `acknowledge_contamination()` la spegne senza riscrivere `failures()`; il pool torna a servire | T14 |
+| 15 | **Teardown con un job in volo** | submit di un job lento **senza** `wait` abbinato, poi distruzione cronometrata: nessuna barriera spaiata, sotto i 2 s | T15 |
+| 16 | **Percorsi di fallimento di `create()`** | sette configurazioni non valide (tipi non impostati, `vec_dot_type` diversi fra gate e up, `n_ff_exp` non multiplo del blocco, `max_rows`/`max_per_row` fuori dai limiti, forma nulla, scadenza nulla) più il fornitore di memoria assente: nessuna costruisce un esecutore, tutte producono un messaggio | T16 |
+| 17 | **`register_layer`: idempotenza ed errore** | stessa registrazione due volte → vero; puntatore cambiato → falso; passo incoerente con la forma → falso; indice negativo → falso | T17 |
+| 18 | Nessuna API CUDA né mutex nelle callback | controllo statico: nel corpo di `submit_hook`/`wait_hook` e in tutto ciò che chiamano non compaiono simboli `cuda*`/`cu*` né `std::mutex`/`lock_guard` (P1 §5, riga dell'invariante 6) | revisione + `grep` |
+| 19 | Riuso dei pesi host senza duplicazione | `register_layer` confronta i tre passi con `row_size * forma` e rifiuta un banco incoerente; nel server, controllo che i puntatori registrati siano esattamente `ggml_cuda_mapped_tensor_host_ptr(*_src, 0)` | T17 (passi) + P3 |
+| 20 | Ordine con lo stream e concorrenza reale | P3: confronto del tempo di blocco fra `wait` accodato dopo il lavoro GPU e `wait` accodato subito dopo `submit` — deve riprodurre il divario 253,5 / 339,5 del prototipo | P3 |
+| 21 | Cattura e replay con puntatori stabili | P3: contatore di ricatture del graph invariato su una corsa lunga; `cuda_graph_update_required` non deve scattare per colpa nostra | P3 |
+| 22 | Costo a CPU spenta | P4: A/B fra `cpu_max = 0` con i nodi host presenti e la build senza la funzione | P4 |
+| 23 | `max_rows = 3` (P5) | **non provato in P2**, e dichiarato: il valore operativo resta 1 fino a P4. In P2 si verifica solo che `n_rows` fuori dai limiti sia rifiutato (T6). La parità a più righe è lavoro di P5 | P5 |
 
-I punti 1-11 girano **senza GPU e senza server**, con `build_test.cmd`. I punti 12-16 appartengono alla revisione e alle fasi successive: dichiararli qui serve a non scoprirli dopo.
+I punti 1-17 girano **senza GPU e senza server**, con `build_test.cmd`. I punti 18-23 appartengono alla revisione e alle fasi successive: dichiararli qui serve a non scoprirli dopo.
+
+**Come i test rendono osservabile la concorrenza.** T12, T13 e T15 hanno bisogno di un job che duri abbastanza da poterci intervenire sopra. Invece di dipendere dalla taglia dei pesi — che cambia con `--full` e con `--weights`, e che quindi renderebbe i test riproducibili solo su una macchina — si usa `set_test_delay_us()`: il coordinatore, **dopo** aver svegliato i worker e **prima** di entrare lui stesso in `compute()`, gira a vuoto per il tempo richiesto. In quell'intervallo i worker sono già dentro `compute()`, fermi alla prima barriera: è la finestra vera, non una simulazione. In produzione il valore resta 0 e il ramo è un confronto con zero.
 
 ---
 
@@ -398,7 +491,7 @@ I punti 1-11 girano **senza GPU e senza server**, con `build_test.cmd`. I punti 
 | `ggml/src/ggml-cuda/mmvq.cu` | 1407 | passare `src1` a `remap`, perché il kernel di export possa leggere l'attivazione |
 | `ggml/src/ggml-cuda/ggml-cuda.cu` | 3666-3676 | `reset_transient_memory`: quiesce dell'esecutore **prima** di `cuda_graphs.clear()` |
 | | 4462-4645 (ciclo dei nodi) | riconoscere il nodo `add` del contributo CPU e accodare `cudaLaunchHostFunc(hooks->wait, ...)` prima; leggere `flags->poison` nel kernel di somma |
-| | 6015-6030 | aggiungere `ggml_cuda_mapped_tensor_host_ptr` alla tabella dei proc-address |
+| | ~6000-6035 (tabella `strcmp`) | aggiungere `ggml_cuda_mapped_tensor_host_ptr` (definita a 1387) alla tabella dei proc-address. `ggml_backend_cuda_mapped_buffer_type_for_device` c'è già, a 6032-6033: è quella che il fornitore di memoria usa, col nome e la firma corretti (§7) |
 | | 3719-3727, 4801 | verificare che la fusione della riduzione pesata consumi i pesi **mascherati** e non scavalchi l'`add` del contributo CPU |
 | `src/llama-graph.cpp` | 2062-2110 | conservare ID e pesi originali; produrre il peso GPU mascherato |
 | | 2366-2404 | dopo la riduzione: `moe_out = ggml_add(moe_out, vista_di_y)`, prima del `return` |
@@ -418,8 +511,8 @@ Le opzioni di controllo (abilitazione, elenco strati, massimo esperti CPU, core,
 
 | # | Rischio | Perché è credibile | Come lo si scopre presto |
 |---|---|---|---|
-| R1 | Un nodo host che blocca lo stream occupa un thread di callback del driver, condiviso con altro lavoro | il `wait` blocca per la durata del calcolo CPU, 48 volte per token | misurare il tempo di parete del decode con `cpu_max = 0` e i nodi host presenti (punto 16 di §13) prima di credere a qualunque guadagno |
-| R2 | Il `wait` finisce accodato troppo presto e la concorrenza sparisce | è successo nel prototipo, ed è la riga da 339,5 µs contro 253,5 | punto 14 di §13, da fare come **prima** misura di P3, non come ultima |
+| R1 | Un nodo host che blocca lo stream occupa un thread di callback del driver, condiviso con altro lavoro | il `wait` blocca per la durata del calcolo CPU, 48 volte per token | misurare il tempo di parete del decode con `cpu_max = 0` e i nodi host presenti (punto 22 di §13) prima di credere a qualunque guadagno |
+| R2 | Il `wait` finisce accodato troppo presto e la concorrenza sparisce | è successo nel prototipo, ed è la riga da 339,5 µs contro 253,5 | punto 20 di §13, da fare come **prima** misura di P3, non come ultima |
 | R3 | La fusione della riduzione pesata scavalca o assorbe l'`add` del contributo CPU | `ggml_cuda_try_fuse` riconosce sequenze di `MUL`+`ADD` (`ggml-cuda.cu:3276`, `3719-3727`, `4801`) | controllo numerico del `moe_out` contro il percorso interamente GPU in modalità diagnostica, prima della modalità attiva |
 | R4 | I pesi host finiscono in un buffer pinnato non mappato e `ggml_cuda_mapped_tensor_host_ptr` restituisce `nullptr` | dipende da `-ot` e da `--no-mmap`; `bind` già aborta con un messaggio esplicito (`llama-moecache.cpp:367`) | `register_layer` fallisce alla creazione, con messaggio; mai un puntatore device dereferenziato |
 | R5 | Ordine di distruzione sbagliato: l'esecutore muore prima dei graph che referenziano `y` | dipende dall'ordine di dichiarazione dei membri, invisibile alla lettura | §5 esplicita l'ordine; il difetto si manifesta solo alla chiusura, quindi va messo in revisione, non nel test |
@@ -428,48 +521,111 @@ Le opzioni di controllo (abilitazione, elenco strati, massimo esperti CPU, core,
 | R8 | Un secondo contesto tenta di installare i hook e la tabella globale non lo rifiuta | oggi `n_seq_max == 1` lo rende improbabile, domani no | `ggml_moe_cpu_set_hooks` deve restituire `false`, e il chiamante deve trattarlo come errore di configurazione |
 | R9 | La scadenza del `wait` è troppo corta e produce falsi fallimenti sotto carico | 2 s è una proposta, non una misura | rendere `wait_timeout_us` un parametro e registrare ogni scadenza nel registro; una sola scadenza in una corsa è un difetto da investigare, non da tollerare |
 | R10 | L'aritmetica CPU/GPU diversa cambia il testo generato | il prototipo lo dice: CPU e CUDA quantizzano diversamente | è previsto dal protocollo per P3-P6; qui serve solo non pretendere l'identità del testo come criterio |
+| R11 | **CHIUSO in codice.** Rilascio prematuro di `in_flight` da `cancel()`/scadenza: il completamento tardivo sovrascrive i flag del job successivo | trovato dalla revisione (§B1) leggendo il codice, non misurando | non si misura: si corregge. Corretto con la rivendicazione unica e il riconoscimento a generazione (§11.1); T12 e T13 lo esercitano con concorrenza reale. Se fosse rimasto, sarebbe riemerso in P4/P6 come «risultato ogni tanto sbagliato», molto più caro da diagnosticare |
+| R12 | **CHIUSO in codice.** `contaminated()` appiccicoso senza uscita, alzato anche dall'annullamento di routine | trovato dalla revisione (§B2); al primo rollback speculativo ogni `decode()` successivo fallirebbe fino al riavvio | separazione fra esiti che contaminano e esiti di routine (§11) più `acknowledge_contamination()` (§5); T14 verifica entrambe le direzioni. Da rieseguire come **primo** test funzionale di P3, prima di qualunque banco di velocità |
+| R13 | **CHIUSO in codice.** `join()` senza limite di tempo su una barriera spaiata | segnalato dalla revisione come basso rischio; era però un vero percorso raggiungibile, perché i worker uscivano su `stopping`, che l'host può alzare in qualunque istante | i worker escono solo su `pool_retire`, alzato dal coordinatore (§11.2): il numero di partecipanti alla barriera è invariante per tutta la vita di un job. T15 esercita la distruzione con un job in volo |
+| R14 | **APERTO.** Un nodo `wait` già accodato sullo stream sopravvive al `cancel()` del suo job e si attacca al job successivo | i due nodi host non hanno parametri (§12, obbligo 3): l'esecutore non può distinguere il `wait` del job vecchio da quello del nuovo | mitigato, non eliminato: fino a `rearm()` nessun job può uscire `ok`, quindi la finestra non produce risultati consumabili. La precondizione dichiarata in §11.1 — sincronizzare il dispositivo prima di riarmare — è ciò che la chiude, e in P3 va **verificata nel chiamante**, non assunta |
+| R15 | **APERTO.** `ack_timeout_us` troppo corto produce falsi «irrecuperabili» sotto carico | 200 ms è una proposta, non una misura; è lo stesso difetto di R9 su un'altra scadenza | parametro esplicito, e ogni scadenza del riconoscimento va registrata nel registro. Una sola in una corsa è un difetto da investigare, non da tollerare |
 
 ---
 
 ## 16. Voce di registro (bozza da riportare nel registro)
 
-**Data e fase.** 14 settembre 2026, **P2 — Esecutore e durata degli oggetti**. Progettazione e scrittura del codice sorgente; nessuna compilazione, nessun binario, nessun server, nessuna GPU usata: sulla macchina girava una misura di baseline.
+**Data e fase.** 14 settembre 2026, **P2 — Esecutore e durata degli oggetti**. Progettazione, scrittura del codice sorgente e **correzione dopo revisione indipendente**; nessuna compilazione, nessun binario, nessun server, nessuna GPU usata: sulla macchina girava una misura di baseline.
 
 **Ipotesi.** Il prototipo del 13 settembre può essere portato dietro un contratto host esplicito senza perdere l'aritmetica bit-identica, aggiungendo proprietà seriale, buffer persistenti, generazione/stato, attesa inattiva, errore, annullamento e chiusura, e senza che il backend CUDA debba conoscere `llama_context` né che libllama debba linkare ggml-cuda.
 
-**ID della modifica/revisione.** P2-v1.0. Nessun file del motore toccato; nessun file sotto `qwen38_clean\source` né sotto `Documents\Codex` modificato.
+**ID della modifica/revisione.** P2-v1.1 (v1.0 rivista da `REVIEW_P2_14_SETTEMBRE.md`). Nessun file del motore toccato; nessun file sotto `qwen38_clean\source` né sotto `Documents\Codex` modificato, né in lettura né in scrittura, oltre alla lettura di verifica delle righe citate.
 
 **File prodotti** (tutti sotto `docs/porto/p2_esecutore/`):
 
 | File | Contenuto |
 |---|---|
 | `PROGETTO_P2_ESECUTORE_14_SETTEMBRE.md` | questo documento |
+| `REVIEW_P2_14_SETTEMBRE.md` | la revisione indipendente (non prodotta qui) |
 | `src/ggml-moe-cpu.h` | tabella C dei hook, calco di `ggml_set_moe_obs_callback` |
 | `src/moe_cpu_job.h` | descrittore POD condiviso host/dispositivo |
 | `src/moe_cpu_host_memory.h` | astrazione del fornitore di buffer mappati |
 | `src/moe_cpu_host_memory_plain.cpp` | fornitore malloc, per il test host-only |
 | `src/moe_cpu_host_memory_cuda.cpp` | fornitore `CUDA<n>_Mapped` via proc-address |
-| `src/moe_cpu_executor.h` | il contratto host |
-| `src/moe_cpu_executor.cpp` | implementazione: pool, quantizzazione, barriere, stati |
-| `src/test_esecutore.cpp` | undici prove host-only (T1-T11) |
+| `src/moe_cpu_executor.h` | il contratto host, con la macchina a stati di un job |
+| `src/moe_cpu_executor.cpp` | implementazione: pool, quantizzazione, barriere, rivendicazione, stati |
+| `src/test_esecutore.cpp` | **diciassette** prove host-only (T1-T17), di cui quattro a concorrenza reale |
 | `build_test.cmd`, `build_test.ps1` | compilazione con lo stesso metodo di `freetoken_hybrid/build.cmd` |
 
 **Configurazioni confrontate.** Nessuna: non sono state eseguite misure. I numeri citati (griglia della comunicazione, 253,5 contro 279,2 contro 308,1 contro 387,7 µs) sono **riletture delle prove del 13 settembre**, non risultati nuovi.
 
-**Risultato e limite.** Consegna di progetto e sorgenti. Limite dichiarato: **nulla di tutto questo è stato compilato**. La struttura interna è argomentata e coerente con i sorgenti letti, ma errori di compilazione, firme cambiate e simboli non esportati sono tutti ancora possibili.
+**Risultato e limite.** Consegna di progetto e sorgenti, più la correzione di due difetti di correttezza (B1, B2), tre difetti minori trovati mentre li si correggeva, e due difetti di compilazione (E1, E2). Limite dichiarato: **nulla di tutto questo è stato compilato**. La struttura interna è argomentata e coerente con i sorgenti letti, ma errori di compilazione, firme cambiate e simboli non esportati sono tutti ancora possibili. In particolare la macchina a stati di §11.1 è stata verificata **per lettura**, non eseguendo T12-T15.
 
 **Cosa resta da verificare in compilazione.**
-1. che `ggml-cpu.lib`, `ggml-base.lib` e `ggml.lib` della build privata bastino al test (nessun simbolo CUDA richiesto);
+1. che `ggml-cpu.lib`, `ggml-base.lib` e `ggml.lib` della build privata bastino al test (nessun simbolo CUDA richiesto, nessuna `Synchronization.lib`);
 2. che `ggml_quantize_chunk` accetti IQ2_S con una matrice di importanza di soli uno (altrimenti il test gira solo con `--weights` e i `.bin` del prototipo);
 3. che `WaitOnAddress`/`WakeByAddressAll` si risolvano su questa macchina, e con quale percorso;
 4. che la parità col riferimento GGML sia davvero **bit a bit** e non solo entro 1e-6, come lo era nel prototipo;
-5. che la batteria T1-T11 passi con quattro e con sei thread;
-6. che `ggml_cuda_mapped_tensor_host_ptr` sia effettivamente esportata dalla DLL (oggi non è in tabella: va aggiunta in P3).
+5. che la batteria T1-T17 passi con quattro e con sei thread — e che T12-T15 passino **ripetutamente**, non una volta: sono prove di corsa, e una prova di corsa che passa una volta non ha detto niente. Va eseguita in ciclo, almeno cinquanta volte, prima di dichiararle superate;
+6. che `ggml_cuda_mapped_tensor_host_ptr` sia effettivamente esportata dalla DLL (oggi non è in tabella: va aggiunta in P3);
+7. che i ritardi iniettati di T12/T13/T15 (120-300 ms) non facciano scattare per sbaglio le scadenze della batteria su una macchina carica: se succede, è il banco a essere sbagliato, non il codice.
 
-**Decisione.** Proseguire. Il confine d'interfaccia proposto è il più piccolo che soddisfi i vincoli letti nei sorgenti: una tabella C in ggml-base, due callback, quattro puntatori. Le due scelte di comunicazione (memoria mappata, nodi host) sono confermate separatamente dai dati del 13 settembre e coincidono con D02.
+**Decisione.** Proseguire. Il confine d'interfaccia proposto resta il più piccolo che soddisfi i vincoli letti nei sorgenti: una tabella C in ggml-base, due callback, quattro puntatori. Le due scelte di comunicazione (memoria mappata, nodi host) sono confermate separatamente dai dati del 13 settembre e coincidono con D02. La revisione non ha messo in discussione l'impostazione, solo la gestione di errore e annullamento: quella è stata riscritta.
 
-**Regressioni aperte.** Nessuna: non è stato modificato nulla di eseguibile.
+**Regressioni aperte.** Nessuna: non è stato modificato nulla di eseguibile. Restano aperti R14 (nodo `wait` sopravvissuto a un `cancel`, mitigato dal veleno e da una precondizione dichiarata) e R15 (taratura di `ack_timeout_us`).
 
-**Stato dei processi avviati.** Nessuno. La misura di baseline dell'utente non è stata toccata.
+**Stato dei processi avviati.** Nessuno. La misura di baseline dell'utente non è stata toccata: niente compilazione, niente server, niente GPU.
 
-**Prossima azione.** Nella fase di compilazione concordata: eseguire `build_test.cmd`, poi `test_esecutore.exe --threads 4` e `--threads 6`, poi `--full`, poi `--weights` con i `.bin` del prototipo. Correggere ciò che emerge e registrare l'esito qui. Solo dopo aprire P3, iniziando dalla misura del rischio R2 (concorrenza reale fra `submit` e `wait`), che è la condizione di esistenza dell'intero guadagno.
+**Prossima azione.** Nella fase di compilazione concordata: eseguire `build_test.cmd`, poi `test_esecutore.exe --threads 4` e `--threads 6`, poi `--full`, poi `--weights` con i `.bin` del prototipo, e infine il ciclo di ripetizione di T12-T15. Correggere ciò che emerge e registrare l'esito qui. Solo dopo aprire P3, iniziando dalla misura del rischio R2 (concorrenza reale fra `submit` e `wait`), che è la condizione di esistenza dell'intero guadagno.
+
+---
+
+## 17. Risposta alla revisione del 14 settembre
+
+Ogni punto di `REVIEW_P2_14_SETTEMBRE.md`, con che cosa è stato fatto. I due difetti bloccanti sono corretti; i due di compilazione anche; dei sette buchi di copertura ne sono coperti sei e uno è rifiutato con motivazione.
+
+### 17.1 Difetti bloccanti
+
+| # | Difetto | Esito | Dove |
+|---|---|---|---|
+| **B1** | `cancel()` e la scadenza del `wait` rilasciano `in_flight` senza attendere il coordinatore: il completamento tardivo sovrascrive i flag del job successivo, e `register_layer()` può lasciare un riferimento pendente a `cur_bank` | **Corretto.** Rivendicazione unica per job (CAS su `job_claim`) più riconoscimento a generazione (`gen_reaped`). Chi non ha la rivendicazione non scrive; `in_flight` copre la durata reale del calcolo; il ramo di scadenza non blocca il thread di callback ma marca il job irrecuperabile. Nessun mutex aggiunto | §11.1, `moe_cpu_executor.cpp` (`finish`, `abandon_claimed`, `await_reap`, `submit_hook`, `wait_hook`, `cancel`) |
+| **B2** | `contaminated()` irreversibile, alzato anche dall'annullamento di routine | **Corretto.** `moe_cpu_state_contaminates()` separa gli esiti: `rejected` e `timeout` contaminano, `cancelled` e `stopped` no. Aggiunta `acknowledge_contamination()`, che rifiuta con un job in volo o in stato irrecuperabile | §5, §11, `moe_cpu_executor.h/.cpp` |
+
+La revisione proponeva per B1 due strade alternative («un contatore `superseded_generation`» oppure «un `coordinator_gen_done` che `wait_hook`/`cancel()` attendono»). Sono state adottate **entrambe insieme**, perché prese singolarmente lasciano un buco: la sola generazione superata non dice chi ha il diritto di scrivere quando i due arrivano nello stesso istante (serve il CAS); il solo `coordinator_gen_done` atteso da `wait_hook` bloccherebbe il thread di callback del driver una seconda volta, contro l'invariante 6. La forma finale è: CAS per decidere il proprietario, `gen_reaped` per il riconoscimento, attesa del riconoscimento **solo** sul thread proprietario.
+
+La revisione osservava anche che il campo `sequence` di `moe_cpu_job` esiste e non viene mai letto. Resta così, e la scelta è deliberata: la generazione la assegna l'host in `submit_hook`, dove è al riparo da un header corrotto. Un numero scritto dal dispositivo dentro un descrittore che può essere non valido non è una base su cui fondare la proprietà di un buffer. Il campo resta come diagnostica per P3 (correlare un job con il passo del planner) e il commento in `moe_cpu_job.h` lo dice già.
+
+### 17.2 Difetti di compilazione
+
+| # | Difetto | Esito |
+|---|---|---|
+| **E1** | Nome e firma del proc-address del buffer type mappato sbagliati | **Corretto** e riverificato sull'albero reale: `"ggml_backend_cuda_mapped_buffer_type_for_device"`, firma `(ggml_backend_dev_t)`. Corretti anche due difetti adiacenti trovati leggendo: `ggml_backend_dev_by_name(nullptr)` per ogni dispositivo diverso da 0 (ora si costruisce `"CUDA<n>"`), e il `fail()` che liberava il buffer anche nel caso «già allocato» |
+| **E2** | `_aligned_malloc`/`_aligned_free` senza `<malloc.h>` | **Corretto**, dentro la guardia `_WIN32` (il ramo POSIX usa `posix_memalign`, che sta in `<cstdlib>`, già incluso) |
+
+**`/utf-8`, aggiunto per prudenza e non su segnalazione.** I sorgenti hanno commenti in italiano con em-dash, virgolette basse e — in `moe_cpu_executor.h` — il disegno della macchina a stati a caratteri di riquadro. Senza `/utf-8` MSVC legge il file nella codepage di sistema, e nel caso peggiore una sequenza multibyte che termina con il byte `0x5C` fa da continuazione di riga dentro un commento `//`, mangiandosi la riga successiva. È una classe di difetto silenzioso che costa poco chiudere e molto diagnosticare; era già latente nella prima stesura. Aggiunto in `build_test.cmd`.
+
+**`<synchapi.h>` e `Synchronization.lib`** (controllo esplicito richiesto, esito: nessuna modifica necessaria). `WaitOnAddress`/`WakeByAddressAll` sono risolte a caldo con `LoadLibraryA`/`GetProcAddress` e hanno un ripiego su `Sleep(1)`: il binario non ha nessuna dipendenza statica da `Synchronization.lib`, e `<synchapi.h>` arriva comunque via `<windows.h>` con le sue dichiarazioni inutilizzate, il che è voluto. La cosa è ora **scritta** in `moe_cpu_executor.cpp`, in `build_test.cmd` e in `build_test.ps1`, con la riga esatta da aggiungere se un giorno si passasse al collegamento statico: un difetto di questo tipo si ripaga solo se è documentato dove lo si cercherebbe. I due script restano equivalenti; a `build_test.ps1` è stato aggiunto `-Experts`, che il `.cmd` accettava già come `--experts` e che il `.ps1` non sapeva passare.
+
+### 17.3 Buchi di copertura
+
+| # | Buco segnalato | Esito |
+|---|---|---|
+| D1 | Nessun test con `cancel()`/scadenza durante un `compute()` vero | **Coperto** da T12 (cancel da un secondo thread) e T13 (scadenza del `wait`), con un ritardo iniettabile che tiene aperta la finestra di calcolo. Entrambi verificano la proprietà che conta: il completamento tardivo non tocca flag né uscita |
+| D2 | Nessun test di `contaminated()`/recupero | **Coperto** da T14 (routine contro errore, riconoscimento) e dalla coda di T13 (recupero completo dopo l'irrecuperabile) |
+| D3 | Nessun test dei percorsi di fallimento di `create()` | **Coperto** da T16, sette configurazioni più il fornitore assente. Mentre lo si scriveva è emerso un difetto che la revisione non aveva visto: `ggml_get_type_traits_cpu` indicizza la tabella **senza controllare i limiti** (`ggml-cpu.c:418-420`), quindi passarle `GGML_TYPE_COUNT` — che è il valore di difetto di `moe_cpu_caps` — era una lettura fuori dai limiti, non un `nullptr`. Aggiunto il controllo di intervallo prima della chiamata |
+| D4 | Nessun test di idempotenza/errore di `register_layer` | **Coperto** da T17, quattro casi |
+| D5 | T6 copre sei header non validi su dieci enumerati | **Coperto**: T6 ne copre ora dieci, inclusi `n_routes` negativo, peso infinito, attivazione non finita e strato negativo |
+| D6 | `max_rows = 3` mai esercitato | **Rifiutato per P2, annotato esplicitamente.** La revisione stessa lo dice accettabile per lo scope; esercitarlo qui richiederebbe un secondo riferimento GGML a più righe e non proverebbe niente che P5 non debba comunque riprovare con la semantica MTP vera. È ora la riga 23 della tabella di §13, con la fase che ne risponde, invece di restare implicito. In P2 si verifica solo che `n_rows` fuori dai limiti sia rifiutato |
+| D7 | Nessun test per la scadenza vera del `wait` | **Coperto** da T13 |
+
+### 17.4 Rischi nuovi proposti dalla revisione
+
+R11 (B1), R12 (B2) e R13 (join senza limite di tempo) sono entrati in §15, tutti e tre marcati **chiusi in codice** anziché «da misurare»: la revisione ha ragione nel dire che questa è la classe di difetti che va verificata *prima*, non dopo. Su R13 il giudizio della revisione era «probabilità bassa ma non nulla»: leggendo il codice per correggerlo è risultato **più raggiungibile di così**, perché i worker uscivano su `stopping`, che l'host può alzare in qualunque istante, anche fra la pubblicazione di `work` e l'ingresso del coordinatore in `compute()`. È stato chiuso per costruzione (uscita su `pool_retire`, alzato solo dal coordinatore) invece che con una guardia a tempo sul `join`: una guardia a tempo su un `join` non ha un seguito sensato — non si può uccidere un thread che sta scrivendo `y` — mentre un'uscita che non può spaiare una barriera non ha bisogno di seguito.
+
+Sono stati aggiunti due rischi che la revisione non elenca e che sono emersi dalla correzione: **R14** (un nodo `wait` accodato sopravvive al `cancel()` del suo job) e **R15** (taratura di `ack_timeout_us`). R14 è il residuo onesto della scelta di §12 di non dare parametri ai nodi host: è mitigato dal veleno e da una precondizione dichiarata, non eliminato, e P3 deve verificarlo nel chiamante.
+
+### 17.5 Difetti trovati mentre si correggeva, non presenti nella revisione
+
+1. **`record(generation, running)` contava un fallimento.** La condizione era `if (s != ok)`, e `running` non è `ok`: `n_failed` cresceva a ogni submit e `gen_first_failed` si fissava sulla **prima generazione in assoluto**. Con la vecchia semantica `contaminated()` era quindi vero dal primo job in poi, e il controllo di T6 («la contaminazione è registrata») passava per la ragione sbagliata. Corretto escludendo `running` e `unknown`.
+2. **`ggml_get_type_traits_cpu` senza controllo di limiti** (vedi D3).
+3. **Chiusura mentre un job era appena stato pubblicato.** Il coordinatore controllava `stopping` *prima* di `request` e usciva senza concludere il job: il `wait` abbinato sarebbe rimasto appeso fino alla propria scadenza. Ora la chiusura conclude il job come `stopped` passando dalla stessa rivendicazione, e alza `done` da sola solo se non c'è già un esito da consumare.
+
+### 17.6 Che cosa la revisione conferma, e che resta invariato
+
+L'aritmetica (tratti, `vec_dot`, quantizzazione a blocchi, piastrelle), la tabella delle allocazioni, l'ordine sullo stream, il confine d'interfaccia a tre pezzi e i riferimenti `file:riga` del motore non sono stati toccati: la revisione li ha verificati uno per uno e l'unica citazione sbagliata era interna al codice di P2 (E1), ora corretta. I controlli con esito positivo della revisione — nessun simbolo `cuda*`/`cu*` né mutex nelle callback, un job rifiutato che non tocca `y`, `ggml-moe-cpu.h` includibile da C — restano validi dopo la correzione: la macchina a stati aggiunge solo atomici e `WaitOnAddress`, e il ramo di scadenza di `wait_hook` è stato scritto apposta per **non** introdurre una seconda attesa sul thread di callback.

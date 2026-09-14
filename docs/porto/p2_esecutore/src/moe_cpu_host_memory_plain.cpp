@@ -6,6 +6,13 @@
 #include <cstdlib>
 #include <cstring>
 
+#if defined(_WIN32)
+// `_aligned_malloc`/`_aligned_free` sono dichiarate in <malloc.h>, non in
+// <stdlib.h>: senza questo include MSVC da' «identificatore non trovato».
+// (difetto E2 della revisione del 14 settembre)
+#  include <malloc.h>
+#endif
+
 namespace {
 
 class plain_memory : public moe_cpu_host_memory {

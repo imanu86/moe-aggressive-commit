@@ -3,8 +3,8 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p2_fixing_after_review",
-  "current_phase": "P2",
+  "implementation_status": "p4_cost_localization",
+  "current_phase": "P4",
   "goal": {
     "decode_free_tps": 50,
     "decode_ms_per_accepted_token": 20,
@@ -17,9 +17,15 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 4,
+  "new_benchmark_runs": 12,
   "baseline_reference_free_tps": 24.44,
-  "next_action": "Fix the two blocking defects from the independent review (B1 cancel/timeout concurrency, B2 irreversible contamination) plus E1/E2, compile and run the host-only test once the fix is ready, then start P3 against the closed baseline reference of 24.44 t/s on the free set, reusing the P1 simulator invariant asserts.",
+  "p3_result": {
+    "free_tps_B": 23.5135,
+    "free_tps_A_off": 24.4275,
+    "mechanism_ms_per_token": 1.801,
+    "bandwidth_saving_ms_per_token": 0.209
+  },
+  "next_action": "P4 cell C0: relax the llama-moecpu.cpp guard that currently rejects LLAMA_MOE_CPU_MAX=0 with the plumbing built, then measure the free set cost of the mechanism (host nodes, export kernel, merge guard, add node) with zero CPU routes, to decide whether the next lever is the number of host nodes or the CPU arithmetic. Exit criterion: the mechanism must cost less than the per-layer bandwidth saving (0.209 ms/token) measured in P3, or the CPU route closes in favor of P7.",
   "phases": [
     {
       "id": "P0",
@@ -35,21 +41,21 @@
     },
     {
       "id": "P2",
-      "status": "not_started",
+      "status": "completed",
       "depends_on": [
         "P1"
       ]
     },
     {
       "id": "P3",
-      "status": "not_started",
+      "status": "completed",
       "depends_on": [
         "P2"
       ]
     },
     {
       "id": "P4",
-      "status": "not_started",
+      "status": "in_progress",
       "depends_on": [
         "P3"
       ]

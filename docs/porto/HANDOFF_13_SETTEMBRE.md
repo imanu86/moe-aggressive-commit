@@ -7,6 +7,16 @@ Scritto a fine giornata del 13/9. **Leggere per intero prima di toccare qualsias
 
 ## 0. In una pagina
 
+> **Piano del 14 settembre:** documentati [piano di integrazione CPU/GPU](PIANO_CPU_GPU_14_SETTEMBRE.md), [protocollo A/B e qualità](PROTOCOLLO_CPU_GPU_14_SETTEMBRE.md) e [registro di avanzamento](REGISTRO_CPU_GPU_14_SETTEMBRE.md). Stato: prototipo concluso, integrazione nel server ancora da avviare; prossima fase P0 (baseline isolata e prompt congelati), poi contratto della cache e ammissioni CPU/GPU prima del decode reale e di MTP. Nessun nuovo benchmark in questa sessione di pianificazione; produzione invariata, Q4 rinviato. Le soglie nel protocollo sono criteri per le prove future, non prestazioni già raggiunte.
+
+> **Aggiornamento prototipo CPU/GPU FreeToken:** implementato e provato un esecutore CPU fuso sui pesi originali IQ2_S/IQ4_NL. La variante RAM pinnata mappata + callback, con tre miss e due esperti CPU, riduce un blocco da circa 337 a 242 µs (quattro core, mediana di tre processi); il controllo a singola invocazione è più variabile. Copie esplicite + flag invece rallentano. Sono misure di un blocco, non nuovi t/s: generazione libera ancora al precedente 25,08 t/s; obiettivo 50 aperto. Compatibilità dei formati verificata per 47/48 strati, strato 2 IQ3_S da gestire separatamente. Prototipo non integrato nel server, MTP non ancora coperto; produzione invariata. Risultati, limiti e replica: [FREETOKEN_IBRIDO_13_SETTEMBRE.md](FREETOKEN_IBRIDO_13_SETTEMBRE.md), `freetoken_ibrido_evidence.zip`.
+
+> **Aggiornamento FreeToken/Bonsai:** priorità a FreeToken e al motore attuale; ipotesi Q4 CPU rinviata, nessun download completo Q4 avviato. FreeToken main `9535656` non carica il Qwen GGUF corrente e il suo esecutore CPU non supporta IQ2_S/IQ4_NL. Replay a pari memoria: cache attuale calda 75,55%, LRU globale ideale 74,82%; non sostituire la cache sulla sola base del paper. Sonda CPU con pesi originali e catena gate/up-SiLU-down: circa 0,085 ms per un esperto a 8 thread; sono componenti, non nuovi t/s del modello. Le primitive CUDA di sincronizzazione con memoria host funzionano sulla 3060/Windows. Dettagli, limiti e percorso successivo: [FREETOKEN_BONSAI_13_SETTEMBRE.md](FREETOKEN_BONSAI_13_SETTEMBRE.md). I 39 t/s restano un risultato di copia, circa 25 t/s il precedente riferimento di risposta libera.
+
+> **Aggiornamento prestazioni Codex, successivo alla ripresa cache:** implementati e misurati GDN a tile, correzione dei draft n-gram corti, rollback a due token e staging asincrono degli esperti. **414,83 t/s di prefill a 32k con MTP attivo**; **357,61 t/s a 131k, cinque fatti recuperati su cinque**. In copia/modifica del codice **39,19 / 37,76 t/s**, con gli stessi output del riferimento; nel banco di risposta libera a 32k la configurazione combinata dà **25,08 t/s**, quindi i **50 t/s generali restano aperti**. Il profilo mostra un contributo importante anche dei matvec Q6_K residenti: il decode non va più descritto come vincolato esclusivamente al bus. Produzione invariata e server di prova arrestati. Dettagli e limiti: [VERSO_50_TPS_400_PREFILL_13_SETTEMBRE_CODEX.md](VERSO_50_TPS_400_PREFILL_13_SETTEMBRE_CODEX.md); patch, JSON e prove in `strumenti_50_tps_13settembre/`.
+
+> **Aggiornamento Codex, ripresa del 13/9:** il divario della priorità A è stato verificato sul banco HTTP, MTP spento e 64 slot. Su **36.913 piani GPU, zero differenze dal simulatore**; colpi diretti **75,55%** escludendo i primi 64 passi di ciascuna cache. Il **41% dedotto dal PCIe non è un tasso di colpi valido**. Corretta anche la stampa dei contatori, che prima non avanzava durante il replay CUDA. Resta da attribuire il traffico PCIe eccedente il payload degli esperti. Dettagli, replica con CUDA graph attivi, hash e strumenti: [RIPRESA_CACHE_13_SETTEMBRE_CODEX.md](RIPRESA_CACHE_13_SETTEMBRE_CODEX.md). I dati storici sotto sono conservati come contesto; la produzione resta invariata.
+
 Oggi si è lavorato su tre fronti. Uno ha prodotto una vittoria, due sono stati **chiusi** con
 misure, e restano **due priorità massime**, entrambe sul decode:
 
@@ -38,7 +48,7 @@ Impronte (SHA256, primi 8) al 13/9 sera. **Fra i due insiemi differiscono SOLO d
 
 | file | bin_prod | build\bin |
 |---|---|---|
-| `ggml-cuda.dll` | `481D89C6` (183,2 MB) | **`20653E30`** (183,4 MB, 13/09 08:48) |
+| `ggml-cuda.dll` | `481D89C6` (183,2 MB) | **`321BA4AC`** (183,4 MB, 13/09 10:38) |
 | `llama.dll` | `2D558CA0` (2,5 MB) | **`59A97335`** (2,5 MB, 13/09 08:39) |
 | `ggml.dll` | `093DCDAB` | identico |
 | `ggml-base.dll` | `5F4BA614` | identico |
@@ -52,7 +62,12 @@ Impronte (SHA256, primi 8) al 13/9 sera. **Fra i due insiemi differiscono SOLO d
 | `moe_batch_math_probe.exe` | `93E91852` | identico |
 
 **Conseguenza pratica:** tutta la sparse FA vive in quelle due DLL. Per promuoverla in produzione
-basta copiarle in `bin_prod` (dopo il gate di qualità, §4.1). Per annullarla basta non copiarle.
+basta copiarle in `bin_prod`. Per annullarla basta non copiarle.
+
+`ggml-cuda.dll` è stata ricostruita tre volte il 13/9: `20653E30` (sparse FA + log),
+poi **`321BA4AC`** (aggiunge il contatore dei colpi di cache, §4.A). Entrambe le aggiunte sono
+**spente di default** e si accendono da variabile d'ambiente, quindi la DLL nuova si comporta
+esattamente come quella di produzione finché non si chiede altro.
 
 ### 1.2 Backup dei sorgenti
 
@@ -131,6 +146,8 @@ di sessione e sarebbero andati persi):
 | `simula_cache.py` | Simulatore della cache esperti sulle tracce del router |
 | `build_sparse_fa.cmd` | Ricompila `ggml-cuda`, `llama`, `llama-server` (Ninja, arch 86) |
 | `build_llama_dll.cmd` | Ricompila la sola `llama.dll` (3 s) |
+| `banco_ripetizione.py` | Carico a **ripetizione**: fa riprodurre al modello un file che ha nel prompt. È il solo regime in cui un n-grammo aggancia (§4.B) |
+| `ab_ngram.ps1` | Coppia `draft-mtp` contro `draft-mtp,ngram-mod` sul carico a ripetizione |
 
 ---
 
@@ -274,11 +291,17 @@ località degli esperti dipende dal testo. Ma è un sospetto, non una misura.
 
 **Piano proposto, in ordine:**
 
-1. **Contare i colpi veri, non dedurli.** Oggi il 41% è calcolato per differenza dai byte sul PCIe.
-   Serve un contatore diretto: `moe_grouped_decode_plan` conosce già `n_misses` e `n_unique`
-   (`fork-moe-kernels.cuh:48`, `2160` circa). Accumularli in due contatori sul dispositivo e
-   stamparli a fine richiesta dà il tasso reale per strato, senza inferenze.
-   *È il passo che rende falsificabile tutto il resto: farlo per primo.*
+1. **Contare i colpi veri, non dedurli. FATTO il 13/9, è nella DLL `321BA4AC`.**
+   Il 41% era calcolato per differenza dai byte sul PCIe; ora c'è un contatore diretto.
+   Due contatori sul dispositivo per gruppo (cioè per strato) accumulano `n_unique` e `n_misses`
+   del piano; l'inserzione è unica, subito dopo il punto in cui i due cammini del kernel (a warp e
+   a blocco) si ricongiungono, e la lettura somma tutti gli strati.
+   **Uso: `LLAMA_MOE_HIT_REPORT=<N>`** stampa nel log `moe cache: richiesti .., mancanti .., colpi ..%`
+   ogni N chiamate al piano. Spento di default; la copia dal dispositivo sincronizza, quindi N va
+   tenuto grande (4096 è già innocuo). Codice: `fork-moe-kernels.cuh` (parametro `demand_counters`
+   e accumulo) e `moe-demand.cuh` (campo `counters`, allocazione, lettura e stampa in `remap`).
+   *Con questo il resto del fronte diventa falsificabile: confrontare il numero misurato con il
+   75,4% del simulatore sulle stesse tracce.*
 2. **Ricalibrare le tracce sul carico vero.** Esiste `route_capture.cpp` (probe di una sessione
    precedente). Raccogliere le rotte **durante il banco** e rilanciare `simula_cache.py`: se il
    simulato scende verso il 41%, il modello è sano e il tetto è quello; se resta al 75%, c'è
@@ -345,22 +368,30 @@ Si vede quindi quante volte l'n-grammo ha sparato e quanto è costato, senza ric
 
 ## 5. Lavoro in volo al momento della consegna
 
-**Prova di qualità della sparse FA a 131k** (`ab_reale.ps1 -Ctx 131072`), in corso. Cinque aghi a
-5/25/50/75/95% di profondità più una domanda tecnica, sui due bracci. Serve come **gate**: la sparse
-tiene 2051 celle per strato e il rischio è amputare il contesto senza che la velocità lo mostri.
+### Gate di qualità della sparse FA — **PASSATO**
 
-Una corsa precedente, con strumento difettoso, aveva mostrato l'ago al 90% perso dal braccio sparso.
-**Non è una misura**: le risposte erano vuote per un difetto di cattura (`content` vuoto con
-`--reasoning on`, tutto in `reasoning_content`), il budget di 120 token poteva essersi esaurito nel
-ragionamento, ed era un solo ago in un solo braccio. La versione corretta toglie tutti e tre i dubbi.
+`ab_reale.ps1 -Ctx 131072`: cinque fatti verificabili piantati al 5/25/50/75/95% di un contesto da
+131k, sui due bracci. **5 su 5 ritrovati da entrambi**, compreso quello al 95%. La sparse **non
+ampute il contesto**. Ha senso: il top-k è **per strato**, i 12 strati QSA scelgono ciascuno le
+proprie 2051 celle, e i 36 strati ricorrenti trasportano informazione a prescindere.
 
-**Se il gate passa:**
-1. Misurare la coppia a **250k**: `ab_long.ps1 -Ctx 250000`. È il punto operativo vero del harness.
-2. Promuovere copiando `ggml-cuda.dll` e `llama.dll` da `build\bin` a `bin_prod`, e accendere
-   `QWEN4EXP_SPARSE_FA=1` nel lanciatore di produzione.
+Una corsa precedente aveva mostrato un ago perso dal braccio sparso: era **un artefatto dello
+strumento**, non della leva. Tre difetti indipendenti, tutti corretti: cattura del testo che
+ignorava `reasoning_content` (con `--reasoning on` l'impronta era quella della stringa vuota),
+budget di 120 token che poteva esaurirsi dentro il ragionamento, e un solo ago in un solo braccio.
 
-**Se il gate non passa** (il braccio sparso perde un ago che quello denso trova, con la risposta in
-chiaro a dimostrarlo): la leva resta in albero, spenta, e non si promuove. Il +18,1% non basta.
+La **domanda tecnica** dello stesso test invece **non misura nulla e va corretta prima di
+riusarla**: il riempimento scorre i file in ordine alfabetico e a 131k si ferma dentro `common/`,
+quindi chiedeva di codice che non era nel contesto. Entrambi i bracci hanno risposto correttamente
+che quel codice non c'era — comportamento sano, ma domanda inutile. Nella versione in repo la
+domanda è già stata spostata su `common/arg.cpp`, che nel riempimento c'è sempre.
+
+**Resta da fare sulla sparse:**
+1. Misurare la coppia a **250k**: `ab_long.ps1 -Ctx 250000`. È il punto operativo vero del harness,
+   e il guadagno cresce con la profondità.
+2. Decidere la promozione: copiare `ggml-cuda.dll` e `llama.dll` da `build\bin` a `bin_prod` e
+   accendere `QWEN4EXP_SPARSE_FA=1` nel lanciatore di produzione. **Non ancora fatto**: richiede
+   una decisione esplicita perché tocca ciò che gira tutti i giorni.
 
 ---
 

@@ -131,10 +131,16 @@ for frazione, _, domanda, atteso in AGHI:
     print(f'  ago a {int(frazione*100):>3}%  {stato:<16} {r["n_gen"]:>4} token, {r["dt"]:>6}s  '
           f'-> {r["mostrato"][:150]}', flush=True)
 
+# ATTENZIONE (corretto il 13/9): la domanda deve riguardare codice che sta DAVVERO nel
+# riempimento. La v2 chiedeva di fattn.cu e qwen4exp.cpp, ma il riempimento scorre i file
+# in ordine alfabetico e a 131k token si ferma dentro common/: la domanda era senza
+# risposta per costruzione, ed entrambi i bracci rispondevano - correttamente - che quel
+# codice non c'era. `common/arg.cpp` invece entra sempre, essendo fra i primi in ordine.
 DOMANDA_TECNICA = (
-    "Nel codice che ti ho dato, quale funzione decide a RUNTIME se usare la flash attention "
-    "sparsa, e quali condizioni impone? Rispondi in italiano, citando il nome della funzione "
-    "e le condizioni principali."
+    "Nel codice che ti ho dato c'e' il file common/arg.cpp con la definizione delle opzioni "
+    "da riga di comando. Quale opzione regola il numero di slot della cache degli esperti MoE "
+    "sulla GPU, qual e' il suo valore predefinito, e quale opzione imparentata limita gli "
+    "inserimenti per strato a ogni passo di decode? Rispondi in italiano citando i nomi esatti."
 )
 r = chiedi(base + [{'role': 'user', 'content': DOMANDA_TECNICA}], args.max_tokens)
 r.update({'tipo': 'tecnica', 'domanda': DOMANDA_TECNICA})

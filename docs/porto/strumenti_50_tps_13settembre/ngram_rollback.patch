@@ -1,0 +1,21 @@
+--- a/common/common.cpp
++++ b/common/common.cpp
+@@ -1721,7 +1721,17 @@
+ 
+     cparams.n_ctx             = params.n_ctx;
+     cparams.n_seq_max         = params.n_parallel;
+-    cparams.n_rs_seq          = params.speculative.need_n_rs_seq();
++    cparams.n_rs_seq          = params.speculative.need_n_rs_seq();
++    // Experimental short n-gram rollback: avoid a host checkpoint for every
++    // 2-token proposal when the MTP fallback itself drafts only one token.
++    // Do not reserve states for the normal large (e.g. 48-token) n-gram defaults.
++    const char * ngram_rs_env = std::getenv("QWEN_NGRAM_ROLLBACK");
++    if (ngram_rs_env && std::atoi(ngram_rs_env) != 0 &&
++        params.speculative.ngram_simple.size_m > 0 && params.speculative.ngram_simple.size_m <= 2 &&
++        std::find(params.speculative.types.begin(), params.speculative.types.end(),
++            COMMON_SPECULATIVE_TYPE_NGRAM_SIMPLE) != params.speculative.types.end()) {
++        cparams.n_rs_seq = std::max(cparams.n_rs_seq, uint32_t(params.speculative.ngram_simple.size_m));
++    }
+     cparams.n_outputs_max     = std::max(params.n_outputs_max, 0);
+     cparams.n_outputs_max_per_seq = std::max(params.n_outputs_max_per_seq, 0);
+     cparams.n_batch           = params.n_batch;

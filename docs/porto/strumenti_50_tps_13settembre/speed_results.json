@@ -1,0 +1,897 @@
+{
+  "runs": {
+    "mtp_base": {
+      "config": {
+        "batch": 4096,
+        "launcher_pid": 18204,
+        "gdn_tiled": 1,
+        "label": "mtp_base",
+        "nsight": false,
+        "mtp": 1,
+        "specs": "draft-mtp",
+        "sfa": 1,
+        "ngram_m": 2,
+        "slots": 64
+      },
+      "bench.jsonl": [
+        {
+          "label": "mtp_base_r1",
+          "turn": 1,
+          "ctx_tokens_req": 32000,
+          "wall_s": 110.416,
+          "ttft_s": 82.285,
+          "chunks": 768,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 32139,
+            "prompt_ms": 82210.603,
+            "prompt_per_token_ms": 2.557970160863748,
+            "prompt_per_second": 390.9349746528437,
+            "predicted_n": 768,
+            "predicted_ms": 28131.49,
+            "predicted_per_token_ms": 36.67730117340287,
+            "predicted_per_second": 27.264819602516607,
+            "draft_n": 439,
+            "draft_n_accepted": 327
+          },
+          "prompt_n": 32139,
+          "prompt_tps": 390.93,
+          "gen_n": 768,
+          "gen_tps": 27.26,
+          "draft_n": 439,
+          "draft_n_accepted": 327,
+          "text_sha": "4177b691e247",
+          "text_len": 2535
+        }
+      ],
+      "code.jsonl": [
+        {
+          "label": "mtp_base",
+          "job": "copy",
+          "wall_s": 47.49660529999528,
+          "ttft_s": 11.200746100046672,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4247,
+            "prompt_ms": 11176.172,
+            "prompt_per_token_ms": 2.6315450906522253,
+            "prompt_per_second": 380.004888972718,
+            "predicted_n": 1024,
+            "predicted_ms": 36294.936,
+            "predicted_per_token_ms": 35.47892082111437,
+            "predicted_per_second": 28.18575021044258,
+            "draft_n": 566,
+            "draft_n_accepted": 457
+          },
+          "content_sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+          "all_text_sha256": "2356e6efc0c7acbfa802a080a0fcca9189fbb00e2c79fd11de5814cc42b42c29",
+          "prompt_sha256": "e4b22069fa6f58aad90267f3f8c4667463550bb7b8c0fc5b710e6fc5f5c74c1b",
+          "content_chars": 0,
+          "reasoning_chars": 4095,
+          "copied_line_fraction": 0
+        },
+        {
+          "label": "mtp_base",
+          "job": "rename",
+          "wall_s": 47.47016229998553,
+          "ttft_s": 11.235446799953934,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4268,
+            "prompt_ms": 11226.83,
+            "prompt_per_token_ms": 2.6304662605435802,
+            "prompt_per_second": 380.1607399417289,
+            "predicted_n": 1024,
+            "predicted_ms": 36234.296,
+            "predicted_per_token_ms": 35.419644183773215,
+            "predicted_per_second": 28.232920545772433,
+            "draft_n": 550,
+            "draft_n_accepted": 472
+          },
+          "content_sha256": "b9d40165095eaf1dce89ed7707d0ea07f8dac7d43ca6edf58c31364efc4e3635",
+          "all_text_sha256": "7582e99ccd6ff7d899e4eeb322bb5a07470302b258cc46bfd61056e2599b37c4",
+          "prompt_sha256": "7eff7108154d32401af03022af3f8f61dfadc82946b500e4907fdff1e37174ab",
+          "content_chars": 843,
+          "reasoning_chars": 2983,
+          "copied_line_fraction": 1.0
+        },
+        {
+          "label": "mtp_base",
+          "job": "copy_direct",
+          "thinking": "off",
+          "wall_s": 44.39999040000839,
+          "ttft_s": 10.733091100002639,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4207,
+            "prompt_ms": 10708.917,
+            "prompt_per_token_ms": 2.5454996434513903,
+            "prompt_per_second": 392.8501827028821,
+            "predicted_n": 1024,
+            "predicted_ms": 33666.592,
+            "predicted_per_token_ms": 32.909669599217985,
+            "predicted_per_second": 30.386206005050944,
+            "draft_n": 522,
+            "draft_n_accepted": 500
+          },
+          "content_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "all_text_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "prompt_sha256": "e4b22069fa6f58aad90267f3f8c4667463550bb7b8c0fc5b710e6fc5f5c74c1b",
+          "content_chars": 3407,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3400,
+          "code_chars_without_fence": 3400
+        },
+        {
+          "label": "mtp_base",
+          "job": "rename_direct",
+          "thinking": "off",
+          "wall_s": 43.93665579997469,
+          "ttft_s": 10.477494699996896,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4228,
+            "prompt_ms": 10463.952,
+            "prompt_per_token_ms": 2.474917691579943,
+            "prompt_per_second": 404.0538412255714,
+            "predicted_n": 1024,
+            "predicted_ms": 33458.829,
+            "predicted_per_token_ms": 32.70657771260997,
+            "predicted_per_second": 30.574889515708996,
+            "draft_n": 520,
+            "draft_n_accepted": 502
+          },
+          "content_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "all_text_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "prompt_sha256": "7eff7108154d32401af03022af3f8f61dfadc82946b500e4907fdff1e37174ab",
+          "content_chars": 3393,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3386,
+          "code_chars_without_fence": 3386
+        }
+      ]
+    },
+    "mtp_ngram2": {
+      "config": {
+        "label": "mtp_ngram2",
+        "gdn_tiled": 1,
+        "slots": 64,
+        "ngram_m": 2,
+        "specs": "draft-mtp,ngram-simple",
+        "batch": 4096,
+        "mtp": 1,
+        "launcher_pid": 6868,
+        "sfa": 1,
+        "nsight": false
+      },
+      "bench.jsonl": [
+        {
+          "label": "mtp_ngram2_r1",
+          "turn": 1,
+          "ctx_tokens_req": 32000,
+          "wall_s": 124.864,
+          "ttft_s": 91.196,
+          "chunks": 768,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 32139,
+            "prompt_ms": 91121.42,
+            "prompt_per_token_ms": 2.835228849684184,
+            "prompt_per_second": 352.7052146465672,
+            "predicted_n": 768,
+            "predicted_ms": 33668.799,
+            "predicted_per_token_ms": 43.89673924380704,
+            "predicted_per_second": 22.78073536273153,
+            "draft_n": 439,
+            "draft_n_accepted": 327
+          },
+          "prompt_n": 32139,
+          "prompt_tps": 352.71,
+          "gen_n": 768,
+          "gen_tps": 22.78,
+          "draft_n": 439,
+          "draft_n_accepted": 327,
+          "text_sha": "4177b691e247",
+          "text_len": 2535
+        }
+      ],
+      "code.jsonl": [
+        {
+          "label": "mtp_ngram2",
+          "job": "copy_direct",
+          "thinking": "off",
+          "wall_s": 56.89156729995739,
+          "ttft_s": 21.094048800005112,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4207,
+            "prompt_ms": 21004.542,
+            "prompt_per_token_ms": 4.99276016163537,
+            "prompt_per_second": 200.29001346470682,
+            "predicted_n": 1024,
+            "predicted_ms": 35797.345,
+            "predicted_per_token_ms": 34.992517106549364,
+            "predicted_per_second": 28.57753836213272,
+            "draft_n": 522,
+            "draft_n_accepted": 500
+          },
+          "content_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "all_text_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "prompt_sha256": "e4b22069fa6f58aad90267f3f8c4667463550bb7b8c0fc5b710e6fc5f5c74c1b",
+          "content_chars": 3407,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3400,
+          "code_chars_without_fence": 3400
+        },
+        {
+          "label": "mtp_ngram2",
+          "job": "rename_direct",
+          "thinking": "off",
+          "wall_s": 51.54334460000973,
+          "ttft_s": 13.603716399986297,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4228,
+            "prompt_ms": 13595.633,
+            "prompt_per_token_ms": 3.215618022705771,
+            "prompt_per_second": 310.9822102435392,
+            "predicted_n": 1024,
+            "predicted_ms": 37939.05,
+            "predicted_per_token_ms": 37.08607038123167,
+            "predicted_per_second": 26.96430195273735,
+            "draft_n": 520,
+            "draft_n_accepted": 502
+          },
+          "content_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "all_text_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "prompt_sha256": "7eff7108154d32401af03022af3f8f61dfadc82946b500e4907fdff1e37174ab",
+          "content_chars": 3393,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3386,
+          "code_chars_without_fence": 3386
+        }
+      ],
+      "interpretation": "Invalid as an active ngram benchmark: old simple implementation rejects M=2 < N=12, so zero ngram drafts were generated. Keeps value as a control with a larger speculation state allocation."
+    },
+    "mtp_ngram2_b8192": {
+      "config": {
+        "mtp": 1,
+        "launcher_pid": 21420,
+        "sfa": 1,
+        "slots": 64,
+        "nsight": false,
+        "ngram_m": 2,
+        "batch": 8192,
+        "gdn_tiled": 1,
+        "specs": "draft-mtp,ngram-simple",
+        "label": "mtp_ngram2_b8192"
+      },
+      "aborted.json": {
+        "status": "aborted",
+        "reason": "VRAM pressure: workspace 7451.13 MiB at kv=49152; next 8192-token chunk took 51.18 s versus 16.76 s prior; stopped after 32810 prompt tokens."
+      }
+    },
+    "mtp_ngram2_control": {
+      "config": {
+        "slots": 64,
+        "mtp": 1,
+        "sfa": 1,
+        "specs": "draft-mtp,ngram-simple",
+        "nsight": false,
+        "gdn_tiled": 1,
+        "prefetch": 2,
+        "ngram_m": 2,
+        "launcher_pid": 19596,
+        "batch": 2048,
+        "label": "mtp_ngram2_control"
+      },
+      "code.jsonl": [
+        {
+          "label": "mtp_ngram2_control",
+          "job": "copy_direct",
+          "thinking": "off",
+          "wall_s": 41.596548400004394,
+          "ttft_s": 12.309973200026434,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4207,
+            "prompt_ms": 12294.254,
+            "prompt_per_token_ms": 2.922332778702163,
+            "prompt_per_second": 342.19237702425863,
+            "predicted_n": 1024,
+            "predicted_ms": 29287.0,
+            "predicted_per_token_ms": 28.628543499511242,
+            "predicted_per_second": 34.930173797247924,
+            "draft_n": 684,
+            "draft_n_accepted": 676
+          },
+          "content_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "all_text_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "prompt_sha256": "e4b22069fa6f58aad90267f3f8c4667463550bb7b8c0fc5b710e6fc5f5c74c1b",
+          "content_chars": 3407,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3400,
+          "code_chars_without_fence": 3400
+        },
+        {
+          "label": "mtp_ngram2_control",
+          "job": "rename_direct",
+          "thinking": "off",
+          "wall_s": 41.97527569998056,
+          "ttft_s": 11.749968999996781,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4228,
+            "prompt_ms": 11721.137,
+            "prompt_per_token_ms": 2.7722651371807,
+            "prompt_per_second": 360.7158588795609,
+            "predicted_n": 1024,
+            "predicted_ms": 30224.366,
+            "predicted_per_token_ms": 29.544834799608996,
+            "predicted_per_second": 33.84686381841723,
+            "draft_n": 674,
+            "draft_n_accepted": 666
+          },
+          "content_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "all_text_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "prompt_sha256": "7eff7108154d32401af03022af3f8f61dfadc82946b500e4907fdff1e37174ab",
+          "content_chars": 3393,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3386,
+          "code_chars_without_fence": 3386
+        }
+      ],
+      "binary_hashes.json": {
+        "ggml-cuda.dll": "26ba28b462869f8b54696804e9ff2532e13910a66b2fa3724559cd0bdfb29b70",
+        "ggml-base.dll": "e4c26f7f1824313b2ca0c0f8db350cbcceb1adc7b3e080403965ffcc8234faf5",
+        "llama.dll": "59a97335c478850c42bea8e1ea65bac9ff7fcc69396e477135d317983479d5d1",
+        "llama-common.dll": "d6fbb21d0327709126008a7ad25247b091d916faf3aad44aff2225ffc4514ed3"
+      }
+    },
+    "mtp_ngram2_prefetch": {
+      "config": {
+        "gdn_tiled": 1,
+        "ngram_m": 2,
+        "label": "mtp_ngram2_prefetch",
+        "prefetch": 1,
+        "nsight": false,
+        "sfa": 1,
+        "mtp": 1,
+        "slots": 64,
+        "batch": 2048,
+        "specs": "draft-mtp,ngram-simple",
+        "launcher_pid": 27092
+      },
+      "binary_hashes.json": {
+        "llama-common.dll": "d6fbb21d0327709126008a7ad25247b091d916faf3aad44aff2225ffc4514ed3",
+        "ggml-base.dll": "faedd3112d9455196dcb2cbe1b00a27954cdb33b8b1f55147997a9bee8c2f162",
+        "ggml-cuda.dll": "26ba28b462869f8b54696804e9ff2532e13910a66b2fa3724559cd0bdfb29b70",
+        "llama.dll": "59a97335c478850c42bea8e1ea65bac9ff7fcc69396e477135d317983479d5d1"
+      },
+      "aborted.json": {
+        "reason": "Public tensor_set_async rejected padding write beyond logical tensor size; fixed by representing the upload destination as the allocated byte span. No benchmark result.",
+        "status": "failed"
+      }
+    },
+    "mtp_ngram2_prefetch_rs": {
+      "config": {
+        "batch": 2048,
+        "launcher_pid": 25596,
+        "specs": "draft-mtp,ngram-simple",
+        "gdn_tiled": 1,
+        "sfa": 1,
+        "label": "mtp_ngram2_prefetch_rs",
+        "ngram_rollback": 1,
+        "prefetch": 1,
+        "mtp": 1,
+        "ngram_m": 2,
+        "nsight": false,
+        "slots": 64
+      },
+      "bench.jsonl": [
+        {
+          "label": "mtp_ngram2_prefetch_rs_r1",
+          "turn": 1,
+          "ctx_tokens_req": 32000,
+          "wall_s": 108.107,
+          "ttft_s": 77.528,
+          "chunks": 768,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 32139,
+            "prompt_ms": 77474.879,
+            "prompt_per_token_ms": 2.410618843150067,
+            "prompt_per_second": 414.83123839406056,
+            "predicted_n": 768,
+            "predicted_ms": 30576.957,
+            "predicted_per_token_ms": 39.86565449804433,
+            "predicted_per_second": 25.084248900242105,
+            "draft_n": 456,
+            "draft_n_accepted": 323
+          },
+          "prompt_n": 32139,
+          "prompt_tps": 414.83,
+          "gen_n": 768,
+          "gen_tps": 25.08,
+          "draft_n": 456,
+          "draft_n_accepted": 323,
+          "text_sha": "5dd82ace662e",
+          "text_len": 3071
+        }
+      ],
+      "code.jsonl": [
+        {
+          "label": "mtp_ngram2_prefetch_rs",
+          "job": "copy_direct",
+          "thinking": "off",
+          "wall_s": 36.481606899993494,
+          "ttft_s": 10.380241599981673,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4207,
+            "prompt_ms": 10352.818,
+            "prompt_per_token_ms": 2.460855241264559,
+            "prompt_per_second": 406.3627893390959,
+            "predicted_n": 1024,
+            "predicted_ms": 26101.174,
+            "predicted_per_token_ms": 25.514344086021506,
+            "predicted_per_second": 39.193639335916465,
+            "draft_n": 684,
+            "draft_n_accepted": 676
+          },
+          "content_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "all_text_sha256": "6a2f42dbede7f9f0ea86d07059e8203532a8bb876124eadb52fcbb4ab5b5a349",
+          "prompt_sha256": "e4b22069fa6f58aad90267f3f8c4667463550bb7b8c0fc5b710e6fc5f5c74c1b",
+          "content_chars": 3407,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3400,
+          "code_chars_without_fence": 3400
+        },
+        {
+          "label": "mtp_ngram2_prefetch_rs",
+          "job": "rename_direct",
+          "thinking": "off",
+          "wall_s": 36.92762999999104,
+          "ttft_s": 9.833958700008225,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 4228,
+            "prompt_ms": 9826.746,
+            "prompt_per_token_ms": 2.3242067171239356,
+            "prompt_per_second": 430.25432834022575,
+            "predicted_n": 1024,
+            "predicted_ms": 27092.725,
+            "predicted_per_token_ms": 26.48360215053763,
+            "predicted_per_second": 37.75921395872878,
+            "draft_n": 675,
+            "draft_n_accepted": 666
+          },
+          "content_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "all_text_sha256": "01575a6bd795ca4e2f32e2e90ebe1e6b9513b81f9877c866b63980f489b87891",
+          "prompt_sha256": "7eff7108154d32401af03022af3f8f61dfadc82946b500e4907fdff1e37174ab",
+          "content_chars": 3393,
+          "reasoning_chars": 0,
+          "copied_line_fraction": 1.0,
+          "exact_source_prefix": true,
+          "matching_prefix_chars": 3386,
+          "code_chars_without_fence": 3386
+        }
+      ],
+      "binary_hashes.json": {
+        "ggml-cuda.dll": "26ba28b462869f8b54696804e9ff2532e13910a66b2fa3724559cd0bdfb29b70",
+        "ggml-base.dll": "d3842eb1ca8cc5a46e1eee7e4857ac02b651dc492ae78f9ef589c82c8811e4b0",
+        "llama-common.dll": "2253bd460c4d333116eecbd9dd8803b9ffa4b8c23cd2a18875789ebc2f7b2bbf",
+        "llama.dll": "59a97335c478850c42bea8e1ea65bac9ff7fcc69396e477135d317983479d5d1"
+      },
+      "technical_direct_status.json": {
+        "reason": "Changing the thinking template invalidated the long prompt cache. The optional direct technical retry was stopped during prefill; no answer or benchmark result. The prior 131k retrieval test completed with 5/5 final answers; its technical question exhausted 768 tokens in reasoning.",
+        "status": "aborted"
+      },
+      "prova_reale_prefetch_rs_131k.json": {
+        "label": "prefetch_rs_131k",
+        "ctx": 131072,
+        "esiti": [
+          {
+            "testo": "MANDORLA-417",
+            "ragionamento": "The user is asking for the test code of the ALFA bench. Looking at the provided material, there is a comment: \"// NOTA OPERATIVA ALFA: il codice di collaudo del banco ALFA e' MANDORLA-417.\" The user wants only the code.",
+            "n_gen": 71,
+            "timings": {
+              "cache_n": 0,
+              "prompt_n": 131310,
+              "prompt_ms": 367187.942,
+              "prompt_per_token_ms": 2.796344086512832,
+              "prompt_per_second": 357.6097822950842,
+              "predicted_n": 71,
+              "predicted_ms": 3285.301,
+              "predicted_per_token_ms": 46.932871428571424,
+              "predicted_per_second": 21.307027879637207,
+              "draft_n": 40,
+              "draft_n_accepted": 35
+            },
+            "troncato": false,
+            "mostrato": "MANDORLA-417",
+            "dt": 370.8,
+            "tipo": "ago",
+            "profondita": 0.05,
+            "domanda": "Qual e' il codice di collaudo del banco ALFA? Rispondi con il solo codice.",
+            "atteso": "MANDORLA-417",
+            "trovato": true
+          },
+          {
+            "testo": "VIOLA-CENERE",
+            "ragionamento": "The user asks: \"Qual e' il colore di segnalazione del banco BETA? Rispondi con la sola parola.\" (What is the signaling color of the BETA bench? Answer with the single word.)\n\nFrom the material, there is a comment: \"// NOTA OPERATIVA BETA: il colore di segnalazione del banco BETA e' VIOLA-CENERE.\"\n\nSo the answer is VIOLA-CENERE. The user wants only the word.",
+            "n_gen": 105,
+            "timings": {
+              "cache_n": 131278,
+              "prompt_n": 31,
+              "prompt_ms": 1967.174,
+              "prompt_per_token_ms": 63.45722580645161,
+              "prompt_per_second": 15.758646667757912,
+              "predicted_n": 105,
+              "predicted_ms": 4649.213,
+              "predicted_per_token_ms": 44.703971153846155,
+              "predicted_per_second": 22.369377354834036,
+              "draft_n": 60,
+              "draft_n_accepted": 51
+            },
+            "troncato": false,
+            "mostrato": "VIOLA-CENERE",
+            "dt": 6.9,
+            "tipo": "ago",
+            "profondita": 0.25,
+            "domanda": "Qual e' il colore di segnalazione del banco BETA? Rispondi con la sola parola.",
+            "atteso": "VIOLA-CENERE",
+            "trovato": true
+          },
+          {
+            "testo": "Malinverni",
+            "ragionamento": "The user asks: \"Chi e' il responsabile del banco GAMMA? Rispondi con il solo cognome.\" (Who is the person responsible for the GAMMA bench? Answer with the surname only.)\n\nLooking at the material provided, there is a \"NOTA OPERATIVA GAMMA\" embedded in the code: \"// NOTA OPERATIVA GAMMA: il responsabile del banco GAMMA e' Ferruccio Malinverni.\"\n\nThe surname is Malinverni. The user wants only the surname.",
+            "n_gen": 111,
+            "timings": {
+              "cache_n": 131278,
+              "prompt_n": 29,
+              "prompt_ms": 6101.822,
+              "prompt_per_token_ms": 210.4076551724138,
+              "prompt_per_second": 4.75267879004009,
+              "predicted_n": 111,
+              "predicted_ms": 4862.143,
+              "predicted_per_token_ms": 44.2013,
+              "predicted_per_second": 22.623768984170148,
+              "draft_n": 61,
+              "draft_n_accepted": 55
+            },
+            "troncato": false,
+            "mostrato": "Malinverni",
+            "dt": 11.2,
+            "tipo": "ago",
+            "profondita": 0.5,
+            "domanda": "Chi e' il responsabile del banco GAMMA? Rispondi con il solo cognome.",
+            "atteso": "Malinverni",
+            "trovato": true
+          },
+          {
+            "testo": "ZR-8842",
+            "ragionamento": "The user is asking for the serial number of the DELTA bench. Looking at the provided code, there is a comment: \"// NOTA OPERATIVA DELTA: il numero di serie del banco DELTA e' ZR-8842.\"\nThe user requested to answer with only the number.\nNumber: ZR-8842.",
+            "n_gen": 82,
+            "timings": {
+              "cache_n": 131278,
+              "prompt_n": 30,
+              "prompt_ms": 2270.926,
+              "prompt_per_token_ms": 75.69753333333333,
+              "prompt_per_second": 13.210470090174669,
+              "predicted_n": 82,
+              "predicted_ms": 3827.149,
+              "predicted_per_token_ms": 47.248753086419754,
+              "predicted_per_second": 21.164579691044167,
+              "draft_n": 45,
+              "draft_n_accepted": 41
+            },
+            "troncato": false,
+            "mostrato": "ZR-8842",
+            "dt": 6.4,
+            "tipo": "ago",
+            "profondita": 0.75,
+            "domanda": "Qual e' il numero di serie del banco DELTA? Rispondi con il solo numero.",
+            "atteso": "ZR-8842",
+            "trovato": true
+          },
+          {
+            "testo": "TRAMONTANA",
+            "ragionamento": "The user asks for the password of the EPSILON bank. Looking at the material, there is a comment: \"// NOTA OPERATIVA EPSILON: la parola d'ordine del banco EPSILON e' TRAMONTANA.\"\n\nThe answer is TRAMONTANA. The user requests only the word.",
+            "n_gen": 69,
+            "timings": {
+              "cache_n": 131278,
+              "prompt_n": 31,
+              "prompt_ms": 4670.472,
+              "prompt_per_token_ms": 150.66038709677417,
+              "prompt_per_second": 6.637444780741647,
+              "predicted_n": 69,
+              "predicted_ms": 3511.397,
+              "predicted_per_token_ms": 51.638191176470585,
+              "predicted_per_second": 19.36551178918248,
+              "draft_n": 42,
+              "draft_n_accepted": 30
+            },
+            "troncato": false,
+            "mostrato": "TRAMONTANA",
+            "dt": 8.5,
+            "tipo": "ago",
+            "profondita": 0.95,
+            "domanda": "Qual e' la parola d'ordine del banco EPSILON? Rispondi con la sola parola.",
+            "atteso": "TRAMONTANA",
+            "trovato": true
+          },
+          {
+            "testo": "",
+            "ragionamento": "We need answer user's question in Italian. Need identify from provided code common/arg.cpp options. User asks: \"Nel codice che ti ho dato c'e' il file common/arg.cpp con la definizione delle opzioni da riga di comando. Quale opzione regola il numero di slot della cache degli esperti MoE sulla GPU, qual e' il suo valore predefinito, e quale opzione imparentata limita gli inserimenti per strato a ogni passo di decode? Rispondi in italiano citando i nomi esatti.\"\n\nNeed answer exact option names and default value. Need inspect code. In arg.cpp:\nadd_opt(common_arg(\n    {\"--moe-expert-cache\"}, \"N\",\n    string_format(\"GPU cache slots per host-resident MoE expert layer, 0 = disabled (default: %d)\", params.n_moe_cache_slots),\n    [](common_params & params, int value) {\n        params.n_moe_cache_slots = value;\n    }\n).set_env(\"LLAMA_ARG_MOE_EXPERT_CACHE\"));\nadd_opt(common_arg(\n    {\"--moe-expert-cache-inserts\"}, \"N\",\n    string_format(\"max expert uploads per layer per decode step for the MoE expert cache (default: %d)\", params.n_moe_cache_inserts),\n    [](common_params & params, int value) {\n        params.n_moe_cache_inserts = value;\n    }\n).set_env(\"LLAMA_ARG_MOE_EXPERT_CACHE_INSERTS\"));\n\nQuestion: \"Quale opzione regola il numero di slot della cache degli esperti MoE sulla GPU, qual e' il suo valore predefinito, e quale opzione imparentata limita gli inserimenti per strato a ogni passo di decode?\" Need default value. In code default printed from params.n_moe_cache_slots but not shown in arg.cpp. Need infer from common_params default? Not included. Could be in common.h? Not provided. Need maybe know llama.cpp defaults? We need answer based on code? It says default: %d with params.n_moe_cache_slots. We don't see actual default. Could be 0? Let's inspect code context. In arg.cpp, options:\n--moe-expert-cache N: \"GPU cache slots per host-resident MoE expert layer, 0 = disabled (default: %d)\"\n--moe-expert-cache-inserts N: \"max expert uploads per layer per decode step for the MoE expert cache (default: %d)\"\nNeed exact default values. The code doesn't show initialization. Could be in common_params default in common.h not included. But maybe from known llama.cpp? Need recall. There are params n_moe_cache_slots and n_moe_cache_inserts. What are defaults? Let's think.\n\nThis seems from llama.cpp PR? MoE expert cache. Options: --moe-expert-cache, --moe-expert-cache-inserts. Defaults maybe 0 and 1? Let's search memory. In llama.cpp common params: int n_moe_cache_slots = 0; int n_moe_cache_inserts = 1? Or maybe 8? Need be accurate.\n\nLet's reason from help text: \"GPU cache slots per host-resident MoE expert layer, 0 = disabled (default: %d)\" If default likely 0 (disabled) because experimental? But if default 0, why mention 0=disabled? Could be default 0. Related inserts default maybe 1? \"max expert uploads per layer per decode step\" default maybe 1. But if cache disabled default 0, inserts irrelevant. Could be default 0 and",
+            "n_gen": 768,
+            "timings": {
+              "cache_n": 131278,
+              "prompt_n": 97,
+              "prompt_ms": 2005.983,
+              "prompt_per_token_ms": 20.68023711340206,
+              "prompt_per_second": 48.355344985475945,
+              "predicted_n": 768,
+              "predicted_ms": 30623.175,
+              "predicted_per_token_ms": 39.92591264667536,
+              "predicted_per_second": 25.046390519598308,
+              "draft_n": 452,
+              "draft_n_accepted": 386
+            },
+            "troncato": true,
+            "mostrato": "[solo ragionamento]  common params: int n_moe_cache_slots = 0; int n_moe_cache_inserts = 1? Or maybe 8? Need be accurate.\n\nLet's reason from help text: \"GPU cache slots per host-resident MoE expert layer, 0 = disabled (default: %d)\" If default likely 0 (disabled) because experimental? But if default 0, why mention 0=disabled? Could be default 0. Related inserts default maybe 1? \"max expert uploads per layer per decode step\" default maybe 1. But if cache disabled default 0, inserts irrelevant. Could be default 0 and",
+            "dt": 32.9,
+            "tipo": "tecnica",
+            "domanda": "Nel codice che ti ho dato c'e' il file common/arg.cpp con la definizione delle opzioni da riga di comando. Quale opzione regola il numero di slot della cache degli esperti MoE sulla GPU, qual e' il suo valore predefinito, e quale opzione imparentata limita gli inserimenti per strato a ogni passo di decode? Rispondi in italiano citando i nomi esatti."
+          }
+        ]
+      }
+    },
+    "pp2048": {
+      "config": {
+        "batch": 2048,
+        "mtp": 0,
+        "slots": 64,
+        "nsight": true,
+        "launcher_pid": 18488,
+        "label": "pp2048",
+        "ngram_m": 2,
+        "specs": "draft-mtp",
+        "sfa": 1
+      },
+      "bench.jsonl": [
+        {
+          "label": "pp2048_r1",
+          "turn": 1,
+          "ctx_tokens_req": 32000,
+          "wall_s": 103.866,
+          "ttft_s": 98.25,
+          "chunks": 128,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 32139,
+            "prompt_ms": 98185.942,
+            "prompt_per_token_ms": 3.0550403559538255,
+            "prompt_per_second": 327.3279182879358,
+            "predicted_n": 128,
+            "predicted_ms": 5616.893,
+            "predicted_per_token_ms": 44.227503937007874,
+            "predicted_per_second": 22.610364840491
+          },
+          "prompt_n": 32139,
+          "prompt_tps": 327.33,
+          "gen_n": 128,
+          "gen_tps": 22.61,
+          "text_sha": "1eef0e394718",
+          "text_len": 520
+        }
+      ]
+    },
+    "pp4096": {
+      "config": {
+        "launcher_pid": 26452,
+        "specs": "draft-mtp",
+        "sfa": 1,
+        "label": "pp4096",
+        "slots": 64,
+        "mtp": 0,
+        "batch": 4096
+      },
+      "bench.jsonl": [
+        {
+          "label": "pp4096_r1",
+          "turn": 1,
+          "ctx_tokens_req": 32000,
+          "wall_s": 83.851,
+          "ttft_s": 78.363,
+          "chunks": 128,
+          "timings": {
+            "cache_n": 0,
+            "prompt_n": 32139,
+            "prompt_ms": 78295.76,
+            "prompt_per_token_ms": 2.4361604281402656,
+            "prompt_per_second": 410.4819980034679,
+            "predicted_n": 128,
+            "predicted_ms": 5489.049,
+            "predicted_per_token_ms": 43.22085826771654,
+            "predicted_per_second": 23.13697691530901
+          },
+          "prompt_n": 32139,
+          "prompt_tps": 410.48,
+          "gen_n": 128,
+          "gen_tps": 23.14,
+          "text_sha": "1cbeb329f978",
+          "text_len": 538
+        }
+      ]
+    }
+  },
+  "profile": {
+    "prefill": {
+      "total_kernel_time_ns": 4066147406,
+      "groups": {
+        "quantized_matrix_matrix": {
+          "ns": 2248071254,
+          "percent": 55.287500169884396
+        },
+        "other": {
+          "ns": 1016819917,
+          "percent": 25.00696151594461
+        },
+        "Gated_DeltaNet": {
+          "ns": 424907261,
+          "percent": 10.44987351843191
+        },
+        "quantized_state_write": {
+          "ns": 331416296,
+          "percent": 8.15062177802415
+        },
+        "flash_attention": {
+          "ns": 32645418,
+          "percent": 0.8028586949855403
+        },
+        "Q6_K_matrix_vector": {
+          "ns": 11774431,
+          "percent": 0.28957216313962625
+        },
+        "expert_upload_kernels": {
+          "ns": 383966,
+          "percent": 0.009442992633110655
+        },
+        "IQ2_S_matrix_vector": {
+          "ns": 89279,
+          "percent": 0.002195665603963596
+        },
+        "IQ4_NL_matrix_vector": {
+          "ns": 39584,
+          "percent": 0.0009735013526954266
+        }
+      }
+    },
+    "decode": {
+      "total_kernel_time_ns": 10637710344,
+      "groups": {
+        "other": {
+          "ns": 2688061390,
+          "percent": 25.2691726233752
+        },
+        "expert_upload_kernels": {
+          "ns": 2604041066,
+          "percent": 24.479337957051634
+        },
+        "Q6_K_matrix_vector": {
+          "ns": 2445987301,
+          "percent": 22.993550509481704
+        },
+        "IQ2_S_matrix_vector": {
+          "ns": 1047616218,
+          "percent": 9.848136338764743
+        },
+        "flash_attention": {
+          "ns": 843342305,
+          "percent": 7.9278555039400125
+        },
+        "IQ4_NL_matrix_vector": {
+          "ns": 471991681,
+          "percent": 4.436966844714079
+        },
+        "quantized_matrix_matrix": {
+          "ns": 322177442,
+          "percent": 3.028635219248267
+        },
+        "Gated_DeltaNet": {
+          "ns": 186993151,
+          "percent": 1.7578327003937455
+        },
+        "quantized_state_write": {
+          "ns": 27499790,
+          "percent": 0.2585123030306116
+        }
+      }
+    },
+    "notes": [
+      "CUDA kernel durations can overlap, especially expert down uploads. Percentages describe summed kernel time, not wall-time attribution.",
+      "Profiler node tracing slows decode; use unprofiled HTTP results for speed claims.",
+      "Prefill profile used about 2k fresh prompt tokens; decode profile 256 output tokens at short context."
+    ]
+  },
+  "binaries": {
+    "bin_prod/ggml-cuda.dll": "481d89c66b35d63225f2001cdd631002e58707c50884893d9c45b4fdecadc140",
+    "bin_prod/ggml-base.dll": "5f4ba6143da2bead2717f1303067c982808a464baab9932989a67b30d5c497b9",
+    "bin_prod/ggml.dll": "093dcdab8307d0e841f30a7e8ad0f0298a260b9aa7ca40a4ab53b7bd0922ee6b",
+    "bin_prod/llama.dll": "2d558ca07dc280152d83abbee631d0a8d0bbde66d0ab80c17bb1fa993534c77f",
+    "bin_prod/llama-common.dll": "13648095c65ea70d58fc345a486497570673271dcdf5675aa2961d12eb8e65c3",
+    "build/bin/ggml-cuda.dll": "26ba28b462869f8b54696804e9ff2532e13910a66b2fa3724559cd0bdfb29b70",
+    "build/bin/ggml-base.dll": "d3842eb1ca8cc5a46e1eee7e4857ac02b651dc492ae78f9ef589c82c8811e4b0",
+    "build/bin/ggml.dll": "093dcdab8307d0e841f30a7e8ad0f0298a260b9aa7ca40a4ab53b7bd0922ee6b",
+    "build/bin/llama.dll": "59a97335c478850c42bea8e1ea65bac9ff7fcc69396e477135d317983479d5d1",
+    "build/bin/llama-common.dll": "2253bd460c4d333116eecbd9dd8803b9ffa4b8c23cd2a18875789ebc2f7b2bbf"
+  },
+  "code_equality": {
+    "mtp_ngram2": {
+      "copy_direct": true,
+      "rename_direct": true
+    },
+    "mtp_ngram2_control": {
+      "copy_direct": true,
+      "rename_direct": true
+    },
+    "mtp_ngram2_prefetch_rs": {
+      "copy_direct": true,
+      "rename_direct": true
+    }
+  },
+  "ngram_cpu_results": {
+    "current_result.txt": "map n=12 m=2 history=33 sampled=2 draft= 3 4\nmap n=2 m=2 history=33 sampled=2 draft= 3 4\nsimple n=12 m=2 history=33 sampled=2 draft= 3 4\nsimple n=2 m=2 history=33 sampled=2 draft= 3 4\nfailures=0\n",
+    "fixed_result.txt": "map n=12 m=2 history=33 sampled=2 draft= 3 4\nmap n=2 m=2 history=33 sampled=2 draft= 3 4\nsimple n=12 m=2 history=33 sampled=2 draft= 3 4\nsimple n=2 m=2 history=33 sampled=2 draft= 3 4\nfailures=0\n",
+    "original_result.txt": "map n=12 m=2 history=33 sampled=2 draft= 3 4\nmap n=2 m=2 history=33 sampled=2 draft= 3 4\nsimple n=12 m=2 history=33 sampled=2 draft=\nsimple n=2 m=2 history=33 sampled=2 draft= 3 4\nfailures=0\n"
+  },
+  "gdn_results": {
+    "result.txt": "T=16 output maxabs=0 maxrel=0 bad=0\nT=16 state maxabs=0 maxrel=0 bad=0\nT=16 baseline_ms=0.097485 tiled_ms=0.070758 speedup=1.3777\nT=17 output maxabs=0 maxrel=0 bad=0\nT=17 state maxabs=0 maxrel=0 bad=0\nT=17 baseline_ms=0.103424 tiled_ms=0.075674 speedup=1.3667\nT=256 output maxabs=0 maxrel=0 bad=0\nT=256 state maxabs=0 maxrel=0 bad=0\nT=256 baseline_ms=1.466880 tiled_ms=0.949043 speedup=1.5456\nT=2048 output maxabs=0 maxrel=0 bad=0\nT=2048 state maxabs=0 maxrel=0 bad=0\nT=2048 baseline_ms=11.978038 tiled_ms=7.045427 speedup=1.7001\nT=4096 output maxabs=0 maxrel=0 bad=0\nT=4096 state maxabs=0 maxrel=0 bad=0\nT=4096 baseline_ms=24.355431 tiled_ms=13.953229 speedup=1.7455\n",
+    "result_k1_strided_8192.txt": "T=16 output maxabs=0 maxrel=0 bad=0\nT=16 state maxabs=0 maxrel=0 bad=0\nT=16 baseline_ms=0.097792 tiled_ms=0.070758 speedup=1.3821\nT=17 output maxabs=0 maxrel=0 bad=0\nT=17 state maxabs=0 maxrel=0 bad=0\nT=17 baseline_ms=0.103427 tiled_ms=0.075674 speedup=1.3668\nT=256 output maxabs=0 maxrel=0 bad=0\nT=256 state maxabs=0 maxrel=0 bad=0\nT=256 baseline_ms=1.466675 tiled_ms=0.949658 speedup=1.5444\nT=2048 output maxabs=0 maxrel=0 bad=0\nT=2048 state maxabs=0 maxrel=0 bad=0\nT=2048 baseline_ms=12.048282 tiled_ms=7.394509 speedup=1.6294\nT=4096 output maxabs=0 maxrel=0 bad=0\nT=4096 state maxabs=0 maxrel=0 bad=0\nT=4096 baseline_ms=24.273100 tiled_ms=13.921178 speedup=1.7436\nT=8192 output maxabs=0 maxrel=0 bad=0\nT=8192 state maxabs=0 maxrel=0 bad=0\nT=8192 baseline_ms=49.091377 tiled_ms=27.812046 speedup=1.7651\n",
+    "result_k3.txt": "T=16 output maxabs=0 maxrel=0 bad=0\nT=16 state maxabs=0 maxrel=0 bad=0\nT=16 baseline_ms=0.101069 tiled_ms=0.077107 speedup=1.3108\nT=17 output maxabs=0 maxrel=0 bad=0\nT=17 state maxabs=0 maxrel=0 bad=0\nT=17 baseline_ms=0.106701 tiled_ms=0.082637 speedup=1.2912\nT=256 output maxabs=0 maxrel=0 bad=0\nT=256 state maxabs=0 maxrel=0 bad=0\nT=256 baseline_ms=1.472000 tiled_ms=0.946381 speedup=1.5554\nT=2048 output maxabs=0 maxrel=0 bad=0\nT=2048 state maxabs=0 maxrel=0 bad=0\nT=2048 baseline_ms=12.040295 tiled_ms=7.054438 speedup=1.7068\nT=4096 output maxabs=0 maxrel=0 bad=0\nT=4096 state maxabs=0 maxrel=0 bad=0\nT=4096 baseline_ms=24.400793 tiled_ms=13.834241 speedup=1.7638\n",
+    "result_k3_strided_8192.txt": "T=16 output maxabs=0 maxrel=0 bad=0\nT=16 state maxabs=0 maxrel=0 bad=0\nT=16 baseline_ms=0.095027 tiled_ms=0.073523 speedup=1.2925\nT=17 output maxabs=0 maxrel=0 bad=0\nT=17 state maxabs=0 maxrel=0 bad=0\nT=17 baseline_ms=0.100250 tiled_ms=0.078950 speedup=1.2698\nT=256 output maxabs=0 maxrel=0 bad=0\nT=256 state maxabs=0 maxrel=0 bad=0\nT=256 baseline_ms=1.389978 tiled_ms=0.884941 speedup=1.5707\nT=2048 output maxabs=0 maxrel=0 bad=0\nT=2048 state maxabs=0 maxrel=0 bad=0\nT=2048 baseline_ms=12.086681 tiled_ms=7.010611 speedup=1.7241\nT=4096 output maxabs=0 maxrel=0 bad=0\nT=4096 state maxabs=0 maxrel=0 bad=0\nT=4096 baseline_ms=24.404276 tiled_ms=13.827789 speedup=1.7649\nT=8192 output maxabs=0 maxrel=0 bad=0\nT=8192 state maxabs=0 maxrel=0 bad=0\nT=8192 baseline_ms=49.233715 tiled_ms=27.351141 speedup=1.8001\n",
+    "result_k5.txt": "T=16 output maxabs=0 maxrel=0 bad=0\nT=16 state maxabs=0 maxrel=0 bad=0\nT=16 baseline_ms=0.105370 tiled_ms=0.087450 speedup=1.2049\nT=17 output maxabs=0 maxrel=0 bad=0\nT=17 state maxabs=0 maxrel=0 bad=0\nT=17 baseline_ms=0.111002 tiled_ms=0.095232 speedup=1.1656\nT=256 output maxabs=0 maxrel=0 bad=0\nT=256 state maxabs=0 maxrel=0 bad=0\nT=256 baseline_ms=1.475379 tiled_ms=0.954688 speedup=1.5454\nT=2048 output maxabs=0 maxrel=0 bad=0\nT=2048 state maxabs=0 maxrel=0 bad=0\nT=2048 baseline_ms=12.070707 tiled_ms=7.119257 speedup=1.6955\nT=4096 output maxabs=0 maxrel=0 bad=0\nT=4096 state maxabs=0 maxrel=0 bad=0\nT=4096 baseline_ms=24.421991 tiled_ms=13.877350 speedup=1.7598\n",
+    "result_k5_strided_8192.txt": "T=16 output maxabs=0 maxrel=0 bad=0\nT=16 state maxabs=0 maxrel=0 bad=0\nT=16 baseline_ms=0.099846 tiled_ms=0.083456 speedup=1.1964\nT=17 output maxabs=0 maxrel=0 bad=0\nT=17 state maxabs=0 maxrel=0 bad=0\nT=17 baseline_ms=0.105062 tiled_ms=0.091341 speedup=1.1502\nT=256 output maxabs=0 maxrel=0 bad=0\nT=256 state maxabs=0 maxrel=0 bad=0\nT=256 baseline_ms=1.383117 tiled_ms=0.885043 speedup=1.5628\nT=2048 output maxabs=0 maxrel=0 bad=0\nT=2048 state maxabs=0 maxrel=0 bad=0\nT=2048 baseline_ms=12.054835 tiled_ms=6.947635 speedup=1.7351\nT=4096 output maxabs=0 maxrel=0 bad=0\nT=4096 state maxabs=0 maxrel=0 bad=0\nT=4096 baseline_ms=24.308941 tiled_ms=13.707674 speedup=1.7734\nT=8192 output maxabs=0 maxrel=0 bad=0\nT=8192 state maxabs=0 maxrel=0 bad=0\nT=8192 baseline_ms=49.163059 tiled_ms=27.358105 speedup=1.7970\n"
+  },
+  "prefetch_scheduler_results": {
+    "result_mode1.txt": "ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12287 MiB):\n  Device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, VMM: yes, VRAM: 12287 MiB\nqwen_prefetch: staged 3 tensors, 3 MiB; ring released\nqwen_prefetch: staged 3 tensors, 3 MiB; ring released\nqwen_prefetch: staged 3 tensors, 3 MiB; ring released\nrepeat=0 op=0 maxabs=0.0155944824 fnv64=c20f78290ff7ea27\nrepeat=0 op=1 maxabs=0.0195617676 fnv64=8603dbc37c8b0097\nrepeat=0 op=2 maxabs=0.0234069824 fnv64=95b888422937a1d3\nrepeat=1 op=0 maxabs=0.0155944824 fnv64=c20f78290ff7ea27\nrepeat=1 op=1 maxabs=0.0195617676 fnv64=8603dbc37c8b0097\nrepeat=1 op=2 maxabs=0.0234069824 fnv64=95b888422937a1d3\nrepeat=2 op=0 maxabs=0.0155944824 fnv64=c20f78290ff7ea27\nrepeat=2 op=1 maxabs=0.0195617676 fnv64=8603dbc37c8b0097\nrepeat=2 op=2 maxabs=0.0234069824 fnv64=95b888422937a1d3\nfailures=0\n",
+    "result_mode2.txt": "ggml_cuda_init: found 1 CUDA devices (Total VRAM: 12287 MiB):\n  Device 0: NVIDIA GeForce RTX 3060, compute capability 8.6, VMM: yes, VRAM: 12287 MiB\nrepeat=0 op=0 maxabs=0.0155944824 fnv64=c20f78290ff7ea27\nrepeat=0 op=1 maxabs=0.0195617676 fnv64=8603dbc37c8b0097\nrepeat=0 op=2 maxabs=0.0234069824 fnv64=95b888422937a1d3\nrepeat=1 op=0 maxabs=0.0155944824 fnv64=c20f78290ff7ea27\nrepeat=1 op=1 maxabs=0.0195617676 fnv64=8603dbc37c8b0097\nrepeat=1 op=2 maxabs=0.0234069824 fnv64=95b888422937a1d3\nrepeat=2 op=0 maxabs=0.0155944824 fnv64=c20f78290ff7ea27\nrepeat=2 op=1 maxabs=0.0195617676 fnv64=8603dbc37c8b0097\nrepeat=2 op=2 maxabs=0.0234069824 fnv64=95b888422937a1d3\nfailures=0\n"
+  },
+  "rollback_config_results": "off_mtp1_ngram2: n_rs_seq=1 expected=1 PASS\non_mtp1_ngram2: n_rs_seq=2 expected=2 PASS\non_ngram2_only: n_rs_seq=2 expected=2 PASS\non_mtp3_preserved: n_rs_seq=3 expected=3 PASS\non_large_ngram_unchanged: n_rs_seq=1 expected=1 PASS\non_none_unchanged: n_rs_seq=0 expected=0 PASS\non_mtp_without_ngram: n_rs_seq=1 expected=1 PASS\non_ngram1_only: n_rs_seq=1 expected=1 PASS\nfailures=0\n",
+  "prefetch_scheduler_hashes_equal": true,
+  "production_validation": {
+    "bin_prod/ggml-cuda.dll": true,
+    "bin_prod/llama.dll": true,
+    "bin_prod/llama-common.dll": true,
+    "bin_prod/ggml-base.dll": true,
+    "bin_prod/ggml.dll": true
+  },
+  "transfer_results": {
+    "gather_result.txt": "mode=gather iterations=19600 bytes=309084160000 elapsed_s=12.0223 GBps=25.7093 last_segment=ok\n",
+    "memcpy_result.txt": "mode=memcpy iterations=18600 bytes=293314560000 elapsed_s=12.0218 GBps=24.3987 last_segment=ok\n",
+    "gather_dmon.txt": "# gpu  rxpci  txpci \n# Idx   MB/s   MB/s \n    0      0      9 \n    0  36824   4834 \n    0  42211   4824 \n    0  41771   4952 \n    0  28900   4781 \n    0  35435   4747 \n    0  31817   4120 \n    0  27512   4181 \n    0  43386   5065 \n    0  38636   4119 \n    0  42857   6775 \n    0  42470   4801 \n",
+    "memcpy_dmon.txt": "# gpu  rxpci  txpci \n# Idx   MB/s   MB/s \n    0     31     25 \n    0  41946   4151 \n    0  36686   4528 \n    0  40092   4582 \n    0  39772   4031 \n    0  39607   4558 \n    0  38885   4563 \n    0  40331   4683 \n    0  32769   4586 \n    0  39843   4352 \n    0  39798   4525 \n    0  39981   4602 \n"
+  },
+  "source_baselines": {
+    "gdn_probe\\backup_before_tiled\\gated_delta_net.cu": "6c95caa9dff67279b23b39058a74ddb4ab6d634f651716f82482e06e53f027d8",
+    "ngram_probe\\backup_before_fix\\ngram-map.cpp": "c2e11076291afcb53ca448c74d39466ec4e12212d944472a2c714f91c117c492",
+    "prefetch_probe\\backup_before_prefetch\\ggml-backend.cpp": "b8c7218773b66edef1714fa7ad031255f796bc2fdafa16e74e23b22312b030c6",
+    "prefetch_probe\\backup_before_prefetch\\ggml-cuda.cu": "78ad531649dc4bfe6c7a92e57f3ca8c2b7101551195bd05a7cffc0f96bfbb0fd",
+    "rollback_probe\\backup_before_rs\\common.cpp": "963c6848eec9847386a8242661227724f963f0ee0fa9cf11e31764bc639aaff8"
+  }
+}

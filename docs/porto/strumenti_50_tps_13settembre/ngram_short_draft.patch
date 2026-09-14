@@ -1,0 +1,11 @@
+--- a/common/ngram-map.cpp
++++ b/common/ngram-map.cpp
+@@ -97,7 +97,7 @@
+             n_draft_max,
+             cur_len - (match_pos + n_draft_min)
+             );
+-    if (copy_max < n_draft_min) {
++    if (copy_max == 0) {
+         return draft_tokens;
+     }
+     LOG_DBG("%s: #tokens = %zu: found matching pattern at pos %zu, length %zu, draft length %zu\n",

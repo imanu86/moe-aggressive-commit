@@ -1,0 +1,164 @@
+--- a/ggml/src/ggml-cuda/moe-demand.cuh
++++ b/ggml/src/ggml-cuda/moe-demand.cuh
+@@ -7,7 +7,9 @@
+ 
+ namespace qwen_moe_demand {
+ 
+-struct bound_group {
++struct bound_group {
++    uint64_t trace_id = 0;
++    int layer = -1;
+     int device = 0;
+     uint32_t n_experts = 0;
+     uint32_t n_slots = 0;
+@@ -60,7 +62,8 @@
+ static std::mutex bindings_mutex;
+ static std::vector<std::unique_ptr<bound_group>> groups;
+ static std::unordered_map<const void *, bank_binding> bindings;
+-static std::atomic<uint64_t> fused_calls{0};
++static std::atomic<uint64_t> fused_calls{0};
++static uint64_t next_trace_id = 0;
+ 
+ static uint64_t fused_count() { return fused_calls.load(std::memory_order_relaxed); }
+ 
+@@ -101,7 +104,9 @@
+         CUDA_CHECK(cudaFuncSetAttribute(moe_grouped_gather_decode<false>, cudaFuncAttributePreferredSharedMemoryCarveout, 25));
+         ggml_cuda_quantize_moe_carveout();
+     }
+-    auto group = std::make_unique<bound_group>();
++    auto group = std::make_unique<bound_group>();
++    group->trace_id = next_trace_id++;
++    (void) sscanf(source[0]->name, "blk.%d.", &group->layer);
+     group->device = device;
+     group->n_experts = n_experts;
+     group->n_slots = uint32_t(n_slots);
+@@ -151,16 +156,74 @@
+     return true;
+ }
+ 
+-static bool find(const ggml_tensor * weights, bank_binding * output = nullptr) {
++static bool find(const ggml_tensor * weights, bank_binding * output = nullptr) {
+     if (!weights || !weights->data) return false;
+     std::lock_guard<std::mutex> lock(bindings_mutex);
+     const auto it = bindings.find(weights->data);
+     if (it == bindings.end()) return false;
+     if (output) *output = it->second;
+-    return true;
+-}
+-
+-static bool remap(ggml_backend_cuda_context & ctx, const ggml_tensor * weights, const ggml_tensor * ids,
++    return true;
++}
++
++static void trace_plan(bound_group & group, const ggml_tensor * ids, cudaStream_t stream) {
++    static FILE * trace = []() -> FILE * {
++        const char * path = getenv("LLAMA_MOE_ROUTE_TRACE");
++        if (!path || !*path) return nullptr;
++        GGML_ASSERT(getenv("GGML_CUDA_DISABLE_GRAPHS"));
++        FILE * file = fopen(path, "wb");
++        GGML_ASSERT(file);
++        return file;
++    }();
++    if (!trace) return;
++    moe_grouped_decode_plan plan{};
++    uint64_t step = 0;
++    std::vector<int32_t> routes(ids->ne[0] * ids->ne[1]);
++    CUDA_CHECK(cudaMemcpyAsync(&plan, group.plan, sizeof(plan), cudaMemcpyDeviceToHost, stream));
++    CUDA_CHECK(cudaMemcpyAsync(&step, group.step, sizeof(step), cudaMemcpyDeviceToHost, stream));
++    for (int64_t row = 0; row < ids->ne[1]; ++row) {
++        CUDA_CHECK(cudaMemcpyAsync(routes.data() + row * ids->ne[0],
++            static_cast<const char *>(ids->data) + row * ids->nb[1],
++            ids->ne[0] * sizeof(int32_t), cudaMemcpyDeviceToHost, stream));
++    }
++    CUDA_CHECK(cudaStreamSynchronize(stream));
++    GGML_ASSERT(plan.status == MOE_GROUPED_PLAN_READY);
++    fprintf(trace, "{\"group\":%llu,\"layer\":%d,\"step\":%llu,\"k\":%lld,\"rows\":%lld,\"requested\":%u,\"misses\":%u,\"bytes_per_miss\":%llu,\"ids\":[",
++        (unsigned long long) group.trace_id, group.layer, (unsigned long long) step,
++        (long long) ids->ne[0], (long long) ids->ne[1], plan.n_unique, plan.n_misses,
++        (unsigned long long) (group.words_per_miss * sizeof(uint4)));
++    for (size_t i = 0; i < routes.size(); ++i) fprintf(trace, "%s%d", i ? "," : "", routes[i]);
++    fprintf(trace, "]}\n");
++    if (group.layer == 47) fflush(trace);
++}
++
++// Called after graph launch, including replay, outside CUDA stream capture.
++static void report_hits() {
++    static const int report_every = [] {
++        const char * value = getenv("LLAMA_MOE_HIT_REPORT");
++        return value ? atoi(value) : 0;
++    }();
++    if (report_every <= 0) return;
++    static std::atomic<uint64_t> n_graph_calls{0};
++    if ((n_graph_calls.fetch_add(1, std::memory_order_relaxed) + 1) % (uint64_t) report_every) return;
++    std::lock_guard<std::mutex> lock(bindings_mutex);
++    if (groups.empty()) return;
++    moe_grouped_device_scope scope(groups.front()->device);
++    CUDA_CHECK(cudaDeviceSynchronize());
++    unsigned long long requested = 0, missed = 0, bytes = 0;
++    for (const auto & group : groups) {
++        unsigned long long host[2] = {0, 0};
++        CUDA_CHECK(cudaMemcpy(host, group->counters, sizeof(host), cudaMemcpyDeviceToHost));
++        requested += host[0];
++        missed += host[1];
++        bytes += host[1] * group->words_per_miss * sizeof(uint4);
++    }
++    if (requested) {
++        GGML_LOG_INFO("moe cache: richiesti %llu, mancanti %llu, colpi %.3f%%, payload_bytes %llu\n",
++            requested, missed, 100.0 * (1.0 - double(missed) / double(requested)), bytes);
++    }
++}
++
++static bool remap(ggml_backend_cuda_context & ctx, const ggml_tensor * weights, const ggml_tensor * ids,
+         ggml_tensor & result, const ggml_tensor * fused_gate) {
+     bank_binding binding{};
+     if (!find(weights, &binding)) return false;
+@@ -210,32 +273,7 @@
+         CUDA_CHECK(cudaGetLastError());
+         }
+ 
+-        // Tasso di colpi MISURATO, sommato su tutti gli strati. Spento di default:
+-        // LLAMA_MOE_HIT_REPORT=<N> stampa una riga ogni N chiamate. La copia dal
+-        // dispositivo sincronizza, quindi N va tenuto grande (4096 e' gia' innocuo).
+-        static const int report_every = [] {
+-            const char * e = getenv("LLAMA_MOE_HIT_REPORT");
+-            return e ? atoi(e) : 0;
+-        }();
+-        if (report_every > 0) {
+-            static std::atomic<uint64_t> n_calls{0};
+-            if ((n_calls.fetch_add(1, std::memory_order_relaxed) + 1) % (uint64_t) report_every == 0) {
+-                unsigned long long richiesti = 0, mancanti = 0;
+-                {
+-                    std::lock_guard<std::mutex> lock(bindings_mutex);
+-                    for (const auto & g : groups) {
+-                        if (!g->counters) continue;
+-                        unsigned long long host[2] = {0, 0};
+-                        CUDA_CHECK(cudaMemcpy(host, g->counters, sizeof(host), cudaMemcpyDeviceToHost));
+-                        richiesti += host[0];
+-                        mancanti  += host[1];
+-                    }
+-                }
+-                const double colpi = richiesti > 0 ? 100.0*(1.0 - double(mancanti)/double(richiesti)) : 0.0;
+-                GGML_LOG_INFO("moe cache: richiesti %llu, mancanti %llu, colpi %.1f%%\n",
+-                              richiesti, mancanti, colpi);
+-            }
+-        }
++        trace_plan(group, ids, ctx.stream());
+     }
+     result = *ids;
+     result.data = moe_grouped_plan_array_ptr(group.plan, group.n_slots, MOE_GROUPED_PLAN_REMAPPED_IDS);
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -4748,9 +4748,10 @@
+         CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stream(), cudaStreamCaptureModeRelaxed));
+     }
+ 
+-    ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
+-
+-    return GGML_STATUS_SUCCESS;
++    ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
++    qwen_moe_demand::report_hits();
++
++    return GGML_STATUS_SUCCESS;
+ }
+ 
+ static void ggml_backend_cuda_event_record(ggml_backend_t backend, ggml_backend_event_t event) {

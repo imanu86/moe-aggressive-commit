@@ -1,0 +1,418 @@
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -1651,9 +1651,143 @@
+     return true;
+ }
+ 
++
++// Experimental prefill staging. Buffers live for one scheduler evaluation so
++// the phase cache can reclaim all their memory when returning to decode.
++struct qwen_prefetch_eval {
++    struct slot {
++        ggml_backend_buffer_t buffer = nullptr;
++        ggml_backend_event_t ready = nullptr;
++        ggml_backend_event_t done = nullptr;
++        bool used = false;
++    } slots[2];
++    struct candidate {
++        ggml_tensor * input = nullptr;
++        ggml_tensor * copy = nullptr;
++    };
++    std::vector<candidate> candidates;
++    std::vector<uint8_t> padding_zero;
++    ggml_backend_t compute = nullptr;
++    ggml_backend_t upload = nullptr;
++    int next_slot = 0;
++    size_t copied_bytes = 0;
++    int copied_tensors = 0;
++
++    explicit qwen_prefetch_eval(ggml_backend_sched_t sched) {
++        const char * env = getenv("QWEN_PREFETCH_EXPERTS");
++        if (!env || atoi(env) != 1 || sched->callback_eval || !sched->op_offload) {
++            return;
++        }
++        candidates.resize(sched->n_splits);
++        size_t max_size = 0;
++        for (int s = 0; s < sched->n_splits; ++s) {
++            auto & split = sched->splits[s];
++            if (split.graph.n_nodes == 0) { continue; }
++            ggml_tensor * node = split.graph.nodes[0];
++            if (node->op != GGML_OP_MUL_MAT_ID || node->src[2]->ne[1] < 512) { continue; }
++            ggml_backend_t backend = sched->backends[split.backend_id];
++            ggml_backend_dev_t dev = ggml_backend_get_device(backend);
++            if (strcmp(ggml_backend_reg_name(ggml_backend_dev_backend_reg(dev)), "CUDA") != 0) { continue; }
++            // A separate backend for the same device supplies an independent stream.
++            if (compute && compute != backend) { candidates.clear(); compute = nullptr; return; }
++            for (int i = 0; i < split.n_inputs; ++i) {
++                ggml_tensor * input = split.inputs[i];
++                ggml_tensor * copy = tensor_copy(input, split.backend_id, sched->cur_copy);
++                if (node->src[0] != copy || !input->buffer || input->view_src || copy->view_src ||
++                    (input->flags & GGML_TENSOR_FLAG_INPUT) || !ggml_is_contiguous(input) ||
++                    input->ne[2] != 512 || input->ne[3] != 1 ||
++                    ggml_backend_buffer_get_usage(input->buffer) != GGML_BACKEND_BUFFER_USAGE_WEIGHTS ||
++                    !ggml_backend_buffer_is_host(input->buffer) ||
++                    copy->buffer->buft != ggml_backend_get_default_buffer_type(backend)) {
++                    continue;
++                }
++                // Views have data pointers fixed during allocation, so do not rebind their parent.
++                bool has_view = false;
++                for (int j = 0; j < split.graph.n_nodes; ++j) {
++                    if (split.graph.nodes[j]->view_src == copy) { has_view = true; break; }
++                }
++                if (has_view) { continue; }
++                compute = backend;
++                candidates[s] = {input, copy};
++                max_size = std::max(max_size, ggml_backend_buft_get_alloc_size(copy->buffer->buft, copy));
++                const size_t padding = ggml_backend_buft_get_alloc_size(copy->buffer->buft, copy) - ggml_nbytes(input);
++                if (padding > padding_zero.size()) { padding_zero.resize(padding, 0); }
++                break;
++            }
++        }
++        if (!max_size || !compute) { return; }
++        ggml_backend_dev_t dev = ggml_backend_get_device(compute);
++        size_t free_bytes = 0, total_bytes = 0;
++        ggml_backend_dev_memory(dev, &free_bytes, &total_bytes);
++        const size_t reserve = 512ull * 1024 * 1024;
++        if (free_bytes < reserve || max_size > (free_bytes - reserve)/2) {
++            GGML_LOG_INFO("qwen_prefetch: skipped, insufficient free VRAM for %zu MiB plus reserve\n", 2*max_size/1024/1024);
++            candidates.clear();
++            return;
++        }
++        upload = ggml_backend_dev_init(dev, nullptr);
++        if (!upload) { candidates.clear(); return; }
++        for (auto & slot : slots) {
++            slot.buffer = ggml_backend_alloc_buffer(upload, max_size);
++            slot.ready = ggml_backend_event_new(dev);
++            slot.done = ggml_backend_event_new(dev);
++            if (!slot.buffer || !slot.ready || !slot.done) {
++                candidates.clear();
++                return; // destructor also handles a partially initialized ring
++            }
++            ggml_backend_buffer_set_usage(slot.buffer, GGML_BACKEND_BUFFER_USAGE_COMPUTE);
++            ggml_backend_buffer_clear(slot.buffer, 0); // quantization padding remains finite
++        }
++    }
++
++    slot * enqueue(int split_id) {
++        if (candidates.empty() || !candidates[split_id].input) { return nullptr; }
++        auto & c = candidates[split_id];
++        auto & slot = slots[next_slot++ % 2];
++        if (slot.used) { ggml_backend_event_wait(upload, slot.done); }
++        ggml_tensor dst = *c.copy;
++        dst.buffer = slot.buffer;
++        dst.data = ggml_backend_buffer_get_base(slot.buffer);
++        const size_t bytes = ggml_nbytes(c.input);
++        const size_t padded_size = ggml_backend_buft_get_alloc_size(slot.buffer->buft, &dst);
++        // Represent the whole allocation as bytes for the upload. The public
++        // tensor API intentionally disallows writes beyond a weight's logical end.
++        dst.type = GGML_TYPE_I8;
++        dst.ne[0] = padded_size;
++        dst.nb[0] = 1;
++        for (int d = 1; d < GGML_MAX_DIMS; ++d) { dst.ne[d] = 1; dst.nb[d] = padded_size; }
++        ggml_backend_tensor_set_async(upload, &dst, c.input->data, 0, bytes);
++        if (padded_size > bytes) {
++            // The previous occupant may have been larger and used another quantization.
++            ggml_backend_tensor_set_async(upload, &dst, padding_zero.data(), bytes, padded_size - bytes);
++        }
++        ggml_backend_event_record(slot.ready, upload);
++        copied_bytes += bytes;
++        ++copied_tensors;
++        return &slot;
++    }
++
++    ~qwen_prefetch_eval() {
++        if (upload) {
++            if (compute) { ggml_backend_synchronize(compute); }
++            ggml_backend_synchronize(upload);
++        }
++        for (auto & slot : slots) {
++            if (slot.ready) { ggml_backend_event_free(slot.ready); }
++            if (slot.done) { ggml_backend_event_free(slot.done); }
++            if (slot.buffer) { ggml_backend_buffer_free(slot.buffer); }
++        }
++        if (upload) { ggml_backend_free(upload); }
++        if (copied_tensors) {
++            GGML_LOG_INFO("qwen_prefetch: staged %d tensors, %zu MiB; ring released\n", copied_tensors, copied_bytes/1024/1024);
++        }
++    }
++};
++
+ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
+     GGML_ASSERT(sched);
+     struct ggml_backend_sched_split * splits = sched->splits;
++    qwen_prefetch_eval prefetch(sched);
+ 
+     ggml_tensor * prev_ids_tensor = nullptr;
+     std::vector<int32_t> ids;
+@@ -1665,6 +1799,13 @@
+         struct ggml_backend_sched_split * split = &splits[split_id];
+         int split_backend_id = split->backend_id;
+         ggml_backend_t split_backend = sched->backends[split_backend_id];
++
++        // Queue the immutable host weights before waiting for the previous split.
++        // This overlaps H2D with work already enqueued on the compute stream.
++        auto * staged_slot = prefetch.enqueue(split_id);
++        ggml_tensor * staged_copy = nullptr;
++        ggml_backend_buffer_t saved_buffer = nullptr;
++        void * saved_data = nullptr;
+ 
+         // ensure the previous split's async work has completed before we start
+         // this split, the allocator may have reused buffer regions across splits
+@@ -1681,6 +1822,16 @@
+             ggml_backend_t input_backend = ggml_backend_sched_get_tensor_backend(sched, split->inputs[input_id]);
+             struct ggml_tensor * input = split->inputs[input_id];
+             struct ggml_tensor * input_cpy = tensor_copy(input, split_backend_id, sched->cur_copy);
++
++            if (staged_slot && input == prefetch.candidates[split_id].input) {
++                staged_copy = input_cpy;
++                saved_buffer = input_cpy->buffer;
++                saved_data = input_cpy->data;
++                input_cpy->buffer = staged_slot->buffer;
++                input_cpy->data = ggml_backend_buffer_get_base(staged_slot->buffer);
++                ggml_backend_event_wait(split_backend, staged_slot->ready);
++                continue;
++            }
+ 
+             if (input->flags & GGML_TENSOR_FLAG_INPUT) {
+                 // inputs from the user must be copied immediately to prevent the user overwriting the data before the copy is done
+@@ -1801,6 +1952,12 @@
+ 
+         if (!sched->callback_eval) {
+             enum ggml_status ec = ggml_backend_graph_compute_async(split_backend, &split->graph);
++            if (staged_copy) {
++                ggml_backend_event_record(staged_slot->done, split_backend);
++                staged_slot->used = true;
++                staged_copy->buffer = saved_buffer;
++                staged_copy->data = saved_data;
++            }
+             if (ec != GGML_STATUS_SUCCESS) {
+                 return ec;
+             }
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -2130,7 +2130,7 @@
+     return true;
+ }
+ 
+-static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
++static void ggml_cuda_mul_mat_id(ggml_backend_cuda_context & ctx, ggml_tensor * dst) {
+     const ggml_tensor * src0 = dst->src[0];
+     const ggml_tensor * src1 = dst->src[1];
+     const ggml_tensor * ids  = dst->src[2];
+@@ -2140,13 +2140,13 @@
+ 
+     GGML_TENSOR_BINARY_OP_LOCALS
+ 
+-    const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
+-
+-    if (qwen_moe_demand::find(src0)) {
+-        GGML_ASSERT(ne2 <= 3 && ne2 <= get_mmvq_mmid_max_batch(src0->type, cc));
+-        ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
+-        return;
+-    }
++    const int cc = ggml_cuda_info().devices[ggml_cuda_get_device()].cc;
++
++    if (qwen_moe_demand::find(src0)) {
++        GGML_ASSERT(ne2 <= 3 && ne2 <= get_mmvq_mmid_max_batch(src0->type, cc));
++        ggml_cuda_mul_mat_vec_q(ctx, src0, src1, ids, dst);
++        return;
++    }
+ 
+     // [TAG_MUL_MAT_ID_CUDA_GRAPHS]
+     if (src1->type == GGML_TYPE_F32 && dst->type == GGML_TYPE_F32) {
+@@ -2778,7 +2778,7 @@
+     GGML_UNUSED(backend);
+ }
+ 
+-static bool ggml_cuda_is_view_or_noop(const ggml_tensor * t) {
++static bool ggml_cuda_is_view_or_noop(const ggml_tensor * t) {
+     return ggml_is_empty(t) || t->op == GGML_OP_RESHAPE || t->op == GGML_OP_TRANSPOSE ||
+            t->op == GGML_OP_VIEW || t->op == GGML_OP_PERMUTE || t->op == GGML_OP_NONE;
+ }
+@@ -3657,25 +3657,25 @@
+     return false;
+ }
+ 
+-static std::atomic<uint64_t> get_rows_cast_fusions{0};
+-
+-static uint64_t ggml_cuda_get_rows_cast_fused_count() {
+-    return get_rows_cast_fusions.load(std::memory_order_relaxed);
+-}
+-
+-static void ggml_backend_cuda_reset_transient_memory(ggml_backend_t backend) {
+-    auto * ctx = static_cast<ggml_backend_cuda_context *>(backend->context);
+-    ggml_cuda_set_device(ctx->device);
+-    CUDA_CHECK(cudaDeviceSynchronize());
+-#ifdef USE_CUDA_GRAPH
+-    ctx->cuda_graphs.clear();
+-#endif
+-    for (auto & device_pools : ctx->pools) {
+-        for (auto & pool : device_pools) pool.reset();
+-    }
+-}
+-
+-// try and fuse nodes and return the number of nodes to skip
++static std::atomic<uint64_t> get_rows_cast_fusions{0};
++
++static uint64_t ggml_cuda_get_rows_cast_fused_count() {
++    return get_rows_cast_fusions.load(std::memory_order_relaxed);
++}
++
++static void ggml_backend_cuda_reset_transient_memory(ggml_backend_t backend) {
++    auto * ctx = static_cast<ggml_backend_cuda_context *>(backend->context);
++    ggml_cuda_set_device(ctx->device);
++    CUDA_CHECK(cudaDeviceSynchronize());
++#ifdef USE_CUDA_GRAPH
++    ctx->cuda_graphs.clear();
++#endif
++    for (auto & device_pools : ctx->pools) {
++        for (auto & pool : device_pools) pool.reset();
++    }
++}
++
++// try and fuse nodes and return the number of nodes to skip
+ static int ggml_cuda_try_fuse(ggml_backend_cuda_context * cuda_ctx, ggml_cgraph * cgraph, int i) {
+ 
+     static bool disable_fusion = getenv("GGML_CUDA_DISABLE_FUSION") != nullptr && std::atoi(getenv("GGML_CUDA_DISABLE_FUSION"));
+@@ -3683,39 +3683,39 @@
+         return 0;
+     }
+ 
+-    ggml_tensor * node = cgraph->nodes[i];
+-
+-    // Q4_0/Q8_0 get_rows already dequantizes through float before converting its
+-    // destination. Elide the temporary F32 tensor for an immediately consumed
+-    // F16 cast, preserving the same rounding as get_rows -> cast.
+-    if (node->op == GGML_OP_GET_ROWS && node->type == GGML_TYPE_F32 &&
+-            (node->src[0]->type == GGML_TYPE_Q4_0 || node->src[0]->type == GGML_TYPE_Q8_0) &&
+-            ggml_can_fuse_subgraph(cgraph, i, { GGML_OP_GET_ROWS, GGML_OP_CPY }, { i + 1 })) {
+-        ggml_tensor * cast = cgraph->nodes[i + 1];
+-        bool safe = cast->src[0] == node && cast->src[1] == cast &&
+-            cast->type == GGML_TYPE_F16 && !cast->view_src && ggml_is_contiguous(cast) &&
+-            ggml_are_same_shape(node, cast);
+-        // A cast's src[1] is itself, so the generic alias check rejects it.
+-        // Check both external inputs directly, including constant input tensors.
+-        for (int s = 0; safe && s < 2; ++s) {
+-            const auto * src = node->src[s];
+-            const uintptr_t src_begin = reinterpret_cast<uintptr_t>(src->data);
+-            const uintptr_t dst_begin = reinterpret_cast<uintptr_t>(cast->data);
+-            safe = dst_begin + ggml_nbytes(cast) <= src_begin ||
+-                   src_begin + ggml_nbytes(src) <= dst_begin;
+-        }
+-        if (safe) {
+-            ggml_tensor fused = *cast;
+-            fused.op = GGML_OP_GET_ROWS;
+-            fused.src[0] = node->src[0];
+-            fused.src[1] = node->src[1];
+-            ggml_cuda_op_get_rows(*cuda_ctx, &fused);
+-            get_rows_cast_fusions.fetch_add(1, std::memory_order_relaxed);
+-            return 1;
+-        }
+-    }
+-
+-    if (node->op == GGML_OP_MUL) {
++    ggml_tensor * node = cgraph->nodes[i];
++
++    // Q4_0/Q8_0 get_rows already dequantizes through float before converting its
++    // destination. Elide the temporary F32 tensor for an immediately consumed
++    // F16 cast, preserving the same rounding as get_rows -> cast.
++    if (node->op == GGML_OP_GET_ROWS && node->type == GGML_TYPE_F32 &&
++            (node->src[0]->type == GGML_TYPE_Q4_0 || node->src[0]->type == GGML_TYPE_Q8_0) &&
++            ggml_can_fuse_subgraph(cgraph, i, { GGML_OP_GET_ROWS, GGML_OP_CPY }, { i + 1 })) {
++        ggml_tensor * cast = cgraph->nodes[i + 1];
++        bool safe = cast->src[0] == node && cast->src[1] == cast &&
++            cast->type == GGML_TYPE_F16 && !cast->view_src && ggml_is_contiguous(cast) &&
++            ggml_are_same_shape(node, cast);
++        // A cast's src[1] is itself, so the generic alias check rejects it.
++        // Check both external inputs directly, including constant input tensors.
++        for (int s = 0; safe && s < 2; ++s) {
++            const auto * src = node->src[s];
++            const uintptr_t src_begin = reinterpret_cast<uintptr_t>(src->data);
++            const uintptr_t dst_begin = reinterpret_cast<uintptr_t>(cast->data);
++            safe = dst_begin + ggml_nbytes(cast) <= src_begin ||
++                   src_begin + ggml_nbytes(src) <= dst_begin;
++        }
++        if (safe) {
++            ggml_tensor fused = *cast;
++            fused.op = GGML_OP_GET_ROWS;
++            fused.src[0] = node->src[0];
++            fused.src[1] = node->src[1];
++            ggml_cuda_op_get_rows(*cuda_ctx, &fused);
++            get_rows_cast_fusions.fetch_add(1, std::memory_order_relaxed);
++            return 1;
++        }
++    }
++
++    if (node->op == GGML_OP_MUL) {
+         ggml_cuda_moe_weighted_reduction_match match;
+         if (ggml_cuda_match_moe_weighted_reduction(cgraph, i, match)) {
+             const int output_idx = i + match.node_count - 1;
+@@ -4709,7 +4709,15 @@
+     ggml_cuda_graph_set_enabled(cuda_ctx, graph_key);
+ 
+     ggml_cuda_graph * graph = cuda_ctx->cuda_graph(graph_key);
+-    if (graph->is_enabled()) {
++    // Staging buffers live for one evaluation; cached graph pointers would be stale.
++    // Mode 2 is a control: bypass these graphs without staging any weights.
++    static const bool prefetch_mode = []() {
++        const char * env = std::getenv("QWEN_PREFETCH_EXPERTS");
++        return env && std::atoi(env) != 0;
++    }();
++    const bool staged_prefill = prefetch_mode && cgraph->n_nodes > 0 &&
++        cgraph->nodes[0]->op == GGML_OP_MUL_MAT_ID && cgraph->nodes[0]->src[2]->ne[1] >= 512;
++    if (graph->is_enabled() && !staged_prefill) {
+         const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
+         if (graph_compatible) {
+             const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
+@@ -4748,10 +4756,10 @@
+         CUDA_CHECK(cudaStreamBeginCapture(cuda_ctx->stream(), cudaStreamCaptureModeRelaxed));
+     }
+ 
+-    ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
+-    qwen_moe_demand::report_hits();
+-
+-    return GGML_STATUS_SUCCESS;
++    ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
++    qwen_moe_demand::report_hits();
++
++    return GGML_STATUS_SUCCESS;
+ }
+ 
+ static void ggml_backend_cuda_event_record(ggml_backend_t backend, ggml_backend_event_t event) {
+@@ -6006,21 +6014,21 @@
+     if (strcmp(name, "ggml_backend_unregister_host_buffer") == 0) {
+         return (void *)ggml_backend_cuda_unregister_host_buffer;
+     }
+-    if (strcmp(name, "ggml_backend_cuda_moe_demand_bind") == 0) {
+-        return (void *) qwen_moe_demand::bind;
+-    }
+-    if (strcmp(name, "ggml_backend_cuda_moe_demand_unbind") == 0) {
+-        return (void *) qwen_moe_demand::unbind;
+-    }
+-    if (strcmp(name, "ggml_backend_cuda_reset_transient_memory") == 0) {
+-        return (void *) ggml_backend_cuda_reset_transient_memory;
+-    }
+-    if (strcmp(name, "ggml_backend_cuda_moe_demand_fused_count") == 0) {
+-        return (void *) qwen_moe_demand::fused_count;
+-    }
+-    if (strcmp(name, "ggml_backend_cuda_get_rows_cast_fused_count") == 0) {
+-        return (void *) ggml_cuda_get_rows_cast_fused_count;
+-    }
++    if (strcmp(name, "ggml_backend_cuda_moe_demand_bind") == 0) {
++        return (void *) qwen_moe_demand::bind;
++    }
++    if (strcmp(name, "ggml_backend_cuda_moe_demand_unbind") == 0) {
++        return (void *) qwen_moe_demand::unbind;
++    }
++    if (strcmp(name, "ggml_backend_cuda_reset_transient_memory") == 0) {
++        return (void *) ggml_backend_cuda_reset_transient_memory;
++    }
++    if (strcmp(name, "ggml_backend_cuda_moe_demand_fused_count") == 0) {
++        return (void *) qwen_moe_demand::fused_count;
++    }
++    if (strcmp(name, "ggml_backend_cuda_get_rows_cast_fused_count") == 0) {
++        return (void *) ggml_cuda_get_rows_cast_fused_count;
++    }
+     if (strcmp(name, "ggml_backend_cuda_mapped_buffer_type_for_device") == 0) {
+         return (void *) ggml_backend_cuda_mapped_buffer_type_for_device;
+     }

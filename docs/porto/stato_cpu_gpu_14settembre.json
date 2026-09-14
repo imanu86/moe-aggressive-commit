@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p7_mtp_draft_length",
+  "implementation_status": "p7_mtp_unshared_head",
   "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
@@ -17,8 +17,18 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 42,
+  "new_benchmark_runs": 44,
   "baseline_reference_free_tps": 24.44,
+  "spec_reference_free_tps": 28.6646,
+  "p7_cell1_result": {
+    "draft1_tps": 28.6646,
+    "draft2_tps": 27.503,
+    "acc_pos1": 0.785,
+    "acc_pos2": 0.553,
+    "breakeven_pos2": 0.633,
+    "verify_row_ms": 16.6,
+    "head_ms_per_draft_token": 5.5
+  },
   "p3_result": {
     "free_tps_B": 23.5135,
     "free_tps_A_off": 24.4275,
@@ -37,7 +47,7 @@
     "fumo_delta_24_layers": -0.059,
     "plumbing_47_layers_ms": 2.78
   },
-  "next_action": "P7 cell 1 (D20): MTP draft length. Run M2 (2-token draft) first on the solo_libero profile against the already-known reference M1 (1-token draft, current production regime, 70-75% acceptance), original experimental binaries, no code changes; run M3 (3-token draft) only if M2 beats M1 (D14). Adoption threshold +5% on the free set. Work under docs/porto/p7_speculazione/, not docs/porto/p7_colpi/ or docs/porto/banco_p0/ (owned by another agent). The cache-hit-gap front (41% vs 75%) is NOT the P7 front: falsified by Codex on 9/13 (75.55% real), reopened by mistake on 9/14 and closed within an hour with no valid runs (D19).",
+  "next_action": "P7 cell 1 (D20) is COMPLETE: M2 (2-token draft) lost 4.05% against M1 (1-token draft), both with the shared MTP head (27.503 vs 28.6646 t/s free-set; -4.74% on the iso-text 32k subset); M3 (3-token draft) is not runnable (two GGML_ASSERT plus three silent guards cap the local fast path at 3 verify rows, i.e. exactly a 2-token draft). M1 (28.6646 t/s) is now the reference with speculation on this bench (D21); the draft does not get lengthened, it needs to get more accurate (D22) since the second draft position accepts 0.553 against a 0.633 break-even. Cell 2 (D22): run the unshared MTP head (mtp-Qwen3.8-Flash-Next-Q8_0.gguf, 4137 MB, RAM-resident, no cache-slot cost) with draft 1 first (D14) against the D21 reference, then draft 2 only if second-position acceptance clears 0.633. solo_libero profile, original experimental binaries, no code changes. Adoption threshold +5% on the free set vs D21 (28.66 t/s). Work under docs/porto/p7_speculazione/, not docs/porto/p7_colpi/ or docs/porto/banco_p0/ (owned by another agent). The cache-hit-gap front (41% vs 75%) is NOT the P7 front: falsified by Codex on 9/13 (75.55% real), reopened by mistake on 9/14 and closed within an hour with no valid runs (D19).",
   "phases": [
     {
       "id": "P0",
@@ -126,7 +136,9 @@
     "D17",
     "D18",
     "D19",
-    "D20"
+    "D20",
+    "D21",
+    "D22"
   ],
   "decisions_added": [
     {
@@ -168,6 +180,14 @@
     {
       "id": "D20",
       "summary": "P7 cell 1 = MTP draft length (speculation). Chosen after the 9/13 Codex chat digest and VERSO_50_TPS_400_PREFILL_13_SETTEMBRE_CODEX.md (decode profile: expert upload 24.5%, Q6_K 23%, IQ2_S 9.9%, attention 7.9%; MTP acceptance 70-75% with a 1-token draft; n-grams already falsified as a general setting, they only help copy-tasks and hurt free-form prose). Protocol per D14: run M2 (2-token draft) first against the already-known reference M1 (1-token draft, current production regime); run M3 (3-token draft) only if M2 beats M1. solo_libero profile, original experimental binaries, no code changes in this cell. Adoption threshold +5% on the free set, same criterion as D17 for P4."
+    },
+    {
+      "id": "D21",
+      "summary": "New reference with speculation on this bench: 28.66 t/s (M1, 1-token MTP draft, shared Q8_0 head, LLAMA_MTP_LIGHT=1). Measured in P7 cell 1: 28.6646 t/s vs 24.4344 t/s with MTP off (+17.31%), 0.785 acceptance, 1.788 tokens/pass, +5.60% on the iso-text 32k subset. Codex's 27.26 t/s from 9/13 stays historical: different preset, budget, and bench, does not replace this reference."
+    },
+    {
+      "id": "D22",
+      "summary": "The MTP draft does not get lengthened from 1 to 2 tokens: the lever is draft accuracy or the cost of the verify row, not length. M2 (2-token draft) loses 4.05% against M1 (-4.74% on the iso-text 32k subset): the second draft position costs 22.08 ms (11.1 head + 16.6 third verify row, ~6.6 ms mmvq + ~6.4 ms transfers per the 9/10 measurement) and yields only 0.535 tokens, below the 0.633 break-even (measured 0.553); M3 not runnable (3-row guards). Cell 2 opened accordingly: unshared MTP head (mtp-Qwen3.8-Flash-Next-Q8_0.gguf), draft 1 first (D14), draft 2 only if second-position acceptance clears 0.633."
     }
   ]
 }

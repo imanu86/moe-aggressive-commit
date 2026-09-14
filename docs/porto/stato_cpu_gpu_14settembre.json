@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p4_cost_localization",
+  "implementation_status": "p4_light_plumbing_and_extension",
   "current_phase": "P4",
   "goal": {
     "decode_free_tps": 50,
@@ -17,7 +17,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 12,
+  "new_benchmark_runs": 34,
   "baseline_reference_free_tps": 24.44,
   "p3_result": {
     "free_tps_B": 23.5135,
@@ -25,7 +25,13 @@
     "mechanism_ms_per_token": 1.801,
     "bandwidth_saving_ms_per_token": 0.209
   },
-  "next_action": "P4 cell C0: relax the llama-moecpu.cpp guard that currently rejects LLAMA_MOE_CPU_MAX=0 with the plumbing built, then measure the free set cost of the mechanism (host nodes, export kernel, merge guard, add node) with zero CPU routes, to decide whether the next lever is the number of host nodes or the CPU arithmetic. Exit criterion: the mechanism must cost less than the per-layer bandwidth saving (0.209 ms/token) measured in P3, or the CPU route closes in favor of P7.",
+  "p4_cost_result": {
+    "plumbing_us_per_layer": 114.6,
+    "host_nodes_share": 0.799,
+    "contention_ms_per_token_4threads": 1.719,
+    "active_2threads_delta_ms": 0.339
+  },
+  "next_action": "P4 cell 2 (light plumbing and extension, D17): one host node per layer instead of two, merge guard without a PCIe read (flag duplicated in VRAM), thread-pool affinity kept away from the server's GPU-enqueue thread; then measure candidate B (LLAMA_MOE_CPU_THREADS=2, preset_C20_p4.json) against the reference on the free set before extending to 8/24/47 layers, candidate first per D14. Exit criterion unchanged: the mechanism must cost less than the per-layer bandwidth saving; +5% on the free set for adoption, <3% for closing the CPU route.",
   "phases": [
     {
       "id": "P0",
@@ -109,7 +115,9 @@
     "D12",
     "D13",
     "D14",
-    "D15"
+    "D15",
+    "D16",
+    "D17"
   ],
   "decisions_added": [
     {
@@ -131,6 +139,14 @@
     {
       "id": "D15",
       "summary": "With --reasoning on and the screening token budget, 14 of 16 free-form cases finish on length with an empty final text (only L04@corto and L04@ctx32k reach stop). Speed measurement stays valid; the free-form quality rubric is not applicable in screening and is deferred to confirmation (P6) with a 3072 budget or run-to-stop."
+    },
+    {
+      "id": "D16",
+      "summary": "Default of LLAMA_MOE_CPU_THREADS moved from 4 to 2, with pool affinity kept away from the server thread that enqueues to the GPU. P4 cell 1 confirms P2's R7: the pool is pinned from core 0 on an 8-physical-core machine running the server at -t 16, so a 4-thread pool shares a core with the GPU-enqueue thread. D03 revised: 4/6 core threads are no longer candidates (6 threads costs +7.7 ms/token)."
+    },
+    {
+      "id": "D17",
+      "summary": "The CPU route does not close after P4 cell 1; it continues with cell 2, 'light plumbing and extension': one host node per layer instead of two, merge guard without a PCIe read, thread affinity; then 8/24/47 layers, candidate B first, A only if needed (D14). Exit criterion unchanged: +5% on the free set for adoption, <3% for closure."
     }
   ]
 }

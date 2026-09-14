@@ -197,6 +197,15 @@ constexpr uint32_t CLAIM_HOST  = 2;   // cancel() o scadenza del wait: job abban
 
 using namespace moe_cpu_detail;
 
+const char * moe_cpu_wait_backend() {
+#if defined(_WIN32)
+    return sync().wait && sync().wake ? "WaitOnAddress/WakeByAddressAll"
+                                      : "Sleep(1) (ripiego)";
+#else
+    return "sleep_for (non Windows)";
+#endif
+}
+
 const char * moe_cpu_state_name(moe_cpu_state s) {
     switch (s) {
         case moe_cpu_state::unknown:   return "sconosciuto";

@@ -233,6 +233,9 @@ int main(int argc, char ** argv) {
     ggml_cpu_init();
     std::printf("forme: K=%d H=%d E=%d thread=%d %s\n", s.K, s.H, s.E, threads,
                 weights_dir.empty() ? "(pesi sintetici)" : "(pesi del prototipo)");
+    // Verifica in compilazione n. 3 (§16) e rischio R6 (§15): quale percorso di
+    // attesa inattiva e' stato risolto. Va stampato, non assunto.
+    std::printf("attesa inattiva: %s\n", moe_cpu_wait_backend());
 
     const banks b = make_banks(s, weights_dir);
 
@@ -277,7 +280,7 @@ int main(int argc, char ** argv) {
 
     // ---------------------------------------------------------------- T1/T2/T3
     double worst_single = 0, worst_pair = 0, worst_internal = 0;
-    size_t unequal_single = 0, unequal_pair = 0;
+    size_t unequal_single = 0, unequal_pair = 0, unequal_internal = 0;
     const int cases = 16;
     for (int c = 0; c < cases; ++c) {
         for (auto & v : x) v = dist(rng) * (c % 3 == 0 ? 0.25f : c % 3 == 1 ? 1.0f : 4.0f);
@@ -297,6 +300,7 @@ int main(int argc, char ** argv) {
 
         // T3: stessa route col riferimento interno seriale
         if (!ex->reference_expert(7, e0, x.data(), internal.data(), &err)) { std::printf("%s\n", err.c_str()); return 2; }
+        unequal_internal += unequal(ex->y_host(), internal.data(), s.K);
         worst_internal = std::max(worst_internal, nrmse(ex->y_host(), internal.data(), s.K));
 
         // T2: due route con pesi, stesso ordine di somma
@@ -309,11 +313,19 @@ int main(int argc, char ** argv) {
         unequal_pair += unequal(ex->y_host(), expected.data(), s.K);
         worst_pair = std::max(worst_pair, nrmse(ex->y_host(), expected.data(), s.K));
     }
-    std::printf("       route singola: nrmse=%.3g diversi=%zu | coppia: nrmse=%.3g diversi=%zu | interno: nrmse=%.3g\n",
-                worst_single, unequal_single, worst_pair, unequal_pair, worst_internal);
+    std::printf("       route singola: nrmse=%.3g diversi=%zu | coppia: nrmse=%.3g diversi=%zu"
+                " | interno: nrmse=%.3g diversi=%zu   (su %d casi x %d elementi = %zu confronti per colonna)\n",
+                worst_single, unequal_single, worst_pair, unequal_pair,
+                worst_internal, unequal_internal, cases, s.K, (size_t) cases * (size_t) s.K);
     check(worst_single   <= 1e-6, "T1", "parita' col riferimento GGML, una route");
+    // La parita' che il progetto dichiara di voler verificare (§16, punto 4) e'
+    // BIT A BIT, non solo entro 1e-6: il conteggio degli elementi diversi e'
+    // il criterio, la soglia e' solo la rete di sicurezza.
+    check(unequal_single == 0,    "T1", "parita' BIT A BIT col riferimento GGML (zero elementi diversi)");
     check(worst_pair     <= 1e-6, "T2", "parita' sulla somma pesata di due route");
+    check(unequal_pair   == 0,    "T2", "parita' BIT A BIT sulla somma pesata (zero elementi diversi)");
     check(worst_internal == 0.0,  "T3", "la piastrellatura parallela non cambia il risultato");
+    check(unequal_internal == 0,  "T3", "piastrellatura: zero elementi diversi dal seriale");
 
     // ------------------------------------------------------------------- T4
     routes[0].clear();
@@ -507,6 +519,13 @@ int main(int argc, char ** argv) {
         canceller.join();                 // il riconoscimento del coordinatore avviene qui dentro
         ex->set_test_delay_us(0);
 
+        // Verifica in compilazione n. 7 (§16): il ritardo iniettato deve tenere
+        // aperta la finestra di calcolo SENZA far scattare per sbaglio le due
+        // scadenze. I margini vanno stampati, non assunti: su una macchina
+        // carica sono loro a dire se e' il banco a essere sbagliato.
+        std::printf("       T12: ritardo 120 ms, cancel a 30 ms -> wait %.1f ms"
+                    " (scadenza wait %.0f ms, scadenza riconoscimento %.0f ms)\n",
+                    wait_ms, caps.wait_timeout_us / 1000.0, caps.ack_timeout_us / 1000.0);
         check(wait_ms < 2000.0, "T12", "il wait ritorna senza stallo durante un calcolo lungo");
         check(result_seen != (uint64_t) moe_cpu_state::ok && poison_seen == 1,
               "T12", "l'esito del job annullato non e' mai `ok` ed e' avvelenato");
@@ -573,6 +592,15 @@ int main(int argc, char ** argv) {
         moe_cpu_executor::wait_hook(ex2.get());
         const double ms = std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count();
 
+        // Margine del banco (verifica n. 7): il `wait` ha una scadenza di 3 ms e
+        // il calcolo dura 300 ms. Il controllo pretende il ritorno entro 200 ms,
+        // che e' la meta' del calcolo: se su una macchina carica questo numero
+        // si avvicinasse ai 200 ms sarebbe il BANCO da allargare, non il codice
+        // da correggere, perche' la proprieta' provata e' «la scadenza scatta a
+        // calcolo in corso», non «scatta entro 200 ms».
+        std::printf("       T13: scadenza del wait 3 ms su un calcolo da 300 ms -> wait %.1f ms"
+                    " (limite del banco 200 ms, margine %.0f%%)\n",
+                    ms, 100.0 * (200.0 - ms) / 200.0);
         check(ms < 200.0, "T13", "il wait scade e ritorna, non aspetta la fine del calcolo");
         check(ex2->state(gen_to) == moe_cpu_state::timeout, "T13", "la scadenza produce lo stato `timeout`");
         check(ex2->contaminated(), "T13", "la scadenza contamina");
@@ -683,7 +711,13 @@ int main(int argc, char ** argv) {
         const auto t0 = clock_t_::now();
         ex4.reset();
         const double ms = std::chrono::duration<double, std::milli>(clock_t_::now() - t0).count();
-        std::printf("       distruzione con job in volo in %.1f ms\n", ms);
+        // Il ritardo iniettato e' 150 ms e la distruzione parte a 20 ms: la
+        // distruzione deve quindi costare circa i 130 ms che restano del
+        // calcolo, non i 2 s del limite. Se il numero si allontanasse da 130 ms
+        // vorrebbe dire che il teardown attende qualcosa di diverso dal
+        // coordinatore (verifica n. 7).
+        std::printf("       T15: distruzione con job in volo in %.1f ms"
+                    " (atteso ~130 ms = 150 iniettati - 20 di attesa; limite 2000 ms)\n", ms);
         check(ms < 2000.0, "T15", "distruzione con un job in volo: nessuno stallo");
     }
 

@@ -12,8 +12,19 @@ rem inutilizzate ed e' voluto. Se un giorno si passasse al collegamento statico,
 rem la riga da aggiungere e' `Synchronization.lib` nella sezione /link QUI e la
 rem stessa nota in build_test.ps1.
 rem
-rem NON ESEGUITO nella fase di progetto: sulla macchina gira una misura di
-rem baseline. Lanciarlo solo nella fase di compilazione concordata.
+rem Lanciarlo solo a macchina libera: se gira una misura di baseline, la build
+rem la contamina (memoria del progetto: "dopo una build la macchina non e'
+rem quieta", fino al 15 per cento).
+rem
+rem NOTA: questo file deve restare in PURO ASCII. cmd.exe lo legge nella
+rem codepage attiva, non in UTF-8: una virgoletta bassa o un em-dash dentro un
+rem commento rem basta a rompere il parsing della riga. E' il motivo per cui qui
+rem si scrive "e'" e non la lettera accentata, mentre i sorgenti C++ - compilati
+rem con /utf-8 - possono usarla.
+rem ESEGUITO il 14 settembre 2026: compila al primo tentativo, zero errori,
+rem quindici avvisi C4324 voluti (padding da alignas). Esito in
+rem ESITO_COMPILAZIONE_P2_14_SETTEMBRE.md; ciclo delle prove di corsa in
+rem cicla_corse.ps1.
 setlocal
 cd /d "%~dp0"
 

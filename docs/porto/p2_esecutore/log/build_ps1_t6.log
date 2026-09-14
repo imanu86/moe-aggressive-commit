@@ -1,0 +1,128 @@
+﻿build_test.cmd : "vswhere.exe" non è riconosciuto come comando interno o esterno,
+In C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\p2_esecutore\build_test.ps1:48 car:9
++ try   { & "$here\build_test.cmd" }
++         ~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpecified: ("vswhere.exe" n...erno o esterno,:String) [], RemoteException
+    + FullyQualifiedErrorId : NativeCommandError
+ 
+ un programma eseguibile o un file batch.
+test_esecutore.cpp
+moe_cpu_executor.cpp
+src\moe_cpu_executor.cpp(276): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(277): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(278): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(279): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(280): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(281): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(283): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(284): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(285): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(286): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(287): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(290): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(291): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(292): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+src\moe_cpu_executor.cpp(293): warning C4324: 'moe_cpu_executor::impl': la struttura è stata compilata in base all'identificatore di allineamento
+moe_cpu_host_memory_plain.cpp
+Generazione del codice in corso...
+compilato: test_esecutore.exe
+esecuzione rapida  : test_esecutore.exe --threads 4
+esecuzione completa: test_esecutore.exe --full --threads 4
+con i pesi veri    : test_esecutore.exe --weights PERCORSO_cpu_quant_audit --threads 4
+
+nota: T12/T13/T15 usano ritardi iniettati (120-300 ms) e thread
+      concorrenti. La batteria dura qualche secondo in piu' della prima
+      stesura ed e' normale.
+forme: K=512 H=128 E=4 thread=6 (pesi sintetici)
+attesa inattiva: WaitOnAddress/WakeByAddressAll
+
+allocazioni dell'esecutore (una volta sola, per contesto)
+  job (descrittore)                192 byte  mappata
+  flags (4 linee)                  256 byte  mappata
+  x (attivazione)                 2048 byte  mappata
+  y (contributo CPU)              2048 byte  mappata
+  xq (attivazione quant.)          584 byte  host
+  hq (nascosto quant.)             272 byte  host
+  TOTALE                          5400 byte
+
+       route singola: nrmse=0 diversi=0 | coppia: nrmse=0 diversi=0 | interno: nrmse=0 diversi=0   (su 16 casi x 512 elementi = 8192 confronti per colonna)
+[ok]   parita' col riferimento GGML, una route              T1
+[ok]   parita' BIT A BIT col riferimento GGML (zero elementi diversi) T1
+[ok]   parita' sulla somma pesata di due route              T2
+[ok]   parita' BIT A BIT sulla somma pesata (zero elementi diversi) T2
+[ok]   la piastrellatura parallela non cambia il risultato  T3
+[ok]   piastrellatura: zero elementi diversi dal seriale    T3
+[ok]   zero route: contributo nullo, esito valido           T4
+[ok]   zero route: nessun veleno                            T4
+[ok]   nessuna contaminazione dopo soli esiti validi        T4
+[ok]   la generazione cresce di uno per submit              T5
+[ok]   stato del job appena concluso                        T5
+[ok]   generazione fuori finestra: sconosciuta              T5
+[ok]   nessun job in volo dopo il wait                      T5
+[ok]   header non validi: rifiutati (10 casi)               T6
+[ok]   header non validi: risultato avvelenato              T6
+[ok]   header non validi: `y` non toccato, nessuno zero     T6
+[ok]   un header non valido contamina, e la marca e' appiccicosa T6
+[ok]   l'annullamento sblocca l'attesa senza stallo         T7
+[ok]   annullamento: `y` non toccato                        T7
+[ok]   dopo il riarmo il pool torna a servire               T7
+[ok]   submit concorrente: rifiutato, non accodato, senza stallo T8
+[ok]   il submit rientrante e' registrato come rifiutato    T8
+[ok]   il job legittimo non viene disturbato dal rientrante T8
+[ok]   il wait spaiato ritorna subito, senza attendere il vuoto T8
+[ok]   il pool torna quieto dopo la rientranza              T8
+[ok]   nessun riuso anticipato del buffer fra job consecutivi T10
+[ok]   nessuna allocazione nuova a regime                   T11
+[ok]   register_layer e' idempotente con gli stessi puntatori T17
+[ok]   un puntatore sorgente cambiato e' rifiutato, non aggiornato T17
+[ok]   un passo incoerente con la forma e' rifiutato        T17
+[ok]   un indice di strato negativo e' rifiutato            T17
+[ok]   acknowledge_contamination riparte da pulito          T12
+[ok]   dopo il riconoscimento la marca e' spenta            T12
+       T12: ritardo 120 ms, cancel a 30 ms -> wait 33.3 ms (scadenza wait 5000 ms, scadenza riconoscimento 2000 ms)
+[ok]   il wait ritorna senza stallo durante un calcolo lungo T12
+[ok]   l'esito del job annullato non e' mai `ok` ed e' avvelenato T12
+[ok]   il job annullato e' registrato come annullato        T12
+[ok]   il coordinatore ha riconosciuto l'annullamento entro la scadenza T12
+[ok]   un annullamento di routine non contamina             T12
+[ok]   l'annullamento resta contato fra i non-ok            T12
+[ok]   nessun job in volo dopo il riconoscimento            T12
+[ok]   il job successivo e' valido                          T12
+[ok]   il job successivo non eredita il veleno              T12
+[ok]   il completamento tardivo non ha toccato l'uscita del job successivo T12
+[ok]   quiesce ritorna senza lavoro in volo                 T9
+       distruzione in 0.1 ms
+[ok]   distruzione senza stallo                             T9
+       T13: scadenza del wait 3 ms su un calcolo da 300 ms -> wait 4.9 ms (limite del banco 200 ms, margine 98%)
+[ok]   il wait scade e ritorna, non aspetta la fine del calcolo T13
+[ok]   la scadenza produce lo stato `timeout`               T13
+[ok]   la scadenza contamina                                T13
+[ok]   il job scaduto resta marcato irrecuperabile          T13
+[ok]   non si riconosce una contaminazione con un job irrecuperabile T13
+[ok]   durante l'irrecuperabile ogni submit e' rifiutato    T13
+[ok]   il submit rifiutato non sovrascrive le celle del job abbandonato T13
+[ok]   il coordinatore riconosce il job e riapre il servizio T13
+[ok]   il completamento tardivo NON riscrive i flag del job abbandonato T13
+[ok]   dopo il riconoscimento il pool e' quieto             T13
+[ok]   acknowledge_contamination dopo il riconoscimento     T13
+[ok]   la marca di contaminazione e' spenta                 T13
+[ok]   dopo il recupero il pool torna a produrre risultati corretti T13
+[ok]   un esecutore appena creato non e' contaminato        T14
+[ok]   tre annullamenti di routine non contaminano          T14
+[ok]   gli annullamenti restano contati fra i non-ok        T14
+[ok]   dopo gli annullamenti il pool serve ancora           T14
+[ok]   un header non valido e' rifiutato                    T14
+[ok]   un errore vero contamina                             T14
+[ok]   la prima generazione contaminante e' quella giusta   T14
+[ok]   acknowledge_contamination riesce a pool quieto       T14
+[ok]   dopo il riconoscimento la marca e' spenta            T14
+[ok]   la prima generazione contaminante e' azzerata        T14
+[ok]   il riconoscimento non riscrive il contatore storico  T14
+[ok]   dopo il riconoscimento il pool torna a servire       T14
+       T15: distruzione con job in volo in 118.0 ms (atteso ~130 ms = 150 iniettati - 20 di attesa; limite 2000 ms)
+[ok]   distruzione con un job in volo: nessuno stallo       T15
+[ok]   ogni configurazione non valida fallisce la creazione T16
+[ok]   ogni fallimento di create() porta un messaggio       T16
+[ok]   senza fornitore di memoria la creazione fallisce     T16
+
+ESITO POSITIVO: 0 controlli falliti

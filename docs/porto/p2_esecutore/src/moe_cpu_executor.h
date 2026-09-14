@@ -110,6 +110,17 @@ enum class moe_cpu_state : uint32_t {
 
 const char * moe_cpu_state_name(moe_cpu_state s);
 
+// Quale percorso di attesa inattiva e' stato effettivamente risolto su questa
+// macchina: "WaitOnAddress/WakeByAddressAll" quando i due simboli si risolvono,
+// "Sleep(1) (ripiego)" quando non si risolvono, "sleep_for (non Windows)"
+// altrove. Diagnostica soltanto: non cambia nessun comportamento.
+// Esiste perche' il rischio R6 del progetto (§15) chiede che l'esecutore
+// REGISTRI quale percorso ha scelto, e perche' la verifica in compilazione
+// n. 3 (§16) non e' altrimenti osservabile dall'esterno del binario.
+// La prima chiamata forza la risoluzione dei simboli (che e' comunque
+// idempotente e protetta dall'inizializzazione di uno static locale).
+const char * moe_cpu_wait_backend();
+
 // Vero per gli esiti che possono aver lasciato `y` o lo stato della cache in
 // uno stato incoerente, e che quindi richiedono di buttare l'incarnazione
 // (contratto P1 §5, caso «job fallito dopo il gather»).

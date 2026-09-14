@@ -1,0 +1,38 @@
+@echo off
+rem P2 - compilazione della prova host-only dell'esecutore CPU.
+rem Stesso metodo di freetoken_hybrid\build.cmd: cl.exe con le .lib della build
+rem privata GGML e le DLL corrispondenti copiate accanto all'eseguibile.
+rem
+rem NON ESEGUITO nella fase di progetto: sulla macchina gira una misura di
+rem baseline. Lanciarlo solo nella fase di compilazione concordata.
+setlocal
+cd /d "%~dp0"
+
+set "QROOT=C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_clean"
+set "VCVARS=C:\Program Files\Microsoft Visual Studio\2022\Community\VC\Auxiliary\Build\vcvars64.bat"
+
+if not exist "%QROOT%\build\ggml\src\ggml-cpu.lib" (
+    echo build GGML non trovata in %QROOT%\build
+    exit /b 1
+)
+
+call "%VCVARS%" >nul
+if errorlevel 1 exit /b 1
+
+cl /nologo /std:c++17 /O2 /EHsc /MD /W4 ^
+   /I"%QROOT%\source\ggml\include" /Isrc ^
+   src\test_esecutore.cpp src\moe_cpu_executor.cpp src\moe_cpu_host_memory_plain.cpp ^
+   /link "%QROOT%\build\ggml\src\ggml-cpu.lib" ^
+         "%QROOT%\build\ggml\src\ggml-base.lib" ^
+         "%QROOT%\build\ggml\src\ggml.lib" ^
+   /OUT:test_esecutore.exe
+if errorlevel 1 exit /b 1
+
+copy /y "%QROOT%\build\bin\ggml-cpu.dll"  . >nul
+copy /y "%QROOT%\build\bin\ggml-base.dll" . >nul
+copy /y "%QROOT%\build\bin\ggml.dll"      . >nul
+
+echo compilato: test_esecutore.exe
+echo esecuzione rapida  : test_esecutore.exe --threads 4
+echo esecuzione completa: test_esecutore.exe --full --threads 4
+echo con i pesi veri    : test_esecutore.exe --weights PERCORSO_cpu_quant_audit --threads 4

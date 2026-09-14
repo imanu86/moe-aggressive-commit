@@ -1,0 +1,69 @@
+P4 - scomposizione del costo del meccanismo. Profilo `fumo` (L01@corto 1024 token +
+S01@corto 372 token), budget screening, greedy, MTP spento, -np 1, un processo nuovo
+per cella. Tempo per token = somma(predicted_ms) / somma(predicted_n) sui casi
+misurati, riscaldamenti esclusi.
+
+PAVIMENTO DI RUMORE, misurato e non assunto
+  C0  r1 42.135   r2 42.126   scarto 0.009 ms  (0.02%)
+  C1  r1 42.324   r2 42.361   scarto 0.037 ms  (0.09%)
+  C20 r1 42.459   r2 42.481   scarto 0.022 ms  (0.05%)
+  -> incertezza su una differenza: +/- 0.03 ms/token. Il profilo `fumo` e' molto
+     piu' ripetibile dello 0,5% ipotizzato: tutte le differenze qui sotto tranne
+     quella del nodo `add` sono risolte.
+
+SCALA A UNO STRATO (strato 1)                       ms/token   delta C0
+  C0   spento                                         42.131      ----
+  C3   add+export+guardia + 1 nodo host (inerte)       42.247     +0.117
+  C2   add+export+guardia + 1 nodo host (inerte)       42.280     +0.149
+  C5   diagnostica, nessuna aritmetica, 4 thread       42.315     +0.184
+  C1   impianto completo, cpu_max=0, 4 thread          42.343     +0.212
+  C22  diagnostica, 2 thread, 1 esperto CPU            42.425     +0.295
+  C17  diagnostica, 2 thread, 2 esperti CPU            42.440     +0.309
+  C21  attiva, 2 thread (con contatori, non a tempo)   42.455     +0.324
+  C20  ATTIVA, 2 thread                                42.470     +0.339
+  C18  diagnostica, 1 thread, 2 esperti CPU            42.680     +0.549
+  C4   diagnostica, 4 thread, 2 esperti CPU            44.159     +2.028
+  C6   ATTIVA, 4 thread  (il candidato di P3)          44.503     +2.372
+  C16  diagnostica, 6 thread, 2 esperti CPU            49.790     +7.659
+
+SCALA AMPLIFICATA (47 strati, cpu_max=0: l'uscita non cambia)
+                                                      ms/token   delta C0   per strato
+  C10  nessun pezzo acceso (solo src[4] e pool fermo)   42.116     -0.015       ~0
+  C11  + nodo `add`                                     42.254     +0.124     2.9 us
+  C12  + kernel di export                               42.496     +0.365     5.1 us
+  C13  + guardia del merge                              43.202     +1.072    15.0 us
+  C14  + 1 nodo host (callback che ritorna subito)      45.170     +3.040    41.9 us
+  C15  + 2 nodo host e hook VERI (giro del pool)        47.501     +5.370    49.6 us
+  ------------------------------------------------------------------------------
+  impianto completo                                                +5.385   114.6 us
+
+  Ripartizione dell'impianto:  add 2.6%  export 4.5%  guardia 13.1%  nodi host 79.9%
+
+I +1,801 ms DI P3, SCOMPOSTI (qui +2.028: stesso meccanismo, profilo diverso)
+  impianto (add, export, guardia, due nodi host, giro del pool)   +0.184 +/- 0.03   (C5 - C0)
+  aritmetica CPU a QUATTRO thread                                 +1.844 +/- 0.03   (C4 - C5)
+     di cui aritmetica vera, misurata a due thread                +0.097            (C17 - C1)
+     di cui CONTESA col threadpool del server (difetto)           +1.719            (C4 - C17)
+  ------------------------------------------------------------------------------
+  totale                                                          +2.028            (C4 - C0)
+
+  La stessa grandezza per un'altra via: C1 (impianto con cpu_max=0, nessuna route da
+  calcolare) da' +0.212. Le due letture distano 0.028 ms, meno del pavimento di rumore
+  (+/- 0.03): l'impianto costa 0.18-0.21 ms/token su un solo strato.
+
+  Costo marginale del SECONDO esperto CPU, a due thread: +0.015 ms (C17 - C22).
+  L'aritmetica, quando il pool non e' sovradimensionato, e' quasi tutta NASCOSTA
+  dietro il lavoro GPU dello strato: la concorrenza del progetto P2 §9.2 funziona
+  (rischio R2 non si e' materializzato).
+
+CONFRONTO COL RISPARMIO DI BANDA (0.209 ms/token allo strato 1, misurato da P3)
+  costo oggi, quattro thread (P3)                    +2.028   ->  9,7 volte il risparmio
+  costo oggi, due thread                             +0.309   ->  1,5 volte il risparmio
+  costo senza i due nodi host (stima da C13/C15)     ~+0.14   ->  0,7 volte il risparmio
+
+IMPRONTE (oracolo del testo, greedy)
+  identiche a C0 in C1, C2, C3, C4, C5, C10-C18, C22: 22 corse su 22 dove devono esserlo.
+  diverse in C6, C20, C21 (modalita' attiva): L01@corto e S01@corto, esattamente le
+  stesse due impronte della corsa attiva di P3 (696351b004da5ce5 / 9ac50dc93a61a0f8).
+  L01@corto e i due riscaldamenti coincidono anche col blocco di riferimento
+  20260914_072049 in tutte le celle non attive.

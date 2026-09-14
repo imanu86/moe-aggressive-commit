@@ -1,0 +1,44 @@
+P3 - insieme libero, profilo solo_libero, budget 1024, 16 casi, una replica per lato.
+Throughput = somma(token accettati) / somma(tempo di generazione), come prescrive il protocollo.
+
+corsa                                                        preset                  t/s     token       s   ms/token
+20260914_072049_P0_sper_ibrido_assente_r1 (riferimento)      binari qwen38_clean  24.4344   15687  642.00     40.926
+20260914_094556_P3_p3_ibrido_spento_r1                       A_p3                 24.4275   15687  642.19     40.937
+20260914_101459_P3_..._diagnostica_strato1_senza_contatori   D0_p3                23.3983   15687  670.43     42.738
+20260914_092846_P3_p3_ibrido_attivo_strato1_r1               B_p3                 23.5135   15576  662.43     42.529
+
+A/rif = 0.9997  (-0.03%)   la patch a funzione spenta e' neutra; 18 impronte su 18 identiche
+D/A   = 0.9579  (-4.21%)   costo del solo MECCANISMO (nessun risparmio di byte, nessun cambio di traiettoria)
+B/A   = 0.9626  (-3.74%)   candidato completo, un solo strato
+B/D   = 1.0049  (+0.49%)   quello che il risparmio del 38,7% dei trasferimenti restituisce
+
+ms per token: A 40.937 | D 42.738 (+1.801) | B 42.529 (+1.591 su A, -0.209 su D)
+
+Per caso (t/s del server, predicted_n / predicted_ms):
+
+caso                  A        D        B      B/A
+L01@corto        23.987   22.676   22.939   0.9563
+L01@ctx32k       26.301   25.289   25.577   0.9725
+L02@corto        23.845   22.677   22.622   0.9487
+L02@ctx32k       26.509   25.342   25.612   0.9662
+L03@corto        24.019   22.874   23.096   0.9616
+L03@ctx32k       26.191   25.196   25.545   0.9753
+L04@corto        22.665   21.801   21.828   0.9631
+L04@ctx32k       25.394   24.346   24.859   0.9789
+L05@corto        22.979   21.767   21.807   0.9490
+L05@ctx32k       26.491   25.511   25.650   0.9683
+L06@corto        22.313   21.511   21.547   0.9657
+L06@ctx32k       25.779   24.881   24.363   0.9451
+L07@corto        22.313   21.485   21.566   0.9665
+L07@ctx32k       25.481   24.566   24.984   0.9805
+L08@corto        22.170   21.081   21.346   0.9628
+L08@ctx32k       25.893   24.966   24.788   0.9573
+
+Impronte SHA256 del testo, contro il blocco di riferimento 20260914_072049:
+  A (ibrido spento)   18 confrontate, 0 diverse
+  D (diagnostica)     18 confrontate, 0 diverse
+  B (attivo)          18 confrontate, 15 diverse; invariate L04@corto e i due riscaldamenti
+
+Nota: B ha 15576 token accettati contro 15687 degli altri lati, perche' con la CPU attiva
+il testo cambia e L04@ctx32k si ferma prima (521 token invece di 632). Il throughput e'
+somma/somma, quindi non ne e' falsato.

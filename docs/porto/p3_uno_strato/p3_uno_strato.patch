@@ -1,0 +1,3341 @@
+P3 - Un solo strato nel server, MTP spento.
+Diff unificato rispetto allo snapshot immutabile di P0:
+  D:\ds4_work\p0_snapshot_20260914\source
+Lo snapshot NON e' stato modificato: e' solo il lato sinistro del diff.
+
+COME SI APPLICA (Git Bash su Windows):
+  cd <albero>
+  patch -p1 --binary < p3_uno_strato.patch
+Il flag --binary e' NECESSARIO: i sorgenti hanno terminatori CRLF e senza quel
+flag `patch` fallisce con "different line endings". Verificato con --dry-run:
+17 file, tutti applicati senza rifiuti.
+
+Generato da genera_patch.sh.
+=
+
+--- a/ggml/include/ggml-moe-cpu.h
++++ b/ggml/include/ggml-moe-cpu.h
+@@ -0,0 +1,74 @@
++// P2 — Confine d'interfaccia minimo fra il backend CUDA e l'esecutore CPU.
++//
++// In P3 questo file va copiato in `ggml/include/ggml-moe-cpu.h` e le due
++// funzioni implementate in `ggml/src/ggml.c` accanto a ggml_set_moe_obs_callback
++// (ggml.c:252-265), di cui questo e' il calco esatto: una tabella globale di
++// ggml-base, installata da libllama e letta dal backend CUDA.
++//
++// Perche' cosi' e non altrimenti:
++//  - il backend CUDA NON deve conoscere llama_context;
++//  - libllama NON deve linkare ggml-cuda;
++//  - l'esecutore usa i tratti CPU (ggml_get_type_traits_cpu), quindi vive dal
++//    lato che gia' linka ggml-cpu, cioe' libllama;
++//  - nessun tipo CUDA compare qui: `ggml_moe_cpu_fn_t` coincide con
++//    cudaHostFn_t (void(*)(void*)) e i puntatori sono `void *`.
++//
++// La sonda del 13 settembre leggeva la struttura interna del backend CUDA
++// (overlap_probe.cu:146-147, `ggml_backend_cuda_context::streams`). Quella
++// lettura NON diventa un'API: qui passano solo puntatori opachi e due callback.
++
++#ifndef GGML_MOE_CPU_H
++#define GGML_MOE_CPU_H
++
++#include "ggml.h"
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++    /* Firma identica a cudaHostFn_t: usabile con cudaLaunchHostFunc senza cast. */
++    typedef void (*ggml_moe_cpu_fn_t)(void * user);
++
++    struct ggml_moe_cpu_hooks {
++        uint32_t          abi;          /* MOE_CPU_ABI_VERSION */
++        void *            user;         /* l'esecutore, opaco */
++
++        /* Nodi host. Vincoli non negoziabili (invariante 6 del piano):
++           nessuna API CUDA al loro interno, nessun mutex che possa essere
++           trattenuto dal thread che aspetta il graph, ritorno in tempo finito. */
++        ggml_moe_cpu_fn_t submit;       /* pubblica il job e sveglia il pool */
++        ggml_moe_cpu_fn_t wait;         /* attende l'esito, con limite di tempo */
++
++        /* Alias DEVICE di memoria host pinnata e mappata. Stabili per tutta la
++           vita dell'esecutore: sono ingressi di graph e non possono cambiare
++           fra cattura e replay. */
++        void *  job_dev;                /* struct moe_cpu_job   */
++        void *  flags_dev;              /* struct moe_cpu_flags */
++        void *  x_dev;                  /* float [max_rows * n_embd], attivazione */
++        void *  y_dev;                  /* float [max_rows * n_embd], contributo CPU */
++
++        /* Forme dichiarate alla creazione; il kernel di export le rispetta. */
++        int32_t max_rows;
++        int32_t max_per_row;
++        int32_t n_embd;
++        int32_t n_ff_exp;
++    };
++
++    /* Installa la tabella. NULL la disinstalla. Il chiamante e' il proprietario
++       della memoria puntata e deve disinstallare PRIMA di distruggere
++       l'esecutore. Una seconda installazione mentre una e' attiva e' un errore:
++       l'implementazione deve rifiutarla e restituire false (un solo pool vivo
++       per processo, coerente con «un solo pool per contesto» di D09, perche'
++       il percorso a domanda richiede gia' n_seq_max == 1). */
++    GGML_API bool ggml_moe_cpu_set_hooks(const struct ggml_moe_cpu_hooks * hooks);
++
++    /* NULL quando la funzione e' spenta. Letta dal backend CUDA a ogni
++       costruzione del graph; non va memorizzata fra un replay e l'altro. */
++    GGML_API const struct ggml_moe_cpu_hooks * ggml_moe_cpu_get_hooks(void);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* GGML_MOE_CPU_H */
+--- a/ggml/include/moe_cpu_job.h
++++ b/ggml/include/moe_cpu_job.h
+@@ -0,0 +1,93 @@
++// P2 — Esecutore CPU/GPU: descrittore del lavoro condiviso fra dispositivo e host.
++//
++// Questo header e' C puro e deve poter essere incluso sia da .cpp host sia da .cu.
++// Le strutture qui dentro vivono in memoria host PINNATA E MAPPATA: il kernel di
++// export le scrive attraverso l'alias device (zero-copy), il pool CPU le legge
++// attraverso l'alias host. Nessuna API CUDA compare in questo file.
++//
++// Regole di ordine (vincolanti per P3):
++//  1. Il kernel di export scrive header + attivazione e termina con
++//     __threadfence_system() prima di concludere.
++//  2. Il nodo host `submit` e' accodato sullo STESSO stream, DOPO quel kernel:
++//     l'ordinamento di stream garantisce la visibilita' delle scritture all'host.
++//  3. Il nodo host `wait` e' accodato DOPO il lavoro GPU degli esperti e PRIMA
++//     del nodo che consuma `y`.
++//  4. C'e' un solo slot di job per contesto: gli strati sono seriali sullo
++//     stesso stream, quindi lo strato il+1 non puo' pubblicare prima che il
++//     `wait` dello strato il sia ritornato.
++
++#ifndef MOE_CPU_JOB_H
++#define MOE_CPU_JOB_H
++
++#include <stdint.h>
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++#define MOE_CPU_JOB_MAGIC    0x4D4F4543u  /* 'MOEC' */
++#define MOE_CPU_ABI_VERSION  1u
++
++/* Tetti di forma. MOE_CPU_MAX_ROWS = 3 e' il massimo MTP dichiarato dal piano
++   (moe-demand.cuh:232 accetta ids->ne[1] in [1,3]); MOE_CPU_MAX_PER_ROW e' un
++   tetto strutturale, il limite operativo `cpu_max` resta 1 o 2 (D03). */
++#define MOE_CPU_MAX_ROWS     3
++#define MOE_CPU_MAX_PER_ROW  4
++#define MOE_CPU_MAX_ROUTES   (MOE_CPU_MAX_ROWS * MOE_CPU_MAX_PER_ROW)
++
++/* Esito di un job. Scritto dal pool, letto dall'host e dal kernel di merge. */
++enum moe_cpu_result {
++    MOE_CPU_RESULT_NONE      = 0,  /* nessun risultato ancora */
++    MOE_CPU_RESULT_OK        = 1,  /* `y` contiene il contributo valido */
++    MOE_CPU_RESULT_REJECTED  = 2,  /* header non valido: `y` NON e' stato toccato */
++    MOE_CPU_RESULT_CANCELLED = 3,  /* annullamento esplicito */
++    MOE_CPU_RESULT_TIMEOUT   = 4,  /* il pool non ha risposto entro il limite */
++    MOE_CPU_RESULT_STOPPED   = 5,  /* esecutore in chiusura */
++};
++
++/* Una cella per linea di cache: host e dispositivo scrivono su celle diverse e
++   non devono condividere una linea sul PCIe. */
++struct moe_cpu_cell {
++    volatile uint64_t value;
++    uint8_t           pad[56];
++};
++
++/* Bandiere. Allocate in memoria mappata; l'alias device e' esposto ai kernel.
++   - request: alzata dal callback `submit`, abbassata dal coordinatore.
++   - done:    alzata dal coordinatore, abbassata dal callback `wait`.
++   - result:  uno dei moe_cpu_result del job appena concluso.
++   - poison:  1 quando il contenuto di `y` NON e' un risultato valido.
++              Il kernel di merge la legge e, se e' 1, NON somma `y`: scrive NaN
++              nelle righe interessate. Un errore non puo' diventare uno zero
++              silenzioso (invariante 7). */
++struct moe_cpu_flags {
++    struct moe_cpu_cell request;
++    struct moe_cpu_cell done;
++    struct moe_cpu_cell result;
++    struct moe_cpu_cell poison;
++};
++
++/* Descrittore del job. Scritto interamente dal kernel di export.
++   `weight` e' il peso ORIGINALE della route, gia' normalizzato e scalato
++   (llama-graph.cpp:2089-2107): il contributo CPU non passa una seconda volta
++   per la moltiplicazione dei pesi (P1 §4.6).
++   Gli ID esperto sono ID LOGICI, non slot. */
++struct moe_cpu_job {
++    uint32_t magic;                        /* MOE_CPU_JOB_MAGIC */
++    uint32_t abi;                          /* MOE_CPU_ABI_VERSION */
++    int32_t  layer;                        /* indice di strato registrato */
++    int32_t  n_rows;                       /* token in questo job, 1..MOE_CPU_MAX_ROWS */
++    int32_t  n_embd;                       /* K, controllo di forma */
++    int32_t  n_ff_exp;                     /* H, controllo di forma */
++    int32_t  n_routes[MOE_CPU_MAX_ROWS];   /* route CPU per token, 0..MOE_CPU_MAX_PER_ROW */
++    int32_t  expert  [MOE_CPU_MAX_ROUTES]; /* ID logico, riga-maggiore per token */
++    float    weight  [MOE_CPU_MAX_ROUTES];
++    uint64_t sequence;                     /* numero di job, scritto dal dispositivo o 0 */
++    uint32_t reserved[6];
++};
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif /* MOE_CPU_JOB_H */
+--- a/ggml/src/ggml.c
++++ b/ggml/src/ggml.c
+@@ -10,6 +10,10 @@
+ // FIXME: required here for quantization functions
+ #include "ggml-quants.h"
+ 
++// P3 — tabella dei hook dell'esecutore CPU degli esperti MoE (calco di
++// ggml_set_moe_obs_callback, sotto).
++#include "ggml-moe-cpu.h"
++
+ #ifdef GGML_USE_CPU_HBM
+ #include <hbwmalloc.h>
+ #endif
+@@ -264,6 +268,32 @@
+     return g_moe_obs_cb;
+ }
+ 
++// P3 — esecutore CPU degli esperti: una sola tabella per processo.
++// Calco esatto della coppia qui sopra: ggml-base la possiede, libllama la
++// installa, il backend CUDA la legge. Nessun tipo CUDA la attraversa.
++static struct ggml_moe_cpu_hooks g_moe_cpu_hooks;
++static bool                      g_moe_cpu_hooks_set = false;
++
++bool ggml_moe_cpu_set_hooks(const struct ggml_moe_cpu_hooks * hooks) {
++    if (hooks == NULL) {
++        memset(&g_moe_cpu_hooks, 0, sizeof(g_moe_cpu_hooks));
++        g_moe_cpu_hooks_set = false;
++        return true;
++    }
++    // Una seconda installazione mentre una e' attiva e' un errore di
++    // configurazione: si rifiuta, non si sovrascrive (R8 del progetto P2).
++    if (g_moe_cpu_hooks_set) {
++        return false;
++    }
++    g_moe_cpu_hooks     = *hooks;
++    g_moe_cpu_hooks_set = true;
++    return true;
++}
++
++const struct ggml_moe_cpu_hooks * ggml_moe_cpu_get_hooks(void) {
++    return g_moe_cpu_hooks_set ? &g_moe_cpu_hooks : NULL;
++}
++
+ void ggml_abort(const char * file, int line, const char * fmt, ...) {
+     fflush(stdout);
+ 
+--- a/ggml/src/ggml-cuda/fork-moe-kernels.cuh
++++ b/ggml/src/ggml-cuda/fork-moe-kernels.cuh
+@@ -45,7 +45,15 @@
+     uint32_t status;
+     uint32_t n_routes;
+     uint32_t n_unique;
+-    uint32_t n_misses;
++    uint32_t n_misses;   // P3: significa ESCLUSIVAMENTE «miss GPU da trasferire»
++                         // (contratto P1 §6). I quattro lettori storici — commit
++                         // differito, contatori, gather, traccia — sono stati
++                         // aggiornati insieme a questa ridefinizione.
++    uint32_t n_cpu;      // P3: miss serviti dalla CPU (richieste uniche)
++    uint32_t cpu_active; // P3: 1 quando le route CPU sono ALIASATE e mascherate
++                         // (modalita' attiva). In modalita' diagnostica resta 0:
++                         // il piano e' identico a cpu_max=0 e il commit differito
++                         // deve trattare gli unici CPU come unici normali.
+     uint64_t next_clock;
+     uint64_t frequency_epoch;
+ };
+@@ -59,6 +67,10 @@
+     MOE_GROUPED_PLAN_MISS_EXPERTS,
+     MOE_GROUPED_PLAN_MISS_SLOTS,
+     MOE_GROUPED_PLAN_REMAPPED_IDS,
++    // P3 (contratto P1 §4.1): tre array nuovi per la partizione CPU/GPU.
++    MOE_GROUPED_PLAN_UNIQUE_IS_CPU,
++    MOE_GROUPED_PLAN_CPU_UNIQUE,
++    MOE_GROUPED_PLAN_CPU_EXPERTS,
+     MOE_GROUPED_PLAN_ROUTE_ARRAY_COUNT,
+ };
+ 
+@@ -191,6 +203,8 @@
+         uint64_t host_clock_end,
+         uint64_t * device_clock,
+         unsigned long long * demand_counters,
++        uint32_t cpu_max,          // P3: 0 = comportamento storico
++        bool     cpu_diag,         // P3: modalita' diagnostica (nessun alias, nessuna maschera)
+         moe_grouped_decode_plan * plan) {
+     if (blockIdx.x != 0) {
+         return;
+@@ -212,6 +226,9 @@
+     int32_t * miss_experts = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_MISS_EXPERTS);
+     int32_t * miss_slots = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_MISS_SLOTS);
+     int32_t * remapped_ids = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_REMAPPED_IDS);
++    int32_t * unique_is_cpu = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_UNIQUE_IS_CPU);
++    int32_t * cpu_unique   = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_CPU_UNIQUE);
++    int32_t * cpu_experts  = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_CPU_EXPERTS);
+     uint32_t * expert_routes = moe_grouped_plan_expert_routes(plan, plan_capacity);
+ 
+     // Commit the prior admission before this call overwrites the shared plan.
+@@ -244,7 +261,16 @@
+             if (stored_epoch > plan->frequency_epoch) {
+                 moe_grouped_plan_fail(plan, MOE_GROUPED_PLAN_INVALID_STATE);
+             }
+-            last_used[slot] = plan->next_clock - plan->n_unique + unique + 1;
++            // P3 / contratto P1 §4.2 passo 1: la RECENZA riguarda solo gli slot
++            // validi, quindi solo gli unici NON serviti dalla CPU; lo slot di un
++            // unico CPU e' un ALIAS e scriverci sopra falserebbe l'eta' di uno
++            // slot che appartiene a un altro esperto. Il tick di orologio viene
++            // comunque consumato (l'aritmetica dell'indice non cambia).
++            // La FREQUENZA, invece, riguarda tutte le richieste logiche.
++            const bool unique_cpu = plan->cpu_active != 0 && unique_is_cpu[unique] != 0;
++            if (!unique_cpu) {
++                last_used[slot] = plan->next_clock - plan->n_unique + unique + 1;
++            }
+             const uint32_t frequency = moe_grouped_effective_frequency(
+                 expert_frequency[expert], stored_epoch, plan->frequency_epoch);
+             const uint32_t updated_frequency = frequency != UINT32_MAX ? frequency + 1 : frequency;
+@@ -259,6 +285,8 @@
+         plan->n_routes = n_routes;
+         plan->n_unique = 0;
+         plan->n_misses = 0;
++        plan->n_cpu = 0;
++        plan->cpu_active = 0;
+         const unsigned long long step = atomicAdd(reinterpret_cast<unsigned long long *>(device_step), 1ULL);
+         if (step == UINT64_MAX) {
+             moe_grouped_plan_fail(plan, MOE_GROUPED_PLAN_INVALID_STATE);
+@@ -311,6 +339,9 @@
+         miss_experts[route] = -1;
+         miss_slots[route] = -1;
+         remapped_ids[route] = -1;
++        unique_is_cpu[route] = 0;
++        cpu_unique[route] = -1;
++        cpu_experts[route] = -1;
+     }
+     if (!warp_fast) {
+         for (uint32_t expert = thread; expert < n_experts; expert += blockDim.x) {
+@@ -425,14 +456,94 @@
+         __syncthreads();
+     }
+ 
++    // ------------------------------------------------------------------ P3
++    // PARTIZIONE DEI MISS IN CPU E GPU, prima di qualunque assegnazione di slot
++    // e prima del gather (contratto P1 §4.2, passo 5).
++    //
++    //   n_cpu = max(0, min(cpu_max, n_misses, n_unique - 1))
++    //
++    // Il termine `n_unique - 1` garantisce che resti almeno un unico GPU da cui
++    // prendere lo slot ALIAS (§4.5). Quali miss: i PRIMI nell'ordine degli indici
++    // unici, che e' l'ordine di prima comparsa fra le route gia' materializzato
++    // da entrambi i cammini di deduplica (D13). Non legge NULLA dello stato
++    // della cache.
++    //
++    // In modalita' DIAGNOSTICA si riempiono soltanto gli elenchi `cpu_unique` /
++    // `cpu_experts` (servono al kernel di export per produrre il job): i miss
++    // restano tutti miss GPU, `unique_is_cpu` resta a zero e `cpu_active` resta
++    // 0. Il piano, il gather, il commit e i pesi sono quindi identici a
++    // cpu_max = 0, ed e' per questo che la diagnostica non puo' cambiare
++    // l'uscita del modello.
++    if (thread == 0) {
++        uint32_t n_cpu = 0;
++        if (cpu_max > 0 && plan->n_unique > 1) {
++            n_cpu = min(cpu_max, plan->n_misses);
++            n_cpu = min(n_cpu, plan->n_unique - 1);
++        }
++        for (uint32_t i = 0; i < n_cpu; ++i) {
++            const int32_t unique = miss_unique[i];
++            const int32_t expert = miss_experts[i];
++            if (unique < 0 || (uint32_t) unique >= plan->n_unique || expert < 0 || (uint32_t) expert >= n_experts) {
++                moe_grouped_plan_fail(plan, MOE_GROUPED_PLAN_INVALID_STATE);
++            }
++            cpu_unique[i]  = unique;
++            cpu_experts[i] = expert;
++        }
++        plan->n_cpu = n_cpu;
++        if (n_cpu > 0 && !cpu_diag) {
++            for (uint32_t i = 0; i < n_cpu; ++i) {
++                unique_is_cpu[cpu_unique[i]] = 1;
++            }
++            // Compattazione: gli array di TRASFERIMENTO e di COMMIT contengono
++            // solo miss GPU (invariante 2: un esperto CPU non riceve
++            // un'ammissione GPU fittizia).
++            const uint32_t n_gpu = plan->n_misses - n_cpu;
++            for (uint32_t i = 0; i < n_gpu; ++i) {
++                miss_unique[i]  = miss_unique[i + n_cpu];
++                miss_experts[i] = miss_experts[i + n_cpu];
++            }
++            for (uint32_t i = n_gpu; i < plan->n_misses; ++i) {
++                miss_unique[i]  = -1;
++                miss_experts[i] = -1;
++            }
++            plan->n_misses  = n_gpu;
++            plan->cpu_active = 1;
++        }
++    }
++    __syncthreads();
++
+     // Contatore VERO di esperti richiesti e mancanti. Qui i due cammini (a warp e a
+     // blocco) si sono gia' ricongiunti e sincronizzati, quindi una sola inserzione li
+     // copre entrambi. Serve a MISURARE il tasso di colpi della cache invece di dedurlo
+     // per differenza dai byte sul PCIe, che e' come lo stimavamo finora (~41%).
++    //
++    // P3: tre contatori invece di due, piu' coppie e colpi (contratto P1 §6). Con i
++    // miss CPU la vecchia formula `1 - mancanti/richiesti` li conterebbe come colpi.
++    //   [0] richieste uniche   [1] miss GPU   [2] miss CPU (unici)
++    //   [3] coppie token/esperto (route)      [4] route servite dalla CPU (job)
++    //   [5] colpi GPU
+     if (demand_counters && thread == 0) {
+-        atomicAdd(&demand_counters[0], (unsigned long long) plan->n_unique);
+-        atomicAdd(&demand_counters[1], (unsigned long long) plan->n_misses);
++        const unsigned long long uniq   = plan->n_unique;
++        const unsigned long long m_gpu  = plan->n_misses;
++        const unsigned long long m_cpu  = plan->cpu_active ? plan->n_cpu : 0;
++        atomicAdd(&demand_counters[0], uniq);
++        atomicAdd(&demand_counters[1], m_gpu);
++        atomicAdd(&demand_counters[2], m_cpu);
++        atomicAdd(&demand_counters[3], (unsigned long long) n_routes);
++        atomicAdd(&demand_counters[5], uniq - m_gpu - m_cpu);
++        if (plan->n_cpu > 0) {
++            unsigned long long cpu_routes = 0;
++            for (uint32_t route = 0; route < n_routes; ++route) {
++                const int32_t unique = route_unique[route];
++                for (uint32_t i = 0; i < plan->n_cpu; ++i) {
++                    if (cpu_unique[i] == unique) { ++cpu_routes; break; }
++                }
++            }
++            atomicAdd(&demand_counters[4], cpu_routes);
++            atomicAdd(&demand_counters[6], (unsigned long long) plan->n_cpu);
++        }
+     }
++    __syncthreads();
+ 
+     for (uint32_t slot = thread; slot < n_slots; slot += blockDim.x) {
+         const int32_t resident = expert_for_slot[slot];
+@@ -511,6 +622,32 @@
+         __syncthreads();
+     }
+ 
++    // ------------------------------------------------------------------ P3
++    // SLOT ALIAS (contratto P1 §4.5). Una route servita dalla CPU non ha uno
++    // slot proprio: negli ID di CALCOLO usa quello di una route GPU REALE di
++    // questo stesso piano — il minimo indice unico non CPU. Quello slot e'
++    // protetto dalla bitmap (colpi correnti e slot appena assegnati), quindi
++    // nessuno sfratto di questo piano puo' toccarlo, e se e' un miss GPU le tre
++    // banche vengono scritte dal gather di QUESTO piano, accodato prima del
++    // mul_mat_id che le consuma. Il peso GPU di quella riga viene azzerato dal
++    // kernel di export: la GPU fa un calcolo fittizio e lo moltiplica per zero.
++    if (thread == 0 && plan->cpu_active != 0 && plan->n_cpu > 0) {
++        int32_t alias = -1;
++        for (uint32_t unique = 0; unique < plan->n_unique; ++unique) {
++            if (unique_is_cpu[unique] == 0) {
++                alias = unique_slots[unique];
++                break;
++            }
++        }
++        if (alias < 0 || (uint32_t) alias >= n_slots || route_storage[alias] != 1) {
++            moe_grouped_plan_fail(plan, MOE_GROUPED_PLAN_INVALID_STATE);
++        }
++        for (uint32_t i = 0; i < plan->n_cpu; ++i) {
++            unique_slots[cpu_unique[i]] = alias;
++        }
++    }
++    __syncthreads();
++
+     for (uint32_t unique = thread; unique < plan->n_unique; unique += blockDim.x) {
+         if (unique_slots[unique] < 0) {
+             moe_grouped_plan_fail(plan, MOE_GROUPED_PLAN_INVALID_STATE);
+--- a/ggml/src/ggml-cuda/moe-demand.cuh
++++ b/ggml/src/ggml-cuda/moe-demand.cuh
+@@ -1,12 +1,89 @@
+ #pragma once
+ 
+ #include "fork-moe-kernels.cuh"
++#include "ggml-moe-cpu.h"
++#include "moe_cpu_job.h"
+ #include <atomic>
++#include <string>
++#include <vector>
++#include <cstdlib>
+ 
+ void ggml_cuda_quantize_moe_carveout();
+ 
++// P3 — contatori di cattura del CUDA graph, definiti a scope globale piu'
++// avanti in ggml-cuda.cu (questo header e' incluso solo da li'). Servono alla
++// prova «graph riutilizzato»: una ricattura per token vorrebbe dire che i
++// puntatori dei nodi introdotti da questa patch non sono stabili.
++extern std::atomic<uint64_t> g_cuda_graph_calls;
++extern std::atomic<uint64_t> g_cuda_graph_captures;
++extern std::atomic<uint64_t> g_cuda_graph_warmup_resets;
++
+ namespace qwen_moe_demand {
+ 
++// ---------------------------------------------------------------------------
++// P3 — opzioni di controllo dell'ibrido CPU/GPU.
++//
++// Tutte da AMBIENTE, tutte lette UNA VOLTA SOLA (static locale): cambiarle
++// richiede il riavvio del processo, come stabilito dal piano. Default: spento.
++//
++//   LLAMA_MOE_CPU=0|1            abilitazione generale             (default 0)
++//   LLAMA_MOE_CPU_LAYERS=1[,7]   elenco strati ammessi al ramo CPU (default vuoto = nessuno)
++//   LLAMA_MOE_CPU_MAX=0|1|2      massimo esperti CPU per strato    (default 2)
++//   LLAMA_MOE_CPU_DIAG=0|1       modalita' diagnostica             (default 0)
++//   LLAMA_MOE_CPU_REPORT=N       stampa i contatori ogni N lanci   (default 0 = mai)
++// (LLAMA_MOE_CPU_THREADS, _WAIT_US, _ACK_US sono letti da libllama: riguardano
++//  l'esecutore, non il planner.)
++struct cpu_options {
++    bool     enabled = false;
++    bool     diag    = false;
++    uint32_t cpu_max = 2;
++    int      report  = 0;
++    bool     layer[512] = {};
++};
++
++static const cpu_options & cpu_opts() {
++    static const cpu_options opts = [] {
++        cpu_options o;
++        const char * on = getenv("LLAMA_MOE_CPU");
++        o.enabled = on && strcmp(on, "0") != 0;
++        const char * diag = getenv("LLAMA_MOE_CPU_DIAG");
++        o.diag = diag && strcmp(diag, "0") != 0;
++        const char * mx = getenv("LLAMA_MOE_CPU_MAX");
++        if (mx && *mx) {
++            const int v = atoi(mx);
++            o.cpu_max = v < 0 ? 0 : (v > (int) MOE_CPU_MAX_PER_ROW ? MOE_CPU_MAX_PER_ROW : (uint32_t) v);
++        }
++        const char * rep = getenv("LLAMA_MOE_CPU_REPORT");
++        o.report = rep ? atoi(rep) : 0;
++        const char * layers = getenv("LLAMA_MOE_CPU_LAYERS");
++        if (layers && *layers) {
++            const char * p = layers;
++            while (*p) {
++                char * end = nullptr;
++                const long v = strtol(p, &end, 10);
++                if (end == p) break;
++                if (v >= 0 && v < 512) o.layer[v] = true;
++                p = (*end == ',' || *end == ' ' || *end == ';') ? end + 1 : end;
++            }
++        }
++        return o;
++    }();
++    return opts;
++}
++
++static constexpr uint32_t MOE_CPU_DIAG_RING = 256;
++
++// P3 — i pesi di routing del nodo `mul_mat_id` in corso di esecuzione.
++//
++// Perche' serve una variabile e non basta `dst->src[4]`: nel percorso FUSO il
++// backend chiama `ggml_cuda_mul_mat_vec_q` passando come `dst` il nodo GLU
++// (ggml-cuda.cu:4209, 4248, 4336, 4401), non il `mul_mat_id`, quindi il tensore
++// agganciato dal graph al nodo del matmul non arriverebbe mai. Il ciclo dei nodi
++// la scrive dal nodo VERO (che a quel punto e' `cgraph->nodes[i]`) subito prima
++// di tentare la fusione. Un solo thread host per backend, nessuna rientranza.
++static const ggml_tensor * pending_router_weights = nullptr;
++
++
+ struct bound_group {
+     uint64_t trace_id = 0;
+     int layer = -1;
+@@ -27,8 +104,17 @@
+     uint64_t * frequency_epoch = nullptr;
+     uint64_t * step = nullptr;
+     uint64_t * clock = nullptr;
+-    unsigned long long * counters = nullptr; // [0] esperti richiesti, [1] mancanti
++    // [0] uniche  [1] miss GPU  [2] miss CPU  [3] coppie token/esperto
++    // [4] route servite dalla CPU (job)  [5] colpi GPU  [6] unici CPU (diagnostica inclusa)
++    unsigned long long * counters = nullptr;
+     moe_grouped_decode_plan * plan = nullptr;
++    // P3 — ramo CPU
++    bool cpu_ok = false;          // forme/tipi/strato compatibili col ramo CPU
++    uint32_t n_embd = 0;
++    uint32_t n_ff_exp = 0;
++    double * diag_acc = nullptr;              // [0] somma err^2  [1] somma rif^2  [2] confronti
++    unsigned long long * diag_u = nullptr;    // [0] max |err| (bit di float)  [1] non finiti  [2] posizione anello
++    float * diag_ring = nullptr;              // 2 * MOE_CPU_DIAG_RING: (nrmse, max|err|) per token
+     std::vector<void *> allocations;
+ 
+     ~bound_group() {
+@@ -64,6 +150,10 @@
+ static std::unordered_map<const void *, bank_binding> bindings;
+ static std::atomic<uint64_t> fused_calls{0};
+ static uint64_t next_trace_id = 0;
++// P3 — il solo gruppo abilitato al ramo CPU in questa fase (un solo strato).
++// Letto dal ciclo dei nodi del backend per il nodo di merge; nullptr quando la
++// funzione e' spenta o lo strato non e' idoneo.
++static std::atomic<bound_group *> cpu_group{nullptr};
+ 
+ static uint64_t fused_count() { return fused_calls.load(std::memory_order_relaxed); }
+ 
+@@ -129,12 +219,43 @@
+     group->frequency_epoch = group->allocate<uint64_t>(n_experts);
+     group->step = group->allocate<uint64_t>(1);
+     group->clock = group->allocate<uint64_t>(1);
+-    group->counters = group->allocate<unsigned long long>(2);
++    group->counters = group->allocate<unsigned long long>(8);
++    // ------------------------------------------------------------------ P3
++    // Idoneita' del ramo CPU: e' una proprieta' dello STRATO e del FORMATO, e
++    // si decide PRIMA dell'invio (invariante 7). Qui si controllano tipi e
++    // forme dei tre banchi; le guardie che riguardano il grafo (SiLU, niente
++    // LoRA/bias/scala, gate e up non uniti, nessuna pesatura prima dell'FFN)
++    // stanno in llama-graph.cpp, dove quelle informazioni esistono.
++    {
++        const auto & opts = cpu_opts();
++        const ggml_tensor * up = source[0];
++        const ggml_tensor * gt = source[1];
++        const ggml_tensor * dn = source[2];
++        const bool types_ok = up->type == GGML_TYPE_IQ2_S && gt->type == GGML_TYPE_IQ2_S &&
++                              dn->type == GGML_TYPE_IQ4_NL;
++        const bool shapes_ok = up->ne[0] == gt->ne[0] && up->ne[1] == gt->ne[1] &&
++                              dn->ne[0] == up->ne[1] && dn->ne[1] == up->ne[0];
++        group->n_embd   = uint32_t(up->ne[0]);
++        group->n_ff_exp = uint32_t(up->ne[1]);
++        group->cpu_ok = opts.enabled && opts.cpu_max > 0 && group->layer >= 0 &&
++                        group->layer < 512 && opts.layer[group->layer] && types_ok && shapes_ok;
++        if (group->cpu_ok) {
++            group->diag_acc  = group->allocate<double>(4);
++            group->diag_u    = group->allocate<unsigned long long>(4);
++            group->diag_ring = group->allocate<float>(2 * MOE_CPU_DIAG_RING);
++            GGML_LOG_INFO("moe cpu: strato %d idoneo al ramo CPU (%s), cpu_max=%u\n",
++                group->layer, opts.diag ? "diagnostica" : "attiva", opts.cpu_max);
++        } else if (opts.enabled && group->layer >= 0 && group->layer < 512 && opts.layer[group->layer]) {
++            GGML_LOG_WARN("moe cpu: strato %d RICHIESTO ma non idoneo (tipi %s/%s/%s): ripiego sul percorso GPU\n",
++                group->layer, ggml_type_name(up->type), ggml_type_name(gt->type), ggml_type_name(dn->type));
++        }
++    }
+     size_t plan_size;
+     GGML_ASSERT(moe_grouped_plan_size(n_slots, n_experts, &plan_size));
+     group->plan = reinterpret_cast<moe_grouped_decode_plan *>(group->allocate<char>(plan_size));
+     CUDA_CHECK(cudaDeviceSynchronize());
+     for (uint32_t i = 0; i < 3; ++i) bindings.emplace(target[i]->data, bank_binding{group.get(), i});
++    if (group->cpu_ok) cpu_group.store(group.get(), std::memory_order_release);
+     groups.push_back(std::move(group));
+     return true;
+ }
+@@ -152,6 +273,9 @@
+     const auto owned = std::find_if(groups.begin(),groups.end(),[group](const auto & item){ return item.get() == group; });
+     if (owned == groups.end()) return false;
+     for (uint32_t i = 0; i < 3; ++i) bindings.erase(target[i]->data);
++    // P3: un unbind distrugge l'incarnazione con tutto il suo stato, quindi il
++    // gruppo CPU non deve piu' essere raggiungibile dal ciclo dei nodi.
++    cpu_group.compare_exchange_strong(group, nullptr);
+     groups.erase(owned);
+     return true;
+ }
+@@ -163,6 +287,194 @@
+     if (it == bindings.end()) return false;
+     if (output) *output = it->second;
+     return true;
++}
++
++// ---------------------------------------------------------------------------
++// P3 — kernel di EXPORT: scrive il descrittore del job e l'attivazione in
++// memoria host mappata, e (solo in modalita' attiva) azzera il peso GPU delle
++// route servite dalla CPU.
++//
++// Perche' qui e non dall'host: il piano CPU nasce SUL DISPOSITIVO (contratto
++// P1 §4.2 passo 5), quindi il job non puo' essere consegnato al momento
++// dell'accodamento. Il nodo host `submit` viene accodato DOPO questo kernel
++// sullo stesso stream: l'ordinamento di stream rende visibili all'host le
++// scritture, e il __threadfence_system() finale e' comunque richiesto.
++//
++// La maschera si applica DOPO la normalizzazione e la scala del routing
++// (llama-graph.cpp), sul tensore dei pesi effettivamente consumato dalla
++// pesatura e dalla sua eventuale fusione: azzerando IN LOCO non esiste un
++// secondo tensore che una fusione possa leggere al posto di quello mascherato
++// (rischio R3 del progetto P2, chiuso per costruzione). I pesi delle altre
++// route restano identici bit per bit: NESSUNA rinormalizzazione.
++static __global__ void moe_cpu_export_kernel(
++        const moe_grouped_decode_plan * plan,
++        uint32_t plan_capacity,
++        uint32_t top_k,
++        uint32_t n_rows,
++        const float * activation,
++        uint64_t act_row_stride,      // in float
++        float * router_weights,       // [top_k * n_rows], contiguo
++        uint32_t n_embd,
++        uint32_t n_ff_exp,
++        int32_t  layer,
++        bool     diag,
++        moe_cpu_job * job,
++        float * x,
++        const uint64_t * device_step) {
++    const uint32_t thread = threadIdx.x;
++    if (plan->status != MOE_GROUPED_PLAN_READY) {
++        // Il piano e' fallito: non si pubblica nulla di consumabile. Il magic
++        // invalidato fa rifiutare il job dall'esecutore (invariante 7).
++        if (thread == 0) job->magic = 0;
++        return;
++    }
++
++    const int32_t * route_unique = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_ROUTE_UNIQUE);
++    const int32_t * cpu_unique   = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_CPU_UNIQUE);
++    const int32_t * cpu_experts  = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_CPU_EXPERTS);
++
++    if (thread == 0) {
++        job->magic    = MOE_CPU_JOB_MAGIC;
++        job->abi      = MOE_CPU_ABI_VERSION;
++        job->layer    = layer;
++        job->n_rows   = (int32_t) n_rows;
++        job->n_embd   = (int32_t) n_embd;
++        job->n_ff_exp = (int32_t) n_ff_exp;
++        job->sequence = device_step ? *device_step : 0ULL;
++        for (int r = 0; r < MOE_CPU_MAX_ROWS; ++r) job->n_routes[r] = 0;
++        for (int i = 0; i < MOE_CPU_MAX_ROUTES; ++i) { job->expert[i] = 0; job->weight[i] = 0.0f; }
++
++        const uint32_t n_cpu    = plan->n_cpu;
++        const uint32_t n_routes = plan->n_routes;
++        for (uint32_t route = 0; route < n_routes && n_cpu > 0; ++route) {
++            const int32_t u = route_unique[route];
++            for (uint32_t i = 0; i < n_cpu; ++i) {
++                if (cpu_unique[i] != u) continue;
++                const uint32_t row = top_k ? route / top_k : 0;
++                if (row >= n_rows || row >= (uint32_t) MOE_CPU_MAX_ROWS) break;
++                const int32_t j = job->n_routes[row];
++                if (j >= (int32_t) MOE_CPU_MAX_PER_ROW) break;
++                const uint32_t idx = row * MOE_CPU_MAX_PER_ROW + (uint32_t) j;
++                job->expert[idx]   = cpu_experts[i];
++                job->weight[idx]   = router_weights ? router_weights[route] : 0.0f;
++                job->n_routes[row] = j + 1;
++                // Ogni coppia token/esperto contribuisce ESATTAMENTE UNA VOLTA
++                // (invariante 5): o con il peso GPU originale, o con peso GPU
++                // zero e un job CPU che porta lo stesso peso originale.
++                if (!diag && router_weights) router_weights[route] = 0.0f;
++                break;
++            }
++        }
++    }
++    __syncthreads();
++
++    const uint32_t total = n_rows * n_embd;
++    for (uint32_t i = thread; i < total; i += blockDim.x) {
++        const uint32_t row = i / n_embd;
++        const uint32_t col = i - row * n_embd;
++        x[i] = activation[row * act_row_stride + col];
++    }
++    __threadfence_system();
++}
++
++// ---------------------------------------------------------------------------
++// P3 — guardia del merge, accodata fra il nodo host `wait` e l'`add` che legge
++// `y`.
++//
++//  - VELENO: se `flags->poison` vale 1 il contenuto di `y` NON e' un risultato
++//    valido. Si scrive NaN, non zero: un errore non puo' diventare uno zero
++//    silenzioso e plausibile (invariante 7). La prima cintura resta il
++//    controllo di `contaminated()` in decode(), che fa fallire il passo.
++//  - DIAGNOSTICA: si confronta il contributo CPU con il contributo che la GPU
++//    calcola per le STESSE route (somma di peso * riga di `experts`), si
++//    accumulano NRMSE e massimo assoluto, e poi `y` viene AZZERATO, cosi'
++//    l'uscita del modello resta esattamente quella del percorso GPU.
++static __global__ void moe_cpu_merge_guard_kernel(
++        const moe_cpu_flags * flags,
++        float * y,
++        uint32_t n_embd,
++        uint32_t n_rows,
++        bool diag,
++        const float * experts,
++        uint64_t exp_nb1,             // in float
++        uint64_t exp_nb2,             // in float
++        const float * router_weights,
++        const moe_grouped_decode_plan * plan,
++        uint32_t plan_capacity,
++        uint32_t top_k,
++        double * diag_acc,
++        unsigned long long * diag_u,
++        float * diag_ring) {
++    __shared__ double sh_err[128];
++    __shared__ double sh_ref[128];
++    __shared__ float  sh_max[128];
++    const uint32_t thread = threadIdx.x;
++    const bool poison = flags && flags->poison.value != 0ULL;
++
++    const bool can_diag = diag && experts && router_weights && plan && diag_acc && diag_u &&
++                          plan->status == MOE_GROUPED_PLAN_READY && plan->n_cpu > 0 && !poison;
++
++    if (can_diag) {
++        const int32_t * route_unique = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_ROUTE_UNIQUE);
++        const int32_t * cpu_unique   = moe_grouped_plan_array_ptr(plan, plan_capacity, MOE_GROUPED_PLAN_CPU_UNIQUE);
++        for (uint32_t row = 0; row < n_rows; ++row) {
++            double err = 0.0, ref = 0.0;
++            float  mx  = 0.0f;
++            for (uint32_t i = thread; i < n_embd; i += blockDim.x) {
++                float r = 0.0f;
++                for (uint32_t route = row * top_k; route < (row + 1) * top_k && route < plan->n_routes; ++route) {
++                    const int32_t u = route_unique[route];
++                    bool is_cpu = false;
++                    for (uint32_t c = 0; c < plan->n_cpu; ++c) {
++                        if (cpu_unique[c] == u) { is_cpu = true; break; }
++                    }
++                    if (!is_cpu) continue;
++                    const uint32_t k = route - row * top_k;
++                    r += router_weights[route] * experts[row * exp_nb2 + k * exp_nb1 + i];
++                }
++                const float got = y[row * n_embd + i];
++                const float d   = got - r;
++                err += (double) d * (double) d;
++                ref += (double) r * (double) r;
++                mx   = fmaxf(mx, fabsf(d));
++            }
++            // Il kernel gira SEMPRE con 128 thread (vedi il punto di lancio):
++            // una cella per thread, nessuna atomica in memoria condivisa.
++            sh_err[thread] = err;
++            sh_ref[thread] = ref;
++            sh_max[thread] = mx;
++            __syncthreads();
++            if (thread == 0) {
++                double e = 0.0, f = 0.0; float m = 0.0f;
++                for (int i = 0; i < 128; ++i) { e += sh_err[i]; f += sh_ref[i]; m = fmaxf(m, sh_max[i]); }
++                atomicAdd(&diag_acc[0], e);
++                atomicAdd(&diag_acc[1], f);
++                atomicAdd(&diag_acc[2], 1.0);
++                atomicMax(diag_u, (unsigned long long) __float_as_uint(m));
++                const unsigned long long pos = atomicAdd(&diag_u[2], 1ULL) % MOE_CPU_DIAG_RING;
++                diag_ring[2 * pos + 0] = f > 0.0 ? (float) sqrt(e / f) : (e > 0.0 ? 1.0f : 0.0f);
++                diag_ring[2 * pos + 1] = m;
++            }
++            __syncthreads();
++        }
++    }
++
++    // Conteggio dei non finiti in `y`: vale in entrambe le modalita'.
++    if (diag_u) {
++        unsigned long long bad = 0;
++        for (uint32_t i = thread; i < n_rows * n_embd; i += blockDim.x) {
++            if (!isfinite(y[i])) ++bad;
++        }
++        if (bad) atomicAdd(&diag_u[1], bad);
++    }
++    __syncthreads();
++
++    if (poison) {
++        const float nan_value = __int_as_float(0x7fc00000);
++        for (uint32_t i = thread; i < n_rows * n_embd; i += blockDim.x) y[i] = nan_value;
++    } else if (diag) {
++        for (uint32_t i = thread; i < n_rows * n_embd; i += blockDim.x) y[i] = 0.0f;
++    }
+ }
+ 
+ static void trace_plan(bound_group & group, const ggml_tensor * ids, cudaStream_t stream) {
+@@ -187,9 +499,12 @@
+     }
+     CUDA_CHECK(cudaStreamSynchronize(stream));
+     GGML_ASSERT(plan.status == MOE_GROUPED_PLAN_READY);
+-    fprintf(trace, "{\"group\":%llu,\"layer\":%d,\"step\":%llu,\"k\":%lld,\"rows\":%lld,\"requested\":%u,\"misses\":%u,\"bytes_per_miss\":%llu,\"ids\":[",
++    // P3: lo schema porta ora `misses_cpu`, altrimenti un replay con la CPU
++    // attiva confronterebbe grandezze diverse (contratto P1 §6).
++    fprintf(trace, "{\"group\":%llu,\"layer\":%d,\"step\":%llu,\"k\":%lld,\"rows\":%lld,\"requested\":%u,\"misses\":%u,\"misses_cpu\":%u,\"bytes_per_miss\":%llu,\"ids\":[",
+         (unsigned long long) group.trace_id, group.layer, (unsigned long long) step,
+         (long long) ids->ne[0], (long long) ids->ne[1], plan.n_unique, plan.n_misses,
++        plan.cpu_active ? plan.n_cpu : 0u,
+         (unsigned long long) (group.words_per_miss * sizeof(uint4)));
+     for (size_t i = 0; i < routes.size(); ++i) fprintf(trace, "%s%d", i ? "," : "", routes[i]);
+     fprintf(trace, "]}\n");
+@@ -209,22 +524,79 @@
+     if (groups.empty()) return;
+     moe_grouped_device_scope scope(groups.front()->device);
+     CUDA_CHECK(cudaDeviceSynchronize());
+-    unsigned long long requested = 0, missed = 0, bytes = 0;
++    unsigned long long requested = 0, missed = 0, bytes = 0, cpu = 0;
+     for (const auto & group : groups) {
+-        unsigned long long host[2] = {0, 0};
++        unsigned long long host[8] = {0};
+         CUDA_CHECK(cudaMemcpy(host, group->counters, sizeof(host), cudaMemcpyDeviceToHost));
+         requested += host[0];
+         missed += host[1];
++        cpu += host[2];
+         bytes += host[1] * group->words_per_miss * sizeof(uint4);
+     }
+     if (requested) {
+-        GGML_LOG_INFO("moe cache: richiesti %llu, mancanti %llu, colpi %.3f%%, payload_bytes %llu\n",
+-            requested, missed, 100.0 * (1.0 - double(missed) / double(requested)), bytes);
++        // P3: due percentuali distinte. La vecchia formula `1 - mancanti/richiesti`
++        // conterebbe i miss CPU come colpi (contratto P1 §6).
++        GGML_LOG_INFO("moe cache: richiesti %llu, mancanti %llu, cpu %llu, colpi GPU %.3f%%, quota CPU %.3f%%, payload_bytes %llu\n",
++            requested, missed, cpu,
++            100.0 * (double(requested - missed - cpu) / double(requested)),
++            100.0 * (double(cpu) / double(requested)), bytes);
++    }
++}
++
++// Contatori e diagnostica del ramo CPU. Chiamata dallo stesso punto di
++// report_hits (dopo il lancio del graph, fuori dalla cattura).
++static void report_cpu() {
++    const auto & opts = cpu_opts();
++    if (!opts.enabled || opts.report <= 0) return;
++    static std::atomic<uint64_t> n_calls{0};
++    if ((n_calls.fetch_add(1, std::memory_order_relaxed) + 1) % (uint64_t) opts.report) return;
++    std::lock_guard<std::mutex> lock(bindings_mutex);
++    bound_group * group = cpu_group.load(std::memory_order_acquire);
++    if (!group) return;
++    moe_grouped_device_scope scope(group->device);
++    CUDA_CHECK(cudaDeviceSynchronize());
++    unsigned long long c[8] = {0};
++    CUDA_CHECK(cudaMemcpy(c, group->counters, sizeof(c), cudaMemcpyDeviceToHost));
++    double acc[4] = {0};
++    unsigned long long du[4] = {0};
++    if (group->diag_acc) CUDA_CHECK(cudaMemcpy(acc, group->diag_acc, sizeof(acc), cudaMemcpyDeviceToHost));
++    if (group->diag_u)   CUDA_CHECK(cudaMemcpy(du,  group->diag_u,   sizeof(du),  cudaMemcpyDeviceToHost));
++    const unsigned long long hits = c[5];
++    const unsigned long long bytes = c[1] * group->words_per_miss * sizeof(uint4);
++    // Invariante 1: uniche = colpi GPU + miss GPU + miss CPU. In modalita'
++    // diagnostica i "miss CPU" sono ANCHE miss GPU, quindi la somma torna con
++    // c[2] = 0 e c[6] conta comunque gli unici mandati alla CPU.
++    const bool inv1 = (hits + c[1] + c[2]) == c[0];
++    float nrmse = 0.0f;
++    if (acc[1] > 0.0) nrmse = (float) sqrt(acc[0] / acc[1]);
++    const float maxabs = *reinterpret_cast<const float *>(&du[0]);
++    GGML_LOG_INFO("moe cpu: strato %d modo %s | uniche %llu = colpi %llu + missGPU %llu + missCPU %llu (invariante1 %s) | "
++                  "coppie %llu, routeCPU %llu, uniciCPU %llu, byte %llu | diag confronti %.0f NRMSE %.6f max %.6g | non finiti %llu | "
++                  "graph: lanci %llu, catture %llu, riavvii di riscaldamento %llu\n",
++        group->layer, cpu_opts().diag ? "diagnostica" : "attiva",
++        c[0], hits, c[1], c[2], inv1 ? "OK" : "VIOLATO",
++        c[3], c[4], c[6], bytes, acc[2], nrmse, (double) maxabs, du[1],
++        (unsigned long long) g_cuda_graph_calls.load(std::memory_order_relaxed),
++        (unsigned long long) g_cuda_graph_captures.load(std::memory_order_relaxed),
++        (unsigned long long) g_cuda_graph_warmup_resets.load(std::memory_order_relaxed));
++    if (group->diag_ring && du[2] > 0) {
++        std::vector<float> ring(2 * MOE_CPU_DIAG_RING, 0.0f);
++        CUDA_CHECK(cudaMemcpy(ring.data(), group->diag_ring, ring.size()*sizeof(float), cudaMemcpyDeviceToHost));
++        const uint32_t n = du[2] < MOE_CPU_DIAG_RING ? (uint32_t) du[2] : MOE_CPU_DIAG_RING;
++        std::string line;
++        char buf[64];
++        for (uint32_t i = 0; i < n && i < 16; ++i) {
++            const uint32_t pos = (uint32_t)((du[2] - n + i) % MOE_CPU_DIAG_RING);
++            snprintf(buf, sizeof(buf), "%s%.5f/%.3g", i ? " " : "", ring[2*pos], (double) ring[2*pos+1]);
++            line += buf;
++        }
++        GGML_LOG_INFO("moe cpu: ultimi token (NRMSE/max): %s\n", line.c_str());
+     }
+ }
+ 
+ static bool remap(ggml_backend_cuda_context & ctx, const ggml_tensor * weights, const ggml_tensor * ids,
+-        ggml_tensor & result, const ggml_tensor * fused_gate) {
++        ggml_tensor & result, const ggml_tensor * fused_gate,
++        const ggml_tensor * activation, const ggml_tensor * router_weights) {
+     bank_binding binding{};
+     if (!find(weights, &binding)) return false;
+     auto & group = *binding.group;
+@@ -246,12 +618,68 @@
+             return !value || strcmp(value, "0") != 0;
+         }();
+         const uint32_t routes = uint32_t(ids->ne[0]*ids->ne[1]);
++
++        // ---------------------------------------------------------------- P3
++        // Ramo CPU: attivo solo se lo strato e' idoneo (tipi/forme, elenco
++        // degli strati), i hook dell'esecutore sono installati, le forme
++        // dichiarate combaciano e il numero di token sta dentro `max_rows`.
++        // Ogni condizione mancante e' un RIPIEGO sul percorso precedente
++        // deciso PRIMA dell'invio (invariante 7), non un errore in volo.
++        const auto & opts = cpu_opts();
++        const ggml_moe_cpu_hooks * hooks = group.cpu_ok ? ggml_moe_cpu_get_hooks() : nullptr;
++        const uint32_t n_rows = uint32_t(ids->ne[1]);
++        // Percorso non fuso: i pesi arrivano dal nodo passato come `dst`.
++        // Percorso fuso: `dst` e' il nodo GLU, quindi si usa il tensore che il
++        // ciclo dei nodi ha preso dal `mul_mat_id` vero.
++        if (router_weights == nullptr) router_weights = pending_router_weights;
++        bool cpu_run = false;
++        if (hooks && hooks->abi == MOE_CPU_ABI_VERSION &&
++                hooks->submit && hooks->wait && hooks->job_dev && hooks->x_dev && hooks->y_dev &&
++                uint32_t(hooks->n_embd) == group.n_embd && uint32_t(hooks->n_ff_exp) == group.n_ff_exp &&
++                n_rows <= uint32_t(hooks->max_rows) && opts.cpu_max <= uint32_t(hooks->max_per_row) &&
++                activation && activation->type == GGML_TYPE_F32 && ggml_is_contiguous(activation) &&
++                activation->ne[0] == int64_t(group.n_embd) && activation->ne[1] == 1 &&
++                activation->ne[2] == ids->ne[1] &&
++                router_weights && router_weights->type == GGML_TYPE_F32 &&
++                ggml_is_contiguous(router_weights) && router_weights->ne[0] == 1 &&
++                router_weights->ne[1] == ids->ne[0] && router_weights->ne[2] == ids->ne[1]) {
++            cpu_run = true;
++        }
++        // Perche' il ramo CPU non e' partito: si dice UNA VOLTA SOLA, altrimenti
++        // un ripiego silenzioso costa piu' a diagnosticarlo che a scriverlo.
++        if (group.cpu_ok && !cpu_run && n_rows <= 3) {
++            static bool detto = false;
++            if (!detto) {
++                detto = true;
++                GGML_LOG_WARN("moe cpu: ramo CPU non avviato sullo strato %d — hook %s, righe %u/%d, "
++                              "attivazione %s, pesi %s\n",
++                    group.layer, hooks ? "presenti" : "ASSENTI", n_rows, hooks ? hooks->max_rows : 0,
++                    activation ? (ggml_is_contiguous(activation) && activation->type == GGML_TYPE_F32 ? "ok" : "forma/tipo") : "ASSENTE",
++                    router_weights ? (ggml_is_contiguous(router_weights) && router_weights->type == GGML_TYPE_F32 ? "ok" : "forma/tipo") : "ASSENTI");
++            }
++        }
++        const uint32_t cpu_max = cpu_run ? opts.cpu_max : 0u;
++
+         moe_grouped_plan_decode<<<1, moe_grouped_plan_threads(group.n_slots), 0, ctx.stream()>>>(
+             static_cast<const int32_t *>(ids->data), routes, uint32_t(ids->ne[0]), uint32_t(ids->nb[1]/sizeof(int32_t)),
+             group.n_experts, group.n_slots, group.n_slots, group.slot_for_expert, group.expert_for_slot,
+             group.last_used, group.frequency, group.frequency_epoch, group.step, frequency_aware,
+-            0, 0, group.clock, group.counters, group.plan);
++            0, 0, group.clock, group.counters, cpu_max, opts.diag, group.plan);
+         CUDA_CHECK(cudaGetLastError());
++
++        if (cpu_run) {
++            // Ordine sullo stream (progetto P2 §9.2): export -> submit -> gather
++            // -> lavoro GPU (CONCORRENTE alla CPU) -> wait -> add.
++            moe_cpu_export_kernel<<<1, 256, 0, ctx.stream()>>>(
++                group.plan, group.n_slots, uint32_t(ids->ne[0]), n_rows,
++                static_cast<const float *>(activation->data), uint64_t(activation->nb[2]/sizeof(float)),
++                static_cast<float *>(router_weights->data), group.n_embd, group.n_ff_exp,
++                group.layer, opts.diag,
++                static_cast<moe_cpu_job *>(hooks->job_dev), static_cast<float *>(hooks->x_dev),
++                group.step);
++            CUDA_CHECK(cudaGetLastError());
++            CUDA_CHECK(cudaLaunchHostFunc(ctx.stream(), hooks->submit, hooks->user));
++        }
+         if (group.transfer_stream) {
+             const uint32_t up_blocks = moe_grouped_transfer_blocks(group.device, group.up_gate_words, 0, routes);
+             moe_grouped_gather_decode<false><<<up_blocks, MOE_GROUPED_TRANSFER_THREADS, 0, ctx.stream()>>>(
+@@ -283,9 +711,57 @@
+     return true;
+ }
+ 
++// ---------------------------------------------------------------------------
++// P3 — il nodo `add` che somma il contributo CPU a `moe_out` fa anche da
++// MARCATORE: quando il backend lo incontra, accoda PRIMA il nodo host `wait` e
++// la guardia del merge. Il riconoscimento e' per puntatore (`src[1]` e'
++// esattamente il buffer `y` dell'esecutore), quindi nessun nuovo operatore
++// ggml e nessun cambio di topologia oltre a un `add` per strato.
++static bool merge_node(ggml_backend_cuda_context & ctx, const ggml_tensor * node) {
++    if (!node || node->op != GGML_OP_ADD || !node->src[1] || !node->src[1]->data) return false;
++    const ggml_moe_cpu_hooks * hooks = ggml_moe_cpu_get_hooks();
++    if (!hooks || node->src[1]->data != hooks->y_dev) return false;
++
++    bound_group * group = cpu_group.load(std::memory_order_acquire);
++    const auto & opts = cpu_opts();
++
++    CUDA_CHECK(cudaLaunchHostFunc(ctx.stream(), hooks->wait, hooks->user));
++
++    const uint32_t n_embd = uint32_t(hooks->n_embd);
++    const uint32_t n_rows = uint32_t(node->src[1]->ne[1]);
++    const ggml_tensor * experts = opts.diag ? node->src[2] : nullptr;
++    const ggml_tensor * rweights = opts.diag ? node->src[3] : nullptr;
++    const bool diag_ready = opts.diag && group && experts && rweights &&
++        experts->type == GGML_TYPE_F32 && rweights->type == GGML_TYPE_F32;
++
++    moe_cpu_merge_guard_kernel<<<1, 128, 0, ctx.stream()>>>(
++        static_cast<const moe_cpu_flags *>(hooks->flags_dev),
++        static_cast<float *>(hooks->y_dev), n_embd, n_rows, opts.diag,
++        diag_ready ? static_cast<const float *>(experts->data) : nullptr,
++        diag_ready ? uint64_t(experts->nb[1]/sizeof(float)) : 0ULL,
++        diag_ready ? uint64_t(experts->nb[2]/sizeof(float)) : 0ULL,
++        diag_ready ? static_cast<const float *>(rweights->data) : nullptr,
++        group ? group->plan : nullptr, group ? group->n_slots : 0u,
++        diag_ready ? uint32_t(rweights->ne[1]) : 0u,
++        group ? group->diag_acc : nullptr,
++        group ? group->diag_u : nullptr,
++        group ? group->diag_ring : nullptr);
++    CUDA_CHECK(cudaGetLastError());
++    return true;
++}
++
+ } // namespace qwen_moe_demand
+ 
+ bool ggml_cuda_moe_demand_remap(ggml_backend_cuda_context & ctx,
+-        const ggml_tensor * weights, const ggml_tensor * ids, ggml_tensor & result, const ggml_tensor * fused_gate) {
+-    return qwen_moe_demand::remap(ctx, weights, ids, result, fused_gate);
++        const ggml_tensor * weights, const ggml_tensor * ids, ggml_tensor & result, const ggml_tensor * fused_gate,
++        const ggml_tensor * activation, const ggml_tensor * router_weights) {
++    return qwen_moe_demand::remap(ctx, weights, ids, result, fused_gate, activation, router_weights);
++}
++
++bool ggml_cuda_moe_cpu_merge_node(ggml_backend_cuda_context & ctx, const ggml_tensor * node) {
++    return qwen_moe_demand::merge_node(ctx, node);
++}
++
++void ggml_cuda_moe_cpu_report() {
++    qwen_moe_demand::report_cpu();
+ }
+--- a/ggml/src/ggml-cuda/moe-demand-api.cuh
++++ b/ggml/src/ggml-cuda/moe-demand-api.cuh
+@@ -2,6 +2,20 @@
+ 
+ #include "common.cuh"
+ 
++// P3: la firma porta ora l'ATTIVAZIONE (src1 del mul_mat_id) e i PESI DI
++// ROUTING, che servono al kernel di export del job CPU e alla maschera a peso
++// GPU zero. Entrambi possono essere nullptr: in quel caso il ramo CPU non parte
++// e il percorso resta quello precedente.
+ bool ggml_cuda_moe_demand_remap(ggml_backend_cuda_context & ctx,
+         const ggml_tensor * weights, const ggml_tensor * ids, ggml_tensor & result,
+-        const ggml_tensor * fused_gate);
++        const ggml_tensor * fused_gate,
++        const ggml_tensor * activation, const ggml_tensor * router_weights);
++
++// P3: riconosce il nodo `add` che somma il contributo CPU a `moe_out` e accoda
++// il nodo host `wait` piu' la guardia del merge. Restituisce false per ogni
++// altro nodo.
++bool ggml_cuda_moe_cpu_merge_node(ggml_backend_cuda_context & ctx, const ggml_tensor * node);
++
++// P3: stampa i contatori del ramo CPU (LLAMA_MOE_CPU_REPORT). Da chiamare dopo
++// il lancio del graph, fuori dalla cattura.
++void ggml_cuda_moe_cpu_report();
+--- a/ggml/src/ggml-cuda/mmvq.cu
++++ b/ggml/src/ggml-cuda/mmvq.cu
+@@ -1404,7 +1404,10 @@
+         ggml_backend_cuda_context & ctx, const ggml_tensor * src0, const ggml_tensor * src1, const ggml_tensor * ids, ggml_tensor * dst,
+         const ggml_cuda_mm_fusion_args_host * fusion) {
+     ggml_tensor demand_ids;
+-    if (ids && ggml_cuda_moe_demand_remap(ctx, src0, ids, demand_ids, fusion ? fusion->gate : nullptr)) ids = &demand_ids;
++    // P3: `dst->src[4]` porta i pesi di routing gia' normalizzati e scalati
++    // (llama-graph.cpp li aggancia al nodo); servono al job CPU e alla maschera.
++    if (ids && ggml_cuda_moe_demand_remap(ctx, src0, ids, demand_ids, fusion ? fusion->gate : nullptr,
++                                          src1, dst ? dst->src[4] : nullptr)) ids = &demand_ids;
+     GGML_ASSERT(        src1->type == GGML_TYPE_F32);
+     GGML_ASSERT(        dst->type  == GGML_TYPE_F32);
+     GGML_ASSERT(!ids || ids->type  == GGML_TYPE_I32); // Optional, used for batched GGML_MUL_MAT_ID.
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -4599,6 +4599,18 @@
+                     continue;
+                 }
+ 
++                // P3 — contributo CPU degli esperti MoE: se questo nodo e' l'`add`
++                // che legge il buffer `y` dell'esecutore, accoda prima il nodo
++                // host `wait` e la guardia del merge (veleno/diagnostica). Il
++                // nodo resta poi un `add` normale.
++                qwen_moe_demand::merge_node(*cuda_ctx, node);
++
++                // P3 — i pesi di routing agganciati al nodo `mul_mat_id`
++                // (llama-graph.cpp, src[4]). Vanno presi QUI: nel percorso fuso
++                // il `dst` che arriva a ggml_cuda_mul_mat_vec_q e' il nodo GLU.
++                qwen_moe_demand::pending_router_weights =
++                    node->op == GGML_OP_MUL_MAT_ID ? node->src[4] : nullptr;
++
+                 int nodes_to_skip = ggml_cuda_try_fuse(cuda_ctx, cgraph, i);
+ 
+                 if (nodes_to_skip != 0) {
+@@ -4694,8 +4706,17 @@
+ }
+ #endif // USE_CUDA_GRAPH
+ 
++// P3 - contatori di CATTURA del CUDA graph. Servono alla prova "graph
++// riutilizzato": se la patch rendesse instabili i puntatori dei nodi, il graph
++// verrebbe ricatturato a ogni token e si pagherebbe la tassa di ricattura.
++// Letti da ggml_cuda_moe_cpu_report().
++std::atomic<uint64_t> g_cuda_graph_calls{0};
++std::atomic<uint64_t> g_cuda_graph_captures{0};
++std::atomic<uint64_t> g_cuda_graph_warmup_resets{0};
++
+ static enum ggml_status ggml_backend_cuda_graph_compute(ggml_backend_t backend, ggml_cgraph * cgraph) {
+     ggml_backend_cuda_context * cuda_ctx = (ggml_backend_cuda_context *) backend->context;
++    g_cuda_graph_calls.fetch_add(1, std::memory_order_relaxed);
+ 
+     ggml_cuda_set_device(cuda_ctx->device);
+ 
+@@ -4736,6 +4757,7 @@
+                 if (properties_changed) {
+                     // Properties changed - reset warmup, execute directly until stable again
+                     graph->warmup_complete = false;
++                    g_cuda_graph_warmup_resets.fetch_add(1, std::memory_order_relaxed);
+                     GGML_LOG_DEBUG("%s: CUDA graph warmup reset\n", __func__);
+                 } else {
+                     use_cuda_graph = true;
+@@ -4747,6 +4769,7 @@
+ #endif // USE_CUDA_GRAPH
+ 
+     if (use_cuda_graph && cuda_graph_update_required) {
++        g_cuda_graph_captures.fetch_add(1, std::memory_order_relaxed);
+         // Start CUDA graph capture
+         {
+             std::lock_guard<std::mutex> lock(ggml_cuda_lock);
+@@ -4758,6 +4781,7 @@
+ 
+     ggml_cuda_graph_evaluate_and_capture(cuda_ctx, cgraph, use_cuda_graph, cuda_graph_update_required, graph_key);
+     qwen_moe_demand::report_hits();
++    qwen_moe_demand::report_cpu();
+ 
+     return GGML_STATUS_SUCCESS;
+ }
+@@ -6032,6 +6056,13 @@
+     if (strcmp(name, "ggml_backend_cuda_mapped_buffer_type_for_device") == 0) {
+         return (void *) ggml_backend_cuda_mapped_buffer_type_for_device;
+     }
++    // P3: l'esecutore CPU ha bisogno dell'indirizzo HOST dei pesi mappati.
++    // `tensor->data` e' l'indirizzo DEVICE (get_base restituisce ctx->dev):
++    // senza questa voce libllama non avrebbe modo di ottenerlo e si sarebbe
++    // tentati di dereferenziare un puntatore device.
++    if (strcmp(name, "ggml_cuda_mapped_tensor_host_ptr") == 0) {
++        return (void *) ggml_cuda_mapped_tensor_host_ptr;
++    }
+     if (strcmp(name, "ggml_backend_get_features") == 0) {
+         return (void *)ggml_backend_cuda_get_features;
+     }
+--- a/src/CMakeLists.txt
++++ b/src/CMakeLists.txt
+@@ -38,6 +38,9 @@
+             llama-model-saver.cpp
+             llama-model.cpp
+             llama-moecache.cpp
++            llama-moecpu.cpp
++            moe_cpu_executor.cpp
++            moe_cpu_host_memory_cuda.cpp
+             llama-quant.cpp
+             llama-sampler.cpp
+             llama-vocab.cpp
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -3,6 +3,7 @@
+ #include <cstdlib>
+ 
+ #include "llama-moecache.h"
++#include "llama-moecpu.h"
+ 
+ #include "llama-impl.h"
+ #include "llama-model.h"
+@@ -2140,6 +2141,27 @@
+         down_exps = mcache->down_c;
+         mcache = nullptr;
+     }
++
++    // ---------------------------------------------------------------------- P3
++    // Ramo CPU degli esperti: le guardie che riguardano il GRAFO stanno qui,
++    // dove le informazioni esistono; quelle su tipi e forme dei pesi stanno in
++    // moe-demand.cuh (bind) e in llama-moecpu.cpp. Il ripiego sul percorso
++    // precedente si decide PRIMA dell'invio (invariante 7), mai in volo.
++    //
++    // Richiesto: percorso a domanda attivo, strato ammesso, un solo token,
++    // gate e up SEPARATI, SiLU senza clamp (l'esecutore non implementa il
++    // ramo clampato), nessun bias/scala degli esperti, nessuna pesatura prima
++    // dell'FFN, nessuna LoRA.
++    const bool moe_cpu_ok =
++        demand_gpu && llama_moe_cpu_enabled() && llama_moe_cpu_layer_enabled(il) &&
++        n_tokens >= 1 && n_tokens <= (int64_t) llama_moe_cpu_max_rows() &&
++        !gate_up_exps && gate_exps && down_exps &&
++        !up_exps_b && !gate_exps_b && !down_exps_b &&
++        !up_exps_s && !gate_exps_s && !down_exps_s &&
++        type_op == LLM_FFN_SILU && !weight_before_ffn && loras->empty() &&
++        (il < 0 || hparams.swiglu_clamp_exp[il] <= 1e-6f) &&
++        llama_moe_cpu_y(n_embd, n_tokens) != nullptr;
++    ggml_tensor * moe_cpu_experts_down = nullptr;
+     if (mcache) {
+         // la tabella e' replicata su n_piani: se ne prende una vista dei primi n_tokens,
+         // perche' ggml_get_rows pretende a->ne[2] == b->ne[1] e gli indici scelti hanno
+@@ -2196,6 +2218,16 @@
+             up->op_params[0] = mcache->n_slots;
+         }
+ 
++        // P3: i pesi di routing, gia' normalizzati e scalati, viaggiano con il
++        // nodo del mul_mat_id: il kernel di export ne legge il peso ORIGINALE
++        // per il job CPU e, in modalita' attiva, azzera IN LOCO quello delle
++        // route servite dalla CPU. Azzerare in loco invece di produrre un
++        // secondo tensore e' cio' che garantisce che anche la FUSIONE della
++        // riduzione pesata consumi i pesi mascherati (rischio R3 di P2).
++        if (moe_cpu_ok) {
++            up->src[4] = weights;
++        }
++
+         if (up_exps_s) {
+             cb(up, "ffn_moe_up_scaled", il);
+         }
+@@ -2215,6 +2247,12 @@
+                 cur->src[3] = mcache->host_table;
+                 cur->op_params[0] = mcache->n_slots;
+             }
++
++            // P3: il piano viene costruito sulla chiamata del GATE (banco 1),
++            // quindi e' questo il nodo che deve portare i pesi di routing.
++            if (moe_cpu_ok) {
++                cur->src[4] = weights;
++            }
+         } else {
+             cur = up;
+         }
+@@ -2317,6 +2355,13 @@
+     experts = build_lora_mm_id(down_exps, cur, selected_experts, down_exps_s); // [n_embd, n_expert_used, n_tokens]
+     cb(experts, "ffn_moe_down", il);
+ 
++    // P3: in modalita' DIAGNOSTICA il confronto fra contributo CPU e contributo
++    // GPU per le stesse route legge queste righe, non pesate. Si aggancia solo
++    // in diagnostica: in modalita' attiva non serve e non si paga.
++    if (moe_cpu_ok && llama_moe_cpu_diag()) {
++        moe_cpu_experts_down = experts;
++    }
++
+     if (mcache) {
+         experts->src[3] = mcache->host_table;
+         experts->op_params[0] = mcache->n_slots;
+@@ -2399,6 +2444,35 @@
+         moe_out = ggml_cont(ctx0, moe_out);
+     }
+ 
++    // ---------------------------------------------------------------------- P3
++    // Somma del contributo CPU. Il punto e' `moe_out`, DOPO la pesatura delle
++    // righe e la loro riduzione e PRIMA del ritorno di build_moe_ffn, quindi
++    // prima dello shared expert (contratto P1 §3.10 e §4.6). Il contributo CPU
++    // non passa una seconda volta per la moltiplicazione dei pesi: il peso
++    // originale e' gia' dentro, applicato dal pool.
++    //
++    // `y` e' una vista stabile sul buffer mappato dell'esecutore: il kernel di
++    // somma della GPU lo legge in ZERO-COPY, 10 KiB sul PCIe per strato contro
++    // gli ~1,9 MiB per esperto che il gather non fa piu'.
++    //
++    // Il nodo fa anche da MARCATORE: quando il backend CUDA lo incontra accoda
++    // prima il nodo host `wait` e la guardia del merge. Nessun operatore ggml
++    // nuovo, nessun cambio di topologia oltre a un `add` per strato.
++    if (moe_cpu_ok) {
++        ggml_tensor * y = llama_moe_cpu_y(n_embd, n_tokens);
++        if (y) {
++            ggml_tensor * merged = ggml_add(ctx0, moe_out, y);
++            if (moe_cpu_experts_down) {
++                // solo diagnostica: righe non pesate e pesi di routing, per il
++                // confronto numerico dentro la guardia.
++                merged->src[2] = moe_cpu_experts_down;
++                merged->src[3] = weights;
++            }
++            moe_out = merged;
++            cb(moe_out, "ffn_moe_cpu_merged", il);
++        }
++    }
++
+     cb(moe_out, "ffn_moe_out", il);
+ 
+     return moe_out;
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1,6 +1,7 @@
+ #include "llama-context.h"
+ 
+ #include "llama-moecache.h"
++#include "llama-moecpu.h"
+ 
+ #include "ggml.h"
+ #include "llama-arch.h"
+@@ -116,6 +117,12 @@
+         throw std::runtime_error("n_seq_max must be <= " + std::to_string(LLAMA_MAX_SEQ));
+     }
+ 
++    // P3 - ibrido CPU/GPU degli esperti MoE. Spento di default; un fallimento
++    // spegne la funzione e lo registra, non interrompe l'avvio.
++    if (demand_dynamic_workspace) {
++        llama_moe_cpu_init(model, cparams.n_seq_max);
++    }
++
+     cparams.n_rs_seq = params.n_rs_seq;
+     if (cparams.n_rs_seq > 0 && !llm_arch_supports_rs_rollback(model.arch)) {
+         LLAMA_LOG_DEBUG("%s: n_rs_seq=%u requested but model does not support recurrent partial rollback; clamping to 0\n",
+@@ -497,6 +504,14 @@
+     // wait for any pending asynchronous copies into the output buffers before they are freed
+     synchronize();
+ 
++    // P3 - il pool CPU va messo a riposo e i hook disinstallati PRIMA che i
++    // backend (e con loro i cudaGraphExec che referenziano i buffer mappati)
++    // vengano distrutti con i membri. La distruzione vera dei buffer avviene
++    // dopo, in llama_free(), quando lo scheduler e i backend non esistono piu'.
++    llama_moe_cpu_set_phase_idle();
++    llama_moe_cpu_quiesce();
++    llama_moe_cpu_log_counters("fine contesto");
++
+     // when training, ggml_opt allocates extra buffers through the scheduler, so the sizes no longer match the expectation
+     if (!model.hparams.no_alloc && !opt_ctx) {
+         for (size_t i = 0; i < backend_ptrs.size(); ++i) {
+@@ -628,6 +643,12 @@
+     synchronize();
+ 
+     if (demand_dynamic_workspace) {
++        // P3 - reset_transient_memory e' il punto in cui i graph muoiono. Il
++        // pool deve essere quieto PRIMA: dopo cudaDeviceSynchronize() nessun
++        // nodo host puo' partire, ma un job potrebbe essere ancora in
++        // esecuzione se un `wait` e' scaduto (progetto P2 §5).
++        llama_moe_cpu_set_phase_idle();
++        llama_moe_cpu_quiesce();
+         using reset_fn = void (*)(ggml_backend_t);
+         for (auto backend : backend_ptrs) {
+             auto reg = ggml_backend_dev_backend_reg(ggml_backend_get_device(backend));
+@@ -2126,6 +2147,16 @@
+     // apply throttled MoE expert-cache updates between graph executions
+     llama_moe_cache_step();
+ 
++    // P3 - un esito che contamina (header non valido, scadenza del `wait`)
++    // significa che il gather ha gia' scritto e il contributo CPU non esiste:
++    // il passo non puo' restituire un risultato dubbio (invariante 7). La
++    // seconda cintura e' il NaN scritto dalla guardia del merge.
++    if (llama_moe_cpu_contaminated()) {
++        LLAMA_LOG_ERROR("%s: esecutore CPU degli esperti CONTAMINATO: il passo fallisce\n", __func__);
++        llama_moe_cpu_log_counters("contaminazione");
++        return -1;
++    }
++
+     return 0;
+ }
+ 
+@@ -2600,6 +2631,15 @@
+         set_n_threads_fn.second(set_n_threads_fn.first, n_threads);
+     }
+ 
++    // P3 - fase del pool CPU: durante il prefill e fuori dal decode i thread
++    // dormono subito, cosi' non rubano core (D09). Il giro breve serve solo al
++    // decode, l'unico regime in cui la latenza di risveglio conta.
++    if (batched) {
++        llama_moe_cpu_set_phase_prefill();
++    } else {
++        llama_moe_cpu_set_phase_decode();
++    }
++
+     auto status = ggml_backend_sched_graph_compute_async(sched.get(), gf);
+     if (status != GGML_STATUS_SUCCESS) {
+         LLAMA_LOG_ERROR("%s: ggml_backend_sched_graph_compute_async failed with error %d\n", __func__, status);
+@@ -3864,6 +3904,10 @@
+ 
+ void llama_free(llama_context * ctx) {
+     delete ctx;
++    // P3 - solo qui lo scheduler e i backend (con i loro cudaGraphExec) non
++    // esistono piu': e' il momento in cui i buffer mappati dell'esecutore
++    // possono essere liberati senza che un graph li referenzi ancora.
++    llama_moe_cpu_free();
+ }
+ 
+ uint32_t llama_n_ctx(const llama_context * ctx) {
+--- a/src/llama-moecpu.h
++++ b/src/llama-moecpu.h
+@@ -0,0 +1,67 @@
++#pragma once
++
++// P3 — Ibrido CPU/GPU degli esperti MoE: il lato di libllama.
++//
++// Questo file possiede l'esecutore CPU di P2 (`moe_cpu_executor`), i buffer
++// mappati che il backend CUDA vede come ingressi di graph, l'installazione
++// della tabella di hook di ggml-base e le opzioni di controllo. Il backend
++// CUDA non conosce `llama_context`; libllama non linka ggml-cuda.
++//
++// OPZIONI (tutte da ambiente, lette una volta sola: cambiarle richiede il
++// riavvio del processo; default SPENTO).
++//
++//   LLAMA_MOE_CPU=0|1           abilitazione generale                (0)
++//   LLAMA_MOE_CPU_LAYERS=1      elenco strati ammessi, separati da , (vuoto)
++//   LLAMA_MOE_CPU_MAX=0|1|2     massimo esperti CPU per strato       (2)
++//   LLAMA_MOE_CPU_THREADS=N     core del pool                        (4)
++//   LLAMA_MOE_CPU_DIAG=0|1      modalita' diagnostica                (0)
++//   LLAMA_MOE_CPU_REPORT=N      stampa i contatori ogni N lanci      (0)
++//   LLAMA_MOE_CPU_WAIT_US=N     scadenza del nodo host `wait`        (2000000)
++//   LLAMA_MOE_CPU_ACK_US=N      scadenza del riconoscimento          (200000)
++//
++// Le stesse variabili `LLAMA_MOE_CPU`, `_LAYERS`, `_MAX`, `_DIAG`, `_REPORT`
++// sono lette anche dal backend CUDA (moe-demand.cuh): il planner deve decidere
++// sul dispositivo, e il confine di P2 non porta configurazione.
++
++#include <cstdint>
++
++struct llama_model;
++struct ggml_tensor;
++
++// Crea l'esecutore e installa i hook. Non fa nulla quando la funzione e'
++// spenta, quando il modello non e' idoneo o quando `n_seq_max > 1`.
++// Non lancia: un fallimento spegne la funzione e lo registra nel log.
++void llama_moe_cpu_init(const llama_model & model, uint32_t n_seq_max);
++
++// Disinstalla i hook e distrugge l'esecutore. Da chiamare DOPO la
++// sincronizzazione del dispositivo e DOPO la distruzione dei graph che
++// referenziano i buffer.
++void llama_moe_cpu_free();
++
++bool llama_moe_cpu_enabled();
++bool llama_moe_cpu_diag();
++bool llama_moe_cpu_layer_enabled(int il);
++int  llama_moe_cpu_max_rows();
++
++// Vista stabile sul buffer `y` (il contributo CPU), F32 [n_embd, n_tokens].
++// nullptr quando la funzione e' spenta o le forme non combaciano. Le viste
++// sono create UNA VOLTA per contesto e riusate da tutti i graph: se fossero
++// create per strato o per replay, i puntatori dei nodi cambierebbero e il
++// graph CUDA verrebbe ricatturato a ogni token.
++ggml_tensor * llama_moe_cpu_y(int64_t n_embd, int64_t n_tokens);
++
++// Fase del pool: fuori dal decode e durante il prefill i thread dormono.
++void llama_moe_cpu_set_phase_decode();
++void llama_moe_cpu_set_phase_prefill();
++void llama_moe_cpu_set_phase_idle();
++
++// Vero quando un esito ha lasciato `y` o lo stato della cache incoerenti: il
++// decode deve fallire e l'incarnazione della cache va buttata.
++bool llama_moe_cpu_contaminated();
++
++// Attende che non ci sia lavoro in volo. Falso con un messaggio nel log se non
++// ci riesce entro il limite.
++bool llama_moe_cpu_quiesce();
++
++// Riepilogo per il registro: job pubblicati, conclusi, falliti.
++void llama_moe_cpu_log_counters(const char * where);
+--- a/src/llama-moecpu.cpp
++++ b/src/llama-moecpu.cpp
+@@ -0,0 +1,329 @@
++// P3 — Ibrido CPU/GPU degli esperti MoE: il lato di libllama.
++// Vedi llama-moecpu.h per le opzioni e P3_UNO_STRATO_14_SETTEMBRE.md per il
++// progetto complessivo.
++
++#include "llama-moecpu.h"
++
++#include "llama-impl.h"
++#include "llama-model.h"
++
++#include "moe_cpu_executor.h"
++#include "moe_cpu_host_memory.h"
++
++#include "ggml.h"
++#include "ggml-backend.h"
++#include "ggml-moe-cpu.h"
++
++#include <cstdlib>
++#include <cstring>
++#include <memory>
++#include <string>
++#include <vector>
++
++namespace {
++
++struct options {
++    bool     enabled  = false;
++    bool     diag     = false;
++    int      cpu_max  = 2;
++    int      threads  = 4;
++    uint64_t wait_us  = 2000000;
++    uint64_t ack_us   = 200000;
++    bool     layer[512] = {};
++    bool     any_layer = false;
++};
++
++const options & opts() {
++    static const options o = [] {
++        options r;
++        const char * on = getenv("LLAMA_MOE_CPU");
++        r.enabled = on && strcmp(on, "0") != 0;
++        const char * diag = getenv("LLAMA_MOE_CPU_DIAG");
++        r.diag = diag && strcmp(diag, "0") != 0;
++        if (const char * v = getenv("LLAMA_MOE_CPU_MAX"))     { r.cpu_max = atoi(v); }
++        if (const char * v = getenv("LLAMA_MOE_CPU_THREADS")) { r.threads = atoi(v); }
++        if (const char * v = getenv("LLAMA_MOE_CPU_WAIT_US")) { r.wait_us = strtoull(v, nullptr, 10); }
++        if (const char * v = getenv("LLAMA_MOE_CPU_ACK_US"))  { r.ack_us  = strtoull(v, nullptr, 10); }
++        if (r.cpu_max < 0) r.cpu_max = 0;
++        if (r.cpu_max > MOE_CPU_MAX_PER_ROW) r.cpu_max = MOE_CPU_MAX_PER_ROW;
++        if (r.threads < 1) r.threads = 1;
++        if (const char * layers = getenv("LLAMA_MOE_CPU_LAYERS")) {
++            const char * p = layers;
++            while (*p) {
++                char * end = nullptr;
++                const long v = strtol(p, &end, 10);
++                if (end == p) break;
++                if (v >= 0 && v < 512) { r.layer[v] = true; r.any_layer = true; }
++                p = (*end == ',' || *end == ' ' || *end == ';') ? end + 1 : end;
++            }
++        }
++        return r;
++    }();
++    return o;
++}
++
++using mapped_host_fn = const void * (*)(const ggml_tensor *, size_t);
++
++struct state {
++    bool active = false;
++    int  max_rows = 1;
++    int64_t n_embd = 0;
++    std::unique_ptr<moe_cpu_executor> exec;
++    moe_cpu_host_memory * memory = nullptr;   // posseduta dall'esecutore
++    ggml_context * ctx_views = nullptr;
++    std::vector<ggml_tensor *> y_view;        // indice = n_tokens - 1
++    ggml_moe_cpu_hooks hooks{};
++};
++
++state g_state;
++
++// Indirizzo HOST di un tensore mappato. `tensor->data` e' l'indirizzo DEVICE:
++// su x86-64 coincidono per UVA, ma il codice non ci si appoggia (progetto P2 §7).
++const uint8_t * host_ptr_of(const ggml_tensor * t, std::string * err) {
++    if (!t || !t->buffer) { if (err) *err = "tensore senza buffer"; return nullptr; }
++    ggml_backend_buffer_type_t buft = ggml_backend_buffer_get_type(t->buffer);
++    ggml_backend_dev_t dev = ggml_backend_buft_get_device(buft);
++    if (dev) {
++        ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
++        if (reg) {
++            auto fn = (mapped_host_fn) ggml_backend_reg_get_proc_address(reg, "ggml_cuda_mapped_tensor_host_ptr");
++            if (fn) {
++                const void * p = fn(t, 0);
++                if (p) return (const uint8_t *) p;
++            }
++        }
++    }
++    // Ripiego dichiarato: un buffer host ordinario porta gia' l'indirizzo host.
++    if (ggml_backend_buffer_is_host(t->buffer)) return (const uint8_t *) t->data;
++    if (err) *err = std::string("i pesi di '") + t->name + "' non sono in memoria host mappata";
++    return nullptr;
++}
++
++} // namespace
++
++bool llama_moe_cpu_enabled()          { return g_state.active; }
++bool llama_moe_cpu_diag()             { return g_state.active && opts().diag; }
++int  llama_moe_cpu_max_rows()         { return g_state.active ? g_state.max_rows : 0; }
++
++bool llama_moe_cpu_layer_enabled(int il) {
++    return g_state.active && il >= 0 && il < 512 && opts().layer[il];
++}
++
++void llama_moe_cpu_init(const llama_model & model, uint32_t n_seq_max) {
++    const auto & o = opts();
++    if (g_state.active || !o.enabled) return;
++    if (!o.any_layer || o.cpu_max <= 0) {
++        LLAMA_LOG_WARN("moe cpu: LLAMA_MOE_CPU e' acceso ma LLAMA_MOE_CPU_LAYERS/_MAX non selezionano nulla: funzione spenta\n");
++        return;
++    }
++    if (n_seq_max != 1) {
++        LLAMA_LOG_WARN("moe cpu: richiede --parallel 1 (n_seq_max=%u): funzione spenta\n", n_seq_max);
++        return;
++    }
++    if (model.hparams.no_alloc) return;
++
++    const auto & hparams = model.hparams;
++
++    // Raccolta dei banchi degli strati ammessi, con le guardie di forma e tipo.
++    struct bank_entry { int il; moe_cpu_bank bank; };
++    std::vector<bank_entry> banks;
++    ggml_type t_gate = GGML_TYPE_COUNT, t_up = GGML_TYPE_COUNT, t_down = GGML_TYPE_COUNT;
++    int64_t n_embd = 0, n_ff_exp = 0;
++
++    for (int il = 0; il < (int) model.layers.size() && il < 512; ++il) {
++        if (!o.layer[il]) continue;
++        const auto & l = model.layers[il];
++        std::string err;
++        if (!l.ffn_gate_exps || !l.ffn_up_exps || !l.ffn_down_exps) {
++            LLAMA_LOG_WARN("moe cpu: strato %d senza esperti separati: escluso\n", il);
++            continue;
++        }
++        if (l.ffn_gate_exps_b || l.ffn_up_exps_b || l.ffn_down_exps_b) {
++            LLAMA_LOG_WARN("moe cpu: strato %d ha bias degli esperti: escluso\n", il);
++            continue;
++        }
++        if (l.ffn_gate_exps->type != l.ffn_up_exps->type) {
++            LLAMA_LOG_WARN("moe cpu: strato %d ha gate e up di tipo diverso: escluso\n", il);
++            continue;
++        }
++        const uint8_t * g = host_ptr_of(l.ffn_gate_exps, &err);
++        const uint8_t * u = host_ptr_of(l.ffn_up_exps,   &err);
++        const uint8_t * d = host_ptr_of(l.ffn_down_exps, &err);
++        if (!g || !u || !d) {
++            LLAMA_LOG_WARN("moe cpu: strato %d escluso (%s)\n", il, err.c_str());
++            continue;
++        }
++        if (banks.empty()) {
++            t_gate   = l.ffn_gate_exps->type;
++            t_up     = l.ffn_up_exps->type;
++            t_down   = l.ffn_down_exps->type;
++            n_embd   = l.ffn_gate_exps->ne[0];
++            n_ff_exp = l.ffn_gate_exps->ne[1];
++        } else if (l.ffn_gate_exps->type != t_gate || l.ffn_down_exps->type != t_down ||
++                   l.ffn_gate_exps->ne[0] != n_embd || l.ffn_gate_exps->ne[1] != n_ff_exp) {
++            LLAMA_LOG_WARN("moe cpu: strato %d ha forme/tipi diversi dal primo strato ammesso: escluso\n", il);
++            continue;
++        }
++        moe_cpu_bank b;
++        b.gate = g; b.gate_stride = l.ffn_gate_exps->nb[2];
++        b.up   = u; b.up_stride   = l.ffn_up_exps->nb[2];
++        b.down = d; b.down_stride = l.ffn_down_exps->nb[2];
++        b.n_experts = (int32_t) l.ffn_gate_exps->ne[2];
++        banks.push_back({il, b});
++    }
++
++    if (banks.empty()) {
++        LLAMA_LOG_WARN("moe cpu: nessuno strato ammesso e' risultato idoneo: funzione spenta\n");
++        return;
++    }
++    if (n_embd != (int64_t) hparams.n_embd) {
++        LLAMA_LOG_WARN("moe cpu: n_embd degli esperti (%lld) diverso da hparams (%u): funzione spenta\n",
++            (long long) n_embd, hparams.n_embd);
++        return;
++    }
++
++    moe_cpu_caps caps;
++    caps.n_embd          = (int32_t) n_embd;
++    caps.n_ff_exp        = (int32_t) n_ff_exp;
++    caps.type_gate       = t_gate;
++    caps.type_up         = t_up;
++    caps.type_down       = t_down;
++    caps.max_rows        = 1;               // D06: MTP spento nella prima integrazione
++    caps.max_per_row     = (int32_t) o.cpu_max;
++    caps.n_threads       = (int32_t) o.threads;
++    caps.wait_timeout_us = o.wait_us;
++    caps.ack_timeout_us  = o.ack_us;
++
++    auto memory = moe_cpu_host_memory_cuda_mapped(0);
++    moe_cpu_host_memory * mem_raw = memory.get();
++    std::string err;
++    auto exec = moe_cpu_executor::create(caps, std::move(memory), &err);
++    if (!exec) {
++        LLAMA_LOG_WARN("moe cpu: esecutore non creato (%s): funzione spenta\n", err.c_str());
++        return;
++    }
++    for (const auto & e : banks) {
++        if (!exec->register_layer(e.il, e.bank, &err)) {
++            LLAMA_LOG_WARN("moe cpu: registrazione dello strato %d fallita (%s): funzione spenta\n", e.il, err.c_str());
++            return;
++        }
++    }
++
++    // Vista stabile su `y`. Si costruisce sopra il tensore che copre il blocco
++    // mappato: `y` e' quindi un tensore ggml su un buffer che il backend CUDA
++    // riconosce come proprio, e l'`add` del contributo CPU lo legge in
++    // ZERO-COPY, senza nessuna copia H2D.
++    ggml_tensor * base = mem_raw->base_tensor();
++    if (!base || !base->buffer || !base->data) {
++        LLAMA_LOG_WARN("moe cpu: il fornitore di memoria non espone un tensore di base: funzione spenta\n");
++        return;
++    }
++    const size_t off_y = (const char *) exec->y_dev() - (const char *) base->data;
++
++    ggml_init_params ip{};
++    ip.mem_size = ggml_tensor_overhead() * (size_t) (caps.max_rows + 2);
++    ip.no_alloc = true;
++    g_state.ctx_views = ggml_init(ip);
++    if (!g_state.ctx_views) {
++        LLAMA_LOG_WARN("moe cpu: contesto delle viste non creato: funzione spenta\n");
++        return;
++    }
++    g_state.y_view.assign((size_t) caps.max_rows, nullptr);
++    for (int r = 1; r <= caps.max_rows; ++r) {
++        ggml_tensor * v = ggml_new_tensor_2d(g_state.ctx_views, GGML_TYPE_F32, n_embd, r);
++        // Allocazione esplicita sopra il blocco gia' esistente: stesso buffer,
++        // indirizzo fisso per tutta la vita del contesto.
++        v->buffer = base->buffer;
++        v->data   = (char *) base->data + off_y;
++        ggml_format_name(v, "moe_cpu_y.%d", r);
++        g_state.y_view[(size_t) r - 1] = v;
++    }
++
++    g_state.hooks.abi         = MOE_CPU_ABI_VERSION;
++    g_state.hooks.user        = exec.get();
++    g_state.hooks.submit      = &moe_cpu_executor::submit_hook;
++    g_state.hooks.wait        = &moe_cpu_executor::wait_hook;
++    g_state.hooks.job_dev     = exec->job_dev();
++    g_state.hooks.flags_dev   = exec->flags_dev();
++    g_state.hooks.x_dev       = exec->x_dev();
++    g_state.hooks.y_dev       = exec->y_dev();
++    g_state.hooks.max_rows    = caps.max_rows;
++    g_state.hooks.max_per_row = caps.max_per_row;
++    g_state.hooks.n_embd      = caps.n_embd;
++    g_state.hooks.n_ff_exp    = caps.n_ff_exp;
++
++    if (!ggml_moe_cpu_set_hooks(&g_state.hooks)) {
++        LLAMA_LOG_WARN("moe cpu: una tabella di hook e' gia' installata (un solo pool per processo): funzione spenta\n");
++        ggml_free(g_state.ctx_views);
++        g_state.ctx_views = nullptr;
++        return;
++    }
++
++    g_state.exec     = std::move(exec);
++    g_state.memory   = mem_raw;
++    g_state.max_rows = caps.max_rows;
++    g_state.n_embd   = n_embd;
++    g_state.active   = true;
++
++    std::string layer_list;
++    for (const auto & e : banks) {
++        layer_list += (layer_list.empty() ? "" : ",") + std::to_string(e.il);
++    }
++    LLAMA_LOG_INFO("moe cpu: ATTIVO, modo %s, strati [%s], cpu_max %d, thread %d, attesa %s, "
++                   "n_embd %lld, n_ff_exp %lld, tipi %s/%s/%s, %zu byte di buffer\n",
++        o.diag ? "DIAGNOSTICA (nessuna somma)" : "attiva (righe fittizie a peso GPU zero)",
++        layer_list.c_str(), o.cpu_max, o.threads, moe_cpu_wait_backend(),
++        (long long) n_embd, (long long) n_ff_exp,
++        ggml_type_name(t_gate), ggml_type_name(t_up), ggml_type_name(t_down),
++        g_state.exec->allocated_bytes());
++}
++
++void llama_moe_cpu_free() {
++    if (!g_state.active) return;
++    g_state.exec->set_phase(moe_cpu_phase::idle);
++    std::string err;
++    if (!g_state.exec->quiesce(2000000, &err)) {
++        LLAMA_LOG_WARN("moe cpu: quiesce fallita alla chiusura (%s)\n", err.c_str());
++    }
++    llama_moe_cpu_log_counters("chiusura");
++    ggml_moe_cpu_set_hooks(nullptr);
++    if (g_state.ctx_views) { ggml_free(g_state.ctx_views); g_state.ctx_views = nullptr; }
++    g_state.y_view.clear();
++    g_state.exec.reset();
++    g_state.memory = nullptr;
++    g_state.active = false;
++}
++
++ggml_tensor * llama_moe_cpu_y(int64_t n_embd, int64_t n_tokens) {
++    if (!g_state.active) return nullptr;
++    if (n_embd != g_state.n_embd) return nullptr;
++    if (n_tokens < 1 || n_tokens > (int64_t) g_state.max_rows) return nullptr;
++    return g_state.y_view[(size_t) n_tokens - 1];
++}
++
++void llama_moe_cpu_set_phase_decode()  { if (g_state.active) g_state.exec->set_phase(moe_cpu_phase::decode); }
++void llama_moe_cpu_set_phase_prefill() { if (g_state.active) g_state.exec->set_phase(moe_cpu_phase::prefill); }
++void llama_moe_cpu_set_phase_idle()    { if (g_state.active) g_state.exec->set_phase(moe_cpu_phase::idle); }
++
++bool llama_moe_cpu_contaminated() {
++    return g_state.active && g_state.exec->contaminated();
++}
++
++bool llama_moe_cpu_quiesce() {
++    if (!g_state.active) return true;
++    std::string err;
++    if (g_state.exec->quiesce(2000000, &err)) return true;
++    LLAMA_LOG_WARN("moe cpu: quiesce fallita (%s)\n", err.c_str());
++    return false;
++}
++
++void llama_moe_cpu_log_counters(const char * where) {
++    if (!g_state.active) return;
++    LLAMA_LOG_INFO("moe cpu [%s]: pubblicati %llu, conclusi %llu, falliti %llu, contaminato %s, irrecuperabile %s\n",
++        where ? where : "",
++        (unsigned long long) g_state.exec->submitted(),
++        (unsigned long long) g_state.exec->completed(),
++        (unsigned long long) g_state.exec->failures(),
++        g_state.exec->contaminated() ? "SI" : "no",
++        g_state.exec->unrecoverable() ? "SI" : "no");
++}
+--- a/src/moe_cpu_executor.h
++++ b/src/moe_cpu_executor.h
+@@ -0,0 +1,271 @@
++// P2 — Esecutore CPU degli esperti MoE: contratto host esplicito.
++//
++// Adattamento di `freetoken_hybrid/fused_cpu.hpp` (prototipo del 13 settembre)
++// a un'interfaccia posseduta dal contesto. Differenze volute rispetto al
++// prototipo, tutte documentate in PROGETTO_P2_ESECUTORE_14_SETTEMBRE.md §4:
++//
++//  - il prototipo aveva un proprietario seriale che creava, usava e distruggeva
++//    il pool sullo stesso thread, e che eseguiva anche il lavoro del worker 0.
++//    Qui il proprietario seriale e' un COORDINATORE interno: il thread che crea
++//    l'esecutore non viene ne' affinizzato ne' usato per calcolare;
++//  - i worker del prototipo attendevano attivamente e occupavano core anche a
++//    riposo. Qui l'attesa e' a due livelli: giro breve e poi blocco vero
++//    (WaitOnAddress/WakeByAddressAll, oppure condition_variable altrove).
++//    Fuori dal decode e durante il prefill il pool non consuma CPU (D09);
++//  - il prototipo abortiva il processo dopo 10 s di attesa. Qui non esiste
++//    nessun abort: scadenza, annullamento e header non valido producono uno
++//    STATO, e il risultato non viene mai sostituito da zeri (invariante 7);
++//  - generazione, stato per job, cancel, quiesce e teardown sono espliciti.
++//
++// Vincoli di chiamata:
++//  - `submit_hook`/`wait_hook` sono i SOLI punti chiamabili da un nodo host
++//    CUDA. Non usano API CUDA e non prendono nessun mutex che il thread in
++//    attesa del graph possa trattenere (invariante 6);
++//  - tutto il resto si chiama dal thread proprietario (quello che ha creato
++//    l'esecutore), fuori da una cattura di graph;
++//  - un solo job in volo per esecutore: chiamate concorrenti a submit sono un
++//    errore di programma e vengono rifiutate, non serializzate.
++//
++// ---------------------------------------------------------------------------
++// MACCHINA A STATI DI UN JOB (correzione del difetto B1 della revisione).
++//
++// Ogni job accettato prende una GENERAZIONE, assegnata da `submit_hook` (non
++// piu' dal coordinatore: chi serializza deve anche numerare). Su quel job c'e'
++// una sola RIVENDICAZIONE, `job_claim`, che decide chi ha il diritto di
++// scrivere le celle condivise (`result`, `poison`, `done`) e di rilasciare
++// `in_flight`:
++//
++//   libero ──submit_hook──▶ in volo (claim = nessuno)
++//                              │
++//           ┌──────────────────┴───────────────────┐
++//           │ il coordinatore finisce              │ cancel() o scadenza del
++//           │ (CAS claim: nessuno → coordinatore)  │ wait (CAS: nessuno → host)
++//           ▼                                      ▼
++//     pubblica esito + done=1               avvelena + done=1
++//     `wait_hook` vede claim=coordinatore   `wait_hook` NON rilascia nulla
++//     e rilascia in_flight ──▶ libero       (la rivendicazione non e' sua)
++//                                                  │
++//                                    attesa del RICONOSCIMENTO del
++//                                    coordinatore (gen_reaped >= gen):
++//                                    ┌─────────────┴──────────────┐
++//                                    │ entro la scadenza          │ scaduta
++//                                    ▼                            ▼
++//                              in_flight=0 ──▶ libero      IRRECUPERABILE:
++//                                                          in_flight resta 1,
++//                                                          ogni submit e'
++//                                                          rifiutato finche' il
++//                                                          coordinatore non
++//                                                          riconosce (alla fine
++//                                                          del suo calcolo
++//                                                          tardivo rilascia lui)
++//
++// Le due proprieta' che la macchina garantisce, e che il codice precedente
++// violava:
++//  1. un completamento TARDIVO del coordinatore su un job abbandonato non
++//     scrive nessuna cella condivisa e non rilascia `in_flight`: non puo'
++//     quindi sovrascrivere i flag del job successivo (B1, punti 1-4);
++//  2. `in_flight` resta alto per tutta la durata reale del calcolo, anche
++//     quando l'host ha gia' dichiarato invalido l'esito. Percio' `y`, `flat`,
++//     `xq`, `hq` e `cur_bank` hanno un solo scrittore, e `register_layer()`
++//     — che rifiuta con `in_flight != 0` — non puo' piu' far scadere il
++//     puntatore `cur_bank` sotto il coordinatore (B1, secondo effetto).
++//
++// PRECONDIZIONE di `cancel()`: annullare non rende legale un nuovo submit.
++// Fino a `rearm()` ogni job successivo esce `cancelled`; il chiamante deve
++// sincronizzare il dispositivo (§5 del progetto: set_phase → quiesce → sync)
++// prima di riarmare, perche' un nodo `wait` gia' accodato appartiene al job
++// vecchio e l'esecutore non ha modo di distinguerlo.
++//
++// CONTAMINAZIONE (correzione del difetto B2). `contaminated()` non e' piu'
++// alzato da ogni esito diverso da `ok`: contamina solo cio' che puo' aver
++// lasciato `y` o lo stato della cache incoerenti — header non valido, scadenza
++// del `wait`, job irrecuperabile. Un annullamento di ROUTINE (cambio di fase,
++// rollback speculativo) e la chiusura NON contaminano. Quando la
++// contaminazione c'e', si esce con `acknowledge_contamination()`, che il
++// chiamante invoca solo dopo aver buttato l'incarnazione della cache.
++
++#ifndef MOE_CPU_EXECUTOR_H
++#define MOE_CPU_EXECUTOR_H
++
++#include "moe_cpu_job.h"
++#include "moe_cpu_host_memory.h"
++
++#include "ggml.h"
++
++#include <cstdint>
++#include <memory>
++#include <string>
++#include <vector>
++
++// Stato osservabile di un job, dal lato host.
++enum class moe_cpu_state : uint32_t {
++    unknown   = 0,  // generazione non piu' in finestra
++    running   = 1,
++    ok        = 2,
++    rejected  = 3,
++    cancelled = 4,
++    timeout   = 5,
++    stopped   = 6,
++};
++
++const char * moe_cpu_state_name(moe_cpu_state s);
++
++// Quale percorso di attesa inattiva e' stato effettivamente risolto su questa
++// macchina: "WaitOnAddress/WakeByAddressAll" quando i due simboli si risolvono,
++// "Sleep(1) (ripiego)" quando non si risolvono, "sleep_for (non Windows)"
++// altrove. Diagnostica soltanto: non cambia nessun comportamento.
++// Esiste perche' il rischio R6 del progetto (§15) chiede che l'esecutore
++// REGISTRI quale percorso ha scelto, e perche' la verifica in compilazione
++// n. 3 (§16) non e' altrimenti osservabile dall'esterno del binario.
++// La prima chiamata forza la risoluzione dei simboli (che e' comunque
++// idempotente e protetta dall'inizializzazione di uno static locale).
++const char * moe_cpu_wait_backend();
++
++// Vero per gli esiti che possono aver lasciato `y` o lo stato della cache in
++// uno stato incoerente, e che quindi richiedono di buttare l'incarnazione
++// (contratto P1 §5, caso «job fallito dopo il gather»).
++// `cancelled` e `stopped` sono esiti di ROUTINE e non contaminano.
++bool moe_cpu_state_contaminates(moe_cpu_state s);
++
++// Fase del contesto: decide la politica d'attesa dei thread.
++enum class moe_cpu_phase : uint32_t {
++    idle    = 0,  // fuori dal decode: blocco immediato
++    prefill = 1,  // blocco immediato; il pool non deve rubare core al prefill
++    decode  = 2,  // finestra di giro breve prima del blocco
++};
++
++struct moe_cpu_caps {
++    int32_t   n_embd        = 0;                 // K
++    int32_t   n_ff_exp      = 0;                 // H
++    ggml_type type_gate     = GGML_TYPE_COUNT;   // IQ2_S sui 47 strati supportati
++    ggml_type type_up       = GGML_TYPE_COUNT;   // IQ2_S
++    ggml_type type_down     = GGML_TYPE_COUNT;   // IQ4_NL
++    int32_t   max_rows      = 1;                 // 1 fino a P4, 3 in P5
++    int32_t   max_per_row   = 2;                 // cpu_max (D03)
++    int32_t   n_threads     = 4;                 // 4 o 6 da confrontare in P4
++    uint64_t  wait_timeout_us = 2000000;         // limite del nodo host `wait`
++    // Limite entro cui il coordinatore deve RICONOSCERE un job abbandonato da
++    // `cancel()`. Oltre questo limite il job e' dichiarato irrecuperabile.
++    // Un job dura decine di microsecondi: 200 ms e' tre ordini di grandezza di
++    // margine, non una misura.
++    uint64_t  ack_timeout_us  = 200000;
++    uint32_t  spin_us       = 60;                // finestra di giro in fase decode
++};
++
++// I pesi host ORIGINALI di uno strato. Nessuna copia: sono gli stessi byte che
++// la GPU legge in zero-copy dal buffer CUDA<n>_Mapped.
++//   gate/up: [n_embd, n_ff_exp, n_experts], passo per esperto = nb[2]
++//   down:    [n_ff_exp, n_embd, n_experts], passo per esperto = nb[2]
++struct moe_cpu_bank {
++    const uint8_t * gate = nullptr;  size_t gate_stride = 0;
++    const uint8_t * up   = nullptr;  size_t up_stride   = 0;
++    const uint8_t * down = nullptr;  size_t down_stride = 0;
++    int32_t         n_experts = 0;
++};
++
++// Riga della tabella delle allocazioni, per il rapporto di P2/P6.
++struct moe_cpu_allocation {
++    const char * name;
++    size_t       bytes;
++    bool         mapped;   // true: visibile anche al dispositivo
++};
++
++class moe_cpu_executor {
++public:
++    // Crea il pool. Fallisce (nullptr + messaggio) se i tipi non hanno i tratti
++    // CPU necessari, se le forme non sono divisibili per i blocchi, se non ci
++    // sono abbastanza processori fisici o se il fornitore di memoria fallisce.
++    static std::unique_ptr<moe_cpu_executor> create(const moe_cpu_caps & caps,
++                                                    std::unique_ptr<moe_cpu_host_memory> memory,
++                                                    std::string * err);
++
++    ~moe_cpu_executor();
++
++    moe_cpu_executor(const moe_cpu_executor &)             = delete;
++    moe_cpu_executor & operator=(const moe_cpu_executor &) = delete;
++
++    // Registra i pesi host di uno strato. Idempotente per lo stesso strato con
++    // gli stessi puntatori; un cambio di puntatore e' un errore (significa che
++    // la memoria e' stata riallocata sotto un graph catturato).
++    // Rifiuta con un job in volo: la mappa e' letta dal coordinatore.
++    bool register_layer(int32_t layer, const moe_cpu_bank & bank, std::string * err);
++    bool clear_layers(std::string * err);
++
++    // ---- i due soli punti chiamabili da un nodo host CUDA -------------------
++    static void submit_hook(void * user);
++    static void wait_hook  (void * user);
++
++    // ---- lato host, fuori dal graph ----------------------------------------
++    uint64_t      submitted()  const;   // job pubblicati (accettati o rifiutati)
++    uint64_t      completed()  const;   // job conclusi, con qualunque esito
++    uint64_t      failures()   const;   // esiti diversi da ok
++    moe_cpu_state state(uint64_t generation) const;
++    uint64_t      first_failed_generation() const;  // UINT64_MAX se nessuno
++    bool          contaminated() const;             // sticky: c'e' stato un esito che contamina
++
++    // Vero quando un job abbandonato non e' ancora stato riconosciuto dal
++    // coordinatore: finche' dura, ogni submit e' rifiutato e nessun buffer
++    // dell'esecutore puo' essere considerato quieto.
++    bool          unrecoverable() const;
++    uint64_t      current_generation() const;
++
++    // Riconoscimento della contaminazione. Lo chiama SOLO il thread
++    // proprietario e SOLO dopo aver buttato l'incarnazione della cache
++    // (`unbind`/`bind`, moe-demand.cuh:142-157, la via che
++    // `llama_moe_cache_set_device_active(false)` gia' percorre) e ricreato lo
++    // stato: e' il caso «job fallito dopo il gather» del contratto P1 §5.
++    // Fallisce se c'e' un job in volo o se l'esecutore e' irrecuperabile:
++    // riconoscere prima che il coordinatore abbia finito non ha significato.
++    // Non azzera `failures()`, che resta un contatore storico.
++    bool acknowledge_contamination(std::string * err);
++
++    // Annulla. Non interrompe il job in volo (durata limitata, decine di
++    // microsecondi): ne invalida l'esito, sblocca l'attesa, attende che il
++    // coordinatore riconosca l'annullamento e rifiuta ogni pubblicazione
++    // successiva finche' non si chiama rearm().
++    // E' un'operazione di ROUTINE: non contamina. Contamina solo se il
++    // riconoscimento del coordinatore non arriva entro `ack_timeout_us`.
++    void cancel();
++    void rearm();
++
++    // Attende che non ci sia lavoro in volo. Da chiamare DOPO la
++    // sincronizzazione del dispositivo e PRIMA di distruggere i graph che
++    // referenziano i buffer (ggml-cuda.cu:3666) o di liberare i banchi.
++    bool quiesce(uint64_t timeout_us, std::string * err);
++
++    void set_phase(moe_cpu_phase phase);
++
++    // SOLO PER LE PROVE. Ritardo artificiale, in microsecondi, che il
++    // coordinatore inserisce dopo aver svegliato i worker e prima di entrare
++    // lui stesso in compute(): serve a rendere osservabile la finestra in cui
++    // un job e' genuinamente in calcolo (T12/T13/T15). In produzione resta 0 e
++    // il ramo e' un confronto con zero.
++    void set_test_delay_us(uint64_t us);
++
++    // Indirizzi stabili per la cattura del graph.
++    const moe_cpu_job   * job_host()   const;
++    const moe_cpu_flags * flags_host() const;
++    const float         * y_host()     const;
++    float               * x_host();                 // solo per i banchi host-only
++    moe_cpu_job         * job_host_mut();           // solo per i banchi host-only
++    void *                job_dev()   const;
++    void *                flags_dev() const;
++    void *                x_dev()     const;
++    void *                y_dev()     const;
++
++    const moe_cpu_caps & caps() const;
++    const std::vector<moe_cpu_allocation> & allocations() const;
++    size_t allocated_bytes() const;
++
++    // Riferimento CPU seriale a un thread, stessi tratti e stessa
++    // quantizzazione: serve al test di parita'. Scrive n_embd float in `out`.
++    bool reference_expert(int32_t layer, int32_t expert, const float * x, float * out,
++                          std::string * err) const;
++
++private:
++    struct impl;
++    explicit moe_cpu_executor(std::unique_ptr<impl> p);
++    std::unique_ptr<impl> p_;
++};
++
++#endif // MOE_CPU_EXECUTOR_H
+--- a/src/moe_cpu_executor.cpp
++++ b/src/moe_cpu_executor.cpp
+@@ -0,0 +1,1067 @@
++// P2 — Esecutore CPU degli esperti MoE: implementazione.
++//
++// Derivato da `freetoken_hybrid/fused_cpu.hpp` (13 settembre). L'aritmetica —
++// tratti CPU, vec_dot, quantizzazione dell'attivazione, piastrelle a 32 righe
++// per gate/up e a 16 righe per down — e' la stessa che il prototipo ha
++// verificato bit-identica al riferimento GGML. Cambiano la proprieta' degli
++// oggetti, l'attesa, gli errori e l'annullamento.
++//
++// La macchina a stati di un job (rivendicazione unica + riconoscimento con
++// generazione) e' documentata in moe_cpu_executor.h e nel §11 del progetto.
++//
++// NON compilato in questa fase: la compilazione appartiene a una fase separata.
++
++#include "moe_cpu_executor.h"
++
++#include "ggml-cpu.h"
++
++#include <algorithm>
++#include <atomic>
++#include <cmath>
++#include <cstdio>
++#include <cstring>
++#include <thread>
++#include <unordered_map>
++
++#if defined(_WIN32)
++#  ifndef NOMINMAX
++#    define NOMINMAX
++#  endif
++#  ifndef WIN32_LEAN_AND_MEAN
++#    define WIN32_LEAN_AND_MEAN
++#  endif
++// <windows.h> tira dentro <synchapi.h>, che dichiara WaitOnAddress e
++// WakeByAddressAll. NON le usiamo per dichiarazione: le risolviamo a caldo con
++// GetProcAddress (vedi `sync_api`), cosi' il binario non dipende da
++// Synchronization.lib e gira anche dove l'API non c'e'. Per questo le
++// dichiarazioni di <synchapi.h> restano inutilizzate ed e' voluto: nessuna
++// libreria in piu' da aggiungere in build_test.cmd / build_test.ps1.
++#  include <windows.h>
++#  include <intrin.h>
++#  define MOE_CPU_PAUSE() _mm_pause()
++#else
++#  include <chrono>
++#  define MOE_CPU_PAUSE() std::this_thread::yield()
++#endif
++
++// ---------------------------------------------------------------------------
++// Attesa inattiva senza mutex.
++//
++// Invariante 6: nessun callback deve attendere un mutex che il thread in attesa
++// del graph possa trattenere. Il modo piu' semplice di renderlo vero per
++// costruzione e' non usare mutex da nessuna parte in questo percorso.
++// Su Windows si usa WaitOnAddress/WakeByAddressAll, che non passa da un lock
++// dell'utente e non ha risvegli persi: il confronto con il valore atteso lo fa
++// il sistema al momento dell'attesa. Se l'API non e' risolvibile si degrada a
++// Sleep(1), che consuma comunque quasi zero CPU: il pool resta inattivo fuori
++// dal decode (D09) anche nel percorso di ripiego.
++// ---------------------------------------------------------------------------
++// Namespace con nome, non anonimo: `moe_cpu_executor::impl` ha un membro di
++// tipo `barrier` e un tipo di namespace anonimo dentro una classe a linkage
++// esterno e' una fonte inutile di diagnostiche.
++namespace moe_cpu_detail {
++
++#if defined(_WIN32)
++using pfn_WaitOnAddress   = BOOL (WINAPI *)(volatile VOID *, PVOID, SIZE_T, DWORD);
++using pfn_WakeByAddressAll= VOID (WINAPI *)(PVOID);
++
++struct sync_api {
++    pfn_WaitOnAddress    wait = nullptr;
++    pfn_WakeByAddressAll wake = nullptr;
++    sync_api() {
++        HMODULE m = LoadLibraryA("api-ms-win-core-synch-l1-2-0.dll");
++        if (!m) m = LoadLibraryA("kernelbase.dll");
++        if (!m) return;
++        wait = (pfn_WaitOnAddress)   GetProcAddress(m, "WaitOnAddress");
++        wake = (pfn_WakeByAddressAll)GetProcAddress(m, "WakeByAddressAll");
++        if (!wait || !wake) { wait = nullptr; wake = nullptr; }
++    }
++};
++const sync_api & sync() { static sync_api s; return s; }
++#endif
++
++inline void block_until_changed(volatile uint64_t * address, uint64_t expected, uint32_t timeout_ms) {
++#if defined(_WIN32)
++    const sync_api & s = sync();
++    if (s.wait) {
++        uint64_t compare = expected;
++        s.wait(address, &compare, sizeof(uint64_t), timeout_ms ? timeout_ms : INFINITE);
++        return;
++    }
++    Sleep(1);
++#else
++    (void) address; (void) expected; (void) timeout_ms;
++    std::this_thread::sleep_for(std::chrono::milliseconds(1));
++#endif
++}
++
++inline void wake_waiters(volatile uint64_t * address) {
++#if defined(_WIN32)
++    const sync_api & s = sync();
++    if (s.wake) s.wake((PVOID) address);
++#else
++    (void) address;
++#endif
++}
++
++// Le celle vivono in memoria mappata condivisa col dispositivo: si accedono
++// come volatile + barriere esplicite, non come std::atomic (che non e'
++// costruibile sopra memoria altrui senza lanciare un placement new).
++inline uint64_t cell_load_acquire(const volatile uint64_t * p) {
++    uint64_t v = *p;
++    std::atomic_thread_fence(std::memory_order_acquire);
++    return v;
++}
++inline void cell_store_release(volatile uint64_t * p, uint64_t v) {
++    std::atomic_thread_fence(std::memory_order_release);
++    *p = v;
++}
++
++inline uint64_t now_us() {
++#if defined(_WIN32)
++    static const uint64_t freq = [] {
++        LARGE_INTEGER f; QueryPerformanceFrequency(&f); return (uint64_t) f.QuadPart;
++    }();
++    LARGE_INTEGER c;
++    QueryPerformanceCounter(&c);
++    return (uint64_t) ((c.QuadPart * 1000000ull) / freq);
++#else
++    return (uint64_t) std::chrono::duration_cast<std::chrono::microseconds>(
++        std::chrono::steady_clock::now().time_since_epoch()).count();
++#endif
++}
++
++// Barriera a inversione di fase, dal prototipo. Tutti i thread del pool la
++// attraversano per ogni job; nessuno esce prima che tutti siano arrivati.
++//
++// La barriera e' corretta solo se il numero di partecipanti e' invariante per
++// tutta la vita del pool. E' la ragione per cui i worker NON escono su
++// `stopping` (che l'host puo' alzare in qualunque istante) ma su `pool_retire`,
++// alzato dal solo coordinatore quando ha deciso di non entrare mai piu' in
++// compute(): rischio R13 della revisione, chiuso per costruzione.
++class barrier {
++    const unsigned count;
++    std::atomic<unsigned> arrived{0};
++    std::atomic<unsigned> phase{0};
++public:
++    explicit barrier(unsigned n) : count(n) {}
++    void wait() {
++        if (count <= 1) return;
++        const unsigned p = phase.load(std::memory_order_relaxed);
++        if (arrived.fetch_add(1, std::memory_order_acq_rel) == count - 1) {
++            arrived.store(0, std::memory_order_relaxed);
++            phase.fetch_add(1, std::memory_order_release);
++        } else {
++            while (phase.load(std::memory_order_acquire) == p) MOE_CPU_PAUSE();
++        }
++    }
++};
++
++#if defined(_WIN32)
++// Un processore logico per core fisico, poi i fratelli SMT. Copiata dal
++// prototipo (fused_cpu.hpp:18-31) perche' la misura del 13 settembre e' stata
++// ottenuta con questa disposizione.
++std::vector<DWORD_PTR> physical_first_masks() {
++    DWORD bytes = 0;
++    GetLogicalProcessorInformation(nullptr, &bytes);
++    std::vector<SYSTEM_LOGICAL_PROCESSOR_INFORMATION> info(bytes / sizeof(SYSTEM_LOGICAL_PROCESSOR_INFORMATION));
++    std::vector<DWORD_PTR> first, other;
++    if (bytes == 0 || !GetLogicalProcessorInformation(info.data(), &bytes)) return first;
++    DWORD_PTR allowed = 0, system = 0;
++    GetProcessAffinityMask(GetCurrentProcess(), &allowed, &system);
++    for (const auto & i : info) {
++        if (i.Relationship != RelationProcessorCore) continue;
++        DWORD_PTR mask = i.ProcessorMask & allowed;
++        if (!mask) continue;
++        DWORD_PTR bit = mask & (~mask + 1);
++        first.push_back(bit);
++        mask ^= bit;
++        while (mask) { bit = mask & (~mask + 1); other.push_back(bit); mask ^= bit; }
++    }
++    first.insert(first.end(), other.begin(), other.end());
++    return first;
++}
++#endif
++
++constexpr int MOE_CPU_DOWN_TILE = 16;   // righe di `down` per piastrella, come nel prototipo
++constexpr int MOE_CPU_RING      = 64;   // finestra degli stati per generazione
++constexpr int MOE_CPU_MAX_BLOCK = 256;  // blocco massimo del vec_dot_type ammesso
++
++// Rivendicazione dell'esito di un job: un solo vincitore scrive le celle
++// condivise e rilascia `in_flight`.
++constexpr uint32_t CLAIM_NONE  = 0;
++constexpr uint32_t CLAIM_COORD = 1;   // il coordinatore ha finito e pubblica
++constexpr uint32_t CLAIM_HOST  = 2;   // cancel() o scadenza del wait: job abbandonato
++
++} // namespace moe_cpu_detail
++
++using namespace moe_cpu_detail;
++
++const char * moe_cpu_wait_backend() {
++#if defined(_WIN32)
++    return sync().wait && sync().wake ? "WaitOnAddress/WakeByAddressAll"
++                                      : "Sleep(1) (ripiego)";
++#else
++    return "sleep_for (non Windows)";
++#endif
++}
++
++const char * moe_cpu_state_name(moe_cpu_state s) {
++    switch (s) {
++        case moe_cpu_state::unknown:   return "sconosciuto";
++        case moe_cpu_state::running:   return "in corso";
++        case moe_cpu_state::ok:        return "valido";
++        case moe_cpu_state::rejected:  return "rifiutato";
++        case moe_cpu_state::cancelled: return "annullato";
++        case moe_cpu_state::timeout:   return "scaduto";
++        case moe_cpu_state::stopped:   return "chiuso";
++    }
++    return "?";
++}
++
++bool moe_cpu_state_contaminates(moe_cpu_state s) {
++    // Contamina solo cio' che puo' aver lasciato `y` o lo stato della cache
++    // incoerenti e che quindi richiede di buttare l'incarnazione (P1 §5):
++    //  - `rejected`: il gather del dispositivo e' gia' avvenuto ma il
++    //    contributo CPU non esiste;
++    //  - `timeout`: la scadenza del `wait`, e il job dichiarato irrecuperabile
++    //    perche' il coordinatore non ha riconosciuto l'abbandono in tempo.
++    // NON contaminano:
++    //  - `cancelled`: e' un'operazione di ROUTINE (cambio di fase, rollback
++    //    speculativo). Il chiamante sa gia' che sta buttando il passo; `y` puo'
++    //    restare sporco ma e' avvelenato e il job successivo lo riscrive per
++    //    intero;
++    //  - `stopped`: chiusura ordinata;
++    //  - `running`/`unknown`: non sono esiti.
++    return s == moe_cpu_state::rejected || s == moe_cpu_state::timeout;
++}
++
++// ---------------------------------------------------------------------------
++
++struct moe_cpu_executor::impl {
++    moe_cpu_caps caps;
++    std::unique_ptr<moe_cpu_host_memory> memory;
++    moe_cpu_host_block block;
++    std::vector<moe_cpu_allocation> alloc_table;
++
++    // viste sul blocco mappato (host e device)
++    moe_cpu_job   * job_h   = nullptr;  void * job_d   = nullptr;
++    moe_cpu_flags * flags_h = nullptr;  void * flags_d = nullptr;
++    float         * x_h     = nullptr;  void * x_d     = nullptr;
++    float         * y_h     = nullptr;  void * y_d     = nullptr;
++
++    // scratch host-privato, mai visto dal dispositivo
++    std::vector<uint8_t> xq;      // attivazione quantizzata, una riga per token
++    std::vector<uint8_t> hq;      // stato nascosto quantizzato, uno per route
++
++    const ggml_type_traits_cpu * tg = nullptr;  // gate
++    const ggml_type_traits_cpu * tu = nullptr;  // up
++    const ggml_type_traits_cpu * td = nullptr;  // down
++    ggml_from_float_t quant_x = nullptr;
++    ggml_from_float_t quant_h = nullptr;
++    size_t xq_row = 0, hq_row = 0, hq_block = 0;
++    int    blk_h  = 0;            // blocco del vec_dot_type di `down`
++
++    std::unordered_map<int32_t, moe_cpu_bank> layers;
++
++    // stato del job corrente, scritto solo dal coordinatore
++    struct route { int32_t row; int32_t expert; float weight; };
++    std::vector<route> flat;
++    int32_t cur_rows = 0;
++    const moe_cpu_bank * cur_bank = nullptr;
++
++    // sincronizzazione del pool
++    std::vector<std::thread> threads;
++    std::unique_ptr<barrier> gate;
++    alignas(64) std::atomic<uint64_t> work{0};
++    alignas(64) std::atomic<uint64_t> stopping{0};      // alzato dall'host: «chiudi»
++    alignas(64) std::atomic<uint64_t> pool_retire{0};   // alzato SOLO dal coordinatore
++    alignas(64) std::atomic<uint64_t> cancelled{0};
++    alignas(64) std::atomic<uint32_t> phase{(uint32_t) moe_cpu_phase::idle};
++    alignas(64) std::atomic<uint64_t> test_delay_us{0};
++
++    alignas(64) std::atomic<uint64_t> n_submitted{0};
++    alignas(64) std::atomic<uint64_t> n_completed{0};
++    alignas(64) std::atomic<uint64_t> n_failed{0};
++    alignas(64) std::atomic<uint64_t> gen_first_failed{UINT64_MAX};
++    alignas(64) std::atomic<uint64_t> in_flight{0};
++
++    // --- macchina a stati del job (correzione B1) ---------------------------
++    alignas(64) std::atomic<uint64_t> gen_current{0};   // generazione pubblicata da submit_hook
++    alignas(64) std::atomic<uint32_t> job_claim{CLAIM_NONE};
++    alignas(64) std::atomic<uint64_t> gen_reaped{0};    // ultima generazione FINITA dal coordinatore
++    alignas(64) std::atomic<uint64_t> orphan_gen{0};    // >0: job irrecuperabile non ancora riconosciuto
++
++    std::atomic<uint64_t> ring_gen[MOE_CPU_RING];
++    std::atomic<uint32_t> ring_state[MOE_CPU_RING];
++
++    ~impl() { shutdown(); }
++
++    void shutdown() {
++        if (threads.empty()) {
++            if (memory) memory->release();
++            return;
++        }
++        stopping.store(1, std::memory_order_release);
++        // Sveglia il coordinatore, che attende su `flags.request`. NON si tocca
++        // `work`: un avanzamento di `work` significa «c'e' un job» e un worker
++        // che lo vedesse dovrebbe entrare in compute(). Il risveglio dei worker
++        // e' compito del coordinatore, l'unico che sa quando il pool puo'
++        // ritirarsi (R13).
++        if (flags_h) {
++            cell_store_release(&flags_h->request.value, 1);
++            wake_waiters(&flags_h->request.value);
++        }
++        wake_waiters((volatile uint64_t *) &work);   // solo risveglio, nessun cambio di valore
++        for (auto & t : threads) if (t.joinable()) t.join();
++        threads.clear();
++        if (memory) memory->release();
++    }
++
++    void record(uint64_t generation, moe_cpu_state s) {
++        const size_t i = (size_t) (generation % MOE_CPU_RING);
++        ring_state[i].store((uint32_t) s, std::memory_order_relaxed);
++        ring_gen[i].store(generation, std::memory_order_release);
++        // `running` non e' un esito: registrarlo come fallimento era il difetto
++        // che rendeva `contaminated()` vero dal primo submit in poi.
++        if (s == moe_cpu_state::running || s == moe_cpu_state::unknown) return;
++        if (s != moe_cpu_state::ok) {
++            n_failed.fetch_add(1, std::memory_order_relaxed);
++        }
++        if (moe_cpu_state_contaminates(s)) {
++            uint64_t expected = UINT64_MAX;
++            gen_first_failed.compare_exchange_strong(expected, generation, std::memory_order_relaxed);
++        }
++    }
++
++    // ---- aritmetica -------------------------------------------------------
++
++    // Fase 1: gate/up -> SiLU(gate)*up -> quantizzazione a blocchi dello stato
++    // nascosto. Ogni piastrella di blk_h righe possiede il proprio blocco.
++    void phase_gate_up(int worker, int nth) {
++        const int H = caps.n_ff_exp;
++        const int K = caps.n_embd;
++        const int tiles_per_route = H / blk_h;
++        const int n_tiles = (int) flat.size() * tiles_per_route;
++        alignas(64) float hidden[MOE_CPU_MAX_BLOCK];
++        for (int t = worker; t < n_tiles; t += nth) {
++            const int r  = t / tiles_per_route;
++            const int b  = t % tiles_per_route;
++            const int r0 = b * blk_h;
++            const route & rt = flat[(size_t) r];
++            const uint8_t * g = cur_bank->gate + (size_t) rt.expert * cur_bank->gate_stride;
++            const uint8_t * u = cur_bank->up   + (size_t) rt.expert * cur_bank->up_stride;
++            const size_t gate_row = cur_bank->gate_stride / (size_t) H;
++            const size_t up_row   = cur_bank->up_stride   / (size_t) H;
++            const uint8_t * xqr = xq.data() + (size_t) rt.row * xq_row;
++            for (int i = 0; i < blk_h; ++i) {
++                float gv = 0.0f, uv = 0.0f;
++                tg->vec_dot(K, &gv, 0, g + (size_t) (r0 + i) * gate_row, 0, xqr, 0, 1);
++                tu->vec_dot(K, &uv, 0, u + (size_t) (r0 + i) * up_row,   0, xqr, 0, 1);
++                hidden[(size_t) i] = (gv / (1.0f + std::exp(-gv))) * uv;
++            }
++            quant_h(hidden, hq.data() + (size_t) r * hq_row + (size_t) b * hq_block, blk_h);
++        }
++    }
++
++    // Fase 2: down e somma pesata. Ogni piastrella possiede le proprie righe di
++    // uscita e somma le route del suo token senza atomiche.
++    void phase_down(int worker, int nth) {
++        const int H = caps.n_ff_exp;
++        const int K = caps.n_embd;
++        const int tiles_per_row = (K + MOE_CPU_DOWN_TILE - 1) / MOE_CPU_DOWN_TILE;
++        const int n_tiles = cur_rows * tiles_per_row;
++        for (int t = worker; t < n_tiles; t += nth) {
++            const int row  = t / tiles_per_row;
++            const int tile = t % tiles_per_row;
++            const int k0 = tile * MOE_CPU_DOWN_TILE;
++            const int k1 = std::min(k0 + MOE_CPU_DOWN_TILE, K);
++            float * out = y_h + (size_t) row * (size_t) K;
++            for (int k = k0; k < k1; ++k) {
++                float sum = 0.0f;
++                // ordine di somma: route crescenti del token. Il test di parita'
++                // riproduce esattamente questo ordine.
++                for (size_t r = 0; r < flat.size(); ++r) {
++                    if (flat[r].row != row) continue;
++                    const size_t down_row = cur_bank->down_stride / (size_t) K;
++                    float value = 0.0f;
++                    td->vec_dot(H, &value, 0,
++                        cur_bank->down + (size_t) flat[r].expert * cur_bank->down_stride + (size_t) k * down_row, 0,
++                        hq.data() + r * hq_row, 0, 1);
++                    sum += flat[r].weight * value;
++                }
++                out[k] = sum;
++            }
++        }
++    }
++
++    void compute(int worker) {
++        const int nth = (int) threads.size();
++        phase_gate_up(worker, nth);
++        gate->wait();
++        phase_down(worker, nth);
++        gate->wait();
++    }
++
++    // ---- thread -----------------------------------------------------------
++
++    void pin(int index) {
++#if defined(_WIN32)
++        static const std::vector<DWORD_PTR> masks = physical_first_masks();
++        if (index < (int) masks.size()) SetThreadAffinityMask(GetCurrentThread(), masks[(size_t) index]);
++#else
++        (void) index;
++#endif
++    }
++
++    // I worker escono SOLO su `pool_retire`, e solo quando `work` non e'
++    // avanzato: cosi' il numero dei partecipanti alla barriera e' invariante
++    // per tutta la vita di ogni job. Un avanzamento di `work` significa sempre
++    // «c'e' un job da calcolare» e va sempre onorato.
++    void worker_loop(int index) {
++        pin(index);
++        uint64_t observed = 0;
++        for (;;) {
++            uint64_t next;
++            const uint64_t deadline = now_us() + caps.spin_us;
++            while ((next = work.load(std::memory_order_acquire)) == observed) {
++                if (pool_retire.load(std::memory_order_acquire)) return;
++                const bool spin = phase.load(std::memory_order_relaxed) == (uint32_t) moe_cpu_phase::decode
++                                  && now_us() < deadline;
++                if (spin) { MOE_CPU_PAUSE(); continue; }
++                block_until_changed((volatile uint64_t *) &work, observed, 20);
++            }
++            observed = next;
++            compute(index);
++        }
++    }
++
++    // Il coordinatore e' il proprietario seriale del pool: nessun altro thread
++    // tocca `flat`, `xq`, `hq` o i buffer mappati mentre un job e' in corso.
++    void coordinator_loop() {
++        pin(0);
++        for (;;) {
++            // attesa della richiesta: giro breve solo in fase di decode, poi
++            // blocco vero. Fuori dal decode e in prefill si dorme subito (D09).
++            bool have_request = false;
++            {
++                const uint64_t deadline = now_us() + caps.spin_us;
++                for (;;) {
++                    if (cell_load_acquire(&flags_h->request.value) == 1) { have_request = true; break; }
++                    if (stopping.load(std::memory_order_acquire)) break;
++                    const bool spin = phase.load(std::memory_order_relaxed) == (uint32_t) moe_cpu_phase::decode
++                                      && now_us() < deadline;
++                    if (spin) { MOE_CPU_PAUSE(); continue; }
++                    block_until_changed(&flags_h->request.value, 0, 20);
++                }
++            }
++            if (have_request) cell_store_release(&flags_h->request.value, 0);
++
++            const uint64_t generation = gen_current.load(std::memory_order_acquire);
++
++            if (stopping.load(std::memory_order_acquire)) {
++                // Chiusura. Se un job era stato pubblicato e non e' ancora
++                // stato concluso, lo si conclude come `stopped` passando dalla
++                // stessa rivendicazione degli altri esiti: il `wait` gia'
++                // accodato si sblocca e `in_flight` viene rilasciato.
++                if (in_flight.load(std::memory_order_acquire) != 0 &&
++                    generation > gen_reaped.load(std::memory_order_acquire)) {
++                    finish(generation, moe_cpu_state::stopped);
++                } else if (cell_load_acquire(&flags_h->done.value) == 0) {
++                    // Nessun job da concludere: si alza `done` soltanto se non
++                    // c'e' gia' un esito pubblicato da consumare. Sovrascrivere
++                    // l'esito di un job appena concluso sarebbe la stessa
++                    // classe di difetto di B1, in versione teardown.
++                    publish_flags(moe_cpu_state::stopped);
++                }
++                retire();
++                return;
++            }
++
++            if (!have_request) continue;   // risveglio spurio: si torna ad attendere
++
++            moe_cpu_state result = validate_and_prepare();
++            if (result == moe_cpu_state::ok && cancelled.load(std::memory_order_acquire)) {
++                result = moe_cpu_state::cancelled;
++            }
++            if (result == moe_cpu_state::ok) {
++                if (!flat.empty()) {
++                    work.fetch_add(1, std::memory_order_release);
++                    wake_waiters((volatile uint64_t *) &work);
++                    // Ritardo iniettabile SOLO dalle prove: i worker sono gia'
++                    // dentro compute(), fermi alla prima barriera. E' la
++                    // finestra in cui T12/T13/T15 esercitano l'annullamento.
++                    const uint64_t d = test_delay_us.load(std::memory_order_relaxed);
++                    if (d) { const uint64_t until = now_us() + d; while (now_us() < until) MOE_CPU_PAUSE(); }
++                    compute(0);
++                } else {
++                    // nessuna route CPU per questo passo: il contributo corretto
++                    // e' zero. Non e' una maschera d'errore, e' il valore giusto.
++                    std::memset(y_h, 0, (size_t) cur_rows * (size_t) caps.n_embd * sizeof(float));
++                }
++            }
++
++            finish(generation, result);
++        }
++    }
++
++    // Il coordinatore ha deciso di non entrare mai piu' in compute(): solo ora
++    // i worker possono uscire senza spaiare una barriera.
++    void retire() {
++        pool_retire.store(1, std::memory_order_release);
++        wake_waiters((volatile uint64_t *) &work);
++    }
++
++    void publish_flags(moe_cpu_state result) {
++        cell_store_release(&flags_h->result.value, (uint64_t) result);
++        cell_store_release(&flags_h->poison.value, result == moe_cpu_state::ok ? 0u : 1u);
++        cell_store_release(&flags_h->done.value, 1);
++        wake_waiters(&flags_h->done.value);
++    }
++
++    // Conclusione di un job dal lato del coordinatore.
++    //
++    // La rivendicazione decide chi scrive: se l'host ha gia' abbandonato il job
++    // (cancel o scadenza del wait), il coordinatore NON tocca ne' le celle
++    // condivise ne' `in_flight` — e' esattamente il completamento tardivo che
++    // prima sovrascriveva i flag del job successivo (difetto B1).
++    void finish(uint64_t generation, moe_cpu_state result) {
++        uint32_t expected = CLAIM_NONE;
++        const bool mine = job_claim.compare_exchange_strong(expected, CLAIM_COORD,
++                                                            std::memory_order_acq_rel,
++                                                            std::memory_order_acquire);
++        n_completed.fetch_add(1, std::memory_order_release);
++        if (mine) {
++            record(generation, result);
++            publish_flags(result);
++            gen_reaped.store(generation, std::memory_order_seq_cst);
++            wake_waiters((volatile uint64_t *) &gen_reaped);
++            return;
++        }
++
++        // Job abbandonato: l'esito e' gia' stato registrato da chi ha vinto la
++        // rivendicazione. Qui si dichiara solo di aver finito.
++        gen_reaped.store(generation, std::memory_order_seq_cst);
++        wake_waiters((volatile uint64_t *) &gen_reaped);
++
++        // Riconoscimento di un job dichiarato irrecuperabile: chi lo aveva
++        // abbandonato ha gia' rinunciato ad attenderci e ha lasciato
++        // `in_flight` alto. Tocca al coordinatore riaprire il servizio.
++        //
++        // Il rilascio passa da un CAS su `orphan_gen`, non da una lettura
++        // seguita da una scrittura: `abandon_claimed` fa lo stesso CAS dal suo
++        // lato, quindi esattamente UNO dei due vince. Il seq_cst incrociato
++        // (qui `orphan_gen`, la' `gen_reaped`) garantisce che almeno uno dei
++        // due veda l'altro, quindi il rilascio non si perde. Rilasciarlo due
++        // volte sarebbe peggio che non rilasciarlo: il secondo
++        // `in_flight.store(0)` potrebbe azzerare il flag di un job NUOVO.
++        uint64_t expected_orphan = generation;
++        if (orphan_gen.compare_exchange_strong(expected_orphan, 0, std::memory_order_seq_cst)) {
++            in_flight.store(0, std::memory_order_release);
++            wake_waiters((volatile uint64_t *) &in_flight);
++        }
++    }
++
++    // Attende che il coordinatore abbia FINITO con `generation`. Ritorna false
++    // alla scadenza. Solo atomici e WaitOnAddress: nessun mutex (invariante 6).
++    bool await_reap(uint64_t generation, uint64_t timeout_us) {
++        const uint64_t deadline = now_us() + timeout_us;
++        for (;;) {
++            const uint64_t r = gen_reaped.load(std::memory_order_acquire);
++            if (r >= generation) return true;
++            if (now_us() >= deadline) return false;
++            block_until_changed((volatile uint64_t *) &gen_reaped, r, 1);
++        }
++    }
++
++    // Abbandono di un job in volo, comune a `cancel()` e alla scadenza del
++    // `wait`. Il chiamante deve aver gia' vinto la rivendicazione.
++    //
++    // `wait_for_ack == true`  (cancel, thread proprietario): si attende il
++    //     riconoscimento del coordinatore e poi si rilascia `in_flight`.
++    // `wait_for_ack == false` (scadenza dentro il nodo host): non si blocca una
++    //     seconda volta il thread di callback del driver. Il job e' dichiarato
++    //     subito irrecuperabile e sara' il coordinatore a rilasciare.
++    void abandon_claimed(uint64_t generation, moe_cpu_state announced,
++                         moe_cpu_state on_ack, bool wait_for_ack) {
++        cancelled.store(1, std::memory_order_release);   // nessuna pubblicazione fino a rearm()
++        cell_store_release(&flags_h->result.value, (uint64_t) announced);
++        cell_store_release(&flags_h->poison.value, 1);
++        cell_store_release(&flags_h->done.value, 1);
++        wake_waiters(&flags_h->done.value);
++
++        if (wait_for_ack && await_reap(generation, caps.ack_timeout_us)) {
++            record(generation, on_ack);
++            cell_store_release(&flags_h->done.value, 0);
++            in_flight.store(0, std::memory_order_release);
++            wake_waiters((volatile uint64_t *) &in_flight);
++            return;
++        }
++
++        // Nessun riconoscimento entro la scadenza: il job e' IRRECUPERABILE.
++        // `in_flight` resta alto — quindi ogni submit successivo e' rifiutato e
++        // nessuno puo' toccare `y`, `flat`, `xq`, `hq` o la mappa degli strati
++        // mentre il coordinatore sta ancora calcolando.
++        orphan_gen.store(generation, std::memory_order_seq_cst);
++        record(generation, moe_cpu_state::timeout);      // la scadenza contamina
++        if (gen_reaped.load(std::memory_order_seq_cst) >= generation) {
++            // Il coordinatore ha finito proprio adesso e puo' non aver visto
++            // `orphan_gen`: si riapre qui. Stesso CAS che fa `finish()`, cosi'
++            // esattamente uno dei due rilascia.
++            uint64_t expected_orphan = generation;
++            if (orphan_gen.compare_exchange_strong(expected_orphan, 0, std::memory_order_seq_cst)) {
++                in_flight.store(0, std::memory_order_release);
++                wake_waiters((volatile uint64_t *) &in_flight);
++            }
++        }
++    }
++
++    // Controllo integrale dell'header. Un job non valido NON scrive `y`:
++    // nessuno zero viene spacciato per risultato (invariante 7).
++    moe_cpu_state validate_and_prepare() {
++        flat.clear();
++        cur_bank = nullptr;
++        cur_rows = 0;
++
++        const moe_cpu_job & j = *job_h;
++        if (j.magic != MOE_CPU_JOB_MAGIC || j.abi != MOE_CPU_ABI_VERSION)          return moe_cpu_state::rejected;
++        if (j.n_embd != caps.n_embd || j.n_ff_exp != caps.n_ff_exp)                return moe_cpu_state::rejected;
++        if (j.n_rows < 1 || j.n_rows > caps.max_rows)                              return moe_cpu_state::rejected;
++
++        const auto it = layers.find(j.layer);
++        if (it == layers.end())                                                    return moe_cpu_state::rejected;
++        cur_bank = &it->second;
++        cur_rows = j.n_rows;
++
++        int32_t cursor = 0;
++        for (int32_t row = 0; row < j.n_rows; ++row) {
++            const int32_t n = j.n_routes[row];
++            if (n < 0 || n > caps.max_per_row)                                     return moe_cpu_state::rejected;
++            for (int32_t e = 0; e < n; ++e, ++cursor) {
++                if (cursor >= MOE_CPU_MAX_ROUTES)                                  return moe_cpu_state::rejected;
++                const int32_t expert = j.expert[cursor];
++                const float   weight = j.weight[cursor];
++                if (expert < 0 || expert >= cur_bank->n_experts)                   return moe_cpu_state::rejected;
++                if (!std::isfinite(weight))                                        return moe_cpu_state::rejected;
++                flat.push_back({row, expert, weight});
++            }
++        }
++        if ((size_t) cursor != flat.size())                                        return moe_cpu_state::rejected;
++
++        // Quantizzazione dell'attivazione: una volta per token, condivisa da
++        // tutte le route CPU di quel token.
++        for (int32_t row = 0; row < j.n_rows; ++row) {
++            const float * x = x_h + (size_t) row * (size_t) caps.n_embd;
++            for (int32_t k = 0; k < caps.n_embd; ++k) {
++                if (!std::isfinite(x[k]))                                          return moe_cpu_state::rejected;
++            }
++            quant_x(x, xq.data() + (size_t) row * xq_row, caps.n_embd);
++        }
++        return moe_cpu_state::ok;
++    }
++};
++
++// ---------------------------------------------------------------------------
++
++moe_cpu_executor::moe_cpu_executor(std::unique_ptr<impl> p) : p_(std::move(p)) {}
++moe_cpu_executor::~moe_cpu_executor() = default;
++
++std::unique_ptr<moe_cpu_executor> moe_cpu_executor::create(const moe_cpu_caps & caps,
++                                                           std::unique_ptr<moe_cpu_host_memory> memory,
++                                                           std::string * err) {
++    auto fail = [&](const char * m) -> std::unique_ptr<moe_cpu_executor> {
++        if (err) *err = m;
++        return nullptr;
++    };
++    if (!memory)                                             return fail("fornitore di memoria assente");
++    if (caps.n_embd <= 0 || caps.n_ff_exp <= 0)              return fail("forme non valide");
++    if (caps.max_rows < 1 || caps.max_rows > MOE_CPU_MAX_ROWS)       return fail("max_rows fuori dai limiti");
++    if (caps.max_per_row < 1 || caps.max_per_row > MOE_CPU_MAX_PER_ROW) return fail("max_per_row fuori dai limiti");
++    if (caps.n_threads < 1 || caps.n_threads > 32)           return fail("n_threads fuori dai limiti");
++    if (caps.wait_timeout_us == 0 || caps.ack_timeout_us == 0) return fail("scadenze nulle");
++
++    // `ggml_get_type_traits_cpu` indicizza la tabella SENZA controllare i
++    // limiti (ggml-cpu.c:418-420): passarle GGML_TYPE_COUNT, che e' il valore
++    // di difetto di `moe_cpu_caps`, e' una lettura fuori dai limiti, non un
++    // nullptr. Il controllo di intervallo va fatto qui, prima della chiamata.
++    auto type_ok = [](ggml_type t) {
++        return (int) t >= 0 && (int) t < (int) GGML_TYPE_COUNT;
++    };
++    if (!type_ok(caps.type_gate) || !type_ok(caps.type_up) || !type_ok(caps.type_down))
++        return fail("tipo di peso non valido");
++
++    ggml_cpu_init();
++
++    auto p = std::unique_ptr<impl>(new impl());
++    p->caps   = caps;
++    p->memory = std::move(memory);
++    for (int i = 0; i < MOE_CPU_RING; ++i) {
++        p->ring_gen[i].store(UINT64_MAX, std::memory_order_relaxed);
++        p->ring_state[i].store((uint32_t) moe_cpu_state::unknown, std::memory_order_relaxed);
++    }
++
++    p->tg = ggml_get_type_traits_cpu(caps.type_gate);
++    p->tu = ggml_get_type_traits_cpu(caps.type_up);
++    p->td = ggml_get_type_traits_cpu(caps.type_down);
++    if (!p->tg || !p->tu || !p->td || !p->tg->vec_dot || !p->tu->vec_dot || !p->td->vec_dot)
++        return fail("tipi senza tratti CPU");
++    if (p->tg->vec_dot_type != p->tu->vec_dot_type)
++        return fail("gate e up devono condividere il tipo di attivazione");
++
++    p->quant_x = ggml_get_type_traits_cpu(p->tg->vec_dot_type)->from_float;
++    p->quant_h = ggml_get_type_traits_cpu(p->td->vec_dot_type)->from_float;
++    if (!p->quant_x || !p->quant_h)                          return fail("attivazione non quantizzabile");
++
++    p->blk_h = (int) ggml_blck_size(p->td->vec_dot_type);
++    if (p->blk_h <= 0 || p->blk_h > MOE_CPU_MAX_BLOCK)       return fail("blocco dell'attivazione di down fuori dai limiti");
++    if (caps.n_ff_exp % p->blk_h)                            return fail("n_ff_exp non multiplo del blocco di down");
++    if (caps.n_embd % (int) ggml_blck_size(p->tg->vec_dot_type))
++        return fail("n_embd non multiplo del blocco dell'attivazione");
++
++    p->xq_row   = ggml_row_size(p->tg->vec_dot_type, caps.n_embd);
++    p->hq_row   = ggml_row_size(p->td->vec_dot_type, caps.n_ff_exp);
++    p->hq_block = ggml_row_size(p->td->vec_dot_type, p->blk_h);
++
++    // Un solo blocco mappato, suddiviso una volta: job | flags | x | y.
++    const size_t sz_job   = (sizeof(moe_cpu_job)   + 63) & ~size_t(63);
++    const size_t sz_flags = (sizeof(moe_cpu_flags) + 63) & ~size_t(63);
++    const size_t sz_vec   = ((size_t) caps.max_rows * (size_t) caps.n_embd * sizeof(float) + 63) & ~size_t(63);
++    const size_t total    = sz_job + sz_flags + 2 * sz_vec;
++
++    std::string merr;
++    if (!p->memory->allocate(total, 64, &p->block, &merr)) {
++        if (err) *err = "allocazione mappata fallita: " + merr;
++        return nullptr;
++    }
++    char * h = (char *) p->block.host;
++    char * d = (char *) p->block.dev;
++    size_t off = 0;
++    p->job_h   = (moe_cpu_job *)   (h + off); p->job_d   = d + off; off += sz_job;
++    p->flags_h = (moe_cpu_flags *) (h + off); p->flags_d = d + off; off += sz_flags;
++    p->x_h     = (float *)         (h + off); p->x_d     = d + off; off += sz_vec;
++    p->y_h     = (float *)         (h + off); p->y_d     = d + off; off += sz_vec;
++    std::memset(h, 0, total);
++
++    p->xq.assign((size_t) caps.max_rows * p->xq_row, 0);
++    p->hq.assign((size_t) caps.max_rows * (size_t) caps.max_per_row * p->hq_row, 0);
++    p->flat.reserve((size_t) caps.max_rows * (size_t) caps.max_per_row);
++
++    p->alloc_table = {
++        {"job (descrittore)",        sz_job,                 true},
++        {"flags (4 linee)",          sz_flags,               true},
++        {"x (attivazione)",          sz_vec,                 true},
++        {"y (contributo CPU)",       sz_vec,                 true},
++        {"xq (attivazione quant.)",  p->xq.size(),           false},
++        {"hq (nascosto quant.)",     p->hq.size(),           false},
++    };
++
++#if defined(_WIN32)
++    {
++        const auto masks = physical_first_masks();
++        if (!masks.empty() && caps.n_threads > (int) masks.size()) {
++            // il distruttore di `impl` rilascia la memoria: nessun rilascio qui
++            return fail("piu' thread che processori consentiti");
++        }
++    }
++#endif
++
++    p->gate.reset(new barrier((unsigned) caps.n_threads));
++    p->threads.reserve((size_t) caps.n_threads);
++    impl * raw = p.get();
++    p->threads.emplace_back([raw] { raw->coordinator_loop(); });
++    for (int i = 1; i < caps.n_threads; ++i) {
++        p->threads.emplace_back([raw, i] { raw->worker_loop(i); });
++    }
++
++    return std::unique_ptr<moe_cpu_executor>(new moe_cpu_executor(std::move(p)));
++}
++
++bool moe_cpu_executor::register_layer(int32_t layer, const moe_cpu_bank & bank, std::string * err) {
++    auto fail = [&](const char * m) { if (err) *err = m; return false; };
++    if (layer < 0)                                   return fail("indice di strato negativo");
++    if (!bank.gate || !bank.up || !bank.down)        return fail("banco incompleto");
++    if (bank.n_experts <= 0)                         return fail("numero di esperti non valido");
++    const size_t gate_row = ggml_row_size(p_->caps.type_gate, p_->caps.n_embd);
++    const size_t up_row   = ggml_row_size(p_->caps.type_up,   p_->caps.n_embd);
++    const size_t down_row = ggml_row_size(p_->caps.type_down, p_->caps.n_ff_exp);
++    if (bank.gate_stride != gate_row * (size_t) p_->caps.n_ff_exp) return fail("passo di gate incoerente con la forma");
++    if (bank.up_stride   != up_row   * (size_t) p_->caps.n_ff_exp) return fail("passo di up incoerente con la forma");
++    if (bank.down_stride != down_row * (size_t) p_->caps.n_embd)   return fail("passo di down incoerente con la forma");
++    // `cur_bank` del coordinatore punta DENTRO questa mappa: un `emplace` che
++    // provoca un rehash mentre un job e' in corso lascerebbe un riferimento
++    // pendente. Con la macchina a stati corretta `in_flight` resta alto per
++    // tutta la durata reale del calcolo, quindi questa guardia e' sufficiente.
++    if (p_->in_flight.load(std::memory_order_acquire))             return fail("registrazione con un job in volo");
++
++    const auto it = p_->layers.find(layer);
++    if (it != p_->layers.end()) {
++        const moe_cpu_bank & old = it->second;
++        if (old.gate != bank.gate || old.up != bank.up || old.down != bank.down ||
++            old.n_experts != bank.n_experts) {
++            return fail("puntatori dello strato cambiati: memoria riallocata sotto un graph");
++        }
++        return true;
++    }
++    p_->layers.emplace(layer, bank);
++    return true;
++}
++
++bool moe_cpu_executor::clear_layers(std::string * err) {
++    if (p_->in_flight.load(std::memory_order_acquire)) {
++        if (err) *err = "svuotamento della mappa con un job in volo";
++        return false;
++    }
++    p_->layers.clear();
++    return true;
++}
++
++// ---- nodi host -------------------------------------------------------------
++//
++// Nessuna API CUDA, nessun mutex, ritorno in tempo finito. Sono le uniche due
++// funzioni che il backend CUDA passa a cudaLaunchHostFunc.
++
++void moe_cpu_executor::submit_hook(void * user) {
++    impl * p = ((moe_cpu_executor *) user)->p_.get();
++
++    // La generazione la assegna chi serializza, cioe' questa funzione: cosi'
++    // `cancel()` e la scadenza del `wait` sanno SEMPRE di quale job stanno
++    // parlando, senza gareggiare col coordinatore.
++    const uint64_t gen = p->n_submitted.fetch_add(1, std::memory_order_relaxed) + 1;
++
++    if (p->in_flight.exchange(1, std::memory_order_acq_rel) != 0) {
++        // Due casi, stesso esito: rientranza (due submit senza wait in mezzo:
++        // errore di programma, non una coda) oppure job irrecuperabile non
++        // ancora riconosciuto dal coordinatore.
++        //
++        // NON si tocca nessuna cella condivisa: quelle appartengono al job
++        // ancora in volo, e sovrascriverle e' precisamente il difetto B1.
++        // L'attesa abbinata a questo submit si accorgera' da sola che non c'e'
++        // niente da attendere (vedi `wait_hook`).
++        p->record(gen, moe_cpu_state::rejected);
++        p->n_completed.fetch_add(1, std::memory_order_release);
++        return;
++    }
++
++    p->gen_current.store(gen, std::memory_order_release);
++    p->job_claim.store(CLAIM_NONE, std::memory_order_release);
++    p->record(gen, moe_cpu_state::running);
++
++    cell_store_release(&p->flags_h->done.value, 0);
++    cell_store_release(&p->flags_h->poison.value, 0);
++    cell_store_release(&p->flags_h->result.value, (uint64_t) moe_cpu_state::running);
++    cell_store_release(&p->flags_h->request.value, 1);
++    wake_waiters(&p->flags_h->request.value);
++}
++
++void moe_cpu_executor::wait_hook(void * user) {
++    impl * p = ((moe_cpu_executor *) user)->p_.get();
++
++    if (p->in_flight.load(std::memory_order_acquire) == 0) {
++        // Nessun job in volo: questa attesa appartiene a un submit rifiutato
++        // per rientranza. Non c'e' niente da attendere e — soprattutto —
++        // niente da rilasciare: rilasciare qui e' cio' che permetteva al job
++        // successivo di partire sopra un calcolo ancora in corso.
++        return;
++    }
++
++    const uint64_t gen        = p->gen_current.load(std::memory_order_acquire);
++    const uint64_t start      = now_us();
++    const uint64_t spin_until = start + p->caps.spin_us;
++    const uint64_t deadline   = start + p->caps.wait_timeout_us;
++
++    for (;;) {
++        if (p->job_claim.load(std::memory_order_acquire) == CLAIM_HOST &&
++            p->gen_current.load(std::memory_order_acquire) == gen) {
++            // Il job e' stato abbandonato da `cancel()` o da una scadenza
++            // precedente: non c'e' nessun esito da attendere e il rilascio di
++            // `in_flight` appartiene a chi ha vinto la rivendicazione.
++            // Il controllo sta PRIMA di quello su `done` perche' chi abbandona
++            // riabbassa `done` quando ottiene il riconoscimento: senza questo
++            // ramo un `wait` lento potrebbe non vedere mai il fronte di salita.
++            return;
++        }
++        if (cell_load_acquire(&p->flags_h->done.value) == 1) {
++            const uint32_t claim = p->job_claim.load(std::memory_order_acquire);
++            if (claim == CLAIM_COORD) {
++                // esito pubblicato dal coordinatore: rilascio normale
++                cell_store_release(&p->flags_h->done.value, 0);
++                p->in_flight.store(0, std::memory_order_release);
++                wake_waiters((volatile uint64_t *) &p->in_flight);
++            }
++            // claim == CLAIM_HOST: il job e' stato abbandonato da `cancel()` o
++            // da una scadenza precedente. Chi ha vinto la rivendicazione
++            // possiede anche il rilascio: qui non si tocca nulla.
++            return;
++        }
++        const uint64_t t = now_us();
++        if (t >= deadline) {
++            // Scadenza: non si abortisce (il prototipo chiamava std::abort).
++            // Si tenta di strappare il job al coordinatore. Solo chi vince la
++            // rivendicazione puo' scrivere le celle e rilasciare `in_flight`.
++            uint32_t expected = CLAIM_NONE;
++            if (p->job_claim.compare_exchange_strong(expected, CLAIM_HOST,
++                                                     std::memory_order_acq_rel,
++                                                     std::memory_order_acquire)) {
++                // `wait_for_ack = false`: questo e' il thread di callback del
++                // driver; bloccarlo una seconda volta per attendere il
++                // riconoscimento e' esattamente cio' che l'invariante 6 vuole
++                // evitare. Il job viene dichiarato irrecuperabile subito e
++                // sara' il coordinatore a riaprire il servizio quando finisce.
++                p->abandon_claimed(gen, moe_cpu_state::timeout, moe_cpu_state::timeout, false);
++                return;
++            }
++            // Il coordinatore ha pubblicato proprio adesso (o un `cancel()` ha
++            // vinto la rivendicazione un istante fa): si rilegge `done` e si
++            // prende la strada normale. La finestra e' di nanosecondi — il
++            // vincitore scrive `done` subito dopo aver vinto il CAS.
++            MOE_CPU_PAUSE();
++            continue;
++        }
++        // Giro breve, poi blocco vero: anche il thread di callback del driver
++        // deve poter dormire invece di occupare un core.
++        if (t < spin_until) { MOE_CPU_PAUSE(); continue; }
++        block_until_changed(&p->flags_h->done.value, 0, 1);
++    }
++}
++
++// ---- osservazione ----------------------------------------------------------
++
++uint64_t moe_cpu_executor::submitted() const { return p_->n_submitted.load(std::memory_order_acquire); }
++uint64_t moe_cpu_executor::completed() const { return p_->n_completed.load(std::memory_order_acquire); }
++uint64_t moe_cpu_executor::failures()  const { return p_->n_failed.load(std::memory_order_acquire); }
++uint64_t moe_cpu_executor::first_failed_generation() const { return p_->gen_first_failed.load(std::memory_order_acquire); }
++bool     moe_cpu_executor::contaminated() const { return first_failed_generation() != UINT64_MAX; }
++bool     moe_cpu_executor::unrecoverable() const { return p_->orphan_gen.load(std::memory_order_acquire) != 0; }
++uint64_t moe_cpu_executor::current_generation() const { return p_->gen_current.load(std::memory_order_acquire); }
++
++moe_cpu_state moe_cpu_executor::state(uint64_t generation) const {
++    const size_t i = (size_t) (generation % MOE_CPU_RING);
++    if (p_->ring_gen[i].load(std::memory_order_acquire) != generation) return moe_cpu_state::unknown;
++    return (moe_cpu_state) p_->ring_state[i].load(std::memory_order_relaxed);
++}
++
++bool moe_cpu_executor::acknowledge_contamination(std::string * err) {
++    auto fail = [&](const char * m) { if (err) *err = m; return false; };
++    // Chi riconosce deve aver gia' buttato l'incarnazione della cache e
++    // ricreato lo stato (P1 §5). Riconoscere mentre il coordinatore sta ancora
++    // lavorando non ha significato: lo stato che si dichiara pulito potrebbe
++    // essere riscritto un microsecondo dopo.
++    if (p_->orphan_gen.load(std::memory_order_acquire))      return fail("job irrecuperabile non ancora riconosciuto dal coordinatore");
++    if (p_->in_flight.load(std::memory_order_acquire))       return fail("riconoscimento con un job in volo");
++    p_->gen_first_failed.store(UINT64_MAX, std::memory_order_release);
++    return true;
++}
++
++void moe_cpu_executor::cancel() {
++    // Il veleno vale comunque, anche senza job in volo: fino a `rearm()` ogni
++    // job successivo esce `cancelled` e non produce un contributo consumabile.
++    p_->cancelled.store(1, std::memory_order_seq_cst);
++
++    if (p_->in_flight.load(std::memory_order_acquire) == 0) return;   // niente da strappare
++
++    const uint64_t gen = p_->gen_current.load(std::memory_order_acquire);
++    uint32_t expected = CLAIM_NONE;
++    if (!p_->job_claim.compare_exchange_strong(expected, CLAIM_HOST,
++                                               std::memory_order_acq_rel,
++                                               std::memory_order_acquire)) {
++        // Il coordinatore ha gia' pubblicato: l'esito vero e' suo e il `wait`
++        // abbinato lo consumera' normalmente. Non si riscrive niente.
++        return;
++    }
++    // `wait_for_ack = true`: qui siamo sul thread proprietario, fuori da un
++    // nodo host. Si attende che il coordinatore abbia davvero finito prima di
++    // rilasciare il job: e' il riconoscimento che mancava (difetto B1).
++    // L'annullamento riconosciuto in tempo e' ROUTINE e non contamina (B2).
++    p_->abandon_claimed(gen, moe_cpu_state::cancelled, moe_cpu_state::cancelled, true);
++}
++
++void moe_cpu_executor::rearm() {
++    p_->cancelled.store(0, std::memory_order_release);
++}
++
++bool moe_cpu_executor::quiesce(uint64_t timeout_us, std::string * err) {
++    const uint64_t deadline = now_us() + timeout_us;
++    for (;;) {
++        if (p_->orphan_gen.load(std::memory_order_acquire) == 0 &&
++            p_->in_flight.load(std::memory_order_acquire) == 0 &&
++            p_->n_completed.load(std::memory_order_acquire) >= p_->n_submitted.load(std::memory_order_acquire)) {
++            return true;
++        }
++        if (now_us() >= deadline) {
++            if (err) {
++                *err = p_->orphan_gen.load(std::memory_order_acquire)
++                     ? "quiesce scaduta: job irrecuperabile non ancora riconosciuto dal coordinatore"
++                     : "quiesce scaduta: un job risulta ancora in volo";
++            }
++            return false;
++        }
++        std::this_thread::yield();
++    }
++}
++
++void moe_cpu_executor::set_phase(moe_cpu_phase ph) {
++    p_->phase.store((uint32_t) ph, std::memory_order_relaxed);
++    if (ph != moe_cpu_phase::decode) {
++        // risveglia i thread perche' rileggano la fase e vadano a dormire
++        wake_waiters((volatile uint64_t *) &p_->work);
++        wake_waiters(&p_->flags_h->request.value);
++    }
++}
++
++void moe_cpu_executor::set_test_delay_us(uint64_t us) {
++    p_->test_delay_us.store(us, std::memory_order_relaxed);
++}
++
++const moe_cpu_job   * moe_cpu_executor::job_host()   const { return p_->job_h; }
++moe_cpu_job         * moe_cpu_executor::job_host_mut()     { return p_->job_h; }
++const moe_cpu_flags * moe_cpu_executor::flags_host() const { return p_->flags_h; }
++const float         * moe_cpu_executor::y_host()     const { return p_->y_h; }
++float               * moe_cpu_executor::x_host()           { return p_->x_h; }
++void * moe_cpu_executor::job_dev()   const { return p_->job_d; }
++void * moe_cpu_executor::flags_dev() const { return p_->flags_d; }
++void * moe_cpu_executor::x_dev()     const { return p_->x_d; }
++void * moe_cpu_executor::y_dev()     const { return p_->y_d; }
++
++const moe_cpu_caps & moe_cpu_executor::caps() const { return p_->caps; }
++const std::vector<moe_cpu_allocation> & moe_cpu_executor::allocations() const { return p_->alloc_table; }
++size_t moe_cpu_executor::allocated_bytes() const {
++    size_t n = 0;
++    for (const auto & a : p_->alloc_table) n += a.bytes;
++    return n;
++}
++
++bool moe_cpu_executor::reference_expert(int32_t layer, int32_t expert, const float * x, float * out,
++                                        std::string * err) const {
++    auto fail = [&](const char * m) { if (err) *err = m; return false; };
++    const auto it = p_->layers.find(layer);
++    if (it == p_->layers.end())                       return fail("strato non registrato");
++    const moe_cpu_bank & b = it->second;
++    if (expert < 0 || expert >= b.n_experts)          return fail("esperto fuori dai limiti");
++    if (!x || !out)                                   return fail("buffer assente");
++
++    const int K = p_->caps.n_embd;
++    const int H = p_->caps.n_ff_exp;
++    std::vector<uint8_t> xqr(p_->xq_row), hqr(p_->hq_row);
++    p_->quant_x(x, xqr.data(), K);
++
++    const size_t gate_row = b.gate_stride / (size_t) H;
++    const size_t up_row   = b.up_stride   / (size_t) H;
++    const size_t down_row = b.down_stride / (size_t) K;
++    std::vector<float> hidden((size_t) p_->blk_h);
++    for (int r0 = 0; r0 < H; r0 += p_->blk_h) {
++        for (int i = 0; i < p_->blk_h; ++i) {
++            float gv = 0.0f, uv = 0.0f;
++            p_->tg->vec_dot(K, &gv, 0, b.gate + (size_t) expert * b.gate_stride + (size_t) (r0 + i) * gate_row, 0, xqr.data(), 0, 1);
++            p_->tu->vec_dot(K, &uv, 0, b.up   + (size_t) expert * b.up_stride   + (size_t) (r0 + i) * up_row,   0, xqr.data(), 0, 1);
++            hidden[(size_t) i] = (gv / (1.0f + std::exp(-gv))) * uv;
++        }
++        p_->quant_h(hidden.data(), hqr.data() + (size_t) (r0 / p_->blk_h) * p_->hq_block, p_->blk_h);
++    }
++    for (int k = 0; k < K; ++k) {
++        float value = 0.0f;
++        p_->td->vec_dot(H, &value, 0,
++            b.down + (size_t) expert * b.down_stride + (size_t) k * down_row, 0, hqr.data(), 0, 1);
++        out[k] = value;
++    }
++    return true;
++}
+--- a/src/moe_cpu_host_memory.h
++++ b/src/moe_cpu_host_memory.h
+@@ -0,0 +1,63 @@
++// P2 — Fornitore dei buffer host mappati dell'esecutore.
++//
++// L'esecutore non chiama CUDA. Riceve un fornitore che sa restituire, per una
++// stessa allocazione, l'indirizzo HOST (quello che la CPU dereferenzia) e
++// l'indirizzo DEVICE (quello che i kernel vedono). Due implementazioni:
++//
++//  - `moe_cpu_host_memory_plain()`: malloc allineato, dev == host. Serve al
++//    test host-only e a qualunque banco senza GPU.
++//  - `moe_cpu_host_memory_cuda_mapped(device)`: allocazione sul buffer type
++//    `CUDA<n>_Mapped` (ggml-cuda.cu:1447-1477, cudaHostAlloc(MAPPED|PORTABLE)
++//    + cudaHostGetDevicePointer), raggiunto per proc-address come gia' fa
++//    llama-moecache.cpp:461-466 per `ggml_backend_cuda_moe_demand_unbind`.
++//    Vive in un file separato che il test non compila.
++//
++// ATTENZIONE (difetto costoso se lo si dimentica): per un tensore allocato su
++// `CUDA<n>_Mapped`, `tensor->data` e' l'indirizzo DEVICE, perche' get_base
++// restituisce ctx->dev (ggml-cuda.cu:1372-1375). Su x86-64 host e device
++// coincidono (UVA), ma il codice NON deve dipenderne: l'indirizzo host si
++// ottiene solo da `ggml_cuda_mapped_tensor_host_ptr` (ggml-cuda.cu:1387).
++
++#ifndef MOE_CPU_HOST_MEMORY_H
++#define MOE_CPU_HOST_MEMORY_H
++
++#include <cstddef>
++#include <memory>
++#include <string>
++
++struct moe_cpu_host_block {
++    void * host = nullptr;
++    void * dev  = nullptr;
++    size_t size = 0;
++};
++
++class moe_cpu_host_memory {
++public:
++    virtual ~moe_cpu_host_memory() = default;
++
++    // Una sola chiamata per esecutore: un blocco unico, poi suddiviso
++    // internamente. Allineamento richiesto: 64 byte o piu'.
++    virtual bool allocate(size_t size, size_t align, moe_cpu_host_block * out, std::string * err) = 0;
++
++    // Rilascio esplicito. L'esecutore lo invoca nel proprio distruttore, DOPO
++    // aver disinstallato i hook e atteso il pool: i graph che referenziano
++    // questi indirizzi devono essere gia' stati distrutti.
++    virtual void release() = 0;
++
++    virtual const char * name() const = 0;
++
++    // P3 — tensore ggml che copre l'intero blocco, quando il fornitore ne ha
++    // uno (fornitore `cuda-mapped`). Serve a costruire, dal lato di libllama,
++    // una VISTA stabile sul buffer `y` da dare in pasto al graph: cosi' il
++    // contributo CPU entra in `moe_out` con un semplice ggml_add letto in
++    // zero-copy, senza nessuna copia H2D e senza nessun operatore nuovo.
++    // nullptr per il fornitore `plain` del test host-only.
++    virtual struct ggml_tensor * base_tensor() const { return nullptr; }
++};
++
++std::unique_ptr<moe_cpu_host_memory> moe_cpu_host_memory_plain();
++
++// Definita in moe_cpu_host_memory_cuda.cpp (non compilata dal test host-only).
++std::unique_ptr<moe_cpu_host_memory> moe_cpu_host_memory_cuda_mapped(int device);
++
++#endif // MOE_CPU_HOST_MEMORY_H
+--- a/src/moe_cpu_host_memory_cuda.cpp
++++ b/src/moe_cpu_host_memory_cuda.cpp
+@@ -0,0 +1,135 @@
++// P2 — Fornitore di memoria mappata per il server.
++//
++// Non chiama CUDA direttamente: usa il buffer type `CUDA<n>_Mapped` del backend
++// (ggml-cuda.cu:1447-1477, cudaHostAlloc(MAPPED|PORTABLE) + cudaHostGetDevicePointer)
++// raggiunto per proc-address, esattamente come llama-moecache.cpp:461-466 fa con
++// `ggml_backend_cuda_moe_demand_unbind`. Cosi' libllama non linka ggml-cuda.
++//
++// ATTENZIONE: per un tensore di quel buffer, `tensor->data` e' l'indirizzo
++// DEVICE (get_base restituisce ctx->dev, ggml-cuda.cu:1372-1375). L'indirizzo
++// host si ottiene SOLO da `ggml_cuda_mapped_tensor_host_ptr` (ggml-cuda.cu:1387).
++// Su x86-64 i due coincidono (UVA) ma il codice non ci si appoggia.
++//
++// NOMI E FIRME VERIFICATI SULL'ALBERO REALE il 14 settembre (difetto E1 della
++// revisione: la versione precedente cercava `"ggml_backend_cuda_mapped_buffer_type"`
++// con firma `(int)`, che in tabella non esiste):
++//
++//   ggml-cuda.cu:6032-6033  "ggml_backend_cuda_mapped_buffer_type_for_device"
++//   ggml-cuda.cu:5987       static ggml_backend_buffer_type_t
++//                           ggml_backend_cuda_mapped_buffer_type_for_device(ggml_backend_dev_t dev);
++//
++// La funzione prende il DISPOSITIVO, non l'indice: internamente ritrova
++// l'indice scorrendo `ggml_backend_reg_dev_get(reg, i)` e chiama
++// `ggml_backend_cuda_mapped_buffer_type((int) i)` (righe 5987-5998). Passarle
++// un `int` avrebbe compilato e sarebbe esploso a runtime.
++//
++// DA FARE IN P3: `ggml_cuda_mapped_tensor_host_ptr` (definita a ggml-cuda.cu:1387)
++// NON e' nella tabella dei proc-address (verificato: la tabella a ~6000-6035
++// non la contiene). Va aggiunta la voce, altrimenti la risoluzione qui sotto
++// fallisce e l'esecutore non si crea. Il fallimento e' sicuro — messaggio e
++// nullptr, mai un puntatore device dereferenziato — ma resta BLOCCANTE per
++// l'inizio di P3.
++//
++// NON compilato dal test host-only.
++
++#include "moe_cpu_host_memory.h"
++
++#include "ggml.h"
++#include "ggml-backend.h"   // include a sua volta ggml-alloc.h (ggml_backend_alloc_ctx_tensors_from_buft)
++
++#include <string>
++
++namespace {
++
++// Firma reale: ggml_backend_buffer_type_t (*)(ggml_backend_dev_t).
++using mapped_buft_fn = ggml_backend_buffer_type_t (*)(ggml_backend_dev_t);
++using mapped_host_fn = const void * (*)(const ggml_tensor *, size_t);
++
++class cuda_mapped_memory : public moe_cpu_host_memory {
++    int                     device_;
++    ggml_context *          ctx_    = nullptr;
++    ggml_backend_buffer_t   buf_    = nullptr;
++    ggml_tensor *           base_   = nullptr;   // P3: il tensore che copre il blocco
++    moe_cpu_host_block      block_{};
++public:
++    explicit cuda_mapped_memory(int device) : device_(device) {}
++    ~cuda_mapped_memory() override { release(); }
++
++    bool allocate(size_t size, size_t align, moe_cpu_host_block * out, std::string * err) override {
++        // `fail` rilascia cio' che questa chiamata ha gia' costruito: non si
++        // usa per il caso «gia' allocato», che non deve distruggere nulla.
++        auto fail = [&](const char * m) { if (err) *err = m; release(); return false; };
++        if (buf_) { if (err) *err = "gia' allocato"; return false; }
++        // Il buffer type allinea a 128 (ggml-cuda.cu:1479-1482), quindi ogni
++        // richiesta fino a 128 byte e' soddisfatta per costruzione.
++        if (align > 128) { if (err) *err = "allineamento richiesto superiore a quello del buffer mappato"; return false; }
++
++        ggml_backend_dev_t dev = nullptr;
++        {
++            const std::string name = "CUDA" + std::to_string(device_);
++            dev = ggml_backend_dev_by_name(name.c_str());
++        }
++        if (!dev) {
++            for (size_t i = 0; i < ggml_backend_dev_count(); ++i) {
++                ggml_backend_dev_t d = ggml_backend_dev_get(i);
++                if (ggml_backend_dev_type(d) == GGML_BACKEND_DEVICE_TYPE_GPU) { dev = d; break; }
++            }
++        }
++        if (!dev) { if (err) *err = "nessun dispositivo CUDA"; return false; }
++
++        ggml_backend_reg_t reg = ggml_backend_dev_backend_reg(dev);
++        if (!reg) { if (err) *err = "registro del backend assente"; return false; }
++
++        auto buft_fn = (mapped_buft_fn) ggml_backend_reg_get_proc_address(
++            reg, "ggml_backend_cuda_mapped_buffer_type_for_device");
++        auto host_fn = (mapped_host_fn) ggml_backend_reg_get_proc_address(
++            reg, "ggml_cuda_mapped_tensor_host_ptr");
++        if (!buft_fn) { if (err) *err = "ggml_backend_cuda_mapped_buffer_type_for_device non esposta dal backend"; return false; }
++        if (!host_fn) { if (err) *err = "ggml_cuda_mapped_tensor_host_ptr non esposta: aggiungerla alla tabella dei proc-address in P3"; return false; }
++
++        ggml_backend_buffer_type_t buft = buft_fn(dev);
++        if (!buft) { if (err) *err = "buffer type mappato assente per questo dispositivo"; return false; }
++
++        ggml_init_params ip{};
++        ip.mem_size   = ggml_tensor_overhead() * 2;
++        ip.no_alloc   = true;
++        ctx_ = ggml_init(ip);
++        if (!ctx_) return fail("contesto ggml non creato");
++
++        ggml_tensor * t = ggml_new_tensor_1d(ctx_, GGML_TYPE_I8, (int64_t) size);
++        if (!t) return fail("tensore non creato");
++        ggml_set_name(t, "moe_cpu_mapped");
++
++        buf_ = ggml_backend_alloc_ctx_tensors_from_buft(ctx_, buft);
++        if (!buf_) return fail("allocazione del buffer mappato fallita");
++
++        const void * host = host_fn(t, 0);
++        if (!host) return fail("indirizzo host del buffer mappato non risolvibile");
++
++        base_ = t;
++        block_.host = const_cast<void *>(host);
++        block_.dev  = t->data;          // indirizzo DEVICE: e' quello che vedono i kernel
++        block_.size = size;
++        if (out) *out = block_;
++        return true;
++    }
++
++    void release() override {
++        if (buf_) { ggml_backend_buffer_free(buf_); buf_ = nullptr; }
++        if (ctx_) { ggml_free(ctx_); ctx_ = nullptr; }
++        base_ = nullptr;
++        block_ = {};
++    }
++
++    const char * name() const override { return "cuda-mapped"; }
++
++    // P3: il tensore ggml che copre il blocco. libllama ci costruisce sopra la
++    // vista stabile di `y` usata dal nodo di merge nel graph.
++    ggml_tensor * base_tensor() const override { return base_; }
++};
++
++} // namespace
++
++std::unique_ptr<moe_cpu_host_memory> moe_cpu_host_memory_cuda_mapped(int device) {
++    return std::unique_ptr<moe_cpu_host_memory>(new cuda_mapped_memory(device));
++}

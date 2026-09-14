@@ -1,0 +1,999 @@
+--- a/ggml/include/moe_cpu_job.h
++++ b/ggml/include/moe_cpu_job.h
+@@ -15,6 +15,13 @@
+ //  4. C'e' un solo slot di job per contesto: gli strati sono seriali sullo
+ //     stesso stream, quindi lo strato il+1 non puo' pubblicare prima che il
+ //     `wait` dello strato il sia ritornato.
++//
++// P4-estensione, modo FUSO (`LLAMA_MOE_CPU_FUSE=1`). La regola 2 cade: non c'e'
++// piu' nessun nodo host `submit`. La pubblicazione la fa il KERNEL di export
++// stesso, scrivendo `flags->publish` dopo il fence, e il coordinatore del pool
++// si arma da solo guardando quella cella. Resta UN nodo host per strato, quello
++// della regola 3, che attende la conclusione del job appena pubblicato. Le
++// regole 1, 3 e 4 restano valide parola per parola.
+ 
+ #ifndef MOE_CPU_JOB_H
+ #define MOE_CPU_JOB_H
+@@ -59,12 +66,22 @@
+    - poison:  1 quando il contenuto di `y` NON e' un risultato valido.
+               Il kernel di merge la legge e, se e' 1, NON somma `y`: scrive NaN
+               nelle righe interessate. Un errore non puo' diventare uno zero
+-              silenzioso (invariante 7). */
++              silenzioso (invariante 7).
++   - publish: P4-estensione. Numero di PUBBLICAZIONE, scritto dal KERNEL di
++              export come ultima cosa dopo __threadfence_system(), e strettamente
++              crescente su tutto il processo (contatore in VRAM). E' cio' che
++              permette di togliere il nodo host `submit`: il pool si arma da solo
++              guardando questa cella, e il nodo host che resta (uno per strato)
++              attende che il coordinatore abbia concluso il job con quel numero.
++              Sta su una cella propria perche' l'host la interroga a giro stretto
++              mentre il dispositivo la scrive: condividere una linea con `done`
++              farebbe rimbalzare la linea a ogni scrittura. */
+ struct moe_cpu_flags {
+     struct moe_cpu_cell request;
+     struct moe_cpu_cell done;
+     struct moe_cpu_cell result;
+     struct moe_cpu_cell poison;
++    struct moe_cpu_cell publish;
+ };
+ 
+ /* Descrittore del job. Scritto interamente dal kernel di export.
+--- a/ggml/src/ggml-cuda/moe-demand.cuh
++++ b/ggml/src/ggml-cuda/moe-demand.cuh
+@@ -3,6 +3,7 @@
+ #include "fork-moe-kernels.cuh"
+ #include "ggml-moe-cpu.h"
+ #include "moe_cpu_job.h"
++#include <algorithm>
+ #include <atomic>
+ #include <string>
+ #include <vector>
+@@ -54,6 +55,17 @@
+     // P4, opzioni di misura: inerti ai default.
+     bool     allow_zero = false;
+     uint32_t nodes      = MOE_CPU_NODE_ALL;
++    // P4-estensione (impianto leggero).
++    //   LLAMA_MOE_CPU_FUSE=0|1        (1) UN nodo host per strato invece di due:
++    //        il nodo `submit` sparisce, la pubblicazione la fa il kernel di
++    //        export scrivendo `flags->publish`, e il pool si arma da solo.
++    //   LLAMA_MOE_CPU_GUARD_LIGHT=0|1 (1) la guardia del merge non legge piu'
++    //        `y` dalla memoria host mappata (n_embd float per strato attraverso
++    //        il PCIe con un solo blocco): il controllo dei non finiti lo fa il
++    //        pool sul suo stesso buffer, in memoria host, dove costa nulla.
++    //        Resta la lettura di UNA parola, quella del veleno.
++    bool     fuse        = true;
++    bool     guard_light = true;
+ };
+ 
+ static const cpu_options & cpu_opts() {
+@@ -82,6 +94,13 @@
+         // descrittore stantio.
+         if (!(o.nodes & MOE_CPU_NODE_ADD))    o.nodes &= ~(MOE_CPU_NODE_WAIT | MOE_CPU_NODE_GUARD);
+         if (!(o.nodes & MOE_CPU_NODE_EXPORT)) o.nodes &= ~MOE_CPU_NODE_SUBMIT;
++        if (const char * f = getenv("LLAMA_MOE_CPU_FUSE"))        o.fuse        = strcmp(f, "0") != 0;
++        if (const char * g = getenv("LLAMA_MOE_CPU_GUARD_LIGHT")) o.guard_light = strcmp(g, "0") != 0;
++        // Il modo fuso vive sulla pubblicazione fatta dal kernel di export: senza
++        // quel kernel non c'e' niente da pubblicare e il nodo che resta
++        // attenderebbe un job mai nato. La stessa regola e' scritta anche in
++        // llama-moecpu.cpp, perche' i due lati non si scambiano configurazione.
++        if (!(o.nodes & MOE_CPU_NODE_EXPORT)) o.fuse = false;
+         const char * layers = getenv("LLAMA_MOE_CPU_LAYERS");
+         if (layers && *layers) {
+             const char * p = layers;
+@@ -177,10 +196,25 @@
+ static std::unordered_map<const void *, bank_binding> bindings;
+ static std::atomic<uint64_t> fused_calls{0};
+ static uint64_t next_trace_id = 0;
+-// P3 — il solo gruppo abilitato al ramo CPU in questa fase (un solo strato).
+-// Letto dal ciclo dei nodi del backend per il nodo di merge; nullptr quando la
+-// funzione e' spenta o lo strato non e' idoneo.
++// P3 — il gruppo abilitato al ramo CPU. Era UNO solo perche' P3 lavorava su un
++// solo strato; con l'estensione di P4 gli strati sono molti e `cpu_group` da
++// solo non basta piu' a dire QUALE strato ha prodotto l'`add` che il ciclo dei
++// nodi sta guardando (il buffer `y` e' lo stesso per tutti). Restano entrambi:
++//  - `cpu_group`: l'ultimo gruppo idoneo, usato solo come ripiego;
++//  - `cpu_groups`: tutti i gruppi idonei, per i contatori aggregati;
++//  - `pending_cpu_group`: il gruppo dello strato appena pianificato, scritto da
++//    `remap` e consumato da `merge_node`, con la stessa disciplina di
++//    `pending_router_weights` (un solo thread host per backend, nessuna
++//    rientranza, valido solo dentro il ciclo dei nodi).
+ static std::atomic<bound_group *> cpu_group{nullptr};
++static std::vector<bound_group *> cpu_groups;            // protetto da bindings_mutex
++static bound_group *              pending_cpu_group = nullptr;
++
++// P4-estensione — contatore di PUBBLICAZIONE in VRAM, uno per processo.
++// Il kernel di export ne prende il prossimo valore e lo scrive in
++// `flags->publish`: e' il numero che il nodo host del modo fuso attende. Deve
++// essere unico fra gli strati, quindi non puo' vivere dentro `bound_group`.
++static unsigned long long * pub_counter = nullptr;
+ 
+ static uint64_t fused_count() { return fused_calls.load(std::memory_order_relaxed); }
+ 
+@@ -273,6 +307,10 @@
+             group->diag_acc  = group->allocate<double>(4);
+             group->diag_u    = group->allocate<unsigned long long>(4);
+             group->diag_ring = group->allocate<float>(2 * MOE_CPU_DIAG_RING);
++            if (!pub_counter) {
++                CUDA_CHECK(cudaMalloc(&pub_counter, sizeof(unsigned long long)));
++                CUDA_CHECK(cudaMemset(pub_counter, 0, sizeof(unsigned long long)));
++            }
+             GGML_LOG_INFO("moe cpu: strato %d idoneo al ramo CPU (%s), cpu_max=%u\n",
+                 group->layer, opts.diag ? "diagnostica" : "attiva", opts.cpu_max);
+         } else if (opts.enabled && group->layer >= 0 && group->layer < 512 && opts.layer[group->layer]) {
+@@ -285,7 +323,10 @@
+     group->plan = reinterpret_cast<moe_grouped_decode_plan *>(group->allocate<char>(plan_size));
+     CUDA_CHECK(cudaDeviceSynchronize());
+     for (uint32_t i = 0; i < 3; ++i) bindings.emplace(target[i]->data, bank_binding{group.get(), i});
+-    if (group->cpu_ok) cpu_group.store(group.get(), std::memory_order_release);
++    if (group->cpu_ok) {
++        cpu_group.store(group.get(), std::memory_order_release);
++        cpu_groups.push_back(group.get());
++    }
+     groups.push_back(std::move(group));
+     return true;
+ }
+@@ -305,7 +346,10 @@
+     for (uint32_t i = 0; i < 3; ++i) bindings.erase(target[i]->data);
+     // P3: un unbind distrugge l'incarnazione con tutto il suo stato, quindi il
+     // gruppo CPU non deve piu' essere raggiungibile dal ciclo dei nodi.
+-    cpu_group.compare_exchange_strong(group, nullptr);
++    bound_group * expected = group;
++    cpu_group.compare_exchange_strong(expected, nullptr);
++    cpu_groups.erase(std::remove(cpu_groups.begin(), cpu_groups.end(), group), cpu_groups.end());
++    if (pending_cpu_group == group) pending_cpu_group = nullptr;
+     groups.erase(owned);
+     return true;
+ }
+@@ -350,12 +394,25 @@
+         bool     diag,
+         moe_cpu_job * job,
+         float * x,
+-        const uint64_t * device_step) {
++        const uint64_t * device_step,
++        moe_cpu_flags * flags,              // P4-estensione: cella `publish`
++        unsigned long long * pub_seq) {     // contatore di pubblicazione in VRAM
+     const uint32_t thread = threadIdx.x;
+     if (plan->status != MOE_GROUPED_PLAN_READY) {
+         // Il piano e' fallito: non si pubblica nulla di consumabile. Il magic
+         // invalidato fa rifiutare il job dall'esecutore (invariante 7).
+-        if (thread == 0) job->magic = 0;
++        // ATTENZIONE: si pubblica lo stesso, altrimenti nel modo fuso il nodo
++        // host che segue attenderebbe per sempre un numero che non arriva. Il
++        // pool prendera' il job, lo trovera' senza magic e lo rifiutera': e'
++        // esattamente la strada dell'invariante 7 (uno STATO, non un blocco).
++        if (thread == 0) {
++            job->magic = 0;
++            __threadfence_system();
++            if (flags && pub_seq) {
++                flags->publish.value = atomicAdd(pub_seq, 1ULL) + 1ULL;
++                __threadfence_system();
++            }
++        }
+         return;
+     }
+ 
+@@ -405,6 +462,16 @@
+         x[i] = activation[row * act_row_stride + col];
+     }
+     __threadfence_system();
++    // P4-estensione — PUBBLICAZIONE. Ultima scrittura del kernel, dopo il fence
++    // che rende visibili all'host descrittore e attivazione: il pool che vede
++    // crescere `publish` sa che tutto il resto e' gia' leggibile. Un solo
++    // thread, dopo la barriera: senza __syncthreads() un thread potrebbe
++    // pubblicare mentre un altro sta ancora copiando `x`.
++    __syncthreads();
++    if (thread == 0 && flags && pub_seq) {
++        flags->publish.value = atomicAdd(pub_seq, 1ULL) + 1ULL;
++        __threadfence_system();
++    }
+ }
+ 
+ // ---------------------------------------------------------------------------
+@@ -434,7 +501,8 @@
+         uint32_t top_k,
+         double * diag_acc,
+         unsigned long long * diag_u,
+-        float * diag_ring) {
++        float * diag_ring,
++        bool light) {
+     __shared__ double sh_err[128];
+     __shared__ double sh_ref[128];
+     __shared__ float  sh_max[128];
+@@ -489,8 +557,17 @@
+         }
+     }
+ 
+-    // Conteggio dei non finiti in `y`: vale in entrambe le modalita'.
+-    if (diag_u) {
++    // Conteggio dei non finiti in `y`.
++    //
++    // P4-estensione, DIFETTO TROVATO: `y` vive in memoria host MAPPATA, quindi
++    // questo ciclo e' una lettura di n_embd float ATTRAVERSO IL PCIe fatta da un
++    // solo blocco di 128 thread — ed e' la ragione per cui la guardia costava
++    // 15,0 microsecondi per strato contro i 5,1 del kernel di export (P4 §4.4,
++    // dove l'ipotesi era «il flag del veleno»: era `y`, non il flag). Con
++    // `light` il controllo non sparisce, CAMBIA LATO: lo fa il pool sul proprio
++    // buffer, in memoria host, dove costa nulla, e il suo esito arriva qui gia'
++    // dentro il veleno. Resta la lettura di UNA parola, quella di `poison`.
++    if (diag_u && !light) {
+         unsigned long long bad = 0;
+         for (uint32_t i = thread; i < n_rows * n_embd; i += blockDim.x) {
+             if (!isfinite(y[i])) ++bad;
+@@ -581,47 +658,80 @@
+     static std::atomic<uint64_t> n_calls{0};
+     if ((n_calls.fetch_add(1, std::memory_order_relaxed) + 1) % (uint64_t) opts.report) return;
+     std::lock_guard<std::mutex> lock(bindings_mutex);
+-    bound_group * group = cpu_group.load(std::memory_order_acquire);
+-    if (!group) return;
+-    moe_grouped_device_scope scope(group->device);
++    if (cpu_groups.empty()) return;
++    moe_grouped_device_scope scope(cpu_groups.front()->device);
+     CUDA_CHECK(cudaDeviceSynchronize());
+-    unsigned long long c[8] = {0};
+-    CUDA_CHECK(cudaMemcpy(c, group->counters, sizeof(c), cudaMemcpyDeviceToHost));
+-    double acc[4] = {0};
+-    unsigned long long du[4] = {0};
+-    if (group->diag_acc) CUDA_CHECK(cudaMemcpy(acc, group->diag_acc, sizeof(acc), cudaMemcpyDeviceToHost));
+-    if (group->diag_u)   CUDA_CHECK(cudaMemcpy(du,  group->diag_u,   sizeof(du),  cudaMemcpyDeviceToHost));
+-    const unsigned long long hits = c[5];
+-    const unsigned long long bytes = c[1] * group->words_per_miss * sizeof(uint4);
+-    // Invariante 1: uniche = colpi GPU + miss GPU + miss CPU. In modalita'
+-    // diagnostica i "miss CPU" sono ANCHE miss GPU, quindi la somma torna con
+-    // c[2] = 0 e c[6] conta comunque gli unici mandati alla CPU.
+-    const bool inv1 = (hits + c[1] + c[2]) == c[0];
+-    float nrmse = 0.0f;
+-    if (acc[1] > 0.0) nrmse = (float) sqrt(acc[0] / acc[1]);
+-    const float maxabs = *reinterpret_cast<const float *>(&du[0]);
+-    GGML_LOG_INFO("moe cpu: strato %d modo %s | uniche %llu = colpi %llu + missGPU %llu + missCPU %llu (invariante1 %s) | "
+-                  "coppie %llu, routeCPU %llu, uniciCPU %llu, byte %llu | diag confronti %.0f NRMSE %.6f max %.6g | non finiti %llu | "
++
++    // P4-estensione: con piu' strati accesi il riepilogo e' per strato PIU' un
++    // totale. La riga per strato resta quella di P3, parola per parola, cosi'
++    // un confronto con le corse di P3/P4 si fa senza tradurre niente.
++    unsigned long long t_uniq = 0, t_hits = 0, t_mgpu = 0, t_mcpu = 0, t_pairs = 0;
++    unsigned long long t_route = 0, t_ucpu = 0, t_bytes = 0, t_saved = 0, t_bad = 0;
++    bool inv1_all = true;
++    double  agg_err = 0.0, agg_ref = 0.0, agg_cmp = 0.0;
++    float   agg_max = 0.0f;
++    const bool per_strato = cpu_groups.size() <= 8;   // 47 righe per stampa sono illeggibili
++
++    for (bound_group * group : cpu_groups) {
++        unsigned long long c[8] = {0};
++        CUDA_CHECK(cudaMemcpy(c, group->counters, sizeof(c), cudaMemcpyDeviceToHost));
++        double acc[4] = {0};
++        unsigned long long du[4] = {0};
++        if (group->diag_acc) CUDA_CHECK(cudaMemcpy(acc, group->diag_acc, sizeof(acc), cudaMemcpyDeviceToHost));
++        if (group->diag_u)   CUDA_CHECK(cudaMemcpy(du,  group->diag_u,   sizeof(du),  cudaMemcpyDeviceToHost));
++        const unsigned long long hits  = c[5];
++        const unsigned long long bytes = c[1] * group->words_per_miss * sizeof(uint4);
++        // Byte NON trasferiti perche' serviti dalla CPU. In diagnostica i miss
++        // CPU sono anche miss GPU (c[2] = 0): il risparmio e' zero per
++        // costruzione e la colonna lo dice.
++        const unsigned long long saved = c[2] * group->words_per_miss * sizeof(uint4);
++        // Invariante 1: uniche = colpi GPU + miss GPU + miss CPU.
++        const bool inv1 = (hits + c[1] + c[2]) == c[0];
++        inv1_all = inv1_all && inv1;
++        t_uniq += c[0]; t_hits += hits; t_mgpu += c[1]; t_mcpu += c[2]; t_pairs += c[3];
++        t_route += c[4]; t_ucpu += c[6]; t_bytes += bytes; t_saved += saved; t_bad += du[1];
++        agg_err += acc[0]; agg_ref += acc[1]; agg_cmp += acc[2];
++        const float mx = *reinterpret_cast<const float *>(&du[0]);
++        if (mx > agg_max) agg_max = mx;
++        if (!per_strato) continue;
++        float nrmse = 0.0f;
++        if (acc[1] > 0.0) nrmse = (float) sqrt(acc[0] / acc[1]);
++        GGML_LOG_INFO("moe cpu: strato %d modo %s | uniche %llu = colpi %llu + missGPU %llu + missCPU %llu (invariante1 %s) | "
++                      "coppie %llu, routeCPU %llu, uniciCPU %llu, byte %llu, byte risparmiati %llu | "
++                      "diag confronti %.0f NRMSE %.6f max %.6g | non finiti %llu\n",
++            group->layer, cpu_opts().diag ? "diagnostica" : "attiva",
++            c[0], hits, c[1], c[2], inv1 ? "OK" : "VIOLATO",
++            c[3], c[4], c[6], bytes, saved, acc[2], nrmse, (double) mx, du[1]);
++        if (group->diag_ring && du[2] > 0 && cpu_groups.size() == 1) {
++            std::vector<float> ring(2 * MOE_CPU_DIAG_RING, 0.0f);
++            CUDA_CHECK(cudaMemcpy(ring.data(), group->diag_ring, ring.size()*sizeof(float), cudaMemcpyDeviceToHost));
++            const uint32_t n = du[2] < MOE_CPU_DIAG_RING ? (uint32_t) du[2] : MOE_CPU_DIAG_RING;
++            std::string line;
++            char buf[64];
++            for (uint32_t i = 0; i < n && i < 16; ++i) {
++                const uint32_t pos = (uint32_t)((du[2] - n + i) % MOE_CPU_DIAG_RING);
++                snprintf(buf, sizeof(buf), "%s%.5f/%.3g", i ? " " : "", ring[2*pos], (double) ring[2*pos+1]);
++                line += buf;
++            }
++            GGML_LOG_INFO("moe cpu: ultimi token (NRMSE/max): %s\n", line.c_str());
++        }
++    }
++
++    float nrmse_tot = 0.0f;
++    if (agg_ref > 0.0) nrmse_tot = (float) sqrt(agg_err / agg_ref);
++    GGML_LOG_INFO("moe cpu TOTALE: strati %zu modo %s%s | uniche %llu = colpi %llu + missGPU %llu + missCPU %llu (invariante1 %s) | "
++                  "coppie %llu, routeCPU %llu, uniciCPU %llu | byte trasferiti %llu, byte risparmiati %llu (%.2f%%) | "
++                  "diag confronti %.0f NRMSE %.6f max %.6g | non finiti %llu | "
+                   "graph: lanci %llu, catture %llu, riavvii di riscaldamento %llu\n",
+-        group->layer, cpu_opts().diag ? "diagnostica" : "attiva",
+-        c[0], hits, c[1], c[2], inv1 ? "OK" : "VIOLATO",
+-        c[3], c[4], c[6], bytes, acc[2], nrmse, (double) maxabs, du[1],
++        cpu_groups.size(), cpu_opts().diag ? "diagnostica" : "attiva",
++        cpu_opts().fuse ? ", UN nodo host per strato" : ", due nodi host per strato",
++        t_uniq, t_hits, t_mgpu, t_mcpu, inv1_all ? "OK" : "VIOLATO",
++        t_pairs, t_route, t_ucpu, t_bytes, t_saved,
++        (t_bytes + t_saved) ? 100.0 * double(t_saved) / double(t_bytes + t_saved) : 0.0,
++        agg_cmp, nrmse_tot, (double) agg_max, t_bad,
+         (unsigned long long) g_cuda_graph_calls.load(std::memory_order_relaxed),
+         (unsigned long long) g_cuda_graph_captures.load(std::memory_order_relaxed),
+         (unsigned long long) g_cuda_graph_warmup_resets.load(std::memory_order_relaxed));
+-    if (group->diag_ring && du[2] > 0) {
+-        std::vector<float> ring(2 * MOE_CPU_DIAG_RING, 0.0f);
+-        CUDA_CHECK(cudaMemcpy(ring.data(), group->diag_ring, ring.size()*sizeof(float), cudaMemcpyDeviceToHost));
+-        const uint32_t n = du[2] < MOE_CPU_DIAG_RING ? (uint32_t) du[2] : MOE_CPU_DIAG_RING;
+-        std::string line;
+-        char buf[64];
+-        for (uint32_t i = 0; i < n && i < 16; ++i) {
+-            const uint32_t pos = (uint32_t)((du[2] - n + i) % MOE_CPU_DIAG_RING);
+-            snprintf(buf, sizeof(buf), "%s%.5f/%.3g", i ? " " : "", ring[2*pos], (double) ring[2*pos+1]);
+-            line += buf;
+-        }
+-        GGML_LOG_INFO("moe cpu: ultimi token (NRMSE/max): %s\n", line.c_str());
+-    }
+ }
+ 
+ static bool remap(ggml_backend_cuda_context & ctx, const ggml_tensor * weights, const ggml_tensor * ids,
+@@ -677,7 +787,13 @@
+         }
+         // Perche' il ramo CPU non e' partito: si dice UNA VOLTA SOLA, altrimenti
+         // un ripiego silenzioso costa piu' a diagnosticarlo che a scriverlo.
+-        if (group.cpu_ok && !cpu_run && n_rows <= 3) {
++        // P4-estensione, difetto 3 di P4: l'avviso si accendeva anche nel
++        // PREFILL, dove `n_rows` vale 2 e `max_rows` 1 — vero, innocuo, e
++        // indistinguibile da un guasto per chi legge il log di una corsa
++        // riuscita. Ora tace quando la causa e' il numero di righe fuori dal
++        // perimetro dichiarato, che e' un ripiego previsto, non un difetto.
++        const bool fuori_perimetro = hooks && n_rows > uint32_t(hooks->max_rows);
++        if (group.cpu_ok && !cpu_run && n_rows <= 3 && !fuori_perimetro) {
+             static bool detto = false;
+             if (!detto) {
+                 detto = true;
+@@ -697,18 +813,28 @@
+             0, 0, group.clock, group.counters, cpu_max, opts.diag, group.plan);
+         CUDA_CHECK(cudaGetLastError());
+ 
++        // P4-estensione: quale gruppo ha appena pianificato. Lo consuma
++        // `merge_node` per sapere di QUALE strato e' l'`add` che sta guardando:
++        // con piu' strati accesi il buffer `y` e' lo stesso per tutti e il nodo
++        // da solo non lo direbbe. Si scrive anche quando il ramo non parte, per
++        // non lasciare in giro il gruppo dello strato precedente.
++        pending_cpu_group = cpu_run ? &group : nullptr;
++
+         if (cpu_run && (opts.nodes & MOE_CPU_NODE_EXPORT)) {
+             // Ordine sullo stream (progetto P2 §9.2): export -> submit -> gather
+             // -> lavoro GPU (CONCORRENTE alla CPU) -> wait -> add.
++            // Nel modo FUSO il `submit` non c'e': il kernel di export pubblica da
++            // solo scrivendo `flags->publish`, e resta UN nodo host per strato.
+             moe_cpu_export_kernel<<<1, 256, 0, ctx.stream()>>>(
+                 group.plan, group.n_slots, uint32_t(ids->ne[0]), n_rows,
+                 static_cast<const float *>(activation->data), uint64_t(activation->nb[2]/sizeof(float)),
+                 static_cast<float *>(router_weights->data), group.n_embd, group.n_ff_exp,
+                 group.layer, opts.diag,
+                 static_cast<moe_cpu_job *>(hooks->job_dev), static_cast<float *>(hooks->x_dev),
+-                group.step);
++                group.step,
++                static_cast<moe_cpu_flags *>(hooks->flags_dev), pub_counter);
+             CUDA_CHECK(cudaGetLastError());
+-            if (opts.nodes & MOE_CPU_NODE_SUBMIT) {
++            if (!opts.fuse && (opts.nodes & MOE_CPU_NODE_SUBMIT)) {
+                 CUDA_CHECK(cudaLaunchHostFunc(ctx.stream(), hooks->submit, hooks->user));
+             }
+         }
+@@ -754,7 +880,11 @@
+     const ggml_moe_cpu_hooks * hooks = ggml_moe_cpu_get_hooks();
+     if (!hooks || node->src[1]->data != hooks->y_dev) return false;
+ 
+-    bound_group * group = cpu_group.load(std::memory_order_acquire);
++    // P4-estensione: lo strato e' quello che `remap` ha appena pianificato.
++    // Il ripiego su `cpu_group` vale solo per un impianto a un solo strato.
++    bound_group * group = pending_cpu_group ? pending_cpu_group
++                                            : cpu_group.load(std::memory_order_acquire);
++    pending_cpu_group = nullptr;
+     const auto & opts = cpu_opts();
+ 
+     // P4: i due pezzi accodati da questo marcatore sono accendibili uno per uno.
+@@ -788,7 +918,8 @@
+         diag_ready ? uint32_t(rweights->ne[1]) : 0u,
+         group ? group->diag_acc : nullptr,
+         group ? group->diag_u : nullptr,
+-        group ? group->diag_ring : nullptr);
++        group ? group->diag_ring : nullptr,
++        opts.guard_light);
+     CUDA_CHECK(cudaGetLastError());
+     return true;
+ }
+--- a/src/llama-moecpu.h
++++ b/src/llama-moecpu.h
+@@ -13,7 +13,7 @@
+ //   LLAMA_MOE_CPU=0|1           abilitazione generale                (0)
+ //   LLAMA_MOE_CPU_LAYERS=1      elenco strati ammessi, separati da , (vuoto)
+ //   LLAMA_MOE_CPU_MAX=0|1|2     massimo esperti CPU per strato       (2)
+-//   LLAMA_MOE_CPU_THREADS=N     core del pool                        (4)
++//   LLAMA_MOE_CPU_THREADS=N     core del pool                        (2)
+ //   LLAMA_MOE_CPU_DIAG=0|1      modalita' diagnostica                (0)
+ //   LLAMA_MOE_CPU_REPORT=N      stampa i contatori ogni N lanci      (0)
+ //   LLAMA_MOE_CPU_WAIT_US=N     scadenza del nodo host `wait`        (2000000)
+@@ -49,6 +49,31 @@
+ //        `LLAMA_MOE_CPU_DIAG=1`, dove `y` viene comunque azzerata dalla
+ //        guardia e l'uscita del modello non cambia. E' la cella C5.
+ //
++// P4-ESTENSIONE — l'impianto leggero. Le tre opzioni qui sotto sono i tre
++// interventi della seconda cella di P4; i due primi sono ACCESI di default,
++// perche' misurati e adottati, e si spengono per rimisurare il prima/dopo.
++//
++//   LLAMA_MOE_CPU_FUSE=0|1        (1) UN nodo host per strato invece di due. Il
++//        nodo `submit` sparisce: la pubblicazione la fa il kernel di export
++//        scrivendo `flags->publish`, il coordinatore si arma da solo e il nodo
++//        host che resta attende quel numero. Con 0 si torna ai due nodi di P3.
++//   LLAMA_MOE_CPU_GUARD_LIGHT=0|1 (1) la guardia del merge non legge piu' `y`
++//        (n_embd float per strato ATTRAVERSO IL PCIe, con un solo blocco): il
++//        controllo dei non finiti lo fa il pool sul proprio buffer in memoria
++//        host. Con 0 torna la guardia di P3. L'una o l'altra: il controllo non
++//        sparisce mai e non viene mai fatto due volte.
++//   LLAMA_MOE_CPU_AFFINITY=...    (auto) dove si appoggiano i thread del pool.
++//        `auto`  = gli ULTIMI core fisici, i piu' lontani dal core 0 e dal suo
++//                  gemello SMT, cioe' dal thread che accoda il lavoro alla GPU;
++//        `first` = i PRIMI core fisici, la disposizione di P3 (il difetto R7);
++//        `0x30`/`48` = maschera esplicita di processori logici;
++//        `6,7`   = elenco di processori logici.
++//   LLAMA_MOE_CPU_FUSE_SPIN_US=N  (0) tetto del giro a vuoto del coordinatore
++//        nel modo fuso; 0 significa «gira finche' la fase e' decode».
++//
++// Cambia anche un DEFAULT: `LLAMA_MOE_CPU_THREADS` passa da 4 a 2 (P4 §4.1,
++// difetto 1: quattro thread costavano +1,72 ms per token di sola contesa).
++//
+ // Le stesse variabili `LLAMA_MOE_CPU`, `_LAYERS`, `_MAX`, `_DIAG`, `_REPORT`
+ // sono lette anche dal backend CUDA (moe-demand.cuh): il planner deve decidere
+ // sul dispositivo, e il confine di P2 non porta configurazione.
+--- a/src/llama-moecpu.cpp
++++ b/src/llama-moecpu.cpp
+@@ -20,6 +20,16 @@
+ #include <string>
+ #include <vector>
+ 
++#if defined(_WIN32)
++#  ifndef NOMINMAX
++#    define NOMINMAX
++#  endif
++#  ifndef WIN32_LEAN_AND_MEAN
++#    define WIN32_LEAN_AND_MEAN
++#  endif
++#  include <windows.h>   // solo per GetCurrentProcessorNumber (diagnostica P4e)
++#endif
++
+ namespace {
+ 
+ // P4 — pezzi del meccanismo, accendibili uno per uno (LLAMA_MOE_CPU_NODES).
+@@ -38,7 +48,9 @@
+     bool     enabled  = false;
+     bool     diag     = false;
+     int      cpu_max  = 2;
+-    int      threads  = 4;
++    // P4-estensione: il default passa da 4 a 2. Quattro thread costavano
++    // +1,72 ms per token di sola contesa col threadpool del server (P4 §4.1).
++    int      threads  = 2;
+     uint64_t wait_us  = 2000000;
+     uint64_t ack_us   = 200000;
+     bool     layer[512] = {};
+@@ -48,6 +60,13 @@
+     bool     nocompute  = false;
+     unsigned nodes      = NODE_ALL;
+     bool     inert_hooks = false;   // dedotta: submit e wait non entrambi accesi
++    // P4-estensione: i tre interventi dell'impianto leggero.
++    bool     fuse        = true;
++    bool     guard_light = true;
++    uint32_t fuse_spin_us = 0;
++    int      affinity_mode = 1;     // 1 = dal fondo (auto)
++    uint64_t affinity_mask = 0;
++    std::string affinity_text = "auto";
+ };
+ 
+ const options & opts() {
+@@ -74,6 +93,40 @@
+         if (!(r.nodes & NODE_ADD))    r.nodes &= ~(NODE_WAIT | NODE_GUARD);
+         if (!(r.nodes & NODE_EXPORT)) r.nodes &= ~NODE_SUBMIT;
+         r.inert_hooks = (r.nodes & (NODE_SUBMIT | NODE_WAIT)) != (NODE_SUBMIT | NODE_WAIT);
++        // ------------------------------------------------ P4, estensione ----
++        if (const char * f = getenv("LLAMA_MOE_CPU_FUSE"))        r.fuse        = strcmp(f, "0") != 0;
++        if (const char * g = getenv("LLAMA_MOE_CPU_GUARD_LIGHT")) r.guard_light = strcmp(g, "0") != 0;
++        if (const char * s = getenv("LLAMA_MOE_CPU_FUSE_SPIN_US")) r.fuse_spin_us = (uint32_t) strtoul(s, nullptr, 10);
++        // Nel modo fuso non esiste nodo `submit`, e il nodo host che resta e'
++        // quello del `wait`: senza il bit 4 non c'e' niente da accodare e la
++        // fusione non ha senso. Senza export non c'e' pubblicazione. Le stesse
++        // due regole sono scritte anche in moe-demand.cuh.
++        if (!(r.nodes & NODE_EXPORT) || !(r.nodes & NODE_WAIT)) r.fuse = false;
++        if (r.fuse) r.inert_hooks = false;   // il nodo del modo fuso e' sempre vero
++        if (const char * a = getenv("LLAMA_MOE_CPU_AFFINITY")) {
++            r.affinity_text = a;
++            if (strcmp(a, "auto") == 0 || !*a) {
++                r.affinity_mode = 1;
++            } else if (strcmp(a, "first") == 0 || strcmp(a, "p3") == 0) {
++                r.affinity_mode = 0;
++            } else if (strchr(a, ',')) {
++                r.affinity_mode = 2;
++                r.affinity_mask = 0;
++                const char * p = a;
++                while (*p) {
++                    char * end = nullptr;
++                    const long v = strtol(p, &end, 10);
++                    if (end == p) break;
++                    if (v >= 0 && v < 64) r.affinity_mask |= (1ULL << v);
++                    p = (*end == ',' || *end == ' ' || *end == ';') ? end + 1 : end;
++                }
++                if (!r.affinity_mask) r.affinity_mode = 1;
++            } else {
++                r.affinity_mode = 2;
++                r.affinity_mask = strtoull(a, nullptr, 0);
++                if (!r.affinity_mask) { r.affinity_mode = 1; r.affinity_text = "auto (maschera vuota)"; }
++            }
++        }
+         if (r.cpu_max < 0) r.cpu_max = 0;
+         if (r.cpu_max > MOE_CPU_MAX_PER_ROW) r.cpu_max = MOE_CPU_MAX_PER_ROW;
+         if (r.threads < 1) r.threads = 1;
+@@ -241,6 +294,15 @@
+     caps.n_threads       = (int32_t) o.threads;
+     caps.wait_timeout_us = o.wait_us;
+     caps.ack_timeout_us  = o.ack_us;
++    // P4-estensione. `check_finite` e la guardia leggera sono le DUE FACCE dello
++    // stesso controllo: una sola delle due lo esegue, mai nessuna e mai
++    // entrambe. Con `GUARD_LIGHT=0` il controllo torna sul dispositivo e il pool
++    // non lo rifa', cosi' il confronto prima/dopo misura solo lo spostamento.
++    caps.fuse            = o.fuse;
++    caps.fuse_spin_us    = o.fuse_spin_us;
++    caps.check_finite    = o.guard_light;
++    caps.affinity_mode   = (int32_t) o.affinity_mode;
++    caps.affinity_mask   = o.affinity_mask;
+ 
+     auto memory = moe_cpu_host_memory_cuda_mapped(0);
+     moe_cpu_host_memory * mem_raw = memory.get();
+@@ -289,8 +351,12 @@
+ 
+     g_state.hooks.abi         = MOE_CPU_ABI_VERSION;
+     g_state.hooks.user        = exec.get();
++    // P4-estensione. Nel modo fuso il `submit` non viene mai accodato (il lato
++    // CUDA non lo accoda) e il nodo host che resta e' `wait_seq_hook`, che
++    // attende un NUMERO di pubblicazione invece che «il job in volo».
+     g_state.hooks.submit      = o.inert_hooks ? &moe_cpu_noop_hook : &moe_cpu_executor::submit_hook;
+-    g_state.hooks.wait        = o.inert_hooks ? &moe_cpu_noop_hook : &moe_cpu_executor::wait_hook;
++    g_state.hooks.wait        = o.fuse        ? &moe_cpu_executor::wait_seq_hook
++                              : (o.inert_hooks ? &moe_cpu_noop_hook : &moe_cpu_executor::wait_hook);
+     g_state.hooks.job_dev     = exec->job_dev();
+     g_state.hooks.flags_dev   = exec->flags_dev();
+     g_state.hooks.x_dev       = exec->x_dev();
+@@ -338,6 +404,16 @@
+         (o.nodes & NODE_ADD)    ? "add"     : "",
+         o.inert_hooks ? "INERTI (misura del solo nodo host)" : "veri",
+         o.nocompute ? "SI (contributo zero, nessuna aritmetica)" : "no");
++
++    // P4-estensione — la riga dell'impianto leggero. Dice da sola, per ogni
++    // corsa, quale dei tre interventi era acceso e DOVE sono finiti i thread.
++    LLAMA_LOG_INFO("moe cpu [P4e]: nodi host per strato %d (fuse %s), guardia %s, "
++                   "controllo dei non finiti sul %s, affinita' '%s' -> core [%s], thread %d, strati ammessi %zu\n",
++        o.fuse ? 1 : 2, o.fuse ? "SI" : "no",
++        o.guard_light ? "LEGGERA (nessuna lettura di y sul PCIe)" : "di P3 (legge y sul PCIe)",
++        o.guard_light ? "POOL (memoria host)" : "DISPOSITIVO",
++        o.affinity_text.c_str(), g_state.exec->affinity_description(),
++        o.threads, banks.size());
+ }
+ 
+ void llama_moe_cpu_free() {
+@@ -363,7 +439,22 @@
+     return g_state.y_view[(size_t) n_tokens - 1];
+ }
+ 
+-void llama_moe_cpu_set_phase_decode()  { if (g_state.active) g_state.exec->set_phase(moe_cpu_phase::decode); }
++void llama_moe_cpu_set_phase_decode()  {
++    if (!g_state.active) return;
++    // P4-estensione, intervento 3: QUALE core usa il thread che accoda il lavoro
++    // alla GPU. E' questo thread (quello che entra nel decode) che il pool non
++    // deve prelazionare; senza misurarlo, «lontano dal core 0» resta un'ipotesi.
++    // Si stampa una volta sola, e solo quando la funzione e' accesa.
++#if defined(_WIN32)
++    static bool detto = false;
++    if (!detto) {
++        detto = true;
++        LLAMA_LOG_INFO("moe cpu [P4e]: il thread che accoda alla GPU gira sul processore logico %u\n",
++            (unsigned) GetCurrentProcessorNumber());
++    }
++#endif
++    g_state.exec->set_phase(moe_cpu_phase::decode);
++}
+ void llama_moe_cpu_set_phase_prefill() { if (g_state.active) g_state.exec->set_phase(moe_cpu_phase::prefill); }
+ void llama_moe_cpu_set_phase_idle()    { if (g_state.active) g_state.exec->set_phase(moe_cpu_phase::idle); }
+ 
+@@ -381,11 +472,12 @@
+ 
+ void llama_moe_cpu_log_counters(const char * where) {
+     if (!g_state.active) return;
+-    LLAMA_LOG_INFO("moe cpu [%s]: pubblicati %llu, conclusi %llu, falliti %llu, contaminato %s, irrecuperabile %s\n",
++    LLAMA_LOG_INFO("moe cpu [%s]: pubblicati %llu, conclusi %llu, falliti %llu, non finiti %llu, contaminato %s, irrecuperabile %s\n",
+         where ? where : "",
+         (unsigned long long) g_state.exec->submitted(),
+         (unsigned long long) g_state.exec->completed(),
+         (unsigned long long) g_state.exec->failures(),
++        (unsigned long long) g_state.exec->nonfinite(),
+         g_state.exec->contaminated() ? "SI" : "no",
+         g_state.exec->unrecoverable() ? "SI" : "no");
+ }
+--- a/src/moe_cpu_executor.h
++++ b/src/moe_cpu_executor.h
+@@ -157,6 +157,35 @@
+     // contributo delle route CPU sparirebbe dall'uscita del modello, quindi si
+     // usa solo in DIAGNOSTICA, dove `y` viene comunque azzerata dalla guardia.
+     bool      nocompute     = false;
++
++    // ---------------------------------------------------- P4, estensione -----
++    // Modo FUSO: UN nodo host per strato invece di due. Il nodo `submit` non
++    // esiste piu': il kernel di export pubblica da solo scrivendo
++    // `flags->publish`, e il coordinatore si arma guardando quella cella. Il
++    // nodo host che resta (`wait_seq_hook`) attende che il job con quel numero
++    // di pubblicazione sia concluso. Vedi §4 del documento di fase per il motivo
++    // per cui la fusione LETTERALE (wait dello strato L insieme al submit dello
++    // strato L+1, in un solo nodo) e' impossibile per ordine di stream.
++    bool      fuse          = false;
++    // Il coordinatore, nel modo fuso, non puo' essere svegliato da nessuno: la
++    // pubblicazione la scrive il dispositivo. In fase di decode gira dunque a
++    // vuoto su `publish`; fuori dal decode dorme. Questo e' il tetto del giro:
++    // oltre, si passa a un'attesa da 1 ms, che in decode costerebbe un'eternita'
++    // ma fuori dal decode e' esattamente cio' che si vuole.
++    uint32_t  fuse_spin_us  = 0;      // 0 = giro finche' la fase e' decode
++    // Controllo dei non finiti in `y` fatto DAL POOL, in memoria host, invece
++    // che dalla guardia sul dispositivo attraverso il PCIe. L'esito arriva alla
++    // guardia dentro il veleno: un `y` non finito non diventa mai una somma.
++    bool      check_finite  = true;
++    // Affinita' del pool.
++    //   0 = P3: un processore logico per core fisico, dal PRIMO in poi
++    //           (`physical_first_masks`), cioe' proprio i core su cui gira il
++    //           thread che accoda il lavoro alla GPU. E' il difetto R7.
++    //   1 = dal fondo: gli ULTIMI core fisici, i piu' lontani dal core 0.
++    //   2 = maschera esplicita in `affinity_mask` (un bit per processore
++    //           logico); il thread i prende l'i-esimo bit acceso.
++    int32_t   affinity_mode = 1;
++    uint64_t  affinity_mask = 0;
+ };
+ 
+ // I pesi host ORIGINALI di uno strato. Nessuna copia: sono gli stessi byte che
+@@ -198,9 +227,17 @@
+     bool register_layer(int32_t layer, const moe_cpu_bank & bank, std::string * err);
+     bool clear_layers(std::string * err);
+ 
+-    // ---- i due soli punti chiamabili da un nodo host CUDA -------------------
++    // ---- i soli punti chiamabili da un nodo host CUDA -----------------------
++    // Nessuna API CUDA, nessun mutex, ritorno in tempo finito (invariante 6).
+     static void submit_hook(void * user);
+     static void wait_hook  (void * user);
++    // P4-estensione, modo FUSO: l'UNICO nodo host dello strato. Legge dalla
++    // cella `publish` il numero del job che il kernel di export ha appena
++    // pubblicato e attende che il coordinatore lo abbia concluso. Se quel numero
++    // e' gia' stato concluso — per esempio perche' lo strato non ha esportato
++    // niente — ritorna subito: non attende mai un job che non e' stato
++    // pubblicato, che e' la condizione di stallo da evitare col replay del graph.
++    static void wait_seq_hook(void * user);
+ 
+     // ---- lato host, fuori dal graph ----------------------------------------
+     uint64_t      submitted()  const;   // job pubblicati (accettati o rifiutati)
+@@ -216,6 +253,12 @@
+     bool          unrecoverable() const;
+     uint64_t      current_generation() const;
+ 
++    // P4-estensione. Righe di `y` trovate NON FINITE dal pool (controllo fatto
++    // in memoria host invece che dalla guardia attraverso il PCIe) e descrizione
++    // dell'affinita' effettivamente applicata ai thread del pool.
++    uint64_t      nonfinite() const;
++    const char *  affinity_description() const;
++
+     // Riconoscimento della contaminazione. Lo chiama SOLO il thread
+     // proprietario e SOLO dopo aver buttato l'incarnazione della cache
+     // (`unbind`/`bind`, moe-demand.cuh:142-157, la via che
+--- a/src/moe_cpu_executor.cpp
++++ b/src/moe_cpu_executor.cpp
+@@ -280,6 +280,17 @@
+     alignas(64) std::atomic<uint32_t> phase{(uint32_t) moe_cpu_phase::idle};
+     alignas(64) std::atomic<uint64_t> test_delay_us{0};
+ 
++    // P4-estensione — modo FUSO.
++    //   `seq_taken`: ultima pubblicazione presa in carico dal coordinatore;
++    //   `seq_done` : ultima pubblicazione CONCLUSA (esito gia' nei flag).
++    // Il nodo host attende `seq_done >= publish`. Sono due parole separate
++    // perche' il nodo host deve poter distinguere «preso ma non finito» da
++    // «finito»: con una sola parola un `wait` veloce vedrebbe il numero gia'
++    // alzato e consumerebbe un `y` ancora in scrittura.
++    alignas(64) std::atomic<uint64_t> seq_taken{0};
++    alignas(64) std::atomic<uint64_t> seq_done{0};
++    alignas(64) std::atomic<uint64_t> n_nonfinite{0};
++
+     alignas(64) std::atomic<uint64_t> n_submitted{0};
+     alignas(64) std::atomic<uint64_t> n_completed{0};
+     alignas(64) std::atomic<uint64_t> n_failed{0};
+@@ -405,15 +416,68 @@
+ 
+     // ---- thread -----------------------------------------------------------
+ 
++    // P4-estensione — dove si appoggia il pool.
++    //
++    // P3 appuntava i thread sui PRIMI core fisici (`physical_first_masks`), che
++    // sono esattamente i core su cui gira il thread che accoda il lavoro alla
++    // GPU: ogni volta che il pool calcolava, quel thread veniva prelazionato e
++    // si pagava una bolla nello stream, non l'aritmetica (P4 §4.1, rischio R7).
++    // Qui l'ordine si puo' rovesciare (modo 1: dal fondo, i core piu' lontani
++    // dal core 0 e dal suo gemello SMT) o imporre con una maschera esplicita
++    // (modo 2). Il modo 0 resta per poter rimisurare il difetto.
+     void pin(int index) {
+ #if defined(_WIN32)
+-        static const std::vector<DWORD_PTR> masks = physical_first_masks();
+-        if (index < (int) masks.size()) SetThreadAffinityMask(GetCurrentThread(), masks[(size_t) index]);
++        const auto & chosen = affinity_masks();
++        if (!chosen.empty()) {
++            SetThreadAffinityMask(GetCurrentThread(), chosen[(size_t) index % chosen.size()]);
++        }
+ #else
+         (void) index;
+ #endif
+     }
+ 
++#if defined(_WIN32)
++    const std::vector<DWORD_PTR> & affinity_masks() const { return pin_masks; }
++    std::vector<DWORD_PTR> pin_masks;
++    std::string            pin_text;
++
++    void build_affinity() {
++        pin_masks.clear();
++        const std::vector<DWORD_PTR> physical = physical_first_masks();
++        const int n = caps.n_threads;
++        if (caps.affinity_mode == 2 && caps.affinity_mask) {
++            DWORD_PTR allowed = 0, system = 0;
++            GetProcessAffinityMask(GetCurrentProcess(), &allowed, &system);
++            for (int bit = 0; bit < 64 && (int) pin_masks.size() < n; ++bit) {
++                const DWORD_PTR m = (DWORD_PTR) 1 << bit;
++                if ((caps.affinity_mask >> bit) & 1ULL) {
++                    if (allowed && !(m & allowed)) continue;
++                    pin_masks.push_back(m);
++                }
++            }
++        } else if (caps.affinity_mode == 1) {
++            // Dal fondo dell'elenco dei core FISICI: i thread del pool finiscono
++            // sui core piu' alti, il piu' lontano possibile dal core 0.
++            const int n_phys = (int) physical.size();
++            for (int i = 0; i < n && i < n_phys; ++i) pin_masks.push_back(physical[(size_t) (n_phys - 1 - i)]);
++        } else {
++            for (int i = 0; i < n && i < (int) physical.size(); ++i) pin_masks.push_back(physical[(size_t) i]);
++        }
++        pin_text.clear();
++        char buf[32];
++        for (size_t i = 0; i < pin_masks.size(); ++i) {
++            int bit = 0;
++            for (; bit < 64; ++bit) if ((pin_masks[i] >> bit) & 1) break;
++            snprintf(buf, sizeof(buf), "%s%d", i ? "," : "", bit);
++            pin_text += buf;
++        }
++        if (pin_text.empty()) pin_text = "nessuna";
++    }
++#else
++    std::string pin_text = "nessuna (non Windows)";
++    void build_affinity() {}
++#endif
++
+     // I worker escono SOLO su `pool_retire`, e solo quando `work` non e'
+     // avanzato: cosi' il numero dei partecipanti alla barriera e' invariante
+     // per tutta la vita di ogni job. Un avanzamento di `work` significa sempre
+@@ -499,12 +563,147 @@
+                     // e' zero. Non e' una maschera d'errore, e' il valore giusto.
+                     std::memset(y_h, 0, (size_t) cur_rows * (size_t) caps.n_embd * sizeof(float));
+                 }
++                // P4-estensione: stesso controllo del modo fuso, cosi' la
++                // guardia leggera vale anche col percorso a due nodi host.
++                if (caps.check_finite && !y_is_finite()) {
++                    n_nonfinite.fetch_add(1, std::memory_order_relaxed);
++                    result = moe_cpu_state::rejected;
++                }
+             }
+ 
+             finish(generation, result);
+         }
+     }
+ 
++    // ---- P4-estensione: il modo FUSO --------------------------------------
++    //
++    // Perche' la fusione LETTERALE non esiste. Sullo stream l'ordine di uno
++    // strato e': export -> submit -> gather -> lavoro GPU -> wait -> guardia ->
++    // add. Il `wait` dello strato L deve stare PRIMA dell'`add` dello strato L,
++    // e la `submit` dello strato L+1 DOPO l'export dello strato L+1, che a sua
++    // volta viene dopo quell'`add`. Un solo nodo non puo' stare in due punti:
++    // fondere «wait di L» e «submit di L+1» e' impossibile per ordine di
++    // stream, e metterli insieme al posto del `wait` significherebbe fare il
++    // calcolo CPU DOPO il lavoro GPU dello strato, cioe' buttare via tutta la
++    // concorrenza (progetto P2 §9.2).
++    //
++    // Il risultato chiesto — UN nodo host per strato invece di due — si ottiene
++    // togliendo l'altro: la PUBBLICAZIONE non ha bisogno di un nodo host. La fa
++    // il kernel di export, scrivendo `flags->publish` dopo il proprio fence; il
++    // coordinatore si arma da solo guardando quella cella. Il nodo host che
++    // resta e' quello della regola 3, che nessun meccanismo host puo'
++    // sostituire: e' l'unico modo di ordinare l'`add` dopo la fine del calcolo.
++    //
++    // Invariante 6 (nessun mutex, nessuna API CUDA nel nodo host): il nodo host
++    // del modo fuso legge due parole e blocca su indirizzo, esattamente come il
++    // `wait_hook` di P3. Non prende nessun lock e non chiama nessuna API CUDA.
++    //
++    // Stallo col replay del graph: il nodo host NON attende «il job», attende un
++    // NUMERO — quello che il kernel di export dello stesso strato ha appena
++    // scritto in `publish`. Se quel numero e' gia' stato concluso (strato che
++    // non ha esportato, piano fallito, pool gia' avanti) il nodo ritorna
++    // immediatamente. Un job non pubblicato non ha un numero da attendere, e un
++    // numero pubblicato viene SEMPRE concluso: il kernel di export pubblica
++    // anche quando il piano e' fallito, proprio per non lasciare il nodo host
++    // davanti a un numero che nessuno alzera' mai.
++    void coordinator_loop_fused() {
++        pin(0);
++        uint64_t last = cell_load_acquire(&flags_h->publish.value);
++        seq_taken.store(last, std::memory_order_release);
++        seq_done.store(last, std::memory_order_release);
++        for (;;) {
++            uint64_t seq = last;
++            const uint64_t spin_deadline = caps.fuse_spin_us ? now_us() + caps.fuse_spin_us : 0;
++            for (;;) {
++                if (stopping.load(std::memory_order_acquire)) break;
++                seq = cell_load_acquire(&flags_h->publish.value);
++                if (seq != last) break;
++                const bool decode = phase.load(std::memory_order_relaxed) == (uint32_t) moe_cpu_phase::decode;
++                if (decode && (!spin_deadline || now_us() < spin_deadline)) { MOE_CPU_PAUSE(); continue; }
++                // Fuori dal decode il pool non deve rubare core (D09). Qui non
++                // c'e' nessuno che possa svegliarci — la pubblicazione la scrive
++                // il dispositivo — quindi si dorme a grana di millisecondo.
++                block_until_changed((volatile uint64_t *) &seq_taken,
++                                    seq_taken.load(std::memory_order_relaxed), 1);
++            }
++
++            if (stopping.load(std::memory_order_acquire)) {
++                // Chiusura: si liberano tutti i nodi host eventualmente fermi su
++                // un numero di pubblicazione, poi si pubblica l'esito `stopped`.
++                seq_done.store(cell_load_acquire(&flags_h->publish.value) + 1, std::memory_order_release);
++                wake_waiters((volatile uint64_t *) &seq_done);
++                if (in_flight.load(std::memory_order_acquire) != 0) {
++                    record(gen_current.load(std::memory_order_acquire), moe_cpu_state::stopped);
++                    in_flight.store(0, std::memory_order_release);
++                    wake_waiters((volatile uint64_t *) &in_flight);
++                }
++                publish_flags(moe_cpu_state::stopped);
++                retire();
++                return;
++            }
++
++            last = seq;
++            const uint64_t generation = n_submitted.fetch_add(1, std::memory_order_relaxed) + 1;
++            gen_current.store(generation, std::memory_order_release);
++            job_claim.store(CLAIM_COORD, std::memory_order_release);   // nel modo fuso il coordinatore possiede sempre l'esito
++            record(generation, moe_cpu_state::running);
++            in_flight.store(1, std::memory_order_release);
++            seq_taken.store(seq, std::memory_order_release);
++            cell_store_release(&flags_h->done.value, 0);
++            cell_store_release(&flags_h->poison.value, 0);
++            cell_store_release(&flags_h->result.value, (uint64_t) moe_cpu_state::running);
++
++            moe_cpu_state result = validate_and_prepare();
++            if (result == moe_cpu_state::ok && cancelled.load(std::memory_order_acquire)) {
++                result = moe_cpu_state::cancelled;
++            }
++            if (result == moe_cpu_state::ok) {
++                if (!flat.empty()) {
++                    work.fetch_add(1, std::memory_order_release);
++                    wake_waiters((volatile uint64_t *) &work);
++                    compute(0);
++                } else {
++                    std::memset(y_h, 0, (size_t) cur_rows * (size_t) caps.n_embd * sizeof(float));
++                }
++                if (caps.check_finite && !y_is_finite()) {
++                    // Il controllo che P3 faceva sul DISPOSITIVO leggendo `y`
++                    // attraverso il PCIe. Qui costa una passata su memoria
++                    // locale, e il suo esito arriva alla guardia dentro il
++                    // veleno: `y` non finito non diventa mai una somma.
++                    n_nonfinite.fetch_add(1, std::memory_order_relaxed);
++                    result = moe_cpu_state::rejected;
++                }
++            }
++
++            record(generation, result);
++            n_completed.fetch_add(1, std::memory_order_release);
++            gen_reaped.store(generation, std::memory_order_seq_cst);
++            publish_flags(result);
++            in_flight.store(0, std::memory_order_release);
++            wake_waiters((volatile uint64_t *) &in_flight);
++            // Ultima scrittura: da questo istante il nodo host dello strato puo'
++            // passare. `y` e i flag sono gia' pubblicati (release sopra).
++            seq_done.store(seq, std::memory_order_release);
++            wake_waiters((volatile uint64_t *) &seq_done);
++        }
++    }
++
++    // Blocco vero del nodo host in attesa di una pubblicazione: si dorme
++    // sull'indirizzo di `seq_done`, che il coordinatore sveglia quando lo alza.
++    void block_until_seq(uint64_t want) {
++        const uint64_t seen = seq_done.load(std::memory_order_acquire);
++        if (seen >= want) return;
++        block_until_changed((volatile uint64_t *) &seq_done, seen, 20);
++    }
++
++    bool y_is_finite() const {
++        const size_t n = (size_t) cur_rows * (size_t) caps.n_embd;
++        for (size_t i = 0; i < n; ++i) {
++            if (!std::isfinite(y_h[i])) return false;
++        }
++        return true;
++    }
++
+     // Il coordinatore ha deciso di non entrare mai piu' in compute(): solo ora
+     // i worker possono uscire senza spaiare una barriera.
+     void retire() {
+@@ -772,10 +971,15 @@
+     }
+ #endif
+ 
++    p->build_affinity();
+     p->gate.reset(new barrier((unsigned) caps.n_threads));
+     p->threads.reserve((size_t) caps.n_threads);
+     impl * raw = p.get();
+-    p->threads.emplace_back([raw] { raw->coordinator_loop(); });
++    if (caps.fuse) {
++        p->threads.emplace_back([raw] { raw->coordinator_loop_fused(); });
++    } else {
++        p->threads.emplace_back([raw] { raw->coordinator_loop(); });
++    }
+     for (int i = 1; i < caps.n_threads; ++i) {
+         p->threads.emplace_back([raw, i] { raw->worker_loop(i); });
+     }
+@@ -931,9 +1135,52 @@
+     }
+ }
+ 
++// P4-estensione — l'UNICO nodo host dello strato, nel modo fuso.
++//
++// Legge il numero che il kernel di export dello stesso strato ha appena scritto
++// in `publish` (una parola di memoria host, gia' visibile per ordine di stream)
++// e attende che il coordinatore abbia concluso quel numero. Nessun mutex,
++// nessuna API CUDA, ritorno in tempo finito: invariante 6 intatto.
++void moe_cpu_executor::wait_seq_hook(void * user) {
++    impl * p = ((moe_cpu_executor *) user)->p_.get();
++
++    const uint64_t want = cell_load_acquire(&p->flags_h->publish.value);
++    if (p->seq_done.load(std::memory_order_acquire) >= want) {
++        // Niente da attendere: questo strato non ha pubblicato nulla (ripiego
++        // sul percorso GPU), oppure il pool ha gia' finito. E' la stessa
++        // guardia del `wait_hook` di P3 su `in_flight`, scritta sul numero.
++        return;
++    }
++
++    const uint64_t start      = now_us();
++    const uint64_t spin_until = start + p->caps.spin_us;
++    const uint64_t deadline   = start + p->caps.wait_timeout_us;
++
++    for (;;) {
++        const uint64_t done = p->seq_done.load(std::memory_order_acquire);
++        if (done >= want) return;
++        const uint64_t t = now_us();
++        if (t >= deadline) {
++            // Scadenza. Non si strappa il job al coordinatore (nel modo fuso e'
++            // lui il proprietario unico dell'esito: strapparglielo aprirebbe
++            // proprio la corsa che la macchina a stati di P2 chiude). Si
++            // registra l'esito che CONTAMINA — il decode fallira' sul controllo
++            // di `contaminated()`, prima cintura — e si alza il veleno, cosi'
++            // anche la guardia scrive NaN invece di una somma plausibile.
++            p->record(p->gen_current.load(std::memory_order_acquire), moe_cpu_state::timeout);
++            cell_store_release(&p->flags_h->poison.value, 1);
++            return;
++        }
++        if (t < spin_until) { MOE_CPU_PAUSE(); continue; }
++        p->block_until_seq(want);
++    }
++}
++
+ // ---- osservazione ----------------------------------------------------------
+ 
+ uint64_t moe_cpu_executor::submitted() const { return p_->n_submitted.load(std::memory_order_acquire); }
++uint64_t moe_cpu_executor::nonfinite() const { return p_->n_nonfinite.load(std::memory_order_acquire); }
++const char * moe_cpu_executor::affinity_description() const { return p_->pin_text.c_str(); }
+ uint64_t moe_cpu_executor::completed() const { return p_->n_completed.load(std::memory_order_acquire); }
+ uint64_t moe_cpu_executor::failures()  const { return p_->n_failed.load(std::memory_order_acquire); }
+ uint64_t moe_cpu_executor::first_failed_generation() const { return p_->gen_first_failed.load(std::memory_order_acquire); }

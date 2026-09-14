@@ -1,0 +1,12 @@
+P4-estensione, parte A - impianto leggero sulla scala amplificata (47 strati, cpu_max=0)
+
+cella configurazione                                        ms/token     delta    us/strato
+E0   ibrido spento (riferimento)                             42.213         -            -
+E1   impianto di P3: 2 nodi host, guardia pesante, 4 thread, core primi    47.494    +5.281        112.4
+E2   intervento 1: UN nodo host per strato                   45.506    -1.988        -42.3
+E3   intervento 2: guardia senza lettura PCIe di y           44.957    -0.549        -11.7
+E4   intervento 3: 2 thread sugli ultimi core fisici         44.993    +0.036          0.8
+
+impianto di P3        : +5.281 ms/token = 112.4 us/strato
+impianto leggero      : +2.780 ms/token = 59.1 us/strato
+riduzione             : 47.4%

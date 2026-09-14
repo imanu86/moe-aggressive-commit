@@ -3,8 +3,8 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p4_light_plumbing_and_extension",
-  "current_phase": "P4",
+  "implementation_status": "p7_mtp_draft_length",
+  "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
     "decode_ms_per_accepted_token": 20,
@@ -17,7 +17,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 34,
+  "new_benchmark_runs": 42,
   "baseline_reference_free_tps": 24.44,
   "p3_result": {
     "free_tps_B": 23.5135,
@@ -31,7 +31,13 @@
     "contention_ms_per_token_4threads": 1.719,
     "active_2threads_delta_ms": 0.339
   },
-  "next_action": "P4 cell 2 (light plumbing and extension, D17): one host node per layer instead of two, merge guard without a PCIe read (flag duplicated in VRAM), thread-pool affinity kept away from the server's GPU-enqueue thread; then measure candidate B (LLAMA_MOE_CPU_THREADS=2, preset_C20_p4.json) against the reference on the free set before extending to 8/24/47 layers, candidate first per D14. Exit criterion unchanged: the mechanism must cost less than the per-layer bandwidth saving; +5% on the free set for adoption, <3% for closing the CPU route.",
+  "p4_extension_result": {
+    "free_tps_8_layers": 24.06,
+    "delta_8_layers": -0.016,
+    "fumo_delta_24_layers": -0.059,
+    "plumbing_47_layers_ms": 2.78
+  },
+  "next_action": "P7 cell 1 (D20): MTP draft length. Run M2 (2-token draft) first on the solo_libero profile against the already-known reference M1 (1-token draft, current production regime, 70-75% acceptance), original experimental binaries, no code changes; run M3 (3-token draft) only if M2 beats M1 (D14). Adoption threshold +5% on the free set. Work under docs/porto/p7_speculazione/, not docs/porto/p7_colpi/ or docs/porto/banco_p0/ (owned by another agent). The cache-hit-gap front (41% vs 75%) is NOT the P7 front: falsified by Codex on 9/13 (75.55% real), reopened by mistake on 9/14 and closed within an hour with no valid runs (D19).",
   "phases": [
     {
       "id": "P0",
@@ -61,32 +67,32 @@
     },
     {
       "id": "P4",
-      "status": "in_progress",
+      "status": "closed_negative",
       "depends_on": [
         "P3"
       ]
     },
     {
       "id": "P5",
-      "status": "not_started",
+      "status": "not_applicable",
       "depends_on": [
         "P4"
       ]
     },
     {
       "id": "P6",
-      "status": "not_started",
+      "status": "not_applicable",
       "depends_on": [
         "P5"
       ]
     },
     {
       "id": "P7",
-      "status": "not_started",
+      "status": "in_progress",
       "depends_on": [
         "P6"
       ],
-      "alternative_start": "documented closure of the CPU route after an inconclusive or negative matched confirmation"
+      "alternative_start": "documented closure of the CPU route after an inconclusive or negative matched confirmation (D18, exercised 9/14)"
     }
   ],
   "primary_documents": [
@@ -117,7 +123,10 @@
     "D14",
     "D15",
     "D16",
-    "D17"
+    "D17",
+    "D18",
+    "D19",
+    "D20"
   ],
   "decisions_added": [
     {
@@ -147,6 +156,18 @@
     {
       "id": "D17",
       "summary": "The CPU route does not close after P4 cell 1; it continues with cell 2, 'light plumbing and extension': one host node per layer instead of two, merge guard without a PCIe read, thread affinity; then 8/24/47 layers, candidate B first, A only if needed (D14). Exit criterion unchanged: +5% on the free set for adoption, <3% for closure."
+    },
+    {
+      "id": "D18",
+      "summary": "CPU route CLOSED (9/14). The orchestrator stopped P4 cell 2 right after the 24-layer verification run, before the 24-layer free block and any 47-layer run: the numbers already collected settle the verdict. Light plumbing cuts per-layer cost 47% (112.4->59.1 us) but stays 6.6% of decode at 47 layers, and measured free-set t/s is -1.6% at 8 layers (clean measurement) and -5.9% at 24 layers (verification run, counters on but same direction and larger), both under the plan's <3% closure threshold, with the loss growing rather than shrinking with scale. Result preserved: P3+P4 patches stay on D:\\ds4_work\\p3_work, off by default (LLAMA_MOE_CPU=0); bin_prod never touched. P5/P6 become not applicable; move to P7."
+    },
+    {
+      "id": "D19",
+      "summary": "The cache-hit gap (41% vs 75%) is NOT an open front. Falsified by Codex on 9/13: real hit rate 75.55% (75.55% on steps past 64 per cache, 74.51% on the full trace), measured directly and confirmed against the simulator on 36,913 GPU plans with zero differences; the 41% came from an indirect PCIe-traffic estimate that overstated misses. On 9/14 the front was mistakenly reopened in this registry's status/next-action text without reading RIPRESA_CACHE_13_SETTEMBRE_CODEX.md, and closed within about an hour with no runs produced. Binding rule: before opening or reopening a front already touched in a prior session, read the relevant *_CODEX.md reports."
+    },
+    {
+      "id": "D20",
+      "summary": "P7 cell 1 = MTP draft length (speculation). Chosen after the 9/13 Codex chat digest and VERSO_50_TPS_400_PREFILL_13_SETTEMBRE_CODEX.md (decode profile: expert upload 24.5%, Q6_K 23%, IQ2_S 9.9%, attention 7.9%; MTP acceptance 70-75% with a 1-token draft; n-grams already falsified as a general setting, they only help copy-tasks and hurt free-form prose). Protocol per D14: run M2 (2-token draft) first against the already-known reference M1 (1-token draft, current production regime); run M3 (3-token draft) only if M2 beats M1. solo_libero profile, original experimental binaries, no code changes in this cell. Adoption threshold +5% on the free set, same criterion as D17 for P4."
     }
   ]
 }

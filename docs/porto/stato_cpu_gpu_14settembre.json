@@ -3,8 +3,8 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "not_started",
-  "current_phase": "P0",
+  "implementation_status": "baseline_variability_running",
+  "current_phase": "P2",
   "goal": {
     "decode_free_tps": 50,
     "decode_ms_per_accepted_token": 20,
@@ -17,17 +17,17 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 0,
-  "next_action": "Create an isolated baseline/build, freeze prompt/token/template fixtures, and measure matched baseline variability.",
+  "new_benchmark_runs": 1,
+  "next_action": "Finish the matched baseline-variability measurement (three A=A pairs on the solo_libero profile plus one full screening block), record it as the detectability floor for P4/P6, then start P2 (executor/lifetime) reusing the P1 simulator invariant asserts.",
   "phases": [
     {
       "id": "P0",
-      "status": "not_started",
+      "status": "completed",
       "depends_on": []
     },
     {
       "id": "P1",
-      "status": "not_started",
+      "status": "completed",
       "depends_on": [
         "P0"
       ]
@@ -97,6 +97,23 @@
     "D07",
     "D08",
     "D09",
-    "D10"
+    "D10",
+    "D11",
+    "D12",
+    "D13"
+  ],
+  "decisions_added": [
+    {
+      "id": "D11",
+      "summary": "Token budgets raised to 1024 (screening) / 1536 (confirmation) for free-form cases, 768 for structured-quality and long-context cases, replacing the protocol's 512/768."
+    },
+    {
+      "id": "D12",
+      "summary": "Baseline variability is measured on the solo_libero profile (8 free-form cases, short context and 32k) with three alternating-order A=A pairs, plus a single full screening block as reference and as a proof of the 131k schema."
+    },
+    {
+      "id": "D13",
+      "summary": "Deterministic CPU-miss ordering for P3: first misses in unique-index order, as proposed by the P1 contract; alternative orderings deferred to P4."
+    }
   ]
 }

@@ -1,0 +1,10 @@
+Scrivi codice C++17 completo e autonomo (un solo file, con `int main()`), senza dipendenze esterne oltre la libreria standard.
+
+Implementa una classe `CacheFrequenzaDecaduta` con capacita' fissa passata al costruttore. L'interfaccia minima e':
+  bool accedi(int id);            // true se era presente (colpo), false se inserito ora
+  std::vector<int> residenti() const;  // gli id presenti, in ordine crescente
+  long long colpi() const; long long mancanze() const;
+
+Regole: ogni accesso incrementa un contatore di frequenza dell'id e ne aggiorna l'istante d'uso. Ogni 64 accessi l'epoca avanza e tutte le frequenze vengono dimezzate (divisione intera). Quando la cache e' piena, la vittima e' l'elemento con frequenza minima; a pari frequenza il meno recente; a pari recenza l'id minore.
+
+Aggiungi nel `main()` almeno cinque test con `assert` che coprano: inserimento e colpo, sfratto a capacita' piena, effetto del dimezzamento dopo 64 accessi, pareggio risolto dalla recenza e pareggio risolto dall'id minore. Stampa 'OK' alla fine.

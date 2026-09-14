@@ -1,0 +1,11 @@
+Scrivi codice C++17 completo e autonomo (un solo file con `int main()`, solo libreria standard).
+
+Implementa:
+  struct Piano { std::vector<int> colpi; std::vector<int> mancanze_gpu; std::vector<int> mancanze_cpu; };
+  Piano pianifica(const std::vector<int>& richiesti,
+                  const std::vector<int>& residenti,
+                  int max_cpu);
+
+`richiesti` puo' contenere duplicati: il piano lavora sugli id UNICI, conservando il primo ordine di comparsa. Gli id presenti fra i `residenti` vanno in `colpi`. I mancanti vanno in `mancanze_cpu` fino a `max_cpu` elementi (nell'ordine di comparsa) e i restanti in `mancanze_gpu`. Deve valere sempre l'invariante `colpi.size() + mancanze_gpu.size() + mancanze_cpu.size() == numero di id unici`.
+
+Aggiungi nel `main()` almeno sei test con `assert`: nessun mancante, tutti mancanti, duplicati nei richiesti, max_cpu = 0, max_cpu maggiore del numero di mancanti, e la verifica esplicita dell'invariante su un caso misto. Stampa 'OK' alla fine.

@@ -20,7 +20,7 @@ Il banco esistente costruisce parte del contesto leggendo i sorgenti: questi cam
 
 I 25,08/27,26 t/s e i 39,19 t/s del 13 settembre sono riferimenti storici; non sostituiscono uno dei lati della matrice. In particolare non esiste una "baseline FreeToken" del modello completo.
 
-**Batteria minima.** La selezione è congelata in P0 con un ID per caso e una rubrica di correttezza.
+**Batteria minima.** La selezione è congelata in P0 con un ID per caso e una rubrica di correttezza. I budget di token in vigore sono quelli della decisione **D11** nella tabella delle decisioni del [registro](REGISTRO_CPU_GPU_14_SETTEMBRE.md) (1024 in screening / 1536 in conferma per i liberi, 768 per qualità strutturata e contesto lungo), non i 512/768 della tabella sotto.
 
 | Insieme | Casi e taglie | Uso |
 |---|---|---|

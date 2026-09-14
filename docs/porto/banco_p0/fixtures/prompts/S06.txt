@@ -1,0 +1,15 @@
+La funzione seguente deve scegliere come vittima l'elemento con frequenza minima; a pari frequenza il MENO recente (cioe' quello con `ultimo_uso` piu' piccolo); a pari recenza l'indice minore. Contiene un difetto. Individualo, spiegalo in una frase e restituisci la funzione corretta.
+
+```cpp
+int scegli_vittima(const std::vector<int>& freq, const std::vector<int>& ultimo_uso,
+                   const std::vector<bool>& usato_ora) {
+    int migliore = -1;
+    for (int i = 0; i < (int) freq.size(); ++i) {
+        if (usato_ora[i]) continue;
+        if (migliore < 0) { migliore = i; continue; }
+        if (freq[i] < freq[migliore]) migliore = i;
+        else if (freq[i] == freq[migliore] && ultimo_uso[i] > ultimo_uso[migliore]) migliore = i;
+    }
+    return migliore;
+}
+```

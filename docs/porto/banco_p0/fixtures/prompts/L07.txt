@@ -1,0 +1,7 @@
+Scrivi un modulo Python autonomo (un solo file, solo libreria standard) che espone:
+
+  def throughput_insieme(casi: list[dict]) -> float
+
+dove ogni caso e' un dizionario con le chiavi 'token_accettati' (int) e 'tempo_generazione_s' (float). La funzione deve restituire somma(token_accettati) / somma(tempo_generazione_s), cioe' NON la media aritmetica dei token al secondo dei singoli casi. Deve sollevare `ValueError` se la lista e' vuota, se un tempo e' negativo o se la somma dei tempi e' zero, e deve ignorare i casi marcati con 'valido': False.
+
+Aggiungi nello stesso file una suite di test eseguibile con `python il_file.py` (usando `unittest`) che dimostri con un caso numerico esplicito che il risultato differisce dalla media aritmetica dei t/s per caso, piu' i test degli errori e dell'esclusione dei casi non validi.

@@ -64,6 +64,18 @@ Impronte (SHA256, primi 8) al 13/9 sera. **Fra i due insiemi differiscono SOLO d
 **Conseguenza pratica:** tutta la sparse FA vive in quelle due DLL. Per promuoverla in produzione
 basta copiarle in `bin_prod`. Per annullarla basta non copiarle.
 
+> **Nota del 14/9 (P0 del registro CPU/GPU).** La tabella sopra è **superata**: allo snapshot di
+> P0 (`D:\ds4_work\p0_snapshot_20260914\`) fra `bin_prod` e `build\bin` differiscono **quattro**
+> file, non due. Si sono aggiunte `ggml-base.dll` (`D3842EB1` contro `5F4BA614`) e
+> `llama-common.dll` (`2253BD46` contro `13648095`), ricompilate il 13/9 alle 13:09-13:10 durante
+> il lavoro sulle prestazioni successivo alla stesura di questo handoff. Conseguenza pratica
+> aggiornata: «promuovere la sparse FA copiando due DLL» **non è più vero**; una copia di
+> quattro DLL non sarebbe più una promozione isolata della sparse FA. Inoltre la `ggml-cuda.dll`
+> effettivamente presente in `build\bin` allo snapshot è `26BA28B4` (13/9 12:57), non `321BA4AC`
+> come indicato al §4.A: chi cercasse `LLAMA_MOE_HIT_REPORT` "nella DLL della §4.A" guarderebbe un
+> binario diverso da quello descritto. Dettagli in
+> [REGISTRO_CPU_GPU_14_SETTEMBRE.md](REGISTRO_CPU_GPU_14_SETTEMBRE.md), voce P0.
+
 `ggml-cuda.dll` è stata ricostruita tre volte il 13/9: `20653E30` (sparse FA + log),
 poi **`321BA4AC`** (aggiunge il contatore dei colpi di cache, §4.A). Entrambe le aggiunte sono
 **spente di default** e si accendono da variabile d'ambiente, quindi la DLL nuova si comporta

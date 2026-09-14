@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p7_mtp_unshared_head",
+  "implementation_status": "p7_awaiting_mtp_reconnaissance",
   "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
@@ -17,7 +17,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 44,
+  "new_benchmark_runs": 45,
   "baseline_reference_free_tps": 24.44,
   "spec_reference_free_tps": 28.6646,
   "p7_cell1_result": {
@@ -28,6 +28,13 @@
     "breakeven_pos2": 0.633,
     "verify_row_ms": 16.6,
     "head_ms_per_draft_token": 5.5
+  },
+  "p7_cell2_result": {
+    "unshared_tps": 22.6316,
+    "unshared_tps_depurato": 29.04,
+    "acc_pos1_unshared": 0.7832,
+    "acc_pos1_shared": 0.7851,
+    "anomaly_cases": 2
   },
   "p3_result": {
     "free_tps_B": 23.5135,
@@ -47,7 +54,7 @@
     "fumo_delta_24_layers": -0.059,
     "plumbing_47_layers_ms": 2.78
   },
-  "next_action": "P7 cell 1 (D20) is COMPLETE: M2 (2-token draft) lost 4.05% against M1 (1-token draft), both with the shared MTP head (27.503 vs 28.6646 t/s free-set; -4.74% on the iso-text 32k subset); M3 (3-token draft) is not runnable (two GGML_ASSERT plus three silent guards cap the local fast path at 3 verify rows, i.e. exactly a 2-token draft). M1 (28.6646 t/s) is now the reference with speculation on this bench (D21); the draft does not get lengthened, it needs to get more accurate (D22) since the second draft position accepts 0.553 against a 0.633 break-even. Cell 2 (D22): run the unshared MTP head (mtp-Qwen3.8-Flash-Next-Q8_0.gguf, 4137 MB, RAM-resident, no cache-slot cost) with draft 1 first (D14) against the D21 reference, then draft 2 only if second-position acceptance clears 0.633. solo_libero profile, original experimental binaries, no code changes. Adoption threshold +5% on the free set vs D21 (28.66 t/s). Work under docs/porto/p7_speculazione/, not docs/porto/p7_colpi/ or docs/porto/banco_p0/ (owned by another agent). The cache-hit-gap front (41% vs 75%) is NOT the P7 front: falsified by Codex on 9/13 (75.55% real), reopened by mistake on 9/14 and closed within an hour with no valid runs (D19).",
+  "next_action": "P7 cell 2 (D22) is COMPLETE: the unshared MTP head (mtp-Qwen3.8-Flash-Next-Q8_0.gguf) with a 1-token draft does not beat M1 on either t/s (22.6316 vs 28.6646, -21.03% raw) or first-position acceptance (0.7832 vs 0.7851, no gain). The raw t/s drop is an isolated system anomaly on 2 of 16 cases (L07/L08@ctx32k: decode 3-4x slower, free RAM below 4 GB, GPU power collapsed to 81W vs 135W at equal or higher clock -- a transport-stall signature, not thermal, not isolated experimentally); depurated t/s is 29.04 (+1.3%, within single-replica noise) but depurated acceptance stays at 0.7797, still below 0.7851 -- the verdict does not change even in the most favorable case. Fingerprints 18/18 identical to M1 (verification correctness confirmed). VRAM +302 MiB, RAM +1.03 GB. M5 not run (neither trigger condition met). Decision D23: the unshared head is not adopted -- draft accuracy is not improved by swapping the available head. New risk R-RAM: with the MTP head on and 32k context, free RAM drops to ~4-5 GB, and below 4 GB decode collapses (transport stall, not thermal); every future preset must log minimum free RAM during the run, and a cell with a minimum below 4 GB is not a clean speed measurement. Next: P7 cell 3 (cost of the verify row, 16.6 ms: 6.6 mmvq + 6.4 transfers) is in preparation, pending the GitHub MTP-acceptance reconnaissance (docs/porto/RICOGNIZIONE_MTP_ACCETTAZIONE_14_SETTEMBRE.md, being written by another agent -- do not create it from this task). The cache-hit-gap front (41% vs 75%) is still NOT the P7 front (D19).",
   "phases": [
     {
       "id": "P0",
@@ -138,7 +145,8 @@
     "D19",
     "D20",
     "D21",
-    "D22"
+    "D22",
+    "D23"
   ],
   "decisions_added": [
     {
@@ -188,6 +196,10 @@
     {
       "id": "D22",
       "summary": "The MTP draft does not get lengthened from 1 to 2 tokens: the lever is draft accuracy or the cost of the verify row, not length. M2 (2-token draft) loses 4.05% against M1 (-4.74% on the iso-text 32k subset): the second draft position costs 22.08 ms (11.1 head + 16.6 third verify row, ~6.6 ms mmvq + ~6.4 ms transfers per the 9/10 measurement) and yields only 0.535 tokens, below the 0.633 break-even (measured 0.553); M3 not runnable (3-row guards). Cell 2 opened accordingly: unshared MTP head (mtp-Qwen3.8-Flash-Next-Q8_0.gguf), draft 1 first (D14), draft 2 only if second-position acceptance clears 0.633."
+    },
+    {
+      "id": "D23",
+      "summary": "The unshared MTP head is not adopted (P7 cell 2, COMPLETE 9/14, commit 07b07a1). M4 (unshared head, 1-token draft) beats M1 on neither t/s (22.6316 vs 28.6646, -21.03% raw) nor first-position acceptance (0.7832 vs 0.7851, no gain). The raw t/s collapse is an isolated system anomaly on 2 of 16 cases (L07/L08@ctx32k: decode 3-4x slower, free RAM below 4 GB, GPU power collapsed to 81W vs 135W at equal or higher clock -- a transport-stall signature, not thermal), not isolated experimentally. Depurated t/s is 29.04 (+1.3%, within single-replica noise) but depurated acceptance stays at 0.7797, still below M1 -- the decision does not change even in the most favorable case. Fingerprints 18/18 identical to M1. M5 not run: neither trigger condition met. New risk R-RAM: with the MTP head and 32k context, minimum free RAM during a run must be logged in every future preset; a cell with a minimum below 4 GB is not a clean speed measurement until R-RAM is falsified or confirmed in isolation."
     }
   ]
 }

@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p7_cell4_polling_and_draft_rows",
+  "implementation_status": "day_closed_handoff_written",
   "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
@@ -17,7 +17,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 45,
+  "new_benchmark_runs": 60,
   "p7_cell3_result": {
     "verify_row_ms": 15.66,
     "mmvq_ms": 6.60,
@@ -25,6 +25,15 @@
     "gather_gib_s": 24.0,
     "prefetch_max_coverage": 0.49
   },
+  "p7_cell4_result": {
+    "polling_us_per_layer": 13.8,
+    "host_node_us_per_layer": 59.8,
+    "draft_rows_R_ms": 19.7,
+    "draft_rows_tps": 27.243,
+    "same_binary_off_tps": 30.238,
+    "open_issue": "A7"
+  },
+  "handoff": "HANDOFF_14_SETTEMBRE.md",
   "baseline_reference_free_tps": 24.44,
   "spec_reference_free_tps": 28.6646,
   "p7_cell1_result": {
@@ -112,11 +121,12 @@
     },
     {
       "id": "P7",
-      "status": "in_progress",
+      "status": "completed_mixed_outcome",
       "depends_on": [
         "P6"
       ],
-      "alternative_start": "documented closure of the CPU route after an inconclusive or negative matched confirmation (D18, exercised 9/14)"
+      "alternative_start": "documented closure of the CPU route after an inconclusive or negative matched confirmation (D18, exercised 9/14)",
+      "note": "cell 1 (D20/D21/D22) and cell 2 (D23) and cell 3 (D24) completed with a negative/closed verdict; cell 4 (D25) completed with a mixed outcome -- stage 1 (polling) adopted as an asset (D26), stage 2 (CPU lane on draft rows) inconclusive pending opening A7 (D27); day closed 9/14 (D28), see HANDOFF_14_SETTEMBRE.md"
     }
   ],
   "primary_documents": [
@@ -155,7 +165,10 @@
     "D22",
     "D23",
     "D24",
-    "D25"
+    "D25",
+    "D26",
+    "D27",
+    "D28"
   ],
   "decisions_added": [
     {
@@ -217,6 +230,18 @@
     {
       "id": "D25",
       "summary": "P7 cell 4 opened: compose the P3/P4 CPU lane (general route closed in D18, but the mechanism remains sound) with MTP draft rows only, in two gated stages. On real traces, computing on CPU the non-resident experts requested only by rows beyond the first (instead of transferring them) cuts the extra row's traffic by 84.6% (from +140.2 to ~21.6 MiB), at a cost of 114.5 CPU experts/cycle (2.39/layer avg, p90 5, max 10). Stage 1: light plumbing (variant C9 from P4, described but never implemented because at one isolated layer it did not clear the 0.5 ms/token threshold) replaces the two cudaLaunchHostFunc host nodes with polling on a mapped flag; gate: cost <=15 us/layer at 47 layers cpu_max=0 (today 59.1 us after P4 cell 2's light plumbing, origin 112.4 us), fingerprints identical to off. Stage 2 only if stage 1 clears the gate: CPU lane on draft rows only; gate on row cost, not t/s -- R = cycle - T1 - H must drop under 13 ms, ctx32k fingerprints identical to M1 (8/8); only then re-run B (solo_libero draft-1 and draft-2) against the 28.66 t/s reference (D21). Expectation: +2.2% if the CPU lane is half-exposed, +9.7% if fully covered; quantified side effect: the 2nd-draft-position break-even drops from 0.633 to 0.501, below the 0.553 measured in cell 1 -- the 2-token draft (closed in D22) could become profitable again without any change to acceptance."
+    },
+    {
+      "id": "D26",
+      "summary": "The polling plumbing (variant C9) is an ACQUIRED ASSET, kept in the working copy D:\\ds4_work\\p3_work, off by default (LLAMA_MOE_CPU_POLL=0). Replaces the last cudaLaunchHostFunc with the CPU-contribution wait as the merge guard's prologue (no extra kernel launch), spinning on a mapped word written by the pool, with a safety deadline in SM cycles measured by clock64() inside the kernel. Cost per layer: 13.8 us (gate <=15, cleared with 1.2 us margin), vs 59.8 for P4-extension's host-node plumbing and 112.4 at P4-cost's origin -- identical fingerprints to off in six of six runs, two replicas within 0.08-0.09%. On the active per-layer cost (cpu_max=2) it is 75.9 -> 41.9 us, which changes a piece of P4-extension section 9's balance (opening A2 of P7-cell4, not a reopening of D18)."
+    },
+    {
+      "id": "D27",
+      "summary": "P7 cell 4 stage 2 (CPU lane on MTP draft rows) is INCONCLUSIVE, not negative. The row-cost gate is missed (R ~= 19.7 ms vs the 13 ms gate, -9.9% on t/s at same binary), but the mechanism is correct (invariant 1 verified, zero non-finite values, -47.8% of expert bytes) and, after fixing the pool-phase defect, the gap is a factor of 1.7, not 123 as the first (buggy) measurement suggested. Before judging the lane, opening A7 must close first: run preset_S13_p7.json (diagnostic NRMSE between the CPU and GPU contributions on the same routes, already generated, never executed) to check whether the CPU contribution actually reaches moe_out on draft rows -- S7 (with CPU arithmetic) and S10 (LLAMA_MOE_CPU_NOCOMPUTE=1, without) produce the exact same text, which does not add up -- and fix the found-but-uncorrected defect where the draft context inherits a moe_out add node that is not its own. Only after A7 should R be re-measured; if it stays above 13 ms even after the fix, the lane closes for good."
+    },
+    {
+      "id": "D28",
+      "summary": "The 9/14 working day closes here. Nine phases opened and closed in one session (P0-P4, P7 cells 1-4, the GitHub MTP-acceptance recon), three motivated-closure decisions (D18 general CPU route, D19 cache-hit gap, D24 prefetch) and one acquired asset (D26). The next session resumes from HANDOFF_14_SETTEMBRE.md, which collects the full map of tracks, the bench reference numbers, the knobs introduced today, and the method rules learned today."
     }
   ]
 }

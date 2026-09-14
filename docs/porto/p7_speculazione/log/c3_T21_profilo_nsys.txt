@@ -1,0 +1,76 @@
+{'w1': 60, 'w2': 28}
+
+== w1: 60 forward | parete 41.11 ms | GPU occupata (unione kernel) 37.76 ms | inattiva 3.36 ms | H2D 0.53 ms 11.3 MiB | D2H 0.04 ms | somma kernel 40.90 ms
+    18.911 ms  x 545.0  mul_mat_vec_q
+    10.239 ms  x  96.0  moe_grouped_gather_decode
+     1.762 ms  x  36.0  k_get_rows
+     1.661 ms  x 288.0  mul_mat_vec_f
+     1.280 ms  x 909.0  k_bin_bcast
+     0.995 ms  x  12.0  mul_mat_f
+     0.705 ms  x  48.0  DeviceRadixSortOnesweepKernel
+     0.684 ms  x 545.0  quantize_q8_1
+     0.681 ms  x  36.0  gated_delta_net_cuda
+     0.670 ms  x  36.0  k_get_rows_float_vec
+     0.525 ms  x  48.0  moe_grouped_plan_decode
+     0.396 ms  x 399.0  scale_f32
+     0.362 ms  x 184.0  rms_norm_f32
+     0.306 ms  x 294.0  unary_op_kernel
+     0.266 ms  x  12.0  flash_attn_ext_f16
+     0.246 ms  x 181.0  unary_gated_op_kernel
+     0.218 ms  x  48.0  topk_moe_cuda
+     0.113 ms  x  49.0  concat_cont
+     0.103 ms  x  36.0  ssm_conv_f32
+     0.101 ms  x  24.0  k_get_rows_scalar
+     0.094 ms  x  48.0  moe_weighted_reduction_f32
+     0.091 ms  x  72.0  l2_norm_f32
+
+== w2: 28 forward | parete 57.92 ms | GPU occupata (unione kernel) 52.39 ms | inattiva 5.53 ms | H2D 1.67 ms 38.7 MiB | D2H 0.08 ms | somma kernel 58.33 ms
+    25.508 ms  x 593.0  mul_mat_vec_q
+    16.772 ms  x  96.0  moe_grouped_gather_decode
+     3.492 ms  x  60.0  k_get_rows
+     1.974 ms  x 312.0  mul_mat_vec_f
+     1.456 ms  x 957.0  k_bin_bcast
+     1.391 ms  x  96.0  DeviceRadixSortOnesweepKernel
+     1.011 ms  x  12.0  mul_mat_f
+     0.822 ms  x  48.0  moe_grouped_plan_decode
+     0.779 ms  x 593.0  quantize_q8_1
+     0.694 ms  x  36.0  gated_delta_net_cuda
+     0.689 ms  x  36.0  k_get_rows_float_vec
+     0.520 ms  x  24.0  flash_attn_ext_f16
+     0.415 ms  x 399.0  scale_f32
+     0.384 ms  x 330.0  unary_op_kernel
+     0.367 ms  x 184.0  rms_norm_f32
+     0.279 ms  x 193.0  unary_gated_op_kernel
+     0.217 ms  x  48.0  topk_moe_cuda
+     0.209 ms  x 109.0  concat_cont
+     0.198 ms  x  48.0  k_get_rows_scalar
+     0.144 ms  x  37.0  cpy_scalar_transpose
+     0.122 ms  x  48.0  moe_weighted_reduction_f32
+     0.105 ms  x  36.0  ssm_conv_f32
+
+== DIFFERENZA w2 - w1: parete +16.80 ms | occupata +14.63 | inattiva +2.17 | H2D +1.14 ms +27.5 MiB | somma kernel +17.43
+    +6.597 ms  (18.911 -> 25.508)  x545.0->593.0  mul_mat_vec_q
+    +6.533 ms  (10.239 -> 16.772)  x 96.0-> 96.0  moe_grouped_gather_decode
+    +1.730 ms  ( 1.762 ->  3.492)  x 36.0-> 60.0  k_get_rows
+    +0.686 ms  ( 0.705 ->  1.391)  x 48.0-> 96.0  DeviceRadixSortOnesweepKernel
+    +0.314 ms  ( 1.661 ->  1.974)  x288.0->312.0  mul_mat_vec_f
+    +0.297 ms  ( 0.525 ->  0.822)  x 48.0-> 48.0  moe_grouped_plan_decode
+    +0.254 ms  ( 0.266 ->  0.520)  x 12.0-> 24.0  flash_attn_ext_f16
+    +0.176 ms  ( 1.280 ->  1.456)  x909.0->957.0  k_bin_bcast
+    +0.144 ms  ( 0.000 ->  0.144)  x  0.0-> 37.0  cpy_scalar_transpose
+    +0.097 ms  ( 0.101 ->  0.198)  x 24.0-> 48.0  k_get_rows_scalar
+    +0.096 ms  ( 0.113 ->  0.209)  x 49.0->109.0  concat_cont
+    +0.095 ms  ( 0.684 ->  0.779)  x545.0->593.0  quantize_q8_1
+    +0.078 ms  ( 0.306 ->  0.384)  x294.0->330.0  unary_op_kernel
+    +0.046 ms  ( 0.046 ->  0.092)  x 12.0-> 24.0  DeviceRadixSortHistogramKernel
+    +0.033 ms  ( 0.246 ->  0.279)  x181.0->193.0  unary_gated_op_kernel
+    +0.028 ms  ( 0.094 ->  0.122)  x 48.0-> 48.0  moe_weighted_reduction_f32
+    +0.026 ms  ( 0.027 ->  0.053)  x 12.0-> 24.0  init_indices
+    +0.021 ms  ( 0.022 ->  0.042)  x 12.0-> 24.0  flash_attn_stream_k_fixup_uniform
+    +0.019 ms  ( 0.396 ->  0.415)  x399.0->399.0  scale_f32
+    +0.019 ms  ( 0.670 ->  0.689)  x 36.0-> 36.0  k_get_rows_float_vec
+    +0.019 ms  ( 0.013 ->  0.032)  x 12.0-> 24.0  DeviceRadixSortExclusiveSumKernel
+    +0.016 ms  ( 0.995 ->  1.011)  x 12.0-> 12.0  mul_mat_f
+    +0.016 ms  ( 0.014 ->  0.029)  x 12.0-> 24.0  pad_f32
+    +0.015 ms  ( 0.051 ->  0.066)  x 48.0-> 60.0  fwht_cuda
+    +0.014 ms  ( 0.681 ->  0.694)  x 36.0-> 36.0  gated_delta_net_cuda

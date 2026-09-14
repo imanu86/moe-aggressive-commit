@@ -1,0 +1,83 @@
+﻿== guardia d'istanza unica ==
+porta 8100 libera, nessun llama-server attivo, nessuna build in corso
+== avvio processo NUOVO ==
+  exe        : C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_clean\build\bin\llama-server.exe
+  log server : C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_server_logs_sperimentali\p0_p7_mtp_bozza2_r1_20260914_142032.log
+  env        : GGML_CUDA_MOE_CPU_PREFILL, QWEN4EXP_QSA_GATHER, QWEN4EXP_INDEXER_K_ONLY, LLAMA_MOE_DEMAND_GPU, LLAMA_MOE_DYNAMIC_WORKSPACE, QWEN4EXP_POOL_CACHE, QWEN4EXP_POOL_LAYOUT, GGML_CUDA_SCALAR_GATHER, GGML_CUDA_MOE_FREQUENCY, QWEN4EXP_GATHER_F16, QWEN_MOE_OVERLAP_DOWN, QWEN4EXP_INDEXER_MAPPED, LLAMA_MOE_CACHE_BATCH, LLAMA_MOE_PHASE_CACHE, QWEN4EXP_ATTN_MAPPED, QWEN_MOE_SHARED_CARVEOUT, QWEN4EXP_SPARSE_FA, QWEN4EXP_INDEXER_F32_BATCH, QWEN_MOE_SCALAR_BATCH, LLAMA_MTP_LIGHT
+  PID        : 22536
+pronto dopo 175.9 s
+== banco ==
+corsa: 20260914_142328_P7_p7_mtp_bozza2_r1
+preset M2 (p7_mtp_bozza2), profilo solo_libero, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.91s  ttft   2.34/-       prompt_n 61      cache_n 0       pred 8     gen 12.207520879220532 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    1.96s  ttft   1.43/-       prompt_n 61      cache_n 0       pred 8     gen 13.145737400749685 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  L01@corto              wall   35.46s  ttft   2.26/-       prompt_n 145     cache_n 0       pred 1024  gen 30.812311009166436 sha d973918c76f5  fine=length
+  L02@corto              wall   42.08s  ttft   2.19/-       prompt_n 136     cache_n 0       pred 1024  gen 25.643641617700176 sha 21ce33327def  fine=length
+  L03@corto              wall   39.49s  ttft   2.14/-       prompt_n 136     cache_n 0       pred 1024  gen 27.387705254854644 sha 3594285c7e3c  fine=length
+  L04@corto              wall   20.99s  ttft   2.60/16.25   prompt_n 230     cache_n 0       pred 555   gen 30.1258084211749 sha 24c908dc0804  fine=stop
+  L05@corto              wall   32.31s  ttft   2.84/-       prompt_n 273     cache_n 0       pred 1024  gen 34.71204391538418 sha 95b677ba6581  fine=length
+  L06@corto              wall   39.95s  ttft   2.89/-       prompt_n 329     cache_n 0       pred 1024  gen 27.6040218978955 sha 2ded2d757f71  fine=length
+  L07@corto              wall   39.37s  ttft   2.83/-       prompt_n 278     cache_n 0       pred 1024  gen 27.999476029355712 sha e644eb5d3fee  fine=length
+  L08@corto              wall   38.00s  ttft   2.93/-       prompt_n 323     cache_n 0       pred 1024  gen 29.169723594770662 sha a38983d6ab7b  fine=length
+  L01@ctx32k             wall  140.43s  ttft 100.10/-       prompt_n 32944   cache_n 0       pred 1024  gen 25.364957228061932 sha d1aa2a209608  fine=length
+  L02@ctx32k             wall   45.63s  ttft   1.53/-       prompt_n 94      cache_n 32841   pred 1024  gen 23.198106363294997 sha 23d753403e45  fine=length
+  L03@ctx32k             wall   43.84s  ttft   1.59/-       prompt_n 94      cache_n 32841   pred 1024  gen 24.213586269291813 sha fbedb74d398a  fine=length
+  L04@ctx32k             wall   24.04s  ttft   2.04/17.68   prompt_n 188     cache_n 32841   pred 632   gen 28.68456538087534 sha 8115d0c6cb8b  fine=stop
+  L05@ctx32k             wall   34.76s  ttft   2.32/-       prompt_n 231     cache_n 32841   pred 1024  gen 31.531324799245173 sha 34af04486126  fine=length
+  L06@ctx32k             wall   41.10s  ttft   2.41/-       prompt_n 287     cache_n 32841   pred 1024  gen 26.44293582139216 sha 46b25180a045  fine=length
+  L07@ctx32k             wall   42.24s  ttft   2.32/-       prompt_n 236     cache_n 32841   pred 1024  gen 25.62699268343096 sha c0623840ddca  fine=length
+  L08@ctx32k             wall   40.11s  ttft   2.40/-       prompt_n 281     cache_n 32841   pred 1024  gen 27.127430987736012 sha ffde01a2af72  fine=length
+log del server copiato e ripulito dalla chiave
+
+corsa 20260914_142328_P7_p7_mtp_bozza2_r1
+preset M2 / p7_mtp_bozza2, profilo solo_libero, replica 1
+richieste: 18 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 16, "token_accettati": 15523, "tempo_generazione_s": 564.411, "tps_insieme": 27.503}
+tutti i casi: {"n_casi": 16, "token_accettati": 15523, "tempo_generazione_s": 564.411, "tps_insieme": 27.503}
+scarto orologio-timing server (%): {"min": 0.01, "max": 0.232, "mediano": 0.086}
+campioni di carico: 345
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  L01@corto                d973918c76f52add
+  L02@corto                21ce33327def2cc8
+  L03@corto                3594285c7e3c6935
+  L04@corto                24c908dc0804ce8b
+  L05@corto                95b677ba658140df
+  L06@corto                2ded2d757f71566d
+  L07@corto                e644eb5d3feef251
+  L08@corto                a38983d6ab7b67e7
+  L01@ctx32k               d1aa2a2096082218
+  L02@ctx32k               23d753403e45d459
+  L03@ctx32k               fbedb74d398a3a72
+  L04@ctx32k               8115d0c6cb8bd262
+  L05@ctx32k               34af04486126109d
+  L06@ctx32k               46b25180a045214d
+  L07@ctx32k               c0623840ddca3c89
+  L08@ctx32k               ffde01a2af7284d5
+CARTELLA_CORSA=D:\ds4_work\banco_p0_run\20260914_142328_P7_p7_mtp_bozza2_r1
+== chiusura del server ==
+  non si e' chiuso da solo: passo alla terminazione forzata
+
+
+pid                 : 22536
+modo_chiusura       : stop_process_forzato
+secondi_caricamento : 175,9
+uscito              : True
+codice_uscita       : 
+log_server          : C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_server_logs_
+                      sperimentali\p0_p7_mtp_bozza2_r1_20260914_142032.log
+porta_libera_dopo   : True
+processi_residui    : {$null}
+
+
+
+artefatti di avvio copiati (ripuliti) in D:\ds4_work\banco_p0_run\20260914_142328_P7_p7_mtp_bozza2_r1\log
+CARTELLA_CORSA=D:\ds4_work\banco_p0_run\20260914_142328_P7_p7_mtp_bozza2_r1
+== stato finale ==
+nessun llama-server attivo
+porta 8100 libera (nessun LISTENING; 3 socket in TIME_WAIT, normali e innocui)

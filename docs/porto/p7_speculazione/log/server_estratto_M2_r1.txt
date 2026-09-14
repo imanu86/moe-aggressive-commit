@@ -1,0 +1,377 @@
+2.38.283.437 I llama_context: n_rs_seq              = 2
+2.39.135.389 I llama_memory_recurrent: size =  337.71 MiB (     1 cells,  48 layers,  1 seqs  2 rs_seq), R (f32):   12.66 MiB, S (f32):  324.00 MiB, P (f32):    1.05 MiB
+2.39.259.281 I sched_reserve: graph nodes  = 8595 (with bs=3), 8390 (with bs=1)
+2.39.760.590 I common_speculative_init_result: loading draft model 'D:\models\qwen38flashnext\MTP\mtp-Qwen3.8-Flash-Next-shared-Q8_0.gguf'
+2.47.909.384 I llama_context: n_rs_seq              = 0
+2.47.914.143 I sched_reserve: graph nodes  = 178
+2.52.360.546 I spec common_specu: adding speculative implementation 'draft-mtp'
+2.52.360.554 I spec common_specu: - n_max=2, n_min=1, p_min=0.00, n_embd=10240, backend_sampling=1
+2.52.360.557 I spec common_specu: - gpu_layers=99, cache_k=q8_0, cache_v=q8_0, ctx_tgt=yes, ctx_dft=yes, devices=[default]
+2.52.363.760 I sched_reserve: graph nodes  = 184
+2.52.688.018 I srv  llama_server: listening on http://127.0.0.1:8100
+2.56.115.351 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+2.58.606.302 I sched_reserve: graph nodes  = 8593 (with bs=3), 8388 (with bs=1)
+2.58.960.188 I slot print_timing: id  0 | task 0 | prompt eval time =    2327.34 ms /    61 tokens (   38.15 ms per token,    26.21 tokens per second)
+2.58.960.196 I slot print_timing: id  0 | task 0 |        eval time =     573.42 ms /     8 tokens (   81.92 ms per token,    12.21 tokens per second)
+2.58.960.197 I slot print_timing: id  0 | task 0 |       total time =    2900.76 ms /    69 tokens
+2.58.960.198 I slot print_timing: id  0 | task 0 |    graphs reused =          1
+2.58.960.202 I slot print_timing: id  0 | task 0 | draft acceptance = 1.00000 (    4 accepted /     4 generated), mean len =  3.00
+2.58.960.202 I slot print_timing: id  0 | task 0 |      acc per pos = (1.000, 1.000)
+2.58.960.428 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    1      2      2, #gen drafts =      2, #acc drafts =     2, #gen tokens =      4, #acc tokens =     4, #mean acc len = 3.00, #acc rate/pos = (1.000, 1.000), dur(b,g,a) = 0.017, 36.828, 0.005 ms
+2.59.021.343 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+3.00.593.208 I sched_reserve: graph nodes  = 8593 (with bs=3), 8388 (with bs=1)
+3.00.921.007 I slot print_timing: id  0 | task 7 | prompt eval time =    1422.86 ms /    61 tokens (   23.33 ms per token,    42.87 tokens per second)
+3.00.921.013 I slot print_timing: id  0 | task 7 |        eval time =     532.49 ms /     8 tokens (   76.07 ms per token,    13.15 tokens per second)
+3.00.921.015 I slot print_timing: id  0 | task 7 |       total time =    1955.35 ms /    69 tokens
+3.00.921.015 I slot print_timing: id  0 | task 7 |    graphs reused =          1
+3.00.921.019 I slot print_timing: id  0 | task 7 | draft acceptance = 1.00000 (    4 accepted /     4 generated), mean len =  3.00
+3.00.921.020 I slot print_timing: id  0 | task 7 |      acc per pos = (1.000, 1.000)
+3.00.921.043 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    2      4      4, #gen drafts =      4, #acc drafts =     4, #gen tokens =      8, #acc tokens =     8, #mean acc len = 3.00, #acc rate/pos = (1.000, 1.000), dur(b,g,a) = 0.033, 58.162, 0.010 ms
+3.01.006.332 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+3.01.763.738 I sched_reserve: graph nodes  = 8425 (with bs=99), 8388 (with bs=1)
+3.03.387.057 I sched_reserve: graph nodes  = 8593 (with bs=3), 8388 (with bs=1)
+3.06.692.994 I slot print_timing: id  0 | task 14 | n_gen =    101, tg =  28.48 t/s, tg_3s =  28.76 t/s
+3.07.106.823 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+3.09.700.728 I slot print_timing: id  0 | task 14 | n_gen =    186, tg =  28.38 t/s, tg_3s =  28.26 t/s
+3.12.708.825 I slot print_timing: id  0 | task 14 | n_gen =    277, tg =  28.97 t/s, tg_3s =  30.25 t/s
+3.15.835.184 I slot print_timing: id  0 | task 14 | n_gen =    373, tg =  29.40 t/s, tg_3s =  30.71 t/s
+3.18.847.188 I slot print_timing: id  0 | task 14 | n_gen =    467, tg =  29.75 t/s, tg_3s =  31.21 t/s
+3.21.908.371 I slot print_timing: id  0 | task 14 | n_gen =    562, tg =  29.96 t/s, tg_3s =  31.03 t/s
+3.24.958.214 I slot print_timing: id  0 | task 14 | n_gen =    635, tg =  29.11 t/s, tg_3s =  23.94 t/s
+3.28.000.177 I slot print_timing: id  0 | task 14 | n_gen =    738, tg =  29.70 t/s, tg_3s =  33.86 t/s
+3.31.064.260 I slot print_timing: id  0 | task 14 | n_gen =    845, tg =  30.27 t/s, tg_3s =  34.92 t/s
+3.34.092.833 I slot print_timing: id  0 | task 14 | n_gen =    949, tg =  30.67 t/s, tg_3s =  34.34 t/s
+3.36.382.575 I slot print_timing: id  0 | task 14 | prompt eval time =    2255.56 ms /   145 tokens (   15.56 ms per token,    64.29 tokens per second)
+3.36.382.581 I slot print_timing: id  0 | task 14 |        eval time =   33201.01 ms /  1024 tokens (   32.45 ms per token,    30.81 tokens per second)
+3.36.382.582 I slot print_timing: id  0 | task 14 |       total time =   35456.58 ms /  1169 tokens
+3.36.382.583 I slot print_timing: id  0 | task 14 |    graphs reused =        419
+3.36.382.588 I slot print_timing: id  0 | task 14 | draft acceptance = 0.70519 (  598 accepted /   848 generated), mean len =  2.41
+3.36.382.588 I slot print_timing: id  0 | task 14 |      acc per pos = (0.821, 0.590)
+3.36.382.616 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    3    428    428, #gen drafts =    428, #acc drafts =   352, #gen tokens =    856, #acc tokens =   606, #mean acc len = 2.42, #acc rate/pos = (0.822, 0.593), dur(b,g,a) = 0.046, 4766.196, 0.771 ms
+3.36.447.794 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+3.37.204.707 I sched_reserve: graph nodes  = 8425 (with bs=90), 8388 (with bs=1)
+3.38.776.808 I sched_reserve: graph nodes  = 8593 (with bs=3), 8388 (with bs=1)
+3.42.187.581 I slot print_timing: id  0 | task 443 | n_gen =    100, tg =  27.38 t/s, tg_3s =  27.65 t/s
+3.43.029.987 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+3.45.258.254 I slot print_timing: id  0 | task 443 | n_gen =    184, tg =  27.37 t/s, tg_3s =  27.36 t/s
+3.48.289.024 I slot print_timing: id  0 | task 443 | n_gen =    261, tg =  26.76 t/s, tg_3s =  25.41 t/s
+3.51.341.577 I slot print_timing: id  0 | task 443 | n_gen =    344, tg =  26.86 t/s, tg_3s =  27.19 t/s
+3.54.404.318 I slot print_timing: id  0 | task 443 | n_gen =    421, tg =  26.53 t/s, tg_3s =  25.14 t/s
+3.57.434.996 I slot print_timing: id  0 | task 443 | n_gen =    503, tg =  26.61 t/s, tg_3s =  27.06 t/s
+4.00.478.686 I slot print_timing: id  0 | task 443 | n_gen =    587, tg =  26.75 t/s, tg_3s =  27.60 t/s
+4.03.535.038 I slot print_timing: id  0 | task 443 | n_gen =    659, tg =  26.36 t/s, tg_3s =  23.56 t/s
+4.06.599.530 I slot print_timing: id  0 | task 443 | n_gen =    722, tg =  25.72 t/s, tg_3s =  20.56 t/s
+4.09.628.156 I slot print_timing: id  0 | task 443 | n_gen =    799, tg =  25.69 t/s, tg_3s =  25.42 t/s
+4.12.691.314 I slot print_timing: id  0 | task 443 | n_gen =    873, tg =  25.56 t/s, tg_3s =  24.16 t/s
+4.15.727.528 I slot print_timing: id  0 | task 443 | n_gen =    957, tg =  25.73 t/s, tg_3s =  27.67 t/s
+4.18.463.876 I slot print_timing: id  0 | task 443 | prompt eval time =    2183.23 ms /   136 tokens (   16.05 ms per token,    62.29 tokens per second)
+4.18.463.882 I slot print_timing: id  0 | task 443 |        eval time =   39892.93 ms /  1024 tokens (   39.00 ms per token,    25.64 tokens per second)
+4.18.463.883 I slot print_timing: id  0 | task 443 |       total time =   42076.16 ms /  1160 tokens
+4.18.463.883 I slot print_timing: id  0 | task 443 |    graphs reused =        927
+4.18.463.888 I slot print_timing: id  0 | task 443 | draft acceptance = 0.49271 (  507 accepted /  1029 generated), mean len =  1.98
+4.18.463.889 I slot print_timing: id  0 | task 443 |      acc per pos = (0.625, 0.359)
+4.18.463.917 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    4    943    943, #gen drafts =    943, #acc drafts =   674, #gen tokens =   1885, #acc tokens =  1113, #mean acc len = 2.18, #acc rate/pos = (0.715, 0.466), dur(b,g,a) = 0.065, 10483.341, 1.758 ms
+4.18.544.301 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+4.19.301.472 I sched_reserve: graph nodes  = 8425 (with bs=90), 8388 (with bs=1)
+4.20.813.328 I sched_reserve: graph nodes  = 8593 (with bs=3), 8388 (with bs=1)
+4.24.505.825 I slot print_timing: id  0 | task 963 | n_gen =    101, tg =  25.65 t/s, tg_3s =  25.90 t/s
+4.25.132.467 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+4.27.533.372 I slot print_timing: id  0 | task 963 | n_gen =    184, tg =  26.42 t/s, tg_3s =  27.41 t/s
+4.30.579.605 I slot print_timing: id  0 | task 963 | n_gen =    266, tg =  26.57 t/s, tg_3s =  26.92 t/s
+4.33.590.923 I slot print_timing: id  0 | task 963 | n_gen =    349, tg =  26.80 t/s, tg_3s =  27.56 t/s
+4.36.610.150 I slot print_timing: id  0 | task 963 | n_gen =    432, tg =  26.93 t/s, tg_3s =  27.49 t/s
+4.39.645.910 I slot print_timing: id  0 | task 963 | n_gen =    513, tg =  26.89 t/s, tg_3s =  26.68 t/s
+4.42.653.128 I slot print_timing: id  0 | task 963 | n_gen =    612, tg =  27.71 t/s, tg_3s =  32.92 t/s
+4.45.683.822 I slot print_timing: id  0 | task 963 | n_gen =    696, tg =  27.71 t/s, tg_3s =  27.72 t/s
+4.48.752.457 I slot print_timing: id  0 | task 963 | n_gen =    782, tg =  27.75 t/s, tg_3s =  28.03 t/s
+4.51.783.665 I slot print_timing: id  0 | task 963 | n_gen =    861, tg =  27.58 t/s, tg_3s =  26.06 t/s
+4.54.829.237 I slot print_timing: id  0 | task 963 | n_gen =    939, tg =  27.41 t/s, tg_3s =  25.61 t/s
+4.57.868.626 I slot print_timing: id  0 | task 963 | n_gen =   1022, tg =  27.40 t/s, tg_3s =  27.31 t/s
+4.57.959.464 I slot print_timing: id  0 | task 963 | prompt eval time =    2125.54 ms /   136 tokens (   15.63 ms per token,    63.98 tokens per second)
+4.57.959.469 I slot print_timing: id  0 | task 963 |        eval time =   37352.53 ms /  1024 tokens (   36.51 ms per token,    27.39 tokens per second)
+4.57.959.470 I slot print_timing: id  0 | task 963 |       total time =   39478.07 ms /  1160 tokens
+4.57.959.471 I slot print_timing: id  0 | task 963 |    graphs reused =       1405
+4.57.959.474 I slot print_timing: id  0 | task 963 | draft acceptance = 0.55521 (  538 accepted /   969 generated), mean len =  2.11
+4.57.959.475 I slot print_timing: id  0 | task 963 |      acc per pos = (0.685, 0.425)
+4.57.959.497 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    5   1428   1428, #gen drafts =   1428, #acc drafts =  1006, #gen tokens =   2854, #acc tokens =  1651, #mean acc len = 2.16, #acc rate/pos = (0.704, 0.452), dur(b,g,a) = 0.079, 15870.755, 2.668 ms
+4.58.040.839 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+4.58.797.414 I sched_reserve: graph nodes  = 8425 (with bs=184), 8388 (with bs=1)
+5.00.769.347 I sched_reserve: graph nodes  = 8593 (with bs=3), 8388 (with bs=1)
+5.01.775.354 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+5.04.075.938 I slot print_timing: id  0 | task 1452 | n_gen =    101, tg =  28.47 t/s, tg_3s =  28.75 t/s
+5.07.116.640 I slot print_timing: id  0 | task 1452 | n_gen =    206, tg =  31.28 t/s, tg_3s =  34.53 t/s
+5.10.121.756 I slot print_timing: id  0 | task 1452 | n_gen =    302, tg =  31.49 t/s, tg_3s =  31.95 t/s
+5.13.158.117 I slot print_timing: id  0 | task 1452 | n_gen =    381, tg =  30.17 t/s, tg_3s =  26.02 t/s
+5.16.162.092 I slot print_timing: id  0 | task 1452 | n_gen =    467, tg =  29.87 t/s, tg_3s =  28.63 t/s
+5.18.953.007 I slot print_timing: id  0 | task 1452 | prompt eval time =    2584.57 ms /   230 tokens (   11.24 ms per token,    88.99 tokens per second)
+5.18.953.012 I slot print_timing: id  0 | task 1452 |        eval time =   18389.55 ms /   555 tokens (   33.19 ms per token,    30.13 tokens per second)
+5.18.953.013 I slot print_timing: id  0 | task 1452 |       total time =   20974.12 ms /   785 tokens
+5.18.953.013 I slot print_timing: id  0 | task 1452 |    graphs reused =       1612
+5.18.953.018 I slot print_timing: id  0 | task 1452 | draft acceptance = 0.81132 (  344 accepted /   424 generated), mean len =  2.62
+5.18.953.018 I slot print_timing: id  0 | task 1452 |      acc per pos = (0.877, 0.745)
+5.18.953.037 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    6   1640   1640, #gen drafts =   1640, #acc drafts =  1192, #gen tokens =   3278, #acc tokens =  1995, #mean acc len = 2.22, #acc rate/pos = (0.727, 0.490), dur(b,g,a) = 0.093, 18169.313, 3.098 ms
+5.19.019.210 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+5.19.781.338 I sched_reserve: graph nodes  = 8425 (with bs=227), 8484 (with bs=1)
+5.22.009.088 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+5.25.394.012 I slot print_timing: id  0 | task 1668 | n_gen =    102, tg =  28.08 t/s, tg_3s =  28.36 t/s
+5.28.406.929 I slot print_timing: id  0 | task 1668 | n_gen =    200, tg =  30.11 t/s, tg_3s =  32.53 t/s
+5.31.472.957 I slot print_timing: id  0 | task 1668 | n_gen =    307, tg =  31.63 t/s, tg_3s =  34.90 t/s
+5.34.549.380 I slot print_timing: id  0 | task 1668 | n_gen =    418, tg =  32.70 t/s, tg_3s =  36.08 t/s
+5.37.582.555 I slot print_timing: id  0 | task 1668 | n_gen =    529, tg =  33.45 t/s, tg_3s =  36.60 t/s
+5.40.642.136 I slot print_timing: id  0 | task 1668 | n_gen =    639, tg =  33.86 t/s, tg_3s =  35.95 t/s
+5.43.651.992 I slot print_timing: id  0 | task 1668 | n_gen =    748, tg =  34.18 t/s, tg_3s =  36.21 t/s
+5.46.690.174 I slot print_timing: id  0 | task 1668 | n_gen =    862, tg =  34.59 t/s, tg_3s =  37.52 t/s
+5.49.692.925 I slot print_timing: id  0 | task 1668 | n_gen =    970, tg =  34.74 t/s, tg_3s =  35.97 t/s
+5.51.268.683 I slot print_timing: id  0 | task 1668 | prompt eval time =    2839.06 ms /   273 tokens (   10.40 ms per token,    96.16 tokens per second)
+5.51.268.689 I slot print_timing: id  0 | task 1668 |        eval time =   29471.04 ms /  1024 tokens (   28.81 ms per token,    34.71 tokens per second)
+5.51.268.690 I slot print_timing: id  0 | task 1668 |       total time =   32310.10 ms /  1297 tokens
+5.51.268.690 I slot print_timing: id  0 | task 1668 |    graphs reused =       1967
+5.51.268.699 I slot print_timing: id  0 | task 1668 | draft acceptance = 0.91425 (  661 accepted /   723 generated), mean len =  2.83
+5.51.268.700 I slot print_timing: id  0 | task 1668 |      acc per pos = (0.953, 0.873)
+5.51.268.722 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    7   2002   2002, #gen drafts =   2002, #acc drafts =  1537, #gen tokens =   4001, #acc tokens =  2656, #mean acc len = 2.33, #acc rate/pos = (0.768, 0.559), dur(b,g,a) = 0.106, 22187.100, 3.782 ms
+5.51.357.701 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+5.52.118.661 I sched_reserve: graph nodes  = 8425 (with bs=283), 8484 (with bs=1)
+5.54.370.056 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+5.58.307.923 I slot print_timing: id  0 | task 2034 | n_gen =    100, tg =  23.86 t/s, tg_3s =  24.09 t/s
+6.01.325.141 I slot print_timing: id  0 | task 2034 | n_gen =    188, tg =  26.09 t/s, tg_3s =  29.17 t/s
+6.04.334.600 I slot print_timing: id  0 | task 2034 | n_gen =    272, tg =  26.63 t/s, tg_3s =  27.91 t/s
+6.07.395.219 I slot print_timing: id  0 | task 2034 | n_gen =    361, tg =  27.20 t/s, tg_3s =  29.08 t/s
+6.10.449.932 I slot print_timing: id  0 | task 2034 | n_gen =    452, tg =  27.68 t/s, tg_3s =  29.79 t/s
+6.13.509.424 I slot print_timing: id  0 | task 2034 | n_gen =    534, tg =  27.54 t/s, tg_3s =  26.80 t/s
+6.16.568.299 I slot print_timing: id  0 | task 2034 | n_gen =    625, tg =  27.84 t/s, tg_3s =  29.75 t/s
+6.19.613.991 I slot print_timing: id  0 | task 2034 | n_gen =    713, tg =  27.97 t/s, tg_3s =  28.89 t/s
+6.22.614.868 I slot print_timing: id  0 | task 2034 | n_gen =    802, tg =  28.15 t/s, tg_3s =  29.66 t/s
+6.25.626.638 I slot print_timing: id  0 | task 2034 | n_gen =    883, tg =  28.03 t/s, tg_3s =  26.89 t/s
+6.28.692.839 I slot print_timing: id  0 | task 2034 | n_gen =    960, tg =  27.77 t/s, tg_3s =  25.11 t/s
+6.31.217.396 I slot print_timing: id  0 | task 2034 | prompt eval time =    2862.03 ms /   329 tokens (    8.70 ms per token,   114.95 tokens per second)
+6.31.217.402 I slot print_timing: id  0 | task 2034 |        eval time =   37059.82 ms /  1024 tokens (   36.23 ms per token,    27.60 tokens per second)
+6.31.217.403 I slot print_timing: id  0 | task 2034 |       total time =   39921.85 ms /  1353 tokens
+6.31.217.404 I slot print_timing: id  0 | task 2034 |    graphs reused =       2414
+6.31.217.409 I slot print_timing: id  0 | task 2034 | draft acceptance = 0.62804 (  569 accepted /   906 generated), mean len =  2.26
+6.31.217.410 I slot print_timing: id  0 | task 2034 |      acc per pos = (0.740, 0.517)
+6.31.217.438 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    8   2455   2455, #gen drafts =   2455, #acc drafts =  1872, #gen tokens =   4907, #acc tokens =  3225, #mean acc len = 2.31, #acc rate/pos = (0.763, 0.551), dur(b,g,a) = 0.120, 27225.680, 4.584 ms
+6.31.284.718 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+6.32.044.821 I sched_reserve: graph nodes  = 8425 (with bs=232), 8484 (with bs=1)
+6.34.260.705 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+6.38.056.856 I slot print_timing: id  0 | task 2492 | n_gen =    100, tg =  24.70 t/s, tg_3s =  24.94 t/s
+6.41.108.599 I slot print_timing: id  0 | task 2492 | n_gen =    184, tg =  25.92 t/s, tg_3s =  27.53 t/s
+6.44.111.075 I slot print_timing: id  0 | task 2492 | n_gen =    265, tg =  26.24 t/s, tg_3s =  26.98 t/s
+6.47.179.714 I slot print_timing: id  0 | task 2492 | n_gen =    347, tg =  26.35 t/s, tg_3s =  26.72 t/s
+6.50.203.830 I slot print_timing: id  0 | task 2492 | n_gen =    436, tg =  26.93 t/s, tg_3s =  29.43 t/s
+6.53.218.426 I slot print_timing: id  0 | task 2492 | n_gen =    533, tg =  27.75 t/s, tg_3s =  32.18 t/s
+6.56.270.158 I slot print_timing: id  0 | task 2492 | n_gen =    620, tg =  27.86 t/s, tg_3s =  28.51 t/s
+6.59.299.813 I slot print_timing: id  0 | task 2492 | n_gen =    709, tg =  28.04 t/s, tg_3s =  29.38 t/s
+7.02.302.109 I slot print_timing: id  0 | task 2492 | n_gen =    794, tg =  28.07 t/s, tg_3s =  28.31 t/s
+7.05.383.585 I slot print_timing: id  0 | task 2492 | n_gen =    886, tg =  28.24 t/s, tg_3s =  29.86 t/s
+7.08.407.242 I slot print_timing: id  0 | task 2492 | n_gen =    966, tg =  28.09 t/s, tg_3s =  26.46 t/s
+7.10.584.439 I slot print_timing: id  0 | task 2492 | prompt eval time =    2824.87 ms /   278 tokens (   10.16 ms per token,    98.41 tokens per second)
+7.10.584.445 I slot print_timing: id  0 | task 2492 |        eval time =   36536.40 ms /  1024 tokens (   35.71 ms per token,    28.00 tokens per second)
+7.10.584.446 I slot print_timing: id  0 | task 2492 |       total time =   39361.27 ms /  1302 tokens
+7.10.584.447 I slot print_timing: id  0 | task 2492 |    graphs reused =       2861
+7.10.584.450 I slot print_timing: id  0 | task 2492 | draft acceptance = 0.62804 (  569 accepted /   906 generated), mean len =  2.26
+7.10.584.451 I slot print_timing: id  0 | task 2492 |      acc per pos = (0.731, 0.525)
+7.10.584.479 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =    9   2908   2908, #gen drafts =   2908, #acc drafts =  2203, #gen tokens =   5813, #acc tokens =  3794, #mean acc len = 2.30, #acc rate/pos = (0.758, 0.547), dur(b,g,a) = 0.133, 32256.412, 5.398 ms
+7.10.676.006 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+7.11.438.572 I sched_reserve: graph nodes  = 8425 (with bs=277), 8484 (with bs=1)
+7.13.726.719 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+7.17.557.088 I slot print_timing: id  0 | task 2950 | n_gen =    101, tg =  24.74 t/s, tg_3s =  24.99 t/s
+7.20.602.982 I slot print_timing: id  0 | task 2950 | n_gen =    185, tg =  25.96 t/s, tg_3s =  27.58 t/s
+7.23.608.419 I slot print_timing: id  0 | task 2950 | n_gen =    281, tg =  27.74 t/s, tg_3s =  31.94 t/s
+7.26.677.878 I slot print_timing: id  0 | task 2950 | n_gen =    367, tg =  27.81 t/s, tg_3s =  28.02 t/s
+7.29.691.233 I slot print_timing: id  0 | task 2950 | n_gen =    449, tg =  27.70 t/s, tg_3s =  27.21 t/s
+7.32.723.332 I slot print_timing: id  0 | task 2950 | n_gen =    548, tg =  28.48 t/s, tg_3s =  32.65 t/s
+7.35.746.812 I slot print_timing: id  0 | task 2950 | n_gen =    649, tg =  29.15 t/s, tg_3s =  33.41 t/s
+7.38.830.649 I slot print_timing: id  0 | task 2950 | n_gen =    738, tg =  29.11 t/s, tg_3s =  28.86 t/s
+7.41.905.455 I slot print_timing: id  0 | task 2950 | n_gen =    820, tg =  28.85 t/s, tg_3s =  26.67 t/s
+7.44.915.888 I slot print_timing: id  0 | task 2950 | n_gen =    900, tg =  28.63 t/s, tg_3s =  26.57 t/s
+7.47.968.233 I slot print_timing: id  0 | task 2950 | n_gen =   1001, tg =  29.03 t/s, tg_3s =  33.09 t/s
+7.48.585.854 I slot print_timing: id  0 | task 2950 | prompt eval time =    2901.69 ms /   323 tokens (    8.98 ms per token,   111.31 tokens per second)
+7.48.585.859 I slot print_timing: id  0 | task 2950 |        eval time =   35070.61 ms /  1024 tokens (   34.28 ms per token,    29.17 tokens per second)
+7.48.585.860 I slot print_timing: id  0 | task 2950 |       total time =   37972.30 ms /  1347 tokens
+7.48.585.861 I slot print_timing: id  0 | task 2950 |    graphs reused =       3278
+7.48.585.865 I slot print_timing: id  0 | task 2950 | draft acceptance = 0.70922 (  600 accepted /   846 generated), mean len =  2.42
+7.48.585.866 I slot print_timing: id  0 | task 2950 |      acc per pos = (0.816, 0.603)
+7.48.585.885 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   10   3331   3331, #gen drafts =   3331, #acc drafts =  2548, #gen tokens =   6659, #acc tokens =  4394, #mean acc len = 2.32, #acc rate/pos = (0.765, 0.554), dur(b,g,a) = 0.146, 36954.720, 6.179 ms
+7.48.694.795 I sched_reserve: graph nodes  = 8425 (with bs=42), 8388 (with bs=1)
+7.49.475.825 I sched_reserve: graph nodes  = 8425 (with bs=2048), 8484 (with bs=1)
+7.54.760.869 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =   2090, progress = 0.06, t =   6.11 s / 342.19 tokens per second
+8.00.096.753 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =   4138, progress = 0.13, t =  11.44 s / 361.60 tokens per second
+8.05.496.056 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =   6186, progress = 0.19, t =  16.84 s / 367.28 tokens per second
+8.11.057.901 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =   8234, progress = 0.25, t =  22.40 s / 367.51 tokens per second
+8.16.708.751 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  10282, progress = 0.31, t =  28.06 s / 366.49 tokens per second
+8.22.493.092 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  12330, progress = 0.37, t =  33.84 s / 364.36 tokens per second
+8.28.383.618 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  14378, progress = 0.44, t =  39.73 s / 361.89 tokens per second
+8.28.459.515 I sched_reserve: graph nodes  = 8425 (with bs=2048), 8484 (with bs=1)
+8.34.418.881 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  16426, progress = 0.50, t =  45.77 s / 358.92 tokens per second
+8.40.437.947 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  18474, progress = 0.56, t =  51.78 s / 356.74 tokens per second
+8.46.546.844 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  20522, progress = 0.62, t =  57.89 s / 354.48 tokens per second
+8.52.724.224 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  22570, progress = 0.69, t =  64.07 s / 352.27 tokens per second
+8.59.096.175 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  24618, progress = 0.75, t =  70.44 s / 349.47 tokens per second
+9.05.496.976 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  26666, progress = 0.81, t =  76.84 s / 347.02 tokens per second
+9.12.001.139 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  28714, progress = 0.87, t =  83.35 s / 344.51 tokens per second
+9.18.585.706 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  30762, progress = 0.93, t =  89.93 s / 342.06 tokens per second
+9.20.460.197 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  30896, progress = 0.94, t =  91.82 s / 336.47 tokens per second
+9.20.590.366 I sched_reserve: graph nodes  = 8425 (with bs=2048), 8484 (with bs=1)
+9.27.140.427 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  32841, progress = 1.00, t =  98.49 s / 333.45 tokens per second
+9.28.441.460 I slot print_timing: id  0 | task 3377 | prompt processing, n_tokens =  32940, progress = 1.00, t =  99.81 s / 330.04 tokens per second
+9.28.941.564 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+9.32.810.071 I slot print_timing: id  0 | task 3377 | n_gen =    100, tg =  24.01 t/s, tg_3s =  24.25 t/s
+9.35.856.260 I slot print_timing: id  0 | task 3377 | n_gen =    167, tg =  23.15 t/s, tg_3s =  21.99 t/s
+9.38.905.810 I slot print_timing: id  0 | task 3377 | n_gen =    252, tg =  24.56 t/s, tg_3s =  27.87 t/s
+9.41.979.923 I slot print_timing: id  0 | task 3377 | n_gen =    344, tg =  25.80 t/s, tg_3s =  29.93 t/s
+9.45.030.544 I slot print_timing: id  0 | task 3377 | n_gen =    436, tg =  26.62 t/s, tg_3s =  30.16 t/s
+9.48.042.209 I slot print_timing: id  0 | task 3377 | n_gen =    529, tg =  27.28 t/s, tg_3s =  30.88 t/s
+9.51.093.699 I slot print_timing: id  0 | task 3377 | n_gen =    593, tg =  26.42 t/s, tg_3s =  20.97 t/s
+9.54.111.279 I slot print_timing: id  0 | task 3377 | n_gen =    655, tg =  25.72 t/s, tg_3s =  20.55 t/s
+9.57.148.492 I slot print_timing: id  0 | task 3377 | n_gen =    726, tg =  25.47 t/s, tg_3s =  23.38 t/s
+10.00.192.940 I slot print_timing: id  0 | task 3377 | n_gen =    804, tg =  25.49 t/s, tg_3s =  25.62 t/s
+10.03.229.513 I slot print_timing: id  0 | task 3377 | n_gen =    878, tg =  25.39 t/s, tg_3s =  24.37 t/s
+10.06.287.448 I slot print_timing: id  0 | task 3377 | n_gen =    958, tg =  25.45 t/s, tg_3s =  26.16 t/s
+10.09.017.299 I slot print_timing: id  0 | task 3377 | prompt eval time =  100052.46 ms / 32944 tokens (    3.04 ms per token,   329.27 tokens per second)
+10.09.017.305 I slot print_timing: id  0 | task 3377 |        eval time =   40331.23 ms /  1024 tokens (   39.42 ms per token,    25.36 tokens per second)
+10.09.017.306 I slot print_timing: id  0 | task 3377 |       total time =  140383.70 ms / 33968 tokens
+10.09.017.306 I slot print_timing: id  0 | task 3377 |    graphs reused =       3735
+10.09.017.310 I slot print_timing: id  0 | task 3377 | draft acceptance = 0.60194 (  558 accepted /   927 generated), mean len =  2.20
+10.09.017.311 I slot print_timing: id  0 | task 3377 |      acc per pos = (0.728, 0.474)
+10.09.017.338 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   11   3795   3795, #gen drafts =   3795, #acc drafts =  2886, #gen tokens =   7586, #acc tokens =  4952, #mean acc len = 2.30, #acc rate/pos = (0.760, 0.544), dur(b,g,a) = 0.160, 42137.827, 7.148 ms
+10.09.168.994 I sched_reserve: graph nodes  = 8425 (with bs=90), 8484 (with bs=1)
+10.10.766.032 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+10.15.005.128 I slot print_timing: id  0 | task 3863 | n_gen =    102, tg =  22.70 t/s, tg_3s =  22.92 t/s
+10.18.025.008 I slot print_timing: id  0 | task 3863 | n_gen =    173, tg =  23.03 t/s, tg_3s =  23.51 t/s
+10.21.064.544 I slot print_timing: id  0 | task 3863 | n_gen =    249, tg =  23.60 t/s, tg_3s =  25.00 t/s
+10.24.068.288 I slot print_timing: id  0 | task 3863 | n_gen =    315, tg =  23.24 t/s, tg_3s =  21.97 t/s
+10.27.168.825 I slot print_timing: id  0 | task 3863 | n_gen =    386, tg =  23.17 t/s, tg_3s =  22.90 t/s
+10.30.196.422 I slot print_timing: id  0 | task 3863 | n_gen =    459, tg =  23.32 t/s, tg_3s =  24.11 t/s
+10.33.208.039 I slot print_timing: id  0 | task 3863 | n_gen =    529, tg =  23.31 t/s, tg_3s =  23.24 t/s
+10.36.286.235 I slot print_timing: id  0 | task 3863 | n_gen =    600, tg =  23.28 t/s, tg_3s =  23.07 t/s
+10.39.328.276 I slot print_timing: id  0 | task 3863 | n_gen =    667, tg =  23.15 t/s, tg_3s =  22.02 t/s
+10.42.343.066 I slot print_timing: id  0 | task 3863 | n_gen =    731, tg =  22.96 t/s, tg_3s =  21.23 t/s
+10.45.419.181 I slot print_timing: id  0 | task 3863 | n_gen =    802, tg =  22.98 t/s, tg_3s =  23.08 t/s
+10.48.440.226 I slot print_timing: id  0 | task 3863 | n_gen =    873, tg =  23.02 t/s, tg_3s =  23.50 t/s
+10.51.488.716 I slot print_timing: id  0 | task 3863 | n_gen =    942, tg =  22.99 t/s, tg_3s =  22.63 t/s
+10.54.509.856 I slot print_timing: id  0 | task 3863 | n_gen =   1020, tg =  23.18 t/s, tg_3s =  25.82 t/s
+10.54.653.400 I slot print_timing: id  0 | task 3863 | prompt eval time =    1492.50 ms /    94 tokens (   15.88 ms per token,    62.98 tokens per second)
+10.54.653.406 I slot print_timing: id  0 | task 3863 |        eval time =   44098.43 ms /  1024 tokens (   43.11 ms per token,    23.20 tokens per second)
+10.54.653.407 I slot print_timing: id  0 | task 3863 |       total time =   45590.92 ms /  1118 tokens
+10.54.653.408 I slot print_timing: id  0 | task 3863 |    graphs reused =       4246
+10.54.653.412 I slot print_timing: id  0 | task 3863 | draft acceptance = 0.48839 (  505 accepted /  1034 generated), mean len =  1.98
+10.54.653.413 I slot print_timing: id  0 | task 3863 |      acc per pos = (0.648, 0.329)
+10.54.653.442 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   12   4312   4312, #gen drafts =   4312, #acc drafts =  3221, #gen tokens =   8620, #acc tokens =  5457, #mean acc len = 2.27, #acc rate/pos = (0.747, 0.519), dur(b,g,a) = 0.173, 47886.488, 8.157 ms
+10.54.801.395 I sched_reserve: graph nodes  = 8425 (with bs=90), 8484 (with bs=1)
+10.56.455.151 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+11.00.704.024 I slot print_timing: id  0 | task 4384 | n_gen =    100, tg =  22.20 t/s, tg_3s =  22.42 t/s
+11.03.746.968 I slot print_timing: id  0 | task 4384 | n_gen =    169, tg =  22.39 t/s, tg_3s =  22.68 t/s
+11.06.832.421 I slot print_timing: id  0 | task 4384 | n_gen =    245, tg =  23.05 t/s, tg_3s =  24.63 t/s
+11.09.860.865 I slot print_timing: id  0 | task 4384 | n_gen =    323, tg =  23.65 t/s, tg_3s =  25.76 t/s
+11.12.916.500 I slot print_timing: id  0 | task 4384 | n_gen =    394, tg =  23.57 t/s, tg_3s =  23.24 t/s
+11.15.919.173 I slot print_timing: id  0 | task 4384 | n_gen =    470, tg =  23.84 t/s, tg_3s =  25.31 t/s
+11.18.934.120 I slot print_timing: id  0 | task 4384 | n_gen =    558, tg =  24.55 t/s, tg_3s =  29.19 t/s
+11.21.983.762 I slot print_timing: id  0 | task 4384 | n_gen =    632, tg =  24.52 t/s, tg_3s =  24.27 t/s
+11.24.984.858 I slot print_timing: id  0 | task 4384 | n_gen =    705, tg =  24.50 t/s, tg_3s =  24.32 t/s
+11.28.030.434 I slot print_timing: id  0 | task 4384 | n_gen =    778, tg =  24.45 t/s, tg_3s =  23.97 t/s
+11.31.099.847 I slot print_timing: id  0 | task 4384 | n_gen =    851, tg =  24.39 t/s, tg_3s =  23.78 t/s
+11.34.134.554 I slot print_timing: id  0 | task 4384 | n_gen =    914, tg =  24.10 t/s, tg_3s =  20.76 t/s
+11.37.213.199 I slot print_timing: id  0 | task 4384 | n_gen =    994, tg =  24.24 t/s, tg_3s =  25.99 t/s
+11.38.493.579 I slot print_timing: id  0 | task 4384 | prompt eval time =    1546.32 ms /    94 tokens (   16.45 ms per token,    60.79 tokens per second)
+11.38.493.586 I slot print_timing: id  0 | task 4384 |        eval time =   42249.01 ms /  1024 tokens (   41.30 ms per token,    24.21 tokens per second)
+11.38.493.588 I slot print_timing: id  0 | task 4384 |       total time =   43795.33 ms /  1118 tokens
+11.38.493.588 I slot print_timing: id  0 | task 4384 |    graphs reused =       4726
+11.38.493.594 I slot print_timing: id  0 | task 4384 | draft acceptance = 0.55144 (  536 accepted /   972 generated), mean len =  2.10
+11.38.493.594 I slot print_timing: id  0 | task 4384 |      acc per pos = (0.675, 0.428)
+11.38.493.625 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   13   4798   4798, #gen drafts =   4798, #acc drafts =  3549, #gen tokens =   9592, #acc tokens =  5993, #mean acc len = 2.25, #acc rate/pos = (0.740, 0.509), dur(b,g,a) = 0.187, 53292.825, 9.093 ms
+11.38.654.759 I sched_reserve: graph nodes  = 8425 (with bs=184), 8484 (with bs=1)
+11.40.752.680 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+11.44.803.089 I slot print_timing: id  0 | task 4874 | n_gen =    100, tg =  23.22 t/s, tg_3s =  23.45 t/s
+11.47.851.672 I slot print_timing: id  0 | task 4874 | n_gen =    196, tg =  26.67 t/s, tg_3s =  31.49 t/s
+11.50.876.610 I slot print_timing: id  0 | task 4874 | n_gen =    296, tg =  28.54 t/s, tg_3s =  33.06 t/s
+11.53.943.310 I slot print_timing: id  0 | task 4874 | n_gen =    379, tg =  28.20 t/s, tg_3s =  27.06 t/s
+11.57.024.808 I slot print_timing: id  0 | task 4874 | n_gen =    462, tg =  27.96 t/s, tg_3s =  26.93 t/s
+12.00.051.939 I slot print_timing: id  0 | task 4874 | n_gen =    555, tg =  28.39 t/s, tg_3s =  30.72 t/s
+12.02.536.676 I slot print_timing: id  0 | task 4874 | prompt eval time =    1987.96 ms /   188 tokens (   10.57 ms per token,    94.57 tokens per second)
+12.02.536.681 I slot print_timing: id  0 | task 4874 |        eval time =   21997.89 ms /   632 tokens (   34.86 ms per token,    28.68 tokens per second)
+12.02.536.682 I slot print_timing: id  0 | task 4874 |       total time =   23985.85 ms /   820 tokens
+12.02.536.682 I slot print_timing: id  0 | task 4874 |    graphs reused =       4960
+12.02.536.686 I slot print_timing: id  0 | task 4874 | draft acceptance = 0.82983 (  395 accepted /   476 generated), mean len =  2.66
+12.02.536.686 I slot print_timing: id  0 | task 4874 |      acc per pos = (0.887, 0.773)
+12.02.536.705 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   14   5036   5036, #gen drafts =   5036, #acc drafts =  3760, #gen tokens =  10068, #acc tokens =  6388, #mean acc len = 2.27, #acc rate/pos = (0.747, 0.522), dur(b,g,a) = 0.200, 55875.458, 9.576 ms
+12.02.685.418 I sched_reserve: graph nodes  = 8425 (with bs=227), 8484 (with bs=1)
+12.05.070.354 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+12.08.853.703 I slot print_timing: id  0 | task 5115 | n_gen =    100, tg =  24.77 t/s, tg_3s =  25.02 t/s
+12.11.871.521 I slot print_timing: id  0 | task 5115 | n_gen =    182, tg =  25.80 t/s, tg_3s =  27.17 t/s
+12.14.923.959 I slot print_timing: id  0 | task 5115 | n_gen =    276, tg =  27.32 t/s, tg_3s =  30.80 t/s
+12.17.964.470 I slot print_timing: id  0 | task 5115 | n_gen =    374, tg =  28.46 t/s, tg_3s =  32.23 t/s
+12.20.983.708 I slot print_timing: id  0 | task 5115 | n_gen =    473, tg =  29.27 t/s, tg_3s =  32.79 t/s
+12.24.061.755 I slot print_timing: id  0 | task 5115 | n_gen =    578, tg =  30.04 t/s, tg_3s =  34.11 t/s
+12.27.061.789 I slot print_timing: id  0 | task 5115 | n_gen =    679, tg =  30.53 t/s, tg_3s =  33.67 t/s
+12.30.082.095 I slot print_timing: id  0 | task 5115 | n_gen =    780, tg =  30.88 t/s, tg_3s =  33.44 t/s
+12.33.106.634 I slot print_timing: id  0 | task 5115 | n_gen =    879, tg =  31.08 t/s, tg_3s =  32.73 t/s
+12.36.135.595 I slot print_timing: id  0 | task 5115 | n_gen =    984, tg =  31.43 t/s, tg_3s =  34.67 t/s
+12.37.300.136 I slot print_timing: id  0 | task 5115 | prompt eval time =    2275.22 ms /   231 tokens (    9.85 ms per token,   101.53 tokens per second)
+12.37.300.142 I slot print_timing: id  0 | task 5115 |        eval time =   32443.93 ms /  1024 tokens (   31.71 ms per token,    31.53 tokens per second)
+12.37.300.143 I slot print_timing: id  0 | task 5115 |       total time =   34719.14 ms /  1255 tokens
+12.37.300.144 I slot print_timing: id  0 | task 5115 |    graphs reused =       5319
+12.37.300.149 I slot print_timing: id  0 | task 5115 | draft acceptance = 0.90000 (  657 accepted /   730 generated), mean len =  2.80
+12.37.300.150 I slot print_timing: id  0 | task 5115 |      acc per pos = (0.942, 0.858)
+12.37.300.179 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   15   5401   5401, #gen drafts =   5401, #acc drafts =  4104, #gen tokens =  10798, #acc tokens =  7045, #mean acc len = 2.30, #acc rate/pos = (0.760, 0.545), dur(b,g,a) = 0.214, 59926.103, 10.243 ms
+12.37.448.010 I sched_reserve: graph nodes  = 8425 (with bs=283), 8484 (with bs=1)
+12.39.931.944 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+12.44.361.696 I slot print_timing: id  0 | task 5484 | n_gen =    100, tg =  21.31 t/s, tg_3s =  21.53 t/s
+12.47.421.134 I slot print_timing: id  0 | task 5484 | n_gen =    181, tg =  23.36 t/s, tg_3s =  26.48 t/s
+12.50.499.108 I slot print_timing: id  0 | task 5484 | n_gen =    251, tg =  23.19 t/s, tg_3s =  22.74 t/s
+12.53.561.590 I slot print_timing: id  0 | task 5484 | n_gen =    335, tg =  24.12 t/s, tg_3s =  27.43 t/s
+12.56.613.190 I slot print_timing: id  0 | task 5484 | n_gen =    413, tg =  24.38 t/s, tg_3s =  25.56 t/s
+12.59.642.487 I slot print_timing: id  0 | task 5484 | n_gen =    490, tg =  24.54 t/s, tg_3s =  25.42 t/s
+13.02.682.487 I slot print_timing: id  0 | task 5484 | n_gen =    578, tg =  25.12 t/s, tg_3s =  28.95 t/s
+13.05.726.161 I slot print_timing: id  0 | task 5484 | n_gen =    674, tg =  25.88 t/s, tg_3s =  31.54 t/s
+13.08.775.905 I slot print_timing: id  0 | task 5484 | n_gen =    766, tg =  26.33 t/s, tg_3s =  30.17 t/s
+13.11.824.812 I slot print_timing: id  0 | task 5484 | n_gen =    850, tg =  26.44 t/s, tg_3s =  27.55 t/s
+13.14.833.165 I slot print_timing: id  0 | task 5484 | n_gen =    929, tg =  26.43 t/s, tg_3s =  26.26 t/s
+13.17.888.999 I slot print_timing: id  0 | task 5484 | n_gen =   1010, tg =  26.43 t/s, tg_3s =  26.51 t/s
+13.18.403.284 I slot print_timing: id  0 | task 5484 | prompt eval time =    2373.88 ms /   287 tokens (    8.27 ms per token,   120.90 tokens per second)
+13.18.403.290 I slot print_timing: id  0 | task 5484 |        eval time =   38687.08 ms /  1024 tokens (   37.82 ms per token,    26.44 tokens per second)
+13.18.403.291 I slot print_timing: id  0 | task 5484 |       total time =   41060.96 ms /  1311 tokens
+13.18.403.292 I slot print_timing: id  0 | task 5484 |    graphs reused =       5742
+13.18.403.295 I slot print_timing: id  0 | task 5484 | draft acceptance = 0.69114 (  593 accepted /   858 generated), mean len =  2.38
+13.18.403.297 I slot print_timing: id  0 | task 5484 |      acc per pos = (0.809, 0.573)
+13.18.403.326 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   16   5830   5830, #gen drafts =   5830, #acc drafts =  4451, #gen tokens =  11656, #acc tokens =  7638, #mean acc len = 2.31, #acc rate/pos = (0.763, 0.547), dur(b,g,a) = 0.228, 64681.027, 11.005 ms
+13.18.572.679 I sched_reserve: graph nodes  = 8425 (with bs=232), 8484 (with bs=1)
+13.20.940.133 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+13.25.221.920 I slot print_timing: id  0 | task 5917 | n_gen =    101, tg =  22.24 t/s, tg_3s =  22.46 t/s
+13.28.309.171 I slot print_timing: id  0 | task 5917 | n_gen =    172, tg =  22.55 t/s, tg_3s =  23.00 t/s
+13.31.394.759 I slot print_timing: id  0 | task 5917 | n_gen =    248, tg =  23.15 t/s, tg_3s =  24.63 t/s
+13.34.440.838 I slot print_timing: id  0 | task 5917 | n_gen =    336, tg =  24.43 t/s, tg_3s =  28.89 t/s
+13.37.520.863 I slot print_timing: id  0 | task 5917 | n_gen =    425, tg =  25.25 t/s, tg_3s =  28.90 t/s
+13.40.582.811 I slot print_timing: id  0 | task 5917 | n_gen =    509, tg =  25.58 t/s, tg_3s =  27.43 t/s
+13.43.628.639 I slot print_timing: id  0 | task 5917 | n_gen =    586, tg =  25.54 t/s, tg_3s =  25.28 t/s
+13.46.635.672 I slot print_timing: id  0 | task 5917 | n_gen =    668, tg =  25.74 t/s, tg_3s =  27.27 t/s
+13.49.676.915 I slot print_timing: id  0 | task 5917 | n_gen =    756, tg =  26.08 t/s, tg_3s =  28.94 t/s
+13.52.733.499 I slot print_timing: id  0 | task 5917 | n_gen =    835, tg =  26.06 t/s, tg_3s =  25.85 t/s
+13.55.764.416 I slot print_timing: id  0 | task 5917 | n_gen =    909, tg =  25.91 t/s, tg_3s =  24.42 t/s
+13.58.764.663 I slot print_timing: id  0 | task 5917 | n_gen =    983, tg =  25.82 t/s, tg_3s =  24.66 t/s
+14.00.644.885 I slot print_timing: id  0 | task 5917 | prompt eval time =    2267.65 ms /   236 tokens (    9.61 ms per token,   104.07 tokens per second)
+14.00.644.891 I slot print_timing: id  0 | task 5917 |        eval time =   39918.85 ms /  1024 tokens (   39.02 ms per token,    25.63 tokens per second)
+14.00.644.891 I slot print_timing: id  0 | task 5917 |       total time =   42186.49 ms /  1260 tokens
+14.00.644.893 I slot print_timing: id  0 | task 5917 |    graphs reused =       6177
+14.00.644.897 I slot print_timing: id  0 | task 5917 | draft acceptance = 0.65873 (  581 accepted /   882 generated), mean len =  2.32
+14.00.644.897 I slot print_timing: id  0 | task 5917 |      acc per pos = (0.757, 0.560)
+14.00.644.925 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   17   6271   6271, #gen drafts =   6271, #acc drafts =  4785, #gen tokens =  12538, #acc tokens =  8219, #mean acc len = 2.31, #acc rate/pos = (0.763, 0.548), dur(b,g,a) = 0.241, 69591.249, 11.807 ms
+14.00.792.838 I sched_reserve: graph nodes  = 8425 (with bs=277), 8484 (with bs=1)
+14.03.262.259 I sched_reserve: graph nodes  = 9709 (with bs=3), 8484 (with bs=1)
+14.07.570.963 I slot print_timing: id  0 | task 6362 | n_gen =    100, tg =  21.88 t/s, tg_3s =  22.10 t/s
+14.10.656.722 I slot print_timing: id  0 | task 6362 | n_gen =    176, tg =  23.00 t/s, tg_3s =  24.63 t/s
+14.13.668.796 I slot print_timing: id  0 | task 6362 | n_gen =    239, tg =  22.41 t/s, tg_3s =  20.92 t/s
+14.16.760.517 I slot print_timing: id  0 | task 6362 | n_gen =    319, tg =  23.19 t/s, tg_3s =  25.88 t/s
+14.19.832.373 I slot print_timing: id  0 | task 6362 | n_gen =    399, tg =  23.71 t/s, tg_3s =  26.04 t/s
+14.22.900.903 I slot print_timing: id  0 | task 6362 | n_gen =    479, tg =  24.08 t/s, tg_3s =  26.07 t/s
+14.25.994.774 I slot print_timing: id  0 | task 6362 | n_gen =    573, tg =  24.93 t/s, tg_3s =  30.38 t/s
+14.29.035.328 I slot print_timing: id  0 | task 6362 | n_gen =    665, tg =  25.55 t/s, tg_3s =  30.26 t/s
+14.32.082.344 I slot print_timing: id  0 | task 6362 | n_gen =    764, tg =  26.28 t/s, tg_3s =  32.49 t/s
+14.35.118.656 I slot print_timing: id  0 | task 6362 | n_gen =    859, tg =  26.75 t/s, tg_3s =  31.29 t/s
+14.38.193.565 I slot print_timing: id  0 | task 6362 | n_gen =    944, tg =  26.83 t/s, tg_3s =  27.64 t/s
+14.40.757.706 I slot print_timing: id  0 | task 6362 | prompt eval time =    2358.65 ms /   281 tokens (    8.39 ms per token,   119.14 tokens per second)
+14.40.757.711 I slot print_timing: id  0 | task 6362 |        eval time =   37710.91 ms /  1024 tokens (   36.86 ms per token,    27.13 tokens per second)
+14.40.757.712 I slot print_timing: id  0 | task 6362 |       total time =   40069.55 ms /  1305 tokens
+14.40.757.713 I slot print_timing: id  0 | task 6362 |    graphs reused =       6589
+14.40.757.716 I slot print_timing: id  0 | task 6362 | draft acceptance = 0.72162 (  604 accepted /   837 generated), mean len =  2.44
+14.40.757.716 I slot print_timing: id  0 | task 6362 |      acc per pos = (0.814, 0.628)
+14.40.757.738 I spec common_specu: statistics        draft-mtp: #calls(b,g,a) =   18   6690   6690, #gen drafts =   6690, #acc drafts =  5126, #gen tokens =  13375, #acc tokens =  8823, #mean acc len = 2.32, #acc rate/pos = (0.766, 0.553), dur(b,g,a) = 0.254, 74234.155, 12.588 ms

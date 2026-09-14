@@ -39,6 +39,8 @@ Ogni processo misura la stessa sequenza completa. Il processo/coppia è l'unità
 
 Benchmark seriali, nessun altro server avviato dal banco e nessuna compilazione o sonda concorrente. Registrare uso CPU/GPU, clock/temperature e pressione memoria; non terminare attività dell'utente per migliorare il risultato. Se il carico rende una coppia non confrontabile, conservarla come invalida con motivo e ripetere l'intera coppia. Rilevare prestazioni senza profiler; Nsight è una sessione diagnostica separata.
 
+**D14 e D15 (registrate il 14/9, vedi tabella delle decisioni del [registro](REGISTRO_CPU_GPU_14_SETTEMBRE.md)).** L'ordine delle prove è vincolato da **D14**: si lancia PRIMA il candidato B contro il riferimento già noto; se B mostra il vantaggio, il lato A non si esegue; se non lo mostra, si esegue anche A per distinguere una regressione generale da una specifica del candidato — niente batterie di controllo lunghe senza un candidato pronto. Questo ha chiuso la misura di variabilità della baseline di P0 dopo tre blocchi invece del programma completo di D12. Per **D15**, con `--reasoning on` e i budget di screening la rubrica di qualità sui liberi non è applicabile finché il testo finale è vuoto: la qualità dei liberi si valuta solo in conferma (P6), lo screening misura la sola velocità.
+
 **Metriche obbligatorie.**
 
 | Ambito | Dati da conservare |

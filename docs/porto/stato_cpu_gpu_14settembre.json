@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "baseline_variability_running",
+  "implementation_status": "p2_fixing_after_review",
   "current_phase": "P2",
   "goal": {
     "decode_free_tps": 50,
@@ -17,8 +17,9 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 1,
-  "next_action": "Finish the matched baseline-variability measurement (three A=A pairs on the solo_libero profile plus one full screening block), record it as the detectability floor for P4/P6, then start P2 (executor/lifetime) reusing the P1 simulator invariant asserts.",
+  "new_benchmark_runs": 4,
+  "baseline_reference_free_tps": 24.44,
+  "next_action": "Fix the two blocking defects from the independent review (B1 cancel/timeout concurrency, B2 irreversible contamination) plus E1/E2, compile and run the host-only test once the fix is ready, then start P3 against the closed baseline reference of 24.44 t/s on the free set, reusing the P1 simulator invariant asserts.",
   "phases": [
     {
       "id": "P0",
@@ -100,7 +101,9 @@
     "D10",
     "D11",
     "D12",
-    "D13"
+    "D13",
+    "D14",
+    "D15"
   ],
   "decisions_added": [
     {
@@ -114,6 +117,14 @@
     {
       "id": "D13",
       "summary": "Deterministic CPU-miss ordering for P3: first misses in unique-index order, as proposed by the P1 contract; alternative orderings deferred to P4."
+    },
+    {
+      "id": "D14",
+      "summary": "User decision, 9/14, binding: run candidate B first against the already-known reference; if B shows the advantage, skip A; if not, also run A to separate a general regression from one specific to the candidate. No long control batteries without a ready candidate. Stopped the D12 baseline-variability measurement after three blocks (two complete + one interrupted); the full screening block is not run. Closed baseline reference for P3/P4: 24.44 t/s on the free set."
+    },
+    {
+      "id": "D15",
+      "summary": "With --reasoning on and the screening token budget, 14 of 16 free-form cases finish on length with an empty final text (only L04@corto and L04@ctx32k reach stop). Speed measurement stays valid; the free-form quality rubric is not applicable in screening and is deferred to confirmation (P6) with a 3072 budget or run-to-stop."
     }
   ]
 }

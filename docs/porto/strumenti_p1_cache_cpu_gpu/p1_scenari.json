@@ -1,0 +1,537 @@
+{
+  "scenari": 13,
+  "superati": 13,
+  "falliti": [],
+  "dettagli": [
+    {
+      "scenario": "cambio_di_vittima",
+      "esito": "ok",
+      "dettaglio": {
+        "cpu_max_0": [
+          {
+            "ids": [
+              10,
+              11
+            ],
+            "slot": [
+              0,
+              1
+            ],
+            "vittime": [
+              -1,
+              -1
+            ],
+            "cpu": []
+          },
+          {
+            "ids": [
+              12,
+              13
+            ],
+            "slot": [
+              2,
+              0
+            ],
+            "vittime": [
+              -1,
+              10
+            ],
+            "cpu": []
+          },
+          {
+            "ids": [
+              10,
+              14
+            ],
+            "slot": [
+              1,
+              2
+            ],
+            "vittime": [
+              11,
+              12
+            ],
+            "cpu": []
+          },
+          {
+            "ids": [
+              15,
+              16
+            ],
+            "slot": [
+              0,
+              2
+            ],
+            "vittime": [
+              13,
+              14
+            ],
+            "cpu": []
+          }
+        ],
+        "cpu_max_1": [
+          {
+            "ids": [
+              10,
+              11
+            ],
+            "slot": [
+              0,
+              0
+            ],
+            "vittime": [
+              -1
+            ],
+            "cpu": [
+              10
+            ]
+          },
+          {
+            "ids": [
+              12,
+              13
+            ],
+            "slot": [
+              1,
+              1
+            ],
+            "vittime": [
+              -1
+            ],
+            "cpu": [
+              12
+            ]
+          },
+          {
+            "ids": [
+              10,
+              14
+            ],
+            "slot": [
+              2,
+              2
+            ],
+            "vittime": [
+              -1
+            ],
+            "cpu": [
+              10
+            ]
+          },
+          {
+            "ids": [
+              15,
+              16
+            ],
+            "slot": [
+              0,
+              0
+            ],
+            "vittime": [
+              11
+            ],
+            "cpu": [
+              15
+            ]
+          }
+        ],
+        "residenti": {
+          "0": [
+            10,
+            15,
+            16
+          ],
+          "1": [
+            13,
+            14,
+            16
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "vittima_argmin_lfu",
+      "esito": "ok",
+      "dettaglio": {
+        "residenti": [
+          1,
+          2,
+          9
+        ],
+        "frequenze": {
+          "1": 7,
+          "2": 7,
+          "3": 6,
+          "9": 1
+        }
+      }
+    },
+    {
+      "scenario": "saturazione",
+      "esito": "ok",
+      "dettaglio": {
+        "errore_atteso": "n_routes oltre il numero di slot",
+        "cpu_max_0": {
+          "vittime": [
+            1,
+            2,
+            3,
+            4
+          ],
+          "slot": [
+            0,
+            1,
+            2,
+            3
+          ]
+        },
+        "cpu_max_2": {
+          "cpu": [
+            5,
+            6
+          ],
+          "slot": [
+            0,
+            0,
+            0,
+            1
+          ],
+          "vittime": [
+            1,
+            2
+          ]
+        }
+      }
+    },
+    {
+      "scenario": "riuso_ravvicinato",
+      "esito": "ok",
+      "dettaglio": {
+        "cpu_t": [
+          20
+        ],
+        "cpu_t1": [
+          20
+        ],
+        "miss_gpu_t1": [],
+        "frequenza_cpu": 1,
+        "residenti": [
+          21,
+          22
+        ]
+      }
+    },
+    {
+      "scenario": "invalidazione_incarnazioni",
+      "esito": "ok",
+      "dettaglio": {
+        "ammissione_persa": [
+          33,
+          34
+        ],
+        "residenti_vecchia": [
+          31,
+          32
+        ],
+        "colpi_nuova": 0
+      }
+    },
+    {
+      "scenario": "id_ai_limiti",
+      "esito": "ok",
+      "dettaglio": {
+        "accettati": [
+          0,
+          511,
+          1
+        ],
+        "errori": [
+          "ID di route fuori intervallo: 512",
+          "ID di route fuori intervallo: -1"
+        ]
+      }
+    },
+    {
+      "scenario": "zero_uno_due_job_cpu",
+      "esito": "ok",
+      "dettaglio": [
+        {
+          "cpu_max": 0,
+          "ids": [
+            1,
+            2,
+            3
+          ],
+          "k": 3,
+          "rows": 1,
+          "unici": 3,
+          "miss": 3,
+          "miss_cpu": 0,
+          "job_cpu": 0,
+          "coppie": 3
+        },
+        {
+          "cpu_max": 0,
+          "ids": [
+            1,
+            1
+          ],
+          "k": 1,
+          "rows": 2,
+          "unici": 1,
+          "miss": 1,
+          "miss_cpu": 0,
+          "job_cpu": 0,
+          "coppie": 2
+        },
+        {
+          "cpu_max": 0,
+          "ids": [
+            1,
+            2,
+            1,
+            2
+          ],
+          "k": 2,
+          "rows": 2,
+          "unici": 2,
+          "miss": 2,
+          "miss_cpu": 0,
+          "job_cpu": 0,
+          "coppie": 4
+        },
+        {
+          "cpu_max": 1,
+          "ids": [
+            1,
+            2,
+            3
+          ],
+          "k": 3,
+          "rows": 1,
+          "unici": 3,
+          "miss": 3,
+          "miss_cpu": 1,
+          "job_cpu": 1,
+          "coppie": 3
+        },
+        {
+          "cpu_max": 1,
+          "ids": [
+            1,
+            1
+          ],
+          "k": 1,
+          "rows": 2,
+          "unici": 1,
+          "miss": 1,
+          "miss_cpu": 0,
+          "job_cpu": 0,
+          "coppie": 2
+        },
+        {
+          "cpu_max": 1,
+          "ids": [
+            1,
+            2,
+            1,
+            2
+          ],
+          "k": 2,
+          "rows": 2,
+          "unici": 2,
+          "miss": 2,
+          "miss_cpu": 1,
+          "job_cpu": 2,
+          "coppie": 4
+        },
+        {
+          "cpu_max": 2,
+          "ids": [
+            1,
+            2,
+            3
+          ],
+          "k": 3,
+          "rows": 1,
+          "unici": 3,
+          "miss": 3,
+          "miss_cpu": 2,
+          "job_cpu": 2,
+          "coppie": 3
+        },
+        {
+          "cpu_max": 2,
+          "ids": [
+            1,
+            1
+          ],
+          "k": 1,
+          "rows": 2,
+          "unici": 1,
+          "miss": 1,
+          "miss_cpu": 0,
+          "job_cpu": 0,
+          "coppie": 2
+        },
+        {
+          "cpu_max": 2,
+          "ids": [
+            1,
+            2,
+            1,
+            2
+          ],
+          "k": 2,
+          "rows": 2,
+          "unici": 2,
+          "miss": 2,
+          "miss_cpu": 1,
+          "job_cpu": 2,
+          "coppie": 4
+        },
+        {
+          "cpu_max": 2,
+          "ids": [
+            7
+          ],
+          "k": 1,
+          "rows": 1,
+          "unici": 1,
+          "miss": 1,
+          "miss_cpu": 0,
+          "job_cpu": 0,
+          "coppie": 1
+        }
+      ]
+    },
+    {
+      "scenario": "stesso_esperto_due_token",
+      "esito": "ok",
+      "dettaglio": {
+        "job": [
+          [
+            0,
+            40,
+            0.25
+          ],
+          [
+            1,
+            40,
+            0.5
+          ]
+        ],
+        "unici": 3,
+        "coppie": 4,
+        "pesi_gpu": [
+          0.0,
+          0.75,
+          0.0,
+          0.5
+        ]
+      }
+    },
+    {
+      "scenario": "pesi_zero_e_non_uniformi",
+      "esito": "ok",
+      "dettaglio": {
+        "pesi": [
+          0.0,
+          0.125,
+          0.6875,
+          0.1875
+        ],
+        "pesi_gpu": [
+          0.0,
+          0.0,
+          0.6875,
+          0.1875
+        ],
+        "job": [
+          [
+            0,
+            50,
+            0.0
+          ],
+          [
+            0,
+            51,
+            0.125
+          ]
+        ],
+        "route_cpu": [
+          0,
+          1
+        ]
+      }
+    },
+    {
+      "scenario": "fallback_non_supportato",
+      "esito": "ok",
+      "dettaglio": {
+        "firme": [
+          [
+            "(3, 3, (1, 2, 3), (0, 1, 2), (-1, -1, -1))",
+            "(3, 2, (4, 5), (3, 0), (-1, 1))",
+            "(3, 2, (1, 6), (2, 3), (3, 4))"
+          ]
+        ],
+        "residenti": [
+          1,
+          2,
+          5,
+          6
+        ]
+      }
+    },
+    {
+      "scenario": "errore_job_cpu",
+      "esito": "ok",
+      "dettaglio": {
+        "errore": "job CPU fallito: piano scartato senza ammissioni",
+        "residenti_prima": [
+          2,
+          3
+        ],
+        "residenti_dopo": [
+          3
+        ],
+        "riuso_rifiutato": "invariante 7: cache contaminata da un errore, serve la pulizia esplicita",
+        "colpi_dopo_pulizia": 0
+      }
+    },
+    {
+      "scenario": "alias_slot_protetto",
+      "esito": "ok",
+      "dettaglio": {
+        "alias": 1,
+        "remapped": [
+          1,
+          1,
+          1
+        ],
+        "cpu": [
+          1,
+          4
+        ],
+        "gpu": [
+          5
+        ]
+      }
+    },
+    {
+      "scenario": "frequenza_include_cpu",
+      "esito": "ok",
+      "dettaglio": {
+        "aggiornamenti_frequenza": 12,
+        "scritture_recenza": 8,
+        "frequenze": {
+          "60": 4,
+          "61": 4,
+          "62": 4
+        },
+        "decadimento_a_32_epoche": 0
+      }
+    }
+  ]
+}

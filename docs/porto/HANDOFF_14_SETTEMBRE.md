@@ -84,6 +84,33 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
+> **Nota di ripresa, 15/9 (quarta).** P10 — leve sul token singolo a 131k — ha chiuso tre celle sul
+> ramo lossless dopo P9: **cella 1** (commit `8f008d9`) misura che la leva B di P8 paga anche su `T1`,
+> non solo sulla riga di verifica (−1,11% ms/token, **D39**, riferimento 26,677 t/s); **cella 2**
+> (commit `9b597eb`) diagnostica e corregge i due buchi di GPU inattiva fra grafo e host
+> (sincronizzazioni 43,61→9,12/forward), ma il guadagno al token è sotto il cancello di adozione per
+> un fattore tre — la patch resta accesa come igiene, non come leva contata (**D40**, riferimento
+> 26,786 t/s); **cella 3** (commit `51ff69c`) trova che il kernel MMVQ degli esperti IQ2_S a una riga
+> era lento per **occupazione** (110 registri/thread, 4 blocchi/SM su 12), non per la tabella dei
+> codici come ipotizzato da P9, e lo corregge con un `__launch_bounds__` a 8 blocchi/SM minimi
+> (`GGML_CUDA_MMVQ_OCCUPANCY`, default acceso solo su iq2_s): kernel −20,1%, banco **−0,629 ms/token,
+> +1,71%** (**D41**, riferimento **27,245 t/s**). **Il candidato lossless cumulativo a 131k è ora
+> 27,245 t/s, +3,3% su R0 (26,381 t/s), testo identico a R0 in ogni cella.** Le patch si applicano in
+> ordine — **P8 cumulativa, P10 cella 2, P10 cella 3** — sull'albero `D:\ds4_work\p8_work` (la leva B
+> di cella 1 è già dentro la patch P8, nessun file separato); binari compilati in
+> `D:\ds4_work\p8_work\build\bin`; preset del banco `preset_V3_p10.json` (derivato da
+> `preset_V2_p10.json`, stessi argomenti). **P10 è ora in attesa di una decisione dell'utente**, non
+> di una nuova misura: quattro scelte aperte, senza raccomandazione — (a) residenti densi Q6_K → Q4_K
+> (−1,6…−2,6 ms + 841 MiB di VRAM, **non lossless**, rubriche di qualità obbligatorie prima di
+> procedere); (b) recupero dei 48 thread su 128 morti nel blocco iq2_s (leva più grande rimasta sul
+> kernel, ma non bit-identica: cambia l'ordine delle riduzioni); (c) i 505 µs di host non scomposti al
+> confine del forward (cella 2, serve NVTX nel server); (d) validazione P6 del candidato lossless
+> (qualità, stabilità 30 minuti, piano di rollback) per la promozione a `bin_prod`. Dettagli completi
+> in [`REGISTRO_CPU_GPU_14_SETTEMBRE.md`](REGISTRO_CPU_GPU_14_SETTEMBRE.md) (D39-D41),
+> [`p10_token_singolo/P10_CELLA1_B_SU_T1_15_SETTEMBRE.md`](p10_token_singolo/P10_CELLA1_B_SU_T1_15_SETTEMBRE.md),
+> [`p10_token_singolo/P10_CELLA2_BUCHI_15_SETTEMBRE.md`](p10_token_singolo/P10_CELLA2_BUCHI_15_SETTEMBRE.md),
+> [`p10_token_singolo/P10_CELLA3_KERNEL_IQ2S_15_SETTEMBRE.md`](p10_token_singolo/P10_CELLA3_KERNEL_IQ2S_15_SETTEMBRE.md).
+>
 > **Nota di ripresa, 15/9 (terza).** P9 — anatomia del token singolo di decode a 131k — è
 > **COMPLETATA** (commit `4cfa390`, [`p9_anatomia_131k/P9_ANATOMIA_131K_15_SETTEMBRE.md`](p9_anatomia_131k/P9_ANATOMIA_131K_15_SETTEMBRE.md)).
 > I 37,44 ms di un token si scompongono (`nsys`, 106 forward, controllo di integrità geometrico,

@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p10_cell3_iq2s_kernel",
+  "implementation_status": "p10_awaiting_choice_after_cell3",
   "current_phase": "P10",
   "operating_point": {
     "ctx_tokens": 131072,
@@ -19,7 +19,9 @@
     "off_B_ms": 37.486,
     "off_B_c2_tps": 26.786,
     "off_B_c2_ms": 37.332,
-    "replica_noise_ms": 0.152
+    "replica_noise_ms": 0.152,
+    "candidate_lossless_tps": 27.245,
+    "candidate_lossless_ms": 36.703
   },
   "p8_result": {
     "lever_B_ms": -1.44,
@@ -37,6 +39,13 @@
     "syncs_after": 9.12,
     "adopted_as_hygiene": true
   },
+  "p10_cell3_result": {
+    "delta_ms": -0.629,
+    "tps": 27.245,
+    "kernel_us_before": 82.88,
+    "kernel_us_after": 66.21,
+    "occupancy_blocks_per_sm": "4->8"
+  },
   "goal": {
     "decode_free_tps": 50,
     "decode_ms_per_accepted_token": 20,
@@ -49,7 +58,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 95,
+  "new_benchmark_runs": 99,
   "p9_result": {
     "wall_ms": 37.442,
     "wall_ms_no_profiler": 37.758,
@@ -218,11 +227,11 @@
     },
     {
       "id": "P10",
-      "status": "in_progress",
+      "status": "cell3_complete_awaiting_user_choice",
       "depends_on": [
         "P9"
       ],
-      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 COMPLETE (9/15, commit 9b597eb) -- two idle gaps diagnosed and fixed behind a default-on switch (GGML_SCHED_ASYNC_INPUTS, GGML_CUDA_GRAPH_COMPAT_CACHE), syncs/forward 43.61->9.12, boundary gap 1.267->1.031 ms, but only -0.154 ms/token at the bench (26.786 vs 26.677 tps), below the -0.5 ms/token adoption gate by a factor of three; kept on as hygiene, not counted as an adopted lever (D40); first direct T1 replica-noise measurement at 131k, 0.152 ms; cell 3 (single-row IQ2_S kernel, lossless by construction) IN PROGRESS"
+      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 COMPLETE (9/15, commit 9b597eb) -- two idle gaps diagnosed and fixed behind a default-on switch (GGML_SCHED_ASYNC_INPUTS, GGML_CUDA_GRAPH_COMPAT_CACHE), syncs/forward 43.61->9.12, boundary gap 1.267->1.031 ms, but only -0.154 ms/token at the bench (26.786 vs 26.677 tps), below the -0.5 ms/token adoption gate by a factor of three; kept on as hygiene, not counted as an adopted lever (D40); first direct T1 replica-noise measurement at 131k, 0.152 ms; cell 3 COMPLETE (9/15, commit 51ff69c) -- the single-row IQ2_S expert MMVQ kernel was slow from occupancy (110 registers/thread, 4 blocks/SM of 12, 33%), not the code-table lookup P9 had guessed; three 'obvious' ideas falsified bit-identical-but-slower at the microbench (shared-memory code table +3.0%, shared q8_1 activations +7.1%, .cg reads +23.6%); fix is a one-line __launch_bounds__ minimum of 8 blocks/SM on the single-row + small_k path (GGML_CUDA_MMVQ_OCCUPANCY, default on for iq2_s only), 64 registers with zero spills, 4->8 blocks/SM; kernel 82.88->66.21 us/launch (-20.1%), bandwidth 126.6->158.5 GB/s; at the bench 37.332->36.703 ms/token = 26.786->27.245 tps (-0.629 ms, +1.71%), 4/4 fingerprints identical in both replicas and in the microbench memcmp (D41); IQ4_NL (level 2) neutral, not adopted. Cumulative lossless candidate at 131k: R0 26.381 -> B 26.677 -> hygiene 26.786 -> occupancy 27.245 tps (+3.3% over R0, identical text throughout). P10 now awaits a user decision among four open choices (dense Q6_K->Q4_K; recovering 48 dead threads/128 in the iq2_s block, not bit-identical; the 505 us of unresolved host time at the forward boundary; P6 quality/stability validation of the lossless candidate for promotion to bin_prod) rather than a further measurement"
     }
   ],
   "primary_documents": [
@@ -276,7 +285,8 @@
     "D37",
     "D38",
     "D39",
-    "D40"
+    "D40",
+    "D41"
   ],
   "decisions_added": [
     {
@@ -398,6 +408,10 @@
     {
       "id": "D40",
       "summary": "P10 cell 2 COMPLETE (9/15, commit 9b597eb): the two GPU-idle gaps between the CUDA graph and the host are of different kinds. Gap 1 (1.267 ms/forward, once per token) is the boundary between one forward and the next (graph node 0, between the output head mul_mat_vec_q<q6_k> of graph N and the first node of graph N+1): sampling/serving + set_inputs (0.505 ms host, no CUDA calls), 15 input copies with 42 syncs (0.271 ms), an 8,191-node CUDA-graph compatibility rescan (0.174 ms), graph launch. Gap 2 (0.080 ms) is inside the replay at node 45 -- only a cudaGraphLaunch still being delivered by the driver (~0.75 us/node), not fixable by this cell's levers. Per-forward cudaStreamSynchronize calls were 43.61, not 78 (P8's lever B had already removed ~34): 1 necessary, 15.59 blocking copy-queue waits, 27.02 pre-input queue drains -- 42.6 of 43.6 were convenience waits, caused by input copies running on cudaStreamPerThread instead of the graph's own stream. Two lossless levers behind a default-on switch fixed this: GGML_SCHED_ASYNC_INPUTS (split inputs copied with set_tensor_async on the graph's stream, one sync per split instead of two per input: copy block 271 -> 133 us, syncs 43.61 -> 9.12) and GGML_CUDA_GRAPH_COMPAT_CACHE (the graph-compatibility verdict cached by uid instead of rescanning 8,191 nodes every forward: 174 -> 5 us). Side finding: the 2 splits at bs=1 are one CUDA and one CPU (-ot per_layer_token_embd.weight=CPU keeps 26.8 GiB in a host buffer). Measured at the bench: V2 = 37.332 ms/token (mean of two replicas, 37.408/37.256) = 26.786 tps vs V1 37.486 ms/token = 26.677 tps, i.e. only -0.154 ms/token -- below the -0.5 ms/token adoption gate by roughly a factor of three, because most of the boundary gap was host work (0.852 of 1.267 ms), 0.505 ms of it untouched by this cell, and a quarter of what is removed at the boundary reappears inside gap 2 (0.080 -> 0.138 ms). Fingerprints identical 16/16 across all four runs. First direct measurement of replica noise on T1 at 131k: 0.152 ms on the aggregate (not the 0.5 ms assumed so far, which comes from P8's verify-row R). Decision: the patch stays on as path hygiene (costs nothing: no extra node, byte, VRAM, or text risk) but is NOT counted as an adopted lever, and does not move P9's ceiling (D37). Updated noise rule: the 131k adoption gate stays at -0.5 ms/token because it is roughly three times the measured noise, not because the noise itself was 0.5. Remaining targets: the 505 us of unresolved host work inside the boundary gap, and the 5-20 us band inside the graph (0.885 ms/token, larger than the boundary gap after this cell, still unexplained). Next: P10 cell 3, the single-row IQ2_S kernel (lossless by construction, D38 point 3)."
+    },
+    {
+      "id": "D41",
+      "summary": "P10 cell 3 COMPLETE (9/15, commit 51ff69c): the single-row IQ2_S expert MMVQ kernel is adopted at occupancy level 1. Root cause was occupancy, not the code-table lookup P9 had guessed: the real instance (ncols_dst=1, gate+up fusion, small_k) uses 110 registers/thread and lives at 4 blocks/SM of 12 possible (33%). All three 'obvious' ideas from P9 are bit-identical in the microbench and all slower -- code table in shared memory +3.0%, q8_1 activations in shared memory +7.1%, weights read with .cg outside L1 +23.6% (L1 was earning its keep). Fix is a one-line change: the mul_mat_vec_q template takes an int min_blocks=1 that feeds __launch_bounds__'s second argument; the dispatcher sets it to 8 only on the single-row + small_k path for table-quantized types (iq2_s at level 1, iq4_nl also at level 2, GGML_CUDA_MMVQ_OCCUPANCY switch, default on for iq2_s only). ptxas drops to 64 registers with zero spills, blocks/SM 4->8; verified lossless twice (microbench memcmp against all 6,400 output floats on real iq2_s weights, and 4/4 fingerprints identical at the bench across two replicas). In situ: kernel 82.88 -> 66.21 us/launch (-20.1%), bandwidth 126.6 -> 158.5 GB/s, efficiency against the byte floor 36.4% -> 46.6%; no other quant type moves (q6_k unchanged to the nanosecond over 27,595 launches). At the bench: V2 37.332 -> V3 36.703 ms/token = 26.786 -> 27.245 tps (mean of two replicas each), -0.629 ms/token (+1.71%), against a V3 replica-to-replica noise of 0.068 ms -- the -0.5 ms adoption gate is cleared by nine times that noise. IQ4_NL (level 2) measured neutral (36.760 ms/token, inside the V3 replica spread) and NOT adopted, switch left off. Cumulative lossless candidate at the 131k operating point: R0 26.381 -> B (D39) 26.677 -> boundary-gap hygiene (D40) 26.786 -> occupancy (D41) 27.245 tps, +3.3% over R0, identical text throughout. Two open, non-lossless leads remain on this kernel: 48 of 128 threads per block never execute a vec_dot (blocks_per_row_x=10 vs blocks_per_iter=16, warp 3 entirely dead -- real utilization is only 41.7% of the max even at 8 blocks/SM; recovering them changes reduction order, not bit-identical), and 1.05 ms/token still sits above the byte floor (table lookup + sign arithmetic). P10 now has no open cell: it awaits a user decision among four choices -- (a) dense Q6_K->Q4_K residents (-1.6..-2.6 ms + 841 MiB VRAM freed, NOT lossless, needs quality rubrics first); (b) recovering the 48 dead threads (largest remaining kernel lever, not bit-identical); (c) the 505 us of unresolved host time at the forward boundary (cell 2, needs NVTX); (d) P6 quality/stability validation of the cumulative lossless candidate (quality rubrics, 30-minute stability, rollback plan) for promotion to bin_prod."
     }
   ]
 }

@@ -56,6 +56,13 @@ PROFILI = {
     "lungo_2": [("L01", "ctx32k"), ("L02", "ctx32k")],
     # 15/9, punto operativo dell'utente: contesto ~100k+, KV 250k. Un solo prefill freddo a 131k, poi due decode
     "lungo_131k": [("L01", "ctx131k"), ("L02", "ctx131k")],
+    # P11 (15/9): SOLO il prefill freddo a 131k. Una richiesta, risposta brevissima (64 token):
+    # il tempo della corsa e' quasi tutto prefill, quindi una cella costa ~9 minuti invece di ~12.
+    "prefill_131k": [("PF_131K", "ctx131k")],
+    # P11 (15/9): cancello di qualita' del candidato finale. Il primo caso paga il prefill freddo
+    # del prefisso aghi131k, i cinque successivi riusano la cache del prompt.
+    "aghi_131k": [("Q_AGO_05", "aghi131k"), ("Q_AGO_25", "aghi131k"), ("Q_AGO_50", "aghi131k"),
+                  ("Q_AGO_75", "aghi131k"), ("Q_AGO_95", "aghi131k"), ("Q_TEC", "aghi131k")],
 }
 
 RISCALDAMENTO = ("Rispondi con una sola parola: pronto.", 8)

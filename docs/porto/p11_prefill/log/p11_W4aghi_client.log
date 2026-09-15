@@ -1,0 +1,32 @@
+corsa: 20260915_205005_P11_p11_w4_gdn_tile_staging_r1
+preset W4 (p11_w4_gdn_tile_staging), profilo aghi_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.54s  ttft   1.95/-       prompt_n 61      cache_n 0       pred 8     gen 11.778364826437382 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    1.99s  ttft   1.41/-       prompt_n 61      cache_n 0       pred 8     gen 12.179992448404683 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  Q_AGO_05@aghi131k      wall  347.03s  ttft 342.42/346.75  prompt_n 131313  cache_n 0       pred 104   gen 22.334497040137045 sha 2c1d169bdb92  fine=stop
+  Q_AGO_25@aghi131k      wall    5.37s  ttft   1.35/5.16    prompt_n 31      cache_n 131281  pred 92    gen 22.689006278870824 sha 41f8262ab91b  fine=stop
+  Q_AGO_50@aghi131k      wall    6.66s  ttft   1.32/6.50    prompt_n 29      cache_n 131281  pred 129   gen 23.964172065002067 sha aba03bd4ee4b  fine=stop
+  Q_AGO_75@aghi131k      wall    5.08s  ttft   1.30/4.82    prompt_n 30      cache_n 131281  pred 86    gen 22.527453014358734 sha e36f78bdcd3f  fine=stop
+  Q_AGO_95@aghi131k      wall    4.37s  ttft   1.28/4.20    prompt_n 31      cache_n 131281  pred 69    gen 22.075879342333582 sha d182be5d6b6a  fine=stop
+  Q_TEC@aghi131k         wall   32.84s  ttft   1.87/-       prompt_n 97      cache_n 131281  pred 768   gen 24.771317462680734 sha b0672a77dac9  fine=length
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_205005_P11_p11_w4_gdn_tile_staging_r1
+preset W4 / p11_w4_gdn_tile_staging, profilo aghi_131k, replica 1
+richieste: 8 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 0, "token_accettati": 0, "tempo_generazione_s": 0.0, "tps_insieme": null}
+tutti i casi: {"n_casi": 6, "token_accettati": 1248, "tempo_generazione_s": 51.78, "tps_insieme": 24.102}
+scarto orologio-timing server (%): {"min": 0.058, "max": 3.648, "mediano": 2.996}
+campioni di carico: 199
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  Q_AGO_05@aghi131k        2c1d169bdb9281b1
+  Q_AGO_25@aghi131k        41f8262ab91be72c
+  Q_AGO_50@aghi131k        aba03bd4ee4b2c43
+  Q_AGO_75@aghi131k        e36f78bdcd3ffb0a
+  Q_AGO_95@aghi131k        d182be5d6b6ae898
+  Q_TEC@aghi131k           b0672a77dac989a1

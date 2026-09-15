@@ -1,0 +1,53 @@
+﻿== guardia d'istanza unica ==
+porta 8100 libera, nessun llama-server attivo, nessuna build in corso
+== avvio processo NUOVO ==
+  exe        : D:\ds4_work\p11_work\bin\llama-server.exe
+  log server : C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_server_logs_sperimentali\p0_p11_w0_riferimento_v3_r1_20260915_192727.log
+  env        : GGML_CUDA_MOE_CPU_PREFILL, QWEN4EXP_QSA_GATHER, QWEN4EXP_INDEXER_K_ONLY, LLAMA_MOE_DEMAND_GPU, LLAMA_MOE_DYNAMIC_WORKSPACE, QWEN4EXP_POOL_CACHE, QWEN4EXP_POOL_LAYOUT, GGML_CUDA_SCALAR_GATHER, GGML_CUDA_MOE_FREQUENCY, QWEN4EXP_GATHER_F16, QWEN_MOE_OVERLAP_DOWN, QWEN4EXP_INDEXER_MAPPED, LLAMA_MOE_CACHE_BATCH, LLAMA_MOE_PHASE_CACHE, QWEN4EXP_ATTN_MAPPED, QWEN_MOE_SHARED_CARVEOUT, QWEN4EXP_SPARSE_FA, QWEN4EXP_QSA_BIAS_DEV, GGML_SCHED_ASYNC_INPUTS, GGML_CUDA_GRAPH_COMPAT_CACHE, GGML_CUDA_MMVQ_OCCUPANCY
+  PID        : 5096
+pronto dopo 206 s
+== banco ==
+corsa: 20260915_193053_P11_p11_w0_riferimento_v3_r1
+preset W0 (p11_w0_riferimento_v3), profilo prefill_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.40s  ttft   1.83/-       prompt_n 61      cache_n 0       pred 8     gen 12.125516417083121 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    1.94s  ttft   1.36/-       prompt_n 61      cache_n 0       pred 8     gen 12.126335629252878 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  PF_131K@ctx131k        wall  522.01s  ttft 520.25/521.92  prompt_n 131170  cache_n 0       pred 34    gen 18.761480747025313 sha c186b3b753c6  fine=stop
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_193053_P11_p11_w0_riferimento_v3_r1
+preset W0 / p11_w0_riferimento_v3, profilo prefill_131k, replica 1
+richieste: 3 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 0, "token_accettati": 0, "tempo_generazione_s": 0.0, "tps_insieme": null}
+tutti i casi: {"n_casi": 1, "token_accettati": 34, "tempo_generazione_s": 1.759, "tps_insieme": 19.33}
+scarto orologio-timing server (%): {"min": 0.029, "max": 0.029, "mediano": 0.029}
+campioni di carico: 257
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  PF_131K@ctx131k          c186b3b753c6c337
+CARTELLA_CORSA=D:\ds4_work\banco_p0_run\20260915_193053_P11_p11_w0_riferimento_v3_r1
+== chiusura del server ==
+  non si e' chiuso da solo: passo alla terminazione forzata
+
+
+pid                 : 5096
+modo_chiusura       : stop_process_forzato
+secondi_caricamento : 206
+uscito              : True
+codice_uscita       : 
+log_server          : C:\Users\imanu\Documents\Codex\2026-09-09\c-users-imanu-source-repos-moe\work\qwen38_server_logs_
+                      sperimentali\p0_p11_w0_riferimento_v3_r1_20260915_192727.log
+porta_libera_dopo   : True
+processi_residui    : {$null}
+
+
+
+artefatti di avvio copiati (ripuliti) in D:\ds4_work\banco_p0_run\20260915_193053_P11_p11_w0_riferimento_v3_r1\log
+CARTELLA_CORSA=D:\ds4_work\banco_p0_run\20260915_193053_P11_p11_w0_riferimento_v3_r1
+== stato finale ==
+nessun llama-server attivo
+porta 8100 libera (nessun LISTENING; 0 socket in TIME_WAIT, normali e innocui)

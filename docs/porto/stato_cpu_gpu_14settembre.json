@@ -3,8 +3,24 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p7_suspended_awaiting_structural_decision",
-  "current_phase": "P7",
+  "implementation_status": "p9_anatomy_131k",
+  "current_phase": "P9",
+  "operating_point": {
+    "ctx_tokens": 131072,
+    "kv_tokens": 262144,
+    "profile": "lungo_131k"
+  },
+  "ref_131k": {
+    "off_tps": 26.381,
+    "mtp1_tps": 26.229,
+    "mtp1_B_tps": 26.87,
+    "verify_row_ms": 20.203
+  },
+  "p8_result": {
+    "lever_B_ms": -1.44,
+    "lever_B_tps_gain": 0.023,
+    "draft2_delta": -0.112
+  },
   "goal": {
     "decode_free_tps": 50,
     "decode_ms_per_accepted_token": 20,
@@ -17,7 +33,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 75,
+  "new_benchmark_runs": 89,
   "p7_cell3_result": {
     "verify_row_ms": 15.66,
     "mmvq_ms": 6.60,
@@ -137,12 +153,28 @@
     },
     {
       "id": "P7",
-      "status": "suspended_awaiting_structural_decision",
+      "status": "closed",
       "depends_on": [
         "P6"
       ],
       "alternative_start": "documented closure of the CPU route after an inconclusive or negative matched confirmation (D18, exercised 9/14)",
-      "note": "cell 1 (D20/D21/D22) and cell 2 (D23) and cell 3 (D24) completed with a negative/closed verdict; cell 4 (D25) completed with a mixed outcome -- stage 1 (polling) adopted as an asset (D26), stage 2 (CPU lane on draft rows) inconclusive pending opening A7 (D27); cell 5 (9/15) closed A7 and remeasured the CPU lane as negative at 2 threads (D29/D30); cell 6 (9/15, commit 6e7f879) closed the CPU lane for good (D31) and found the speculation track exhausted within the current architecture (D32) -- P7 is now SUSPENDED pending a structural decision from the user, see HANDOFF_14_SETTEMBRE.md section 3.6"
+      "note": "cell 1 (D20/D21/D22) and cell 2 (D23) and cell 3 (D24) completed with a negative/closed verdict; cell 4 (D25) completed with a mixed outcome -- stage 1 (polling) adopted as an asset (D26), stage 2 (CPU lane on draft rows) inconclusive pending opening A7 (D27); cell 5 (9/15) closed A7 and remeasured the CPU lane as negative at 2 threads (D29/D30); cell 6 (9/15, commit 6e7f879) closed the CPU lane for good (D31) and found the speculation track exhausted within the current architecture (D32); cell 7 (9/15, commit 1857142) remeasured at the user's operating point (131k, D33) -- reasoning off does not raise draft-2 acceptance there either (D34/D35). P7 is now CLOSED, not suspended: the user's structural decision was to fix the operating point at 131k (D33), and P8 answered the open question there"
+    },
+    {
+      "id": "P8",
+      "status": "completed",
+      "depends_on": [
+        "P7"
+      ],
+      "note": "lossless levers on the verify row measured cumulatively at the 131k operating point (9/15, commit cc91ebb): lever B (device-resident QSA bias) adopted (D36), flips MTP draft-1 from a net loss to +1.8% over MTP-off at 131k (26.87 vs 26.38 t/s); A/C/D1 not adopted"
+    },
+    {
+      "id": "P9",
+      "status": "in_progress",
+      "depends_on": [
+        "P8"
+      ],
+      "note": "single-token anatomy at 131k: where the 37.9 ms/token go (mmvq, expert gather, attention/indexer, host) to pick the next lever on the single-token path (Q6_K residents to Q4_K, dense matvec fusion, more VRAM)"
     }
   ],
   "primary_documents": [
@@ -188,7 +220,11 @@
     "D29",
     "D30",
     "D31",
-    "D32"
+    "D32",
+    "D33",
+    "D34",
+    "D35",
+    "D36"
   ],
   "decisions_added": [
     {
@@ -278,6 +314,22 @@
     {
       "id": "D32",
       "summary": "The speculation track is EXHAUSTED within the current architecture (P7 cell 6, 9/15). With the CPU lane closed (D31), only minor, unquantified, lossless levers remain on the verify row: A6a (QSA bias in F16/on-device instead of host H2D, +1.14 ms today), A6b (dedup the QSA gather across the two verify rows, k_get_rows headroom at 3.7 GiB/s, not quantified), A2 (the polling plumbing from D26 applied to the P4 extension, 41.9 us/active layer measured but not benched on the free set). None of the three, nor their sum, is measured on free-form decode; an honest, unmeasured estimate (HANDOFF_14_SETTEMBRE.md section 3.6) puts them together at +3-5% at most above the 28.66 t/s reference -- none reaches the 50 t/s goal. P7 moves from IN PROGRESS to SUSPENDED: no cell remains open without a structural decision from the user (see HANDOFF_14_SETTEMBRE.md section 3.6 for the five structural options, listed without a recommendation)."
+    },
+    {
+      "id": "D33",
+      "summary": "User operating point, 9/15: context ~100k with a 250k KV cache, not 32k. Short-context or 32k measurements no longer decide anything for this architecture; every future speed/lever cell is measured on the P0 bench's lungo_131k profile (L01/L02 with the ctx131k prefix, fixtures extended 9/15, commit 9a64efd). The historical 32k references (24.44 t/s MTP off, 28.66 t/s MTP draft-1) remain valid only as control noise and oracle fingerprints, not as numbers to beat."
+    },
+    {
+      "id": "D34",
+      "summary": "Turning reasoning off does not raise the 2-token MTP draft's acceptance at 131k; the 2-token draft still does not pay off (P7 cell 7, COMPLETE 9/15, commit 1857142). With --reasoning off (the only knob that works on this profile, --reasoning-budget 0 is falsified -- the model keeps filling reasoning_content on long prompts) and MTP draft-2, the lungo_131k profile yields 25.479 t/s, cumulative acceptance (0.735 ; 0.489) -- second position stays below the 0.633 break-even from cell 1, and is lower, not higher, than the 32k reasoning-on figure (0.553)."
+    },
+    {
+      "id": "D35",
+      "summary": "Token budget 2048 for quality runs with reasoning off at long context, 9/15. At 131k with --reasoning off and budget 1024, both free-form cases in cell 7 produce solid but truncated text (4 of 5 rubric criteria met each) -- reasoning is empty but the final prose at long context needs more than the screening budget. Budget is a bench max_tokens parameter, not a model property; D11 remains the reference for speed screening."
+    },
+    {
+      "id": "D36",
+      "summary": "Lever B (device-resident QSA bias) is adopted; A, C, D1 are not (P8, COMPLETE 9/15, commit cc91ebb). Of four lossless levers measured cumulatively at the 131k operating point, only B is distinguishable from noise: -1.44 ms on R (5 runs vs 4, groups separated by over six standard deviations), +2.3% on t/s. With B, MTP draft-1 flips from a net loss (-0.5% vs off, raw R1) to a gain (+1.8%, 26.87 vs 26.38 t/s). A is redundant once B is on; C buys nothing (the project's occupancy hypothesis is falsified); D1 shortens the graph by 84 nodes but does not save time (pays in locality), shipped off by default. The delivered patch (p8_cumulativa.patch) defaults to A off (redundant), B on, C on (free and bit-identical), D1 off. The 2-token draft stays closed even with every lever (-11.2% vs draft-1); the only large remaining lever is the P4/P5 CPU lane on the 6.5 ms of expert gather, which P8 does not touch by design. Side effect: the GGUF contains not a single IQ3_XXS tensor (all 144 expert tensors are IQ2_S/IQ3_S/IQ4_NL) -- lever E of the CPU/GPU project must be redesigned against mmvq.cu's scalar branch, not mul_mat_vec_q_moe."
     }
   ]
 }

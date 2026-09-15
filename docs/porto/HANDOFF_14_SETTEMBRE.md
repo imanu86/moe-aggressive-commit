@@ -108,6 +108,40 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 > | (e) testa MTP riaddestrata (FastMTP, §3.3) insieme a una riga di verifica più economica | **+5/10% solo insieme** | attacca sia l'accettazione (pos.2 0,48→0,62 su Qwen3-Next) sia il costo di riga, ma richiede addestramento su pod e nessuna delle due leve da sola basta |
 >
 > La scelta è dell'utente; nessuna raccomandazione.
+>
+> **Nota di ripresa, 15/9 (seconda).** La decisione strutturale attesa sopra è arrivata, ma non come
+> una delle cinque opzioni della tabella: l'utente ha fissato il **punto operativo** a contesto ~100k
+> con KV 250k (**D33**) — da questa data ogni misura di velocità o di leva si fa sul profilo
+> `lungo_131k` del banco P0, non più a 32k; i riferimenti 24,44/28,66 t/s restano solo per rumore e
+> impronte. Due celle nuove hanno rimisurato lì. **P7 cella 7 (COMPLETATA, commit `1857142`)**: MTP
+> bozza 2 con ragionamento spento a 131k — `--reasoning-budget 0` è **FALSIFICATO** su questo profilo
+> (il modello continua a riempire `reasoning_content` sui prompt lunghi), serve `--reasoning off`;
+> 25,479 t/s, accettazione (0,735 ; 0,489), **sotto** la soglia di pareggio 0,633 — spegnere il
+> ragionamento non alza l'accettazione e la bozza 2 non paga nemmeno così (**D34**); qualità buona ma
+> troncata dal budget 1024, da qui budget **2048** per le corse di qualità a ragionamento spento
+> (**D35**, D11 resta per lo screening di velocità); RAM libera minima 3,3 GiB. **P8 (COMPLETATA,
+> commit `cc91ebb`)**: albero pulito dallo snapshot P0 in `D:\ds4_work\p8_work`; al punto operativo
+> 131k, sui binari nudi, **R0 (MTP spento) = 26,381 t/s** (37,906 ms/token), **R1 (MTP bozza 1) =
+> 26,229 t/s (−0,5% su R0: la speculazione era già una perdita netta a 131k)**, riga di verifica
+> `R = 20,203 ms` (non 15,66: quel numero di P7 cella 3 era a un'altra profondità con un `T1` dedotto).
+> Di quattro leve lossless misurate cumulativamente, solo **B** (bias QSA residente sul dispositivo
+> invece di 49 copie H2D per forward) paga: **−1,44 ms su R, +2,3% su t/s**, che ribalta il segno
+> dell'MTP — con B la bozza 1 rende **26,87 t/s, +1,8% sull'MTP spento**; A è ridondante una volta
+> accesa B, C non compra nulla (l'ipotesi di occupancy è falsificata), D1 non guadagna (default spento).
+> La bozza a 2 token resta chiusa anche con tutte le leve (−11,2%). **D36 — si adotta la leva B**
+> (patch `p8_cumulativa.patch`, default B+C accese, A/D1 spente). Effetto collaterale: il GGUF non
+> contiene un solo tensore IQ3_XXS (i 144 tensori esperti sono IQ2_S/IQ3_S/IQ4_NL) — la leva E del
+> progetto CPU/GPU (D25 e seguenti) va riprogettata contro il ramo scalare di `mmvq.cu`, non contro
+> `mul_mat_vec_q_moe`. **Riferimenti al punto operativo: 26,38 t/s MTP spento, 26,87 t/s MTP bozza 1 +
+> B.** R-RAM è confermato **strutturale** a 131k con testa MTP (2,3-3,6 GiB in ogni corsa MTP di
+> entrambe le celle, sempre sotto la soglia di 4 GiB — non un caso isolato). **P7 è ora CHIUSA** (non
+> più sospesa) e **P8 è COMPLETATA**; la prossima azione è **P9 — anatomia del token singolo a 131k**
+> (dove vanno i 37,9 ms: mmvq, gather esperti, attenzione/indexer, host) per scegliere la prossima leva
+> (residenti Q6_K → Q4_K, fusione dei matvec densi, più VRAM) — una misura, non più una decisione in
+> sospeso. Dettagli completi in
+> [`REGISTRO_CPU_GPU_14_SETTEMBRE.md`](REGISTRO_CPU_GPU_14_SETTEMBRE.md) (D33-D36),
+> [`p7_speculazione/P7_CELLA7_RAGIONAMENTO_SPENTO_131K_15_SETTEMBRE.md`](p7_speculazione/P7_CELLA7_RAGIONAMENTO_SPENTO_131K_15_SETTEMBRE.md),
+> [`p8_riga_verifica/P8_ESITO_15_SETTEMBRE.md`](p8_riga_verifica/P8_ESITO_15_SETTEMBRE.md).
 
 ### 3.1 Apertura A7 — il contributo CPU arriva davvero a `moe_out` sulle righe di bozza?
 

@@ -1,0 +1,32 @@
+corsa: 20260915_230714_P11_p11_x4_scaletta_batch_divisibile_r1
+preset X4 (p11_x4_scaletta_batch_divisibile), profilo aghi_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.70s  ttft   2.11/-       prompt_n 61      cache_n 0       pred 8     gen 11.891616410430647 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    1.95s  ttft   1.38/-       prompt_n 61      cache_n 0       pred 8     gen 12.278138423732589 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  Q_AGO_05@aghi131k      wall  335.63s  ttft 331.06/335.34  prompt_n 131313  cache_n 0       pred 104   gen 22.578984796232334 sha 2c1d169bdb92  fine=stop
+  Q_AGO_25@aghi131k      wall    6.16s  ttft   1.31/5.95    prompt_n 31      cache_n 131281  pred 114   gen 23.3303664539887 sha 3116e1a3461d  fine=stop
+  Q_AGO_50@aghi131k      wall   11.04s  ttft   1.29/10.89   prompt_n 29      cache_n 131281  pred 240   gen 24.51737948810379 sha a1aebcdac58d  fine=stop
+  Q_AGO_75@aghi131k      wall    4.43s  ttft   1.34/4.18    prompt_n 30      cache_n 131281  pred 68    gen 21.71490021355146 sha 8770ae51be00  fine=stop
+  Q_AGO_95@aghi131k      wall    5.23s  ttft   1.31/5.06    prompt_n 31      cache_n 131281  pred 91    gen 23.019103810019757 sha 116b03746d20  fine=stop
+  Q_TEC@aghi131k         wall   31.92s  ttft   1.86/-       prompt_n 97      cache_n 131281  pred 768   gen 25.524988614424082 sha 6c6f3d20ef28  fine=length
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_230714_P11_p11_x4_scaletta_batch_divisibile_r1
+preset X4 / p11_x4_scaletta_batch_divisibile, profilo aghi_131k, replica 1
+richieste: 8 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 0, "token_accettati": 0, "tempo_generazione_s": 0.0, "tps_insieme": null}
+tutti i casi: {"n_casi": 6, "token_accettati": 1385, "tempo_generazione_s": 56.198, "tps_insieme": 24.645}
+scarto orologio-timing server (%): {"min": 0.052, "max": 4.589, "mediano": 2.572}
+campioni di carico: 195
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  Q_AGO_05@aghi131k        2c1d169bdb9281b1
+  Q_AGO_25@aghi131k        3116e1a3461d2d3b
+  Q_AGO_50@aghi131k        a1aebcdac58d0a9b
+  Q_AGO_75@aghi131k        8770ae51be00f52f
+  Q_AGO_95@aghi131k        116b03746d2040fc
+  Q_TEC@aghi131k           6c6f3d20ef28703d

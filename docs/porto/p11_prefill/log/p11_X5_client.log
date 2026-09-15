@@ -1,0 +1,22 @@
+corsa: 20260915_225738_P11_p11_x5_scaletta_da_6144_r1
+preset X5 (p11_x5_scaletta_da_6144), profilo prefill_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.53s  ttft   1.95/-       prompt_n 61      cache_n 0       pred 8     gen 11.918565549556545 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    2.00s  ttft   1.42/-       prompt_n 61      cache_n 0       pred 8     gen 12.238639482899998 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  PF_131K@ctx131k        wall  340.72s  ttft 338.98/340.63  prompt_n 131170  cache_n 0       pred 34    gen 19.029177495518052 sha d77a042a3e08  fine=stop
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_225738_P11_p11_x5_scaletta_da_6144_r1
+preset X5 / p11_x5_scaletta_da_6144, profilo prefill_131k, replica 1
+richieste: 3 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 0, "token_accettati": 0, "tempo_generazione_s": 0.0, "tps_insieme": null}
+tutti i casi: {"n_casi": 1, "token_accettati": 34, "tempo_generazione_s": 1.734, "tps_insieme": 19.606}
+scarto orologio-timing server (%): {"min": 0.045, "max": 0.045, "mediano": 0.045}
+campioni di carico: 169
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  PF_131K@ctx131k          d77a042a3e08e595

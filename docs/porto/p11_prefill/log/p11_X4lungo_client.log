@@ -1,0 +1,24 @@
+corsa: 20260915_231732_P11_p11_x4_scaletta_batch_divisibile_r1
+preset X4 (p11_x4_scaletta_batch_divisibile), profilo lungo_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.82s  ttft   2.23/-       prompt_n 61      cache_n 0       pred 8     gen 11.766841712445284 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    1.96s  ttft   1.39/-       prompt_n 61      cache_n 0       pred 8     gen 12.327437882921037 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  L01@ctx131k            wall  372.15s  ttft 334.91/-       prompt_n 131248  cache_n 0       pred 1024  gen 27.474576415485206 sha a43aac7bc33b  fine=length
+  L02@ctx131k            wall   39.63s  ttft   1.82/-       prompt_n 94      cache_n 131145  pred 1024  gen 27.0567636619465 sha 22963af097ca  fine=length
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_231732_P11_p11_x4_scaletta_batch_divisibile_r1
+preset X4 / p11_x4_scaletta_batch_divisibile, profilo lungo_131k, replica 1
+richieste: 4 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 2, "token_accettati": 2048, "tempo_generazione_s": 75.044, "tps_insieme": 27.291}
+tutti i casi: {"n_casi": 2, "token_accettati": 2048, "tempo_generazione_s": 75.044, "tps_insieme": 27.291}
+scarto orologio-timing server (%): {"min": 0.042, "max": 0.403, "mediano": 0.403}
+campioni di carico: 204
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  L01@ctx131k              a43aac7bc33b9141
+  L02@ctx131k              22963af097ca2aea

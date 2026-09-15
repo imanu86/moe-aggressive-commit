@@ -19,6 +19,7 @@ DEST = Path(__file__).resolve().parent / "log"
 
 INTERESSANTI = re.compile(
     r"demand workspace|compute buffer size|sparse FA|qwen_prefetch|gdn|"
+    r"ws_dump|ws_kv|graph nodes|"
     r"CUDA error|out of memory|failed to allocate|alloc_tensor_range|"
     r"KV buffer size|model buffer size|n_batch|n_ubatch|n_ctx ", re.I)
 

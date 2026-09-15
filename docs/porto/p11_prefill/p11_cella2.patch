@@ -1,0 +1,242 @@
+--- p11_work/source/src/models/qwen4exp.cpp	(stato dopo p11.patch)
++++ p11_work/source/src/models/qwen4exp.cpp	(P11 cella 2)
+@@ -1052,6 +1052,73 @@
+         return selected;
+     }
+ 
++    // ---- P11 cella 2 / A1: la selezione top-k si costruisce a FETTE DI TOKEN ----
++    //
++    // Sotto, nel ramo di prefill, vivono insieme tre tensori [n_kv, n_tps] in F32: il
++    // punteggio espanso cella per cella, la copia F32 della maschera causale (che con la
++    // flash attention nasce in F16) e la loro somma. Sono i 12 byte per coppia
++    // token x cella del modello di costo della workspace: a 131k con ubatch 3072 fanno
++    // ~5,0 GiB su 6,8 di riserva, e sono loro a fissare il tetto del batch.
++    //
++    // Ogni RIGA di token e' indipendente da tutte le altre: l'espansione e' un get_rows per
++    // colonna, la somma e' elemento per elemento e il top-k lavora per riga (la versione
++    // CUDA chiama top_k_cub una riga alla volta). Quindi la stessa selezione si calcola su
++    // fette di n_chunk token una dopo l'altra: stessi kernel, stessi byte, e i byte VIVI
++    // insieme passano da 12*n_kv*n_tps a 12*n_kv*n_chunk.
++    //
++    // MISURATO IL 15/9 (celle X0/X1): NON PAGA. I byte vivi scendono ma la riserva no:
++    // a 131k con ubatch 3072 sale da 6819 a 7107 MiB e il prefill scende da 383,3 a
++    // 348,7 t/s. La riserva e' il PICCO dell'allocatore sul grafo dopo lo split, e quel
++    // picco non e' fissato dalle tre F32 di UNO strato. Restano i 67 nodi in piu' per
++    // strato, cioe' altrettanti lanci di kernel piu' piccoli. Spenta di default.
++    //
++    // Interruttore QWEN4EXP_QSA_TOPK_CHUNK = token per fetta, 0 = spento.
++    //
++    // DEFAULT: SPENTA. Il primo progetto la accendeva insieme alla sparse FA; le celle
++    // X1 e X2 del 15/9 l'hanno falsificata. A 131k con ubatch 3072 la riserva SALE da
++    // 6819 a 7107 MiB e il prefill scende da 383,3 a 348,7 t/s (-9,0%): la somma dei
++    // byte scende, il PICCO dell'allocatore no, e restano soltanto i 67 nodi in piu'
++    // per strato. Si tiene perche' e' l'unica forma provata dell'apertura A1 e perche'
++    // il ramo serve a chi vorra' ripetere la prova su un'altra taglia di fetta.
++    static const int64_t topk_chunk = [] {
++        const char * value = getenv("QWEN4EXP_QSA_TOPK_CHUNK");
++        return value != nullptr ? (int64_t) atoll(value) : (int64_t) 0;
++    }();
++
++    if (topk_chunk > 0 && blk_bias && n_stream == 1 && n_tps > topk_chunk) {
++        ggml_tensor * selected = nullptr;
++        for (int64_t t0 = 0; t0 < n_tps; t0 += topk_chunk) {
++            const int64_t nc = std::min<int64_t>(topk_chunk, n_tps - t0);
++
++            // score e' [n_blocks, n_tps, 1] contiguo: una fetta di token e' un blocco contiguo
++            ggml_tensor * score_c = ggml_view_2d(ctx0, score, n_blocks, nc,
++                    score->nb[1], t0*score->nb[1]);
++
++            ggml_tensor * exp_c = ggml_get_rows(ctx0,
++                    ggml_cont(ctx0, ggml_permute(ctx0, score_c, 1, 0, 2, 3)), inp->cell_blk);
++            exp_c = ggml_cont(ctx0, ggml_permute(ctx0, exp_c, 1, 0, 2, 3));   // [n_kv, nc]
++
++            // kq_mask e' [n_kv, n_tps, 1, 1] contiguo: anche qui la fetta e' contigua
++            ggml_tensor * mask_c = ggml_view_2d(ctx0, kq_mask, n_kv, nc,
++                    kq_mask->nb[1], t0*kq_mask->nb[1]);
++            if (mask_c->type != GGML_TYPE_F32) {
++                mask_c = ggml_cast(ctx0, mask_c, GGML_TYPE_F32);
++            }
++
++            // in posto: il risultato sovrascrive exp_c, che nessun altro nodo legge.
++            // Toglie il terzo dei tre tensori grandi senza cambiare un solo valore.
++            exp_c = ggml_add_inplace(ctx0, exp_c, ggml_reshape_2d(ctx0, mask_c, n_kv, nc));
++
++            ggml_tensor * sel_c = ggml_cont(ctx0, ggml_top_k(ctx0, exp_c, width));
++            selected = selected ? ggml_concat(ctx0, selected, sel_c, 1) : sel_c;
++        }
++
++        ggml_tensor * out = ggml_reshape_4d(ctx0, selected, width, n_tps, 1, n_stream);
++        cb(out, "indexer_top_k", il);
++
++        return out;
++    }
++
+     // every token of a block gets the block score; the budget is whole blocks, so top-k cuts on a block boundary
+     ggml_tensor * expanded = ggml_get_rows(ctx0,
+             ggml_cont(ctx0, ggml_permute(ctx0, score, 1, 0, 2, 3)), inp->cell_blk);
+@@ -1245,7 +1312,22 @@
+     kq_mask_top_k = ggml_view_4d(ctx0, kq_mask_top_k, kq_mask_top_k->ne[1], kq_mask_top_k->ne[2], 1, kq_mask_top_k->ne[3], kq_mask_top_k->nb[2], kq_mask_top_k->nb[3], kq_mask_top_k->nb[3], 0);
+ 
+     // combine with the original kq mask
+-    kq_mask_top_k = ggml_add(ctx0, kq_mask_top_k, kq_mask);
++    //
++    // P11 cella 2 / A1: la somma in posto. kq_mask_all e' gia' un tensore tutto nostro
++    // (ggml_fill lo duplica) e kq_mask_top_k e' una sua vista: scriverci dentro toglie la
++    // seconda maschera F16 [n_kv, n_batch] senza cambiare un valore. A 131k con ubatch 4096
++    // sono 1152 MiB di riserva in meno. QWEN4EXP_QSA_MASK_INPLACE=0 la riporta alla somma
++    // fuori posto sullo STESSO binario (via di fuga, e leva A/B).
++    // DEFAULT: SPENTA, come la fetta sopra: non e' mai stata misurata da sola, e finche'
++    // non lo e' non deve cambiare il comportamento di un binario di produzione.
++    static const bool mask_inplace = [] {
++        const char * value = getenv("QWEN4EXP_QSA_MASK_INPLACE");
++        return value != nullptr && value[0] != '0';
++    }();
++
++    kq_mask_top_k = mask_inplace
++        ? ggml_add_inplace(ctx0, kq_mask_top_k, kq_mask)
++        : ggml_add        (ctx0, kq_mask_top_k, kq_mask);
+ 
+     ggml_tensor * q = q_cur;
+     ggml_tensor * k = mctx_cur->get_k(ctx0, il);
+--- p11_work/source/src/llama-context.cpp	(stato dopo p11.patch)
++++ p11_work/source/src/llama-context.cpp	(P11 cella 2)
+@@ -19,6 +19,7 @@
+ #include <algorithm>
+ #include <cinttypes>
+ #include <cmath>
++#include <map>
+ #include <cstdio>
+ #include <cstring>
+ #include <utility>
+@@ -776,6 +777,131 @@
+ 
+         n_splits_pp = ggml_backend_sched_get_n_splits(sched.get());
+         n_nodes_pp  = ggml_graph_n_nodes(gf);
++
++        // P11 cella 2: a che cosa serve la workspace. Elenca i nodi del grafo
++        // RISERVATO piu' grossi, escluse le viste (che non allocano). Non e' il picco
++        // dell'allocatore, ma dice quali forme lo possono fissare. QWEN_WS_DUMP=N.
++        if (const char * dump = getenv("QWEN_WS_DUMP")) {
++            const int quanti = std::max(1, atoi(dump));
++            std::vector<std::pair<size_t, const ggml_tensor *>> v;
++            for (int i = 0; i < ggml_graph_n_nodes(gf); ++i) {
++                const ggml_tensor * t = ggml_graph_node(gf, i);
++                if (t->view_src != nullptr) {
++                    continue;
++                }
++                v.emplace_back(ggml_nbytes(t), t);
++            }
++            std::sort(v.begin(), v.end(),
++                    [](const std::pair<size_t, const ggml_tensor *> & a,
++                       const std::pair<size_t, const ggml_tensor *> & b) { return a.first > b.first; });
++            LLAMA_LOG_INFO("%s: ws_dump tokens=%u kv=%u nodi=%d\n", __func__,
++                    reserve_tokens, reserve_kv, n_nodes_pp);
++            for (int i = 0; i < quanti && i < (int) v.size(); ++i) {
++                const ggml_tensor * t = v[i].second;
++                LLAMA_LOG_INFO("%s: ws_dump #%02d %8.1f MiB  %-16s %-12s %s [%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 "]\n",
++                        __func__, i, v[i].first/1048576.0, ggml_op_name(t->op),
++                        ggml_type_name(t->type), t->name,
++                        t->ne[0], t->ne[1], t->ne[2], t->ne[3]);
++            }
++            // i nodi la cui taglia cresce con la profondita': sono loro a fissare il
++            // tetto del batch. Byte per coppia token x cella, cosi' la riga si legge
++            // anche quando la riserva e' poco profonda.
++            size_t tot_kv = 0;
++            int    n_kvdip = 0;
++            for (const auto & e : v) {
++                const ggml_tensor * t = e.second;
++                if (t->ne[0] != (int64_t) reserve_kv && t->ne[1] != (int64_t) reserve_kv) {
++                    continue;
++                }
++                tot_kv += e.first;
++                ++n_kvdip;
++                const int64_t coppie = (int64_t) reserve_kv * (int64_t) reserve_tokens;
++                LLAMA_LOG_INFO("%s: ws_kv  %8.2f MiB  %5.2f B/coppia  %-16s %-12s %s [%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 "]\n",
++                        __func__, e.first/1048576.0, coppie ? (double) e.first/coppie : 0.0,
++                        ggml_op_name(t->op), ggml_type_name(t->type), t->name,
++                        t->ne[0], t->ne[1], t->ne[2], t->ne[3]);
++            }
++            LLAMA_LOG_INFO("%s: ws_kv TOTALE %d nodi, %.2f MiB, %.2f B/coppia (somma, non il picco)\n",
++                    __func__, n_kvdip, tot_kv/1048576.0,
++                    (double) tot_kv/((double) reserve_kv*(double) reserve_tokens));
++
++            // ATTENZIONE, NON VALIDATO (P11 cella 2, 15/9): la prima versione contava
++            // zero perche' filtrava su `data`, che l'allocatore ha gia' riempito quando
++            // questo codice gira; la correzione non e' stata rimisurata. Inoltre la
++            // simulazione lavora sul grafo PRIMA dello split dello scheduler, quindi non
++            // vede ne' le copie degli ingressi ne' l'ordine effettivo di allocazione.
++            // Chi riprende A1 deve prima validarlo contro GGML_ALLOCATOR_DEBUG (che pero'
++            // stampa a livello DEBUG, che il log del server non contiene: va portato a
++            // INFO e messo dietro una variabile d'ambiente).
++            //
++            // La somma non e' il picco: l'allocatore riusa. Qui si simula la vita dei
++            // tensori nell'ordine dei nodi (un tensore nasce quando lo si calcola e
++            // muore quando l'ultimo nodo che lo legge e' passato, esattamente come in
++            // ggml-alloc) e si stampa CHI E' VIVO nel momento piu' pieno. E' quel
++            // momento, e solo quello, a fissare la workspace.
++            {
++                const int nn = ggml_graph_n_nodes(gf);
++                auto base = [](const ggml_tensor * t) {
++                    while (t != nullptr && t->view_src != nullptr) { t = t->view_src; }
++                    return t;
++                };
++                std::map<const ggml_tensor *, int> figli;
++                for (int i = 0; i < nn; ++i) {
++                    const ggml_tensor * t = ggml_graph_node(gf, i);
++                    figli[base(t)] += 0;
++                    for (int s = 0; s < GGML_MAX_SRC; ++s) {
++                        if (t->src[s]) { figli[base(t->src[s])] += 1; }
++                    }
++                    if (t->view_src) { figli[base(t)] += 1; }
++                }
++                // primo giro: trova il nodo del picco
++                std::map<const ggml_tensor *, int> rest = figli;
++                std::map<const ggml_tensor *, size_t> vivi;
++                size_t corrente = 0, picco = 0;
++                int    i_picco = -1;
++                auto passo = [&](int i, bool registra) {
++                    const ggml_tensor * t = ggml_graph_node(gf, i);
++                    const ggml_tensor * b = base(t);
++                    // il nodo e' sempre un tensore di calcolo (i pesi compaiono solo
++                    // come sorgenti): non si guarda `data`, che a questo punto e' gia'
++                    // stato assegnato dall'allocatore.
++                    if (b == t && vivi.find(b) == vivi.end()) {
++                        vivi[b] = ggml_nbytes(b);
++                        corrente += vivi[b];
++                    }
++                    if (registra && corrente > picco) { picco = corrente; i_picco = i; }
++                    for (int s = 0; s < GGML_MAX_SRC; ++s) {
++                        if (!t->src[s]) continue;
++                        const ggml_tensor * p = base(t->src[s]);
++                        if (--rest[p] <= 0) {
++                            auto it = vivi.find(p);
++                            if (it != vivi.end()) { corrente -= it->second; vivi.erase(it); }
++                        }
++                    }
++                    if (t->view_src && --rest[b] <= 0) {
++                        auto it = vivi.find(b);
++                        if (it != vivi.end()) { corrente -= it->second; vivi.erase(it); }
++                    }
++                };
++                for (int i = 0; i < nn; ++i) { passo(i, true); }
++                LLAMA_LOG_INFO("%s: ws_picco simulato %.1f MiB al nodo %d di %d\n",
++                        __func__, picco/1048576.0, i_picco, nn);
++                rest = figli; vivi.clear(); corrente = 0;
++                for (int i = 0; i <= i_picco && i < nn; ++i) { passo(i, false); }
++                std::vector<std::pair<size_t, const ggml_tensor *>> w;
++                for (const auto & e : vivi) { w.emplace_back(e.second, e.first); }
++                std::sort(w.begin(), w.end(),
++                        [](const std::pair<size_t, const ggml_tensor *> & a,
++                           const std::pair<size_t, const ggml_tensor *> & b) { return a.first > b.first; });
++                for (int i = 0; i < 18 && i < (int) w.size(); ++i) {
++                    const ggml_tensor * t = w[i].second;
++                    LLAMA_LOG_INFO("%s: ws_picco #%02d %8.1f MiB  %-16s %-8s %s [%" PRId64 ",%" PRId64 ",%" PRId64 ",%" PRId64 "]\n",
++                            __func__, i, w[i].first/1048576.0, ggml_op_name(t->op),
++                            ggml_type_name(t->type), t->name, t->ne[0], t->ne[1], t->ne[2], t->ne[3]);
++                }
++                LLAMA_LOG_INFO("%s: ws_picco vivi=%d\n", __func__, (int) w.size());
++            }
++        }
+     }
+ 
+     // reserve with tg (token generation) graph to get the number of splits and nodes

@@ -1,0 +1,22 @@
+corsa: 20260915_223649_P11_p11_x3_scaletta_per_staging_r1
+preset X3 (p11_x3_scaletta_per_staging), profilo prefill_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall    2.75s  ttft   2.16/-       prompt_n 61      cache_n 0       pred 8     gen 11.860426500936974 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    1.96s  ttft   1.39/-       prompt_n 61      cache_n 0       pred 8     gen 12.25591041279657 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  PF_131K@ctx131k        wall  338.91s  ttft 337.15/338.82  prompt_n 131170  cache_n 0       pred 34    gen 18.715281026958507 sha d77a042a3e08  fine=stop
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_223649_P11_p11_x3_scaletta_per_staging_r1
+preset X3 / p11_x3_scaletta_per_staging, profilo prefill_131k, replica 1
+richieste: 3 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 0, "token_accettati": 0, "tempo_generazione_s": 0.0, "tps_insieme": null}
+tutti i casi: {"n_casi": 1, "token_accettati": 34, "tempo_generazione_s": 1.763, "tps_insieme": 19.282}
+scarto orologio-timing server (%): {"min": 0.054, "max": 0.054, "mediano": 0.054}
+campioni di carico: 168
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  PF_131K@ctx131k          d77a042a3e08e595

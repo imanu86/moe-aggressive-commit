@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p7_cell6_threads",
+  "implementation_status": "p7_suspended_awaiting_structural_decision",
   "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
@@ -17,7 +17,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 69,
+  "new_benchmark_runs": 75,
   "p7_cell3_result": {
     "verify_row_ms": 15.66,
     "mmvq_ms": 6.60,
@@ -41,6 +41,13 @@
     "cpu_us_per_expert": 72,
     "tps_on": 28.086,
     "tps_off_same_binary": 30.827
+  },
+  "p7_cell6_result": {
+    "cycle_ms_off": 57.41,
+    "cycle_ms_2thr": 63.84,
+    "cycle_ms_4thr": 61.15,
+    "cycle_ms_6thr": 65.59,
+    "verdict": "closed"
   },
   "handoff": "HANDOFF_14_SETTEMBRE.md",
   "baseline_reference_free_tps": 24.44,
@@ -130,12 +137,12 @@
     },
     {
       "id": "P7",
-      "status": "completed_mixed_outcome",
+      "status": "suspended_awaiting_structural_decision",
       "depends_on": [
         "P6"
       ],
       "alternative_start": "documented closure of the CPU route after an inconclusive or negative matched confirmation (D18, exercised 9/14)",
-      "note": "cell 1 (D20/D21/D22) and cell 2 (D23) and cell 3 (D24) completed with a negative/closed verdict; cell 4 (D25) completed with a mixed outcome -- stage 1 (polling) adopted as an asset (D26), stage 2 (CPU lane on draft rows) inconclusive pending opening A7 (D27); day closed 9/14 (D28), see HANDOFF_14_SETTEMBRE.md"
+      "note": "cell 1 (D20/D21/D22) and cell 2 (D23) and cell 3 (D24) completed with a negative/closed verdict; cell 4 (D25) completed with a mixed outcome -- stage 1 (polling) adopted as an asset (D26), stage 2 (CPU lane on draft rows) inconclusive pending opening A7 (D27); cell 5 (9/15) closed A7 and remeasured the CPU lane as negative at 2 threads (D29/D30); cell 6 (9/15, commit 6e7f879) closed the CPU lane for good (D31) and found the speculation track exhausted within the current architecture (D32) -- P7 is now SUSPENDED pending a structural decision from the user, see HANDOFF_14_SETTEMBRE.md section 3.6"
     }
   ],
   "primary_documents": [
@@ -179,7 +186,9 @@
     "D27",
     "D28",
     "D29",
-    "D30"
+    "D30",
+    "D31",
+    "D32"
   ],
   "decisions_added": [
     {
@@ -261,6 +270,14 @@
     {
       "id": "D30",
       "summary": "P7 cell 5: the CPU lane on MTP draft rows is NEGATIVE at 2 threads. The R < 13 ms gate is missed: R = 22.20 ms (worse than cell 4's 19.7 ms, but honestly so -- that number came from a pool multiplying expert 0 by zero 155 times with perfect cache locality, this one is real arithmetic on 155 different experts). t/s 28.086 vs 30.827 on the same binary, -8.9%. Decomposition: delivery alone is -4.29 ms/cycle (R = 11.48, would clear the gate by itself), CPU arithmetic is +11.17 ms/cycle (155 experts x 72 us/expert, a third independent confirmation of the 9/10 number); the missing factor is 2.6. Minimum free RAM 7.08 GB. One more test before final closure: cell 6, LLAMA_MOE_CPU_THREADS at 4 and 6 with pool affinity -- if the cycle does not drop below T5's 57.41 ms even at 6 threads, the lane closes for good. New binding method rule: a host bench that only exercises row 0 does not validate a multi-row descriptor -- every future executor test must include routes on rows > 0."
+    },
+    {
+      "id": "D31",
+      "summary": "P7 cell 6 (9/15, commit 6e7f879): the CPU lane on MTP draft rows is CLOSED FOR GOOD. Test A3' swept LLAMA_MOE_CPU_THREADS at 3/4/6 with auto affinity against T5 (lane off, cycle 57.41 ms) and T6 (2 threads, 63.84 ms). No configuration drops below the off-lane cycle: the minimum is at 4 threads, cycle 61.15 ms (+3.74 ms vs T5, R = 19.51 ms against the 13 ms gate, tps 29.319); 3 threads is 64.82 ms (R = 23.17) and 6 threads is 65.59 ms (R = 23.94), both worse than 2 threads. The curve is non-monotonic -- 4 clearly beats 2 (-12.1% on R, +4.4% on tps) but 3 and 6 are both worse than 2, falsifying cell 5's linear-scaling hypothesis (that 6 threads would flip the sign). Per-expert CPU cost drops to ~52 us only at 4 threads (vs the 72-76 us reference band; 69/75/80 us at 2/3/6). Arithmetic (routes, -46.61% bytes, zero non-finite) is identical across all thread counts, verified via counters, not assumed. Single replica per configuration, declared limit."
+    },
+    {
+      "id": "D32",
+      "summary": "The speculation track is EXHAUSTED within the current architecture (P7 cell 6, 9/15). With the CPU lane closed (D31), only minor, unquantified, lossless levers remain on the verify row: A6a (QSA bias in F16/on-device instead of host H2D, +1.14 ms today), A6b (dedup the QSA gather across the two verify rows, k_get_rows headroom at 3.7 GiB/s, not quantified), A2 (the polling plumbing from D26 applied to the P4 extension, 41.9 us/active layer measured but not benched on the free set). None of the three, nor their sum, is measured on free-form decode; an honest, unmeasured estimate (HANDOFF_14_SETTEMBRE.md section 3.6) puts them together at +3-5% at most above the 28.66 t/s reference -- none reaches the 50 t/s goal. P7 moves from IN PROGRESS to SUSPENDED: no cell remains open without a structural decision from the user (see HANDOFF_14_SETTEMBRE.md section 3.6 for the five structural options, listed without a recommendation)."
     }
   ]
 }

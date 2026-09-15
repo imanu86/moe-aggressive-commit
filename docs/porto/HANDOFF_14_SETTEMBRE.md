@@ -84,16 +84,30 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
-> **Nota di ripresa, 15/9.** L'apertura A7 di §3.1 è **CHIUSA** (P7 cella 5, commit `7e16b85`,
-> [`p7_speculazione/P7_CELLA5_A7_15_SETTEMBRE.md`](p7_speculazione/P7_CELLA5_A7_15_SETTEMBRE.md)):
-> il contributo CPU sulle righe di bozza non arrivava a `moe_out`, per un disaccordo di
-> indirizzamento fra il kernel che scrive il descrittore del job (passo di riga) e il pool che lo
-> leggeva (cursore compattato) — invisibile a ogni corsa a riga singola (P2, P3, P4). Corretto,
-> insieme a due difetti collaterali. La corsia CPU sulle righe di bozza, rimisurata sul binario
-> corretto, è **NEGATIVA a 2 thread** (`R = 22,20 ms` contro il cancello di 13; t/s −8,9%): la
-> consegna da sola è in guadagno, è l'aritmetica CPU a mancare un fattore 2,6. **Cella 6 è in corso**
-> — ultima prova prima della chiusura definitiva, con `LLAMA_MOE_CPU_THREADS` a 4 e 6 e affinità del
-> pool. Vedi il registro, voci **D29**/**D30**, per i numeri completi.
+> **Nota di ripresa, 15/9.** L'apertura A7 di §3.1 è **CHIUSA** (P7 cella 5, commit `7e16b85`) e la
+> corsia CPU sulle righe di bozza è **CHIUSA DEFINITIVAMENTE** (P7 cella 6, commit `6e7f879`,
+> [`p7_speculazione/P7_CELLA6_THREAD_15_SETTEMBRE.md`](p7_speculazione/P7_CELLA6_THREAD_15_SETTEMBRE.md)):
+> nessun numero di thread provato (2/3/4/6, affinità `auto`) fa scendere il ciclo sotto la corsia
+> spenta, il minimo a 4 thread resta 3,74 ms/ciclo sopra il riferimento e la curva non è monotona
+> (**D31**). **La pista della speculazione dentro l'architettura attuale è ESAURITA (D32)**: restano
+> solo le leve minori lossless della §3.4 (A6a, A6b) e l'apertura A2 sull'impianto a polling applicato
+> a P4, stimate insieme a +3-5% al massimo, nessuna misurata. I riferimenti del banco non cambiano:
+> **24,44 t/s** a MTP spento, **28,66 t/s** a MTP bozza 1 (D21) — nessuna leva provata da P7 li batte.
+> L'asset del polling (13,8 µs/strato, **D26**) e le tre correzioni di correttezza della cella 5
+> (**D29**) restano nella copia di lavoro `D:\ds4_work\p3_work`, spente di default; le patch si
+> applicano in ordine — P3, P4-costo, P4-estensione, P7-cella4, P7-cella5 — nessuna in cella 6 (nessun
+> file di codice toccato). **P7 è SOSPESA**: la prossima azione è una decisione strutturale
+> dell'utente, non una misura. Opzioni note, elencate senza raccomandarne una:
+>
+> | opzione | effetto stimato sul decode libero | motivo |
+> |---|---|---|
+> | (a) esperti residenti/cache a quantizzazione più bassa (IQ1 **escluso** per decisione utente) | al massimo **−5/−6%** | l'upload degli esperti è il 24,5% del tempo dei kernel; meno byte per esperto trasferito aiuta ma non cambia il numero di colpi/miss |
+> | (b) più VRAM (GPU da 24 GB) | circa **+15/20%** | slot 64 → 128+, colpi 75% → ~90% misurato il 13/9, upload −60%, mmvq più veloce a batch più pieni |
+> | (c) modello più piccolo (es. 35B-A3B interamente in VRAM+RAM) | **l'unica via nota ai 50+ t/s** su questo hardware | a costo di qualità, non misurato su questo modello |
+> | (d) esperti Q6_K residenti convertiti a Q4_K | circa **−5%** | meno byte per gli stessi esperti oggi alla quantizzazione più alta (23% del tempo dei kernel), senza toccare IQ2_S/IQ3_S |
+> | (e) testa MTP riaddestrata (FastMTP, §3.3) insieme a una riga di verifica più economica | **+5/10% solo insieme** | attacca sia l'accettazione (pos.2 0,48→0,62 su Qwen3-Next) sia il costo di riga, ma richiede addestramento su pod e nessuna delle due leve da sola basta |
+>
+> La scelta è dell'utente; nessuna raccomandazione.
 
 ### 3.1 Apertura A7 — il contributo CPU arriva davvero a `moe_out` sulle righe di bozza?
 

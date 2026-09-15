@@ -84,6 +84,29 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
+> **Nota di ripresa, 15/9 (quinta).** L'utente chiude le quattro scelte lasciate aperte da P10
+> cella 3 (§sopra, nota "quarta") non scegliendone una ma fissando una regola generale, vincolante
+> per ogni cella futura: **D42 — sotto il 5% di guadagno al punto operativo (131k) non si fa**,
+> nessuna cella, nessuna validazione P6, nessuna promozione a `bin_prod`. Applicata alle quattro
+> scelte: (1) **Q6_K→Q4_K sui densi** — SALTATA dall'utente per rischio di qualità, a prescindere
+> dalla soglia; (2) **48 thread morti nel kernel IQ2_S** (~1% atteso) — sotto soglia; (3) **i 505 µs
+> di host non scomposti al confine del forward** (~1% atteso) — sotto soglia; (4) **validazione/
+> promozione del candidato lossless** (27,245 t/s, +3,3% su R0) — sotto soglia, il candidato resta
+> nella copia di lavoro `D:\ds4_work\p8_work` come base per il futuro, non promosso. Parole
+> dell'utente: «è inutile sprecare token e giorni di lavoro per qualcosa che sposta di 1 token al
+> secondo». **P10 è CHIUSA.**
+>
+> **P11 è APERTA: prefill a 131k, dai 250 t/s attuali verso l'obiettivo di piano di 400 t/s** — sopra
+> soglia, a differenza delle quattro scelte di P10, e un fronte mai toccato da P0 a P10 (tutte sul
+> decode, vedi §3.5 sotto). Le leve già esistenti, misurate separatamente in sessioni precedenti, si
+> compongono in celle cumulative **W0-W5**: sparse FA a teste 256 (`QWEN4EXP_SPARSE_FA=1`, +18,1% a
+> 131k misurato il 13/9, testi identici), batch/ubatch a 4096, GDN a tile, staging asincrono degli
+> esperti, batch in funzione del contesto (non riusato dal preset del decode). Cancelli: **5/5 aghi a
+> 131k**, **decode non regredito oltre il 3% contro 27,25 t/s** (il candidato lossless di P10, D41 —
+> resta la base, non si torna a R0). Riferimento di prefill da battere: **250-252 t/s** (P8 R0 / P10
+> V1, stesso banco). Dettagli completi in
+> [`REGISTRO_CPU_GPU_14_SETTEMBRE.md`](REGISTRO_CPU_GPU_14_SETTEMBRE.md) (D42).
+>
 > **Nota di ripresa, 15/9 (quarta).** P10 — leve sul token singolo a 131k — ha chiuso tre celle sul
 > ramo lossless dopo P9: **cella 1** (commit `8f008d9`) misura che la leva B di P8 paga anche su `T1`,
 > non solo sulla riga di verifica (−1,11% ms/token, **D39**, riferimento 26,677 t/s); **cella 2**

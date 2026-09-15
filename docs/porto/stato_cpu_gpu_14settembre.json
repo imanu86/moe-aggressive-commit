@@ -3,8 +3,12 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p10_awaiting_choice_after_cell3",
-  "current_phase": "P10",
+  "implementation_status": "p11_prefill_131k",
+  "current_phase": "P11",
+  "user_rules": {
+    "D42": "no work below 5% gain at the operating point"
+  },
+  "prefill_131k_ref_tps": 250,
   "operating_point": {
     "ctx_tokens": 131072,
     "kv_tokens": 262144,
@@ -227,11 +231,19 @@
     },
     {
       "id": "P10",
-      "status": "cell3_complete_awaiting_user_choice",
+      "status": "closed",
       "depends_on": [
         "P9"
       ],
-      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 COMPLETE (9/15, commit 9b597eb) -- two idle gaps diagnosed and fixed behind a default-on switch (GGML_SCHED_ASYNC_INPUTS, GGML_CUDA_GRAPH_COMPAT_CACHE), syncs/forward 43.61->9.12, boundary gap 1.267->1.031 ms, but only -0.154 ms/token at the bench (26.786 vs 26.677 tps), below the -0.5 ms/token adoption gate by a factor of three; kept on as hygiene, not counted as an adopted lever (D40); first direct T1 replica-noise measurement at 131k, 0.152 ms; cell 3 COMPLETE (9/15, commit 51ff69c) -- the single-row IQ2_S expert MMVQ kernel was slow from occupancy (110 registers/thread, 4 blocks/SM of 12, 33%), not the code-table lookup P9 had guessed; three 'obvious' ideas falsified bit-identical-but-slower at the microbench (shared-memory code table +3.0%, shared q8_1 activations +7.1%, .cg reads +23.6%); fix is a one-line __launch_bounds__ minimum of 8 blocks/SM on the single-row + small_k path (GGML_CUDA_MMVQ_OCCUPANCY, default on for iq2_s only), 64 registers with zero spills, 4->8 blocks/SM; kernel 82.88->66.21 us/launch (-20.1%), bandwidth 126.6->158.5 GB/s; at the bench 37.332->36.703 ms/token = 26.786->27.245 tps (-0.629 ms, +1.71%), 4/4 fingerprints identical in both replicas and in the microbench memcmp (D41); IQ4_NL (level 2) neutral, not adopted. Cumulative lossless candidate at 131k: R0 26.381 -> B 26.677 -> hygiene 26.786 -> occupancy 27.245 tps (+3.3% over R0, identical text throughout). P10 now awaits a user decision among four open choices (dense Q6_K->Q4_K; recovering 48 dead threads/128 in the iq2_s block, not bit-identical; the 505 us of unresolved host time at the forward boundary; P6 quality/stability validation of the lossless candidate for promotion to bin_prod) rather than a further measurement"
+      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 COMPLETE (9/15, commit 9b597eb) -- two idle gaps diagnosed and fixed behind a default-on switch (GGML_SCHED_ASYNC_INPUTS, GGML_CUDA_GRAPH_COMPAT_CACHE), syncs/forward 43.61->9.12, boundary gap 1.267->1.031 ms, but only -0.154 ms/token at the bench (26.786 vs 26.677 tps), below the -0.5 ms/token adoption gate by a factor of three; kept on as hygiene, not counted as an adopted lever (D40); first direct T1 replica-noise measurement at 131k, 0.152 ms; cell 3 COMPLETE (9/15, commit 51ff69c) -- the single-row IQ2_S expert MMVQ kernel was slow from occupancy (110 registers/thread, 4 blocks/SM of 12, 33%), not the code-table lookup P9 had guessed; three 'obvious' ideas falsified bit-identical-but-slower at the microbench (shared-memory code table +3.0%, shared q8_1 activations +7.1%, .cg reads +23.6%); fix is a one-line __launch_bounds__ minimum of 8 blocks/SM on the single-row + small_k path (GGML_CUDA_MMVQ_OCCUPANCY, default on for iq2_s only), 64 registers with zero spills, 4->8 blocks/SM; kernel 82.88->66.21 us/launch (-20.1%), bandwidth 126.6->158.5 GB/s; at the bench 37.332->36.703 ms/token = 26.786->27.245 tps (-0.629 ms, +1.71%), 4/4 fingerprints identical in both replicas and in the microbench memcmp (D41); IQ4_NL (level 2) neutral, not adopted. Cumulative lossless candidate at 131k: R0 26.381 -> B 26.677 -> hygiene 26.786 -> occupancy 27.245 tps (+3.3% over R0, identical text throughout). CLOSED 9/15 by user rule D42 (no work below 5% gain at the operating point): of the four open choices, dense Q6_K->Q4_K was skipped upfront for quality risk, recovering the 48 dead threads (~1%) and the 505 us of host time (~1%) are both below the 5% threshold, and validating/promoting the lossless candidate (+3.3%) is also below threshold -- the candidate stays unpromoted in the D:\\ds4_work\\p8_work working copy as a future base"
+    },
+    {
+      "id": "P11",
+      "status": "in_progress",
+      "depends_on": [
+        "D42"
+      ],
+      "note": "prefill at 131k, opened 9/15 by D42: from the current 250 tps reference toward the plan's 400 tps goal, a gain well above the 5% threshold and a front untouched from P0 through P10 (all prior cells were on decode). Existing levers, measured separately in earlier sessions, are composed into cumulative cells W0-W5: sparse FA at 256-wide heads (QWEN4EXP_SPARSE_FA=1, +18.1% at 131k measured 9/13, identical texts), batch/ubatch at 4096, tiled GDN, asynchronous expert staging, batch sized as a function of context (not reused from the decode preset). Gates: 5/5 needles at 131k, decode not regressed beyond 3% against 27.25 tps (P10's lossless candidate, D41 -- stays the base, no reversion to R0). Reference to beat: 250-252 tps (P8 R0 / P10 V1, same bench). Next action: cell W0 (measure the prefill reference on the lungo_131k profile with needles, before composing W1-W5)"
     }
   ],
   "primary_documents": [
@@ -286,7 +298,8 @@
     "D38",
     "D39",
     "D40",
-    "D41"
+    "D41",
+    "D42"
   ],
   "decisions_added": [
     {
@@ -412,6 +425,10 @@
     {
       "id": "D41",
       "summary": "P10 cell 3 COMPLETE (9/15, commit 51ff69c): the single-row IQ2_S expert MMVQ kernel is adopted at occupancy level 1. Root cause was occupancy, not the code-table lookup P9 had guessed: the real instance (ncols_dst=1, gate+up fusion, small_k) uses 110 registers/thread and lives at 4 blocks/SM of 12 possible (33%). All three 'obvious' ideas from P9 are bit-identical in the microbench and all slower -- code table in shared memory +3.0%, q8_1 activations in shared memory +7.1%, weights read with .cg outside L1 +23.6% (L1 was earning its keep). Fix is a one-line change: the mul_mat_vec_q template takes an int min_blocks=1 that feeds __launch_bounds__'s second argument; the dispatcher sets it to 8 only on the single-row + small_k path for table-quantized types (iq2_s at level 1, iq4_nl also at level 2, GGML_CUDA_MMVQ_OCCUPANCY switch, default on for iq2_s only). ptxas drops to 64 registers with zero spills, blocks/SM 4->8; verified lossless twice (microbench memcmp against all 6,400 output floats on real iq2_s weights, and 4/4 fingerprints identical at the bench across two replicas). In situ: kernel 82.88 -> 66.21 us/launch (-20.1%), bandwidth 126.6 -> 158.5 GB/s, efficiency against the byte floor 36.4% -> 46.6%; no other quant type moves (q6_k unchanged to the nanosecond over 27,595 launches). At the bench: V2 37.332 -> V3 36.703 ms/token = 26.786 -> 27.245 tps (mean of two replicas each), -0.629 ms/token (+1.71%), against a V3 replica-to-replica noise of 0.068 ms -- the -0.5 ms adoption gate is cleared by nine times that noise. IQ4_NL (level 2) measured neutral (36.760 ms/token, inside the V3 replica spread) and NOT adopted, switch left off. Cumulative lossless candidate at the 131k operating point: R0 26.381 -> B (D39) 26.677 -> boundary-gap hygiene (D40) 26.786 -> occupancy (D41) 27.245 tps, +3.3% over R0, identical text throughout. Two open, non-lossless leads remain on this kernel: 48 of 128 threads per block never execute a vec_dot (blocks_per_row_x=10 vs blocks_per_iter=16, warp 3 entirely dead -- real utilization is only 41.7% of the max even at 8 blocks/SM; recovering them changes reduction order, not bit-identical), and 1.05 ms/token still sits above the byte floor (table lookup + sign arithmetic). P10 now has no open cell: it awaits a user decision among four choices -- (a) dense Q6_K->Q4_K residents (-1.6..-2.6 ms + 841 MiB VRAM freed, NOT lossless, needs quality rubrics first); (b) recovering the 48 dead threads (largest remaining kernel lever, not bit-identical); (c) the 505 us of unresolved host time at the forward boundary (cell 2, needs NVTX); (d) P6 quality/stability validation of the cumulative lossless candidate (quality rubrics, 30-minute stability, rollback plan) for promotion to bin_prod."
+    },
+    {
+      "id": "D42",
+      "summary": "User rule, binding, evening 9/15: no cell, P6 validation, or promotion to bin_prod happens for a gain below 5% at the operating point (131k). Closes the four choices left open by P10 cell 3 without picking one: (1) dense Q6_K->Q4_K, skipped upfront for quality risk regardless of the threshold; (2) recovering the 48 dead threads in the IQ2_S kernel, expected ~1%, below threshold; (3) the 505 us of unresolved host time at the forward boundary, expected ~1%, below threshold; (4) validating/promoting the cumulative lossless candidate (27.245 tps, +3.3% over R0), below threshold -- the candidate is NOT validated or promoted, it stays in the D:\\ds4_work\\p8_work working copy as a future base once further levers, summed, clear 5%. User's words: 'it's pointless to spend tokens and days of work on something that moves the needle by 1 token per second'. P10 is CLOSED. P11 is OPENED: prefill at 131k from the current 250 tps toward the plan's 400 tps goal (above threshold, untouched from P0 through P10), existing levers composed into cumulative cells W0-W5 (256-head sparse FA, batch/ubatch 4096, tiled GDN, asynchronous expert staging, context-dependent batch sizing), gates 5/5 needles at 131k and decode not regressed beyond 3% against 27.25 tps, reference 250-252 tps (P8 R0 / P10 V1)"
     }
   ]
 }

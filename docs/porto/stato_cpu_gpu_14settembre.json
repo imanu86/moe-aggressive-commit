@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "day_closed_handoff_written",
+  "implementation_status": "p7_cell6_threads",
   "current_phase": "P7",
   "goal": {
     "decode_free_tps": 50,
@@ -17,7 +17,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 60,
+  "new_benchmark_runs": 69,
   "p7_cell3_result": {
     "verify_row_ms": 15.66,
     "mmvq_ms": 6.60,
@@ -32,6 +32,15 @@
     "draft_rows_tps": 27.243,
     "same_binary_off_tps": 30.238,
     "open_issue": "A7"
+  },
+  "p7_cell5_result": {
+    "root_cause": "descriptor reader compact cursor vs writer row stride",
+    "acc_after_fix": 0.79298,
+    "R_ms_fixed": 22.20,
+    "R_ms_delivery_only": 11.48,
+    "cpu_us_per_expert": 72,
+    "tps_on": 28.086,
+    "tps_off_same_binary": 30.827
   },
   "handoff": "HANDOFF_14_SETTEMBRE.md",
   "baseline_reference_free_tps": 24.44,
@@ -168,7 +177,9 @@
     "D25",
     "D26",
     "D27",
-    "D28"
+    "D28",
+    "D29",
+    "D30"
   ],
   "decisions_added": [
     {
@@ -242,6 +253,14 @@
     {
       "id": "D28",
       "summary": "The 9/14 working day closes here. Nine phases opened and closed in one session (P0-P4, P7 cells 1-4, the GitHub MTP-acceptance recon), three motivated-closure decisions (D18 general CPU route, D19 cache-hit gap, D24 prefetch) and one acquired asset (D26). The next session resumes from HANDOFF_14_SETTEMBRE.md, which collects the full map of tracks, the bench reference numbers, the knobs introduced today, and the method rules learned today."
+    },
+    {
+      "id": "D29",
+      "summary": "P7 cell 5: opening A7 CLOSED (9/15, commit 7e16b85). The CPU contribution on MTP draft rows never reached moe_out: it was exactly zero. Root cause: the export kernel writes the job descriptor with a fixed row stride (row * MOE_CPU_MAX_PER_ROW + e), the pool read it with a compacted cursor -- the two addressing schemes coincide only when every route sits on row 0, which is the case for all of P3, all of P4, and P2's host bench (540,672 float comparisons at zero differences that could not see the defect for that reason). On draft rows the pool read cells the export kernel zeroes at the start of every job -- expert 0, weight 0.0 -- both of which pass every domain and finiteness check, so the pool ran the full arithmetic and multiplied it by zero. Fixed together with two collateral defects: a slot admitted in diagnostic mode for a draft-only miss was left with no recency (last_used=0), which trapped the planner (__trap()) on the next call; the draft-only flag kept polluting the cache policy even in diagnostic mode. Verification: draft-row NRMSE 1.000000 -> 0.012958, acceptance 0.69652 -> 0.79298 (above the 0.76990 lane-off reference), lane-off fingerprints identical to M1. All three fixes are adopted: two are genuine correctness defects (one lethal), the third is a zero-cost safety net; P3/P4 results remain valid because every one of their runs was single-row, where the two addressing schemes coincide by construction."
+    },
+    {
+      "id": "D30",
+      "summary": "P7 cell 5: the CPU lane on MTP draft rows is NEGATIVE at 2 threads. The R < 13 ms gate is missed: R = 22.20 ms (worse than cell 4's 19.7 ms, but honestly so -- that number came from a pool multiplying expert 0 by zero 155 times with perfect cache locality, this one is real arithmetic on 155 different experts). t/s 28.086 vs 30.827 on the same binary, -8.9%. Decomposition: delivery alone is -4.29 ms/cycle (R = 11.48, would clear the gate by itself), CPU arithmetic is +11.17 ms/cycle (155 experts x 72 us/expert, a third independent confirmation of the 9/10 number); the missing factor is 2.6. Minimum free RAM 7.08 GB. One more test before final closure: cell 6, LLAMA_MOE_CPU_THREADS at 4 and 6 with pool affinity -- if the cycle does not drop below T5's 57.41 ms even at 6 threads, the lane closes for good. New binding method rule: a host bench that only exercises row 0 does not validate a multi-row descriptor -- every future executor test must include routes on rows > 0."
     }
   ]
 }

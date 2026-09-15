@@ -84,6 +84,17 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
+> **Nota di ripresa, 15/9.** L'apertura A7 di §3.1 è **CHIUSA** (P7 cella 5, commit `7e16b85`,
+> [`p7_speculazione/P7_CELLA5_A7_15_SETTEMBRE.md`](p7_speculazione/P7_CELLA5_A7_15_SETTEMBRE.md)):
+> il contributo CPU sulle righe di bozza non arrivava a `moe_out`, per un disaccordo di
+> indirizzamento fra il kernel che scrive il descrittore del job (passo di riga) e il pool che lo
+> leggeva (cursore compattato) — invisibile a ogni corsa a riga singola (P2, P3, P4). Corretto,
+> insieme a due difetti collaterali. La corsia CPU sulle righe di bozza, rimisurata sul binario
+> corretto, è **NEGATIVA a 2 thread** (`R = 22,20 ms` contro il cancello di 13; t/s −8,9%): la
+> consegna da sola è in guadagno, è l'aritmetica CPU a mancare un fattore 2,6. **Cella 6 è in corso**
+> — ultima prova prima della chiusura definitiva, con `LLAMA_MOE_CPU_THREADS` a 4 e 6 e affinità del
+> pool. Vedi il registro, voci **D29**/**D30**, per i numeri completi.
+
 ### 3.1 Apertura A7 — il contributo CPU arriva davvero a `moe_out` sulle righe di bozza?
 
 La domanda che tiene in sospeso tutta la corsia (D27). Nella cella 4, S7 (corsia accesa, il pool

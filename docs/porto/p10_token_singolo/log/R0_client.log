@@ -1,0 +1,24 @@
+corsa: 20260915_112333_P8_p8_r0_spento_binari_nudi_r1
+preset P8_0 (p8_r0_spento_binari_nudi), profilo lungo_131k, url http://127.0.0.1:8100
+fixture: 28 casi, prefissi ctx32k, ctx131k, aghi131k
+  riscaldamento_1        wall   10.25s  ttft   8.62/-       prompt_n 61      cache_n 0       pred 8     gen 3.264007371061217 sha b626d0e377e6  fine=length
+  riscaldamento_2        wall    2.20s  ttft   1.62/-       prompt_n 61      cache_n 0       pred 8     gen 12.081859777935417 sha b626d0e377e6  fine=length
+  riscaldamenti identici fra loro: True
+  L01@ctx131k            wall  561.64s  ttft 523.01/-       prompt_n 131248  cache_n 0       pred 1024  gen 26.48412108664426 sha 99ba1423cf12  fine=length
+  L02@ctx131k            wall   41.06s  ttft   2.05/-       prompt_n 94      cache_n 131145  pred 1024  gen 26.228310494790538 sha dc916b9c4282  fine=length
+log del server copiato e ripulito dalla chiave
+
+corsa 20260915_112333_P8_p8_r0_spento_binari_nudi_r1
+preset P8_0 / p8_r0_spento_binari_nudi, profilo lungo_131k, replica 1
+richieste: 4 (2 riscaldamenti esclusi)
+insieme libero: {"n_casi": 2, "token_accettati": 2048, "tempo_generazione_s": 77.631, "tps_insieme": 26.381}
+tutti i casi: {"n_casi": 2, "token_accettati": 2048, "tempo_generazione_s": 77.631, "tps_insieme": 26.381}
+scarto orologio-timing server (%): {"min": 0.047, "max": 0.391, "mediano": 0.391}
+campioni di carico: 301
+guasto: nessuno
+
+impronte:
+  riscaldamento_1          b626d0e377e6075e
+  riscaldamento_2          b626d0e377e6075e
+  L01@ctx131k              99ba1423cf128585
+  L02@ctx131k              dc916b9c428225c2

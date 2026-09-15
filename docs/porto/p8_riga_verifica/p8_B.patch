@@ -1,0 +1,83 @@
+--- a/src/models/qwen4exp.cpp
++++ b/src/models/qwen4exp.cpp
+@@ -784,6 +784,8 @@
+     ggml_tensor * blk_cells = nullptr;   // I32 [ratio*n_blocks, n_stream]
+     ggml_tensor * blk_pos   = nullptr;   // I32 [4*n_blocks*n_stream]
+     ggml_tensor * bias      = nullptr;   // F32 [n_blocks or n_kv, n_tokens/n_stream, n_stream]
++    // one device-side copy of the per-cell bias, see build_qsa_top_k
++    ggml_tensor * bias_dev  = nullptr;
+     ggml_tensor * pool_cells = nullptr;
+     ggml_tensor * pool_pos = nullptr;
+     ggml_tensor * pool_rows = nullptr;
+@@ -858,6 +860,21 @@
+         ggml_set_input(qsa->blk_pos);
+         ggml_set_input(qsa->bias);
+ 
++        // The bias lives in a host buffer, so every tensor that reads it is an input of the
++        // scheduler split that consumes it, and the split copies each of them whole: a view
++        // of one token's row still costs n_kv floats. The gather path takes one view per
++        // token in build_qsa_top_k and one more per token in build_attn_qsa, so the 12 QSA
++        // layers pay 2*n_tokens*12 copies of n_kv floats per forward instead of one, and the
++        // extra inputs also cut the graph into several launches. Copy the tensor to the
++        // compute backend once and take every view on that copy. Only the per-cell bias of
++        // the gather path is worth it: the per-block bias of the prefill path is
++        // n_tokens*n_blocks and a second copy of it would be large.
++        if (gather && !blk_bias && n_tps <= 3) {
++            qsa->bias_dev = ggml_cont(ctx0, qsa->bias);
++            ggml_set_name(qsa->bias_dev, "qsa_bias_dev");
++            ggml_build_forward_expand(gf, qsa->bias_dev);
++        }
++
+         if (pool_fast) {
+             qsa->pool_cells = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, n_pool*r, 1);
+             qsa->pool_pos = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 4*n_pool);
+@@ -877,6 +894,9 @@
+         qsa_inps.emplace((uint32_t) r, inp);
+     }
+ 
++    // the device-side copy when there is one, the host input otherwise
++    ggml_tensor * const bias_t = inp->bias_dev ? inp->bias_dev : inp->bias;
++
+     static const bool indexer_f32_batch = [] {
+         const char * value = getenv("QWEN4EXP_INDEXER_F32_BATCH");
+         return value && strcmp(value, "1") == 0;
+@@ -971,7 +991,7 @@
+ 
+     // one value per block, so it is cheaper to bias here than after the cells are expanded
+     if (blk_bias) {
+-        score = ggml_add(ctx0, score, inp->bias);
++        score = ggml_add(ctx0, score, bias_t);
+     }
+ 
+     const int64_t width = std::min<int64_t>(n_kv, (int64_t) hparams.indexer_top_k + r - 1);
+@@ -982,7 +1002,7 @@
+             auto * expanded_row = ggml_get_rows(ctx0,
+                     ggml_cont(ctx0, ggml_transpose(ctx0, row)), inp->cell_blk);
+             expanded_row = ggml_cont(ctx0, ggml_transpose(ctx0, expanded_row));
+-            auto * bias_row = ggml_view_2d(ctx0, inp->bias, n_kv, 1, inp->bias->nb[1], token*inp->bias->nb[1]);
++            auto * bias_row = ggml_view_2d(ctx0, bias_t, n_kv, 1, bias_t->nb[1], token*bias_t->nb[1]);
+             expanded_row = ggml_add(ctx0, expanded_row, bias_row);
+             auto * selected_row = ggml_cont(ctx0, ggml_top_k(ctx0, expanded_row, width));
+             selected = selected ? ggml_concat(ctx0, selected, selected_row, 1) : selected_row;
+@@ -1002,7 +1022,7 @@
+         ggml_tensor * mask = kq_mask->type == GGML_TYPE_F32 ? kq_mask : ggml_cast(ctx0, kq_mask, GGML_TYPE_F32);
+         expanded = ggml_add(ctx0, expanded, ggml_reshape_3d(ctx0, mask, n_kv, n_tps, n_stream));
+     } else {
+-        expanded = ggml_add(ctx0, expanded, inp->bias);
++        expanded = ggml_add(ctx0, expanded, bias_t);
+     }
+     cb(expanded, "indexer_score_tokens", il);
+ 
+@@ -1292,7 +1312,11 @@
+     const float kq_scale = hparams.f_attention_scale == 0.0f ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
+ 
+     if (top_k) {
+-        ggml_tensor * qsa_bias = gather ? qsa_inps.at((uint32_t) hparams.dsv4_compress_ratios[il])->bias : nullptr;
++        ggml_tensor * qsa_bias = nullptr;
++        if (gather) {
++            const auto * qsa_inp = qsa_inps.at((uint32_t) hparams.dsv4_compress_ratios[il]);
++            qsa_bias = qsa_inp->bias_dev ? qsa_inp->bias_dev : qsa_inp->bias;
++        }
+ 
+         cur = build_attn_qsa(inp, Qcur, Kcur, Vcur, top_k, qsa_bias, kq_scale, il, gather);
+     } else {

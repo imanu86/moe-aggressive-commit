@@ -1,0 +1,29 @@
+--- a/ggml/src/ggml-cuda/getrows.cu
++++ b/ggml/src/ggml-cuda/getrows.cu
+@@ -186,8 +186,24 @@
+         const int64_t ne10, const int64_t ne11, const int64_t ne12, const size_t nb10, const size_t nb11, const size_t nb12,
+         const size_t nb1, const size_t nb2, const size_t nb3,
+         cudaStream_t stream) {
+-    const dim3 block_dims(CUDA_GET_ROWS_BLOCK_SIZE, 1, 1);
+-    const int block_num_y = (ne00 + 2*CUDA_GET_ROWS_BLOCK_SIZE - 1) / (2*CUDA_GET_ROWS_BLOCK_SIZE);
++    // Each thread dequantizes two values, so a row of ne00 values needs ne00/2 threads. The
++    // gathered rows of a quantized KV cache are short (128 values, 136 B for q8_0): with the
++    // fixed 256-thread block only 64 threads of each block work, one block is spent per
++    // gathered row, and the thread slots of the idle threads limit how many of those blocks
++    // are resident per SM. Narrow the block to the row instead. Pure launch geometry: each
++    // thread reads and writes exactly what it read and wrote before.
++    static const bool narrow_block = [] {
++        const char * value = getenv("GGML_CUDA_GETROWS_NARROW");
++        return value == nullptr || value[0] != '0';
++    }();
++    int block_size = CUDA_GET_ROWS_BLOCK_SIZE;
++    if (narrow_block) {
++        while (block_size > WARP_SIZE && block_size >= ne00) {
++            block_size /= 2;
++        }
++    }
++    const dim3 block_dims(block_size, 1, 1);
++    const int block_num_y = (ne00 + 2*block_size - 1) / (2*block_size);
+     const dim3 block_nums(ne10, MIN(block_num_y, UINT16_MAX), MIN(ne11*ne12, UINT16_MAX));
+ 
+     // strides in elements

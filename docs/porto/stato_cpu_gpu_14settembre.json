@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p10_cell2_idle_gaps",
+  "implementation_status": "p10_cell3_iq2s_kernel",
   "current_phase": "P10",
   "operating_point": {
     "ctx_tokens": 131072,
@@ -16,7 +16,10 @@
     "mtp1_B_tps": 26.87,
     "verify_row_ms": 20.203,
     "off_B_tps": 26.677,
-    "off_B_ms": 37.486
+    "off_B_ms": 37.486,
+    "off_B_c2_tps": 26.786,
+    "off_B_c2_ms": 37.332,
+    "replica_noise_ms": 0.152
   },
   "p8_result": {
     "lever_B_ms": -1.44,
@@ -27,6 +30,12 @@
     "delta_ms": -0.420,
     "tps": 26.677,
     "fingerprints_identical": true
+  },
+  "p10_cell2_result": {
+    "delta_ms": -0.154,
+    "syncs_before": 43.61,
+    "syncs_after": 9.12,
+    "adopted_as_hygiene": true
   },
   "goal": {
     "decode_free_tps": 50,
@@ -40,7 +49,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 91,
+  "new_benchmark_runs": 95,
   "p9_result": {
     "wall_ms": 37.442,
     "wall_ms_no_profiler": 37.758,
@@ -213,7 +222,7 @@
       "depends_on": [
         "P9"
       ],
-      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 (idle gaps between graph and host, 78 sync/forward) IN PROGRESS"
+      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 COMPLETE (9/15, commit 9b597eb) -- two idle gaps diagnosed and fixed behind a default-on switch (GGML_SCHED_ASYNC_INPUTS, GGML_CUDA_GRAPH_COMPAT_CACHE), syncs/forward 43.61->9.12, boundary gap 1.267->1.031 ms, but only -0.154 ms/token at the bench (26.786 vs 26.677 tps), below the -0.5 ms/token adoption gate by a factor of three; kept on as hygiene, not counted as an adopted lever (D40); first direct T1 replica-noise measurement at 131k, 0.152 ms; cell 3 (single-row IQ2_S kernel, lossless by construction) IN PROGRESS"
     }
   ],
   "primary_documents": [
@@ -266,7 +275,8 @@
     "D36",
     "D37",
     "D38",
-    "D39"
+    "D39",
+    "D40"
   ],
   "decisions_added": [
     {
@@ -384,6 +394,10 @@
     {
       "id": "D39",
       "summary": "P10 cell 1 COMPLETE (9/15, commit 8f008d9): lever B of P8 (device-resident QSA bias) pays on T1 too, not only on the verify row R that P8 had isolated. Same P8-R0 preset (MTP off, -np 1, lungo_131k, screening), only the binary changed (nude -> patched with B on): 37.486 ms/token = 26.677 tps vs 37.906/26.381, i.e. -0.420 ms/token (-1.11%), +0.296 tps (+1.12%), lossless (4/4 fingerprints identical to R0). Channel is only the H2D bytes/syncs of the QSA bias (12 of 14 rows removed), not graph launches: real bs=1 decode stays at 2 splits unchanged in both runs, the 4->2 drop seen in the log is only the bs=3 verify-capacity graph, never exercised with MTP off; the graph still gains the usual +1 node (same signature as P8 at MTP on). Measured delta (0.42 ms) exceeds P9's byte-only estimate (~0.36 ms), same sign of deviation P8 found on R. Minimum free RAM 3.03 GB, below the 4 GB threshold -- declared, attributed to external system contention (server RSS nearly identical to R0: 79.14 vs 79.25 GB), not to the lever. Single run, no independent replica. Updated 131k reference: 26.677 tps MTP-off with B on (the P8 cumulative patch, B+C on, stays the base for P10); the T1=37.906 ms P8 used to compute R across all its cells was the nude one -- with B the draft-1 break-even margin widens slightly, not recalculated in this cell. Next: P10 cell 2, the two ~1ms GPU-idle gaps between graph and host (78 cudaStreamSynchronize/forward)."
+    },
+    {
+      "id": "D40",
+      "summary": "P10 cell 2 COMPLETE (9/15, commit 9b597eb): the two GPU-idle gaps between the CUDA graph and the host are of different kinds. Gap 1 (1.267 ms/forward, once per token) is the boundary between one forward and the next (graph node 0, between the output head mul_mat_vec_q<q6_k> of graph N and the first node of graph N+1): sampling/serving + set_inputs (0.505 ms host, no CUDA calls), 15 input copies with 42 syncs (0.271 ms), an 8,191-node CUDA-graph compatibility rescan (0.174 ms), graph launch. Gap 2 (0.080 ms) is inside the replay at node 45 -- only a cudaGraphLaunch still being delivered by the driver (~0.75 us/node), not fixable by this cell's levers. Per-forward cudaStreamSynchronize calls were 43.61, not 78 (P8's lever B had already removed ~34): 1 necessary, 15.59 blocking copy-queue waits, 27.02 pre-input queue drains -- 42.6 of 43.6 were convenience waits, caused by input copies running on cudaStreamPerThread instead of the graph's own stream. Two lossless levers behind a default-on switch fixed this: GGML_SCHED_ASYNC_INPUTS (split inputs copied with set_tensor_async on the graph's stream, one sync per split instead of two per input: copy block 271 -> 133 us, syncs 43.61 -> 9.12) and GGML_CUDA_GRAPH_COMPAT_CACHE (the graph-compatibility verdict cached by uid instead of rescanning 8,191 nodes every forward: 174 -> 5 us). Side finding: the 2 splits at bs=1 are one CUDA and one CPU (-ot per_layer_token_embd.weight=CPU keeps 26.8 GiB in a host buffer). Measured at the bench: V2 = 37.332 ms/token (mean of two replicas, 37.408/37.256) = 26.786 tps vs V1 37.486 ms/token = 26.677 tps, i.e. only -0.154 ms/token -- below the -0.5 ms/token adoption gate by roughly a factor of three, because most of the boundary gap was host work (0.852 of 1.267 ms), 0.505 ms of it untouched by this cell, and a quarter of what is removed at the boundary reappears inside gap 2 (0.080 -> 0.138 ms). Fingerprints identical 16/16 across all four runs. First direct measurement of replica noise on T1 at 131k: 0.152 ms on the aggregate (not the 0.5 ms assumed so far, which comes from P8's verify-row R). Decision: the patch stays on as path hygiene (costs nothing: no extra node, byte, VRAM, or text risk) but is NOT counted as an adopted lever, and does not move P9's ceiling (D37). Updated noise rule: the 131k adoption gate stays at -0.5 ms/token because it is roughly three times the measured noise, not because the noise itself was 0.5. Remaining targets: the 505 us of unresolved host work inside the boundary gap, and the 5-20 us band inside the graph (0.885 ms/token, larger than the boundary gap after this cell, still unexplained). Next: P10 cell 3, the single-row IQ2_S kernel (lossless by construction, D38 point 3)."
     }
   ]
 }

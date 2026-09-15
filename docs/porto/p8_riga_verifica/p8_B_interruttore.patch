@@ -1,0 +1,20 @@
+--- a/src/models/qwen4exp.cpp	2026-09-15 10:48:04.139324200 +0200
++++ b/src/models/qwen4exp.cpp	2026-09-15 10:48:11.732895300 +0200
+@@ -869,7 +869,16 @@
+         // compute backend once and take every view on that copy. Only the per-cell bias of
+         // the gather path is worth it: the per-block bias of the prefill path is
+         // n_tokens*n_blocks and a second copy of it would be large.
+-        if (gather && !blk_bias && n_tps <= 3) {
++        // Behind a switch, default on, so the copy can be turned off in the SAME binary:
++        // with QWEN4EXP_QSA_BIAS_DEV=0 bias_dev stays null, every view is taken on the host
++        // input again, and the graph is the one this file had before the change. Without it
++        // the lever could only be compared across two builds, and a build is never the same
++        // machine twice (rule of 8/9: after a build the machine is not quiet).
++        static const bool bias_dev_on = [] {
++            const char * value = getenv("QWEN4EXP_QSA_BIAS_DEV");
++            return value == nullptr || value[0] != '0';
++        }();
++        if (bias_dev_on && gather && !blk_bias && n_tps <= 3) {
+             qsa->bias_dev = ggml_cont(ctx0, qsa->bias);
+             ggml_set_name(qsa->bias_dev, "qsa_bias_dev");
+             ggml_build_forward_expand(gf, qsa->bias_dev);

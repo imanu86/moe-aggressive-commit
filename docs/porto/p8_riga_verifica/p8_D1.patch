@@ -1,0 +1,51 @@
+--- a/src/models/qwen4exp.cpp	2026-09-15 13:44:44.894912500 +0200
++++ b/src/models/qwen4exp.cpp	2026-09-15 13:44:44.929353200 +0200
+@@ -1004,13 +1004,44 @@
+     }
+ 
+     const int64_t width = std::min<int64_t>(n_kv, (int64_t) hparams.indexer_top_k + r - 1);
++    // The per-token branch below transposes the score twice for every token: once to turn
++    // the token's column into the [1, n_blocks] rows that get_rows wants, and once more to
++    // turn the gathered [1, n_kv] back into a column. Both are pure data movement, and both
++    // can be done once per forward instead of once per token: transposing the whole
++    // [n_blocks, n_tps] score gives a contiguous [n_tps, n_blocks] from which each token's
++    // rows are a strided view (ne0 = 1, nb1 = n_tps*4, offset = token*4), which get_rows
++    // reads through nb01 exactly as it reads a contiguous one; and the gathered [1, n_kv]
++    // is already n_kv contiguous floats, so a reshape says what the second cont copied.
++    // Only the launch count changes, never a value.
++    // DEFAULT OFF, and the reason is a measurement, not a taste: at 131k with two verification
++    // rows this shortens the graph by exactly 84 nodes and still costs +0.14 ms, because the
++    // strided view doubles nb01 for k_get_rows_scalar and what is saved in launches is paid in
++    // locality. Turn it on with QWEN4EXP_QSA_ONE_TRANSPOSE=1 to measure it again at three rows,
++    // where the per-token work it removes is half again as much.
++    static const bool one_transpose = [] {
++        const char * value = getenv("QWEN4EXP_QSA_ONE_TRANSPOSE");
++        return value != nullptr && value[0] != '0';
++    }();
+     if (gather && !blk_bias && n_stream == 1 && n_tps > 1 && n_tps <= 3) {
++        ggml_tensor * score_t = nullptr;
++        if (one_transpose) {
++            score_t = ggml_cont(ctx0, ggml_transpose(ctx0, score));   // [n_tps, n_blocks]
++        }
+         ggml_tensor * selected = nullptr;
+         for (int64_t token = 0; token < n_tps; ++token) {
+-            auto * row = ggml_view_2d(ctx0, score, n_blocks, 1, score->nb[1], token*score->nb[1]);
+-            auto * expanded_row = ggml_get_rows(ctx0,
+-                    ggml_cont(ctx0, ggml_transpose(ctx0, row)), inp->cell_blk);
+-            expanded_row = ggml_cont(ctx0, ggml_transpose(ctx0, expanded_row));
++            ggml_tensor * gathered = nullptr;
++            if (one_transpose) {
++                auto * col = ggml_view_2d(ctx0, score_t, 1, n_blocks,
++                        score_t->nb[1], token*score_t->nb[0]);
++                gathered = ggml_get_rows(ctx0, col, inp->cell_blk);
++            } else {
++                auto * row = ggml_view_2d(ctx0, score, n_blocks, 1, score->nb[1], token*score->nb[1]);
++                gathered = ggml_get_rows(ctx0,
++                        ggml_cont(ctx0, ggml_transpose(ctx0, row)), inp->cell_blk);
++            }
++            auto * expanded_row = one_transpose
++                    ? ggml_reshape_2d(ctx0, gathered, n_kv, 1)
++                    : ggml_cont(ctx0, ggml_transpose(ctx0, gathered));
+             auto * bias_row = ggml_view_2d(ctx0, bias_t, n_kv, 1, bias_t->nb[1], token*bias_t->nb[1]);
+             expanded_row = ggml_add(ctx0, expanded_row, bias_row);
+             auto * selected_row = ggml_cont(ctx0, ggml_top_k(ctx0, expanded_row, width));

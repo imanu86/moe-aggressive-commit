@@ -1,0 +1,197 @@
+--- a/ggml/src/ggml-backend.cpp	2026-09-15 13:44:45.123232600 +0200
++++ b/ggml/src/ggml-backend.cpp	2026-09-15 13:44:45.141758400 +0200
+@@ -845,8 +845,25 @@
+ #define tensor_id_copy(id, backend_id, copy_id) sched->hv_tensor_copies[(id) * sched->n_backends * sched->n_copies + (backend_id) * sched->n_copies + (copy_id)]
+ #define tensor_copy(tensor, backend_id, copy_id) tensor_id_copy(hash_id(tensor), backend_id, copy_id)
+ 
++// A split costs one graph launch on its backend, one full synchronize of that backend
++// before its inputs are copied, and one copy of every one of its inputs. When the number
++// of inputs reaches the split capacity the splitter opens a new split on the SAME backend
++// (see [TAG_SPLIT_INPUTS_CAP] below), so a graph with many host inputs is cut into several
++// launches for bookkeeping reasons alone. The decode graph of qwen4exp has ~63 of them at
++// two verification rows and is cut in three. Keep 30 as the default and allow a larger
++// value at run time, so both settings can be compared with a single binary.
++static int ggml_sched_max_split_inputs(void) {
++    static int value = -1;
++    if (value < 0) {
++        const char * env = getenv("GGML_SCHED_SPLIT_INPUTS");
++        const int    req = env ? atoi(env) : 0;
++        value = req > 0 ? req : GGML_SCHED_MAX_SPLIT_INPUTS;
++    }
++    return value;
++}
++
+ static void ggml_backend_sched_split_inputs_grow(struct ggml_backend_sched_split * split) {
+-    int new_cap = GGML_SCHED_MAX_SPLIT_INPUTS;
++    int new_cap = ggml_sched_max_split_inputs();
+     if (split->inputs_capacity > 0) {
+         new_cap = 2*split->inputs_capacity;
+         GGML_LOG_WARN("%s: increasing split inputs capacity from %d to %d\n", __func__, split->inputs_capacity, new_cap);
+@@ -1338,7 +1355,7 @@
+                             break;
+                         }
+                     }
+-                    // check if the split has too many inputs
++                    // check if the split has too many inputs [TAG_SPLIT_INPUTS_CAP]
+                     // FIXME: count the number of inputs instead of only checking when full
+                     if (split->n_inputs >= split->inputs_capacity) {
+                         const size_t id = hash_id(src);
+--- a/ggml/src/ggml-cuda/getrows.cu	2026-09-15 13:44:45.223840100 +0200
++++ b/ggml/src/ggml-cuda/getrows.cu	2026-09-15 13:44:45.249839300 +0200
+@@ -186,8 +186,24 @@
+         const int64_t ne10, const int64_t ne11, const int64_t ne12, const size_t nb10, const size_t nb11, const size_t nb12,
+         const size_t nb1, const size_t nb2, const size_t nb3,
+         cudaStream_t stream) {
+-    const dim3 block_dims(CUDA_GET_ROWS_BLOCK_SIZE, 1, 1);
+-    const int block_num_y = (ne00 + 2*CUDA_GET_ROWS_BLOCK_SIZE - 1) / (2*CUDA_GET_ROWS_BLOCK_SIZE);
++    // Each thread dequantizes two values, so a row of ne00 values needs ne00/2 threads. The
++    // gathered rows of a quantized KV cache are short (128 values, 136 B for q8_0): with the
++    // fixed 256-thread block only 64 threads of each block work, one block is spent per
++    // gathered row, and the thread slots of the idle threads limit how many of those blocks
++    // are resident per SM. Narrow the block to the row instead. Pure launch geometry: each
++    // thread reads and writes exactly what it read and wrote before.
++    static const bool narrow_block = [] {
++        const char * value = getenv("GGML_CUDA_GETROWS_NARROW");
++        return value == nullptr || value[0] != '0';
++    }();
++    int block_size = CUDA_GET_ROWS_BLOCK_SIZE;
++    if (narrow_block) {
++        while (block_size > WARP_SIZE && block_size >= ne00) {
++            block_size /= 2;
++        }
++    }
++    const dim3 block_dims(block_size, 1, 1);
++    const int block_num_y = (ne00 + 2*block_size - 1) / (2*block_size);
+     const dim3 block_nums(ne10, MIN(block_num_y, UINT16_MAX), MIN(ne11*ne12, UINT16_MAX));
+ 
+     // strides in elements
+--- a/src/models/qwen4exp.cpp	2026-09-15 13:44:45.324339300 +0200
++++ b/src/models/qwen4exp.cpp	2026-09-15 13:44:45.344506100 +0200
+@@ -784,6 +784,8 @@
+     ggml_tensor * blk_cells = nullptr;   // I32 [ratio*n_blocks, n_stream]
+     ggml_tensor * blk_pos   = nullptr;   // I32 [4*n_blocks*n_stream]
+     ggml_tensor * bias      = nullptr;   // F32 [n_blocks or n_kv, n_tokens/n_stream, n_stream]
++    // one device-side copy of the per-cell bias, see build_qsa_top_k
++    ggml_tensor * bias_dev  = nullptr;
+     ggml_tensor * pool_cells = nullptr;
+     ggml_tensor * pool_pos = nullptr;
+     ggml_tensor * pool_rows = nullptr;
+@@ -858,6 +860,30 @@
+         ggml_set_input(qsa->blk_pos);
+         ggml_set_input(qsa->bias);
+ 
++        // The bias lives in a host buffer, so every tensor that reads it is an input of the
++        // scheduler split that consumes it, and the split copies each of them whole: a view
++        // of one token's row still costs n_kv floats. The gather path takes one view per
++        // token in build_qsa_top_k and one more per token in build_attn_qsa, so the 12 QSA
++        // layers pay 2*n_tokens*12 copies of n_kv floats per forward instead of one, and the
++        // extra inputs also cut the graph into several launches. Copy the tensor to the
++        // compute backend once and take every view on that copy. Only the per-cell bias of
++        // the gather path is worth it: the per-block bias of the prefill path is
++        // n_tokens*n_blocks and a second copy of it would be large.
++        // Behind a switch, default on, so the copy can be turned off in the SAME binary:
++        // with QWEN4EXP_QSA_BIAS_DEV=0 bias_dev stays null, every view is taken on the host
++        // input again, and the graph is the one this file had before the change. Without it
++        // the lever could only be compared across two builds, and a build is never the same
++        // machine twice (rule of 8/9: after a build the machine is not quiet).
++        static const bool bias_dev_on = [] {
++            const char * value = getenv("QWEN4EXP_QSA_BIAS_DEV");
++            return value == nullptr || value[0] != '0';
++        }();
++        if (bias_dev_on && gather && !blk_bias && n_tps <= 3) {
++            qsa->bias_dev = ggml_cont(ctx0, qsa->bias);
++            ggml_set_name(qsa->bias_dev, "qsa_bias_dev");
++            ggml_build_forward_expand(gf, qsa->bias_dev);
++        }
++
+         if (pool_fast) {
+             qsa->pool_cells = ggml_new_tensor_2d(ctx0, GGML_TYPE_I32, n_pool*r, 1);
+             qsa->pool_pos = ggml_new_tensor_1d(ctx0, GGML_TYPE_I32, 4*n_pool);
+@@ -877,6 +903,9 @@
+         qsa_inps.emplace((uint32_t) r, inp);
+     }
+ 
++    // the device-side copy when there is one, the host input otherwise
++    ggml_tensor * const bias_t = inp->bias_dev ? inp->bias_dev : inp->bias;
++
+     static const bool indexer_f32_batch = [] {
+         const char * value = getenv("QWEN4EXP_INDEXER_F32_BATCH");
+         return value && strcmp(value, "1") == 0;
+@@ -971,18 +1000,49 @@
+ 
+     // one value per block, so it is cheaper to bias here than after the cells are expanded
+     if (blk_bias) {
+-        score = ggml_add(ctx0, score, inp->bias);
++        score = ggml_add(ctx0, score, bias_t);
+     }
+ 
+     const int64_t width = std::min<int64_t>(n_kv, (int64_t) hparams.indexer_top_k + r - 1);
++    // The per-token branch below transposes the score twice for every token: once to turn
++    // the token's column into the [1, n_blocks] rows that get_rows wants, and once more to
++    // turn the gathered [1, n_kv] back into a column. Both are pure data movement, and both
++    // can be done once per forward instead of once per token: transposing the whole
++    // [n_blocks, n_tps] score gives a contiguous [n_tps, n_blocks] from which each token's
++    // rows are a strided view (ne0 = 1, nb1 = n_tps*4, offset = token*4), which get_rows
++    // reads through nb01 exactly as it reads a contiguous one; and the gathered [1, n_kv]
++    // is already n_kv contiguous floats, so a reshape says what the second cont copied.
++    // Only the launch count changes, never a value.
++    // DEFAULT OFF, and the reason is a measurement, not a taste: at 131k with two verification
++    // rows this shortens the graph by exactly 84 nodes and still costs +0.14 ms, because the
++    // strided view doubles nb01 for k_get_rows_scalar and what is saved in launches is paid in
++    // locality. Turn it on with QWEN4EXP_QSA_ONE_TRANSPOSE=1 to measure it again at three rows,
++    // where the per-token work it removes is half again as much.
++    static const bool one_transpose = [] {
++        const char * value = getenv("QWEN4EXP_QSA_ONE_TRANSPOSE");
++        return value != nullptr && value[0] != '0';
++    }();
+     if (gather && !blk_bias && n_stream == 1 && n_tps > 1 && n_tps <= 3) {
++        ggml_tensor * score_t = nullptr;
++        if (one_transpose) {
++            score_t = ggml_cont(ctx0, ggml_transpose(ctx0, score));   // [n_tps, n_blocks]
++        }
+         ggml_tensor * selected = nullptr;
+         for (int64_t token = 0; token < n_tps; ++token) {
+-            auto * row = ggml_view_2d(ctx0, score, n_blocks, 1, score->nb[1], token*score->nb[1]);
+-            auto * expanded_row = ggml_get_rows(ctx0,
+-                    ggml_cont(ctx0, ggml_transpose(ctx0, row)), inp->cell_blk);
+-            expanded_row = ggml_cont(ctx0, ggml_transpose(ctx0, expanded_row));
+-            auto * bias_row = ggml_view_2d(ctx0, inp->bias, n_kv, 1, inp->bias->nb[1], token*inp->bias->nb[1]);
++            ggml_tensor * gathered = nullptr;
++            if (one_transpose) {
++                auto * col = ggml_view_2d(ctx0, score_t, 1, n_blocks,
++                        score_t->nb[1], token*score_t->nb[0]);
++                gathered = ggml_get_rows(ctx0, col, inp->cell_blk);
++            } else {
++                auto * row = ggml_view_2d(ctx0, score, n_blocks, 1, score->nb[1], token*score->nb[1]);
++                gathered = ggml_get_rows(ctx0,
++                        ggml_cont(ctx0, ggml_transpose(ctx0, row)), inp->cell_blk);
++            }
++            auto * expanded_row = one_transpose
++                    ? ggml_reshape_2d(ctx0, gathered, n_kv, 1)
++                    : ggml_cont(ctx0, ggml_transpose(ctx0, gathered));
++            auto * bias_row = ggml_view_2d(ctx0, bias_t, n_kv, 1, bias_t->nb[1], token*bias_t->nb[1]);
+             expanded_row = ggml_add(ctx0, expanded_row, bias_row);
+             auto * selected_row = ggml_cont(ctx0, ggml_top_k(ctx0, expanded_row, width));
+             selected = selected ? ggml_concat(ctx0, selected, selected_row, 1) : selected_row;
+@@ -1002,7 +1062,7 @@
+         ggml_tensor * mask = kq_mask->type == GGML_TYPE_F32 ? kq_mask : ggml_cast(ctx0, kq_mask, GGML_TYPE_F32);
+         expanded = ggml_add(ctx0, expanded, ggml_reshape_3d(ctx0, mask, n_kv, n_tps, n_stream));
+     } else {
+-        expanded = ggml_add(ctx0, expanded, inp->bias);
++        expanded = ggml_add(ctx0, expanded, bias_t);
+     }
+     cb(expanded, "indexer_score_tokens", il);
+ 
+@@ -1292,7 +1352,11 @@
+     const float kq_scale = hparams.f_attention_scale == 0.0f ? 1.0f / sqrtf(float(n_embd_head)) : hparams.f_attention_scale;
+ 
+     if (top_k) {
+-        ggml_tensor * qsa_bias = gather ? qsa_inps.at((uint32_t) hparams.dsv4_compress_ratios[il])->bias : nullptr;
++        ggml_tensor * qsa_bias = nullptr;
++        if (gather) {
++            const auto * qsa_inp = qsa_inps.at((uint32_t) hparams.dsv4_compress_ratios[il]);
++            qsa_bias = qsa_inp->bias_dev ? qsa_inp->bias_dev : qsa_inp->bias;
++        }
+ 
+         cur = build_attn_qsa(inp, Qcur, Kcur, Vcur, top_k, qsa_bias, kq_scale, il, gather);
+     } else {

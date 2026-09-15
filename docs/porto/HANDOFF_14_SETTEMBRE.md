@@ -84,6 +84,23 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
+> **Nota di ripresa, 15/9 (terza).** P9 — anatomia del token singolo di decode a 131k — è
+> **COMPLETATA** (commit `4cfa390`, [`p9_anatomia_131k/P9_ANATOMIA_131K_15_SETTEMBRE.md`](p9_anatomia_131k/P9_ANATOMIA_131K_15_SETTEMBRE.md)).
+> I 37,44 ms di un token si scompongono (`nsys`, 106 forward, controllo di integrità geometrico,
+> quattro impronte su quattro identiche a P8 R0): densi Q6_K 9,609 ms, trasporto esperti dal PCIe
+> 6,688 ms (al tetto del bus), esperti IQ2_S/IQ4_NL/IQ3_S 5,929 ms, indicizzatore QSA 3,206 ms, GPU
+> inattiva 3,322 ms, elementari 2,512 ms su 1.956 lanci, resto 2,404 ms. **D37 — i 50 t/s a 131k NON
+> stanno in questo hardware con questo modello**: il pavimento dei soli byte (5,11 GiB/token, VRAM
+> 340,3 GB/s, PCIe 26,3 GB/s) è 21,9 ms/token, e 20,0 ms (50 t/s) ci stanno **sotto**, prima di pagare
+> un solo lancio, una sola dequantizzazione, un solo buco; l'obiettivo onesto del token singolo è
+> **30-33 t/s**. **D38 — prossime celle in ordine, apre P10**: (1) misurare la leva B di P8 su `T1`
+> (toglie 12 delle 14 copie H2D di bias QSA per token, patch già scritta e lossless, costa una corsa,
+> **in esecuzione**); (2) i due buchi da ~1 ms di GPU inattiva fra grafo e host (1,9 ms/token); (3) il
+> kernel IQ2_S a una riga (lossless per costruzione, 2,54 ms di inefficienza contro il proprio
+> pavimento); (4) Q6_K→Q4_K solo dopo, con rubriche di qualità pronte (non lossless, rompe il cancello
+> di bit-identità di P7/P8/P9). Dettagli completi in
+> [`REGISTRO_CPU_GPU_14_SETTEMBRE.md`](REGISTRO_CPU_GPU_14_SETTEMBRE.md) (D37/D38, sezione P9).
+>
 > **Nota di ripresa, 15/9.** L'apertura A7 di §3.1 è **CHIUSA** (P7 cella 5, commit `7e16b85`) e la
 > corsia CPU sulle righe di bozza è **CHIUSA DEFINITIVAMENTE** (P7 cella 6, commit `6e7f879`,
 > [`p7_speculazione/P7_CELLA6_THREAD_15_SETTEMBRE.md`](p7_speculazione/P7_CELLA6_THREAD_15_SETTEMBRE.md)):
@@ -234,6 +251,12 @@ una — ciascuna richiede il proprio banco e la propria decisione:
    CPU, che è ancora aperta in A7).
 4. **Modello più piccolo**: fuori perimetro di questo piano (che tiene i pesi GGUF correnti fissi,
    D01), ma è l'opzione che cambia il problema invece di ottimizzarlo.
+
+**Il pavimento dei byte a 131k è 21,9 ms/token = 45,7 t/s teorici a efficienza 100%** (P9, 15/9,
+D37): 5,11 GiB/token alle bande misurate della macchina (VRAM 340,3 GB/s, PCIe 26,3 GB/s), con la
+sovrapposizione fra le due corsie che c'è oggi. I 50 t/s dell'obiettivo dichiarato (20,0 ms/token)
+stanno **sotto** questo pavimento: nessuna delle quattro opzioni sopra, da sola, lo aggira senza
+prima ridurre i byte per token (opzioni 1 e 3) o alzare la banda (opzione 2).
 
 ---
 

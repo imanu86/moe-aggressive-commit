@@ -3,8 +3,8 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p9_anatomy_131k",
-  "current_phase": "P9",
+  "implementation_status": "p10_single_token_levers",
+  "current_phase": "P10",
   "operating_point": {
     "ctx_tokens": 131072,
     "kv_tokens": 262144,
@@ -33,7 +33,31 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 89,
+  "new_benchmark_runs": 90,
+  "p9_result": {
+    "wall_ms": 37.442,
+    "wall_ms_no_profiler": 37.758,
+    "byte_floor_ms": 21.9,
+    "byte_floor_ms_no_overlap": 24.208,
+    "dense_q6k_ms": 9.609,
+    "pcie_experts_ms": 6.688,
+    "vram_experts_ms": 5.929,
+    "iq2s_ms": 3.985,
+    "qsa_indexer_ms": 3.206,
+    "idle_ms": 3.322,
+    "elementary_ms": 2.512,
+    "iq4nl_ms": 1.852,
+    "bytes_per_token_gib": 5.11,
+    "vram_bandwidth_gbs": 340.3,
+    "pcie_bandwidth_gbs": 26.3,
+    "implicit_hit_rate": 0.814,
+    "p7_cell3_hit_rate_205k": 0.705,
+    "target_50tps_feasible_131k": false,
+    "honest_single_token_tps": "30-33",
+    "lever_q6k_to_q4k_ms": [-2.6, -1.6],
+    "lever_fused_launches_ms": [-1.9, -1.0],
+    "lever_iq2s_kernel_ms": [-1.9, -1.4]
+  },
   "p7_cell3_result": {
     "verify_row_ms": 15.66,
     "mmvq_ms": 6.60,
@@ -170,11 +194,19 @@
     },
     {
       "id": "P9",
-      "status": "in_progress",
+      "status": "completed",
       "depends_on": [
         "P8"
       ],
-      "note": "single-token anatomy at 131k: where the 37.9 ms/token go (mmvq, expert gather, attention/indexer, host) to pick the next lever on the single-token path (Q6_K residents to Q4_K, dense matvec fusion, more VRAM)"
+      "note": "single-token anatomy at 131k (9/15, commit 4cfa390): 37.442 ms/token wall over 106 forwards (nsys), dense Q6_K 9.609, PCIe expert transport 6.688 (bus-saturated), VRAM expert matvec 5.929, QSA indexer 3.206, GPU idle 3.322, elementary 2.512; byte floor 21.9 ms with today's lane overlap = 45.7 tps theoretical; D37, 50 tps at 131k does not fit this hardware/model, honest target 30-33 tps; D38, next cells in order (lever B of P8 on T1, the two ~1ms idle gaps, IQ2_S kernel, Q6_K->Q4_K last with quality rubrics)"
+    },
+    {
+      "id": "P10",
+      "status": "in_progress",
+      "depends_on": [
+        "P9"
+      ],
+      "note": "single-token levers at 131k, per D38: cell 1 is lever B of P8 measured on T1 (not just the verify row), a single run, currently executing"
     }
   ],
   "primary_documents": [
@@ -224,7 +256,9 @@
     "D33",
     "D34",
     "D35",
-    "D36"
+    "D36",
+    "D37",
+    "D38"
   ],
   "decisions_added": [
     {
@@ -330,6 +364,14 @@
     {
       "id": "D36",
       "summary": "Lever B (device-resident QSA bias) is adopted; A, C, D1 are not (P8, COMPLETE 9/15, commit cc91ebb). Of four lossless levers measured cumulatively at the 131k operating point, only B is distinguishable from noise: -1.44 ms on R (5 runs vs 4, groups separated by over six standard deviations), +2.3% on t/s. With B, MTP draft-1 flips from a net loss (-0.5% vs off, raw R1) to a gain (+1.8%, 26.87 vs 26.38 t/s). A is redundant once B is on; C buys nothing (the project's occupancy hypothesis is falsified); D1 shortens the graph by 84 nodes but does not save time (pays in locality), shipped off by default. The delivered patch (p8_cumulativa.patch) defaults to A off (redundant), B on, C on (free and bit-identical), D1 off. The 2-token draft stays closed even with every lever (-11.2% vs draft-1); the only large remaining lever is the P4/P5 CPU lane on the 6.5 ms of expert gather, which P8 does not touch by design. Side effect: the GGUF contains not a single IQ3_XXS tensor (all 144 expert tensors are IQ2_S/IQ3_S/IQ4_NL) -- lever E of the CPU/GPU project must be redesigned against mmvq.cu's scalar branch, not mul_mat_vec_q_moe."
+    },
+    {
+      "id": "D37",
+      "summary": "50 tps at 131k does NOT fit on this hardware with this model (P9, COMPLETE 9/15, commit 4cfa390). The byte floor at 131k -- 5.11 GiB/token at measured bandwidths (VRAM 340.3 GB/s, PCIe 26.3 GB/s) -- is 21.9 ms with today's lane overlap (24.208 ms without overlap); 50 tps is 20.0 ms/token, which sits BELOW that floor before paying a single kernel launch, a single dequantization, a single idle gap. Today's 37.44 ms token (nsys, 106 forwards, geometric integrity check, 4/4 fingerprints identical to P8 R0): dense matvec 15.69 ms/41.9% (Q6_K 9.609 ms, ~82% of peak bandwidth), PCIe expert transport 6.688 ms/17.9% (bus-saturated, 100%), VRAM expert matvec 5.929 ms/15.8% (IQ2_S 3.985 at 36.4% of peak), QSA indexer 3.206 ms/8.6%, GPU idle 3.322 ms/8.9% (two-thirds in two ~1ms gaps per forward, always at the same phase between the graph and the host), elementary ops 2.512 ms/6.7% over 1,956 launches, rest 2.404 ms, kernel overlap -2.310 ms. Three facts: (1) at the operating point the largest single item is dense Q6_K, not expert upload (the reverse at short context); (2) single-row matvec is weight-bound, not byte-bound -- IQ2_S costs 1.606 ps/weight of pure dequantization vs 0.398 for Q6_K (4x), so at one row 2.5 bits/weight cost as much as 6.87 effective bpw; (3) inverting transport time to measured bandwidth yields 168.5 MiB, 1.86 missing experts/layer, 81.4% implicit hit rate, which does NOT match P7's direct device counters at 205k (70.5%) -- unreconciled, does not change the verdict. Three identified levers with expected ms: Q6_K->Q4_K -1.6..-2.6 ms (NOT lossless, changes weights, real quality risk, frees 841 MiB VRAM); fusing hc_ connection launches -1.0..-1.9 ms (lossless to be proven, high difficulty); IQ2_S kernel -1.4..-1.9 ms (lossless by construction). Verdict table: today 37.91 ms = 26.4 tps; lossless levers only ~34.3 ms = 29.1 tps; all three levers ~32.4 ms = 30.8 tps; + idle GPU cut to 1 ms ~30.1 ms = 33.2 tps; most optimistic imaginable ~28 ms = ~36 tps; physical byte floor (fiction) 21.9 ms = 45.7 tps. Honest single-token target: 30-33 tps."
+    },
+    {
+      "id": "D38",
+      "summary": "P10 opened: single-token levers at 131k, in order (P9 section 5.3, 9/15). (1) Measure P8's lever B on T1, not just the verify row -- at MTP-off the decode still does 14 H2D copies of QSA bias per token, the device-resident-bias lever would remove 12 of them; patch already written, lossless, costs one run (in progress). (2) Open a cell on the two ~1ms GPU-idle gaps between the graph and the host (1.9 ms/token, larger than the Q6_K->Q4_K lever); needs NVTX in the server to locate which phase produces them. (3) The IQ2_S single-row kernel: lossless by construction, the largest single measured inefficiency against its own floor (2.54 ms, 64% of that kernel's time), does not touch the PCIe bus. (4) Q6_K->Q4_K only after, and only with quality rubrics ready -- not lossless, touches attention/GDN/output-head weights, breaks the bit-identity gate P7/P8/P9 rely on."
     }
   ]
 }

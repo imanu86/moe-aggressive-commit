@@ -1,0 +1,1444 @@
+{
+ "fase": "P0",
+ "versione": 1,
+ "data_fixture": "20260914",
+ "sigillato": "2026-09-14T07:11:30",
+ "secondi_impiegati": 0.8,
+ "tokenizzatore": {
+  "strumento": "endpoint HTTP /tokenize e /detokenize del server in esame",
+  "motivo": "llama-tokenize.exe NON e' compilato in questo albero (build\\tools\\tokenize contiene solo file di CMake)",
+  "url": "http://127.0.0.1:8100",
+  "nota": "il vocabolario e' quello del GGUF caricato dal binario sotto misura"
+ },
+ "immutabilita": [
+  "il filler e' stato generato una sola volta dai sorgenti del 14/9 e non viene rigenerato",
+  "ctx32k/ctx131k/aghi131k sono derivati una sola volta e salvati come testo",
+  "per rifare le fixture si crea una nuova cartella con altra data, non si sovrascrive"
+ ],
+ "filler": {
+  "file": "filler_sorgenti_20260914.txt",
+  "sha256": "ab76a0e01266e972631f9bb0f893077eccc4cd43eb62f048ff0ebc4597b64088",
+  "caratteri": 909830,
+  "file_sorgente_usati": "filler_file_usati_20260914.json"
+ },
+ "codice_copia": {
+  "file": "moe-demand_20260914.cuh",
+  "sha256": "03b5bbb0ba244daa874ad5d09f14df3aa8209bfd51171cbb7876dd3f3d431862",
+  "caratteri": 14231
+ },
+ "prefissi": {
+  "ctx32k": {
+   "file": "ctx32k.txt",
+   "stato": "RIUSATO",
+   "bersaglio_token": 32768,
+   "caratteri": 126766,
+   "sha256_testo": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+   "n_token_riverificato": 32768,
+   "scarto_dal_bersaglio": 0,
+   "ids": {
+    "file": "ctx32k.ids.bin.gz",
+    "formato": "int32_le_gzip",
+    "n_token": 32768,
+    "sha256_byte_int32_le": "411d7b3cf51f9c960c38391d1477a984d4dda082eae48949d893ac5578a00407"
+   }
+  },
+  "ctx131k": {
+   "file": "ctx131k.txt",
+   "stato": "RIUSATO",
+   "bersaglio_token": 131072,
+   "caratteri": 529521,
+   "sha256_testo": "441d0e5f6d33b22783e484c5a440b8e56674d7155553bc1f63948e67e49e0cee",
+   "n_token_riverificato": 131072,
+   "scarto_dal_bersaglio": 0,
+   "ids": {
+    "file": "ctx131k.ids.bin.gz",
+    "formato": "int32_le_gzip",
+    "n_token": 131072,
+    "sha256_byte_int32_le": "a8c2c5d54827c53e745d7aa506c06740acebb9ba1ea1e918a587d9323498ba1d"
+   }
+  },
+  "aghi131k": {
+   "file": "aghi131k.txt",
+   "stato": "RIUSATO",
+   "derivato_da": "ctx131k.txt piu' cinque note operative a frazioni di caratteri",
+   "caratteri": 529929,
+   "sha256_testo": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+   "n_token_riverificato": 131208,
+   "ids": {
+    "file": "aghi131k.ids.bin.gz",
+    "formato": "int32_le_gzip",
+    "n_token": 131208,
+    "sha256_byte_int32_le": "8285833dceaec39eccbbf4354bb4fe425dee7e0d2b0cefc02381f18b063d9700"
+   },
+   "profondita_aghi": [
+    0.05,
+    0.25,
+    0.5,
+    0.75,
+    0.95
+   ]
+  }
+ },
+ "conteggi_per_insieme": {
+  "libero": 8,
+  "qualita": 24,
+  "prefill": 2,
+  "copia": 2
+ },
+ "totale_casi": 28,
+ "istruzione_contesto": "Leggi con attenzione il materiale seguente e rispondi soltanto \"pronto\".\n\n",
+ "casi": [
+  {
+   "id": "L01",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "prosa",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": null,
+   "rubrica": [
+    "distingue byte/token trasferiti da FLOP eseguiti",
+    "mostra almeno un conto numerico esplicito con le unita' indicate",
+    "elenca tre misure distinte e dice cosa ciascuna falsificherebbe",
+    "non afferma che il calcolo e' sempre il collo di bottiglia",
+    "risposta in italiano, senza domande di chiarimento"
+   ],
+   "prompt_file": "L01.txt",
+   "prompt_caratteri": 398,
+   "prompt_sha256": "893adb519d34f72a85ff35a486f5a54649ad5a426ea63a5a49679c0c6342bb99",
+   "prompt_n_token": 93,
+   "prompt_ids": {
+    "file": "prompt_L01.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 93,
+    "sha256_byte_int32_le": "6ac948f201a0e15bd40021fc211c7c1cfbcec15eb260184da93957afcdf3f640"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 93,
+     "sha256_coppia": "6ff15065b7f4b3d09a096d0323e4b1d48b49be5fc90889415d75477cde359690"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32861,
+     "sha256_coppia": "afcf6669ac2c3dd7ece580990a74dc13726ae888dc440b80f10face03e24eda4"
+    }
+   }
+  },
+  {
+   "id": "L02",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "prosa",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": null,
+   "rubrica": [
+    "definisce correttamente entrambe le politiche",
+    "il carico in cui LFU-decaduta vince e' descritto con un meccanismo, non solo asserito",
+    "descrive anche un carico in cui perde",
+    "propone una misura eseguibile e non un'opinione",
+    "risposta in italiano"
+   ],
+   "prompt_file": "L02.txt",
+   "prompt_caratteri": 362,
+   "prompt_sha256": "c032da32054e69b707c274a4a5bc8874781a48c9e69e523100cba3ad427ec9d0",
+   "prompt_n_token": 84,
+   "prompt_ids": {
+    "file": "prompt_L02.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 84,
+    "sha256_byte_int32_le": "befa24bc611078df63125567f8e0f63f3ea5ac4c740f317735eb9ff8f21f69e0"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 84,
+     "sha256_coppia": "1285118fb036714537499c8970071bf184e497d56b7852d1196b877a23cd92f3"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32852,
+     "sha256_coppia": "87dd7fc0d2a00cd2ff80324a3419079abdf9aa0390fa37b6b51644bcbc585849"
+    }
+   }
+  },
+  {
+   "id": "L03",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "spiegazione",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": null,
+   "rubrica": [
+    "introduce un modello di costo con byte per riga di verifica e token accettati per ciclo",
+    "spiega l'ammortamento degli stessi esperti su piu' token accettati",
+    "indica esplicitamente le condizioni (accettazione, unici per riga) che servono",
+    "indica un caso in cui la speculazione peggiora il traffico",
+    "risposta in italiano"
+   ],
+   "prompt_file": "L03.txt",
+   "prompt_caratteri": 359,
+   "prompt_sha256": "eb9cc0d3824312c4cf9a4702cbf48ced9d44cb9bd228872395374c83d789a8fc",
+   "prompt_n_token": 84,
+   "prompt_ids": {
+    "file": "prompt_L03.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 84,
+    "sha256_byte_int32_le": "fcdfc767c618d6b88dfd2d34dcc7c4349588b7d3232992a39912c812e80a6560"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 84,
+     "sha256_coppia": "a3c201a86166a23e1a1ccbacf8fac4d3a830031b034044aac62f0cd31890fe34"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32852,
+     "sha256_coppia": "108a4dd19db4c6c6a952438018bcde26742f1bc3c749e96c65d4a87765e6b6fd"
+    }
+   }
+  },
+  {
+   "id": "L04",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "ragionamento",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": {
+    "tipo": "numero",
+    "valore": 534.7,
+    "tolleranza": 0.3,
+    "regex": "RISPOSTA:\\s*([0-9]+[.,][0-9]+)\\s*MiB"
+   },
+   "rubrica": [
+    "calcola 48 x 10 x 1,888 = 906,24 MiB di richiesta lorda",
+    "applica il 59% e ottiene 534,7 MiB (tolleranza 0,3)",
+    "la riga finale ha il formato richiesto"
+   ],
+   "prompt_file": "L04.txt",
+   "prompt_caratteri": 609,
+   "prompt_sha256": "f6ab454b134d7e134790df0c8a4f1cc1348f5f2a4118856a5ee1c0c9d0ecfe90",
+   "prompt_n_token": 178,
+   "prompt_ids": {
+    "file": "prompt_L04.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 178,
+    "sha256_byte_int32_le": "85a0f2ece373381725152eb014a09971d2bd48b34f65bfd3a1d0c8aac6f342fe"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 178,
+     "sha256_coppia": "d8de906cb9b415c2d8aca6aa961664fee8b1456cde04155fe8924eaa5c21753f"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32946,
+     "sha256_coppia": "9225a89d8311c28fcb0a2bb1e5f2d36a4e7c26e608601d8ea0b2c74bd3a7f8b4"
+    }
+   }
+  },
+  {
+   "id": "L05",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "ragionamento",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": {
+    "tipo": "intero",
+    "valore": 2,
+    "regex": "RISPOSTA:\\s*n\\s*=\\s*([0-9]+)"
+   },
+   "rubrica": [
+    "calcola i quattro valori di token accettati (circa 1,753 / 2,320 / 2,747 / 3,069)",
+    "calcola i ms per token accettato (circa 30,1 / 28,7 / 29,2 / 30,7)",
+    "conclude n = 2",
+    "la riga finale ha il formato richiesto"
+   ],
+   "prompt_file": "L05.txt",
+   "prompt_caratteri": 678,
+   "prompt_sha256": "3e93f89cf7d36e3efae26f9be6f56e7587b5af33e6b73190d9726c5b96b4bf00",
+   "prompt_n_token": 221,
+   "prompt_ids": {
+    "file": "prompt_L05.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 221,
+    "sha256_byte_int32_le": "b78bb0c0f05e37f1936774cc9875defe863d8f33b0f55c1f6e7896cd50e39d87"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 221,
+     "sha256_coppia": "d50fc24a46da1ac74124c58233ce1fb09aa54a95c3038994f8e5669afe889cb8"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32989,
+     "sha256_coppia": "b088a05628cff52d207bbb068e929cb6c1508f1bd70f3573029345a025cbc052"
+    }
+   }
+  },
+  {
+   "id": "L06",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "codice",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": null,
+   "rubrica": [
+    "un solo file compilabile, include corretti, nessuna dipendenza esterna",
+    "presenti tutti e quattro i metodi richiesti con le firme indicate",
+    "lo sfratto usa frequenza, poi recenza, poi id minore",
+    "il dimezzamento avviene a epoche di 64 accessi",
+    "almeno cinque assert che coprono i cinque casi elencati, e la stampa finale OK"
+   ],
+   "prompt_file": "L06.txt",
+   "prompt_caratteri": 1036,
+   "prompt_sha256": "08c3f4ee6b45909fdcf1fc942b754dfd6a95dfd188fc4fe4ace19ba2330c69d9",
+   "prompt_n_token": 277,
+   "prompt_ids": {
+    "file": "prompt_L06.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 277,
+    "sha256_byte_int32_le": "c3493bfd6adf469d321cf24f7f2a8c9ea0840a8637e6c3c651eb3afab7d18f42"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 277,
+     "sha256_coppia": "068f4274e17b5d26d1f35946a560f6209da11c976fe0fef33e56cbf204aa8462"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 33045,
+     "sha256_coppia": "06c6e7c2d6823fb513a2fc12912700022314332abb75637dd3192a95a01e2777"
+    }
+   }
+  },
+  {
+   "id": "L07",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "codice",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": null,
+   "rubrica": [
+    "la funzione calcola somma/somma e non la media dei rapporti",
+    "solleva ValueError nei tre casi richiesti",
+    "ignora i casi con 'valido': False",
+    "i test sono eseguibili con python il_file.py e usano unittest",
+    "un test mostra numericamente la differenza dalla media aritmetica"
+   ],
+   "prompt_file": "L07.txt",
+   "prompt_caratteri": 827,
+   "prompt_sha256": "98823ba1b048629d656f370946c678d9f09fc27799066b2c565020efea79cebe",
+   "prompt_n_token": 226,
+   "prompt_ids": {
+    "file": "prompt_L07.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 226,
+    "sha256_byte_int32_le": "2036d322a26cd884b292343fdba9cf69eb79699c630a227d690d7c250d228069"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 226,
+     "sha256_coppia": "9867707974a5a68aca773a3dd7e3883a1673a3ff1adb2e7b393cdb76d0f4ad34"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32994,
+     "sha256_coppia": "4439a3705d55f9fe500b5fbdc4e52c159dbeeb12163bc93d70ed7dc60cc528dd"
+    }
+   }
+  },
+  {
+   "id": "L08",
+   "insiemi": [
+    "libero",
+    "qualita"
+   ],
+   "sottotipo": "codice",
+   "contesti": [
+    "corto",
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null,
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1536
+   },
+   "atteso": null,
+   "rubrica": [
+    "deduplica conservando il primo ordine di comparsa",
+    "il partizionamento rispetta max_cpu e l'ordine",
+    "l'invariante e' verificato da un assert esplicito",
+    "almeno sei test che coprono i sei casi elencati",
+    "un solo file compilabile, stampa finale OK"
+   ],
+   "prompt_file": "L08.txt",
+   "prompt_caratteri": 996,
+   "prompt_sha256": "c11a45d810ae7eccb6e3e5a95c5390c5e01e479acd2f73860ca4b2234971d4e9",
+   "prompt_n_token": 271,
+   "prompt_ids": {
+    "file": "prompt_L08.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 271,
+    "sha256_byte_int32_le": "ca81378a4fbf211c54244f32695001c53b97ac5734af26fab39c1e05016e167b"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 271,
+     "sha256_coppia": "1d532cd1dcdd12515c14990b9fa1351a50c3225339b8ae29d5c4012121d615c1"
+    },
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 33039,
+     "sha256_coppia": "f6e8c0e05ce64bca5f162ecaa510b733f22487cd7634585bb556e31451f3003c"
+    }
+   }
+  },
+  {
+   "id": "S01",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "json",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "json",
+    "chiavi": [
+     "strati",
+     "esperti_attivi",
+     "mib_per_esperto",
+     "mib_per_token_lordi"
+    ],
+    "valori": {
+     "strati": 48,
+     "esperti_attivi": 10,
+     "mib_per_esperto": 1.888,
+     "mib_per_token_lordi": 906.24
+    },
+    "tolleranza": 0.05
+   },
+   "rubrica": [
+    "JSON valido e nient'altro nella risposta",
+    "esattamente le quattro chiavi richieste",
+    "mib_per_token_lordi = 906,24 entro 0,05"
+   ],
+   "prompt_file": "S01.txt",
+   "prompt_caratteri": 560,
+   "prompt_sha256": "c680695c8ff18c11fe9e1de2ddb236855b92743acd32a9723e4f5aad32024168",
+   "prompt_n_token": 176,
+   "prompt_ids": {
+    "file": "prompt_S01.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 176,
+    "sha256_byte_int32_le": "f0f0b3569c161e1ddf8828e4ac4a3dfbe6e1d17cc6c103382efea7a510a24575"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 176,
+     "sha256_coppia": "889b562bc016469e84d475600d5cb4d1f0f1d0e44489fdc46a45b596b826277a"
+    }
+   }
+  },
+  {
+   "id": "S02",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "json",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "json_vincolo",
+    "vincolo": "somma_100_trasferimento_max"
+   },
+   "rubrica": [
+    "JSON valido e nient'altro",
+    "tre chiavi esatte",
+    "somma esattamente 100",
+    "trasferimento e' il valore maggiore"
+   ],
+   "prompt_file": "S02.txt",
+   "prompt_caratteri": 314,
+   "prompt_sha256": "2678ffe9110a9e7ce5859202d398e10add2c3e9ab601914a6fbfeb0a79f5c966",
+   "prompt_n_token": 74,
+   "prompt_ids": {
+    "file": "prompt_S02.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 74,
+    "sha256_byte_int32_le": "7080a29480cf2b2c37e8b629a10f2281b707b8bab42a9ec87d378ce3ac782e97"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 74,
+     "sha256_coppia": "990cca80f56af317c03374c7b213dae5b3f7efb50003e50dc5998d52d0221fa6"
+    }
+   }
+  },
+  {
+   "id": "S03",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "formato",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "formato",
+    "righe": 5,
+    "prefisso": "- ",
+    "max_parole_riga": 8
+   },
+   "rubrica": [
+    "esattamente cinque righe",
+    "ogni riga inizia con '- '",
+    "nessuna riga oltre otto parole",
+    "nessun testo aggiuntivo"
+   ],
+   "prompt_file": "S03.txt",
+   "prompt_caratteri": 265,
+   "prompt_sha256": "d79d3a716e58443c2819e7f6b57ee2445efb78aebc9e77f2efdbbc5a18e5131c",
+   "prompt_n_token": 60,
+   "prompt_ids": {
+    "file": "prompt_S03.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 60,
+    "sha256_byte_int32_le": "3144aac58ade457c7e3929ee9a5c03ca785c1433cad070fcd6204fd98a9275a5"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 60,
+     "sha256_coppia": "fb5886d1c3140005b8edd0347502a49ff6009f182c41cc8175044c708f08854f"
+    }
+   }
+  },
+  {
+   "id": "S04",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "formato",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "esatto",
+    "valore": "impossibile"
+   },
+   "rubrica": [
+    "una sola parola",
+    "la parola e' 'impossibile'"
+   ],
+   "prompt_file": "S04.txt",
+   "prompt_caratteri": 335,
+   "prompt_sha256": "6bc1a555d0e6ca66ac99479c078b4cc6423b3be55aafece2bddbde70dae51bcd",
+   "prompt_n_token": 95,
+   "prompt_ids": {
+    "file": "prompt_S04.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 95,
+    "sha256_byte_int32_le": "eefcbfb5b8a9a9d084979ded5427e632129ffbcb234c49275412b31332adb6ee"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 95,
+     "sha256_coppia": "8f43af109ed9ab320b8b80ae75d3efc51d643bfd391c367013f21104d171471b"
+    }
+   }
+  },
+  {
+   "id": "S05",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "recupero",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "due_numeri",
+    "regex": "RISPOSTA:\\s*\\+?([0-9]+[.,][0-9]+)%\\s*t/s,\\s*-?([0-9]+[.,][0-9]+)%",
+    "valori": [
+     11.1,
+     24.3
+    ],
+    "tolleranza": 0.4
+   },
+   "rubrica": [
+    "usa 22,18 e 24,64 per il throughput (+11,1%)",
+    "usa 742 e 562 per i byte (-24,3%)",
+    "la riga finale ha il formato richiesto"
+   ],
+   "prompt_file": "S05.txt",
+   "prompt_caratteri": 652,
+   "prompt_sha256": "09faefe159f05817adbac5adc6442727fff2ed13b6722f13cf104712770235a9",
+   "prompt_n_token": 236,
+   "prompt_ids": {
+    "file": "prompt_S05.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 236,
+    "sha256_byte_int32_le": "2b196aaa3bd428ea6a3270511f6f6b101db8a9886ffe3c28ac41dc942b5343e3"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 236,
+     "sha256_coppia": "b79c1889a970c40b241da15c10b7f59c0fb752053cb2a171a332859dac326b37"
+    }
+   }
+  },
+  {
+   "id": "S06",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "codice",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "contiene_uno",
+    "alternative": [
+     "ultimo_uso[i] < ultimo_uso[migliore]",
+     "ultimo_uso[i] <ultimo_uso[migliore]"
+    ]
+   },
+   "rubrica": [
+    "individua il confronto di recenza invertito (> invece di <)",
+    "la funzione corretta usa < sul confronto di ultimo_uso",
+    "gestisce anche il pareggio sull'indice minore senza cambiarne il senso",
+    "non introduce altre modifiche di comportamento"
+   ],
+   "prompt_file": "S06.txt",
+   "prompt_caratteri": 780,
+   "prompt_sha256": "528130c41e3f235d78d14d23e5d2780fd11c84e1fcffe894dddefe48f16a06dd",
+   "prompt_n_token": 229,
+   "prompt_ids": {
+    "file": "prompt_S06.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 229,
+    "sha256_byte_int32_le": "d9eabb86cc8934c752e7395caef90e188840b47c706bd2a1730e9412f91a2438"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 229,
+     "sha256_coppia": "3c772f36d0c4243c7fc9fd5561a0805fa16b4d1d618152c3cd33b986b1fbb2e4"
+    }
+   }
+  },
+  {
+   "id": "S07",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "numerico",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "numero",
+    "valore": 14.52,
+    "tolleranza": 0.2,
+    "regex": "RISPOSTA:\\s*([0-9]+[.,][0-9]+)\\s*GB/s"
+   },
+   "rubrica": [
+    "converte MiB in byte con 1 MiB = 1048576 byte",
+    "moltiplica per 24,64 token al secondo",
+    "risultato circa 14,5 GB/s (tolleranza 0,2)",
+    "la riga finale ha il formato richiesto"
+   ],
+   "prompt_file": "S07.txt",
+   "prompt_caratteri": 465,
+   "prompt_sha256": "21343c8d0735f4adc3bc6ead351119c23683e51afa2b90f2d678333238a2d17d",
+   "prompt_n_token": 155,
+   "prompt_ids": {
+    "file": "prompt_S07.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 155,
+    "sha256_byte_int32_le": "a3e594990f4c63412e5173ad72efb4699718b14b99964d2fa360facb736ae2e7"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 155,
+     "sha256_coppia": "8f88a2857e16cc35af357d47fcd987bc9ac09642afa47ffedda79a6d9b815283"
+    }
+   }
+  },
+  {
+   "id": "S08",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "ragionamento",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "giudizio",
+    "deve_contenere": [
+     "A",
+     "B",
+     "C"
+    ],
+    "nota": "A-B e B-C distinguibili; A-C (+0,50%) sopra il rumore ma dello stesso ordine: la risposta deve trattarla come piccola e discutere il margine"
+   },
+   "rubrica": [
+    "calcola le tre differenze percentuali (+18,1%, -17,4%, +0,50%)",
+    "conclude che A-B e B-C sono ampiamente distinguibili",
+    "tratta A-C come marginale e ne discute il confronto col rumore dichiarato",
+    "non dichiara distinguibile una differenza sotto lo 0,2%"
+   ],
+   "prompt_file": "S08.txt",
+   "prompt_caratteri": 519,
+   "prompt_sha256": "446da636ff4dba8bc641826920370cffd4a8f6db224b67dbb4571bcc940c1585",
+   "prompt_n_token": 164,
+   "prompt_ids": {
+    "file": "prompt_S08.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 164,
+    "sha256_byte_int32_le": "bf1f8218a46cba20f18f4dfee79860036231776acac6f9b51a830ab1df03efb6"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 164,
+     "sha256_coppia": "2b6e53aa68dcf0c7d81a5ff38f6d78af4d7e617163c1bdf0312596d25667b6d0"
+    }
+   }
+  },
+  {
+   "id": "S09",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "onesta",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "negativo",
+    "vietati": [
+     "OMEGA-",
+     "ZR-",
+     "MANDORLA-417 e' il numero"
+    ],
+    "deve_negare": true
+   },
+   "rubrica": [
+    "dichiara che il dato non e' presente",
+    "non inventa un numero di serie",
+    "una sola frase"
+   ],
+   "prompt_file": "S09.txt",
+   "prompt_caratteri": 321,
+   "prompt_sha256": "2d57778722b87b2930ae428245f3bf8716cbed98b0fab202a49a3457e1c98df6",
+   "prompt_n_token": 100,
+   "prompt_ids": {
+    "file": "prompt_S09.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 100,
+    "sha256_byte_int32_le": "103f26538329ef56f0fb8bd45b1077487ede1da60a76a8adc0a3c193ae3d5cf9"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 100,
+     "sha256_coppia": "83d971b19b08094397f8d627cd5993d2a7d37ce5f535eed543e518a35754a4e6"
+    }
+   }
+  },
+  {
+   "id": "S10",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "vincolo",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "contiene_tutti",
+    "termini": [
+     "prompt cache",
+     "flash attention",
+     "MoE expert cache"
+    ]
+   },
+   "rubrica": [
+    "i tre termini compaiono invariati",
+    "la frase e' tradotta in italiano e mantiene il senso",
+    "nessun commento aggiuntivo"
+   ],
+   "prompt_file": "S10.txt",
+   "prompt_caratteri": 324,
+   "prompt_sha256": "724ae30eb3d7ee9626e8343e822975b8fafa83423b2efcde9929e267ad5b0b23",
+   "prompt_n_token": 70,
+   "prompt_ids": {
+    "file": "prompt_S10.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 70,
+    "sha256_byte_int32_le": "658ba6fcd5a6f9ee5aa0505c7eb7d3757dece6ab2e583c78a1bbe38dc0f7fdf2"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 70,
+     "sha256_coppia": "e0d063ef1bc2f2095ef63af2d3885220255f360003028c5f73b8de5b261e1125"
+    }
+   }
+  },
+  {
+   "id": "Q_AGO_05",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "ago_contesto_lungo",
+   "contesti": [
+    "aghi131k"
+   ],
+   "prefisso_per_contesto": {
+    "aghi131k": "aghi131k"
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "profondita_ago": 0.05,
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "MANDORLA-417"
+   },
+   "rubrica": [
+    "la stringa attesa compare nella risposta finale",
+    "la risposta non e' troncata dentro il ragionamento"
+   ],
+   "prompt_file": "Q_AGO_05.txt",
+   "prompt_caratteri": 74,
+   "prompt_sha256": "12287a793fba9c5d8488c5fbd71cc147cb7e9fde5b98d355805000a382de546e",
+   "prompt_n_token": 22,
+   "prompt_ids": {
+    "file": "prompt_Q_AGO_05.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 22,
+    "sha256_byte_int32_le": "b47942a4f994b17aba3a16c1a3e43620b0ad84f207ac12f1ab3b33663f14959b"
+   },
+   "impronta_per_contesto": {
+    "aghi131k": {
+     "prefisso": "aghi131k",
+     "prefisso_sha256": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+     "token_utente_stimati": 131230,
+     "sha256_coppia": "0aeb55c576c61235aa5e80251134d14a385ef266243acf1d0d956f1f3d512b29"
+    }
+   }
+  },
+  {
+   "id": "Q_AGO_25",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "ago_contesto_lungo",
+   "contesti": [
+    "aghi131k"
+   ],
+   "prefisso_per_contesto": {
+    "aghi131k": "aghi131k"
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "profondita_ago": 0.25,
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "VIOLA-CENERE"
+   },
+   "rubrica": [
+    "la stringa attesa compare nella risposta finale",
+    "la risposta non e' troncata dentro il ragionamento"
+   ],
+   "prompt_file": "Q_AGO_25.txt",
+   "prompt_caratteri": 78,
+   "prompt_sha256": "263a61eaf29f009cae372a7858ba692801987d7f1b9d7b58a4a4a2550daa1d58",
+   "prompt_n_token": 21,
+   "prompt_ids": {
+    "file": "prompt_Q_AGO_25.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 21,
+    "sha256_byte_int32_le": "98f644dda9ebf374880e4e705025449c783286db379f2779f194ef85a9b7d3cc"
+   },
+   "impronta_per_contesto": {
+    "aghi131k": {
+     "prefisso": "aghi131k",
+     "prefisso_sha256": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+     "token_utente_stimati": 131229,
+     "sha256_coppia": "523f3709a4b30ffedab77fa606e5f691794db4442d1ef143dc3759af1c43a5bc"
+    }
+   }
+  },
+  {
+   "id": "Q_AGO_50",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "ago_contesto_lungo",
+   "contesti": [
+    "aghi131k"
+   ],
+   "prefisso_per_contesto": {
+    "aghi131k": "aghi131k"
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "profondita_ago": 0.5,
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "Malinverni"
+   },
+   "rubrica": [
+    "la stringa attesa compare nella risposta finale",
+    "la risposta non e' troncata dentro il ragionamento"
+   ],
+   "prompt_file": "Q_AGO_50.txt",
+   "prompt_caratteri": 69,
+   "prompt_sha256": "d406cf5100ffdfda431f500f6fa8d259c89af31e4841ee26378bc2160cc85197",
+   "prompt_n_token": 19,
+   "prompt_ids": {
+    "file": "prompt_Q_AGO_50.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 19,
+    "sha256_byte_int32_le": "f90d19d990fcdcdca1f5d310b727f0f09f7d31dda226a57345d16b49c210d138"
+   },
+   "impronta_per_contesto": {
+    "aghi131k": {
+     "prefisso": "aghi131k",
+     "prefisso_sha256": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+     "token_utente_stimati": 131227,
+     "sha256_coppia": "779d5c7c4419577fa0f71560b53b4756d6ee9b4b45aaa13a04137bbf692150cb"
+    }
+   }
+  },
+  {
+   "id": "Q_AGO_75",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "ago_contesto_lungo",
+   "contesti": [
+    "aghi131k"
+   ],
+   "prefisso_per_contesto": {
+    "aghi131k": "aghi131k"
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "profondita_ago": 0.75,
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "ZR-8842"
+   },
+   "rubrica": [
+    "la stringa attesa compare nella risposta finale",
+    "la risposta non e' troncata dentro il ragionamento"
+   ],
+   "prompt_file": "Q_AGO_75.txt",
+   "prompt_caratteri": 72,
+   "prompt_sha256": "9531cc4b436d652fcef3cc2f3acf62a71de38c3ee6a0002f941e4c8c7bf5ef75",
+   "prompt_n_token": 20,
+   "prompt_ids": {
+    "file": "prompt_Q_AGO_75.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 20,
+    "sha256_byte_int32_le": "537e18942a3cb4603ba3ef6ceae8393048516f197efe6a67789f6850ddd560ee"
+   },
+   "impronta_per_contesto": {
+    "aghi131k": {
+     "prefisso": "aghi131k",
+     "prefisso_sha256": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+     "token_utente_stimati": 131228,
+     "sha256_coppia": "0b43944875d6074dbc18fb1d6705d938a9ef2c7db59d9653b2051fcf42558d3c"
+    }
+   }
+  },
+  {
+   "id": "Q_AGO_95",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "ago_contesto_lungo",
+   "contesti": [
+    "aghi131k"
+   ],
+   "prefisso_per_contesto": {
+    "aghi131k": "aghi131k"
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "profondita_ago": 0.95,
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "TRAMONTANA"
+   },
+   "rubrica": [
+    "la stringa attesa compare nella risposta finale",
+    "la risposta non e' troncata dentro il ragionamento"
+   ],
+   "prompt_file": "Q_AGO_95.txt",
+   "prompt_caratteri": 74,
+   "prompt_sha256": "2196aac045253130bdc37ab444cb8ca3dea965a1fd48fa77e0a8fa0e9b0a7883",
+   "prompt_n_token": 21,
+   "prompt_ids": {
+    "file": "prompt_Q_AGO_95.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 21,
+    "sha256_byte_int32_le": "9114b9e8a763d0afc43092d2c98fb8c8485f49f0e0b5c27f49f7032714d30c4a"
+   },
+   "impronta_per_contesto": {
+    "aghi131k": {
+     "prefisso": "aghi131k",
+     "prefisso_sha256": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+     "token_utente_stimati": 131229,
+     "sha256_coppia": "fb2c2197099d3b0293bc321893f4fdf4267045ac92e7d29653a97d88fd6b9bec"
+    }
+   }
+  },
+  {
+   "id": "Q_TEC",
+   "insiemi": [
+    "qualita"
+   ],
+   "sottotipo": "tecnica_contesto_lungo",
+   "contesti": [
+    "aghi131k"
+   ],
+   "prefisso_per_contesto": {
+    "aghi131k": "aghi131k"
+   },
+   "budget_token": {
+    "screening": 768,
+    "conferma": 768
+   },
+   "atteso": {
+    "tipo": "contiene_tutti",
+    "termini": [
+     "--moe-expert-cache",
+     "--moe-expert-cache-inserts"
+    ]
+   },
+   "rubrica": [
+    "cita --moe-expert-cache con il valore predefinito",
+    "cita --moe-expert-cache-inserts come opzione imparentata",
+    "non inventa opzioni inesistenti"
+   ],
+   "prompt_file": "Q_TEC.txt",
+   "prompt_caratteri": 351,
+   "prompt_sha256": "5aa297cbf9cb5443287dedfae0d881799869e2662a004f7021c5854d06f36660",
+   "prompt_n_token": 87,
+   "prompt_ids": {
+    "file": "prompt_Q_TEC.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 87,
+    "sha256_byte_int32_le": "e6d3d11cd1b95be2ffd44d19089cfd08e374c3db1b48354dc486f25551926a49"
+   },
+   "impronta_per_contesto": {
+    "aghi131k": {
+     "prefisso": "aghi131k",
+     "prefisso_sha256": "ec73073434cdd80aa62b23119f3e32761f1a41aaab10b338a70c3f92143872af",
+     "token_utente_stimati": 131295,
+     "sha256_coppia": "91dcd88901fe6dab9f6693b86be42f571456fb709e9ae33e1ff6f5fbba526f3a"
+    }
+   }
+  },
+  {
+   "id": "PF_32K",
+   "insiemi": [
+    "prefill"
+   ],
+   "sottotipo": "prefill_freddo",
+   "contesti": [
+    "ctx32k"
+   ],
+   "prefisso_per_contesto": {
+    "ctx32k": "ctx32k"
+   },
+   "budget_token": {
+    "screening": 64,
+    "conferma": 64
+   },
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "pronto"
+   },
+   "rubrica": [
+    "risposta brevissima",
+    "prompt_n vicino al bersaglio dichiarato"
+   ],
+   "prompt_file": "PF_32K.txt",
+   "prompt_caratteri": 64,
+   "prompt_sha256": "b254d805b3b5d5dbeb859279b0b538523a5a5825adbb2545ff9ddf866d21ee0c",
+   "prompt_n_token": 15,
+   "prompt_ids": {
+    "file": "prompt_PF_32K.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 15,
+    "sha256_byte_int32_le": "fc66e30f1ccc1e9a6b1b3fb7a85dcacd99ee9527efd56b75e411b946261663c1"
+   },
+   "impronta_per_contesto": {
+    "ctx32k": {
+     "prefisso": "ctx32k",
+     "prefisso_sha256": "3a62c0f088f8567ed0db2b6a98307e14512d78c0d38ce0cdbcbda8db3968de4f",
+     "token_utente_stimati": 32783,
+     "sha256_coppia": "596c296845e695b5f929dd1b1012dbf1597f80c904478d2922ae2783c704355a"
+    }
+   }
+  },
+  {
+   "id": "PF_131K",
+   "insiemi": [
+    "prefill"
+   ],
+   "sottotipo": "prefill_freddo",
+   "contesti": [
+    "ctx131k"
+   ],
+   "prefisso_per_contesto": {
+    "ctx131k": "ctx131k"
+   },
+   "budget_token": {
+    "screening": 64,
+    "conferma": 64
+   },
+   "atteso": {
+    "tipo": "contiene",
+    "valore": "pronto"
+   },
+   "rubrica": [
+    "risposta brevissima",
+    "prompt_n vicino al bersaglio dichiarato"
+   ],
+   "prompt_file": "PF_131K.txt",
+   "prompt_caratteri": 64,
+   "prompt_sha256": "b254d805b3b5d5dbeb859279b0b538523a5a5825adbb2545ff9ddf866d21ee0c",
+   "prompt_n_token": 15,
+   "prompt_ids": {
+    "file": "prompt_PF_131K.ids.json",
+    "formato": "json_lista_interi",
+    "n_token": 15,
+    "sha256_byte_int32_le": "fc66e30f1ccc1e9a6b1b3fb7a85dcacd99ee9527efd56b75e411b946261663c1"
+   },
+   "impronta_per_contesto": {
+    "ctx131k": {
+     "prefisso": "ctx131k",
+     "prefisso_sha256": "441d0e5f6d33b22783e484c5a440b8e56674d7155553bc1f63948e67e49e0cee",
+     "token_utente_stimati": 131087,
+     "sha256_coppia": "9c0f92afd1d5893653e406e5b5e106b7d4ed8337e4bca08d115b31d449b78888"
+    }
+   }
+  },
+  {
+   "id": "C01",
+   "insiemi": [
+    "copia"
+   ],
+   "sottotipo": "copia",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1024
+   },
+   "codice_sorgente": "moe-demand_20260914.cuh",
+   "atteso": {
+    "tipo": "frazione_righe_copiate",
+    "minimo": 0.9,
+    "trasformazione": null
+   },
+   "rubrica": [
+    "frazione di righe identiche all'atteso almeno 0,90",
+    "nessun commento aggiunto",
+    "per la rinomina: nessuna occorrenza residua di bound_group"
+   ],
+   "prompt_file": "C01.txt",
+   "prompt_caratteri": 14391,
+   "prompt_sha256": "e4b22069fa6f58aad90267f3f8c4667463550bb7b8c0fc5b710e6fc5f5c74c1b",
+   "prompt_n_token": 4195,
+   "prompt_ids": {
+    "file": "prompt_C01.ids.bin.gz",
+    "formato": "int32_le_gzip",
+    "n_token": 4195,
+    "sha256_byte_int32_le": "19fac69ffb5ae4170a73a0b60547c3ee3eb299606242645fbbc65b3975d7f2fc"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 4195,
+     "sha256_coppia": "582999cc0b769d890aa65a7f270c30d0938f260b32a6a0da350f7d1acf21b158"
+    }
+   }
+  },
+  {
+   "id": "C02",
+   "insiemi": [
+    "copia"
+   ],
+   "sottotipo": "rinomina",
+   "contesti": [
+    "corto"
+   ],
+   "prefisso_per_contesto": {
+    "corto": null
+   },
+   "budget_token": {
+    "screening": 1024,
+    "conferma": 1024
+   },
+   "codice_sorgente": "moe-demand_20260914.cuh",
+   "atteso": {
+    "tipo": "frazione_righe_copiate",
+    "minimo": 0.9,
+    "trasformazione": [
+     "bound_group",
+     "gruppo_legato"
+    ]
+   },
+   "rubrica": [
+    "frazione di righe identiche all'atteso almeno 0,90",
+    "nessun commento aggiunto",
+    "per la rinomina: nessuna occorrenza residua di bound_group"
+   ],
+   "prompt_file": "C02.txt",
+   "prompt_caratteri": 14452,
+   "prompt_sha256": "7eff7108154d32401af03022af3f8f61dfadc82946b500e4907fdff1e37174ab",
+   "prompt_n_token": 4216,
+   "prompt_ids": {
+    "file": "prompt_C02.ids.bin.gz",
+    "formato": "int32_le_gzip",
+    "n_token": 4216,
+    "sha256_byte_int32_le": "e57fd717c69228280e75989f839bb1d0dfbd874ae58912e697bcf794d140cfa4"
+   },
+   "impronta_per_contesto": {
+    "corto": {
+     "prefisso": null,
+     "prefisso_sha256": null,
+     "token_utente_stimati": 4216,
+     "sha256_coppia": "2d5f4c126798d7f982344377a9589e000798be9789650133fad5dd6f4cfa658e"
+    }
+   }
+  }
+ ]
+}

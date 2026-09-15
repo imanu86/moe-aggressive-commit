@@ -52,6 +52,10 @@ PROFILI = {
     "solo_libero": ([(i, "corto") for i in ("L01", "L02", "L03", "L04", "L05", "L06", "L07", "L08")] +
                     [(i, "ctx32k") for i in ("L01", "L02", "L03", "L04", "L05", "L06", "L07", "L08")]),
     "solo_prefill": [("PF_32K", "ctx32k"), ("PF_131K", "ctx131k")],
+    # 15/9, decisione utente: solo il contesto lungo, due casi liberi a 32k (corsa breve, ~8 min)
+    "lungo_2": [("L01", "ctx32k"), ("L02", "ctx32k")],
+    # 15/9, punto operativo dell'utente: contesto ~100k+, KV 250k. Un solo prefill freddo a 131k, poi due decode
+    "lungo_131k": [("L01", "ctx131k"), ("L02", "ctx131k")],
 }
 
 RISCALDAMENTO = ("Rispondi con una sola parola: pronto.", 8)

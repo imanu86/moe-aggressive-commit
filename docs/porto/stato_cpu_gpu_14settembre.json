@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p11_cell2_masks",
+  "implementation_status": "p11_awaiting_promotion_decision",
   "current_phase": "P11",
   "user_rules": {
     "D42": "no work below 5% gain at the operating point"
@@ -62,7 +62,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 108,
+  "new_benchmark_runs": 116,
   "prefill_131k": {
     "ref_tps": 252.2,
     "W4_tps": 376.35,
@@ -74,7 +74,18 @@
       "ubatch": 3072
     },
     "needles": "5/5",
-    "decode_delta": -0.001
+    "decode_delta": -0.001,
+    "X4_tps": 396.99,
+    "X4_config": {
+      "batch": 12288,
+      "ubatch": 4096,
+      "QWEN4EXP_SPARSE_FA": 1,
+      "QWEN_GDN_TILED": 1,
+      "QWEN_PREFETCH_EXPERTS": 1,
+      "QWEN_PREFILL_UBATCH_DEEP": "81920:3072,114688:2048"
+    },
+    "gain_vs_ref": 0.574,
+    "target_400_declared": false
   },
   "p9_result": {
     "wall_ms": 37.442,
@@ -256,7 +267,7 @@
       "depends_on": [
         "D42"
       ],
-      "note": "prefill at 131k, opened 9/15 by D42: from the current 250 tps reference toward the plan's 400 tps goal, a gain well above the 5% threshold and a front untouched from P0 through P10 (all prior cells were on decode). Cell 1 COMPLETE (9/15, commit 42bd36b): existing levers, measured separately in earlier sessions, composed cumulatively on the same P8+P10 binaries (no recompile through W4) -- W0 reference 252.20 tps; W1 sparse FA at 256-wide heads +17.2% (295.65, identical final answer); W2 batch/ubatch 4096 collapses -40.7% (175.13) from WDDM paging (workspace 8942 MiB, free VRAM 507 MiB) though the first 114,688 tokens ran at 463 tps cumulative; W2b batch 3072 fallback +12.0% (331.06); W3 tiled GDN +1.6% (336.23); W4 asynchronous expert staging +11.9% (376.35), self-disables in the last 13 of 44 blocks once workspace eats free VRAM. Gates cleared: 5/5 needles, decode -0.12%/-0.51% against 27.245 tps (within the -3% gate). D43 adopts W4 (376 tps, +49%, QWEN4EXP_SPARSE_FA + QWEN_GDN_TILED + QWEN_PREFETCH_EXPERTS + -b/-ub 3072, no recompile) as the prefill operating-point candidate; a new lever (W5, depth-scaled ubatch, recompiled binaries) reached 384.40 tps (+2.1%, below the D42 5% gate) but nearly halved peak workspace (6819->5614 MiB). Cell 2 (A1: stop materializing the three F32 [n_kv, n_batch] masks when sparse FA is on, to free the VRAM that caps both batch size and staging) IN PROGRESS, expected gain above 5%"
+      "note": "prefill at 131k, opened 9/15 by D42: from the current 250 tps reference toward the plan's 400 tps goal, a gain well above the 5% threshold and a front untouched from P0 through P10 (all prior cells were on decode). Cell 1 COMPLETE (9/15, commit 42bd36b): existing levers, measured separately in earlier sessions, composed cumulatively on the same P8+P10 binaries (no recompile through W4) -- W0 reference 252.20 tps; W1 sparse FA at 256-wide heads +17.2% (295.65, identical final answer); W2 batch/ubatch 4096 collapses -40.7% (175.13) from WDDM paging (workspace 8942 MiB, free VRAM 507 MiB) though the first 114,688 tokens ran at 463 tps cumulative; W2b batch 3072 fallback +12.0% (331.06); W3 tiled GDN +1.6% (336.23); W4 asynchronous expert staging +11.9% (376.35), self-disables in the last 13 of 44 blocks once workspace eats free VRAM. Gates cleared: 5/5 needles, decode -0.12%/-0.51% against 27.245 tps (within the -3% gate). D43 adopts W4 (376 tps, +49%, QWEN4EXP_SPARSE_FA + QWEN_GDN_TILED + QWEN_PREFETCH_EXPERTS + -b/-ub 3072, no recompile) as the prefill operating-point candidate; a new lever (W5, depth-scaled ubatch, recompiled binaries) reached 384.40 tps (+2.1%, below the D42 5% gate) but nearly halved peak workspace (6819->5614 MiB). Cell 2 COMPLETE (9/15, commit 4207e39): A1 (stop materializing the three F32 [n_kv, n_batch] masks when sparse FA is on) is FALSIFIED -- a diagnostic tensor dump (QWEN_WS_DUMP) shows the three real F32 masks live in the top-k indexer (build_qsa_top_k, qwen4exp.cpp:1056-1063), not in attention as P11 cell 1 assumed (there they are two, F16, one a non-allocating view); slicing the top-k selection into 512-token chunks leaves the workspace peak unchanged (+4.2% instead of -60%) and costs -9% at batch 3072, -43% at batch 4096 (paging, free RAM 3.44 GB). The other half of the opening pays instead: an ubatch depth-schedule recalculated on the expert-staging VRAM requirement (not the VRAM ceiling W5 used) keeps staging on in 50 of 50 blocks (X3, workspace 6819->4659 MiB, +1.55% over the rebuilt-binary control X0); adding -b 12288 (divisible by every schedule step, removes split ubatches) is worth +1.98% alone (X4, 396.99 tps). Gates cleared on X4: 5/5 needles, decode +0.84%/-0.69% against 27.245 tps. Verdict: X4 is +57.4% over the P10 reference (252.2), +5.5% over W4, -0.75% short of 400. D44 adopts X4 as the prefill operating-point candidate; the 400 target is not declared reached. P11 now awaits a user decision between (a) P6 validation and promotion of the prefill candidate to bin_prod, or (b) measuring the 250k operating point (fixture to be built) -- no new cell is in progress"
     }
   ],
   "primary_documents": [
@@ -313,7 +324,8 @@
     "D40",
     "D41",
     "D42",
-    "D43"
+    "D43",
+    "D44"
   ],
   "decisions_added": [
     {
@@ -447,6 +459,10 @@
     {
       "id": "D43",
       "summary": "P11 cell 1 COMPLETE (9/15, commit 42bd36b): existing prefill levers composed cumulatively at 131k on the same P8+P10 binaries, no recompile through W4 (verified: Codex's 9/13 gdn_tiled.patch and prefill_staging.patch were already in the tree and their env-var names already compiled into ggml-cuda.dll). W0 reference 252.20 tps; W1 sparse FA at 256-wide heads +17.2% (295.65, final answer identical to reference, one word differs in the reasoning); W2 batch/ubatch 4096 collapses -40.7% (175.13 tps) from WDDM paging -- workspace 8942 MiB, free VRAM 507 MiB, free RAM 3.34 GB (below the 4 GB R-RAM threshold) -- yet the first 114,688 tokens ran at 463 tps cumulative before the wall, proving the ceiling is VRAM occupancy, not arithmetic; W2b falls back to batch/ubatch 3072, +12.0% (331.06), no collapse; W3 tiled GDN +1.6% (336.23), pays only in the early tract and nothing in the last two where attention dominates; W4 asynchronous expert staging +11.9% (376.35) -- stages 45,412 MiB of expert weights per block on a second stream, self-disables in the last 13 of 44 blocks once W4's own workspace (6819 MiB) drops free VRAM below the ~1.4 GiB the ring needs, and in those blocks timings match W3 to a tenth of a second, the cleanest proof of the lever's value. On L01@ctx131k (same case as the P10 reference) W4 measures 382.85 tps vs 252.16, +51.8%. Both gates cleared: 5/5 needles in the final answer (Q_TEC inconclusive on budget, as on 9/13, consistent with D15); decode 27.212 and 27.106 tps vs the 27.245 reference (-0.12%/-0.51%, within the -3% gate), notable because W4 disables CUDA graphs for large MUL_MAT_ID (inert in decode's 2-3 row verify batches, confirmed rather than assumed). Three structural facts: workspace grows at ~12 bytes per token x KV-cell pair (three F32 [n_kv, n_batch] masks built per QSA layer, untouched by sparse FA, the true batch ceiling); each lever pays at a different point of the prompt (sparse FA zero in the first 32k growing to -23% by the end, tiled GDN the mirror image, staging uniform while VRAM lasts); staging self-disables rather than fails when workspace consumes its VRAM. D43 adopts W4 as the prefill operating-point candidate -- 376 tps (+49% over W0), QWEN4EXP_SPARSE_FA=1 + QWEN_GDN_TILED=1 + QWEN_PREFETCH_EXPERTS=1 + -b/-ub 3072 on the unmodified P8+P10 binaries, no recompilation; 4-6% still short of 400. A new lever (W5, depth-scaled ubatch via QWEN_PREFILL_UBATCH_DEEP, one file patched, recompiled binaries) reached 384.40 tps, +2.1% over W4 -- below the D42 5% adoption gate, not adopted for speed, but it cuts peak workspace 6819->5614 MiB and quadruples minimum free VRAM, opening cell 2. P11 cell 2 (A1: stop materializing the three F32 masks when sparse FA is on, freeing the VRAM that caps both batch size and staging) is IN PROGRESS, expected gain above the 5% threshold."
+    },
+    {
+      "id": "D44",
+      "summary": "P11 cell 2 COMPLETE (9/15, commit 4207e39): A1 is FALSIFIED, and the batch wall is removed anyway by a different route. A new diagnostic (QWEN_WS_DUMP, dumps the reserved graph's nodes) shows the three real F32 [n_kv, n_batch] masks P11 blamed do not live in attention (build_attn_qsa has only two, F16, one a non-allocating view of ggml_set_rows) but in the top-k indexer (build_qsa_top_k, qwen4exp.cpp:1056-1063): the blocks-to-cells expansion, the F16->F32 cast of the causal mask, and their sum -- 7 nodes of n_kv x n_batch per QSA layer, 242.00 bytes/pair across 84 nodes on 12 layers, identical at every depth measured. A1 (slice the top-k selection into 512-token chunks instead of the whole ubatch) is written and measured: the workspace peak does not move (+4.2% instead of the expected -60%), and speed drops -9.0% at batch 3072 (X1) and -42.7% at batch 4096 (X2, paging, free RAM 3.44 GB below the 4 GB threshold) -- both levers shipped off by default. The wall is not the sum of live bytes, it is the allocator's peak, and slicing those tensors along the token axis does not move it (root cause not localized, open issue). The other half of the opening pays: an ubatch depth-schedule recalculated on the expert-staging VRAM requirement, not the VRAM ceiling W5 used (X3: 81920:3072,114688:2048 on -b/-ub 4096) keeps staging on in 50 of 50 blocks (vs 31/44 for W4), cutting peak workspace 6819->4659 MiB (-31.7%) and quadrupling minimum free VRAM (400->1656 MiB), +1.55% over the rebuilt-binary control X0 (383.32 tps, itself +1.85% over W4 from the build alone, not a lever). Adding -b 12288 (X4: divides exactly into every schedule step of 4096/3072/2048, removing split ubatches) is worth +1.98% alone with an identical workspace: 396.99 tps. A depth-schedule extra step at -ub 6144 (X5) does not pay, -2.5% on X4: pushes the next tract's workspace to 5614 MiB, above the staging threshold, disabling it in 13 of 38 blocks -- the schedule's optimum is narrow and must be respected per-tract, not on average. Gates cleared on X4: 5/5 needles (aghi_131k profile, Q_TEC still budget-inconclusive as in prior cells); decode +0.84% (L01@ctx131k, 27.475 tps) and -0.69% (L02@ctx131k, 27.057 tps) against the 27.245 tps V3 reference (-3% gate). Prefill confirmed on three independent prompts: 396.99 / 396.84 / 392.06 tps, the last on the same L01@ctx131k case as the P10 reference (252.16 tps, +55.5%). Verdict against 400: X4 is -0.75% short (2.5 s of 330.4), +57.4% over the P10 reference, +5.5% over W4. D44 adopts X4 as the prefill operating-point candidate (396.99 tps, +57% over the 252 reference); the 400 tps target is NOT declared reached -- the shortfall is within measurement noise but the protocol requires clearing the threshold, not approaching it. Two possible next steps, both above the 5% threshold, no recommendation: (a) P6 validation and promotion of the prefill candidate to bin_prod (requires explicit user agreement on the change procedure, and the recompiled binaries); (b) measuring the 250k KV operating point (fixture not yet built), the extension the plan calls for. Declared limits: the allocator's peak was not localized (GGML_ALLOCATOR_DEBUG produces no lines at log level INFO, and the sched_reserve simulator written for this cell works pre-split and is unvalidated); single replica per cell; QWEN4EXP_QSA_MASK_INPLACE never measured alone; the 512-token slice size not explored; the 250k operating point still not measured. Promotion into the daily launcher remains a user decision and requires the recompiled binaries, unlike W4 which ran on binaries already present. P11 now awaits that decision; no cell is in progress."
     }
   ]
 }

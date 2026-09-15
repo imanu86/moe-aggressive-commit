@@ -84,6 +84,26 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
+> **Nota di ripresa, 15/9 (settima).** **P11 cella 2 (A1) è COMPLETATA** (commit `4207e39`,
+> [`p11_prefill/P11_CELLA2_MASCHERE_15_SETTEMBRE.md`](p11_prefill/P11_CELLA2_MASCHERE_15_SETTEMBRE.md)):
+> la diagnosi corregge il modello di P11 — le tre maschere F32 `[n_kv, n_batch]` non stanno
+> nell'attenzione (`build_attn_qsa`, dove sono due, F16, una delle quali è una vista che non
+> alloca) ma nell'**indicizzatore** `build_qsa_top_k` (`qwen4exp.cpp:1056-1063`). La correzione A1
+> (top-k a fette di 512 token) è stata scritta e misurata: **falsificata** — la riserva non scende
+> (+4,2%) e il tempo peggiora (−9% a batch 3072, −43% a 4096, paginazione). L'altra metà
+> dell'apertura paga: la scaletta dell'ubatch ricalcolata sul **fabbisogno dello staging** (non sul
+> tetto della VRAM come in W5) tiene lo staging acceso in 50 blocchi su 50, e `-b 12288`
+> (divisibile per ogni gradino) toglie gli ubatch spaiati. **Candidato X4: 396,99 t/s a 131k**,
+> workspace 6.819 → 4.659 MiB, **+57,4% sul riferimento P10 (252,2), +5,5% su W4, −0,75% dai 400**.
+> Cancelli superati: 5/5 aghi, decode +0,84%/−0,69% contro 27,245 t/s (cancello −3%). **D44 — X4 è
+> il candidato di prefill al punto operativo; i 400 non sono dichiarati (manca lo 0,75%, dentro il
+> rumore ma il protocollo vuole la soglia superata).** Due passi possibili, entrambi sopra soglia,
+> nessuna raccomandazione: (a) validazione P6 e promozione a `bin_prod` del candidato di prefill
+> (richiede l'accordo esplicito dell'utente sulla procedura di cambio, e i binari ricompilati); (b)
+> misura a 250k (fixture da costruire), il punto operativo dichiarato dal piano, mai ancora
+> misurato. **P11 è in attesa della decisione dell'utente su questi due punti.** Dettagli completi
+> in [`REGISTRO_CPU_GPU_14_SETTEMBRE.md`](REGISTRO_CPU_GPU_14_SETTEMBRE.md).
+>
 > **Nota di ripresa, 15/9 (sesta).** **P11 cella 1 è COMPLETATA** (commit `42bd36b`,
 > [`p11_prefill/P11_PREFILL_131K_15_SETTEMBRE.md`](p11_prefill/P11_PREFILL_131K_15_SETTEMBRE.md)):
 > le leve del prefill a 131k misurate separatamente il 13/9 (sparse FA a teste 256, batch/ubatch

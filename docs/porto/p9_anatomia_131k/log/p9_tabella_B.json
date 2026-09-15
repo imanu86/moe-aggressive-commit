@@ -1,0 +1,175 @@
+{
+ "nsys": "log/p9_L01_nsys.json",
+ "parete_per_forward_ms": 37.442,
+ "gpu_inattiva_ms": 3.322,
+ "gpu_occupata_ms": 34.12,
+ "somma_durate_kernel_ms": 36.43,
+ "byte_modello_mib": {
+  "esperti_vram": 905.76,
+  "esperti_pcie": 168.47,
+  "denso_quant": 3446.43,
+  "denso_float": 336.2,
+  "qsa_pool": 192.26,
+  "gather_kv": 54.19,
+  "bias_h2d": 0.5
+ },
+ "righe": [
+  {
+   "categoria": "esperti: matvec dalla cache in VRAM (iq2_s/iq3_s/iq4_nl)",
+   "ms": 5.929,
+   "lanci": 96.0,
+   "mib": 905.8,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 2.791,
+   "efficienza_pct": 47.1,
+   "spreco_ms": 3.138,
+   "banda_effettiva_gbs": 160.2
+  },
+  {
+   "categoria": "esperti: trasporto dal PCIe (gather)",
+   "ms": 6.688,
+   "lanci": 96.0,
+   "mib": 168.5,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 6.717,
+   "efficienza_pct": 100.4,
+   "spreco_ms": -0.029,
+   "banda_effettiva_gbs": 26.4
+  },
+  {
+   "categoria": "densi quantizzati: matvec q6_k/q8_0 (+quantize_q8_1)",
+   "ms": 13.404,
+   "lanci": 994.0,
+   "mib": 3446.4,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 10.62,
+   "efficienza_pct": 79.2,
+   "spreco_ms": 2.784,
+   "banda_effettiva_gbs": 269.6
+  },
+  {
+   "categoria": "densi in virgola mobile: router f32, inject, ssm, indicizzatore bf16",
+   "ms": 1.651,
+   "lanci": 288.0,
+   "mib": 336.2,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 1.036,
+   "efficienza_pct": 62.7,
+   "spreco_ms": 0.615,
+   "banda_effettiva_gbs": 213.5
+  },
+  {
+   "categoria": "punteggio QSA sui blocchi (legge la cache dei blocchi)",
+   "ms": 0.64,
+   "lanci": 12.0,
+   "mib": 192.3,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 0.592,
+   "efficienza_pct": 92.6,
+   "spreco_ms": 0.048,
+   "banda_effettiva_gbs": 315.0
+  },
+  {
+   "categoria": "indicizzatore/KV: gather delle celle (host mappato)",
+   "ms": 2.575,
+   "lanci": 136.0,
+   "mib": 54.2,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 2.16,
+   "efficienza_pct": 83.9,
+   "spreco_ms": 0.415,
+   "banda_effettiva_gbs": 22.1
+  },
+  {
+   "categoria": "instradamento MoE (plan, top-k, riduzione)",
+   "ms": 0.769,
+   "lanci": 144.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "indicizzatore: ordinamento",
+   "ms": 0.631,
+   "lanci": 72.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "attenzione (flash_attn)",
+   "ms": 0.288,
+   "lanci": 24.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "GDN / SSM",
+   "ms": 0.764,
+   "lanci": 72.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "norme",
+   "ms": 0.458,
+   "lanci": 256.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "elementari (add/mul/scale/unary/rope/copie)",
+   "ms": 2.512,
+   "lanci": 1956.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "altro",
+   "ms": 0.12,
+   "lanci": 110.0,
+   "mib": null,
+   "banda_gbs": null,
+   "pavimento_ms": null,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": null
+  },
+  {
+   "categoria": "copie H2D esplicite (bias QSA e piccole)",
+   "ms": 0.357,
+   "lanci": 27.0,
+   "mib": 7.313,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 0.292,
+   "efficienza_pct": null,
+   "spreco_ms": null,
+   "banda_effettiva_gbs": 21.5
+  }
+ ],
+ "categorie_non_mappate": [],
+ "somma_categorie_ms": 36.786,
+ "somma_pavimenti_ms": 24.208
+}

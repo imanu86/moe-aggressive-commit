@@ -1,0 +1,153 @@
+{
+ "parete_ms": 37.442,
+ "banda_effettiva_gbs": {
+  "q6_k denso": 292.1,
+  "q8_0 denso": 259.2,
+  "iq2_s esperti (gate+up)": 123.8,
+  "iq4_nl esperti (down)": 238.9,
+  "iq3_s esperti": 153.0,
+  "picco misurato": 340.3
+ },
+ "modello_a_due_termini": {
+  "q6_k denso": {
+   "byte_mib": 2676.8,
+   "ms": 9.609,
+   "pesi_milioni": 3421.6,
+   "ps_per_peso_totale": 2.808,
+   "ps_per_peso_dai_byte": 2.411,
+   "ps_per_peso_di_dequantizzazione": 0.398,
+   "quota_dequantizzazione_pct": 14.2,
+   "bpw_effettivi": 7.65
+  },
+  "q8_0 denso": {
+   "byte_mib": 769.6,
+   "ms": 3.113,
+   "pesi_milioni": 759.6,
+   "ps_per_peso_totale": 4.098,
+   "ps_per_peso_dai_byte": 3.122,
+   "ps_per_peso_di_dequantizzazione": 0.976,
+   "quota_dequantizzazione_pct": 23.8,
+   "bpw_effettivi": 11.16
+  },
+  "iq2_s esperti gate+up": {
+   "byte_mib": 470.5,
+   "ms": 3.985,
+   "pesi_milioni": 1578.6,
+   "ps_per_peso_totale": 2.524,
+   "ps_per_peso_dai_byte": 0.918,
+   "ps_per_peso_di_dequantizzazione": 1.606,
+   "quota_dequantizzazione_pct": 63.6,
+   "bpw_effettivi": 6.87
+  },
+  "iq3_s esperti gate+up": {
+   "byte_mib": 13.4,
+   "ms": 0.092,
+   "pesi_milioni": 32.8,
+   "ps_per_peso_totale": 2.808,
+   "ps_per_peso_dai_byte": 1.263,
+   "ps_per_peso_di_dequantizzazione": 1.545,
+   "quota_dequantizzazione_pct": 55.0,
+   "bpw_effettivi": 7.64
+  },
+  "iq4_nl esperti down": {
+   "byte_mib": 421.9,
+   "ms": 1.852,
+   "pesi_milioni": 786.4,
+   "ps_per_peso_totale": 2.355,
+   "ps_per_peso_dai_byte": 1.653,
+   "ps_per_peso_di_dequantizzazione": 0.702,
+   "quota_dequantizzazione_pct": 29.8,
+   "bpw_effettivi": 6.41
+  }
+ },
+ "leva1_q6k_verso_q4k": {
+  "byte_q6_letti_per_token_mib": 2676.8,
+  "ms_misurati": 9.609,
+  "banda_effettiva_gbs": 292.1,
+  "byte_tolti_mib": 841.3,
+  "ms_risparmiati_alla_banda_effettiva": 3.02,
+  "ms_risparmiati_al_pavimento": 2.592,
+  "senza_la_testa_di_uscita": {
+   "byte_tolti_mib": 685.0,
+   "ms_risparmiati": 2.459
+  },
+  "vram_liberata_mib": 841.3,
+  "slot_esperti_in_piu": 9.3,
+  "col_modello_a_due_termini": {
+   "ms_q4k_col_costo_di_dequantizzazione_del_q6k": 7.017,
+   "ms_q4k_col_costo_di_dequantizzazione_dell_iq4nl": 8.058,
+   "guadagno_ms_intervallo": [
+    2.592,
+    1.551
+   ]
+  }
+ },
+ "leva2_lanci": {
+  "lanci_per_forward": 4256.0,
+  "lanci_sotto_2_5_us": 2979.0,
+  "ms_dei_lanci_piccoli": 3.986,
+  "us_per_lancio_vuoto_misurato": 1.15,
+  "ms_di_puro_lancio_nei_piccoli": 3.423,
+  "gia_fuso": "attn_qkv e' UN tensore nel GGUF; gate/up+GLU sono fusi (mmvq con has_fusion=1, 47 lanci iq2_s per forward = uno per strato invece di due)",
+  "bersaglio": "le connessioni HC: build_hc_mix gira 2 volte per strato e mette ~14 nodi elementari ciascuna, cioe' ~1.300 lanci per forward"
+ },
+ "leva3_kernel_esperti": {
+  "iq2_s": {
+   "mib": 470.5,
+   "ms": 3.985,
+   "gbs": 123.8,
+   "pct_del_picco": 36.4,
+   "bit_per_peso_dichiarati": 2.5,
+   "bit_per_peso_effettivi": 6.87
+  },
+  "iq4_nl": {
+   "mib": 421.9,
+   "ms": 1.852,
+   "gbs": 238.9,
+   "pct_del_picco": 70.2
+  },
+  "se_iq2_s_arrivasse_a_iq4_nl_ms": 2.065,
+  "guadagno_ms": 1.92,
+  "se_iq2_s_arrivasse_al_picco_ms": 1.45,
+  "guadagno_massimo_ms": 2.535,
+  "piu_iq4_nl_alla_banda_del_q6k_ms": 0.338,
+  "col_modello_a_due_termini": {
+   "ms_se_la_dequantizzazione_costasse_come_iq4nl": 2.558,
+   "ms_se_costasse_come_q6k": 2.078
+  }
+ },
+ "cosa_cresce_col_contesto": {
+  "voci": {
+   "punteggio QSA sui blocchi (mul_mat_f)": 0.64,
+   "ordinamento dell'indicizzatore": 0.631,
+   "copie H2D del bias QSA": 0.357
+  },
+  "totale_ms_a_131k": 1.628,
+  "quota_del_token_pct": 4.35,
+  "stima_a_262k_ms": 3.256,
+  "stima_a_32k_ms": 0.406,
+  "costante_col_contesto": {
+   "gather delle 2048 celle scelte": 2.575
+  }
+ },
+ "tetto": {
+  "pavimento_vram_ms": 15.039,
+  "pavimento_pcie_ms": 9.169,
+  "sovrapposizione_gia_ottenuta_ms": 2.31,
+  "pavimento_con_la_sovrapposizione_di_oggi_ms": 21.898,
+  "pavimento_con_sovrapposizione_perfetta_ms": 15.039,
+  "misurato_ms": 37.442,
+  "t_s_al_pavimento_di_oggi": 45.67,
+  "t_s_con_sovrapposizione_perfetta": 66.49,
+  "t_s_misurato": 26.71
+ },
+ "tre_leve_insieme": {
+  "leva1_ms": 3.02,
+  "leva2_ms": 1.2,
+  "leva3_ms": 1.92,
+  "ms_per_token_atteso": 31.3,
+  "t_s_atteso": 31.95,
+  "solo_le_lossless_ms": 34.32,
+  "solo_le_lossless_t_s": 29.14
+ }
+}

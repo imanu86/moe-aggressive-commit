@@ -1,0 +1,121 @@
+{
+ "parametri": {
+  "esperti_mancanti_per_strato": 3.0,
+  "n_kv": 131248,
+  "indexer_top_k": 2048,
+  "banda_vram_gbs": 340.3,
+  "banda_pcie_gbs": 26.3,
+  "banda_ram_cpu_gbs": 33.4
+ },
+ "byte_di_un_esperto_medio": 1978666,
+ "n_strati_moe": 48,
+ "righe": [
+  {
+   "categoria": "esperti — letti dalla cache in VRAM",
+   "byte": 664832000,
+   "mib": 634.03,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 1.954,
+   "nota": "70% dei 10 instradati x 48 strati"
+  },
+  {
+   "categoria": "esperti — caricati dal PCIe (gather)",
+   "byte": 284928000,
+   "mib": 271.73,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 10.834,
+   "nota": "3.0 esperti mancanti per strato"
+  },
+  {
+   "categoria": "attenzione QSA (q/k/v/o, q6_k+q8_0)",
+   "byte": 490315776,
+   "mib": 467.6,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 1.441,
+   "nota": "72 tensori, {'q6_k': 48, 'f32': 24}"
+  },
+  {
+   "categoria": "GDN/SSM (qkv, gate, out, q6_k+f32)",
+   "byte": 1754594816,
+   "mib": 1673.31,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 5.156,
+   "nota": "324 tensori, {'q6_k': 106, 'f32': 216, 'q8_0': 2}"
+  },
+  {
+   "categoria": "connessioni HC (q8_0)",
+   "byte": 688128000,
+   "mib": 656.25,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 2.022,
+   "nota": "384 tensori, {'q8_0': 192, 'f32': 192}"
+  },
+  {
+   "categoria": "router ffn_gate_inp (f32!)",
+   "byte": 251658240,
+   "mib": 240.0,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 0.74,
+   "nota": "48 tensori, {'f32': 48}"
+  },
+  {
+   "categoria": "esperto condiviso",
+   "byte": 213867520,
+   "mib": 203.96,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 0.628,
+   "nota": "192 tensori, {'q8_0': 50, 'f32': 48, 'q6_k': 94}"
+  },
+  {
+   "categoria": "pesi dell'indicizzatore QSA",
+   "byte": 39333888,
+   "mib": 37.51,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 0.116,
+   "nota": "48 tensori, {'f32': 24, 'bf16': 24}"
+  },
+  {
+   "categoria": "testa di uscita (q6_k)",
+   "byte": 528476160,
+   "mib": 503.99,
+   "banda_gbs": 340.3,
+   "pavimento_ms": 1.553,
+   "nota": "4 tensori, {'q6_k': 1, 'q8_0': 2, 'f32': 1}"
+  },
+  {
+   "categoria": "indicizzatore: gather di 2048 celle (host mappato)",
+   "byte": 3342336,
+   "mib": 3.19,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 0.127,
+   "nota": "136 B/cella x 12 strati"
+  },
+  {
+   "categoria": "KV delle celle scelte (host mappato)",
+   "byte": 26738688,
+   "mib": 25.5,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 1.017,
+   "nota": "K+V 2x256 q8_0 x 2048 celle x 12 strati"
+  },
+  {
+   "categoria": "bias QSA, copia H2D",
+   "byte": 524992,
+   "mib": 0.5,
+   "banda_gbs": 26.3,
+   "pavimento_ms": 0.02,
+   "nota": "n_kv float per forward"
+  }
+ ],
+ "totali": {
+  "vram_byte": 4631206400,
+  "vram_mib": 4416.7,
+  "vram_pavimento_ms": 13.61,
+  "pcie_byte": 315534016,
+  "pcie_mib": 300.9,
+  "pcie_pavimento_ms": 11.998,
+  "somma_pavimento_ms": 25.608,
+  "pavimento_se_seriale_ms": 25.608,
+  "pavimento_se_sovrapposti_ms": 13.61
+ }
+}

@@ -1,0 +1,519 @@
+{
+ "file": "D:\\ds4_work\\banco_p0_run\\20260915_145054_P9_p9_anatomia_131k\\nsys\\p9_L01.sqlite",
+ "n_forward_completi_nella_finestra": 106,
+ "periodo_min_max_ms": [
+  33.054,
+  52.559
+ ],
+ "integrita": {
+  "valida": true,
+  "conteggi": {
+   "moe_grouped_plan_decode": {
+    "atteso_per_forward": 48,
+    "visto_per_forward": 48.0,
+    "ok": true
+   },
+   "topk_moe_cuda": {
+    "atteso_per_forward": 48,
+    "visto_per_forward": 48.0,
+    "ok": true
+   },
+   "moe_weighted_reduction_f32": {
+    "atteso_per_forward": 48,
+    "visto_per_forward": 48.0,
+    "ok": true
+   },
+   "gated_delta_net_cuda": {
+    "atteso_per_forward": 36,
+    "visto_per_forward": 36.0,
+    "ok": true
+   },
+   "ssm_conv_f32": {
+    "atteso_per_forward": 36,
+    "visto_per_forward": 36.0,
+    "ok": true
+   },
+   "flash_attn_ext_f16": {
+    "atteso_per_forward": 12,
+    "visto_per_forward": 12.0,
+    "ok": true
+   }
+  }
+ },
+ "finestra_ms": 3968.815,
+ "per_forward_ms": {
+  "parete": 37.442,
+  "gpu_occupata_unione_kernel": 34.12,
+  "gpu_inattiva": 3.322,
+  "somma_durate_kernel": 36.43,
+  "sovrapposizione_fra_kernel": 2.31
+ },
+ "copie": {
+  "h2d_n_per_forward": 27.0,
+  "h2d_mib_per_forward": 7.313,
+  "h2d_ms_per_forward": 0.357,
+  "d2h_n_per_forward": 1.0,
+  "d2h_mib_per_forward": 0.9473,
+  "d2h_ms_per_forward": 0.04,
+  "istogramma_h2d_byte": {
+   "526336": 14.0,
+   "262144": 1.0,
+   "16384": 1.0,
+   "10240": 2.0,
+   "32": 2.0,
+   "16": 2.0,
+   "8": 3.0,
+   "4": 2.0
+  }
+ },
+ "categorie": [
+  {
+   "categoria": "2. matvec DENSI quantizzati (mmvq q6_k)",
+   "ms_per_forward": 9.609,
+   "lanci_per_forward": 202.0,
+   "quota_pct": 25.66
+  },
+  {
+   "categoria": "5. trasporto esperti dal PCIe (moe_grouped_gather_decode)",
+   "ms_per_forward": 6.688,
+   "lanci_per_forward": 96.0,
+   "quota_pct": 17.86
+  },
+  {
+   "categoria": "1. matvec ESPERTI (mmvq iq2_s)",
+   "ms_per_forward": 3.985,
+   "lanci_per_forward": 47.0,
+   "quota_pct": 10.64
+  },
+  {
+   "categoria": "2. matvec DENSI quantizzati (mmvq q8_0)",
+   "ms_per_forward": 3.113,
+   "lanci_per_forward": 247.0,
+   "quota_pct": 8.32
+  },
+  {
+   "categoria": "7. indicizzatore QSA: gather delle celle (k_get_rows)",
+   "ms_per_forward": 2.575,
+   "lanci_per_forward": 136.0,
+   "quota_pct": 6.88
+  },
+  {
+   "categoria": "12. elementari (add/mul/scale/unary/rope/copie)",
+   "ms_per_forward": 2.512,
+   "lanci_per_forward": 1956.0,
+   "quota_pct": 6.71
+  },
+  {
+   "categoria": "1. matvec ESPERTI (mmvq iq4_nl)",
+   "ms_per_forward": 1.852,
+   "lanci_per_forward": 48.0,
+   "quota_pct": 4.95
+  },
+  {
+   "categoria": "4. matvec DENSI in virgola mobile (router f32, inject, ssm, indicizzatore bf16)",
+   "ms_per_forward": 1.651,
+   "lanci_per_forward": 288.0,
+   "quota_pct": 4.41
+  },
+  {
+   "categoria": "6. instradamento MoE (plan, top-k, riduzione)",
+   "ms_per_forward": 0.769,
+   "lanci_per_forward": 144.0,
+   "quota_pct": 2.05
+  },
+  {
+   "categoria": "10. GDN / SSM",
+   "ms_per_forward": 0.764,
+   "lanci_per_forward": 72.0,
+   "quota_pct": 2.04
+  },
+  {
+   "categoria": "3. quantizzazione dell'attivazione (quantize_q8_1)",
+   "ms_per_forward": 0.682,
+   "lanci_per_forward": 545.0,
+   "quota_pct": 1.82
+  },
+  {
+   "categoria": "4b. punteggio QSA sui blocchi (mul_mat_f f32)",
+   "ms_per_forward": 0.64,
+   "lanci_per_forward": 12.0,
+   "quota_pct": 1.71
+  },
+  {
+   "categoria": "8. indicizzatore QSA: ordinamento (radix sort)",
+   "ms_per_forward": 0.631,
+   "lanci_per_forward": 72.0,
+   "quota_pct": 1.69
+  },
+  {
+   "categoria": "11. norme",
+   "ms_per_forward": 0.458,
+   "lanci_per_forward": 256.0,
+   "quota_pct": 1.22
+  },
+  {
+   "categoria": "9. attenzione (flash_attn)",
+   "ms_per_forward": 0.288,
+   "lanci_per_forward": 24.0,
+   "quota_pct": 0.77
+  },
+  {
+   "categoria": "13. altro",
+   "ms_per_forward": 0.12,
+   "lanci_per_forward": 110.0,
+   "quota_pct": 0.32
+  },
+  {
+   "categoria": "1. matvec ESPERTI (mmvq iq3_s)",
+   "ms_per_forward": 0.092,
+   "lanci_per_forward": 1.0,
+   "quota_pct": 0.24
+  }
+ ],
+ "kernel": [
+  {
+   "kernel": "mul_mat_vec_q<q6_k>",
+   "ms_per_forward": 9.609,
+   "lanci_per_forward": 202.0,
+   "us_per_lancio": 47.57,
+   "blocchi_medi_per_lancio": 5616.2,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "moe_grouped_gather_decode",
+   "ms_per_forward": 6.688,
+   "lanci_per_forward": 96.0,
+   "us_per_lancio": 69.67,
+   "blocchi_medi_per_lancio": 70.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "mul_mat_vec_q<iq2_s>",
+   "ms_per_forward": 3.985,
+   "lanci_per_forward": 47.0,
+   "us_per_lancio": 84.79,
+   "blocchi_medi_per_lancio": 1600.0,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "mul_mat_vec_q<q8_0>",
+   "ms_per_forward": 3.113,
+   "lanci_per_forward": 247.0,
+   "us_per_lancio": 12.6,
+   "blocchi_medi_per_lancio": 1376.1,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "mul_mat_vec_q<iq4_nl>",
+   "ms_per_forward": 1.852,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 38.59,
+   "blocchi_medi_per_lancio": 6400.0,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "k_get_rows",
+   "ms_per_forward": 1.754,
+   "lanci_per_forward": 36.0,
+   "us_per_lancio": 48.71,
+   "blocchi_medi_per_lancio": 1538.7,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "mul_mat_vec_f<f32>",
+   "ms_per_forward": 1.486,
+   "lanci_per_forward": 264.0,
+   "us_per_lancio": 5.63,
+   "blocchi_medi_per_lancio": 107.8,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "k_bin_bcast",
+   "ms_per_forward": 1.261,
+   "lanci_per_forward": 909.0,
+   "us_per_lancio": 1.39,
+   "blocchi_medi_per_lancio": 33.9,
+   "filo_blocco": "128x1"
+  },
+  {
+   "kernel": "quantize_q8_1",
+   "ms_per_forward": 0.682,
+   "lanci_per_forward": 545.0,
+   "us_per_lancio": 1.25,
+   "blocchi_medi_per_lancio": 17.3,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "gated_delta_net_cuda",
+   "ms_per_forward": 0.666,
+   "lanci_per_forward": 36.0,
+   "us_per_lancio": 18.5,
+   "blocchi_medi_per_lancio": 1536.0,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "k_get_rows_float_vec",
+   "ms_per_forward": 0.664,
+   "lanci_per_forward": 36.0,
+   "us_per_lancio": 18.45,
+   "blocchi_medi_per_lancio": 768.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "mul_mat_f<f32>",
+   "ms_per_forward": 0.64,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 53.33,
+   "blocchi_medi_per_lancio": 1028.0,
+   "filo_blocco": "32x2"
+  },
+  {
+   "kernel": "DeviceRadixSortOnesweepKernel",
+   "ms_per_forward": 0.572,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 11.91,
+   "blocchi_medi_per_lancio": 17.0,
+   "filo_blocco": "384x1"
+  },
+  {
+   "kernel": "moe_grouped_plan_decode",
+   "ms_per_forward": 0.456,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 9.51,
+   "blocchi_medi_per_lancio": 1.0,
+   "filo_blocco": "64x1"
+  },
+  {
+   "kernel": "scale_f32",
+   "ms_per_forward": 0.4,
+   "lanci_per_forward": 399.0,
+   "us_per_lancio": 1.0,
+   "blocchi_medi_per_lancio": 3.4,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "rms_norm_f32",
+   "ms_per_forward": 0.366,
+   "lanci_per_forward": 184.0,
+   "us_per_lancio": 1.99,
+   "blocchi_medi_per_lancio": 13.7,
+   "filo_blocco": "1024x1"
+  },
+  {
+   "kernel": "unary_op_kernel",
+   "ms_per_forward": 0.289,
+   "lanci_per_forward": 294.0,
+   "us_per_lancio": 0.98,
+   "blocchi_medi_per_lancio": 22.4,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "flash_attn_ext_f16",
+   "ms_per_forward": 0.266,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 22.16,
+   "blocchi_medi_per_lancio": 28.0,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "unary_gated_op_kernel",
+   "ms_per_forward": 0.246,
+   "lanci_per_forward": 181.0,
+   "us_per_lancio": 1.36,
+   "blocchi_medi_per_lancio": 28.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "topk_moe_cuda",
+   "ms_per_forward": 0.22,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 4.58,
+   "blocchi_medi_per_lancio": 1.0,
+   "filo_blocco": "32x8"
+  },
+  {
+   "kernel": "mul_mat_vec_f<bf16>",
+   "ms_per_forward": 0.165,
+   "lanci_per_forward": 24.0,
+   "us_per_lancio": 6.89,
+   "blocchi_medi_per_lancio": 320.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "concat_cont",
+   "ms_per_forward": 0.114,
+   "lanci_per_forward": 49.0,
+   "us_per_lancio": 2.32,
+   "blocchi_medi_per_lancio": 127.9,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "ssm_conv_f32",
+   "ms_per_forward": 0.098,
+   "lanci_per_forward": 36.0,
+   "us_per_lancio": 2.71,
+   "blocchi_medi_per_lancio": 80.0,
+   "filo_blocco": "128x1"
+  },
+  {
+   "kernel": "moe_weighted_reduction_f32",
+   "ms_per_forward": 0.093,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 1.94,
+   "blocchi_medi_per_lancio": 10.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "l2_norm_f32",
+   "ms_per_forward": 0.092,
+   "lanci_per_forward": 72.0,
+   "us_per_lancio": 1.28,
+   "blocchi_medi_per_lancio": 16.0,
+   "filo_blocco": "32x1"
+  },
+  {
+   "kernel": "mul_mat_vec_q<iq3_s>",
+   "ms_per_forward": 0.092,
+   "lanci_per_forward": 1.0,
+   "us_per_lancio": 91.7,
+   "blocchi_medi_per_lancio": 6400.0,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "k_get_rows_float",
+   "ms_per_forward": 0.086,
+   "lanci_per_forward": 40.0,
+   "us_per_lancio": 2.15,
+   "blocchi_medi_per_lancio": 118.3,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "k_set_rows_quant",
+   "ms_per_forward": 0.074,
+   "lanci_per_forward": 36.0,
+   "us_per_lancio": 2.05,
+   "blocchi_medi_per_lancio": 1.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "k_get_rows_scalar",
+   "ms_per_forward": 0.072,
+   "lanci_per_forward": 24.0,
+   "us_per_lancio": 2.98,
+   "blocchi_medi_per_lancio": 261.5,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "rope_multi",
+   "ms_per_forward": 0.068,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 1.41,
+   "blocchi_medi_per_lancio": 8.0,
+   "filo_blocco": "1x256"
+  },
+  {
+   "kernel": "fwht_cuda",
+   "ms_per_forward": 0.052,
+   "lanci_per_forward": 48.0,
+   "us_per_lancio": 1.07,
+   "blocchi_medi_per_lancio": 8.2,
+   "filo_blocco": "32x4"
+  },
+  {
+   "kernel": "DeviceRadixSortHistogramKernel",
+   "ms_per_forward": 0.047,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 3.88,
+   "blocchi_medi_per_lancio": 336.0,
+   "filo_blocco": "128x1"
+  },
+  {
+   "kernel": "cpy_scalar",
+   "ms_per_forward": 0.031,
+   "lanci_per_forward": 16.0,
+   "us_per_lancio": 1.94,
+   "blocchi_medi_per_lancio": 112.0,
+   "filo_blocco": "64x1"
+  },
+  {
+   "kernel": "flash_attn_stream_k_fixup_uniform",
+   "ms_per_forward": 0.022,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 1.84,
+   "blocchi_medi_per_lancio": 32.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "init_indices",
+   "ms_per_forward": 0.021,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 1.71,
+   "blocchi_medi_per_lancio": 514.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "k_set_rows",
+   "ms_per_forward": 0.017,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 1.45,
+   "blocchi_medi_per_lancio": 1.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "pad_f32",
+   "ms_per_forward": 0.014,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 1.14,
+   "blocchi_medi_per_lancio": 9.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "DeviceRadixSortExclusiveSumKernel",
+   "ms_per_forward": 0.013,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 1.09,
+   "blocchi_medi_per_lancio": 4.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "op_clamp_kernel",
+   "ms_per_forward": 0.012,
+   "lanci_per_forward": 13.0,
+   "us_per_lancio": 0.9,
+   "blocchi_medi_per_lancio": 8.4,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "diag_mask_inf_f32",
+   "ms_per_forward": 0.012,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 0.97,
+   "blocchi_medi_per_lancio": 72.0,
+   "filo_blocco": "1x32"
+  },
+  {
+   "kernel": "cpy_scalar_contiguous",
+   "ms_per_forward": 0.011,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 0.93,
+   "blocchi_medi_per_lancio": 36.0,
+   "filo_blocco": "64x1"
+  },
+  {
+   "kernel": "init_offsets",
+   "ms_per_forward": 0.009,
+   "lanci_per_forward": 12.0,
+   "us_per_lancio": 0.77,
+   "blocchi_medi_per_lancio": 1.0,
+   "filo_blocco": "256x1"
+  },
+  {
+   "kernel": "reduce_rows_f32",
+   "ms_per_forward": 0.001,
+   "lanci_per_forward": 1.0,
+   "us_per_lancio": 1.4,
+   "blocchi_medi_per_lancio": 4.0,
+   "filo_blocco": "512x1"
+  }
+ ]
+}

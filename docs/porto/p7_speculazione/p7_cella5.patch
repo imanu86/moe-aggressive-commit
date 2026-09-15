@@ -1,0 +1,671 @@
+--- a/ggml/src/ggml-cuda/fork-moe-kernels.cuh
++++ b/ggml/src/ggml-cuda/fork-moe-kernels.cuh
+@@ -294,8 +294,22 @@
+             // non coprirebbe. Il tick di orologio viene comunque consumato:
+             // l'aritmetica dell'indice non cambia, cambia solo chi la scrive.
+             const bool unique_solo_bozza = unique_draft[unique] != 0;
+-            if (!unique_cpu && !unique_solo_bozza) {
+-                last_used[slot] = plan->next_clock - plan->n_unique + unique + 1;
++            if (!unique_cpu) {
++                if (!unique_solo_bozza) {
++                    last_used[slot] = plan->next_clock - plan->n_unique + unique + 1;
++                } else if (last_used[slot] == 0) {
++                    // P7-cella5, DIFETTO 1. Uno slot AMMESSO da questo piano per
++                    // una richiesta di sola bozza non riceveva nessuna recenza, e
++                    // un residente con `last_used == 0` fa scattare il controllo
++                    // di stato in cima alla chiamata SUCCESSIVA
++                    // (`resident >= 0 && last_used[slot] == 0` -> `__trap()`, cioe'
++                    // «unspecified launch failure»). L'invariante 5 dice che la
++                    // bozza non deve SPOSTARE la politica a proprio favore, non che
++                    // un residente possa restare senza eta': gli si da' la recenza
++                    // piu' vecchia rappresentabile, cosi' resta il primo candidato
++                    // allo sfratto e l'invariante del piano regge.
++                    last_used[slot] = 1;
++                }
+             }
+             if (unique_solo_bozza) {
+                 continue;
+@@ -607,6 +621,22 @@
+         }
+     }
+     __syncthreads();
++
++    // ------------------------------------------------------------- P7-cella5
++    // DIFETTO 7 DELLA CELLA 4, corretto. In modalita' DIAGNOSTICA il piano deve
++    // essere identico a `cpu_max = 0` NON SOLO nell'uscita ma anche nella
++    // POLITICA: `cpu_active` resta 0, i miss restano tutti miss GPU — e allora
++    // anche il flag di sola bozza deve sparire, perche' il commit differito
++    // della chiamata successiva lo legge e sopprimerebbe recenza e frequenza di
++    // esperti che la diagnostica ha ammesso normalmente. Il flag e' servito qui
++    // sopra a SCEGLIERE gli esperti CPU (che in diagnostica servono solo a
++    // produrre il job da confrontare): fatto quello, si azzera.
++    if (cpu_diag && draft_from_row > 0) {
++        for (uint32_t u = thread; u < plan_capacity; u += blockDim.x) {
++            unique_draft[u] = 0;
++        }
++    }
++    __syncthreads();
+ 
+     // Contatore VERO di esperti richiesti e mancanti. Qui i due cammini (a warp e a
+     // blocco) si sono gia' ricongiunti e sincronizzati, quindi una sola inserzione li
+--- a/ggml/src/ggml-cuda/moe-demand.cuh
++++ b/ggml/src/ggml-cuda/moe-demand.cuh
+@@ -86,6 +86,18 @@
+     //        ATTIVA SOLO con righe >= 2: con una riga sola non esistono righe di
+     //        bozza e il piano e' identico a prima, riga per riga.
+     bool     draft_rows  = false;
++    // P7-cella5 - SONDA del contributo CPU (apertura A7). Non e' una leva: e'
++    // una PROVA. Il contributo che il pool ha scritto in `y` viene sostituito
++    // dentro la guardia del merge, DOPO l'attesa e PRIMA dell'`add`, cosi' che
++    // il testo prodotto dica da solo se quell'`add` arriva davvero a `moe_out`.
++    //   LLAMA_MOE_CPU_PROBE=0 (default) spenta
++    //                        1  y := 0 su TUTTE le righe
++    //                        2  y := 0 sulla sola riga 0
++    //                        3  y := 0 sulle sole righe >= 1 (le righe di bozza)
++    //                        4  y := marcatore costante su tutte le righe
++    //   LLAMA_MOE_CPU_PROBE_VALUE=f (1.0) il marcatore del modo 4.
++    uint32_t probe       = 0;
++    float    probe_value = 1.0f;
+ };
+ 
+ static const cpu_options & cpu_opts() {
+@@ -137,6 +149,11 @@
+         // La corsia di bozza vive sul kernel di export (che porta il job) e
+         // sull'`add` (che somma il contributo): senza uno dei due non esiste.
+         if (!(o.nodes & MOE_CPU_NODE_EXPORT) || !(o.nodes & MOE_CPU_NODE_ADD)) o.draft_rows = false;
++        // ------------------------------------------------------ P7-cella5 ----
++        if (const char * s = getenv("LLAMA_MOE_CPU_PROBE"))       o.probe       = (uint32_t) strtoul(s, nullptr, 10);
++        if (const char * s = getenv("LLAMA_MOE_CPU_PROBE_VALUE")) o.probe_value = (float) atof(s);
++        // La sonda vive DENTRO la guardia del merge: senza guardia non esiste.
++        if (!(o.nodes & MOE_CPU_NODE_GUARD)) o.probe = 0;
+         const char * layers = getenv("LLAMA_MOE_CPU_LAYERS");
+         if (layers && *layers) {
+             const char * p = layers;
+@@ -155,6 +172,12 @@
+ 
+ static constexpr uint32_t MOE_CPU_DIAG_RING = 256;
+ 
++// P7-cella5 - quanti nodi `add` del contributo CPU il backend ha incontrato, e
++// quanti di questi sono arrivati senza un piano appena costruito per lo stesso
++// strato (vedi `merge_node`).
++static std::atomic<unsigned long long> merge_calls{0};
++static std::atomic<unsigned long long> merge_senza_piano{0};
++
+ // P3 — i pesi di routing del nodo `mul_mat_id` in corso di esecuzione.
+ //
+ // Perche' serve una variabile e non basta `dst->src[4]`: nel percorso FUSO il
+@@ -197,6 +220,11 @@
+     double * diag_acc = nullptr;              // [0] somma err^2  [1] somma rif^2  [2] confronti
+     unsigned long long * diag_u = nullptr;    // [0] max |err| (bit di float)  [1] non finiti  [2] posizione anello
+     float * diag_ring = nullptr;              // 2 * MOE_CPU_DIAG_RING: (nrmse, max|err|) per token
++    // P7-cella5: route CPU per RIGA. [r] = route del job sulla riga r,
++    // [MOE_CPU_MAX_ROWS + r] = job che avevano almeno una route su quella riga.
++    // La NRMSE aggregata e il totale delle route non dicono di QUALE riga sono,
++    // ed e' esattamente la domanda dell'apertura A7.
++    unsigned long long * rowc = nullptr;
+     std::vector<void *> allocations;
+ 
+     ~bound_group() {
+@@ -366,9 +394,12 @@
+         group->cpu_ok = opts.enabled && impianto_richiesto && group->layer >= 0 &&
+                         group->layer < 512 && opts.layer[group->layer] && types_ok && shapes_ok;
+         if (group->cpu_ok) {
+-            group->diag_acc  = group->allocate<double>(4);
+-            group->diag_u    = group->allocate<unsigned long long>(4);
++            // P7-cella5: quattro celle aggregate PIU' tre per riga (err, rif,
++            // confronti) e un massimo per riga.
++            group->diag_acc  = group->allocate<double>(4 + 3 * MOE_CPU_MAX_ROWS);
++            group->diag_u    = group->allocate<unsigned long long>(4 + MOE_CPU_MAX_ROWS);
+             group->diag_ring = group->allocate<float>(2 * MOE_CPU_DIAG_RING);
++            group->rowc      = group->allocate<unsigned long long>(2 * MOE_CPU_MAX_ROWS);
+             if (!pub_counter) {
+                 CUDA_CHECK(cudaMalloc(&pub_counter, sizeof(unsigned long long)));
+                 CUDA_CHECK(cudaMemset(pub_counter, 0, sizeof(unsigned long long)));
+@@ -463,7 +494,8 @@
+         float * x,
+         const uint64_t * device_step,
+         moe_cpu_flags * flags,              // P4-estensione: cella `publish`
+-        unsigned long long * pub_seq) {     // contatore di pubblicazione in VRAM
++        unsigned long long * pub_seq,       // contatore di pubblicazione in VRAM
++        unsigned long long * rowc) {        // P7-cella5: route CPU per riga
+     const uint32_t thread = threadIdx.x;
+     if (plan->status != MOE_GROUPED_PLAN_READY) {
+         // Il piano e' fallito: non si pubblica nulla di consumabile. Il magic
+@@ -519,6 +551,16 @@
+                 break;
+             }
+         }
++        // P7-cella5 - dove sono finite le route CPU, riga per riga. Il totale
++        // di P7-cella4 (69.763 su 47 strati) non dice se stanno sulla riga di
++        // bozza o sulla riga di ammissione: qui si separano.
++        if (rowc) {
++            for (uint32_t r = 0; r < n_rows && r < (uint32_t) MOE_CPU_MAX_ROWS; ++r) {
++                const unsigned long long nr = (unsigned long long) job->n_routes[r];
++                atomicAdd(&rowc[r], nr);
++                if (nr) atomicAdd(&rowc[MOE_CPU_MAX_ROWS + r], 1ULL);
++            }
++        }
+     }
+     __syncthreads();
+ 
+@@ -652,7 +694,9 @@
+         float * diag_ring,
+         bool light,
+         long long wait_cycles,              // P7-cella4: >0 = attesa sul dispositivo
+-        const unsigned long long * pub_seq) { // contatore di pubblicazione in VRAM
++        const unsigned long long * pub_seq,   // contatore di pubblicazione in VRAM
++        uint32_t probe,                       // P7-cella5: sonda del contributo
++        float    probe_value) {
+     __shared__ double sh_err[128];
+     __shared__ double sh_ref[128];
+     __shared__ float  sh_max[128];
+@@ -705,6 +749,13 @@
+                 atomicAdd(&diag_acc[1], f);
+                 atomicAdd(&diag_acc[2], 1.0);
+                 atomicMax(diag_u, (unsigned long long) __float_as_uint(m));
++                // P7-cella5: lo stesso errore, separato per RIGA.
++                if (row < (uint32_t) MOE_CPU_MAX_ROWS) {
++                    atomicAdd(&diag_acc[4 + 3*row + 0], e);
++                    atomicAdd(&diag_acc[4 + 3*row + 1], f);
++                    atomicAdd(&diag_acc[4 + 3*row + 2], 1.0);
++                    atomicMax(&diag_u[4 + row], (unsigned long long) __float_as_uint(m));
++                }
+                 const unsigned long long pos = atomicAdd(&diag_u[2], 1ULL) % MOE_CPU_DIAG_RING;
+                 diag_ring[2 * pos + 0] = f > 0.0 ? (float) sqrt(e / f) : (e > 0.0 ? 1.0f : 0.0f);
+                 diag_ring[2 * pos + 1] = m;
+@@ -738,6 +789,22 @@
+     } else if (diag) {
+         for (uint32_t i = thread; i < n_rows * n_embd; i += blockDim.x) y[i] = 0.0f;
+     }
++
++    // P7-cella5 - LA SONDA. Si applica per ULTIMA, dopo la diagnostica e dopo
++    // il veleno: cio' che l'`add` legge e' esattamente quello che si scrive
++    // qui. Se il testo non cambia fra una sonda e l'altra, quell'`add` non
++    // arriva a `moe_out`, e l'apertura A7 ha la sua risposta.
++    if (probe) {
++        __syncthreads();
++        for (uint32_t i = thread; i < n_rows * n_embd; i += blockDim.x) {
++            const uint32_t row = i / n_embd;
++            if (probe == 1)                   y[i] = 0.0f;
++            else if (probe == 2 && row == 0)  y[i] = 0.0f;
++            else if (probe == 3 && row >= 1)  y[i] = 0.0f;
++            else if (probe == 4)              y[i] = probe_value;
++        }
++        __threadfence_system();
++    }
+ }
+ 
+ static void trace_plan(bound_group & group, const ggml_tensor * ids, cudaStream_t stream) {
+@@ -873,6 +940,50 @@
+         }
+     }
+ 
++    // P7-cella5 - la lettura RIGA PER RIGA. E' la riga di log che risponde ad
++    // A7: dove sono finite le route CPU, e con quale errore, separando la riga
++    // di ammissione (0) dalle righe di bozza (>= 1).
++    {
++        unsigned long long rc[2 * MOE_CPU_MAX_ROWS] = {0};
++        double racc[3 * MOE_CPU_MAX_ROWS] = {0};
++        float  rmax[MOE_CPU_MAX_ROWS] = {0};
++        for (bound_group * group : cpu_groups) {
++            if (group->rowc) {
++                unsigned long long tr[2 * MOE_CPU_MAX_ROWS] = {0};
++                CUDA_CHECK(cudaMemcpy(tr, group->rowc, sizeof(tr), cudaMemcpyDeviceToHost));
++                for (int i = 0; i < 2 * MOE_CPU_MAX_ROWS; ++i) rc[i] += tr[i];
++            }
++            if (group->diag_acc && group->diag_u) {
++                double a[4 + 3 * MOE_CPU_MAX_ROWS] = {0};
++                unsigned long long u[4 + MOE_CPU_MAX_ROWS] = {0};
++                CUDA_CHECK(cudaMemcpy(a, group->diag_acc, sizeof(a), cudaMemcpyDeviceToHost));
++                CUDA_CHECK(cudaMemcpy(u, group->diag_u,   sizeof(u), cudaMemcpyDeviceToHost));
++                for (int r = 0; r < MOE_CPU_MAX_ROWS; ++r) {
++                    racc[3*r+0] += a[4 + 3*r + 0];
++                    racc[3*r+1] += a[4 + 3*r + 1];
++                    racc[3*r+2] += a[4 + 3*r + 2];
++                    const float m = *reinterpret_cast<const float *>(&u[4 + r]);
++                    if (m > rmax[r]) rmax[r] = m;
++                }
++            }
++        }
++        std::string righe;
++        char buf[256];
++        for (int r = 0; r < MOE_CPU_MAX_ROWS; ++r) {
++            const double nr = racc[3*r+1] > 0.0 ? sqrt(racc[3*r+0] / racc[3*r+1]) : -1.0;
++            snprintf(buf, sizeof(buf),
++                "%sriga %d: routeCPU %llu, job %llu, confronti %.0f, NRMSE %.6f, max %.6g",
++                r ? " | " : "", r, rc[r], rc[MOE_CPU_MAX_ROWS + r], racc[3*r+2], nr, (double) rmax[r]);
++            righe += buf;
++        }
++        GGML_LOG_INFO("moe cpu [P7c5] per RIGA: %s | nodi add %llu (senza piano dello strato %llu) | "
++                      "sonda %u (valore %.3f)\n",
++            righe.c_str(),
++            (unsigned long long) merge_calls.load(std::memory_order_relaxed),
++            (unsigned long long) merge_senza_piano.load(std::memory_order_relaxed),
++            opts.probe, (double) opts.probe_value);
++    }
++
+     float nrmse_tot = 0.0f;
+     if (agg_ref > 0.0) nrmse_tot = (float) sqrt(agg_err / agg_ref);
+     GGML_LOG_INFO("moe cpu TOTALE: strati %zu modo %s%s | uniche %llu = colpi %llu + missGPU %llu + missCPU %llu (invariante1 %s) | "
+@@ -995,7 +1106,7 @@
+                 group.layer, opts.diag,
+                 static_cast<moe_cpu_job *>(hooks->job_dev), static_cast<float *>(hooks->x_dev),
+                 group.step,
+-                static_cast<moe_cpu_flags *>(hooks->flags_dev), pub_counter);
++                static_cast<moe_cpu_flags *>(hooks->flags_dev), pub_counter, group.rowc);
+             CUDA_CHECK(cudaGetLastError());
+             if (!opts.fuse && (opts.nodes & MOE_CPU_NODE_SUBMIT)) {
+                 CUDA_CHECK(cudaLaunchHostFunc(ctx.stream(), hooks->submit, hooks->user));
+@@ -1045,9 +1156,18 @@
+ 
+     // P4-estensione: lo strato e' quello che `remap` ha appena pianificato.
+     // Il ripiego su `cpu_group` vale solo per un impianto a un solo strato.
++    // P7-cella5 - un nodo `add` che arriva QUI senza che `remap` abbia appena
++    // pianificato lo stesso strato e' la firma del difetto 3 della cella 4: un
++    // grafo (quello della BOZZA) che porta il nodo di somma senza avere ne'
++    // piano ne' export ne' job. Si conta sempre, anche quando la guardia MTP
++    // e' accesa e il nodo non viene piu' costruito: un contatore a zero e' una
++    // prova, un contatore assente non lo e'.
++    const bool senza_piano = pending_cpu_group == nullptr;
+     bound_group * group = pending_cpu_group ? pending_cpu_group
+                                             : cpu_group.load(std::memory_order_acquire);
+     pending_cpu_group = nullptr;
++    merge_calls.fetch_add(1, std::memory_order_relaxed);
++    if (senza_piano) merge_senza_piano.fetch_add(1, std::memory_order_relaxed);
+     const auto & opts = cpu_opts();
+ 
+     // P4: i due pezzi accodati da questo marcatore sono accendibili uno per uno.
+@@ -1088,7 +1208,8 @@
+         group ? group->diag_ring : nullptr,
+         opts.guard_light,
+         opts.poll ? poll_wait_cycles(ctx.device) : 0LL,
+-        pub_counter);
++        pub_counter,
++        opts.probe, opts.probe_value);
+     CUDA_CHECK(cudaGetLastError());
+     return true;
+ }
+--- a/src/llama-graph.cpp
++++ b/src/llama-graph.cpp
+@@ -2152,7 +2152,7 @@
+     // gate e up SEPARATI, SiLU senza clamp (l'esecutore non implementa il
+     // ramo clampato), nessun bias/scala degli esperti, nessuna pesatura prima
+     // dell'FFN, nessuna LoRA.
+-    const bool moe_cpu_ok =
++    const bool moe_cpu_base_ok =
+         demand_gpu && llama_moe_cpu_enabled() && llama_moe_cpu_layer_enabled(il) &&
+         n_tokens >= 1 && n_tokens <= (int64_t) llama_moe_cpu_max_rows() &&
+         !gate_up_exps && gate_exps && down_exps &&
+@@ -2161,6 +2161,14 @@
+         type_op == LLM_FFN_SILU && !weight_before_ffn && loras->empty() &&
+         (il < 0 || hparams.swiglu_clamp_exp[il] <= 1e-6f) &&
+         llama_moe_cpu_y(n_embd, n_tokens) != nullptr;
++    // P7-cella5, difetto 3 della cella 4: il contesto della BOZZA non deve
++    // costruire il nodo di somma del contributo CPU. Le condizioni qui sopra
++    // sono tutte GLOBALI (funzione accesa, strato nell'elenco, numero di righe)
++    // e nessuna distingue il modello bersaglio dal modello di bozza;
++    // `cparams.ctx_type` lo fa. La funzione conta sempre il caso e sopprime il
++    // nodo solo con `LLAMA_MOE_CPU_MTP_GUARD` acceso (default).
++    const bool moe_cpu_ok = moe_cpu_base_ok &&
++        llama_moe_cpu_ctx_ok(moe_cpu_base_ok, cparams.ctx_type == LLAMA_CONTEXT_TYPE_MTP, il);
+     ggml_tensor * moe_cpu_experts_down = nullptr;
+     if (mcache) {
+         // la tabella e' replicata su n_piani: se ne prende una vista dei primi n_tokens,
+--- a/src/llama-moecpu.cpp
++++ b/src/llama-moecpu.cpp
+@@ -14,6 +14,7 @@
+ #include "ggml-backend.h"
+ #include "ggml-moe-cpu.h"
+ 
++#include <atomic>
+ #include <cstdlib>
+ #include <cstring>
+ #include <memory>
+@@ -71,6 +72,11 @@
+     // default. Quando e' accesa il perimetro delle righe passa da 1 a 2, perche'
+     // il batch di verifica dell'MTP a bozza 1 ha due righe.
+     bool     draft_rows  = false;
++    // P7-cella5: sonda del contributo (letta dal backend CUDA; qui serve solo
++    // al log di provenienza della corsa) e guardia del contesto di bozza.
++    uint32_t probe       = 0;
++    float    probe_value = 1.0f;
++    bool     mtp_guard   = true;
+     int      affinity_mode = 1;     // 1 = dal fondo (auto)
+     uint64_t affinity_mask = 0;
+     std::string affinity_text = "auto";
+@@ -122,6 +128,11 @@
+         if (!r.fuse || !(r.nodes & NODE_WAIT) || !(r.nodes & NODE_GUARD)) r.poll = false;
+         if (const char * v = getenv("LLAMA_MOE_CPU_DRAFT_ROWS")) r.draft_rows = strcmp(v, "0") != 0;
+         if (!(r.nodes & NODE_EXPORT) || !(r.nodes & NODE_ADD)) r.draft_rows = false;
++        // ------------------------------------------------------ P7-cella5 ----
++        if (const char * v = getenv("LLAMA_MOE_CPU_PROBE"))       r.probe       = (uint32_t) strtoul(v, nullptr, 10);
++        if (const char * v = getenv("LLAMA_MOE_CPU_PROBE_VALUE")) r.probe_value = (float) atof(v);
++        if (!(r.nodes & NODE_GUARD)) r.probe = 0;
++        if (const char * v = getenv("LLAMA_MOE_CPU_MTP_GUARD"))   r.mtp_guard   = strcmp(v, "0") != 0;
+         if (const char * a = getenv("LLAMA_MOE_CPU_AFFINITY")) {
+             r.affinity_text = a;
+             if (strcmp(a, "auto") == 0 || !*a) {
+@@ -222,6 +233,29 @@
+     return g_state.active && (opts().nodes & NODE_ADD) != 0;
+ }
+ 
++// P7-cella5 - difetto 3 della cella 4. Il contesto della BOZZA dell'MTP non ha
++// una cache a domanda propria (`n_moe_cache_slots = 0`): nessun piano, nessun
++// export, nessun job. Se costruisse comunque il nodo `add` sommerebbe a
++// `moe_out` della bozza il buffer `y` lasciato dall'ultimo job del BERSAGLIO,
++// cioe' una perturbazione della testa MTP che non c'entra con nessuna leva.
++// `cparams.ctx_type` e' l'unica informazione che distingue i due modelli nel
++// punto in cui il nodo si costruisce.
++static std::atomic<uint64_t> g_draft_ctx_hits{0};
++
++bool llama_moe_cpu_ctx_ok(bool base_ok, bool draft_ctx, int il) {
++    if (!base_ok)   return true;
++    if (!draft_ctx) return true;
++    const uint64_t n = g_draft_ctx_hits.fetch_add(1, std::memory_order_relaxed) + 1;
++    if (n == 1) {
++        LLAMA_LOG_WARN("moe cpu [P7c5]: il contesto della BOZZA soddisfa le condizioni del nodo `add` "
++                       "sullo strato %d - guardia MTP %s\n",
++            il, opts().mtp_guard ? "ACCESA (nodo NON costruito)" : "spenta (nodo costruito)");
++    }
++    return !opts().mtp_guard;
++}
++
++uint64_t llama_moe_cpu_draft_ctx_hits() { return g_draft_ctx_hits.load(std::memory_order_relaxed); }
++
+ void llama_moe_cpu_init(const llama_model & model, uint32_t n_seq_max) {
+     const auto & o = opts();
+     if (g_state.active || !o.enabled) return;
+@@ -455,6 +489,19 @@
+         o.draft_rows ? "ACCESA (righe >= 2: gli esperti non residenti chiesti solo dalla bozza restano alla CPU)"
+                      : "spenta",
+         caps.max_rows, caps.max_per_row);
++
++    // P7-cella5 - la riga di provenienza della corsa: quale sonda era accesa e
++    // se la guardia del contesto di bozza era attiva. Una corsa misurata con la
++    // configurazione sbagliata e' peggio di una corsa non misurata.
++    LLAMA_LOG_INFO("moe cpu [P7c5]: sonda del contributo %u (%s, valore %.3f), guardia del contesto di BOZZA %s\n",
++        o.probe,
++        o.probe == 0 ? "spenta" :
++        o.probe == 1 ? "y := 0 su tutte le righe" :
++        o.probe == 2 ? "y := 0 sulla riga 0" :
++        o.probe == 3 ? "y := 0 sulle righe di bozza" :
++        o.probe == 4 ? "y := marcatore costante" : "valore non riconosciuto (inerte)",
++        (double) o.probe_value,
++        o.mtp_guard ? "ACCESA (il contesto di bozza non costruisce il nodo add)" : "SPENTA");
+ }
+ 
+ void llama_moe_cpu_free() {
+@@ -505,6 +552,20 @@
+     // dove non esiste nessun thread host che possa registrarla. Si legge qui,
+     // fuori dal graph, una volta per decode: una parola di memoria mappata.
+     g_state.exec->poll_device_timeout();
++    // P7-cella5 — i contatori del POOL vanno letti DURANTE la corsa, non alla
++    // chiusura: il banco chiude il server a forza e la riga di «fine contesto»
++    // non arriva mai nel log. Qui siamo una volta per decode, fuori dal graph.
++    {
++        static const unsigned long ogni = [] {
++            const char * e = getenv("LLAMA_MOE_CPU_REPORT");
++            const unsigned long v = e ? strtoul(e, nullptr, 10) : 0UL;
++            return v;
++        }();
++        if (ogni) {
++            static unsigned long n = 0;
++            if (++n % ogni == 0) llama_moe_cpu_log_counters("periodico");
++        }
++    }
+     return g_state.exec->contaminated();
+ }
+ 
+@@ -518,8 +579,18 @@
+ 
+ void llama_moe_cpu_log_counters(const char * where) {
+     if (!g_state.active) return;
++    LLAMA_LOG_INFO("moe cpu [%s]: POOL route calcolate %llu, job con y non nullo %llu, "
++                   "max |y| %.6g, max |peso| %.6g, max |x| %.6g, byte non nulli del banco %llu\n",
++        where ? where : "",
++        (unsigned long long) g_state.exec->route_calcolate(),
++        (unsigned long long) g_state.exec->job_y_non_nullo(),
++        (double) g_state.exec->y_absmax(),
++        (double) g_state.exec->w_absmax(),
++        (double) g_state.exec->x_absmax(),
++        (unsigned long long) g_state.exec->banco_byte_non_nulli());
+     LLAMA_LOG_INFO("moe cpu [%s]: pubblicati %llu, conclusi %llu, falliti %llu, non finiti %llu, "
+-                   "scadenza sul dispositivo %llu, contaminato %s, irrecuperabile %s\n",
++                   "scadenza sul dispositivo %llu, contaminato %s, irrecuperabile %s, "
++                   "nodo add nel contesto di BOZZA %llu\n",
+         where ? where : "",
+         (unsigned long long) g_state.exec->submitted(),
+         (unsigned long long) g_state.exec->completed(),
+@@ -527,5 +598,6 @@
+         (unsigned long long) g_state.exec->nonfinite(),
+         (unsigned long long) g_state.exec->device_timeout_seq(),
+         g_state.exec->contaminated() ? "SI" : "no",
+-        g_state.exec->unrecoverable() ? "SI" : "no");
++        g_state.exec->unrecoverable() ? "SI" : "no",
++        (unsigned long long) g_draft_ctx_hits.load(std::memory_order_relaxed));
+ }
+--- a/src/llama-moecpu.h
++++ b/src/llama-moecpu.h
+@@ -108,6 +108,23 @@
+ //        niente. Attiva solo con righe >= 2: con una riga sola non esiste
+ //        nessuna riga di bozza e il piano e' identico a prima.
+ //
++// P7-CELLA5 - la diagnosi dell'apertura A7 e la guardia del contesto di BOZZA.
++//
++//   LLAMA_MOE_CPU_PROBE=0..4      (0) SONDA del contributo CPU, applicata dentro
++//        la guardia del merge dopo l'attesa e prima dell'`add`: 1 azzera `y` su
++//        tutte le righe, 2 solo sulla riga 0, 3 solo sulle righe di bozza,
++//        4 sostituisce `y` con un marcatore costante. Serve a stabilire se il
++//        contributo CPU arriva davvero a `moe_out`: se il testo non cambia fra
++//        due sonde diverse, non ci arriva. NON e' una leva di produzione.
++//   LLAMA_MOE_CPU_PROBE_VALUE=f   (1.0) il marcatore del modo 4.
++//   LLAMA_MOE_CPU_MTP_GUARD=0|1   (1) il contesto della BOZZA non costruisce il
++//        nodo `add` del contributo CPU. Il contesto di bozza dell'MTP ha
++//        `n_moe_cache_slots = 0`: nessun piano, nessun export, nessun job — ma
++//        con la guardia spenta il nodo di somma verrebbe costruito lo stesso e
++//        sommerebbe a `moe_out` della bozza il buffer `y` lasciato dall'ultimo
++//        job del BERSAGLIO (difetto 3 della cella 4). Con 0 si riproduce il
++//        comportamento precedente, per misurare quanto valeva.
++//
+ // Le stesse variabili `LLAMA_MOE_CPU`, `_LAYERS`, `_MAX`, `_DIAG`, `_REPORT`
+ // sono lette anche dal backend CUDA (moe-demand.cuh): il planner deve decidere
+ // sul dispositivo, e il confine di P2 non porta configurazione.
+@@ -139,6 +156,14 @@
+ // isola il solo costo del nodo `add` e dell'eventuale fusione che rompe.
+ bool llama_moe_cpu_add_node_enabled();
+ 
++// P7-cella5 - decide se il nodo `add` si costruisce in QUESTO contesto.
++// `base_ok` sono tutte le altre condizioni gia' valutate; `draft_ctx` e' vero
++// nel contesto di bozza dell'MTP. La funzione CONTA sempre i casi in cui il
++// contesto di bozza soddisfaceva le condizioni (serve alla diagnosi, anche a
++// guardia accesa) e sopprime il nodo solo se `LLAMA_MOE_CPU_MTP_GUARD` != 0.
++bool     llama_moe_cpu_ctx_ok(bool base_ok, bool draft_ctx, int il);
++uint64_t llama_moe_cpu_draft_ctx_hits();
++
+ // Vista stabile sul buffer `y` (il contributo CPU), F32 [n_embd, n_tokens].
+ // nullptr quando la funzione e' spenta o le forme non combaciano. Le viste
+ // sono create UNA VOLTA per contesto e riusate da tutti i graph: se fossero
+--- a/src/moe_cpu_executor.cpp
++++ b/src/moe_cpu_executor.cpp
+@@ -294,6 +294,21 @@
+     // la cella `gpu_timeout` resta alzata e non va contata una volta per decode.
+     alignas(64) std::atomic<uint64_t> gpu_timeout_seen{0};
+ 
++    // P7-cella5 — che cosa il POOL crede di aver scritto. Serve a separare due
++    // cause che la sola lettura lato GPU non distingue: «il contributo non e'
++    // stato calcolato» e «il contributo e' stato calcolato ma la GPU non lo
++    // vede». Il primo si legge in `n_route_calcolate`, il secondo nel confronto
++    // fra `y_absmax` di qui e la NRMSE della guardia.
++    alignas(64) std::atomic<uint64_t> n_route_calcolate{0};
++    alignas(64) std::atomic<uint64_t> n_job_y_non_nullo{0};
++    alignas(64) std::atomic<uint64_t> y_absmax_bits{0};
++    // I tre ingressi dell'aritmetica, nello stesso formato: peso di routing del
++    // job, attivazione, e byte non nulli del banco letto. Un massimo a zero dice
++    // QUALE stadio produce lo zero, senza dover indovinare.
++    alignas(64) std::atomic<uint64_t> w_absmax_bits{0};
++    alignas(64) std::atomic<uint64_t> x_absmax_bits{0};
++    alignas(64) std::atomic<uint64_t> banco_byte_non_nulli{0};
++
+     alignas(64) std::atomic<uint64_t> n_submitted{0};
+     alignas(64) std::atomic<uint64_t> n_completed{0};
+     alignas(64) std::atomic<uint64_t> n_failed{0};
+@@ -566,6 +581,7 @@
+                     // e' zero. Non e' una maschera d'errore, e' il valore giusto.
+                     std::memset(y_h, 0, (size_t) cur_rows * (size_t) caps.n_embd * sizeof(float));
+                 }
++                misura_y(flat.size());   // P7-cella5
+                 // P4-estensione: stesso controllo del modo fuso, cosi' la
+                 // guardia leggera vale anche col percorso a due nodi host.
+                 if (caps.check_finite && !y_is_finite()) {
+@@ -678,6 +694,7 @@
+                 } else {
+                     std::memset(y_h, 0, (size_t) cur_rows * (size_t) caps.n_embd * sizeof(float));
+                 }
++                misura_y(flat.size());   // P7-cella5
+                 if (caps.check_finite && !y_is_finite()) {
+                     // Il controllo che P3 faceva sul DISPOSITIVO leggendo `y`
+                     // attraverso il PCIe. Qui costa una passata su memoria
+@@ -717,6 +734,52 @@
+         block_until_changed((volatile uint64_t *) &seq_done, seen, 20);
+     }
+ 
++    // P7-cella5 — una passata su `y` in memoria LOCALE, subito dopo il calcolo e
++    // prima di pubblicare. Non e' una leva: e' il testimone del pool. Costa una
++    // lettura di n_rows*n_embd float che il controllo dei non finiti fa gia'.
++    static void alza_massimo(std::atomic<uint64_t> & cella, float valore) {
++        uint32_t bits = 0;
++        std::memcpy(&bits, &valore, sizeof(bits));   // valore >= 0: ordine dei bit = ordine dei valori
++        uint64_t old = cella.load(std::memory_order_relaxed);
++        while ((uint64_t) bits > old &&
++               !cella.compare_exchange_weak(old, (uint64_t) bits, std::memory_order_relaxed)) {}
++    }
++
++    void misura_y(size_t n_route) {
++        n_route_calcolate.fetch_add((uint64_t) n_route, std::memory_order_relaxed);
++        const size_t n = (size_t) cur_rows * (size_t) caps.n_embd;
++        float mx = 0.0f;
++        for (size_t i = 0; i < n; ++i) {
++            const float a = std::fabs(y_h[i]);
++            if (a > mx) mx = a;
++        }
++        if (mx > 0.0f) n_job_y_non_nullo.fetch_add(1, std::memory_order_relaxed);
++        alza_massimo(y_absmax_bits, mx);
++
++        // Gli ingressi: peso di routing, attivazione, banco.
++        float wmx = 0.0f;
++        for (size_t r = 0; r < flat.size(); ++r) {
++            const float a = std::fabs(flat[r].weight);
++            if (a > wmx) wmx = a;
++        }
++        alza_massimo(w_absmax_bits, wmx);
++        float xmx = 0.0f;
++        for (size_t i = 0; i < n; ++i) {
++            const float a = std::fabs(x_h[i]);
++            if (a > xmx) xmx = a;
++        }
++        alza_massimo(x_absmax_bits, xmx);
++        if (!flat.empty() && cur_bank) {
++            // 256 byte del banco `gate` del primo esperto del job: un banco
++            // legato a memoria mai popolata e' tutto zero, e si vede qui.
++            const uint8_t * g = cur_bank->gate + (size_t) flat[0].expert * cur_bank->gate_stride;
++            uint64_t nz = 0;
++            const size_t quanti = cur_bank->gate_stride < 256 ? cur_bank->gate_stride : 256;
++            for (size_t i = 0; i < quanti; ++i) if (g[i]) ++nz;
++            banco_byte_non_nulli.fetch_add(nz, std::memory_order_relaxed);
++        }
++    }
++
+     bool y_is_finite() const {
+         const size_t n = (size_t) cur_rows * (size_t) caps.n_embd;
+         for (size_t i = 0; i < n; ++i) {
+@@ -860,20 +923,42 @@
+         // costo del meccanismo di consegna.
+         if (caps.nocompute) return moe_cpu_state::ok;
+ 
+-        int32_t cursor = 0;
++        // P7-cella5, DIFETTO 2 — LA CAUSA DELL'APERTURA A7.
++        //
++        // Il kernel di export scrive la route `e` della riga `row` all'indice
++        // `row * MOE_CPU_MAX_PER_ROW + e` (moe-demand.cuh, `moe_cpu_export_kernel`):
++        // un PASSO DI RIGA fisso, che e' anche la ragione per cui l'array e'
++        // lungo `MOE_CPU_MAX_ROWS * MOE_CPU_MAX_PER_ROW` invece di `MAX_ROUTES`
++        // compattate. Qui si leggeva con un CURSORE COMPATTATO (0,1,2,... senza
++        // saltare le righe vuote). I due indirizzamenti coincidono solo finche'
++        // tutte le route stanno sulla riga 0 — cioe' in tutto P3 e tutto P4, e
++        // nel banco host di P2, che hanno sempre girato a una riga.
++        //
++        // Con la CORSIA DI BOZZA la riga 0 non ha route e la riga 1 le ha tutte:
++        // il pool leggeva le celle 0..m-1, che il kernel di export azzera
++        // all'inizio di ogni job. Esperto 0 (valido) e peso 0,0 (finito): il job
++        // passava ogni controllo e il contributo CPU usciva ESATTAMENTE ZERO.
++        // E' la lettura (1) di P7-cella4 §5.5 — «il contributo non raggiunge
++        // moe_out» — e spiega perche' S7 (pool che calcola) e S10 (NOCOMPUTE)
++        // davano lo stesso identico testo su 1.397 token.
++        //
++        // Il passo e' la costante di compilazione, non `caps.max_per_row`: chi
++        // scrive usa quella, e un lettore che usasse il tetto configurato
++        // ricadrebbe nello stesso difetto ogni volta che i due non coincidono.
+         for (int32_t row = 0; row < j.n_rows; ++row) {
+             const int32_t n = j.n_routes[row];
+             if (n < 0 || n > caps.max_per_row)                                     return moe_cpu_state::rejected;
+-            for (int32_t e = 0; e < n; ++e, ++cursor) {
+-                if (cursor >= MOE_CPU_MAX_ROUTES)                                  return moe_cpu_state::rejected;
+-                const int32_t expert = j.expert[cursor];
+-                const float   weight = j.weight[cursor];
++            if (n > MOE_CPU_MAX_PER_ROW)                                           return moe_cpu_state::rejected;
++            for (int32_t e = 0; e < n; ++e) {
++                const int32_t idx = row * MOE_CPU_MAX_PER_ROW + e;
++                if (idx < 0 || idx >= MOE_CPU_MAX_ROUTES)                          return moe_cpu_state::rejected;
++                const int32_t expert = j.expert[idx];
++                const float   weight = j.weight[idx];
+                 if (expert < 0 || expert >= cur_bank->n_experts)                   return moe_cpu_state::rejected;
+                 if (!std::isfinite(weight))                                        return moe_cpu_state::rejected;
+                 flat.push_back({row, expert, weight});
+             }
+         }
+-        if ((size_t) cursor != flat.size())                                        return moe_cpu_state::rejected;
+ 
+         // Quantizzazione dell'attivazione: una volta per token, condivisa da
+         // tutte le route CPU di quel token.
+@@ -1202,6 +1287,20 @@
+ uint64_t moe_cpu_executor::submitted() const { return p_->n_submitted.load(std::memory_order_acquire); }
+ uint64_t moe_cpu_executor::nonfinite() const { return p_->n_nonfinite.load(std::memory_order_acquire); }
+ 
++// P7-cella5 — il testimone del pool.
++uint64_t moe_cpu_executor::route_calcolate() const { return p_->n_route_calcolate.load(std::memory_order_relaxed); }
++uint64_t moe_cpu_executor::job_y_non_nullo() const { return p_->n_job_y_non_nullo.load(std::memory_order_relaxed); }
++static float moe_cpu_bits_to_float(uint64_t b) {
++    const uint32_t bits = (uint32_t) b;
++    float v = 0.0f;
++    std::memcpy(&v, &bits, sizeof(v));
++    return v;
++}
++float    moe_cpu_executor::y_absmax()        const { return moe_cpu_bits_to_float(p_->y_absmax_bits.load(std::memory_order_relaxed)); }
++float    moe_cpu_executor::w_absmax()        const { return moe_cpu_bits_to_float(p_->w_absmax_bits.load(std::memory_order_relaxed)); }
++float    moe_cpu_executor::x_absmax()        const { return moe_cpu_bits_to_float(p_->x_absmax_bits.load(std::memory_order_relaxed)); }
++uint64_t moe_cpu_executor::banco_byte_non_nulli() const { return p_->banco_byte_non_nulli.load(std::memory_order_relaxed); }
++
+ // P7-cella4 — la scadenza scattata DENTRO il kernel di attesa. Si legge fuori
+ // dal graph, una volta per decode: e' una lettura di una parola in memoria
+ // mappata (per la CPU e' memoria normale) e costa quanto un confronto.
+--- a/src/moe_cpu_executor.h
++++ b/src/moe_cpu_executor.h
+@@ -270,6 +270,18 @@
+     uint64_t      nonfinite() const;
+     const char *  affinity_description() const;
+ 
++    // P7-cella5 — il testimone del POOL, letto in memoria host subito dopo il
++    // calcolo. `route_calcolate` e' la somma delle route CPU effettivamente
++    // svolte; `job_y_non_nullo` quanti job hanno lasciato in `y` almeno un
++    // valore diverso da zero; `y_absmax` il massimo |y| mai scritto. Servono a
++    // distinguere «non calcolato» da «calcolato e non visto dalla GPU».
++    uint64_t      route_calcolate()  const;
++    uint64_t      job_y_non_nullo()  const;
++    float         y_absmax()         const;
++    float         w_absmax()         const;   // peso di routing portato dal job
++    float         x_absmax()         const;   // attivazione portata dal job
++    uint64_t      banco_byte_non_nulli() const;
++
+     // Riconoscimento della contaminazione. Lo chiama SOLO il thread
+     // proprietario e SOLO dopo aver buttato l'incarnazione della cache
+     // (`unbind`/`bind`, moe-demand.cuh:142-157, la via che

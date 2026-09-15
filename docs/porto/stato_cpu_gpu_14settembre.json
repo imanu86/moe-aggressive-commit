@@ -3,7 +3,7 @@
   "version": "1.0",
   "scope": "planning_and_documentation_only",
   "plan_status": "complete",
-  "implementation_status": "p10_single_token_levers",
+  "implementation_status": "p10_cell2_idle_gaps",
   "current_phase": "P10",
   "operating_point": {
     "ctx_tokens": 131072,
@@ -14,12 +14,19 @@
     "off_tps": 26.381,
     "mtp1_tps": 26.229,
     "mtp1_B_tps": 26.87,
-    "verify_row_ms": 20.203
+    "verify_row_ms": 20.203,
+    "off_B_tps": 26.677,
+    "off_B_ms": 37.486
   },
   "p8_result": {
     "lever_B_ms": -1.44,
     "lever_B_tps_gain": 0.023,
     "draft2_delta": -0.112
+  },
+  "p10_cell1_result": {
+    "delta_ms": -0.420,
+    "tps": 26.677,
+    "fingerprints_identical": true
   },
   "goal": {
     "decode_free_tps": 50,
@@ -33,7 +40,7 @@
   },
   "q4_status": "deferred",
   "production_changed": false,
-  "new_benchmark_runs": 90,
+  "new_benchmark_runs": 91,
   "p9_result": {
     "wall_ms": 37.442,
     "wall_ms_no_profiler": 37.758,
@@ -206,7 +213,7 @@
       "depends_on": [
         "P9"
       ],
-      "note": "single-token levers at 131k, per D38: cell 1 is lever B of P8 measured on T1 (not just the verify row), a single run, currently executing"
+      "note": "single-token levers at 131k, per D38: cell 1 COMPLETE (9/15, commit 8f008d9) -- lever B of P8 measured on T1 (not just the verify row), 37.486 ms/token = 26.677 tps vs 37.906/26.381, -0.420 ms (-1.11%), lossless, 4/4 fingerprints identical (D39, updated 131k reference); cell 2 (idle gaps between graph and host, 78 sync/forward) IN PROGRESS"
     }
   ],
   "primary_documents": [
@@ -258,7 +265,8 @@
     "D35",
     "D36",
     "D37",
-    "D38"
+    "D38",
+    "D39"
   ],
   "decisions_added": [
     {
@@ -372,6 +380,10 @@
     {
       "id": "D38",
       "summary": "P10 opened: single-token levers at 131k, in order (P9 section 5.3, 9/15). (1) Measure P8's lever B on T1, not just the verify row -- at MTP-off the decode still does 14 H2D copies of QSA bias per token, the device-resident-bias lever would remove 12 of them; patch already written, lossless, costs one run (in progress). (2) Open a cell on the two ~1ms GPU-idle gaps between the graph and the host (1.9 ms/token, larger than the Q6_K->Q4_K lever); needs NVTX in the server to locate which phase produces them. (3) The IQ2_S single-row kernel: lossless by construction, the largest single measured inefficiency against its own floor (2.54 ms, 64% of that kernel's time), does not touch the PCIe bus. (4) Q6_K->Q4_K only after, and only with quality rubrics ready -- not lossless, touches attention/GDN/output-head weights, breaks the bit-identity gate P7/P8/P9 rely on."
+    },
+    {
+      "id": "D39",
+      "summary": "P10 cell 1 COMPLETE (9/15, commit 8f008d9): lever B of P8 (device-resident QSA bias) pays on T1 too, not only on the verify row R that P8 had isolated. Same P8-R0 preset (MTP off, -np 1, lungo_131k, screening), only the binary changed (nude -> patched with B on): 37.486 ms/token = 26.677 tps vs 37.906/26.381, i.e. -0.420 ms/token (-1.11%), +0.296 tps (+1.12%), lossless (4/4 fingerprints identical to R0). Channel is only the H2D bytes/syncs of the QSA bias (12 of 14 rows removed), not graph launches: real bs=1 decode stays at 2 splits unchanged in both runs, the 4->2 drop seen in the log is only the bs=3 verify-capacity graph, never exercised with MTP off; the graph still gains the usual +1 node (same signature as P8 at MTP on). Measured delta (0.42 ms) exceeds P9's byte-only estimate (~0.36 ms), same sign of deviation P8 found on R. Minimum free RAM 3.03 GB, below the 4 GB threshold -- declared, attributed to external system contention (server RSS nearly identical to R0: 79.14 vs 79.25 GB), not to the lever. Single run, no independent replica. Updated 131k reference: 26.677 tps MTP-off with B on (the P8 cumulative patch, B+C on, stays the base for P10); the T1=37.906 ms P8 used to compute R across all its cells was the nude one -- with B the draft-1 break-even margin widens slightly, not recalculated in this cell. Next: P10 cell 2, the two ~1ms GPU-idle gaps between graph and host (78 cudaStreamSynchronize/forward)."
     }
   ]
 }

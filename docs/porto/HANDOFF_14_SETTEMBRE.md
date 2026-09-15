@@ -84,6 +84,27 @@ Snapshot immutabile dei sorgenti di partenza: `D:\ds4_work\p0_snapshot_20260914\
 
 ## 3. Che cosa resta aperto, in ordine
 
+> **Nota di ripresa, 15/9 (sesta).** **P11 cella 1 è COMPLETATA** (commit `42bd36b`,
+> [`p11_prefill/P11_PREFILL_131K_15_SETTEMBRE.md`](p11_prefill/P11_PREFILL_131K_15_SETTEMBRE.md)):
+> le leve del prefill a 131k misurate separatamente il 13/9 (sparse FA a teste 256, batch/ubatch
+> grande, GDN a tile, staging asincrono degli esperti) sono state composte sullo stesso binario
+> (P8+P10, nessuna ricompilazione fino a W4) in celle cumulative W0-W5. **W4** — sparse FA + batch/
+> ubatch 3072 + GDN a tile + staging — porta il prefill da **252,20 a 376,35 t/s (+49,2%)**, 382,85
+> sul caso `L01@ctx131k` dello stesso riferimento P10 (+51,8%); il batch 4096 (W2) crolla del 40,7%
+> per paginazione WDDM, ma i primi 114.688 token viaggiavano a 463 t/s cumulativi — il tetto è la
+> VRAM, non l'aritmetica. Cancelli superati: **5/5 aghi**, decode **−0,12%/−0,51%** contro 27,245
+> t/s (cancello −3%). **D43 — si adotta W4 come candidato di prefill al punto operativo**:
+> configurazione `QWEN4EXP_SPARSE_FA=1` + `QWEN_GDN_TILED=1` + `QWEN_PREFETCH_EXPERTS=1` +
+> `-b/-ub 3072` sui binari P8+P10 invariati, nessuna ricompilazione; ai 400 manca il 4-6%. Una
+> leva nuova (W5, ubatch a scaletta per profondità, binari ricompilati) ha raggiunto 384,40 t/s
+> (+2,1% su W4, sotto la regola del 5% di D42, non adottata in velocità) ma dimezza quasi la
+> workspace di picco (6.819 → 5.614 MiB) e apre la cella successiva. **P11 cella 2 (A1) IN CORSO**:
+> togliere la materializzazione delle tre maschere F32 `[n_kv, n_batch]` quando la sparse FA è
+> accesa — sono loro il vero tetto della workspace (~12 byte per coppia token×cella, non toccate
+> dalla sparse FA) e, di conseguenza, il vincolo che spegne lo staging a metà corsa; attesa sopra
+> il 5%. Dettagli completi in
+> [`REGISTRO_CPU_GPU_14_SETTEMBRE.md`](REGISTRO_CPU_GPU_14_SETTEMBRE.md) (D43).
+>
 > **Nota di ripresa, 15/9 (quinta).** L'utente chiude le quattro scelte lasciate aperte da P10
 > cella 3 (§sopra, nota "quarta") non scegliendone una ma fissando una regola generale, vincolante
 > per ogni cella futura: **D42 — sotto il 5% di guadagno al punto operativo (131k) non si fa**,

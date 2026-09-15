@@ -1,0 +1,208 @@
+--- a/ggml/src/ggml-backend.cpp
++++ b/ggml/src/ggml-backend.cpp
+@@ -1801,6 +1801,58 @@
+     }
+ };
+ 
++// ---------------------------------------------------------------------------
++// P10 cella 2 - gli ingressi di split copiati in modo ASINCRONO sullo stream di calcolo.
++//
++// Percorso originale, per OGNI ingresso: `ggml_backend_synchronize(split_backend)`
++// (svuota la coda della GPU e fa tornare l'host dal driver) seguito da
++// `ggml_backend_tensor_copy`, che nel backend CUDA e' una `cudaMemcpyAsync` sullo
++// stream PER-THREAD piu' una `cudaStreamSynchronize` di coda. I due stream sono
++// diversi (lo stream di calcolo e' creato con `cudaStreamCreateWithFlags`,
++// `ggml-cuda/common.cuh:1492`), quindi l'ordine e' garantito solo dalle due attese
++// dell'host. A 131k, a riga singola, sono ~2,8 sincronizzazioni per ingresso e tutta
++// la consegna e' seriale dentro il buco fra il grafo N e il grafo N+1.
++//
++// Qui la garanzia passa dall'host allo STREAM: si svuota la coda UNA volta sola per
++// split e poi ogni ingresso viene copiato con `set_tensor_async` sullo STESSO stream
++// su cui gira il grafo. L'ordine dello stream garantisce (a) che la copia non
++// anticipi il grafo precedente che rilegge lo stesso buffer di ingresso e (b) che il
++// grafo successivo non parta prima che la copia sia finita.
++//
++// Perche' e' senza perdita: con la sorgente su host `ggml_backend_tensor_copy` fa
++// esattamente `ggml_backend_tensor_set(dst, src->data, 0, ggml_nbytes(src))`
++// (`ggml-backend.cpp:495`), cioe' la stessa `cudaMemcpyAsync` H2D con gli stessi byte,
++// lo stesso offset e la stessa destinazione. Cambia solo lo stream su cui e' accodata
++// e chi garantisce l'ordine.
++//
++// PRECONDIZIONE del chiamante: fra `ggml_backend_sched_graph_compute_async` e la
++// successiva riscrittura dei tensori d'ingresso ci deve essere una sincronizzazione.
++// `ggml_backend_sched_graph_compute` (versione non async) la fa gia'; llama.cpp la fa
++// esplicitamente prima di `set_inputs` (`llama-context.cpp`, `process_ubatch`).
++static bool ggml_backend_sched_ingressi_async(void) {
++    static const int abilitato = []() {
++        const char * v = getenv("GGML_SCHED_ASYNC_INPUTS");
++        return v ? atoi(v) : 1;
++    }();
++    return abilitato != 0;
++}
++
++// Vero se `src` (host) puo' essere versato in `dst` con `set_tensor_async` di `backend`:
++// stesse condizioni che l'assert di `ggml_backend_cuda_set_tensor_async` pretende.
++static bool ggml_backend_sched_puo_versare_async(ggml_backend_t backend,
++        const struct ggml_tensor * src, const struct ggml_tensor * dst) {
++    if (backend->iface.set_tensor_async == NULL) { return false; }
++    if (!src->buffer || !ggml_backend_buffer_is_host(src->buffer)) { return false; }
++    // I PESI non passano di qui: quando un tensore di esperti sta su host lo scheduler
++    // copia solo gli esperti instradati (ramo `copy_experts`), e una copia intera
++    // sarebbe un'altra cosa. Vanno lasciati al loro ramo.
++    if (ggml_backend_buffer_get_usage(src->buffer) == GGML_BACKEND_BUFFER_USAGE_WEIGHTS) { return false; }
++    if (!dst->buffer || dst->view_src) { return false; }
++    if (dst->buffer->buft != ggml_backend_get_default_buffer_type(backend)) { return false; }
++    if (!ggml_are_same_layout(src, dst)) { return false; }
++    return true;
++}
++
+ static enum ggml_status ggml_backend_sched_compute_splits(ggml_backend_sched_t sched) {
+     GGML_ASSERT(sched);
+     struct ggml_backend_sched_split * splits = sched->splits;
+@@ -1834,6 +1886,19 @@
+             }
+         }
+ 
++        // P10 cella 2: una sola attesa per split invece di una (o due, o tre) per
++        // ingresso. Da qui in poi l'ordine dello stream basta, perche' le copie vanno
++        // sullo stesso stream del grafo. Gli eventi multi-copia (pipeline parallelism)
++        // escludono il ramo: li' l'ordine e' gia' gestito con eventi.
++        const bool ingressi_async =
++            ggml_backend_sched_ingressi_async() &&
++            split->n_inputs > 0 &&
++            split_backend->iface.set_tensor_async != NULL &&
++            sched->events[split_backend_id][sched->cur_copy] == NULL;
++        if (ingressi_async) {
++            ggml_backend_synchronize(split_backend);
++        }
++
+         // copy the input tensors to the split backend
+         for (int input_id = 0; input_id < split->n_inputs; input_id++) {
+             ggml_backend_t input_backend = ggml_backend_sched_get_tensor_backend(sched, split->inputs[input_id]);
+@@ -1851,6 +1916,12 @@
+             }
+ 
+             if (input->flags & GGML_TENSOR_FLAG_INPUT) {
++                if (ingressi_async && ggml_backend_sched_puo_versare_async(split_backend, input, input_cpy)) {
++                    // P10 cella 2: stessi byte, stesso offset, stessa destinazione di
++                    // `ggml_backend_tensor_copy`; solo accodati sullo stream del grafo.
++                    ggml_backend_tensor_set_async(split_backend, input_cpy, input->data, 0, ggml_nbytes(input));
++                    continue;
++                }
+                 // inputs from the user must be copied immediately to prevent the user overwriting the data before the copy is done
+                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                     ggml_backend_event_synchronize(sched->events[split_backend_id][sched->cur_copy]);
+@@ -1859,6 +1930,12 @@
+                 }
+                 ggml_backend_tensor_copy(input, input_cpy);
+             } else {
++                if (ingressi_async && ggml_backend_sched_puo_versare_async(split_backend, input, input_cpy)) {
++                    // P10 cella 2: e' il caso delle VISTE del bias QSA e degli altri
++                    // ingressi che vivono in un buffer host ma non portano il flag INPUT.
++                    ggml_backend_tensor_set_async(split_backend, input_cpy, input->data, 0, ggml_nbytes(input));
++                    continue;
++                }
+                 // wait for the split backend to finish using the input before overwriting it
+                 if (sched->events[split_backend_id][sched->cur_copy] != NULL) {
+                     ggml_backend_event_wait(split_backend, sched->events[split_backend_id][sched->cur_copy]);
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -2817,6 +2817,52 @@
+     return use_cuda_graph;
+ }
+ 
++// P10 cella 2 - il verdetto di compatibilita' si ricorda, non si ricalcola.
++//
++// `ggml_cuda_graph_check_compability` scorre TUTTI i nodi del grafo a ogni forward.
++// A 131k il grafo di decode ha 8.191 nodi e la scansione e' un inseguimento di
++// puntatori su tensori sparsi: e' ~0,18 ms per token di host puro, pagati dentro il
++// buco fra il grafo N e il grafo N+1 (nessuna chiamata CUDA li' dentro, P10 cella 2 §2).
++//
++// Il verdetto dipende SOLO dalla topologia del grafo (gli `op` dei nodi e, per i
++// `MUL_MAT_ID`, la forma che decide `ggml_cuda_mul_mat_id_needs_sync`). Quella
++// topologia e' esattamente cio' che `cgraph->uid` identifica: lo scheduler assegna un
++// uid nuovo a ogni split ogni volta che ri-divide il grafo
++// (`ggml-backend.cpp`, fine di `ggml_backend_sched_split_graph`), e llama.cpp ri-divide
++// ogni volta che `llm_graph_result::can_reuse` dice di no. E' lo stesso invariante su
++// cui poggia gia' `ggml_cuda_graph_update_required` per saltare il confronto nodo per
++// nodo. Qui si riusa per saltare anche la scansione di compatibilita'.
++//
++// Senza perdita: a uid e numero di nodi invariati la scansione darebbe, nodo per nodo,
++// esattamente il valore memorizzato.
++static std::mutex ggml_cuda_compat_mutex;
++static std::unordered_map<const void *, std::pair<uint64_t, std::pair<int, bool>>> ggml_cuda_compat_cache;
++
++static bool ggml_cuda_graph_check_compability_cached(ggml_cgraph * cgraph, const void * graph_key) {
++    static const bool cache_on = []() {
++        const char * v = std::getenv("GGML_CUDA_GRAPH_COMPAT_CACHE");
++        return v ? std::atoi(v) != 0 : true;
++    }();
++    if (!cache_on || cgraph->uid == 0) {
++        return ggml_cuda_graph_check_compability(cgraph);
++    }
++    {
++        std::lock_guard<std::mutex> lock(ggml_cuda_compat_mutex);
++        const auto it = ggml_cuda_compat_cache.find(graph_key);
++        if (it != ggml_cuda_compat_cache.end() &&
++            it->second.first == cgraph->uid &&
++            it->second.second.first == cgraph->n_nodes) {
++            return it->second.second.second;
++        }
++    }
++    const bool ok = ggml_cuda_graph_check_compability(cgraph);
++    {
++        std::lock_guard<std::mutex> lock(ggml_cuda_compat_mutex);
++        ggml_cuda_compat_cache[graph_key] = { cgraph->uid, { cgraph->n_nodes, ok } };
++    }
++    return ok;
++}
++
+ static const void * ggml_cuda_graph_get_key(ggml_cgraph * cgraph) {
+     return cgraph->nodes[0];
+ }
+@@ -4718,7 +4764,7 @@
+     const bool staged_prefill = prefetch_mode && cgraph->n_nodes > 0 &&
+         cgraph->nodes[0]->op == GGML_OP_MUL_MAT_ID && cgraph->nodes[0]->src[2]->ne[1] >= 512;
+     if (graph->is_enabled() && !staged_prefill) {
+-        const bool graph_compatible = ggml_cuda_graph_check_compability(cgraph);
++        const bool graph_compatible = ggml_cuda_graph_check_compability_cached(cgraph, graph_key);
+         if (graph_compatible) {
+             const bool properties_changed = ggml_cuda_graph_update_required(cuda_ctx, cgraph);
+ 
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -1389,6 +1389,16 @@
+     return res;
+ }
+ 
++// P10 cella 2: lo stesso interruttore letto dallo scheduler in ggml-backend.cpp. La
++// lettura e' duplicata di proposito, per non allargare l'intestazione pubblica di ggml.
++static bool llama_sched_ingressi_async() {
++    static const int abilitato = []() {
++        const char * v = getenv("GGML_SCHED_ASYNC_INPUTS");
++        return v ? atoi(v) : 1;
++    }();
++    return abilitato != 0;
++}
++
+ llm_graph_result * llama_context::process_ubatch(const llama_ubatch & ubatch, llm_graph_type gtype, llama_memory_context_i * mctx, ggml_status & ret) {
+     if (mctx && !mctx->apply()) {
+         LLAMA_LOG_ERROR("%s: failed to apply memory context\n", __func__);
+@@ -1439,6 +1449,17 @@
+         }
+     }
+ 
++    // P10 cella 2: con `GGML_SCHED_ASYNC_INPUTS` (default acceso) lo scheduler accoda
++    // le copie degli ingressi sullo stream di calcolo invece di bloccarsi su ognuna.
++    // Quelle copie leggono `input->data`, che `set_inputs` sta per riscrivere: prima di
++    // riscriverlo bisogna sapere che la copia del forward precedente e' finita. Qui la
++    // coda e' gia' vuota nel caso normale — il campionatore ha appena letto i logit e
++    // quindi ha gia' sincronizzato — e l'attesa costa qualche microsecondo. E' la
++    // precondizione dichiarata in `ggml_backend_sched_compute_splits`.
++    if (llama_sched_ingressi_async()) {
++        ggml_backend_sched_synchronize(sched.get());
++    }
++
+     // set the input data for the input tensors
+     {
+         //const auto t_start_us = ggml_time_us();

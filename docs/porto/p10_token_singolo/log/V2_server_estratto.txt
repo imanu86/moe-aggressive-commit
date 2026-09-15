@@ -1,0 +1,256 @@
+79:0.00.299.156 I llama_model_loader: - kv  64:                                   split.no u16              = 0
+80:0.00.299.156 I llama_model_loader: - kv  65:                        split.tensors.count i32              = 1224
+81:0.00.299.157 I llama_model_loader: - kv  66:                                split.count u16              = 3
+105:0.00.487.937 I print_info: n_ctx_train           = 262144
+124:0.00.487.973 I print_info: f_max_alibi_bias      = 0.0e+00
+139:0.00.487.981 I print_info: n_ctx_orig_yarn       = 262144
+173:3.29.425.664 I cmn  common_init_: added <|endoftext|> logit bias = -inf
+174:3.29.425.671 I cmn  common_init_: added <|im_end|> logit bias = -inf
+175:3.29.425.674 I cmn  common_init_: added <|fim_pad|> logit bias = -inf
+176:3.29.425.674 I cmn  common_init_: added <|repo_name|> logit bias = -inf
+177:3.29.425.675 I cmn  common_init_: added <|file_sep|> logit bias = -inf
+179:3.30.364.507 I moe-cache: current-step GPU path active for 48 layers; prefill graph unchanged
+182:3.30.417.788 I llama_context: n_ctx                 = 262144
+183:3.30.417.789 I llama_context: n_ctx_seq             = 262144
+209:3.31.802.831 I sched_reserve: reserving ...
+210:3.31.802.853 I sched_reserve: demand workspace tokens=3 kv=256 (previous 0/0)
+215:3.32.372.795 I sched_reserve:      CUDA0 compute buffer size =     7.26 MiB
+216:3.32.372.803 I sched_reserve:  CUDA_Host compute buffer size =     0.36 MiB
+217:3.32.372.804 I sched_reserve: graph nodes  = 8131 (with bs=3), 8094 (with bs=1)
+218:3.32.372.805 I sched_reserve: graph splits = 2
+219:3.32.372.806 I sched_reserve: reserve took 569.95 ms, sched copies = 1
+258:3.43.909.267 I reserve_compute_meta: graph splits = 1, nodes = 823
+263:3.44.721.616 I srv    load_model: initializing, n_slots = 1, n_ctx_slot = 262144, kv_unified = 'false'
+265:3.45.038.687 I slot   load_model: id  0 | task -1 | new slot, n_ctx = 262144
+303:3.51.764.274 I slot  operator (): id  0 | task 0 | new prompt, n_ctx_slot = 262144, n_keep = 0, task.n_tokens = 61
+305:3.51.765.112 I sched_reserve: reserving ...
+307:3.51.832.765 I sched_reserve: demand workspace tokens=42 kv=256 (previous 3/256)
+308:3.51.859.630 I sched_reserve:      CUDA0 compute buffer size =   461.37 MiB
+309:3.51.859.632 I sched_reserve:  CUDA_Host compute buffer size =     1.53 MiB
+310:3.51.859.633 I sched_reserve: graph nodes  = 8131 (with bs=42), 8094 (with bs=1)
+311:3.51.859.634 I sched_reserve: graph splits = 143 (with bs=42), 96 (with bs=1)
+312:3.51.859.635 I sched_reserve: reserve took 26.87 ms, sched copies = 1
+313:3.57.691.616 I slot print_timing: id  0 | task 0 | prompt processing, n_tokens =     42, progress = 0.69, t =   5.93 s / 7.09 tokens per second
+316:3.58.406.786 I slot print_timing: id  0 | task 0 | prompt processing, n_tokens =     57, progress = 0.93, t =   6.64 s / 8.58 tokens per second
+320:3.58.884.519 I sched_reserve: reserving ...
+322:3.59.061.373 I sched_reserve: demand workspace tokens=3 kv=256 (previous 42/256)
+323:3.59.102.519 I sched_reserve:      CUDA0 compute buffer size =     7.26 MiB
+324:3.59.102.521 I sched_reserve:  CUDA_Host compute buffer size =     0.36 MiB
+325:3.59.102.521 I sched_reserve: graph nodes  = 8131 (with bs=3), 8094 (with bs=1)
+326:3.59.102.521 I sched_reserve: graph splits = 2
+327:3.59.102.523 I sched_reserve: reserve took 41.15 ms, sched copies = 1
+328:4.00.127.886 I slot print_timing: id  0 | task 0 | prompt eval time =    7119.94 ms /    61 tokens (  116.72 ms per token,     8.57 tokens per second)
+329:4.00.127.891 I slot print_timing: id  0 | task 0 |        eval time =    1243.67 ms /     8 tokens (  177.67 ms per token,     5.63 tokens per second)
+330:4.00.127.892 I slot print_timing: id  0 | task 0 |       total time =    8363.61 ms /    69 tokens
+331:4.00.127.893 I slot print_timing: id  0 | task 0 |    graphs reused =          6
+345:4.00.562.657 I slot  operator (): id  0 | task 11 | new prompt, n_ctx_slot = 262144, n_keep = 0, task.n_tokens = 61
+349:4.00.577.498 I sched_reserve: reserving ...
+351:4.00.607.761 I sched_reserve: demand workspace tokens=42 kv=256 (previous 3/256)
+352:4.00.624.729 I sched_reserve:      CUDA0 compute buffer size =   461.37 MiB
+353:4.00.624.735 I sched_reserve:  CUDA_Host compute buffer size =     1.53 MiB
+354:4.00.624.735 I sched_reserve: graph nodes  = 8131 (with bs=42), 8094 (with bs=1)
+355:4.00.624.736 I sched_reserve: graph splits = 143 (with bs=42), 96 (with bs=1)
+356:4.00.624.737 I sched_reserve: reserve took 16.97 ms, sched copies = 1
+362:4.02.143.615 I sched_reserve: reserving ...
+364:4.02.323.024 I sched_reserve: demand workspace tokens=3 kv=256 (previous 42/256)
+365:4.02.341.116 I sched_reserve:      CUDA0 compute buffer size =     7.26 MiB
+366:4.02.341.117 I sched_reserve:  CUDA_Host compute buffer size =     0.36 MiB
+367:4.02.341.118 I sched_reserve: graph nodes  = 8131 (with bs=3), 8094 (with bs=1)
+368:4.02.341.118 I sched_reserve: graph splits = 2
+369:4.02.341.119 I sched_reserve: reserve took 18.09 ms, sched copies = 1
+370:4.02.718.003 I slot print_timing: id  0 | task 11 | prompt eval time =    1580.90 ms /    61 tokens (   25.92 ms per token,    38.59 tokens per second)
+371:4.02.718.009 I slot print_timing: id  0 | task 11 |        eval time =     574.42 ms /     8 tokens (   82.06 ms per token,    12.19 tokens per second)
+372:4.02.718.010 I slot print_timing: id  0 | task 11 |       total time =    2155.32 ms /    69 tokens
+373:4.02.718.011 I slot print_timing: id  0 | task 11 |    graphs reused =         11
+387:4.02.992.502 I slot  operator (): id  0 | task 22 | new prompt, n_ctx_slot = 262144, n_keep = 0, task.n_tokens = 131248
+391:4.03.006.091 I sched_reserve: reserving ...
+393:4.03.035.485 I sched_reserve: demand workspace tokens=42 kv=256 (previous 3/256)
+394:4.03.053.846 I sched_reserve:      CUDA0 compute buffer size =   461.37 MiB
+395:4.03.053.852 I sched_reserve:  CUDA_Host compute buffer size =     1.53 MiB
+396:4.03.053.853 I sched_reserve: graph nodes  = 8131 (with bs=42), 8094 (with bs=1)
+397:4.03.053.853 I sched_reserve: graph splits = 143 (with bs=42), 96 (with bs=1)
+398:4.03.053.854 I sched_reserve: reserve took 18.37 ms, sched copies = 1
+401:4.03.770.358 I sched_reserve: reserving ...
+402:4.03.773.113 I sched_reserve: demand workspace tokens=2048 kv=16384 (previous 42/256)
+403:4.03.818.632 I sched_reserve:      CUDA0 compute buffer size =  1466.28 MiB
+404:4.03.818.639 I sched_reserve:  CUDA_Host compute buffer size =   156.66 MiB
+405:4.03.818.639 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+406:4.03.818.640 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+407:4.03.818.641 I sched_reserve: reserve took 45.52 ms, sched copies = 1
+408:4.09.042.404 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =   2090, progress = 0.02, t =   6.05 s / 345.46 tokens per second
+410:4.14.225.729 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =   4138, progress = 0.03, t =  11.23 s / 368.37 tokens per second
+412:4.19.470.223 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =   6186, progress = 0.05, t =  16.48 s / 375.42 tokens per second
+414:4.24.885.514 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =   8234, progress = 0.06, t =  21.89 s / 376.10 tokens per second
+416:4.30.391.448 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  10282, progress = 0.08, t =  27.40 s / 375.27 tokens per second
+418:4.36.039.250 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  12330, progress = 0.09, t =  33.05 s / 373.11 tokens per second
+420:4.41.787.985 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  14378, progress = 0.11, t =  38.80 s / 370.61 tokens per second
+422:4.41.788.706 I sched_reserve: reserving ...
+423:4.41.843.149 I sched_reserve: demand workspace tokens=2048 kv=32768 (previous 2048/16384)
+424:4.41.901.391 I sched_reserve:      CUDA0 compute buffer size =  1530.28 MiB
+425:4.41.901.397 I sched_reserve:  CUDA_Host compute buffer size =   252.85 MiB
+426:4.41.901.398 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+427:4.41.901.398 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+428:4.41.901.399 I sched_reserve: reserve took 58.24 ms, sched copies = 1
+429:4.47.679.146 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  16426, progress = 0.13, t =  44.69 s / 367.58 tokens per second
+431:4.53.556.825 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  18474, progress = 0.14, t =  50.56 s / 365.36 tokens per second
+433:4.59.521.548 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  20522, progress = 0.16, t =  56.53 s / 363.03 tokens per second
+435:5.05.563.889 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  22570, progress = 0.17, t =  62.57 s / 360.71 tokens per second
+437:5.11.786.794 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  24618, progress = 0.19, t =  68.79 s / 357.85 tokens per second
+439:5.18.040.161 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  26666, progress = 0.20, t =  75.05 s / 355.32 tokens per second
+441:5.24.394.042 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  28714, progress = 0.22, t =  81.40 s / 352.75 tokens per second
+443:5.30.829.107 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  30762, progress = 0.23, t =  87.84 s / 350.22 tokens per second
+445:5.30.829.820 I sched_reserve: reserving ...
+446:5.30.934.095 I sched_reserve: demand workspace tokens=2048 kv=49152 (previous 2048/32768)
+447:5.30.998.800 I sched_reserve:      CUDA0 compute buffer size =  2008.28 MiB
+448:5.30.998.807 I sched_reserve:  CUDA_Host compute buffer size =   349.04 MiB
+449:5.30.998.807 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+450:5.30.998.808 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+451:5.30.998.809 I sched_reserve: reserve took 64.71 ms, sched copies = 1
+452:5.37.478.555 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  32810, progress = 0.25, t =  94.49 s / 347.25 tokens per second
+454:5.44.026.334 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  34858, progress = 0.27, t = 101.03 s / 345.01 tokens per second
+456:5.50.766.765 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  36906, progress = 0.28, t = 107.77 s / 342.44 tokens per second
+458:5.57.587.611 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  38954, progress = 0.30, t = 114.60 s / 339.93 tokens per second
+460:6.04.477.557 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  41002, progress = 0.31, t = 121.49 s / 337.51 tokens per second
+462:6.11.490.855 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  43050, progress = 0.33, t = 128.50 s / 335.02 tokens per second
+464:6.18.576.402 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  45098, progress = 0.34, t = 135.58 s / 332.62 tokens per second
+466:6.25.769.357 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  47146, progress = 0.36, t = 142.78 s / 330.21 tokens per second
+468:6.25.770.088 I sched_reserve: reserving ...
+469:6.26.037.236 I sched_reserve: demand workspace tokens=2048 kv=65536 (previous 2048/49152)
+470:6.26.121.593 I sched_reserve:      CUDA0 compute buffer size =  2360.28 MiB
+471:6.26.121.600 I sched_reserve:  CUDA_Host compute buffer size =   445.23 MiB
+472:6.26.121.601 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+473:6.26.121.601 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+474:6.26.121.602 I sched_reserve: reserve took 84.36 ms, sched copies = 1
+475:6.33.154.565 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  49194, progress = 0.37, t = 150.16 s / 327.61 tokens per second
+477:6.40.519.650 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  51242, progress = 0.39, t = 157.53 s / 325.29 tokens per second
+479:6.47.976.879 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  53290, progress = 0.41, t = 164.98 s / 323.00 tokens per second
+481:6.55.520.940 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  55338, progress = 0.42, t = 172.53 s / 320.75 tokens per second
+483:7.03.141.538 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  57386, progress = 0.44, t = 180.15 s / 318.55 tokens per second
+485:7.10.917.980 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  59434, progress = 0.45, t = 187.93 s / 316.26 tokens per second
+487:7.18.635.372 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  61482, progress = 0.47, t = 195.64 s / 314.26 tokens per second
+489:7.26.402.458 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  63530, progress = 0.48, t = 203.41 s / 312.32 tokens per second
+491:7.26.403.223 I sched_reserve: reserving ...
+492:7.26.734.608 I sched_reserve: demand workspace tokens=2048 kv=81920 (previous 2048/65536)
+493:7.26.834.801 I sched_reserve:      CUDA0 compute buffer size =  2712.28 MiB
+494:7.26.834.807 I sched_reserve:  CUDA_Host compute buffer size =   541.41 MiB
+495:7.26.834.808 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+496:7.26.834.809 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+497:7.26.834.809 I sched_reserve: reserve took 100.19 ms, sched copies = 1
+498:7.34.521.383 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  65578, progress = 0.50, t = 211.53 s / 310.02 tokens per second
+500:7.42.460.337 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  67626, progress = 0.52, t = 219.47 s / 308.14 tokens per second
+502:7.50.594.684 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  69674, progress = 0.53, t = 227.60 s / 306.12 tokens per second
+504:7.58.800.100 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  71722, progress = 0.55, t = 235.81 s / 304.15 tokens per second
+506:8.07.089.885 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  73770, progress = 0.56, t = 244.10 s / 302.22 tokens per second
+508:8.15.488.024 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  75818, progress = 0.58, t = 252.50 s / 300.27 tokens per second
+510:8.24.006.169 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  77866, progress = 0.59, t = 261.01 s / 298.32 tokens per second
+512:8.32.599.677 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  79914, progress = 0.61, t = 269.61 s / 296.41 tokens per second
+514:8.32.600.417 I sched_reserve: reserving ...
+515:8.33.005.914 I sched_reserve: demand workspace tokens=2048 kv=98304 (previous 2048/81920)
+516:8.33.149.303 I sched_reserve:      CUDA0 compute buffer size =  3256.28 MiB
+517:8.33.149.312 I sched_reserve:  CUDA_Host compute buffer size =   637.60 MiB
+518:8.33.149.313 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+519:8.33.149.313 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+520:8.33.149.314 I sched_reserve: reserve took 143.39 ms, sched copies = 1
+521:8.41.547.738 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  81962, progress = 0.62, t = 278.56 s / 294.24 tokens per second
+523:8.50.348.277 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  84010, progress = 0.64, t = 287.36 s / 292.36 tokens per second
+525:8.59.160.490 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  86058, progress = 0.66, t = 296.17 s / 290.57 tokens per second
+527:9.08.048.436 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  88106, progress = 0.67, t = 305.06 s / 288.82 tokens per second
+529:9.17.038.161 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  90154, progress = 0.69, t = 314.05 s / 287.07 tokens per second
+531:9.26.184.740 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  92202, progress = 0.70, t = 323.19 s / 285.29 tokens per second
+533:9.35.432.296 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  94250, progress = 0.72, t = 332.44 s / 283.51 tokens per second
+535:9.44.717.236 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  96298, progress = 0.73, t = 341.72 s / 281.80 tokens per second
+537:9.44.717.981 I sched_reserve: reserving ...
+538:9.45.191.678 I sched_reserve: demand workspace tokens=2048 kv=114688 (previous 2048/98304)
+539:9.45.323.660 I sched_reserve:      CUDA0 compute buffer size =  3640.28 MiB
+540:9.45.323.668 I sched_reserve:  CUDA_Host compute buffer size =   733.79 MiB
+541:9.45.323.669 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+542:9.45.323.669 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+543:9.45.323.670 I sched_reserve: reserve took 131.99 ms, sched copies = 1
+544:9.54.388.319 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens =  98346, progress = 0.75, t = 351.40 s / 279.87 tokens per second
+546:10.03.779.553 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 100394, progress = 0.76, t = 360.79 s / 278.26 tokens per second
+548:10.13.325.614 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 102442, progress = 0.78, t = 370.33 s / 276.62 tokens per second
+550:10.22.951.603 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 104490, progress = 0.80, t = 379.96 s / 275.00 tokens per second
+552:10.32.705.907 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 106538, progress = 0.81, t = 389.71 s / 273.38 tokens per second
+554:10.42.573.860 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 108586, progress = 0.83, t = 399.58 s / 271.75 tokens per second
+556:10.52.594.864 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 110634, progress = 0.84, t = 409.60 s / 270.10 tokens per second
+558:11.02.736.801 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 112682, progress = 0.86, t = 419.74 s / 268.45 tokens per second
+560:11.02.737.710 I sched_reserve: reserving ...
+561:11.03.276.318 I sched_reserve: demand workspace tokens=2048 kv=131072 (previous 2048/114688)
+562:11.03.404.021 I sched_reserve:      CUDA0 compute buffer size =  4024.28 MiB
+563:11.03.404.029 I sched_reserve:  CUDA_Host compute buffer size =   829.98 MiB
+564:11.03.404.029 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+565:11.03.404.030 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+566:11.03.404.031 I sched_reserve: reserve took 127.71 ms, sched copies = 1
+567:11.13.221.932 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 114730, progress = 0.87, t = 430.23 s / 266.67 tokens per second
+569:11.23.559.530 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 116778, progress = 0.89, t = 440.57 s / 265.06 tokens per second
+571:11.31.671.298 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 118201, progress = 0.90, t = 448.68 s / 263.44 tokens per second
+574:11.33.555.608 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 118260, progress = 0.90, t = 450.56 s / 262.47 tokens per second
+576:11.43.476.033 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 120308, progress = 0.92, t = 460.48 s / 261.26 tokens per second
+578:11.53.882.845 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 122356, progress = 0.93, t = 470.89 s / 259.84 tokens per second
+580:12.04.427.156 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 124404, progress = 0.95, t = 481.43 s / 258.40 tokens per second
+582:12.15.068.271 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 126452, progress = 0.96, t = 492.08 s / 256.98 tokens per second
+584:12.25.822.495 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 128500, progress = 0.98, t = 502.83 s / 255.55 tokens per second
+586:12.31.337.174 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 129200, progress = 0.98, t = 508.34 s / 254.16 tokens per second
+589:12.31.542.599 I sched_reserve: reserving ...
+590:12.31.619.476 I sched_reserve: demand workspace tokens=2048 kv=147456 (previous 2048/131072)
+591:12.31.763.963 I sched_reserve:      CUDA0 compute buffer size =  4408.28 MiB
+592:12.31.763.971 I sched_reserve:  CUDA_Host compute buffer size =   926.16 MiB
+593:12.31.763.972 I sched_reserve: graph nodes  = 8131 (with bs=2048), 8191 (with bs=1)
+594:12.31.763.972 I sched_reserve: graph splits = 143 (with bs=2048), 96 (with bs=1)
+595:12.31.763.974 I sched_reserve: reserve took 144.49 ms, sched copies = 1
+596:12.41.868.943 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 131145, progress = 1.00, t = 518.88 s / 252.75 tokens per second
+599:12.44.140.576 I slot print_timing: id  0 | task 22 | prompt processing, n_tokens = 131244, progress = 1.00, t = 521.15 s / 251.84 tokens per second
+603:12.44.533.400 I sched_reserve: reserving ...
+605:12.44.823.541 I sched_reserve: demand workspace tokens=3 kv=147456 (previous 2048/147456)
+606:12.44.845.751 I sched_reserve:      CUDA0 compute buffer size =   113.74 MiB
+607:12.44.845.758 I sched_reserve:  CUDA_Host compute buffer size =     3.73 MiB
+608:12.44.845.759 I sched_reserve: graph nodes  = 9248 (with bs=3), 8191 (with bs=1)
+609:12.44.845.759 I sched_reserve: graph splits = 2
+610:12.44.845.761 I sched_reserve: reserve took 22.22 ms, sched copies = 1
+611:12.49.226.243 I slot print_timing: id  0 | task 22 | n_gen =    100, tg =  21.10 t/s, tg_3s =  21.31 t/s
+612:12.52.256.698 I slot print_timing: id  0 | task 22 | n_gen =    184, tg =  23.69 t/s, tg_3s =  27.72 t/s
+613:12.55.290.813 I slot print_timing: id  0 | task 22 | n_gen =    268, tg =  24.82 t/s, tg_3s =  27.69 t/s
+614:12.58.321.627 I slot print_timing: id  0 | task 22 | n_gen =    354, tg =  25.60 t/s, tg_3s =  28.38 t/s
+615:13.01.347.274 I slot print_timing: id  0 | task 22 | n_gen =    441, tg =  26.17 t/s, tg_3s =  28.75 t/s
+616:13.04.369.373 I slot print_timing: id  0 | task 22 | n_gen =    527, tg =  26.52 t/s, tg_3s =  28.46 t/s
+617:13.07.382.681 I slot print_timing: id  0 | task 22 | n_gen =    610, tg =  26.65 t/s, tg_3s =  27.54 t/s
+618:13.10.411.768 I slot print_timing: id  0 | task 22 | n_gen =    694, tg =  26.78 t/s, tg_3s =  27.73 t/s
+619:13.13.413.413 I slot print_timing: id  0 | task 22 | n_gen =    779, tg =  26.94 t/s, tg_3s =  28.32 t/s
+620:13.16.414.773 I slot print_timing: id  0 | task 22 | n_gen =    858, tg =  26.88 t/s, tg_3s =  26.32 t/s
+621:13.19.418.112 I slot print_timing: id  0 | task 22 | n_gen =    937, tg =  26.83 t/s, tg_3s =  26.30 t/s
+622:13.22.444.621 I slot print_timing: id  0 | task 22 | n_gen =   1015, tg =  26.75 t/s, tg_3s =  25.77 t/s
+623:13.22.785.835 I slot print_timing: id  0 | task 22 | prompt eval time =  521540.84 ms / 131248 tokens (    3.97 ms per token,   251.65 tokens per second)
+624:13.22.785.841 I slot print_timing: id  0 | task 22 |        eval time =   38252.48 ms /  1024 tokens (   37.39 ms per token,    26.74 tokens per second)
+625:13.22.785.842 I slot print_timing: id  0 | task 22 |       total time =  559793.32 ms / 132272 tokens
+626:13.22.785.843 I slot print_timing: id  0 | task 22 |    graphs reused =       1028
+640:13.23.018.021 I slot  operator (): id  0 | task 1115 | new prompt, n_ctx_slot = 262144, n_keep = 0, task.n_tokens = 131239
+648:13.23.069.976 I sched_reserve: reserving ...
+650:13.23.101.701 I sched_reserve: demand workspace tokens=90 kv=147456 (previous 3/147456)
+651:13.23.122.655 I sched_reserve:      CUDA0 compute buffer size =   960.04 MiB
+652:13.23.122.660 I sched_reserve:  CUDA_Host compute buffer size =    42.57 MiB
+653:13.23.122.660 I sched_reserve: graph nodes  = 8131 (with bs=90), 8191 (with bs=1)
+654:13.23.122.661 I sched_reserve: graph splits = 143 (with bs=90), 96 (with bs=1)
+655:13.23.122.661 I sched_reserve: reserve took 20.96 ms, sched copies = 1
+659:13.24.908.373 I sched_reserve: reserving ...
+661:13.25.094.632 I sched_reserve: demand workspace tokens=3 kv=147456 (previous 90/147456)
+662:13.25.112.557 I sched_reserve:      CUDA0 compute buffer size =   113.74 MiB
+663:13.25.112.564 I sched_reserve:  CUDA_Host compute buffer size =     3.73 MiB
+664:13.25.112.565 I sched_reserve: graph nodes  = 9248 (with bs=3), 8191 (with bs=1)
+665:13.25.112.565 I sched_reserve: graph splits = 2
+666:13.25.112.566 I sched_reserve: reserve took 17.93 ms, sched copies = 1
+667:13.29.113.989 I slot print_timing: id  0 | task 1115 | n_gen =    100, tg =  23.54 t/s, tg_3s =  23.78 t/s
+668:13.32.126.614 I slot print_timing: id  0 | task 1115 | n_gen =    176, tg =  24.24 t/s, tg_3s =  25.23 t/s
+669:13.35.135.999 I slot print_timing: id  0 | task 1115 | n_gen =    256, tg =  24.93 t/s, tg_3s =  26.58 t/s
+670:13.38.156.254 I slot print_timing: id  0 | task 1115 | n_gen =    338, tg =  25.44 t/s, tg_3s =  27.15 t/s
+671:13.41.160.616 I slot print_timing: id  0 | task 1115 | n_gen =    418, tg =  25.66 t/s, tg_3s =  26.63 t/s
+672:13.44.195.089 I slot print_timing: id  0 | task 1115 | n_gen =    502, tg =  25.98 t/s, tg_3s =  27.68 t/s
+673:13.47.217.185 I slot print_timing: id  0 | task 1115 | n_gen =    586, tg =  26.22 t/s, tg_3s =  27.80 t/s
+674:13.50.229.549 I slot print_timing: id  0 | task 1115 | n_gen =    669, tg =  26.38 t/s, tg_3s =  27.55 t/s
+675:13.53.234.830 I slot print_timing: id  0 | task 1115 | n_gen =    751, tg =  26.48 t/s, tg_3s =  27.29 t/s
+676:13.56.244.961 I slot print_timing: id  0 | task 1115 | n_gen =    833, tg =  26.55 t/s, tg_3s =  27.24 t/s
+677:13.59.271.177 I slot print_timing: id  0 | task 1115 | n_gen =    914, tg =  26.57 t/s, tg_3s =  26.77 t/s
+678:14.02.295.295 I slot print_timing: id  0 | task 1115 | n_gen =    998, tg =  26.67 t/s, tg_3s =  27.78 t/s
+679:14.03.267.399 I slot print_timing: id  0 | task 1115 | prompt eval time =    1890.29 ms /    94 tokens (   20.11 ms per token,    49.73 tokens per second)
+680:14.03.267.404 I slot print_timing: id  0 | task 1115 |        eval time =   38359.07 ms /  1024 tokens (   37.50 ms per token,    26.67 tokens per second)
+681:14.03.267.405 I slot print_timing: id  0 | task 1115 |       total time =   40249.37 ms /  1118 tokens
+682:14.03.267.406 I slot print_timing: id  0 | task 1115 |    graphs reused =       2045

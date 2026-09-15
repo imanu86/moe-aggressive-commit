@@ -1,0 +1,189 @@
+{
+ "file": "D:/ds4_work/banco_p0_run/20260915_160208_P10_p10_c2_prima_v1/nsys/prima_L01.sqlite",
+ "n_forward_puliti": 127,
+ "n_forward_scartati_ricattura": 7,
+ "nodi_gpu_per_forward": 4256,
+ "integrita": {
+  "valida": true,
+  "conteggi": {
+   "moe_grouped_plan_decode": {
+    "atteso": 48,
+    "visto": 48.0,
+    "ok": true
+   },
+   "topk_moe_cuda": {
+    "atteso": 48,
+    "visto": 48.0,
+    "ok": true
+   },
+   "moe_weighted_reduction_f32": {
+    "atteso": 48,
+    "visto": 48.0,
+    "ok": true
+   },
+   "gated_delta_net_cuda": {
+    "atteso": 36,
+    "visto": 36.0,
+    "ok": true
+   },
+   "ssm_conv_f32": {
+    "atteso": 36,
+    "visto": 36.0,
+    "ok": true
+   },
+   "flash_attn_ext_f16": {
+    "atteso": 12,
+    "visto": 12.0,
+    "ok": true
+   }
+  }
+ },
+ "parete_ms_per_forward": 36.807,
+ "gpu_inattiva_ms_per_forward": 2.801,
+ "fasce_dei_buchi": {
+  ">100us": {
+   "n_per_forward": 1.5,
+   "ms_per_forward": 1.346
+  },
+  "5-20us": {
+   "n_per_forward": 64.2,
+   "ms_per_forward": 0.885
+  },
+  "<2us": {
+   "n_per_forward": 4048.83,
+   "ms_per_forward": 0.381
+  },
+  "2-5us": {
+   "n_per_forward": 60.59,
+   "ms_per_forward": 0.147
+  },
+  "20-100us": {
+   "n_per_forward": 0.5,
+   "ms_per_forward": 0.041
+  }
+ },
+ "buchi_grandi": [
+  {
+   "prima": "mul_mat_vec_q",
+   "dopo": "k_bin_bcast",
+   "n_per_forward": 1.0,
+   "ms_per_forward": 1.267,
+   "mediana_ms": 1.258,
+   "min_ms": 1.095,
+   "max_ms": 1.717,
+   "nodo_nel_grafo": [
+    [
+     0,
+     127
+    ]
+   ],
+   "copie_dentro": {
+    "n_per_buco": 16.0,
+    "mib_per_buco": 2.237,
+    "ms_per_buco": 0.121
+   },
+   "api_dentro": [
+    {
+     "api": "cudaStreamSynchronize_v3020",
+     "n_per_buco": 41.99,
+     "ms_per_buco": 0.243
+    },
+    {
+     "api": "cudaMemcpyAsync_v3020",
+     "n_per_buco": 15.0,
+     "ms_per_buco": 0.112
+    },
+    {
+     "api": "cudaGraphLaunch_v10000",
+     "n_per_buco": 1.0,
+     "ms_per_buco": 0.06
+    }
+   ]
+  },
+  {
+   "prima": "mul_mat_vec_q",
+   "dopo": "scale_f32",
+   "n_per_forward": 0.5,
+   "ms_per_forward": 0.08,
+   "mediana_ms": 0.139,
+   "min_ms": 0.101,
+   "max_ms": 0.293,
+   "nodo_nel_grafo": [
+    [
+     45,
+     64
+    ]
+   ],
+   "copie_dentro": {
+    "n_per_buco": 0.0,
+    "mib_per_buco": 0.0,
+    "ms_per_buco": 0.0
+   },
+   "api_dentro": [
+    {
+     "api": "cudaGraphLaunch_v10000",
+     "n_per_buco": 1.0,
+     "ms_per_buco": 0.158
+    }
+   ]
+  }
+ ],
+ "api_host_per_forward": [
+  {
+   "api": "cudaStreamSynchronize_v3020",
+   "n": 43.61,
+   "ms": 29.97
+  },
+  {
+   "api": "cudaMemcpyAsync_v3020",
+   "n": 16.59,
+   "ms": 0.13
+  },
+  {
+   "api": "cudaGraphLaunch_v10000",
+   "n": 1.04,
+   "ms": 6.094
+  }
+ ],
+ "stream_synchronize": {
+  "n_per_forward": 43.61,
+  "classi": {
+   "svuotamento della coda prima di un ingresso (dopo un'altra sync)": {
+    "n_per_forward": 27.02,
+    "ms_per_forward": 0.022
+   },
+   "coda bloccante di una copia (dopo cudaMemcpyAsync)": {
+    "n_per_forward": 15.59,
+    "ms_per_forward": 0.144
+   },
+   "attesa del forward (> 1 ms)": {
+    "n_per_forward": 1.0,
+    "ms_per_forward": 29.803
+   }
+  }
+ },
+ "copie": {
+  "h2d_n": 15.59,
+  "h2d_mib": 1.34,
+  "h2d_ms": 0.084,
+  "h2d_per_stream": {
+   "14": {
+    "n": 15.59,
+    "mib": 1.34
+   }
+  },
+  "d2h_n": 1.04,
+  "d2h_mib": 0.9846,
+  "istogramma_h2d_byte": {
+   "527360": 0.17,
+   "526336": 1.91,
+   "262144": 1.04,
+   "16384": 1.04,
+   "10240": 2.08,
+   "32": 2.08,
+   "16": 2.08,
+   "8": 3.12,
+   "4": 2.08
+  }
+ }
+}

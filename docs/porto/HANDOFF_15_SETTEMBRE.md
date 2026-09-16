@@ -64,3 +64,17 @@ Un token legge 5,11 GiB obbligati (densi Q6_K 2,68 GiB, esperti in cache, 168 Mi
 - Alberi: snapshot immutabile `D:\ds4_work\p0_snapshot_20260914`; copie di lavoro `D:\ds4_work\p3_work` (esperti CPU, chiusa), `p8_work` (lossless decode), `p11_work` (prefill, = p8 + p11.patch). Produzione `qwen38_clean\bin_prod` intatta; sperimentale originale `qwen38_clean\build\bin`.
 - Digest delle chat Codex del 13/9: [DIGEST_CHAT_CODEX_13_SETTEMBRE.md](DIGEST_CHAT_CODEX_13_SETTEMBRE.md). Leggere sempre i `*_CODEX.md` prima di aprire un fronte.
 - Regole di metodo imparate: contatori del ramo oltre alle impronte (il ramo puo' non partire con testo identico); un banco che esercita solo la riga 0 non valida un descrittore multi-riga; mai testare una corsia solo senza MTP; una lettura di memoria mappata da kernel costa 1,1 µs; RAM libera minima da registrare (sotto 4 GB il decode crolla); stimare il tetto dal profilo PRIMA di costruire.
+
+## 8. Ipotesi hardware discussa il 16/9 (nessuna decisione presa)
+
+Scheda madre: **ASUS PRIME B550M-A WIFI II** (micro-ATX): slot 1 PCIe 4.0 x16 dalla CPU; slot 2 x16 fisico ma **x4 elettrico PCIe 3.0 dal chipset**, condiviso; tre slot di distanza fra i due. CPU 5800X, 96 GB RAM, GPU attuale RTX 3060 12 GB (PCIe 4.0 x16, 26,3 GB/s misurati).
+
+Stime dal pavimento dei byte di P9 (decode a 131k; NON misure):
+
+| Configurazione | Stima decode | Note |
+|---|---:|---|
+| 1 x 2080 Ti 22 GB (mod) | 40-45 t/s | PCIe 3.0 (13 GB/s), fork invariato |
+| 2 x 2080 Ti 22 GB in layer split | 50-55 | 44 GB: i miss del bus spariscono; serve il porting del fork a due dispositivi (indici di device: cache esperti, staging, sparse FA, GDN, bias hanno CUDA0 cablato); seconda scheda a x4 3.0; NVLink e tensor parallel NON servono (a batch 1 le sync costano 6-15 ms e su Windows le GeForce non hanno peer-to-peer) |
+| 1 x 3090 24 GB | 55-60 | fork invariato, PCIe 4.0 |
+
+Vincoli pratici: alimentatore 850 W ATX 3.x con quattro 8 pin (serve anche per una 3090 sola); mod da 250 W ciascuna; spazio e flusso d'aria fra le due schede; verificare il case. Procedura se si sceglie il doppio: prima llama.cpp a monte col modello stock in layer split per fissare il tetto, poi il porting del fork.

@@ -1,5 +1,8 @@
 # Elastico M3 — banda morta sui ridimensionamenti della cache esperti (21 settembre 2026)
 
+> **Aggiornamento della sera: la leva vera non era questa.** Il 13-16% del decode a 100k lo mangia il deposito RAM
+> degli 8 strati; con `LLAMA_MOE_RAM_LAYERS=0` l'adattivo (M2 o M3) fa 22,4-22,9 t/s. Vedi `SCOMPOSIZIONE_DECODE.md`.
+
 **Conclusione.** M3 fa quello che deve (zero ridimensionamenti a metà decode, un solo ridimensionamento dopo ogni
 prefill, prova del canary ancora SUPERATA), ma al punto operativo **guadagna il 3,0% su M2 (18,93 contro 18,38 t/s a
 ~100k): sotto la soglia del 5%, quindi NON si promuove.** A contesto corto vale +10,7%; a 50k pareggia. Resta il 4%

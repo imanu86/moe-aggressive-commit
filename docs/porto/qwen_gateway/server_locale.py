@@ -25,9 +25,13 @@ HOST, PORT = B.HOST, B.PORT
 
 
 @contextlib.contextmanager
-def server(braccio: str, run: Path, log):
-    """Context manager: yield (base_url, chiave). Chiude con CTRL_BREAK, poi terminate se serve."""
+def server(braccio: str, run: Path, log, leve: dict | None = None, slot: str | None = None):
+    """Context manager: yield (base_url, chiave). Chiude con CTRL_BREAK, poi terminate se serve.
+
+    `leve` = variabili d'ambiente in piu' (vincono sul braccio), `slot` = numero di slot al posto di quello del braccio.
+    """
     config_path, runtime, extra_env, slots = B.BRACCI[braccio]
+    slots = slot or slots
     for name in ("logs", "slots", "ffcache", "tmp", "cuda-cache"):
         (run / name).mkdir(parents=True, exist_ok=True)
     with socket.socket() as s:
@@ -58,6 +62,7 @@ def server(braccio: str, run: Path, log):
     env.update(config["env"])
     if extra_env == "ELASTIC":
         env.update(B.ELASTIC_ENV)
+    env.update(leve or {})
     env.update({"TEMP": str(run / "tmp"), "TMP": str(run / "tmp"), "CUDA_CACHE_PATH": str(run / "cuda-cache")})
 
     with (run / "logs" / "server.stdout.txt").open("w") as out, (run / "logs" / "server.stderr.txt").open("w") as err:

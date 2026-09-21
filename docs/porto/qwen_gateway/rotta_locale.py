@@ -23,6 +23,13 @@ import urllib.parse
 from pathlib import Path
 
 LOCALE = Path(os.environ.get("USERPROFILE", ".")) / ".claude" / "qwen-gateway" / "locale.json"
+# Senza locale.json (= nessun server di prova annunciato) vale il server di PRODUZIONE: se la 8100 risponde,
+# Haiku va li'; se e' spento, tutto va ad Anthropic come sempre. La chiave si legge dal lanciatore sul Desktop
+# (riga `set "API_KEY=…"`), resta in memoria e non viene mai scritta ne' registrata.
+PRODUZIONE = "http://127.0.0.1:8100"
+_DESKTOP = Path(os.environ.get("USERPROFILE", ".")) / "Desktop"
+LANCIATORI = (_DESKTOP / "Qwen - ADATTIVO M2 VRAM+RAM - senza MTP.bat", _DESKTOP / "Qwen - CGControl - senza MTP - 40 slot.bat")
+_chiave: dict = {}
 TENUTI = ("model", "messages", "system", "tools", "tool_choice", "max_tokens", "stream", "temperature", "top_p",
           "top_k", "stop_sequences", "thinking")
 BLOCCHI = {"text", "image", "tool_use", "tool_result", "thinking"}
@@ -78,6 +85,22 @@ def pulisci(j: dict) -> dict:
     return out
 
 
+def _chiave_produzione() -> str | None:
+    import re
+    for bat in LANCIATORI:
+        try:
+            mtime = bat.stat().st_mtime
+        except OSError:
+            continue
+        if _chiave.get("file") == str(bat) and _chiave.get("mtime") == mtime:
+            return _chiave["valore"]
+        m = re.search(r'set "API_KEY=([^"]+)"', bat.read_text(encoding="latin-1"))
+        if m:
+            _chiave.update(file=str(bat), mtime=mtime, valore=m.group(1))
+            return m.group(1)
+    return None
+
+
 async def destinazione(metodo: str, percorso: str, info: dict) -> dict | None:
     if metodo != "POST" or percorso.split("?")[0] != "/v1/messages" or "haiku" not in (info.get("modello") or "").lower():
         return None
@@ -85,7 +108,11 @@ async def destinazione(metodo: str, percorso: str, info: dict) -> dict | None:
         d = json.loads(LOCALE.read_text(encoding="utf-8"))
         u = urllib.parse.urlsplit(d["base"])
     except (OSError, ValueError, KeyError):
-        return None
+        chiave = _chiave_produzione()
+        if chiave is None:
+            return None
+        d = {"base": PRODUZIONE, "chiave": chiave, "instrada": "stream"}
+        u = urllib.parse.urlsplit(PRODUZIONE)
     regola = d.get("instrada", "stream")
     if regola == "subagent" and not info.get("agente"):
         return None

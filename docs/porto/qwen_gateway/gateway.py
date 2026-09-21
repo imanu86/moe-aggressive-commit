@@ -20,6 +20,11 @@ import time
 from datetime import datetime
 from pathlib import Path
 
+try:  # la rotta locale e' facoltativa: se il modulo ha un problema il gateway resta un puro inoltro
+    import rotta_locale
+except Exception:  # noqa: BLE001
+    rotta_locale = None
+
 CERT_DIR = Path(os.environ.get("USERPROFILE", ".")) / ".claude" / "qwen-gateway"
 INTERCETTA = {"api.anthropic.com"}
 LIMITE_TESTA = 1 << 20
@@ -118,6 +123,12 @@ async def inoltra(host: str, c_reader: asyncio.StreamReader, c_writer: asyncio.S
         info = {"host": host, "metodo": metodo, "percorso": percorso.split("?")[0], "byte_richiesta": len(corpo),
                 **metadati(percorso, intest, corpo)}
 
+        # Fase 2: Haiku -> server locale, se c'e'. Qualunque problema prima della risposta = si prosegue verso Anthropic.
+        if rotta_locale is not None and not aggiorna:
+            dest = await rotta_locale.destinazione(metodo, percorso, info)
+            if dest is not None and await rotta_locale.servi(dest, corpo, info, c_writer, reg, t0):
+                return
+
         ctx = ssl.create_default_context()
         ctx.set_alpn_protocols(["http/1.1"])
         u_reader, u_writer = await asyncio.open_connection(host, 443, ssl=ctx, server_hostname=host, limit=LIMITE_TESTA)
@@ -200,7 +211,8 @@ async def main_async(args) -> None:
         tls.load_cert_chain(CERT_DIR / "leaf.pem", CERT_DIR / "leaf.key")
         tls.set_alpn_protocols(["http/1.1"])
     srv = await asyncio.start_server(servi(tls, reg), "127.0.0.1", args.porta, limit=LIMITE_TESTA)
-    reg.scrivi(evento="avvio", porta=args.porta, intercetta=sorted(INTERCETTA) if tls else [], fase="solo inoltro")
+    reg.scrivi(evento="avvio", porta=args.porta, intercetta=sorted(INTERCETTA) if tls else [],
+               fase="inoltro + rotta locale per Haiku" if rotta_locale else "solo inoltro")
     print(f"gateway su 127.0.0.1:{args.porta} | intercetta: {sorted(INTERCETTA) if tls else 'niente (mancano i certificati)'}", flush=True)
     async with srv:
         await srv.serve_forever()

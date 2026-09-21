@@ -56,12 +56,22 @@ lanciata con `HTTPS_PROXY` + `NODE_EXTRA_CA_CERTS` nel solo processo, le sue chi
 `api.anthropic.com` (`/mcp-registry`, `/api/event_logging`) sono passate dal gateway con 200: Claude Code
 onora proxy e CA. La richiesta al modello non è partita perché la CLI non è loggata (si usa solo l'app).
 
+**App desktop attraverso il gateway (21/9, 13:02, con l'ok dell'utente): FUNZIONA, abbonamento intatto.**
+`imposta_proxy.py --attiva` ha messo `HTTPS_PROXY`, `NODE_EXTRA_CA_CERTS` e `NO_PROXY` nell'`env` di
+`%USERPROFILE%\.claude\settings.json` (copia di sicurezza accanto). L'app applica la modifica **a caldo**:
+le due sessioni del tab Code già aperte sono passate subito dal gateway, senza riavvio. Nel registro:
+`POST /v1/messages` con `claude-fable-5-1` → 200 in streaming (primo byte 1,0-2,2 s), più
+`/v1/code/sessions/*/worker/events` e `/api/event_logging` → 200; nessun errore. Campi visti nelle
+richieste vere: `context_management`, `diagnostics`, `metadata`, `output_config`, `thinking`; 47-49 tool.
+
+Sul Desktop: `Claude - avvia gateway Qwen.bat` e `Claude - TORNA DIRETTO (senza gateway).bat` (toglie le tre
+chiavi). **Finché non c'è l'avvio automatico, dopo un riavvio del PC il gateway va acceso prima di aprire
+Claude, altrimenti l'app non si collega.**
+
 ## Prossimi passi
 
-1. (serve l'ok esplicito dell'utente) due righe nell'`env` di `%USERPROFILE%\.claude\settings.json`:
-   `HTTPS_PROXY=http://127.0.0.1:8787` e `NODE_EXTRA_CA_CERTS=<…>\.claude\qwen-gateway\ca.pem`, col
-   gateway acceso; aprire una sessione NUOVA del tab Code e guardare nel registro se arrivano i
-   `POST /v1/messages` con status 200 (= abbonamento intatto attraverso il gateway) e con quali modelli.
+1. Lasciar lavorare l'app qualche ora e leggere dal registro quali richieste usano Haiku e da dove
+   vengono (principale o subagent): decide la regola d'instradamento.
 2. Fase 2: instradamento Haiku → Qwen (solo subagent), conversione dei `system` a metà conversazione,
    ping durante il prefill, riscrittura di `model`, ricaduta sul vero Haiku se il server locale non risponde.
 3. Avvio automatico, guardiano che toglie le due righe se il gateway non risponde, bat «torna diretto».

@@ -85,6 +85,24 @@ di `set_session_model` è scaduta in coda. All'apertura di una sessione partono 
 minuscole (conteggio dei token, una per tool più una con tutti i 141 tool). Da qui la regola predefinita
 `instrada: stream`: a Qwen vanno solo le richieste in streaming (chat e subagent), il resto al vero Haiku.
 
+**Rimisura dopo le due correzioni (21/9, 13:57-14:10, stessa chat, ~52k token di contesto).** Le cause della
+cache persa erano due, nessuna delle due un ritocco del prompt da parte di Claude Code:
+
+1. il blocco di attribuzione in testa al system cambia a ogni turno (`cc_prev_req`, `cc_prompt_id`) e nel
+   template di Qwen cade dopo i tool, al token ~26.541 → `pulisci()` lo toglie;
+2. a ogni turno l'app manda anche una richiesta in streaming minuscola e senza tool (un'altra conversazione,
+   ~250-550 token): sull'unico slot sovrascriveva la cache della chat vera → la regola `stream` ora richiede
+   anche almeno un tool.
+
+| turno | regole | token rifatti | prefill | risposta |
+|---|---|---|---|---|
+| 1 | blocco tolto, slot appena acceso | 51.550 | 159 s | 197 token a 17 t/s |
+| 2 | blocco tolto, ma la richiesta senza tool aveva preso lo slot | 51.782 | 139 s | 362 token |
+| 3 | entrambe le correzioni | **212 su 51.656** | **2,6 s** | 18 token in 1,2 s |
+| 3, richiesta laterale di fine turno | entrambe | 340 su 52.013 | 3,0 s | 231 token a 17,8 t/s |
+
+Un seguito in una chat da 52k token costa quindi ~4 s, come con DSH.
+
 ## Prossimi passi
 
 1. Lasciar lavorare l'app qualche ora e leggere dal registro quali richieste usano Haiku e da dove

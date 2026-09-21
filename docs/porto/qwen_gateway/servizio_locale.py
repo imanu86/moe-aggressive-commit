@@ -25,7 +25,7 @@ def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run", action="store_true")
     ap.add_argument("--braccio", default="x4", choices=sorted(server_locale.B.BRACCI))
-    ap.add_argument("--instrada", default="tutti", choices=("tutti", "subagent"))
+    ap.add_argument("--instrada", default="stream", choices=("stream", "subagent", "tutti"))
     args = ap.parse_args()
     if not args.run:
         print(__doc__)

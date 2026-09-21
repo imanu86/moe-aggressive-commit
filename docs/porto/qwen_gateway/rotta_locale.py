@@ -92,7 +92,10 @@ async def destinazione(metodo: str, percorso: str, info: dict) -> dict | None:
     # "stream" = solo conversazioni vere (chat e subagent). Le richieste di sfondo di Claude Code (titoli,
     # riassunti, verifica del modello) non sono in streaming: il 21/9 con "tutti" hanno tenuto occupato
     # l'unico slot di Qwen per 50-173 s l'una, a ripetizione, da tutte le sessioni aperte.
-    if regola == "stream" and not info.get("stream"):
+    # Servono anche i tool: a ogni turno l'app manda pure una richiesta in streaming minuscola e SENZA tool (1-3
+    # messaggi, ~500 token, un'altra conversazione). Sull'unico slot di Qwen sovrascriveva la cache della chat vera,
+    # che subito dopo rifaceva 51k token (rimisura del 21/9 alle 14:00).
+    if regola == "stream" and not (info.get("stream") and info.get("tool")):
         return None
     try:
         _, w = await asyncio.wait_for(asyncio.open_connection(u.hostname, u.port), 0.5)

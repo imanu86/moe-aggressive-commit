@@ -69,6 +69,32 @@ Il bat di produzione non cattura lo stderr: in produzione questi contatori non s
   566 + 512, perché i tensori degli strati 0-7 sono i più grossi): visto solo quando il desktop occupava 3,2 GB
   (prefill 310/256 t/s a 50k/100k contro 392/276); nelle corse lunghe il prefill senza deposito è stato il più veloce.
 
+## Le misure di Codex con GSQ-RCO (oltre i 25 t/s) e dove sono finite
+
+Le chat stanno nell'app Codex, thread **«Qwen 3.8»** (id `01a099f1-9a13-73f2-a761-1f11c25a0591`, file
+`~\.codex\sessions\2026\09\13\rollout-2026-09-13T10-45-42-01a099f1-….jsonl`, 73 MB, attivo fino al 21/9 mattina); in DSH
+«GSQ» compare solo come nome del modello. I rapporti sono in `C:\Users\imanu\Documents\Codex\2026-09-13\rip\outputs\`:
+`BENCHMARK_GSQ_20_SETTEMBRE.md`, `VRAM_ELASTICA_…`, `VARIANTE_A_CACHE_DINAMICA_…`, `DECODING_RAM_SSD_…`,
+`OTTIMIZZAZIONE_RAM_SSD_…`, `MTP_RAM_…`. Banco `lungo_131k` (131.248 token, due generazioni da 1024, greedy, senza MTP),
+laboratorio `work\qwen_x4_lab_20260920` (`bench_gsq.py --slots N --profile lungo_131k`), binari p11:
+
+| quando (20/9) | assetto | decode t/s |
+|---|---|---|
+| mattina | p11, 40 slot fissi | 23,21 |
+| mattina | p11, 64 slot fissi | 24,97 (colpi 62,9% → 73,8%; VRAM max 11,5 GB: ci stavano) |
+| ~14:00 | p11, 70 slot fissi | **25,43** (minimo di VRAM fisica libera 754 MB) |
+| sera | p11, 70 slot fissi, «controllo ravvicinato» | 23,06 (**stesso binario, −9,3%**) |
+| sera | A1 = elastico senza deposito RAM, tetto 70 / tetto 40 | 23,07 / 21,21 |
+| sera | R1/O2 = con deposito RAM | 18,7-20,6 contro 21,60 di A1: **−13,3%**, già scritto da Codex («resta overhead da recuperare») |
+
+I numeri di oggi coincidono con quelli della sera del 20/9 (x4 a 40 slot 21,24 ≈ 21,21; adattivo senza deposito 22,87 ≈
+23,07). I 25,4 sono la stessa macchina **col desktop scarico**. Misurato oggi: durante il decode il server ha l'85% del
+motore GPU, il desktop il ~7% (app Claude 3,8%, dwm 2,5%, CGControl 0,6% più il 9% del decodificatore video); la VRAM
+dedicata degli altri processi è passata in giornata da 2,0 a **4,4 GB** (CGControl 2,1 GB, app Claude 0,7, csrss 0,4,
+Chrome 0,4, Visual Studio 0,2…). Con 40 slot FISSI e il desktop a 4,4 GB il decode è sceso da 16,1 a 12,4 t/s dentro una
+sola generazione (`…_decode_x4_contesa_gpu`): è il degrado silenzioso che l'adattivo evita, ed è il candidato più serio per
+gli 11 t/s dell'uso reale (non dimostrato). Conto: 25,4 → ~23 per il desktop (meno slot + ~7% di GPU), → ~20 per il deposito RAM.
+
 ## Proposta
 
 1. **Subito, senza build:** produzione con `LLAMA_MOE_RAM_LAYERS=0` (binari M2 già promossi; M3 equivalente).
@@ -81,8 +107,12 @@ Il bat di produzione non cattura lo stderr: in produzione questi contatori non s
    pressione finita e pagine ripristinate si ri-blocca. Tocca `moe-ram-store.cuh`, `moe-demand.cuh`, `ggml-cuda.cu`
    (build nvcc come M2) e il rebind in `llama-moecache.cpp`; collaudo = prova del canary. Premio: la velocità del
    punto 1 con la sicurezza di oggi.
-3. **Oltre i 23 t/s:** gli slot non pagano più; la leva successiva è MTP1 sopra l'assetto senza deposito (Codex: +9% in
-   decode sull'elastico, pagato nel prefill profondo), da misurare con questo stesso banco a 100k.
+3. **Per tornare ai 25: liberare la GPU dal desktop.** 4,4 GB di VRAM e ~7% del motore GPU vanno ad altri programmi,
+   CGControl (mirroring video dei telefoni) per primo. Leve dell'utente: meno flussi video aperti mentre si genera,
+   accelerazione hardware spenta nelle app Electron/Chromium (Claude, DSH, Chrome), finestre ridotte a icona. Leva
+   strutturale: con la 2080 Ti 22 GB in arrivo, desktop su una scheda e modello sull'altra.
+4. **Oltre:** la leva successiva è MTP1 sopra l'assetto senza deposito (Codex, `MTP_RAM_20_SETTEMBRE.md`: +11% in decode a
+   32k, +4,8% a 131k, pagato col −9,8% nel prefill profondo), da misurare con questo stesso banco a 100k.
 
 ## Strumenti aggiunti
 

@@ -45,6 +45,10 @@ BRACCI = {
     # M1 + ripristino delle pagine degli esperti prima del prefill (docs/porto/elastico_m1_canary, 21/9)
     "m2": (LAB / "qwen_ram_mtp_20260920" / "config" / "reference_gsq_64.json",
            Path(r"D:\ds4_work\bin_elastico_m2\llama-server.exe"), "ELASTIC", "70"),
+    # M2 + politica elastica con banda morta, ripartenza dall'ultima taglia buona, prefill senza
+    # svuotamento quando l'area entra (docs/porto/elastico_m3, 21/9). LLAMA_MOE_ELASTIC_M3=0 via --env = M2.
+    "m3": (LAB / "qwen_ram_mtp_20260920" / "config" / "reference_gsq_64.json",
+           Path(r"D:\ds4_work\elastico_m3\runtime-m3\llama-server.exe"), "ELASTIC", "70"),
     # produzione del 18/9 («Qwen - CGControl - senza MTP - 40 slot.bat»): binari p11 (X4), modello
     # GSQ-RCO, 40 slot. Il preset_X4_p11.json non va piu': punta al modello UD-IQ3_XXS, cancellato.
     # reference_gsq_64.json ha gli stessi argomenti e le stesse env del .bat; cambia solo il numero di slot.

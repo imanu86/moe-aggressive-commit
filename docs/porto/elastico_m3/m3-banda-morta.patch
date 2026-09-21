@@ -1,0 +1,352 @@
+--- a/src/llama-moecache.cpp
++++ b/src/llama-moecache.cpp
+@@ -1,6 +1,7 @@
+ #include "llama-moecache.h"
+ #include "llama-moecache-budget.h"
+ #include "llama-moecache-policy.h"
++#include "llama-moecache-policy-m3.h"
+ 
+ #include "llama-impl.h"
+ #include "llama-model.h"
+@@ -116,6 +117,22 @@
+     uint64_t ram_growth_denials = 0;
+     uint64_t pending_ram_bytes = 0;
+     int64_t last_ram_denial_log_us = 0;
++    // M3 (21/9/2026): banda morta, ripartenza dall'ultima taglia buona, prefill senza svuotamento.
++    // LLAMA_MOE_ELASTIC_M3=0 riporta la politica di M2, bit per bit.
++    bool m3 = true;
++    bool m3_keep = true; // LLAMA_MOE_ELASTIC_KEEP=0: la cache si svuota a ogni prefill, come in M2
++    llama_moe_band band;
++    uint64_t keep_margin_bytes = 256ull * 1024 * 1024;     // pool CUDA durante il calcolo del prefill
++    uint64_t prefetch_ring_bytes = 1200ull * 1024 * 1024;  // anello di qwen_prefetch (2 tensori) + la sua riserva di 512 MiB
++    uint64_t decode_workspace_floor = 128ull * 1024 * 1024;
++    int32_t last_good_slots = 0;
++    // (token, kv) -> byte dell'area di lavoro, il massimo osservato fra cuda_free e VRAM fisica
++    std::map<std::pair<uint32_t, uint32_t>, uint64_t> workspace_bytes;
++    bool workspace_probe_valid = false;
++    size_t workspace_probe_cuda = 0;
++    uint64_t workspace_probe_physical = 0;
++    bool workspace_probe_physical_valid = false;
++    int32_t workspace_probe_slots = 0;
+     ggml_backend_dev_t device = nullptr;
+     std::string pci_id;
+     std::array<unsigned char, 8> luid{};
+@@ -330,6 +347,25 @@
+                     throw std::runtime_error("LLAMA_MOE_ELASTIC_POLL_MS must be an integer in 0..250");
+                 }
+                 mc->budget_poll_us = ms * 1000;
++            }
++            {
++                const auto env_int = [](const char * name, long lo, long hi, long fallback) {
++                    const char * v = getenv(name);
++                    if (!v) return fallback;
++                    char * end = nullptr;
++                    const long value = strtol(v, &end, 10);
++                    if (end == v || *end || value < lo || value > hi) {
++                        throw std::runtime_error(std::string(name) + " out of range");
++                    }
++                    return value;
++                };
++                mc->m3      = env_int("LLAMA_MOE_ELASTIC_M3", 0, 1, 1) != 0;
++                mc->m3_keep = mc->m3 && env_int("LLAMA_MOE_ELASTIC_KEEP", 0, 1, 1) != 0;
++                mc->band.cushion_bytes  = uint64_t(env_int("LLAMA_MOE_ELASTIC_CUSHION_MB", 0, 4096, 256)) * 1024 * 1024;
++                mc->band.min_grow_slots = int32_t(env_int("LLAMA_MOE_ELASTIC_MIN_GROW", 1, 64, 4));
++                mc->prefetch_ring_bytes = uint64_t(env_int("LLAMA_MOE_ELASTIC_PREFETCH_MB", 0, 8192, 1200)) * 1024 * 1024;
++                LLAMA_LOG_INFO("moe-elastic: m3=%d keep=%d cushion=%" PRIu64 " min_grow=%d prefetch_ring=%" PRIu64 "\n",
++                        mc->m3, mc->m3_keep, mc->band.cushion_bytes, mc->band.min_grow_slots, mc->prefetch_ring_bytes);
+             }
+             n_slots = mc->min_slots;
+             mc->n_slots = n_slots;
+@@ -699,7 +735,14 @@
+     auto * mc = g_cache;
+     if (!mc || !mc->elastic) return -1;
+     if (mc->release_pending) return 0;
+-    if (tokens > 3 && mc->n_slots) return 0;
++    if (tokens > 3 && mc->n_slots) {
++        if (!mc->m3_keep) return 0;
++        // M3: la cache e' rimasta al suo posto durante il prefill. Si svuota solo a riserva violata.
++        const auto m = read_elastic_memory(*mc);
++        if (m.policy_headroom >= int64_t(mc->transient_bytes)) return -1;
++        memory_log(*mc, "m3_prefill_pressure", tokens, kv, &m);
++        return 0;
++    }
+     const auto now = ggml_time_us();
+     // Stable decode/idle only: no stale reading is used to authorize an
+     // allocation. All workspace changes, resize checks and prefill bypass it.
+@@ -719,19 +762,30 @@
+         memory_log(*mc, "sample", tokens, kv, &m);
+         mc->last_sample_us = now;
+     }
+-    int32_t target = llama_moe_choose_capacity(mc->n_slots, mc->min_slots, mc->max_slots,
+-            mc->bytes_per_slot, m.policy_headroom, 0, mc->transient_bytes);
++    int32_t target;
++    if (mc->m3) {
++        // M3: banda morta. Dopo una riduzione per budget nessuna crescita per 30 s (M2: solo per +1 slot).
++        const bool cooled = mc->last_budget_shrink_us <= 0 || now < mc->last_budget_shrink_us ||
++                now - mc->last_budget_shrink_us >= 30000000;
++        target = llama_moe_choose_capacity_banded(mc->n_slots, mc->min_slots, mc->max_slots, mc->bytes_per_slot,
++                m.policy_headroom, m.growth_headroom, mc->transient_bytes, mc->band, cooled);
++    } else {
++        target = llama_moe_choose_capacity(mc->n_slots, mc->min_slots, mc->max_slots,
++                mc->bytes_per_slot, m.policy_headroom, 0, mc->transient_bytes);
++    }
+     if (target == mc->n_slots) return -1;
+     if (target > mc->n_slots) {
+         // WDDM budget briefly rebounds while the GPU is idle between tokens.
+         // Require ten seconds of stable budget for growth; shrink uses the
+         // current reading immediately. Subtract CURRENT usage, never old free.
+-        target = std::min(target, llama_moe_choose_capacity(mc->n_slots, mc->min_slots, mc->max_slots,
+-                mc->bytes_per_slot, m.growth_headroom, 0, mc->transient_bytes));
+-        if (target <= mc->n_slots) return -1;
+-        if (!llama_moe_single_slot_growth_allowed(mc->n_slots, target, now, mc->last_budget_shrink_us)) {
+-            ++mc->single_slot_growth_denials;
+-            return -1;
++        if (!mc->m3) {
++            target = std::min(target, llama_moe_choose_capacity(mc->n_slots, mc->min_slots, mc->max_slots,
++                    mc->bytes_per_slot, m.growth_headroom, 0, mc->transient_bytes));
++            if (target <= mc->n_slots) return -1;
++            if (!llama_moe_single_slot_growth_allowed(mc->n_slots, target, now, mc->last_budget_shrink_us)) {
++                ++mc->single_slot_growth_denials;
++                return -1;
++            }
+         }
+         // Never grow blindly when Windows physical accounting is unavailable.
+ #if defined(_WIN32)
+@@ -776,6 +830,8 @@
+     if (mc->release_pending) slots = 0;
+     if (mc->n_slots == slots && !mc->release_pending) return false;
+     const int32_t old = mc->n_slots;
++    // M3: la taglia che reggeva il decode prima dello svuotamento e' il punto di ripartenza
++    if (slots == 0 && old >= mc->min_slots) mc->last_good_slots = old;
+     const auto start = ggml_time_us();
+     const auto before = read_elastic_memory(*mc);
+ #if defined(_WIN32)
+@@ -848,6 +904,83 @@
+     return old != mc->n_slots;
+ }
+ 
++// --- M3 (21/9/2026) -------------------------------------------------------------------------------
++// Dichiarate in llama-context.cpp: llama-moecache.h resta quello di O2, perche' lo includono anche
++// oggetti che l'overlay non ricompila.
++
++// Cambio d'area verso un prefill, con l'area precedente gia' liberata. true = la cache resta dov'e'.
++bool llama_moe_cache_m3_keep_for_prefill(uint32_t tokens, uint32_t kv) {
++    auto * mc = g_cache;
++    if (!mc || !mc->elastic || !mc->m3_keep || mc->n_slots == 0 || mc->release_pending) return false;
++    // limite superiore appreso: la piu' piccola area gia' misurata con token e kv non inferiori
++    uint64_t bound = 0;
++    for (const auto & item : mc->workspace_bytes) {
++        if (item.first.first >= tokens && item.first.second >= kv && (bound == 0 || item.second < bound)) bound = item.second;
++    }
++    const auto m = read_elastic_memory(*mc);
++    const bool keep = llama_moe_keep_cache_for_workspace(m.policy_headroom, bound, mc->transient_bytes,
++            mc->keep_margin_bytes, tokens >= 512 ? mc->prefetch_ring_bytes : 0);
++    LLAMA_LOG_INFO("moe-elastic-json {\"event\":\"m3_prefill\",\"keep\":%d,\"slots\":%d,\"tokens\":%u,\"kv\":%u"
++            ",\"workspace_bound\":%" PRIu64 ",\"policy_headroom\":%" PRId64 ",\"monotonic_us\":%" PRIu64 "}\n",
++            keep, mc->n_slots, tokens, kv, bound, m.policy_headroom, monotonic_us());
++    return keep;
++}
++
++// Subito prima di riservare un'area di lavoro (nessuna area allocata) e subito dopo: la differenza di
++// VRAM libera e' la taglia dell'area, che serve a decidere i prefill successivi.
++void llama_moe_cache_m3_workspace_begin() {
++    auto * mc = g_cache;
++    if (!mc || !mc->elastic || !mc->m3) return;
++    const auto m = read_elastic_memory(*mc);
++    mc->workspace_probe_valid = true;
++    mc->workspace_probe_cuda = m.cuda_free;
++    mc->workspace_probe_physical = m.os.physical_free;
++    mc->workspace_probe_physical_valid = m.os.physical_valid;
++    mc->workspace_probe_slots = mc->n_slots;
++}
++
++void llama_moe_cache_m3_workspace_reserved(uint32_t tokens, uint32_t kv) {
++    auto * mc = g_cache;
++    if (!mc || !mc->elastic || !mc->m3 || !mc->workspace_probe_valid) return;
++    mc->workspace_probe_valid = false;
++    if (mc->workspace_probe_slots != mc->n_slots) return; // la cache e' cambiata nel mezzo: la differenza non e' l'area
++    const auto m = read_elastic_memory(*mc);
++    uint64_t bytes = mc->workspace_probe_cuda > m.cuda_free ? mc->workspace_probe_cuda - m.cuda_free : 0;
++    if (mc->workspace_probe_physical_valid && m.os.physical_valid && mc->workspace_probe_physical > m.os.physical_free) {
++        bytes = std::max(bytes, mc->workspace_probe_physical - m.os.physical_free);
++    }
++    if (bytes == 0) return;
++    if (mc->workspace_bytes.size() >= 4096) mc->workspace_bytes.clear();
++    auto & known = mc->workspace_bytes[{tokens, kv}];
++    known = std::max(known, bytes);
++}
++
++// Ritorno al decode dopo un prefill: un solo ridimensionamento, alla capacita' fresca o all'ultima taglia
++// buona, invece di minimo -> crescita forzata. false = politica M3 non applicabile, il chiamante fa come M2.
++bool llama_moe_cache_m3_restart(uint32_t kv) {
++    auto * mc = g_cache;
++    if (!mc || !mc->elastic || !mc->m3 || mc->release_pending) return false;
++    if (mc->n_slots > 0) return true; // cache tenuta durante il prefill (o appena inizializzata): niente da fare
++    const auto m = read_elastic_memory(*mc);
++#if defined(_WIN32)
++    // come la crescita di M2: mai alla cieca se la contabilita' di Windows non risponde
++    if (!m.os.physical_valid || !m.os.budget_valid) return false;
++#endif
++    uint64_t workspace = mc->decode_workspace_floor;
++    for (const auto & item : mc->workspace_bytes) {
++        if (item.first.first <= 3 && item.first.second == kv) workspace = std::max(workspace, item.second);
++    }
++    workspace = std::min<uint64_t>(workspace, 512ull * 1024 * 1024);
++    const int32_t target = llama_moe_restart_capacity(mc->last_good_slots, mc->min_slots, mc->max_slots,
++            mc->bytes_per_slot, std::min(m.policy_headroom, m.growth_headroom), mc->transient_bytes, workspace, mc->band);
++    LLAMA_LOG_INFO("moe-elastic-json {\"event\":\"m3_restart\",\"last_good\":%d,\"target\":%d,\"kv\":%u"
++            ",\"decode_workspace\":%" PRIu64 ",\"policy_headroom\":%" PRId64 ",\"growth_headroom\":%" PRId64
++            ",\"monotonic_us\":%" PRIu64 "}\n",
++            mc->last_good_slots, target, kv, workspace, m.policy_headroom, m.growth_headroom, monotonic_us());
++    llama_moe_cache_resize(target, "workspace_change");
++    return true;
++}
++
+ const llama_moe_cache_layer * llama_moe_cache_lookup(const ggml_tensor * up_exps) {
+     if (!g_cache) {
+         return nullptr;
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -27,6 +27,13 @@
+ #include <limits>
+ #include <stdexcept>
+ #include <string>
++
++// M3 (21/9/2026): definite in llama-moecache.cpp. Dichiarate qui e non in llama-moecache.h, che e'
++// incluso anche da oggetti O2 che l'overlay non ricompila.
++bool llama_moe_cache_m3_keep_for_prefill(uint32_t tokens, uint32_t kv);
++void llama_moe_cache_m3_workspace_begin();
++void llama_moe_cache_m3_workspace_reserved(uint32_t tokens, uint32_t kv);
++bool llama_moe_cache_m3_restart(uint32_t kv);
+ 
+ //
+ // llama_context
+@@ -807,7 +814,15 @@
+             gf_res_prev.reset();
+             gf_res_reserve.reset();
+             sched.reset();
+-            llama_moe_cache_resize(reserve_tokens > 3 ? 0 : 1, "workspace_change");
++            // M3: il prefill svuota la cache solo se la sua area non entra nella VRAM libera; il ritorno
++            // al decode fa un solo ridimensionamento (ultima taglia buona) invece di minimo + crescita.
++            if (reserve_tokens > 3) {
++                if (!llama_moe_cache_m3_keep_for_prefill(reserve_tokens, reserve_kv)) {
++                    llama_moe_cache_resize(0, "workspace_change");
++                }
++            } else if (!llama_moe_cache_m3_restart(reserve_kv)) {
++                llama_moe_cache_resize(1, "workspace_change");
++            }
+         } else if (!llama_moe_cache_elastic() && phase_cache && strcmp(phase_cache, "1") == 0) {
+             sched.reset();
+             llama_moe_cache_set_device_active(reserve_tokens <= 3);
+@@ -816,6 +831,7 @@
+                 reserve_tokens, reserve_kv, workspace_tokens, workspace_kv);
+         workspace_tokens = reserve_tokens;
+         workspace_kv = reserve_kv;
++        llama_moe_cache_m3_workspace_begin();
+     }
+ 
+     const int64_t t_start_us = ggml_time_us();
+@@ -1067,6 +1083,7 @@
+             __func__, (t_end_us - t_start_us)/1000.0, ggml_backend_sched_get_n_copies(sched.get()));
+     if (demand_dynamic_workspace) {
+         llama_moe_cache_memory_log("workspace_reserved", reserve_tokens, reserve_kv);
++        llama_moe_cache_m3_workspace_reserved(reserve_tokens, reserve_kv);
+     }
+     elastic_adjust(reserve_tokens, reserve_kv, true);
+ }
+--- /dev/null
++++ b/src/llama-moecache-policy-m3.h
+@@ -0,0 +1,93 @@
++#pragma once
++
++// M3 (21/9/2026): politica della cache elastica con banda morta.
++// Un ridimensionamento non ritocca la cache: libera tutti i buffer, rialloca e rifa' il bind, quindi
++// butta via ogni esperto residente (anche per un solo slot di differenza). Qui si decide QUANDO vale
++// la pena pagarlo. Funzioni pure, condivise col test autonomo (tests/policy_m3_test.cpp).
++
++#include "llama-moecache-policy.h"
++
++#include <initializer_list>
++
++struct llama_moe_band {
++    // VRAM lasciata libera sopra il transiente dopo ogni ridimensionamento: assorbe il jitter di
++    // cuda_free (±150 MiB misurati a taglia fissa) senza far scattare la riduzione.
++    uint64_t cushion_bytes  = 256ull * 1024 * 1024;
++    // crescita minima che giustifica lo svuotamento dell'intera cache
++    int32_t  min_grow_slots = 4;
++};
++
++// Decisione nel decode. Ritorna la nuova capacita', oppure `current` = non toccare.
++//   headroom        lettura corrente (la riduzione la usa subito, come in M2)
++//   growth_headroom minimo sulla finestra di 10 s (la crescita usa questo)
++// La riduzione scatta ESATTAMENTE quando scatterebbe in M2 (riserva violata: headroom < transient),
++// ma scende fino a lasciare anche il cuscino: un solo svuotamento invece della scaletta 67-66-65-64-62.
++// La crescita parte solo se guadagna almeno min_grow_slots lasciando il cuscino intatto.
++inline int32_t llama_moe_choose_capacity_banded(
++        int32_t current, int32_t minimum, int32_t maximum, uint64_t bytes_per_slot,
++        int64_t headroom, int64_t growth_headroom, uint64_t transient,
++        const llama_moe_band & band, bool growth_allowed) {
++    const int64_t cushion = band.cushion_bytes > uint64_t(std::numeric_limits<int64_t>::max())
++            ? std::numeric_limits<int64_t>::max() : int64_t(band.cushion_bytes);
++    const int32_t brim = llama_moe_choose_capacity(current, minimum, maximum, bytes_per_slot, headroom, 0, transient);
++    if (brim < current) {
++        const int32_t target = llama_moe_choose_capacity(current, minimum, maximum, bytes_per_slot,
++                llama_moe_policy_sat_sub(headroom, cushion), 0, transient);
++        // il cuscino non deve costare la cache intera quando il minimo rispetta ancora la riserva
++        if (target < minimum && brim >= minimum) return minimum;
++        return target < brim ? target : brim;
++    }
++    if (!growth_allowed) return current;
++    const int64_t stable = growth_headroom < headroom ? growth_headroom : headroom;
++    const int32_t target = llama_moe_choose_capacity(current, minimum, maximum, bytes_per_slot,
++            llama_moe_policy_sat_sub(stable, cushion), 0, transient);
++    if (current < minimum && target < minimum) {
++        // decode senza cache: il cuscino non deve impedire il minimo che M2 avrebbe concesso
++        const int32_t stable_brim = llama_moe_choose_capacity(current, minimum, maximum, bytes_per_slot, stable, 0, transient);
++        return stable_brim >= minimum ? minimum : current;
++    }
++    return target - current >= band.min_grow_slots ? target : current;
++}
++
++// Ripartenza dopo un prefill: la cache e' vuota e l'area del prefill e' gia' stata liberata, quindi
++// scegliere la taglia giusta adesso non costa niente. `headroom_empty` e' la lettura in quel momento,
++// `decode_workspace` la stima dell'area di lavoro del decode che verra' riservata subito dopo.
++// Se le condizioni non sono cambiate (capacita' fresca entro min_grow_slots dall'ultima taglia buona)
++// si riparte esattamente dall'ultima taglia buona, che era stabile con l'area del decode gia' allocata:
++// la capacita' fresca viene da una lettura sola e ne porta il jitter. L'ultima taglia buona deve pero'
++// lasciare almeno meta' cuscino, altrimenti la prima oscillazione la farebbe ridurre subito.
++inline int32_t llama_moe_restart_capacity(
++        int32_t last_good, int32_t minimum, int32_t maximum, uint64_t bytes_per_slot,
++        int64_t headroom_empty, uint64_t transient, uint64_t decode_workspace,
++        const llama_moe_band & band) {
++    const auto clamp = [](uint64_t v) {
++        return v > uint64_t(std::numeric_limits<int64_t>::max()) ? std::numeric_limits<int64_t>::max() : int64_t(v);
++    };
++    const int64_t after_workspace = llama_moe_policy_sat_sub(headroom_empty, clamp(decode_workspace));
++    const int32_t ceiling = llama_moe_choose_capacity(0, minimum, maximum, bytes_per_slot,
++            llama_moe_policy_sat_sub(after_workspace, clamp(band.cushion_bytes/2)), 0, transient);
++    const int32_t fresh = llama_moe_choose_capacity(0, minimum, maximum, bytes_per_slot,
++            llama_moe_policy_sat_sub(after_workspace, clamp(band.cushion_bytes)), 0, transient);
++    // M2 ripartiva comunque dal minimo: non fare peggio (resize() ha la sua verifica dopo l'allocazione)
++    if (fresh < minimum) return minimum;
++    if (last_good >= minimum && last_good <= ceiling) {
++        const int32_t delta = fresh > last_good ? fresh - last_good : last_good - fresh;
++        if (delta < band.min_grow_slots) return last_good;
++    }
++    return fresh;
++}
++
++// Prefill con la cache al suo posto: solo se l'area di lavoro (limite superiore appreso), il transiente,
++// un margine per il pool CUDA e l'eventuale anello di staging del prefill stanno nella VRAM libera ADESSO
++// (cache allocata, area del decode gia' liberata). `workspace_bytes == 0` = taglia sconosciuta: si svuota.
++inline bool llama_moe_keep_cache_for_workspace(
++        int64_t headroom_with_cache, uint64_t workspace_bytes, uint64_t transient,
++        uint64_t margin, uint64_t prefetch_ring) {
++    if (workspace_bytes == 0 || headroom_with_cache <= 0) return false;
++    uint64_t need = workspace_bytes;
++    for (const uint64_t part : {transient, margin, prefetch_ring}) {
++        if (part > std::numeric_limits<uint64_t>::max() - need) return false;
++        need += part;
++    }
++    return uint64_t(headroom_with_cache) >= need;
++}

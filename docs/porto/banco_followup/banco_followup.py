@@ -74,16 +74,16 @@ def sha(path: Path) -> str:
     return h.hexdigest()
 
 
-def piano() -> list[dict]:
+def piano(celle: list[int] = CELLE, livelli: list[int] = LIVELLI) -> list[dict]:
     passi, pos = [], 0
-    for n, livello in enumerate(LIVELLI, 1):
+    for n, livello in enumerate(livelli, 1):
         if pos < livello:
             passi.append({"tipo": "riempimento", "livello": n, "inizio": pos, "token": livello - pos})
             pos = livello
         assert pos == livello, (pos, livello)
-        for k, taglia in enumerate(CELLE):
+        for k, taglia in enumerate(celle):
             passi.append({"tipo": "cella", "livello": n, "inizio": pos, "token": taglia,
-                          "ripetuta": k in (4, 5)})
+                          "ripetuta": taglia in celle[:k]})
             pos += taglia
     return passi
 
@@ -102,8 +102,16 @@ def main() -> int:
     ap.add_argument("--braccio", choices=sorted(BRACCI), required=True)
     ap.add_argument("--livelli", type=int, default=len(LIVELLI), help="quanti livelli eseguire (prova corta: 1)")
     ap.add_argument("--riscaldamento", type=int, default=4608, help="token della richiesta di riscaldamento")
+    ap.add_argument("--celle", default=None, help="taglie delle celle separate da virgola (predefinito: CELLE)")
+    ap.add_argument("--profondita", default=None, help="inizi dei livelli separati da virgola (predefinito: LIVELLI)")
+    ap.add_argument("--env", action="append", default=[], metavar="NOME=VALORE",
+                    help="variabile d'ambiente in piu' per il server (ripetibile): e' la leva del braccio B")
+    ap.add_argument("--etichetta", default="", help="suffisso del nome della corsa")
     args = ap.parse_args()
-    passi = [p for p in piano() if p["livello"] <= args.livelli]
+    celle = [int(x) for x in args.celle.split(",")] if args.celle else CELLE
+    livelli = [int(x) for x in args.profondita.split(",")] if args.profondita else LIVELLI
+    leve = dict(v.split("=", 1) for v in args.env)
+    passi = [p for p in piano(celle, livelli) if p["livello"] <= args.livelli]
     if not args.run:
         for p in passi:
             print(p)
@@ -111,7 +119,7 @@ def main() -> int:
         return 0
 
     CONFIG, RUNTIME, extra_env, slots = BRACCI[args.braccio]
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + args.braccio
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S") + "_" + args.braccio + ("_" + args.etichetta if args.etichetta else "")
     run = OUT / stamp
     for name in ("logs", "slots", "ffcache", "tmp", "cuda-cache"):
         (run / name).mkdir(parents=True, exist_ok=False)
@@ -162,6 +170,7 @@ def main() -> int:
         env.update(config["env"])
         if extra_env == "ELASTIC":
             env.update(ELASTIC_ENV)
+        env.update(leve)
         env.update({"TEMP": str(run / "tmp"), "TMP": str(run / "tmp"), "CUDA_CACHE_PATH": str(run / "cuda-cache")})
 
         packed = gzip.decompress(IDS.read_bytes())
@@ -173,7 +182,7 @@ def main() -> int:
             "runtime_sha256": {n: sha(RUNTIME.parent / n) for n in ("llama-server.exe", "llama.dll", "ggml-cuda.dll")},
             "fixture": str(IDS), "fixture_sha256": sha(IDS), "fixture_token": len(ids),
             "argv": argv, "env": {k: v for k, v in env.items() if k.upper().startswith(("GGML_", "LLAMA_", "QWEN"))},
-            "celle": CELLE, "livelli": LIVELLI, "passi": len(passi), "token_totali": totale,
+            "celle": celle, "livelli": livelli, "leve": leve, "passi": len(passi), "token_totali": totale,
             "vram_prima_del_server": vram_prima, "orologio": "time.perf_counter() = QPC, lo stesso di monotonic_us nel log",
         }, indent=1, ensure_ascii=False), encoding="utf-8")
 
@@ -246,7 +255,8 @@ def main() -> int:
                 log(f"passo {i}: chiesti={taglia} prompt_n={valutati} cache_n={in_cache} "
                     f"prompt_ms={tm.get('prompt_ms', 0):.0f} muro={t1 - t0:.2f}s")
                 # la cache deve coprire tutto il contesto precedente (meno i pochi token del rollback al checkpoint)
-                if in_cache < pos - 64 or abs(valutati - taglia) > 96 + taglia // 50:
+                margine = 96 + taglia // 50 + (128 if i == 1 else 0)  # il primo passo valuta anche il prompt di sistema
+                if in_cache < pos - 64 or abs(valutati - taglia) > margine:
                     raise RuntimeError(f"cache del prompt non rispettata al passo {i}: valutati {valutati}, "
                                        f"chiesti {taglia}, cache_n={in_cache}, contesto atteso {pos}")
                 pos = in_cache + valutati + int(tm.get("predicted_n", 0))

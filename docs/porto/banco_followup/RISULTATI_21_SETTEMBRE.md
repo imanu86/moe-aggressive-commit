@@ -68,15 +68,28 @@ Riempimenti da ~16k: 434 t/s a 17k, 357 a 50k, 318 a 83k.
    slot: è anche la VRAM che «oscilla» fra 11 e 5,9 GB quando i prefill sono ravvicinati. Da misurare
    su risposte lunghe prima di trarre conclusioni sul decode.
 
-## Leva da provare (non provata)
+## Leva provata e FALSIFICATA: esperti su CPU per i follow-up corti
 
-Nei binari di produzione esiste `GGML_OP_OFFLOAD_MIN_BATCH` (default 32, `ggml-cuda.cu:6104`): sotto
-quella taglia di batch i pesi su CPU non vengono portati alla GPU. Alzarla (256-512) eviterebbe lo
-staging da ~40 GB ai follow-up corti; se il calcolo degli esperti su CPU per ~256 token sta sotto i
-~3 s, il tempo al primo token dei messaggi brevi scende molto più del 5%. Rischio: i percorsi propri
-del fork (`LLAMA_MOE_DEMAND_GPU`, staging) potrebbero scavalcare la manopola. Prova minima: un solo
-livello, celle 64/128/256/512, con e senza la variabile. `GGML_CUDA_MOE_CPU_PREFILL`, che sta nel
-preset, in questo albero **non ha lettore**: è inerte.
+`GGML_OP_OFFLOAD_MIN_BATCH` (default 32, `ggml-cuda.cu:6104`): sotto quella taglia di batch i pesi su
+CPU non vengono portati alla GPU. Provata a 600 sul runtime elastico M1, contesto vuoto, corsa
+`20260921_093424_m1_sonda_minbatch600` (la manopola è viva: la cella da 1024, sopra soglia, torna sul
+percorso GPU):
+
+| token valutati | con la leva (esperti su CPU) | senza (staging) |
+|---|---|---|
+| 79 | 5,6 s | non misurato |
+| 143-144 | 8,7-9,5 s | non misurato |
+| 272 | 15,6-16,0 s | 2,7-2,9 s |
+| 528 | 27,4 s | non misurato |
+| 1040 (sopra soglia) | 4,8 s | 3,7-4,0 s |
+
+Il percorso CPU costa ~55 ms per token più ~1,5 s: il pareggio con i ~3 s dello staging cade attorno
+ai 30-50 token, cioè dove sta già il default. **Lo staging è la scelta giusta fino a ~32 token: niente
+da guadagnare qui.** Il costo fisso di ~3 s è il pavimento di questa macchina; scende solo portando
+meno byte (più esperti residenti in VRAM) o solo gli esperti davvero instradati nei batch minuscoli.
+La coppia completa a 100k non è stata fatta: B perde 5× già a contesto vuoto.
+
+`GGML_CUDA_MOE_CPU_PREFILL`, che sta nel preset, in questo albero **non ha lettore**: è inerte.
 
 ## Difetto trovato
 

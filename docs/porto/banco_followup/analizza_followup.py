@@ -88,7 +88,7 @@ def main() -> int:
 
     rip = []
     for lv in livelli:
-        for t in (256, 1024):
+        for t in taglie:
             v = [c["prefill_s"] for c in celle if c["livello"] == lv and c["token"] == t]
             if len(v) == 2:
                 rip.append(abs(v[0] - v[1]) / (sum(v) / 2))

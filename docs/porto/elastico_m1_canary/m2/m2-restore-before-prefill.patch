@@ -1,0 +1,170 @@
+--- a/ggml/src/ggml-cuda/moe-ram-store.cuh
++++ b/ggml/src/ggml-cuda/moe-ram-store.cuh
+@@ -736,6 +736,82 @@
+     return ggml_cuda_ram_store_missing.load(std::memory_order_acquire);
+ }
+ 
++// Graphs that do not go through the demand cache (more than three rows, or any row count
++// while the cache holds no slot) read the managed sources as plain host memory: the
++// scheduler's expert copy and the whole-tensor prefill staging know nothing about
++// residency.  Every absent triple is therefore committed and reloaded from the GGUF
++// before such a graph runs.  Commit charge is the only hard limit: these pages are all
++// needed, so the 2 GiB courtesy floor is reported but not enforced here, and the decode
++// policy resumes eviction afterwards.  Returns the number of restored triples, or -1
++// when one could not be restored; that triple is rolled back and stays published cold,
++// so the caller's guard remains valid.
++static int64_t ggml_cuda_ram_restore_all() {
++    auto & registry = ggml_cuda_ram_store_registry_get();
++    const auto started = std::chrono::steady_clock::now();
++    std::lock_guard<std::mutex> lock(registry.mutex);
++    if (!registry.missing_groups) return 0;
++    int64_t restored = 0;
++    uint64_t restored_bytes = 0;
++    bool ok = true;
++    for (auto & item : registry.tensors) {
++        if (!ok) break;
++        auto & first = item.second;
++        if (first.bank != 0) continue;
++        ggml_cuda_ram_store_tensor * banks[3] = {&first, nullptr, nullptr};
++        for (auto & peer : registry.tensors) {
++            if (peer.second.layer == first.layer && peer.second.n_experts == first.n_experts && peer.second.bank >= 0 && peer.second.bank < 3) {
++                banks[peer.second.bank] = &peer.second;
++            }
++        }
++        if (!banks[1] || !banks[2]) continue;
++        const uint64_t record_bytes = banks[0]->stride + banks[1]->stride + banks[2]->stride;
++        for (int expert = 0; expert < first.n_experts && ok; ++expert) {
++            if (banks[0]->resident[expert] && banks[1]->resident[expert] && banks[2]->resident[expert]) continue;
++            try {
++                PERFORMANCE_INFORMATION commit{};
++                commit.cb = sizeof(commit);
++                if (!GetPerformanceInfo(&commit, sizeof(commit))) throw std::runtime_error("RAM_STORE restore commit sensor failed");
++                const uint64_t headroom = commit.CommitLimit > commit.CommitTotal ? uint64_t(commit.CommitLimit - commit.CommitTotal)*commit.PageSize : 0;
++                if (headroom <= record_bytes + 64ull*1024*1024) throw std::runtime_error("RAM_STORE restore has no commit headroom");
++                for (auto * bank : banks) {
++                    if (!ggml_cuda_ram_store_commit(*bank, expert)) throw std::runtime_error("RAM_STORE restore commit failed");
++                }
++                for (auto * bank : banks) {
++                    if (!ggml_cuda_ram_store_read_locked(*bank, expert,
++                            reinterpret_cast<void *>(bank->address + size_t(expert)*bank->stride), bank->stride)) {
++                        throw std::runtime_error("RAM_STORE restore read failed");
++                    }
++                }
++                // last_used is left alone: what was coldest before stays first in line for eviction.
++                ggml_cuda_ram_store_publish_warm(registry, banks, expert);
++                registry.counters.restores++;
++                restored_bytes += record_bytes;
++                ++restored;
++            } catch (const std::exception & error) {
++                uint64_t ignored = 0;
++                // publish_warm is the last step, so the triple is still published cold here.
++                for (auto * bank : banks) (void) ggml_cuda_ram_store_drop(*bank, expert, &ignored);
++                GGML_LOG_ERROR("RAM_STORE restore_all failed layer=%d expert=%d: %s\n", first.layer, expert, error.what());
++                ok = false;
++            }
++        }
++    }
++    // Keep ceiling >= resident: a stale lower ceiling would make the first cold restore
++    // of the next decode evict everything that was just brought back.
++    if (restored && registry.resident_ceiling != UINT64_MAX) {
++        registry.resident_ceiling = (std::max)(registry.resident_ceiling, registry.resident_bytes);
++    }
++    MEMORYSTATUSEX memory{};
++    memory.dwLength = sizeof(memory);
++    (void) GlobalMemoryStatusEx(&memory);
++    fprintf(stderr, "RAM_STORE_RESTORE {\"restored\":%lld,\"bytes\":%llu,\"elapsed_ms\":%lld,\"missing\":%llu,\"resident\":%llu,\"avail\":%llu,\"below_floor\":%d,\"ok\":%d}\n",
++        (long long) restored, (unsigned long long) restored_bytes,
++        (long long) std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - started).count(),
++        (unsigned long long) registry.missing_groups, (unsigned long long) registry.resident_bytes,
++        (unsigned long long) memory.ullAvailPhys, memory.ullAvailPhys < 2ull*1024*1024*1024 ? 1 : 0, ok ? 1 : 0);
++    return ok ? restored : -1;
++}
++
+ #else
+ 
+ static ggml_backend_buffer_type_t ggml_backend_cuda_ram_buffer_type() { return nullptr; }
+@@ -745,6 +821,7 @@
+ static bool ggml_cuda_ram_stage(const ggml_tensor * const *, const int32_t *, size_t, char *, size_t) { return false; }
+ static void ggml_cuda_ram_touch(const ggml_tensor * const *, const int32_t *, size_t) {}
+ static bool ggml_cuda_ram_has_missing() { return false; }
++static int64_t ggml_cuda_ram_restore_all() { return 0; }
+ static void ggml_cuda_ram_set_source_release(void (*)(void *, size_t)) {}
+ 
+ #endif
+--- a/ggml/src/ggml-cuda/ggml-cuda.cu
++++ b/ggml/src/ggml-cuda/ggml-cuda.cu
+@@ -6178,6 +6178,9 @@
+     if (strcmp(name, "ggml_backend_cuda_ram_has_missing") == 0) {
+         return (void *) ggml_cuda_ram_has_missing;
+     }
++    if (strcmp(name, "ggml_backend_cuda_ram_restore_all") == 0) {
++        return (void *) ggml_cuda_ram_restore_all;
++    }
+     if (strcmp(name, "ggml_backend_cuda_moe_demand_unbind") == 0) {
+         return (void *) qwen_moe_demand::unbind;
+     }
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -2042,14 +2042,38 @@
+     return false; // all sequences use backend sampling
+ }
+ 
++// RAM_STORE: a graph that does not go through the demand cache (more than three rows, or
++// any row count while the cache holds no slot) reads the managed expert sources as plain
++// host memory, so every page must be present before it runs.
++static bool llama_ram_store_missing() {
++    if (!getenv("LLAMA_MOE_RAM_LAYERS")) return false;
++    using missing_fn = bool (*)();
++    auto reg = ggml_backend_reg_by_name("CUDA");
++    auto missing = reg ? reinterpret_cast<missing_fn>(ggml_backend_reg_get_proc_address(
++            reg, "ggml_backend_cuda_ram_has_missing")) : nullptr;
++    return missing && missing();
++}
++
++// Reloads the absent triples from the GGUF; the canary refuses only when that fails.
++static bool llama_ram_store_restore(const char * what) {
++    using restore_fn = int64_t (*)();
++    auto reg = ggml_backend_reg_by_name("CUDA");
++    auto restore = reg ? reinterpret_cast<restore_fn>(ggml_backend_reg_get_proc_address(
++            reg, "ggml_backend_cuda_ram_restore_all")) : nullptr;
++    const int64_t restored = restore ? restore() : -1;
++    if (restored < 0 || llama_ram_store_missing()) {
++        LLAMA_LOG_ERROR("RAM decode canary rejects %s while expert pages are absent (restore failed)\n", what);
++        return false;
++    }
++    LLAMA_LOG_INFO("RAM_STORE: restored %lld expert triples before %s\n", (long long) restored, what);
++    return true;
++}
++
+ int llama_context::decode(const llama_batch & batch_inp) {
+-    if (batch_inp.n_tokens > 3 && getenv("LLAMA_MOE_RAM_LAYERS")) {
+-        using missing_fn = bool (*)();
+-        auto reg = ggml_backend_reg_by_name("CUDA");
+-        auto missing = reg ? reinterpret_cast<missing_fn>(ggml_backend_reg_get_proc_address(
+-                reg, "ggml_backend_cuda_ram_has_missing")) : nullptr;
+-        if (missing && missing()) {
+-            LLAMA_LOG_ERROR("RAM decode canary rejects new prefill while expert pages are absent\n");
++    if (batch_inp.n_tokens > 3 && llama_ram_store_missing()) {
++        // nothing may still be staging from the store while its pages come back
++        synchronize();
++        if (!llama_ram_store_restore("new prefill")) {
+             return -3;
+         }
+     }
+@@ -2290,6 +2314,16 @@
+         ggml_status status;
+ 
+         const llm_graph_result * res = nullptr;
++        // With no cache slot even a decode row runs the plain graph; the capacity is only
++        // final here, after the workspace reservation above may have released the cache.
++        bool store_ready = true;
++        if (ubatch.n_tokens <= 3 && llama_moe_cache_capacity() == 0 && llama_ram_store_missing()) {
++            if (sched) ggml_backend_sched_synchronize(sched.get());
++            store_ready = llama_ram_store_restore("cacheless decode");
++        }
++        if (!store_ready) {
++            status = GGML_STATUS_FAILED;
++        } else
+         try {
+             res = process_ubatch(ubatch, ctx_type_to_graph_type(cparams.ctx_type), mctx.get(), status);
+         } catch (const std::exception & e) {

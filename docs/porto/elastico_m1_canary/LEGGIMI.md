@@ -5,9 +5,12 @@
 **non esiste nessun percorso che riporti le pagine in RAM prima di un prefill**, e il decode da solo non
 riesce a riportare `missing` a zero. Basta una terna sfrattata e il server non accetta più nessun prompt
 fino al riavvio. Codex lo elenca fra i limiti noti del prototipo (`qwen_ram_decode_opt_20260920/README.md`,
-«A later multi-token prefill is rejected while expert pages are absent»). Correzione proposta: ripristino
-dal GGUF di tutte le terne assenti in testa a `decode()` quando il batch ha più di 3 token (sotto).
-**Stato: diagnosi e prova fatte; correzione NON implementata, in attesa di approvazione.**
+«A later multi-token prefill is rejected while expert pages are absent»). Correzione: ripristino dal GGUF
+di tutte le terne assenti in testa a `decode()` quando il batch ha più di 3 token (opzione A, sotto).
+**Stato (21/9 pomeriggio): opzione A approvata dall'utente, implementata e collaudata nei binari M2
+(`D:\ds4_work\elastico_m2\runtime-m2`): la stessa prova passa da DIFETTO RIPRODOTTO a SUPERATA con le
+impronte del controllo, prefill a regime pari a M1. NON promossa: `D:\ds4_work\bin_elastico_m1` e il bat
+sul Desktop usano ancora M1. Vedi «Esito della correzione (M2)» in fondo.**
 
 ## Dove e perché
 
@@ -81,9 +84,9 @@ chiude con CTRL_BREAK; la prova rifiuta di partire se c'è già un `llama-server
 
 Corsa: `D:\ds4_work\elastico_m1_canary_run\20260921_130752_m1_originale`.
 
-## Correzione proposta (da approvare)
+## Correzione (piano approvato il 21/9; l'esito è nella sezione successiva)
 
-**A — ripristino prima del prefill (consigliata).**
+**A — ripristino prima del prefill (scelta).**
 - `moe-ram-store.cuh`: nuova `ggml_cuda_ram_restore_all()`, sotto il mutex del registro: per ogni terna
   assente `commit` delle tre banche, `read_locked` dal GGUF direttamente a destinazione, `publish_warm`;
   su errore rollback della terna (come fa già `prepare`) e ritorno negativo. A fine giro
@@ -109,3 +112,56 @@ overlay di `ggml/src/ggml-cuda/` + `llama-context.cpp`, ricompilazione dei soli 
 (1) caso «restore_all» nel test d'integrazione del deposito (decommit vero, contenuto identico al GGUF);
 (2) questa prova con `--runtime ...\runtime-m2\llama-server.exe` → attesa SUPERATA con le stesse impronte;
 (3) `banco_followup.py --livelli 1` su m2 contro i numeri di m1 per il prefill a regime.
+
+## Esito della correzione (M2, 21 settembre pomeriggio)
+
+Laboratorio: `D:\ds4_work\elastico_m2` (fuori da git; il laboratorio di Codex è stato solo letto, 330 oggetti e
+librerie O2 riusati con SHA identico prima e dopo). In `m2/` di questa cartella stanno la patch
+(`m2-restore-before-prefill.patch`, 3 file), lo script di build (`build_m2_overlay.py`) e il test del deposito.
+
+**Cosa cambia rispetto al piano.** Niente di sostanziale. `ggml_cuda_ram_restore_all()` lascia `last_used`
+com'era (ciò che era più freddo resta primo in fila per lo sfratto) e alza `resident_ceiling` ad almeno
+`resident_bytes`; scrive una riga `RAM_STORE_RESTORE {...}` su stderr. In `llama-context.cpp` il ripristino
+avviene dopo un `synchronize()`; la guardia per il decode a 0 slot sta subito prima di `process_ubatch`,
+perché la capacità è definitiva solo dopo la riserva dell'area di lavoro. Se il ripristino fallisce resta il
+rifiuto di prima (stessa riga di canary, con «restore failed»).
+
+| binario | M1 | M2 |
+|---|---|---|
+| `llama.dll` | `b21096d1a306c239…` | `5b219d2127faf219ac30a2aeb58149151dc41049eafef4c352b9e3a79aca078b` |
+| `ggml-cuda.dll` | `0ab93b1842f17965…` | `a8e6d2a95c1fcaa14d28914cee1657e7e492a9b788afaaf5430d8019e667886e` |
+
+Gli altri sette file di `runtime-m2` sono copie identiche di `runtime-m1` (verificato dallo script).
+
+**Collaudo.**
+1. Test d'integrazione del deposito (`m2/ram_store_restore_test.cpp`, decommit vero): niente da fare → 0 e
+   nessuna lettura; 5 terne su 2 strati → tensori interi identici al file, contatori e tetto a posto, ordine
+   LRU invariato; lettura fallita → −1, terna ancora fredda e decommittata, nessuna eccezione; ritentativo → ok. **PASS.**
+2. Questa prova con `--runtime ...\runtime-m2\llama-server.exe` (`20260921_134434_m2_ripristino`): stessa
+   pressione (minimo 1108 MiB, 4120 sfratti, `missing` 4096, residente 0), poi il primo prompt trova
+   `RAM_STORE_RESTORE {"restored":4096,"bytes":6265241600,"elapsed_ms":5840,...,"ok":1}` e risponde **200**;
+   impronte identiche al controllo (`25bcfc3488db`, `1235d4b1aad7`) su tutti e tre i prompt; zero righe di
+   canary, zero errori CUDA. **SUPERATA.** Costo: il primo prefill dopo uno sfratto totale passa da 3,5 a
+   9,1 s (5,8 GiB riletti a ~1,0 GiB/s: 12288 `ReadFile` da ~0,5 MiB); i successivi tornano normali (3,1 s).
+3. Prefill a regime, `banco_followup --livelli 1` (tramite `banco_m2.py`, che aggiunge il braccio senza toccare
+   il banco). Contro la tabella M1 del mattino M2 usciva +7/+18%: per la regola «prima il B, poi l'A solo se
+   serve» ho rilanciato M1 subito dopo, stesse condizioni (build appena fatta, gateway attivo):
+
+   | `prompt_ms` | 256 | 1024 | 2048 | 4096 | 256\* | 1024\* | 8192 |
+   |---|---|---|---|---|---|---|---|
+   | M1 `20260921_135228_m1_controllo_m2` | 3374 | 4100 | 5699 | 10186 | 3113 | 4362 | 19582 |
+   | M2 `20260921_134934_m2` | 3490 | 4125 | 5717 | 10548 | 3431 | 4464 | 19794 |
+   | scarto | +3,4% | +0,6% | +0,3% | +3,6% | +10,2% | +2,3% | +1,1% |
+
+   Era la macchina (anche M1 oggi pomeriggio è ~14% sotto la sua tabella del mattino), non la patch. Lo scarto
+   ha sempre lo stesso segno ma è sotto il rumore del banco (10% sulle celle ripetute di M1) e sotto la soglia
+   del 5% tranne una cella ripetuta da 256; una sola corsa per braccio, M2 girato per primo. Con `missing == 0`
+   il codice in più è una lettura atomica per `decode()`: **nessuna regressione leggibile**.
+
+**Cosa NON è provato.** (a) La guardia per il decode a 0 slot è nel codice ma nessuna prova la esercita (non c'è
+un modo pulito di forzare la cache a 0 slot con pagine assenti). (b) Il caso «sfratto nel warmup» (avvio con ~75 GB
+liberi) non è stato rifatto su M2: passa dallo stesso ramo (primo prompt > 3 token → ripristino), ma per provarlo
+serve avviare con poca RAM e `--senza-pressione`. (c) Sotto pressione *persistente* il ciclo è: prefill ripristina →
+il decode risfratta → il prefill dopo ripristina di nuovo; è limitato e corretto, ma costa qualche secondo a turno
+e non è stato misurato. (d) MTP acceso non provato. (e) Nessuna promozione: per usarlo davvero vanno copiati i
+binari M2 al posto di `D:\ds4_work\bin_elastico_m1` (decisione dell'utente).

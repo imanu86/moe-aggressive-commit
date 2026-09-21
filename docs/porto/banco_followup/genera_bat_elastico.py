@@ -19,13 +19,19 @@ from pathlib import Path
 
 DESKTOP = Path(r"C:\Users\imanu\Desktop")
 SORGENTE = DESKTOP / "Qwen - CGControl - senza MTP - 40 slot.bat"
-USCITA = DESKTOP / "Qwen - ADATTIVO VRAM+RAM - senza MTP.bat"
-RUNTIME_LAB = Path(r"C:\Users\imanu\Documents\Codex\2026-09-13\rip\work\qwen_ram_mtp_20260920\runtime-m1")
-RUNTIME = Path(r"D:\ds4_work\bin_elastico_m1")
+# versione -> (sorgente dei binari, copia stabile usata dal bat, nome del bat, sigla nei log)
+# M2 = M1 + ripristino delle pagine degli esperti prima del prefill (docs/porto/elastico_m1_canary, 21/9):
+# M1 sotto pressione di RAM rifiutava ogni prompt con 500 «Compute error». Uso: genera_bat_elastico.py [m1|m2]
+VERSIONI = {
+    "m1": (Path(r"C:\Users\imanu\Documents\Codex\2026-09-13\rip\work\qwen_ram_mtp_20260920\runtime-m1"),
+           Path(r"D:\ds4_work\bin_elastico_m1"), "Qwen - ADATTIVO VRAM+RAM - senza MTP.bat", "M1"),
+    "m2": (Path(r"D:\ds4_work\elastico_m2\runtime-m2"),
+           Path(r"D:\ds4_work\bin_elastico_m2"), "Qwen - ADATTIVO M2 VRAM+RAM - senza MTP.bat", "M2"),
+}
 EXE_DAILY = r"D:\ds4_work\p11_work\build\bin\llama-server.exe"
 
 ELASTICO = [
-    "REM ---- modalita' adattiva (runtime elastico M1 di Codex, 20-21/9): stessa configurazione delle corse validate",
+    "REM ---- modalita' adattiva (runtime elastico di Codex, 20-21/9): stessa configurazione delle corse validate",
     'set "LLAMA_MOE_ELASTIC=1"',
     'set "LLAMA_MOE_ELASTIC_MAX=512"',
     'set "LLAMA_MOE_RAM_LAYERS=8"',
@@ -43,6 +49,8 @@ def sha(path: Path) -> str:
 
 
 def main() -> int:
+    RUNTIME_LAB, RUNTIME, nome_bat, sigla = VERSIONI[sys.argv[1] if len(sys.argv) > 1 else "m2"]
+    USCITA = DESKTOP / nome_bat
     assert SORGENTE.exists(), f"manca {SORGENTE}"
     if USCITA.exists():
         sys.exit(f"esiste gia': {USCITA} - non lo sovrascrivo")
@@ -70,7 +78,7 @@ def main() -> int:
     cambia("REM Qwen GSQ-RCO P11 X4 - profilo CGControl, senza MTP, 40 slot esperti.\r\n"
            "REM Cache ridotta per convivere con CGControl e desktop 8K.\r\n"
            "REM Margine di memoria da verificare al primo avvio, anche con prompt lunghi.\r\n",
-           "REM Qwen GSQ-RCO - modalita' ADATTIVA, senza MTP (runtime elastico M1).\r\n"
+           f"REM Qwen GSQ-RCO - modalita' ADATTIVA, senza MTP (runtime elastico {sigla}).\r\n"
            "REM VRAM: la cache esperti parte da 70 slot e si adatta ai programmi aperti (circa 200 MB liberi).\r\n"
            "REM RAM : sotto i 2 GiB disponibili otto strati di esperti vengono sfrattati verso SSD e ricaricati.\r\n"
            "REM Generato il 21/9/2026 da docs/porto/banco_followup/genera_bat_elastico.py. Assetto temporaneo.\r\n", 1)
@@ -80,7 +88,7 @@ def main() -> int:
     cambia(ubatch, ubatch + "\r\n".join(ELASTICO) + "\r\n", 1)
     cambia("qwen38_gsq_rco_p11_no_mtp_40_cgcontrol_slots", "qwen38_gsq_rco_elastico_slots")
     cambia("qwen38_gsq_rco_p11_logs", "qwen38_gsq_rco_elastico_logs")
-    cambia("gsq_rco_P11_X4_NO_MTP_40_CGCONTROL_DIAG_", "gsq_rco_ELASTICO_M1_NO_MTP_")
+    cambia("gsq_rco_P11_X4_NO_MTP_40_CGCONTROL_DIAG_", f"gsq_rco_ELASTICO_{sigla}_NO_MTP_")
     cambia("echo Avvio Qwen GSQ-RCO P11 X4 - CGControl, NO MTP, 40 slot - su",
            "echo Avvio Qwen GSQ-RCO ADATTIVO (cache esperti da 70 dinamica, RAM dinamica, NO MTP) - su", 1)
     assert "p11_work" not in testo and "  40 ^" not in testo

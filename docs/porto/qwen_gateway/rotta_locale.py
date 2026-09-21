@@ -49,7 +49,13 @@ def _blocchi(contenuto) -> list[dict]:
 def pulisci(j: dict) -> dict:
     out = {k: j[k] for k in TENUTI if k in j}
     if isinstance(out.get("system"), list):
-        out["system"] = [{"type": "text", "text": b.get("text", "")} for b in out["system"] if isinstance(b, dict) and b.get("type") == "text"]
+        # Il blocco di attribuzione di Claude Code («x-anthropic-billing-header: …; cch=…; cc_prev_req=…;
+        # cc_prompt_id=…») cambia a OGNI turno. Il template di Qwen mette prima i tool (~26,5k token) e poi il
+        # system: quel blocco cade al token ~26.541 e ogni turno nuovo costringeva il server a rifare 50k token
+        # (21/9). Il fork normalizza solo `cch`. A un modello locale non serve: si toglie.
+        out["system"] = [{"type": "text", "text": b.get("text", "")} for b in out["system"]
+                         if isinstance(b, dict) and b.get("type") == "text"
+                         and not b.get("text", "").startswith("x-anthropic-billing-header")]
     messaggi: list[dict] = []
     for m in j.get("messages", []):
         ruolo, blocchi = m.get("role"), _blocchi(m.get("content"))
@@ -123,6 +129,14 @@ async def servi(dest: dict, corpo: bytes, info: dict, c_writer: asyncio.StreamWr
         reg.scrivi(**info, esito="locale: corpo non leggibile, ricado", errore=type(exc).__name__)
         return False
     stream, modello = bool(pulita.get("stream")), richiesta.get("model")
+    if dest.get("dump"):  # diagnosi: salva su disco LOCALE il corpo mandato a Qwen (contiene i prompt: da cancellare dopo)
+        try:
+            cartella = Path(dest["dump"])
+            cartella.mkdir(parents=True, exist_ok=True)
+            (cartella / f"{time.strftime('%H%M%S')}_{info.get('sessione')}_{len(pulita['messages'])}msg.json").write_text(
+                json.dumps(pulita, ensure_ascii=False), encoding="utf-8")
+        except OSError:
+            pass
     intest = {"Authorization": "Bearer " + dest["chiave"], "x-api-key": dest["chiave"], "anthropic-version": "2023-06-01"}
     impegnato, n_ping, n_byte, ttfb = False, 0, 0, None
 

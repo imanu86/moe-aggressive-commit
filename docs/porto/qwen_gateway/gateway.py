@@ -123,6 +123,18 @@ async def inoltra(host: str, c_reader: asyncio.StreamReader, c_writer: asyncio.S
         info = {"host": host, "metodo": metodo, "percorso": percorso.split("?")[0], "byte_richiesta": len(corpo),
                 **metadati(percorso, intest, corpo)}
 
+        # Diagnosi a richiesta: se esiste il file `dump_haiku` (dentro c'e' la cartella di destinazione) salva su
+        # disco LOCALE il corpo delle chat in streaming su Haiku, per capire che cosa Claude Code cambia nel prompt
+        # fra un turno e l'altro. Contiene i prompt: si accende per pochi minuti e poi si cancella tutto.
+        bandiera = CERT_DIR / "dump_haiku"
+        if info.get("stream") and "haiku" in (info.get("modello") or "").lower() and bandiera.exists():
+            try:
+                dove = Path(bandiera.read_text(encoding="utf-8").strip())
+                dove.mkdir(parents=True, exist_ok=True)
+                (dove / f"{time.strftime('%H%M%S')}_{info.get('sessione')}_{info.get('messaggi')}msg.json").write_bytes(corpo)
+            except OSError:
+                pass
+
         # Fase 2: Haiku -> server locale, se c'e'. Qualunque problema prima della risposta = si prosegue verso Anthropic.
         if rotta_locale is not None and not aggiorna:
             dest = await rotta_locale.destinazione(metodo, percorso, info)

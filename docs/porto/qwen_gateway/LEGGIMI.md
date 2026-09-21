@@ -68,6 +68,23 @@ Sul Desktop: `Claude - avvia gateway Qwen.bat` e `Claude - TORNA DIRETTO (senza 
 chiavi). **Finché non c'è l'avvio automatico, dopo un riavvio del PC il gateway va acceso prima di aprire
 Claude, altrimenti l'app non si collega.**
 
+**Prima chat vera su Haiku servita da Qwen (21/9, 13:21-13:26, binari p11 a 40 slot, server isolato):**
+elenco dei file + lettura e riassunto del README con gli strumenti, esito corretto, 4 richieste tutte `LOCALE`.
+
+| turno | token nuovi | prefill | generati | totale | note |
+|---|---|---|---|---|---|
+| 1 | 48.038 | 123 s (390 t/s) | 187 a 18,5 t/s | 134 s | 12 ping, nessun abort; il prompt di una chat dell'app pesa ~48k token (sistema + CLAUDE.md + indice della memoria + 45 tool) |
+| 2 | 978 | 4,2 s | 131 | 11 s | cache del prompt riusata |
+| 3 | 847 | 3,8 s | 529 a 19,2 t/s | 32 s | |
+| 4 | 51.011 | 125 s | 133 | 132 s | **cache persa**: il prompt è cambiato al token 26.541 (Claude Code ritocca una parte già inviata) e il primo checkpoint utile stava a 29.877 → il modello ibrido non può tornare indietro e rifà tutto |
+
+**Traffico Haiku di sfondo.** Con `instrada: tutti` le richieste di sfondo di Claude Code (non in streaming,
+1 messaggio, ~5k token, `max_tokens` 1024, da OGNI sessione aperta, a ripetizione) sono finite su Qwen:
+50-173 s l'una, due troncate a 1024 token dal ragionamento, slot sempre occupato, e la verifica del modello
+di `set_session_model` è scaduta in coda. All'apertura di una sessione partono anche ~50 richieste Haiku
+minuscole (conteggio dei token, una per tool più una con tutti i 141 tool). Da qui la regola predefinita
+`instrada: stream`: a Qwen vanno solo le richieste in streaming (chat e subagent), il resto al vero Haiku.
+
 ## Prossimi passi
 
 1. Lasciar lavorare l'app qualche ora e leggere dal registro quali richieste usano Haiku e da dove

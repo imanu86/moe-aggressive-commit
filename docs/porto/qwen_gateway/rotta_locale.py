@@ -80,7 +80,13 @@ async def destinazione(metodo: str, percorso: str, info: dict) -> dict | None:
         u = urllib.parse.urlsplit(d["base"])
     except (OSError, ValueError, KeyError):
         return None
-    if d.get("instrada", "tutti") == "subagent" and not info.get("agente"):
+    regola = d.get("instrada", "stream")
+    if regola == "subagent" and not info.get("agente"):
+        return None
+    # "stream" = solo conversazioni vere (chat e subagent). Le richieste di sfondo di Claude Code (titoli,
+    # riassunti, verifica del modello) non sono in streaming: il 21/9 con "tutti" hanno tenuto occupato
+    # l'unico slot di Qwen per 50-173 s l'una, a ripetizione, da tutte le sessioni aperte.
+    if regola == "stream" and not info.get("stream"):
         return None
     try:
         _, w = await asyncio.wait_for(asyncio.open_connection(u.hostname, u.port), 0.5)

@@ -1,4 +1,4 @@
-# P0 - un BLOCCO del banco A/B: un processo NUOVO di llama-server, la sequenza di
+﻿# P0 - un BLOCCO del banco A/B: un processo NUOVO di llama-server, la sequenza di
 # fixture, poi chiusura. Un blocco = un processo: `cache_prompt=false` riguarda il
 # prefisso/KV e NON azzera la cache degli esperti, quindi ogni lato di una coppia
 # deve ripartire da un processo nuovo.
@@ -167,7 +167,7 @@ if ($SoloSigillo) {
     Write-Output "== -SoloSigillo: nessun banco eseguito, questa non e' una misura =="
 } else {
     Write-Output "== banco =="
-    & python (Join-Path $here "..\banco_p0\banco_p0.py") --preset $presetPath --profilo $Profilo `
+    & python (Join-Path $here "banco_q36.py") --preset $presetPath --profilo $Profilo `
         --replica $Replica --budget $Budget --out $OutRoot `
         --url ("http://" + $p.host + ":" + $porta) --pid-server $proc.Id --log-server $logFile `
         --nota $Nota | Tee-Object -Variable uscita

@@ -95,3 +95,22 @@ grafo costano quasi come una; nel 35B ogni riga di verifica porta i suoi esperti
 
 Strumenti: `sequenza_q36.py` (blocchi in serie + tabella), `diag_nodi.py` (nodi/partizioni), `valuta_lavoro.py`
 (esiti), `banco_q36.py` (copia locale del banco con il profilo `lavoro`), `genera_preset_q36.py`.
+
+## 6. Il 35B con la VRAM liberata (sera, desktop a ~0,6 GB; ragionamento spento, profilo `lavoro` e 32k)
+
+| braccio | C01 | C02 | S01 | S02 | S06 | slot finali | 32k prefill / decode |
+|---|---:|---:|---:|---:|---:|---|---|
+| C0 M2 senza MTP | 67,1 | 66,9 | 47,3 | 42,0 | 57,8 | 173 | — |
+| C1-M3 MTP interna | 75,6 | 75,9 | 55,8 | 70,9 | 68,0 | 161 | — |
+| C0-M3 tarato (HIT_REPORT=0, -c 40960) | 67,4 | 67,3 | 47,7 | 44,8 | 63,3 | 187 | — |
+| C1-M3 tarato | 76,9 | 77,2 | 54,2 | 72,5 | 68,8 | 188 | 1.178 t/s / 58,4-54,7 |
+| C1-M3 tarato + 30 strati FISSI (`--n-cpu-moe 10`) | 56,5 | 55,9 | 56,4 | 53,5 | 52,1 | **0** | 717 t/s / 49,8-44,0 |
+
+- Con ~11 GiB liberi la cache tiene 161-188 slot su 256 (63-73% degli esperti): colpi 94% a regime (48,6% a
+  freddo). Rispetto al mattino (desktop 5,9 GB) +10-40%; esiti 5/5 in tutte le configurazioni.
+- Taratura dell'audit (contatori spenti, contesto piu' corto, M3 invece di M2): sotto il 5%, rumore.
+- Il «pin» di 30 strati in VRAM PEGGIORA: occupa 9,99 GiB e lascia la cache dei 10 strati rimasti a 0 slot, che
+  leggono ogni esperto dal PCIe. Sul 35B la cache elastica distribuisce meglio del fissaggio.
+- Tetto strutturale del 35B sulla 3060: ~2.395 nodi (~6,7 ms) + ~1,5 GB in VRAM (~5 ms) + mancanze (~1,7 ms)
+  = ~13,5 ms, cioe' ~75 t/s senza bozza. Oltre servono meno nodi (fusione), meno byte (top-k 6, IQ2) o la 2080 Ti.
+- Preparati ma NON eseguiti (l'utente intendeva il 35B): preset del 27B denso IQ2_M (`preset_Q27_*_ro.json`).

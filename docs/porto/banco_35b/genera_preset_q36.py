@@ -133,6 +133,13 @@ for base, nome, ide, et in (("preset_Q36_B2_elastico_mtpq8.json", "preset_Q36_B3
     p["percorsi"]["DRAFT"] = MTP_S
     scrivi(p, nome)
 
+def variante_lunga(nome):
+    """Copia per il profilo lungo_131k: il prefisso ctx131k e' ~131.248 token, serve contesto > 131072."""
+    p = json.loads((HERE / nome).read_text(encoding="utf-8"))
+    p.update(id=p["id"] + "L", etichetta=p["etichetta"] + "_ctx132k", contesto=135168)
+    scrivi(p, nome.replace(".json", "_L.json"))
+
+
 # Varianti M3 (politica a banda morta, cache tenuta nel prefill se l'area entra) di B1 e C1:
 # stesso preset, binari runtime-q36m3 (M3 + patch Q36). LLAMA_MOE_ELASTIC_M3 non impostata = M3 acceso.
 RUNTIME_M3 = r"D:\ds4_work\elastico_q36_m3\runtime-q36m3"
@@ -142,3 +149,9 @@ for base, nome in (("preset_Q36_B1_elastico_mtp.json", "preset_Q36_B1m3_elastico
     p.update(id=p["id"] + "m3", etichetta=p["etichetta"] + "_m3", binari=RUNTIME_M3)
     p["descrizione"] = "Variante M3 (banda morta) di " + base + ": " + p["descrizione"]
     scrivi(p, nome)
+
+# Finalisti della fase 2 (lungo_131k): contesto 135168
+for nome in ("preset_Q36_A0_upstream_mtp.json", "preset_Q36_A1_upstream_iq3_mtpint.json", "preset_Q36_B1_elastico_mtp.json",
+             "preset_Q36_C0_elastico_iq3_nomtp.json", "preset_Q36_C1_elastico_iq3_mtpint.json",
+             "preset_Q36_C1m3_elastico_iq3_mtpint.json"):
+    variante_lunga(nome)

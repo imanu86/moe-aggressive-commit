@@ -1,0 +1,60 @@
+--- a/src/llama-context.cpp
++++ b/src/llama-context.cpp
+@@ -158,7 +158,10 @@
+     //     may need to be backend-dependent
+     LLAMA_LOG_INFO("%s: constructing llama_context\n", __func__);
+ 
+-    if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP && params.ctx_other && model.arch == LLM_ARCH_QWEN4EXP) {
++    // Q36 (25/9): anche la testa MTP separata di qwen35moe e' un contesto MTP col target in
++    // ctx_other; una seconda init con DEMAND acceso lancerebbe "one inference context per process".
++    if (params.ctx_type == LLAMA_CONTEXT_TYPE_MTP && params.ctx_other &&
++            (model.arch == LLM_ARCH_QWEN4EXP || model.arch == LLM_ARCH_QWEN35MOE)) {
+         params.n_moe_cache_slots = 0;
+     } else {
+         llama_moe_cache_init(model, params.n_moe_cache_slots, params.n_moe_cache_inserts, params.n_seq_max);
+@@ -175,9 +178,10 @@
+     demand_dynamic_workspace = params.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT &&
+         dynamic_workspace && strcmp(dynamic_workspace, "0") != 0 &&
+         demand_gpu && strcmp(demand_gpu, "0") != 0 && params.n_moe_cache_slots > 0 &&
+-        model.arch == LLM_ARCH_QWEN4EXP && !model.hparams.no_alloc && cparams.n_seq_max == 1;
++        (model.arch == LLM_ARCH_QWEN4EXP || model.arch == LLM_ARCH_QWEN35MOE) &&
++        !model.hparams.no_alloc && cparams.n_seq_max == 1;
+     if (params.ctx_type == LLAMA_CONTEXT_TYPE_DEFAULT && llama_moe_cache_elastic() && !demand_dynamic_workspace) {
+-        throw std::runtime_error("elastic expert cache requires QWEN4EXP dynamic workspace and parallel=1");
++        throw std::runtime_error("elastic expert cache requires QWEN4EXP/QWEN35MOE dynamic workspace and parallel=1");
+     }
+     if (cparams.n_seq_max > LLAMA_MAX_SEQ) {
+         throw std::runtime_error("n_seq_max must be <= " + std::to_string(LLAMA_MAX_SEQ));
+@@ -840,7 +844,13 @@
+             throw std::runtime_error("failed to initialize memory module");
+         }
+         if (demand_dynamic_workspace) {
+-            static_cast<llama_memory_hybrid_idx_context *>(mctx.get())->limit_reserve_kv(reserve_kv);
++            if (model.arch == LLM_ARCH_QWEN4EXP) {
++                static_cast<llama_memory_hybrid_idx_context *>(mctx.get())->limit_reserve_kv(reserve_kv);
++            } else {
++                // Q36: qwen35moe usa la memoria ibrida normale, senza cache idx_
++                auto * h = static_cast<llama_memory_hybrid_context *>(mctx.get());
++                const_cast<llama_kv_cache_context *>(h->get_attn())->limit_reserve_kv(reserve_kv);
++            }
+         }
+     }
+ 
+@@ -2175,10 +2185,14 @@
+     uint32_t n_ubatch_eff = cparams.n_ubatch;
+ 
+     if (demand_dynamic_workspace) {
+-        const auto * hybrid = static_cast<const llama_memory_hybrid_idx *>(memory.get());
++        const auto * hybrid = static_cast<const llama_memory_hybrid *>(memory.get());
+         uint32_t used = hybrid->get_mem_attn()->get_cells(0).used_max_p1();
+-        if (hybrid->get_mem_idx()) {
+-            used = std::max(used, hybrid->get_mem_idx()->get_cells(0).used_max_p1());
++        if (model.arch == LLM_ARCH_QWEN4EXP) {
++            // Q36: la cache idx_ esiste solo in qwen4exp (llama_memory_hybrid_idx)
++            const auto * hidx = static_cast<const llama_memory_hybrid_idx *>(memory.get());
++            if (hidx->get_mem_idx()) {
++                used = std::max(used, hidx->get_mem_idx()->get_cells(0).used_max_p1());
++            }
+         }
+         const uint32_t n_kv_req = uint32_t(std::min<uint64_t>(cparams.n_ctx, uint64_t(used) + n_tokens_all));
+         if (elastic_prefill_cap && n_tokens_all > 3 &&

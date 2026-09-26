@@ -114,3 +114,26 @@ Strumenti: `sequenza_q36.py` (blocchi in serie + tabella), `diag_nodi.py` (nodi/
 - Tetto strutturale del 35B sulla 3060: ~2.395 nodi (~6,7 ms) + ~1,5 GB in VRAM (~5 ms) + mancanze (~1,7 ms)
   = ~13,5 ms, cioe' ~75 t/s senza bozza. Oltre servono meno nodi (fusione), meno byte (top-k 6, IQ2) o la 2080 Ti.
 - Preparati ma NON eseguiti (l'utente intendeva il 35B): preset del 27B denso IQ2_M (`preset_Q27_*_ro.json`).
+
+## 7. Fusione di kernel: cosa esiste gia' e cosa rende (26/9, Ling, profilo `lavoro`, ragionamento spento)
+
+Ricerca (due agenti, solo web): in llama.cpp master (b11192) per batch 1 c'e' poco di nuovo (+1-3%); le fusioni utili
+(RMS_NORM+MUL, top-k MoE senza gruppi, GEMV+GLU, ROPE+SET_ROWS, SSM_CONV+SILU, GDN+CPY) sono gia' nei nostri binari.
+Il router A GRUPPI di Ling (8 gruppi, 4 usati: 3 ARGSORT per strato = 69) non e' fuso: PR #29181 APERTA (+16% su
+Ling-mini). Nessun megakernel copre Ling o il 35B (Lucebox solo Qwen3.5-0.8B). ik_llama.cpp supporta entrambi (kernel
+KDA proprio, delta-net fuso, gruppi spenti di default) ma senza confronti full-GPU pubblicati.
+
+| variante di Ling (runtime-q36) | C01 | C02 | S01 | S02 | S06 | L06 | L07 |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| base (fusioni accese) | 132,5 | 134,1 | 125,8 | 130,5 | 140,1 | 136,1 | 136,3 |
+| `GGML_CUDA_DISABLE_FUSION=1` | 135,6 | 135,6 | 131,9 | 134,1 | 141,5 | 141,2 | 141,0 |
+| `GGML_CUDA_GRAPH_OPT=1` (stream concorrenti) | 126,1 | 124,7 | 122,3 | 126,1 | 132,9 | 132,9 | 131,5 |
+| gruppi spenti (`expert_group_count=1`) | 113,1* | 138,7 | 136,2 | 139,5 | 133,5 | 143,7 | 146,3 |
+| ngram-simple, con gruppi | 806,6 | 530,9 | 122,8 | 130,7 | 186,8 | 131,3 | 120,6 |
+| ngram-simple, gruppi spenti | **867,2** | **563,3** | 136,7 | 136,5 | **248,2** | 142,5 | 143,7 |
+
+\* primo caso del blocco, probabile GPU non a regime. Le fusioni esistenti non toccano Ling (nessuno dei suoi schemi
+e' riconosciuto); gli stream concorrenti costano sulla 3060; spegnere i gruppi vale +4-8% (fino a +33% su S06 con
+bozza) ma cambia l'instradamento e quindi il testo; esiti invariati (4/5, S01 sbagliato in entrambi i casi).
+Nota di metodo: la fusione non toglie nodi al grafo (il backend li salta), quindi i nodi contati da `diag_nodi.py`
+restano uguali: i KERNEL veri vanno contati con nsys.

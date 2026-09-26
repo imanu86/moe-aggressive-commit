@@ -60,7 +60,12 @@ PROFILI = {
                 "REM Bozza ngram-simple (non cambia il testo), instradamento a gruppi originale. Modello di PROVA."],
         env=[("GGML_SCHED_ASYNC_INPUTS", "1"), ("GGML_CUDA_GRAPH_COMPAT_CACHE", "1"), ("GGML_CUDA_MMVQ_OCCUPANCY", "1")],
         args=["-ngl", "99", "-fit", "off", "-fa", "on", "--no-mmap", "-ctk", "q8_0", "-ctv", "q8_0",
-              "--spec-type", "ngram-simple", "-b", "2048", "-ub", "2048"],
+              "--spec-type", "ngram-simple", "-b", "2048", "-ub", "2048",
+              # 200k voluti dall'utente (26/9): nativo 128k, la scheda dichiara 256k con YaRN. YaRN da solo non basta
+              # (il server tronca a n_ctx_train, lezione del 35B l'8/9): serve anche l'override di context_length.
+              "--override-kv", "bailingmoe3.context_length=int:262144",
+              "--rope-scaling", "yarn", "--rope-scale", "2", "--yarn-orig-ctx", "131072"],
+        ctx="204800",
     ),
 }
 
@@ -89,7 +94,8 @@ def main() -> int:
             assert sha(dst) == sha(f), f"copia non fedele: {f.name}"
             print(f"  {f.name:<28} {sha(dst)[:16]}")
     exe = RUNTIME / "llama-server.exe"
-    args = (["-m", f'"{modello}"'] + P["args"] + COMUNI_FINE +
+    comuni = [x if x != "131072" else P.get("ctx", "131072") for x in COMUNI_FINE]
+    args = (["-m", f'"{modello}"'] + P["args"] + comuni +
             ["--slot-save-path", f'"{base}\\slots"', "--host", "%HOST%", "--port", "%PORT%", "--api-key", "%API_KEY%",
              "--log-file", f'"{base}\\logs\\{P["sigla"]}_%STAMP%.log"', "-lv", "3"])
 

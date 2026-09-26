@@ -1,0 +1,52 @@
+{
+  "original": [
+    {
+      "name": "void mul_mat_vec_q<(ggml_type)12, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)1>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+      "registers": 53,
+      "grid": [
+        9216,
+        1,
+        1
+      ],
+      "block": [
+        32,
+        4,
+        1
+      ],
+      "shared_bytes": 768,
+      "local_bytes_per_thread": 0,
+      "count": 41968,
+      "total_ns": 5114845376,
+      "mean_ns": 121874.88982081586,
+      "median_ns": 96990.0,
+      "min_ns": 94110,
+      "max_ns": 2725098
+    }
+  ],
+  "occ12_on": [
+    {
+      "name": "void mul_mat_vec_q<(ggml_type)12, (int)1, (bool)1, (bool)0, (bool)0, (bool)0, (int)12>(const void *, const void *, const int *, ggml_cuda_mm_fusion_args_device, float *, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, uint3, unsigned int, unsigned int, unsigned int, unsigned int)",
+      "registers": 40,
+      "grid": [
+        9216,
+        1,
+        1
+      ],
+      "block": [
+        32,
+        4,
+        1
+      ],
+      "shared_bytes": 768,
+      "local_bytes_per_thread": 0,
+      "count": 18374,
+      "total_ns": 1915207813,
+      "mean_ns": 104234.66926091215,
+      "median_ns": 89374.0,
+      "min_ns": 86174,
+      "max_ns": 2527177
+    }
+  ],
+  "interpretation": "Instrumented diagnostic confirms dispatch/registers only. Different capture windows and node-trace overhead prevent promotion based on these times. Unprofiled OFF/ON/OFF failed performance gate.",
+  "occ12_observed": true
+}

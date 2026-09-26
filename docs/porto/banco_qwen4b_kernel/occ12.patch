@@ -1,0 +1,41 @@
+diff --git a/ggml/src/ggml-cuda/mmvq.cu b/ggml/src/ggml-cuda/mmvq.cu
+--- a/ggml/src/ggml-cuda/mmvq.cu
++++ b/ggml/src/ggml-cuda/mmvq.cu
+@@ -598,6 +598,14 @@ static int mmvq_occ_livello_richiesto() {
+     return livello;
+ }
+ 
++static bool mmvq_qwen4b_occ12_requested() {
++    static const bool enabled = [] {
++        const char * value = getenv("GGML_CUDA_QWEN4B_Q4K_OCC12");
++        return value && value[0] == '1' && value[1] == '\0';
++    }();
++    return enabled;
++}
++
+ template <ggml_type type, int ncols_dst, bool has_fusion, bool small_k = false, bool halve_iters = false, bool sampled_ids = false, int min_blocks = 1>
+ __launch_bounds__(calc_nwarps(type, ncols_dst, get_device_table_id(), small_k, halve_iters)*ggml_cuda_get_physical_warp_size(), min_blocks)
+ static __global__ void mul_mat_vec_q(
+@@ -1216,6 +1224,22 @@ static void mul_mat_vec_q_switch_ncols_dst(
+                 const std::pair<dim3, dim3> dims = calc_launch_params<type>(c_ncols_dst, nrows_x, nchannels_dst,
+                                                                               nsamples_dst, warp_size, table_id, c_small_k, c_halve_iters);
+ 
++                if constexpr (type == GGML_TYPE_Q4_K && !c_small_k && !c_halve_iters) {
++                    // Qwen4B sm86 experiment: keep the reduction and launch geometry unchanged.
++                    if (cc == 860 && !has_ids && ncols_x == 2560 && nrows_x == 9216 &&
++                            nchannels_x == 1 && nchannels_y == 1 && nchannels_dst == 1 &&
++                            nsamples_x == 1 && nsamples_dst == 1 && fusion.gate &&
++                            !fusion.x_bias && !fusion.gate_bias && !fusion.x_scale && !fusion.gate_scale &&
++                            fusion.glu_op == GGML_GLU_OP_SWIGLU && mmvq_qwen4b_occ12_requested()) {
++                        mul_mat_vec_q_switch_fusion<type, c_ncols_dst, false, false, false, 12>(
++                            vx, vy, ids, fusion, dst, ncols_x, nchannels_y_fd, stride_row_x, stride_col_y, stride_col_dst,
++                            channel_ratio_fd, stride_channel_x, stride_channel_y, stride_channel_dst, sample_ratio_fd,
++                            stride_sample_x, stride_sample_y, stride_sample_dst, dims.first, dims.second, 0, ids_stride,
++                            stream);
++                        return;
++                    }
++                }
++
+                 // P10 cella 3: il tetto ai registri vale solo dove e' stato misurato
+                 // (una riga + small_k, tipi a tabella, NVIDIA). Con il livello a 0 il
+                 // binario riproduce esattamente il comportamento di V2.

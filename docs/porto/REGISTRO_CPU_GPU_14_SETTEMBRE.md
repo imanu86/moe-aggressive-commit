@@ -28,7 +28,7 @@ Aggiornato il 14 settembre 2026, versione 1.0. Documenti correnti: [piano](PIANO
 | P1 — Contratto cache | COMPLETATO | P0 |
 | P2 — Esecutore/lifetime | COMPLETATO | P1 |
 | P3 — Uno strato reale | COMPLETATO | P2 |
-| P4 — Decode completo | **CHIUSA (pista CPU, D18)** — cella 1 completata, cella 2 interrotta con verdetto raggiunto (8 strati −1,6%, 24 strati −5,9%, sotto soglia di chiusura 3%) | P3 |
+| P4 — Decode completo | **CHIUSA (pista CPU, D18)** — cella 1 completata, cella 2 interrotta con verdetto raggiunto (8 strati −1,6%, 24 strati −5,9%, sotto soglia di chiusura 3%). **Nota 28/9:** D18 vale per la forma provata (2 thread, max 2 esperti per strato, nodi host), non per l'idea: Strata divide le mancanze per esperto fra PCIe e CPU su tutti i core con doorbell dentro un grafo solo, vedi `RICOGNIZIONE_STRATA_28_SETTEMBRE.md`. Misure sul vecchio UD-IQ3_XXS, non sul daily GSQ-RCO | P3 |
 | P5 — MTP | NON APPLICABILE (dipendeva da P4) | P4 |
 | P6 — Conferma/preset | NON APPLICABILE (dipendeva da P4) | P5 |
 | P7 — Lunghezza/accuratezza della bozza MTP | **CHIUSA** (cella 1 COMPLETATA, D20/D21/D22; cella 2 COMPLETATA, D23; cella 3 COMPLETATA, D24; cella 4 COMPLETATA con esito misto, D25/D26/D27; cella 5 COMPLETATA, apertura A7 chiusa e corsia rimisurata, D29/D30; cella 6 COMPLETATA, corsia chiusa definitivamente e speculazione esaurita, D31/D32; cella 7 COMPLETATA il 15/9 al punto operativo 131k, ragionamento spento non salva la bozza 2, D34/D35) | Chiusura motivata della pista CPU (D18) |

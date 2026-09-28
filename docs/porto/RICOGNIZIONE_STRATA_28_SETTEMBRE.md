@@ -6,10 +6,24 @@ IQ3_S; Coder IQ1_M). Da ggml prende solo formati e alcuni kernel (MMQ, IQ). Nume
 Ryzen 5 7600 (AVX-512) + 64 GB DDR5: IQ3_XXS 62 t/s corto, 46 t/s a 128K, prefill 1.110 t/s a 32K.
 
 **Dato chiave, da utenti su macchine come la nostra** (issue del repo, motori spesso vecchi): **3060 + Ryzen 9 5950X
-(16 core Zen 3, AVX2) + DDR4-3200, IQ2_XS a 32K: ~40,5 t/s decode, prefill 421** (#13); 3060 + i5-10400 ~21 t/s (#12);
-3090 + Ryzen 5 5600X (solo AVX2) 23-25 → 39-43 t/s coi nuovi kernel AVX2 (#54); 5060 Ti su PCIe 4.0 x8: `pcie_frac`
-0,30 meglio di 0,55 (#44). Noi (3060 + 5800X 8 core + DDR4-3000, PCIe 4.0 x16 26 GB/s): 28,66 t/s a 32k con MTP a 1,
-27,25 a 131k (P9: 37,4 ms/token, pavimento dei byte 21,9 ms).
+(16 core Zen 3, AVX2) + DDR4-3200, IQ2_XS a 32K: ~40,5 t/s decode, prefill 421 su 16,5K** (#13; sulla stessa macchina
+llama.cpp b11146 con `--n-cpu-moe 40` fa 10,9 e 227; MTP non dichiarato); 3060 + i5-10400 ~21 t/s (#12); 3090 + Ryzen 5
+5600X (solo AVX2) 23-25 → 39-43 t/s coi nuovi kernel AVX2 (#54); 5060 Ti su PCIe 4.0 x8: `pcie_frac` 0,30 meglio di
+0,55 (#44). Attenzione: IQ2_XS e' un file piu' leggero del nostro (vedi sotto).
+
+**Noi, sul daily GSQ-RCO IQ3_XXS** (3060 + 5800X 8 core + DDR4-3000, PCIe 4.0 x16 26 GB/s; greedy, ragionamento acceso):
+23,2-25,4 t/s a 131k con MTP spento e 40-70 slot (Codex, 20/9, `BENCHMARK_GSQ_20_SETTEMBRE.md`); 22,4-22,9 a 100k con
+l'elastico senza deposito RAM, 19,7-19,9 col deposito della produzione (21/9); con MTP e sotto pressione RAM 20,45 a 32k
+(Codex, `MTP_RAM_20_SETTEMBRE.md`); ~11 nell'uso reale, non spiegato. **Correzione della prima stesura:** i 28,66 t/s a
+32k, i 27,25 a 131k e l'anatomia P9 (37,4 ms/token, pavimento dei byte 21,9 ms) sono del vecchio Unsloth UD-IQ3_XXS,
+cancellato: non sono il riferimento del daily. Dove la colonna «noi» qui sotto cita P9, descrive la forma del nostro
+motore (lanci, sincronizzazioni, riga di verifica); i millisecondi vanno rimisurati sul GSQ.
+
+Il nostro GSQ-RCO «IQ3_XXS» e' un mix per tensore (intestazioni lette con `docs/porto/gguf_tipi.py`): esperti instradati
+39,97 GiB in sette tipi (IQ3_S 8,73, IQ4_NL 7,91, Q2_0 6,59, IQ2_S 5,00, IQ2_XS 4,52, IQ2_XXS 3,63, IQ3_XXS 3,59; media
+~2,83 bpw, ~1,74 MB per esperto), PLE 26,88 GiB IQ4_NL, densi 2,99 GiB, embedding/uscita 0,67. Un IQ2_XS sta intorno ai
+2,3 bpw: circa il 20% di byte in meno per ogni mancanza e piu' esperti in cache. **Un confronto pulito non esiste**: stima
+grezza di Strata qui col nostro file ~28-35 t/s a 32k (esperti piu' pesanti, meta' dei core del 5950X), da misurare.
 
 ## Cosa fa diversamente (con i file)
 
@@ -22,16 +36,16 @@ Ryzen 5 7600 (AVX-512) + 64 GB DDR5: IQ3_XXS 62 t/s corto, 46 t/s a 128K, prefil
 | **KV a pagine** da 4 celle con clock second-chance: copia vera in RAM pinned, in VRAM solo le pagine usate dalla QSA (`inc/kernels/kv_stream.hpp`) | KV mappata, si raccolgono le 2.048 celle scelte a ogni token (2,6 ms/token) | si' |
 | **Prefill a blocchi 8.192/6.144/4.096** secondo quanto la cache presta, MMQ int8, anello di streaming degli esperti con anticipo durante l'attenzione (`src/prefill/prefill.cpp`) | ubatch <= 4096, staging ~11 GB/s, 8.192 non entrava (WDDM) | si' |
 | Tabella PLE su SSD con I/O diretto e prefetch (~0,3 ms/token) | in RAM (27,5 GB) | irrilevante con 96 GB |
-| Cache riempita da un profilo statico (colpi 64% contro 49% senza) + adattamento lento (ogni 4 round, <=96 scambi) | frequenza con decadimento, **colpi 75%** | nessun divario |
-| Q2_0 (blocchi da 64, 2,25 bpw) con kernel AVX-512 VNNI / AVX2 | IQ2_S limitato dalla dequantizzazione (2,5 bpw costano come 6,87) | kernel AVX2 si', VNNI no |
+| Cache riempita da un profilo statico (colpi 64% contro 49% senza) + adattamento lento (ogni 4 round, <=96 scambi) | frequenza con decadimento, colpi 63% a 40 slot e 74% a 64 slot (GSQ, Codex 20/9) | nessun divario |
+| Q2_0 (blocchi da 64, 2,25 bpw) con kernel AVX-512 VNNI / AVX2 | nel GSQ 6,59 GiB di esperti sono proprio Q2_0 (tipo ggml 42); sul vecchio UD l'IQ2_S era limitato dalla dequantizzazione (2,5 bpw costavano come 6,87) | kernel AVX2 si', VNNI no |
 
 Non si trasferiscono: AVX-512 VNNI, DDR5 (~44 GB/s per loro contro 33 per noi), PCIe 5.0.
 
 ## Correzione a una conclusione precedente
 
 La corsia CPU chiusa il 14/9 (D18) era stata provata in una forma stretta: 2 thread, massimo 2 esperti per strato,
-sincronizzazione con nodi host. Sulla nostra macchina un esperto costa alla CPU 0,08 ms contro ~0,10 ms via PCIe,
-quindi da sola la CPU non vince: il guadagno viene dal SOMMARE le due vie (GPU + CPU ~38-39 GB/s contro 26) dentro
+sincronizzazione con nodi host. Sulla nostra macchina un esperto costa alla CPU 0,08 ms contro ~0,10 ms via PCIe (misure
+sul vecchio UD; col GSQ, ~1,74 MB per esperto, il rapporto resta circa pari), quindi da sola la CPU non vince: il guadagno viene dal SOMMARE le due vie (GPU + CPU ~38-39 GB/s contro 26) dentro
 un unico grafo con attese sul device, e dal rendere economica la verifica MTP. Strata fa esattamente questo.
 
 ## Provarlo qui

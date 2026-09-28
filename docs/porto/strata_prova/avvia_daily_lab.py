@@ -56,8 +56,13 @@ def main():
     # 28/9: con gli altri programmi aperti il -c 262144 del bat non parte (cudaHostAlloc della KV mappata, 3264 MiB,
     # out of memory): per l'A/B con Strata si usa il suo stesso contesto massimo
     ap.add_argument("--contesto", type=int, default=None, help="sostituisce il valore di -c del bat")
+    ap.add_argument("--runtime", default=None, help="cartella con un altro llama-server.exe (es. runtime-m2g)")
+    ap.add_argument("--etichetta", default="daily_m2_lab", help="nome del log")
     a = ap.parse_args()
     exe, args, env = leggi_bat()
+    if a.runtime:
+        exe = str(Path(a.runtime) / "llama-server.exe")
+        assert Path(exe).is_file(), exe
     for d in ("logs", "slots", "ffcache"):
         (LAB / d).mkdir(parents=True, exist_ok=True)
     fuori, i = [], 0
@@ -70,7 +75,7 @@ def main():
         if x == "--api-key":
             i += 2; continue
         if x == "--log-file":
-            fuori += ["--log-file", str(LAB / "logs" / "daily_m2_lab.log")]; i += 2; continue
+            fuori += ["--log-file", str(LAB / "logs" / (a.etichetta + ".log"))]; i += 2; continue
         if x == "--slot-save-path":
             fuori += ["--slot-save-path", str(LAB / "slots")]; i += 2; continue
         if x == "-c" and a.contesto:
@@ -78,13 +83,14 @@ def main():
         fuori.append(x); i += 1
     assert "%API_KEY%" not in fuori and "--api-key" not in fuori
     env_bat = {k: v for k, v in env.items() if k not in os.environ or os.environ[k] != v}
-    (LAB / "comando.json").write_text(json.dumps({"bat": str(BAT), "exe": exe, "args": fuori, "env_dal_bat": env_bat},
-                                                 indent=1, ensure_ascii=False), encoding="utf-8")
+    (LAB / ("comando_" + a.etichetta + ".json")).write_text(json.dumps(
+        {"bat": str(BAT), "exe": exe, "args": fuori, "env_dal_bat": env_bat}, indent=1, ensure_ascii=False), encoding="utf-8")
     print("exe:", exe)
     print("args:", " ".join(fuori))
     print("env dal bat:", len(env_bat), "variabili", flush=True)
     p = subprocess.Popen([exe] + fuori, cwd=str(LAB / "ffcache"), env=env,
-                         stdout=open(LAB / "server_stdout.log", "w", encoding="utf-8"), stderr=subprocess.STDOUT)
+                         stdout=open(LAB / ("server_stdout_" + a.etichetta + ".log"), "w", encoding="utf-8"),
+                         stderr=subprocess.STDOUT)
     (LAB / "pid.txt").write_text(str(p.pid))
     print("pid", p.pid, flush=True)
     return p.wait()

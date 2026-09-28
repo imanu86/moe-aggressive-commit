@@ -1,0 +1,79 @@
+--- a/src/llama-moecache.cpp
++++ b/src/llama-moecache.cpp
+@@ -686,6 +686,26 @@
+     for (auto & ls : mc.layers) ls.pub.n_slots = 0;
+     mc.release_pending = false;
+ }
++
++#if defined(_WIN32)
++// M2g (28/9/2026): host RAM the next growth would allocate, i.e. the pinned staging and plan buffers of RAM
++// transports that do not exist yet. Zero means that growing the VRAM slots costs no host RAM.
++uint64_t elastic_pending_ram_bytes(moe_cache & mc) {
++    using required_fn = size_t (*)(const ggml_tensor * const *);
++    auto reg = ggml_backend_dev_backend_reg(mc.device);
++    auto required = reinterpret_cast<required_fn>(ggml_backend_reg_get_proc_address(reg,
++            "ggml_backend_cuda_moe_ram_transport_required_bytes"));
++    if (!required) return 0;
++    uint64_t pending = 0;
++    for (const auto & layer : mc.layers) {
++        const ggml_tensor * sources[] = {layer.pub.up_src, layer.pub.gate_src, layer.pub.down_src};
++        const uint64_t bytes = required(sources);
++        if (bytes > UINT64_MAX - pending) return UINT64_MAX;
++        pending += bytes;
++    }
++    return pending;
++}
++#endif
+ } // namespace
+ 
+ bool llama_moe_cache_elastic() { return g_cache && g_cache->elastic; }
+@@ -736,23 +756,12 @@
+         // Never grow blindly when Windows physical accounting is unavailable.
+ #if defined(_WIN32)
+         if (!m.os.physical_valid || !m.os.budget_valid) return -1;
+-        using required_fn = size_t (*)(const ggml_tensor * const *);
+-        auto reg = ggml_backend_dev_backend_reg(mc->device);
+-        auto required = reinterpret_cast<required_fn>(ggml_backend_reg_get_proc_address(reg,
+-                "ggml_backend_cuda_moe_ram_transport_required_bytes"));
+-        mc->pending_ram_bytes = 0;
+-        if (required) {
+-            for (const auto & layer : mc->layers) {
+-                const ggml_tensor * sources[] = {layer.pub.up_src, layer.pub.gate_src, layer.pub.down_src};
+-                const uint64_t bytes = required(sources);
+-                if (bytes > UINT64_MAX - mc->pending_ram_bytes) {
+-                    mc->pending_ram_bytes = UINT64_MAX;
+-                    break;
+-                }
+-                mc->pending_ram_bytes += bytes;
+-            }
+-        }
+-        if (!mc->ram_growth.allows(m.os.ram_available, m.os.ram_valid, mc->pending_ram_bytes)) {
++        mc->pending_ram_bytes = elastic_pending_ram_bytes(*mc);
++        // M2g: the RAM gate guards host RAM, so it applies only when this growth allocates host RAM. New VRAM
++        // slots with pending_ram_bytes == 0 cost none; blocking them under RAM pressure kept the cache at 0 slots
++        // for a whole session (28/9: 555 growth_blocked_ram with 7.4 GB of VRAM free, decode 7 t/s).
++        if (mc->pending_ram_bytes != 0 &&
++                !mc->ram_growth.allows(m.os.ram_available, m.os.ram_valid, mc->pending_ram_bytes)) {
+             ++mc->ram_growth_denials;
+             if (now - mc->last_ram_denial_log_us >= 1000000) {
+                 memory_log(*mc, "growth_blocked_ram", tokens, kv, &m);
+@@ -779,10 +788,15 @@
+     const auto start = ggml_time_us();
+     const auto before = read_elastic_memory(*mc);
+ #if defined(_WIN32)
+-    if (slots > old && !mc->ram_growth.allows(before.os.ram_available, before.os.ram_valid, mc->pending_ram_bytes)) {
+-        ++mc->ram_growth_denials;
+-        memory_log(*mc, "growth_cancelled_ram", 0, 0, &before);
+-        return false;
++    if (slots > old) {
++        // M2g: computed here, not the last plan's value (the workspace change after a prefill grows without a plan)
++        mc->pending_ram_bytes = elastic_pending_ram_bytes(*mc);
++        if (mc->pending_ram_bytes != 0 &&
++                !mc->ram_growth.allows(before.os.ram_available, before.os.ram_valid, mc->pending_ram_bytes)) {
++            ++mc->ram_growth_denials;
++            memory_log(*mc, "growth_cancelled_ram", 0, 0, &before);
++            return false;
++        }
+     }
+ #endif
+     memory_log(*mc, "before_resize", 0, 0, &before);

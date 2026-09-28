@@ -47,6 +47,12 @@ identico al bat (`avvia_daily_lab.py`, comando in `corse/.../comando.json`).
 - Numeri non paragonabili ai 40,5 t/s dell'utente con la 3060: lui usava IQ2_XS, 16 core, e quasi certamente piu' VRAM
   libera per la cache.
 
+## M2g: il cancello corretto (stessa sera)
+
+`../elastico_m2g/LEGGIMI.md`. Stessa configurazione, stessi prompt, altri programmi aperti: la cache ricresce dopo ogni
+prefill (42-55 slot, zero `growth_blocked_ram`) e il decode aggregato passa da 7,09 a **17,71 t/s**; prefill 406 a 32k e
+274 oltre 32k. E' il livello del daily a RAM libera (19,7-19,9 col deposito, 21/9), non un guadagno oltre quello.
+
 ## Cosa ne esce per noi, in ordine
 
 1. **Il cancello di crescita RAM di M2**: con la RAM sotto pressione la cache non deve restare a 0 slot. Gli slot in VRAM

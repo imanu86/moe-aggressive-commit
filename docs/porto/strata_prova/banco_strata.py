@@ -32,6 +32,24 @@ PROFILI = {
     "lungo_2": [("L01", "ctx32k"), ("L02", "ctx32k")],
     "lungo_131k": [("L01", "ctx131k"), ("L02", "ctx131k")],
     "tutto": [("L01", "ctx32k"), ("L02", "ctx32k"), ("L01", "ctx131k"), ("L02", "ctx131k")],
+    # 28/9 notte, confronto equo e a regime: 8 casi di fila sullo stesso prefisso a 32k (la residenza impara),
+    # il punto operativo a 131k, poi copia e rinomina di codice (dove bozza e prompt lookup rendono di piu')
+    "regime": ([(i, "ctx32k") for i in ("L01", "L02", "L03", "L04", "L05", "L06", "L07", "L08")] +
+               [("L01", "ctx131k"), ("L02", "ctx131k"), ("C01", "corto"), ("C02", "corto")]),
+    # ripetizione dei soli casi di codice (copia/rinomina), per controllare se un risultato si ripete
+    "codice": [("C01", "corto"), ("C02", "corto")],
+    # contesto corto senza copia: separa «contesto corto» da «compito di copia»
+    "corto": [("L01", "corto"), ("L06", "corto")],
+    # isolamento di una leva di Strata (corsia CPU, bozza): gli stessi casi del regime, meno lunghi
+    "isola": ([(i, "ctx32k") for i in ("L01", "L02", "L03", "L04")] +
+              [("L01", "ctx131k"), ("L02", "ctx131k"), ("C01", "corto")]),
+}
+BLOCCHI = {  # per il riassunto: nome -> etichette
+    "32k_tutti": ["L0%d@ctx32k" % i for i in range(1, 9)],
+    "32k_regime_ultimi4": ["L0%d@ctx32k" % i for i in range(5, 9)],
+    "32k_codice": ["L06@ctx32k", "L07@ctx32k", "L08@ctx32k"],
+    "131k": ["L01@ctx131k", "L02@ctx131k"],
+    "copia_rinomina": ["C01@corto", "C02@corto"],
 }
 
 
@@ -157,16 +175,24 @@ def main():
     for cid, ctx in PROFILI[a.profilo]:
         c = casi[cid]
         pre = c["prefisso_per_contesto"][ctx]
-        messaggi = [{"role": "user", "content": man["istruzione_contesto"] + prefissi[pre]},
-                    {"role": "assistant", "content": "pronto"},
-                    {"role": "user", "content": prompts[cid]}]
+        messaggi = ([{"role": "user", "content": man["istruzione_contesto"] + prefissi[pre]},
+                     {"role": "assistant", "content": "pronto"}] if pre else []) + \
+                   [{"role": "user", "content": prompts[cid]}]
         esegui("%s@%s" % (cid, ctx), messaggi, c["budget_token"]["screening"],
                {"caso": cid, "contesto": ctx, "riscaldamento": False})
 
     utili = [r for r in righe if not r.get("riscaldamento")]
     tok = sum(r["motore"].get("output_tokens") or 0 for r in utili)
     sec = sum((r["motore"].get("decode_ms") or 0) for r in utili) / 1000.0
+    def blocco(etichette):
+        rr = [r for r in utili if r["etichetta"] in etichette]
+        t = sum(r["motore"].get("output_tokens") or 0 for r in rr)
+        s = sum((r["motore"].get("decode_ms") or 0) for r in rr) / 1000.0
+        return {"casi": len(rr), "decode_tps": round(t / s, 3) if s else None}
+
     riass = {"corsa": run.name, "nota": a.nota, "decode_aggregato_tps": round(tok / sec, 3) if sec else None,
+             "blocchi": {nome: blocco(et) for nome, et in BLOCCHI.items()
+                         if any(r["etichetta"] in et for r in utili)},
              "per_caso": [{k: r[k] for k in ("etichetta", "prefill_tps_motore", "decode_tps_motore", "ttft_s",
                                               "vram_prima_mib", "fine")} for r in utili]}
     (run / "riassunto.json").write_text(json.dumps(riass, indent=1, ensure_ascii=False), encoding="utf-8")

@@ -54,6 +54,10 @@ un unico grafo con attese sul device, e dal rendere economica la verifica MTP. S
 (702 esperti in VRAM, 1,56-1,92 token per passata) contro 7,09 del daily, la cui cache elastica resta a 0 slot per il
 cancello di crescita RAM di M2. Prefill pari.
 
+**Confronto equo a regime (stessa VRAM, ~1,6 GB agli altri programmi):** Strata 31,5 t/s a 32k e 28,8 a 131k contro
+22,4 e 22,0 di M2g (+40% / +31%), con 1.915 esperti in VRAM contro ~3.400; sulla copia/rinomina 35,3 contro 11,0. La
+sua corsia CPU vale il 10-16% (`--pcie-frac 1.0`); il resto del vantaggio viene dalla bozza MTP e dal grafo unico.
+
 ## Provarlo qui
 
 - Usa il nostro stesso file: `--gguf-dir` accetta la cartella coi due shard GSQ-RCO-IQ3_XXS gia' in Downloads (niente

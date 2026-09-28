@@ -48,6 +48,12 @@ sincronizzazione con nodi host. Sulla nostra macchina un esperto costa alla CPU 
 sul vecchio UD; col GSQ, ~1,74 MB per esperto, il rapporto resta circa pari), quindi da sola la CPU non vince: il guadagno viene dal SOMMARE le due vie (GPU + CPU ~38-39 GB/s contro 26) dentro
 un unico grafo con attese sul device, e dal rendere economica la verifica MTP. Strata fa esattamente questo.
 
+## Provato qui la sera del 28/9
+
+`strata_prova/RISULTATI_28_SETTEMBRE.md`: con gli altri programmi aperti Strata fa 19,55 t/s di decode aggregato
+(702 esperti in VRAM, 1,56-1,92 token per passata) contro 7,09 del daily, la cui cache elastica resta a 0 slot per il
+cancello di crescita RAM di M2. Prefill pari.
+
 ## Provarlo qui
 
 - Usa il nostro stesso file: `--gguf-dir` accetta la cartella coi due shard GSQ-RCO-IQ3_XXS gia' in Downloads (niente

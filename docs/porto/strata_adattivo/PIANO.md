@@ -34,6 +34,16 @@ ripresa; il layer split della 0.1.21 spegne il KV streaming.
 
 **Patch del fork** (clone, main locale; copie in `patches/`):
 - `0001` — la traccia di instradamento (`--dump-routing`) scritta anche nelle finestre di verifica: col server era vuota.
+- `0002` — blocchi del prompt tagliati sulla griglia dei punti di ripresa (`resume + k * --prompt-cache-every`):
+  misurato con blocco 1.536 (non divide 16.384), follow-up a 32k con 32.768 token riusati e 1,9 s al primo token (prima
+  18.432 riusati e 31 s con blocchi da 6.144).
+
+**F0 fatta (29/9, `corse_f0/`):** profilo degli esperti dal nostro lavoro (traccia di 43 MB su S01-S10 e L05-L08, prompt
+esclusi dalla misura) contro l'originale, stessa cache (1.829/1.827 esperti): colpi in cache 65,2% → 66,1% sugli 8 casi,
+ms per riga 26,8 → 26,5 (−1%); solo le prime richieste brevi guadagnano 6-10 punti (33,7/47,7% → 43,7/53,7%). Sotto la
+soglia: l'adattamento di Strata recupera dentro la prima richiesta. Il controllo A2 in coda ha mostrato l'altro problema:
+con impostazioni identiche la cache e' partita con 1.492 esperti invece di 1.829 (Windows ha dichiarato 0 MiB liberi al
+primo tentativo) e una riga e' costata 32,4 ms invece di 26,8. Dimensionare una volta all'avvio e' una lotteria: F1.
 
 ## Ordine
 

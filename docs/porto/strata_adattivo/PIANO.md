@@ -21,10 +21,20 @@ copiate e versionate qui, in `patches/`.
 | doubleKVring esteso alle conversazioni; salvataggio/ripristino degli slot del nostro daily (`--slot-save-path`) | Strata tiene in cache UNA conversazione: passare a un'altra (subagente, chiamata ausiliaria, secondo agente) butta lo stato e fa rileggere tutto (100k token ≈ 4 minuti a ~415 t/s) | cache di piu' conversazioni a livelli: attiva in RAM bloccata, recenti in RAM normale, vecchie su NVMe (1,4 GB ogni 100k token in int8), ripresa senza rilettura. Basi nell'originale: PR #41 (conversazione principale conservata durante le chiamate ausiliarie), PR #52 (KV su NVMe) |
 | Metodo | banco deterministico, misura a regime, costo per riga, soglia 5%, punto operativo ~100k | `docs/porto/strata_prova/banco_strata.py`, `costo_passata.py`, profili `regime` e `curva` |
 
+**Fatti del 29/9 sulla 0.1.21** (compilata qui, `strata.exe` A0068A0F): il probe PCIe misura 26,3 GB/s e tiene
+`pcie_frac` 0,55; con riserva 1.032 MiB a carico finito restano 151 MiB («LOW: requests may stall», chiede 1.393):
+anche la versione nuova occupa VRAM dopo aver dimensionato la cache. Colpi in cache su una richiesta breve di codice in
+italiano: **48,9%** con 2.114 esperti (il nostro daily sui casi lunghi: 69-83%). `--calibrate` (0.1.19) misura una volta
+tre impostazioni legate all'hardware; non segue la giornata e non tocca il profilo degli esperti.
+
 ## Ordine
 
-1. **F1 (giorni):** 0.1.21 compilata; cache elastica VMM; blocchi di prefill allineati. Misure: niente stallo quando gli
-   altri programmi crescono, cache che torna grande quando la VRAM si libera, follow-up a 32k in ~2 s.
+0. **F0 (ore):** profilo degli esperti dal NOSTRO lavoro (italiano, codice, agenti): `--dump-routing` sui nostri prompt
+   e `tools/make_profile.py` (pin-by-mass di DS4, +53% sul pod). Misura: colpi in cache e ms per riga col profilo
+   originale e col nostro, stessi prompt.
+1. **F1 (giorni):** 0.1.21 compilata (fatto); cache elastica VMM che si dimensiona a carico finito e poi di continuo;
+   blocchi di prefill allineati. Misure: niente stallo quando gli altri programmi crescono, cache che torna grande quando
+   la VRAM si libera, follow-up a 32k in ~2 s.
 2. **F2 (giorni):** cache di piu' conversazioni a livelli (RAM bloccata / RAM / NVMe). Misura: tempo al primo token
    quando si torna a una conversazione lunga dopo averne usata un'altra, con Claude Code e dentro DSH (l'utente pensa
    che in un harness come DSH vada gia' meglio: da verificare).

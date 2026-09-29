@@ -89,6 +89,46 @@ nel costo per riga, ma butta via esperti caldi e banda.
 fisici e la finestra aspetta il piu' lento; con 2-3 core presi da altri, un thread fermo dallo scheduler ferma la
 passata. E' la F2b del piano.
 
+## Il daily sugli stessi prompt (13:19-13:34, OktoCGControl acceso, agenti dell'utente al lavoro)
+Il daily di produzione (runtime M2 `bin_elastico_m2`, llama.dll 5b219d21) col lanciatore di laboratorio
+(`../strata_prova/avvia_daily_lab.py`: il bat letto senza modificarlo, porta 18110, `-c 139264` come Strata), profilo
+`rapido`, e per la prima volta la CPU di tutti i processi campionata ogni 10 s (`corse_elastico/cpu_daily_m2_rapido_carico.jsonl`).
+Al lancio: altri programmi 3.099 MiB di VRAM, 75,5 GB di RAM disponibile.
+
+| t/s | L01 | L02 | L03 | L04 | C01 copia | totale |
+|---|---:|---:|---:|---:|---:|---:|
+| daily M2 | 13,7 | 7,0 | 3,9 | 6,8 | 5,6 | **6,2** |
+
+Primo token 2,3 / 7,5 / 4,4 / 2,8 / 12,8 s (C01: 329 t/s di prefill, come la cache elastica di Strata). L04 ha chiuso a
+686 token come Strata: stessa risposta.
+
+**Carico degli altri (75 campioni):** 7,3 core in media (4,4-11,8): Jump Desktop 2,25, Defender 1,32, il compilatore C#
+degli agenti (VBCSCompiler + MSBuild + dotnet) 1,25, claude 0,56, CGControl 0,40, node 0,37. Il daily stesso 3,0 core in
+media (ne chiede 16). RAM disponibile fino a 0,7 GB: il daily tiene in RAM ~67 GiB (27,5 GiB sulla CPU con `--no-mmap`,
+35,2 di esperti in RAM bloccata, 6 di deposito); Strata ~44 GB (la tabella PLE resta mappata dal file).
+
+**Cache M2:** a 0 slot nel 34% dei campioni (47 slot per strato in media, massimo 75); svuotata a 0 sette volte
+all'inizio di una richiesta (`workspace_change`) e tenuta giu' dalla RAM (252 `growth_blocked_ram`); il deposito RAM ha
+riletto 2,2 GB di esperti dal disco (4.425 letture). E' il difetto del 28/9 sera (M2 a 7,09 t/s), corretto da M2g, che
+pero' non e' in produzione.
+
+## Confronto a tre (t/s di decodifica aggregati)
+Non tutte le righe sono nello stesso momento: si confrontano solo i numeri sulla stessa riga.
+
+| condizione | Strata | Strata elastica | daily llama |
+|---|---:|---:|---:|
+| 28/9 notte, PC libero, un motore dopo l'altro (`regime`) | 31,6 | — | 19,0 (M2g) |
+| 28/9 sera, programmi aperti, stessa sessione | 19,55 | — | 7,09 (M2) |
+| 29/9 11:01-11:11, quasi fermo (Jump Desktop ~2 core) | 22,7 | 24,8 | — |
+| 29/9 12:21-12:43, CGControl (altri ~2-3 core, solo campioni a vista) | 13,2 | 13,7 | — |
+| 29/9 13:19-13:34, CGControl + agenti che compilano (altri 7,3 core, registrati) | — | — | 6,2 |
+
+**Lettura.** Le ultime due righe non sono alla pari: durante il daily la CPU degli altri era piu' carica (compilazioni
+degli agenti), e per le corse di Strata ho solo campioni a vista. Gli agenti dell'utente lavoravano anche nelle corse
+precedenti e possono averle falsate, soprattutto le differenze caso per caso sotto carico (±40%). Il crollo del daily
+pero' ha una causa sua, che gli agenti non spiegano: la RAM esaurita dal suo stesso carico (~67 GiB) e la cache svuotata a
+ogni richiesta. Da qui in poi ogni corsa registra la CPU di tutti i processi.
+
 ## Da fare
 - Elastica senza oscillazioni: margine di crescita piu' largo del rumore misurato (massimo meno minimo delle letture
   recenti), crescita sul minimo della finestra e fino a riserva + margine, attesa crescente dopo ogni restringimento;
@@ -97,4 +137,6 @@ passata. E' la F2b del piano.
   quanto aspetta il GPU il pool CPU.
 - Nessun controllo durante un prefill lungo (131k ≈ 4-5 minuti): la coda e' prestata; un restringimento li' va studiato.
 - A/B a regime contro la cache fissa senza pressione (profilo `regime`).
-- Il daily sugli stessi prompt nello stesso momento, per il confronto sotto carico.
+- Il campionatore della CPU (`strumenti/daily_rapido.py`, riassunto con `strumenti/cpu_altri.py`; eventi della cache
+  M2 con `strumenti/eventi_m2.py`) anche nelle corse di Strata (`f0_profilo.corsa`), e Strata e daily
+  alternati nella stessa sessione se si rifa' il confronto sotto carico.

@@ -37,6 +37,10 @@ ripresa; il layer split della 0.1.21 spegne il KV streaming.
 - `0002` — blocchi del prompt tagliati sulla griglia dei punti di ripresa (`resume + k * --prompt-cache-every`):
   misurato con blocco 1.536 (non divide 16.384), follow-up a 32k con 32.768 token riusati e 1,9 s al primo token (prima
   18.432 riusati e 31 s con blocchi da 6.144).
+- `0003` — **cache esperti elastica** (`--elastic`): arena VMM a blocchi da 64 MiB, cresce e scende al punto sicuro,
+  sposta gli esperti caldi prima di liberare la coda, ripianifica il prestito al prefill. Con 2,5 GB presi da un altro
+  processo per 60 s: 24-27,5 t/s contro 15-17 della cache fissa; al rilascio torna a 1.635 slot e 29-34 t/s.
+  `RISULTATI_ELASTICO_29_SETTEMBRE.md`.
 
 **F0 fatta (29/9, `corse_f0/`):** profilo degli esperti dal nostro lavoro (traccia di 43 MB su S01-S10 e L05-L08, prompt
 esclusi dalla misura) contro l'originale, stessa cache (1.829/1.827 esperti): colpi in cache 65,2% → 66,1% sugli 8 casi,

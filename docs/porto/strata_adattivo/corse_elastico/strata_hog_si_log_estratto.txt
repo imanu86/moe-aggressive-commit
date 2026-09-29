@@ -1,0 +1,180 @@
+﻿strata generate: PCIe probe: 26.3 GB/s host->device -> pcie_frac 0.55 (default 0.55)
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: D:\ds4_work\strata\Strata-data\packs\iq3_xxs experts (largest blob 2.33 MB), token embedding type 21 in mapped host memory (260 MiB)
+strata generate: 1466 MiB of weights loaded from D:\ds4_work\strata\Strata-data\packs\iq3_xxs (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1781.11 MiB of weights
+strata generate: KV streaming: 32768 of 139264 cells per QSA layer in VRAM, the K/V in 1.64 GiB of pinned RAM
+strata generate: PLE on, table 320001536 rows of C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf
+strata generate: expert arena: cudaHostRegister PORTABLE ok; large pages refused for 42916118528 B (GetLargePageMinimum=2097152, VirtualAlloc error 1314); using 4 KB pages
+strata generate: loaded 39.97 GiB at 1.22 GiB/s
+strata generate: profile D:\ds4_work\strata\Strata\data\expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: experimental native Q5_K head, 437043200 bytes
+strata generate: expert cache auto: 5.63 GiB free, 1393 MiB reserved -> 1969 slots
+strata generate: only 0 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: only 1028 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: expert cache 1476 slots, 2.43 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+strata generate: pre-filled 1476 of 1476 slots from the profile; slot 0 verified
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 7 expert-pool workers + the host thread
+strata generate: session is up (engine 0.1.21)
+strata generate: token graph hit path: 1476 resident experts, decided on the device
+strata serve: prompt chunk auto: 2048 tokens
+strata serve: the prompt path borrows 1189 cache slots (1.95 GiB)
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (1476 slots now, 2.43 GiB, chunks of 64 MiB)
+strata serve: 1116 MiB of VRAM free with everything loaded
+strata elastic trace: request free 1105 MiB, 1476 slots (2.43 GiB), room held 1955 ms
+strata elastic trace: decode free 1025 MiB, 1476 slots (2.43 GiB), room held 3621 ms
+strata elastic trace: decode free 844 MiB, 1476 slots (2.43 GiB), room held 4711 ms
+strata elastic trace: decode free 830 MiB, 1476 slots (2.43 GiB), room held 5821 ms
+strata elastic: +82 experts (136 MiB) -> 1558 slots, 2.56 GiB; 702 MiB free
+strata elastic trace: decode free 716 MiB, 1558 slots (2.56 GiB), room held 1011 ms
+strata elastic trace: decode free 702 MiB, 1558 slots (2.56 GiB), room held 1025 ms
+strata elastic trace: decode free 727 MiB, 1558 slots (2.56 GiB), room held 1021 ms
+strata elastic trace: decode free 702 MiB, 1558 slots (2.56 GiB), room held 1075 ms
+strata elastic trace: decode free 716 MiB, 1558 slots (2.56 GiB), room held 1004 ms
+strata elastic trace: decode free 683 MiB, 1558 slots (2.56 GiB), room held 1029 ms
+strata elastic trace: decode free 716 MiB, 1558 slots (2.56 GiB), room held 1003 ms
+strata elastic trace: decode free 716 MiB, 1558 slots (2.56 GiB), room held 1074 ms
+strata elastic trace: decode free 702 MiB, 1558 slots (2.56 GiB), room held 1015 ms
+strata elastic trace: decode free 716 MiB, 1558 slots (2.56 GiB), room held 1036 ms
+strata elastic trace: decode free 702 MiB, 1558 slots (2.56 GiB), room held 1029 ms
+strata elastic trace: decode free 716 MiB, 1558 slots (2.56 GiB), room held 1005 ms
+strata elastic trace: decode free 681 MiB, 1558 slots (2.56 GiB), room held 1054 ms
+strata elastic trace: decode free 648 MiB, 1558 slots (2.56 GiB), room held 1045 ms
+strata elastic trace: decode free 661 MiB, 1558 slots (2.56 GiB), room held 1093 ms
+strata elastic trace: decode free 648 MiB, 1558 slots (2.56 GiB), room held 1033 ms
+strata elastic trace: decode free 689 MiB, 1558 slots (2.56 GiB), room held 1045 ms
+strata elastic trace: decode free 0 MiB, 1558 slots (2.56 GiB), room held 1553 ms
+strata elastic: -339 slots (193 moved in, 146 out) -> 1219 slots, 2.01 GiB; 0 MiB free, prompt chunk 1024
+strata elastic trace: decode free 0 MiB, 1219 slots (2.01 GiB), room held 1064 ms
+strata elastic: -333 slots (203 moved in, 130 out) -> 886 slots, 1.46 GiB; 0 MiB free, prompt chunk 1024
+strata elastic trace: decode free 0 MiB, 886 slots (1.46 GiB), room held 1044 ms
+strata elastic: -338 slots (158 moved in, 180 out) -> 548 slots, 0.90 GiB; 297 MiB free, prompt chunk 512
+strata elastic trace: decode free 46 MiB, 548 slots (0.90 GiB), room held 1035 ms
+strata elastic: -292 slots (108 moved in, 184 out) -> 256 slots, 0.42 GiB; 430 MiB free, prompt chunk 512
+strata elastic trace: decode free 430 MiB, 256 slots (0.42 GiB), room held 1106 ms
+strata elastic trace: decode free 430 MiB, 256 slots (0.42 GiB), room held 1017 ms
+strata elastic trace: decode free 430 MiB, 256 slots (0.42 GiB), room held 1052 ms
+strata elastic trace: decode free 434 MiB, 256 slots (0.42 GiB), room held 1067 ms
+strata elastic trace: decode free 434 MiB, 256 slots (0.42 GiB), room held 1008 ms
+strata elastic trace: decode free 434 MiB, 256 slots (0.42 GiB), room held 1014 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 1037 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 1030 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 2044 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 1115 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 2195 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 3259 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 1076 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 1077 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 2170 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 1113 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 2152 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 1024 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 1014 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 1024 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 1043 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 2082 ms
+strata elastic trace: decode free 562 MiB, 256 slots (0.42 GiB), room held 3129 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 1102 ms
+strata elastic trace: decode free 813 MiB, 256 slots (0.42 GiB), room held 2131 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 3153 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 4223 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1024 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 2070 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 3133 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1085 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1103 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1012 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1056 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 2102 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1043 ms
+strata elastic trace: decode free 937 MiB, 256 slots (0.42 GiB), room held 2122 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 3261 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 4353 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1068 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1070 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1039 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1042 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1092 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 2103 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1059 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 2134 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1033 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 2055 ms
+strata elastic trace: decode free 785 MiB, 256 slots (0.42 GiB), room held 1080 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 2117 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1039 ms
+strata elastic trace: decode free 534 MiB, 256 slots (0.42 GiB), room held 1074 ms
+strata elastic trace: decode free 4805 MiB, 256 slots (0.42 GiB), room held 1034 ms
+strata elastic trace: decode free 4805 MiB, 256 slots (0.42 GiB), room held 2063 ms
+strata elastic trace: decode free 4805 MiB, 256 slots (0.42 GiB), room held 3158 ms
+strata elastic trace: decode free 4805 MiB, 256 slots (0.42 GiB), room held 4214 ms
+strata elastic trace: decode free 4805 MiB, 256 slots (0.42 GiB), room held 5242 ms
+strata elastic: +308 experts (511 MiB) -> 564 slots, 0.92 GiB; 4293 MiB free
+strata elastic trace: decode free 4293 MiB, 564 slots (0.92 GiB), room held 1066 ms
+strata elastic trace: decode free 4293 MiB, 564 slots (0.92 GiB), room held 2077 ms
+strata elastic trace: decode free 4293 MiB, 564 slots (0.92 GiB), room held 3111 ms
+strata elastic trace: decode free 4293 MiB, 564 slots (0.92 GiB), room held 4195 ms
+strata elastic trace: decode free 4293 MiB, 564 slots (0.92 GiB), room held 5246 ms
+strata elastic: +306 experts (510 MiB) -> 870 slots, 1.42 GiB; 1974 MiB free
+strata elastic trace: decode free 1974 MiB, 870 slots (1.42 GiB), room held 1029 ms
+strata elastic trace: decode free 1974 MiB, 870 slots (1.42 GiB), room held 2127 ms
+strata elastic trace: decode free 1974 MiB, 870 slots (1.42 GiB), room held 3164 ms
+strata elastic trace: decode free 1974 MiB, 870 slots (1.42 GiB), room held 4195 ms
+strata elastic trace: decode free 1974 MiB, 870 slots (1.42 GiB), room held 5271 ms
+strata elastic: +307 experts (511 MiB) -> 1177 slots, 1.92 GiB; 1462 MiB free
+strata elastic trace: decode free 1462 MiB, 1177 slots (1.92 GiB), room held 1057 ms
+strata elastic trace: decode free 1462 MiB, 1177 slots (1.92 GiB), room held 2080 ms
+strata elastic trace: decode free 1462 MiB, 1177 slots (1.92 GiB), room held 3125 ms
+strata elastic trace: decode free 1462 MiB, 1177 slots (1.92 GiB), room held 4131 ms
+strata elastic trace: decode free 1462 MiB, 1177 slots (1.92 GiB), room held 5194 ms
+strata elastic: +305 experts (511 MiB) -> 1482 slots, 2.42 GiB; 950 MiB free
+strata elastic trace: decode free 950 MiB, 1482 slots (2.42 GiB), room held 1035 ms
+strata elastic trace: decode free 950 MiB, 1482 slots (2.42 GiB), room held 2143 ms
+strata elastic trace: decode free 950 MiB, 1482 slots (2.42 GiB), room held 3223 ms
+strata elastic trace: decode free 950 MiB, 1482 slots (2.42 GiB), room held 4288 ms
+strata elastic trace: decode free 950 MiB, 1482 slots (2.42 GiB), room held 5316 ms
+strata elastic: +153 experts (258 MiB) -> 1635 slots, 2.67 GiB; 694 MiB free
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1033 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1043 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1032 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1050 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1018 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1033 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1017 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1024 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1059 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1065 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1030 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1067 ms
+strata elastic trace: decode free 554 MiB, 1635 slots (2.67 GiB), room held 1018 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1089 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1050 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1068 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1000 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1011 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1064 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1029 ms
+strata elastic trace: decode free 545 MiB, 1635 slots (2.67 GiB), room held 1064 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1007 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1023 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1076 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1009 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1043 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1054 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1083 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1003 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1040 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1012 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1018 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1035 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1032 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1039 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1020 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1039 ms
+strata elastic trace: decode free 694 MiB, 1635 slots (2.67 GiB), room held 1006 ms
+strata serve: prompt 97 tokens = 0 reused + 97 read in 1735 ms (55.9 tok/s), 4096 generated in 146346 ms (28.0 tok/s), drafts accepted 2378 of 3185, 1 checkpoints
+strata serve: decode expert cache hit rate: 59.0% (1030820 hits / 1748167 lookups)
+strata serve: KV streaming: 99.95% of 23345736 block reads hit VRAM, 50.7 MiB read from RAM
+strata serve: suffix drafts: 56 windows, 79 of 124 drafts accepted

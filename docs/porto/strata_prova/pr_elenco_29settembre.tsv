@@ -1,0 +1,48 @@
+﻿102	open	false	midhatn	feat: optional RAM and VRAM guard for the server it launches
+101	open	false	eightman999	build: allow sm_70 (Volta) builds — the only sm_80+ dependency is unreferenced
+100	open	false	midhatn	fix: honor native per-layer layouts in file-backed expert loading
+96	open	false	djmaze	Add docker build
+94	open	false	2jztricks	Add experimental gfx1100 HIP backend for RX 7900 XTX
+92	open	false	Avicennasis	setup: name a missing or short shard with its numbers; verify reads back the manifest sha256
+91	open	false	Avicennasis	GGUF reader: refuse a duplicate tensor name at open, naming the tensor and the file
+89	open	false	dannychirkov	loader: bulk-read the expert arena and the MTP drafter (MSVC splits ifstream reads into 4095-byte calls)
+88	open	false	hireymage	Pascal port: lower the CUDA floor to sm_61 (GTX 10 series)
+87	open	false	hireymage	Turing port: run on RTX 20 (sm_75) and newer
+84	open	false	j-luwierski	EXPERIMENTAL Rope scaling: contexts past the trained 262K (none / linear / YaRN)
+83	open	false	mikicvi	serve: llama-server-style timings on responses (prefill/decode rates for llama-swap & friends)
+82	open	false	mikicvi	Web app works behind path-prefixed reverse proxies
+81	open	false	mikicvi	Accept sm_80+ GPUs at runtime, matching the build guard and the README
+80	open	false	andrewcoul	Add --tiered-experts: run with less RAM than the experts need (32 GB works)
+79	open	false	andrewcoul	linux: make DirectFile reads actually asynchronous
+69	closed	true	code-martin	telemetry: per-request decode expert cache hit rate in DONE and web monitor
+67	closed	true	acrogenesis	Support OrcaRouter IQ3_XXS with explicit BF16 compatibility packing
+65	closed	false	code-martin	cache: preserve root system prompt checkpoint across turns and eviction
+64	closed	true	pipeob0	parity tool: a new-kernel mismatch must fail the run; dispatch comment fallback was stale
+63	closed	true	alfirus	Fix Windows PermissionError in get_llama_cpp()
+62	closed	true	j-luwierski	serve: the conversation cache keeps its shared prefix; the rest rotates LRU
+61	closed	false	j-luwierski	text sampler: an empty penalty window must not touch the unsized shared bitmap
+59	closed	false	j-luwierski	Fix/53 sampler penalties. sampler: penalties apply once, as in llama.cpp's default chain (#53); guard the unsized penalty bitmap
+54	closed	true	pjgmobile	Support pruned expert variants (GSQ-RCO-Coder: 256 of 512 experts)
+52	open	false	maedoc	nvme kv cache
+50	closed	false	code-martin	tools: add mmproj quantization utility
+44	closed	true	pipeob0	generate: probe the real host->device bandwidth for pcie_frac
+43	closed	true	pipeob0	kernels: AVX2 multi-token i-quant row kernels (an AVX2-only CPU decoded every i-quant row once per token)
+42	closed	true	pipeob0	pinned: MEM_LARGE_PAGES on Windows never worked - enable the privilege, round the size
+41	open	false	midhatn	serve: preserve primary conversation state across auxiliary calls
+39	closed	false	code-martin	telemetry: decode-only cache hit rate, prompt checkpoint retention, and dashboard
+38	closed	false	code-martin	moe: continuous adaptive expert cache eviction with exponential decay
+37	closed	false	code-martin	core: elastic expert cache via CUDA VMM and on-demand GPU vision lifecycle
+24	closed	true	pjgmobile	serve: optional --fit-max-tokens clamps the output cap to remaining context instead of rejecting
+22	closed	false	code-martin	tools: add real-time web dashboard for hardware and engine monitoring
+21	closed	true	code-martin	kv: add Q4_0 KV cache mode with FWHT-256 Hadamard rotation
+19	closed	true	j-luwierski	serve: per-request temperature/top_p/top_k/min_p/penalties sampling
+18	closed	true	coolio986	serve: treat unset/-1 max_tokens as remaining context, not 1024
+16	closed	false	Daerdaal	Add optional multi-GPU expert caches and compact transfers
+15	closed	false	j-luwierski	generate: residual control-vector projection from GGUFs
+14	closed	true	Vistawizard	CPU pool: fix dangling else in Linux physical_cores() (fixes #13, root cause of #11)
+12	closed	false	chynggi	Fork: uncensored model choices (OrcaRouter, mradermacher, RVN) in the…
+10	closed	true	Mirtraxxx	serve: read short prompt parts through the decode windows (~1 s faster first token)
+9	closed	true	Mirtraxxx	CPU pool: sleep between requests instead of spinning (fixes #4)
+8	closed	true	Mirtraxxx	Conversation cache: keep the chat between requests, read only what is new
+7	closed	true	coolio986	serve: fix zero-token replies from engine-queue race between requests
+3	closed	false	noorazman	V100 (sm_70) support for the Qwen3.8-Flash-Next MoE engine

@@ -43,6 +43,8 @@ PROFILI = {
     # isolamento di una leva di Strata (corsia CPU, bozza): gli stessi casi del regime, meno lunghi
     "isola": ([(i, "ctx32k") for i in ("L01", "L02", "L03", "L04")] +
               [("L01", "ctx131k"), ("L02", "ctx131k"), ("C01", "corto")]),
+    # 29/9, curva esperti in VRAM -> velocita' (un punto per dimensione di cache)
+    "curva": ([(i, "ctx32k") for i in ("L01", "L02", "L03", "L04")] + [("L01", "ctx131k"), ("L02", "ctx131k")]),
 }
 BLOCCHI = {  # per il riassunto: nome -> etichette
     "32k_tutti": ["L0%d@ctx32k" % i for i in range(1, 9)],

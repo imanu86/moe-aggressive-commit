@@ -1,0 +1,42 @@
+﻿strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: D:\ds4_work\strata\Strata-data\packs\iq3_xxs experts (largest blob 2.33 MB), token embedding type 21 in mapped host memory (260 MiB)
+strata generate: 1466 MiB of weights loaded from D:\ds4_work\strata\Strata-data\packs\iq3_xxs (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1781.11 MiB of weights
+strata generate: KV streaming: 32768 of 139264 cells per QSA layer in VRAM, the K/V in 1.64 GiB of pinned RAM
+strata generate: PLE on, table 320001536 rows of C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf
+strata generate: expert arena: cudaHostRegister PORTABLE ok; large pages refused for 42916118528 B (GetLargePageMinimum=2097152, VirtualAlloc error 1314); using 4 KB pages
+strata generate: loaded 39.97 GiB at 1.10 GiB/s
+strata generate: profile D:\ds4_work\strata\Strata\data\expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: experimental native Q5_K head, 437043200 bytes
+strata generate: expert cache 788 slots, 1.30 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+strata generate: pre-filled 788 of 788 slots from the profile; slot 0 verified
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 7 expert-pool workers + the host thread
+strata generate: session is up (engine 0.1.18)
+strata generate: token graph hit path: 788 resident experts, decided on the device
+strata serve: prompt chunk auto: 1024 tokens
+strata serve: the prompt path borrows 439 cache slots (0.72 GiB)
+strata serve: 4111 MiB of VRAM free with everything loaded
+strata serve: prompt 61 tokens = 0 reused + 61 read in 2436 ms (25.0 tok/s), 8 generated in 861 ms (9.3 tok/s), drafts accepted 6 of 8, 1 checkpoints
+strata serve: KV streaming: 97.36% of 8172 block reads hit VRAM, 0.9 MiB read from RAM
+strata serve: prompt 61 tokens = 56 reused + 5 read in 233 ms (21.5 tok/s), 8 generated in 503 ms (15.9 tok/s), drafts accepted 6 of 8, 1 checkpoints
+strata serve: KV streaming: 98.09% of 11304 block reads hit VRAM, 0.9 MiB read from RAM
+strata serve: prompt 32944 tokens = 0 reused + 32944 read in 117501 ms (280.4 tok/s), 1024 generated in 43193 ms (23.7 tok/s), drafts accepted 556 of 707, 3 checkpoints
+strata serve: KV streaming: 98.99% of 7277352 block reads hit VRAM, 295.0 MiB read from RAM
+strata serve: suffix drafts: 28 windows, 83 of 94 drafts accepted
+strata serve: prompt 32935 tokens = 32768 reused + 167 read in 1899 ms (87.9 tok/s), 1024 generated in 67581 ms (15.2 tok/s), drafts accepted 396 of 549, 3 checkpoints
+strata serve: KV streaming: 99.43% of 14567100 block reads hit VRAM, 334.7 MiB read from RAM
+strata serve: suffix drafts: 6 windows, 5 of 10 drafts accepted
+strata serve: prompt 32935 tokens = 32768 reused + 167 read in 1933 ms (86.4 tok/s), 1024 generated in 54964 ms (18.6 tok/s), drafts accepted 449 of 628, 3 checkpoints
+strata serve: KV streaming: 99.61% of 22023096 block reads hit VRAM, 349.3 MiB read from RAM
+strata serve: suffix drafts: 15 windows, 63 of 68 drafts accepted
+strata serve: prompt 33029 tokens = 32768 reused + 261 read in 2298 ms (113.6 tok/s), 680 generated in 33867 ms (20.1 tok/s), drafts accepted 433 of 554, 3 checkpoints
+strata serve: KV streaming: 99.67% of 26983500 block reads hit VRAM, 356.2 MiB read from RAM
+strata serve: suffix drafts: 9 windows, 11 of 13 drafts accepted
+strata serve: prompt 131248 tokens = 32768 reused + 98480 read in 415913 ms (236.8 tok/s), 1024 generated in 50035 ms (20.5 tok/s), drafts accepted 504 of 691, 6 checkpoints
+strata serve: KV streaming: 99.18% of 34470288 block reads hit VRAM, 1140.4 MiB read from RAM
+strata serve: suffix drafts: 1 windows, 1 of 2 drafts accepted
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2073 ms (80.6 tok/s), 1024 generated in 55154 ms (18.6 tok/s), drafts accepted 421 of 591, 6 checkpoints
+strata serve: KV streaming: 98.91% of 41864688 block reads hit VRAM, 1839.4 MiB read from RAM
+strata serve: suffix drafts: 8 windows, 7 of 12 drafts accepted

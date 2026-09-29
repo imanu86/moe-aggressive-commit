@@ -54,7 +54,47 @@ casi pari entro il 2% (rumore), poi l'elastica vince: nel caso C01 la cache fiss
 proprio dove l'elastica ha visto la VRAM stringersi e ha ceduto 86 MiB in anticipo (lettura, non provata dai log
 della fissa: niente dice che Windows abbia spostato la sua VRAM). Totale -8,8% di costo per riga, +9% di t/s.
 
+## A/B rapido sotto carico (12:21-12:43, OktoCGControl acceso, l'utente al PC)
+Stesso profilo `rapido`, stessa riserva di avvio (1393), prima l'elastica e poi la fissa. Altri programmi: 2.907 MiB di
+VRAM al lancio dell'elastica, 2.146 al lancio della fissa. Durante l'elastica (12:31) la CPU era al 100%: Strata
+riceveva ~5,3 core (vuole 7 thread del pool + quello principale), OktoCGControl ~1 core e ~10% del decodificatore video,
+Jump Desktop ~7% del motore 3D. RAM disponibile 31-35 GB: il primo avvio ha caricato gli esperti a 0,10 GiB/s (398 s),
+il secondo a 0,98 GiB/s. Sonda PCIe 23,2 e 20,3 GB/s (26,3 a macchina ferma).
+
+Avvio: elastica 1.919 slot, blocco di prefill 4.096; fissa 1.732 slot (Windows: 0 MiB liberi al primo tentativo),
+blocco 3.072.
+
+| ms per riga (t/s) | L01 | L02 | L03 | L04 | C01 copia | totale |
+|---|---:|---:|---:|---:|---:|---:|
+| cache fissa | 85,4 (10,1) | 65,2 (12,9) | 61,7 (13,5) | 56,6 (15,2) | 51,8 (17,1) | 64,7 (13,2) |
+| cache elastica | 48,2 (17,7) | 60,8 (14,0) | 86,0 (9,4) | 49,8 (17,3) | 61,4 (14,7) | **62,3 (13,7)** |
+
+Colpi in cache: fissa 66,9 / 66,7 / 70,2 / 58,0 / 61,1%; elastica 73,0 / 69,7 / 73,2 / 62,2 / 64,7% (+3-6 punti con
+300-500 esperti in piu'). Prefill: fissa 14 / 42 / 42 / 47 / 112 t/s, elastica 60 / 76 / 76 / 114 / 333 t/s (C01: 38,0 s
+al primo token contro 12,9). Le prime due richieste della fissa sono state lentissime (61 token letti in 12 s, 8 generati
+a 2 t/s): compatibile con Windows che sposta in RAM parte della VRAM di una cache partita a 0 MiB liberi, non provato.
+
+**Lettura.** Sotto questo carico una riga costa quasi il doppio che a macchina quasi ferma (62-65 ms contro 34-37), con
+qualunque cache. Fra le due, −3,7% per riga per l'elastica: sotto la soglia del 5% e dentro un rumore di ±40% per caso,
+perche' il carico cambia di minuto in minuto (L01 85 contro 48, L03 61 contro 86). Il vantaggio netto qui e' il prefill:
+3 volte piu' veloce sul prompt da 4k. Il blocco (4.096 contro 3.072) non basta a spiegarlo.
+
+**Difetto: la cache elastica oscilla.** Con OktoCGControl la VRAM libera letta da `cudaMemGetInfo` si muove di ±200-300 MiB
+in pochi secondi. In 13 minuti: 10 crescite (+57...+306 esperti, 1.172 in tutto) e 13 restringimenti (−42...−180 slot,
+994 in tutto; 560 caldi spostati, 434 usciti); VRAM libera dopo ogni passo fra 303 e 856 MiB. Il margine di crescita
+(192 MiB) e' piu' stretto del rumore e la crescita arriva fin sulla soglia di restringimento: ciclo limite. Non si vede
+nel costo per riga, ma butta via esperti caldi e banda.
+
+**Il collo sotto carico e' la CPU, non la cache** (ipotesi da provare): il pool di Strata vuole 7 thread + 1 su 8 core
+fisici e la finestra aspetta il piu' lento; con 2-3 core presi da altri, un thread fermo dallo scheduler ferma la
+passata. E' la F2b del piano.
+
 ## Da fare
+- Elastica senza oscillazioni: margine di crescita piu' largo del rumore misurato (massimo meno minimo delle letture
+  recenti), crescita sul minimo della finestra e fino a riserva + margine, attesa crescente dopo ogni restringimento;
+  lettura del budget WDDM (DXGI) come nel nostro M2.
+- F2b: thread del pool e ripartizione CPU/PCIe adattivi alla CPU libera. Prima misurare la passata sotto carico:
+  quanto aspetta il GPU il pool CPU.
 - Nessun controllo durante un prefill lungo (131k ≈ 4-5 minuti): la coda e' prestata; un restringimento li' va studiato.
-- La VRAM «libera» e' `cudaMemGetInfo`; il budget WDDM (DXGI) del nostro M2 sarebbe una lettura migliore.
-- A/B a regime contro la cache fissa senza pressione (profilo `regime`), e con Jump Desktop acceso.
+- A/B a regime contro la cache fissa senza pressione (profilo `regime`).
+- Il daily sugli stessi prompt nello stesso momento, per il confronto sotto carico.

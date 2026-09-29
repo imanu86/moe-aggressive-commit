@@ -38,6 +38,22 @@ Con `--vram-reserve-mib 2000` l'avvio si ferma a ~1.080 slot (la lettura di Wind
 la cache elastica cresce dopo il carico e il blocco di prefill risale (prefill 292 → 404 t/s dopo la correzione di
 `chunk_max`). Con la riserva di esercizio a 700 + 256 di margine si fermava a ~1.390 slot: portata a 500 + 192.
 
+## A/B rapido a macchina quasi ferma (11:01-11:11, OktoCGControl e quasi tutto spento)
+Profilo `rapido` (L01-L04 corti + C01 copia di codice, 1024 token), riserva di avvio 1393 per entrambi, altri
+programmi a ~1,78 GB. Entrambi gli avvii hanno pescato il biglietto basso (Windows: 0 MiB liberi al primo tentativo →
+1.477 e 1.452 esperti). L'elastica e' cresciuta dopo il carico (+194 → 1.646) e al prompt di C01 ha restituito 52 slot
+(33 caldi spostati) quando la VRAM libera e' scesa sotto 500 MiB.
+
+| ms per riga (t/s) | L01 | L02 | L03 | L04 | C01 copia | totale |
+|---|---:|---:|---:|---:|---:|---:|
+| cache fissa | 32,6 (25,8) | 36,1 (23,1) | 35,1 (23,3) | 34,4 (25,4) | **49,4 (18,5)** | 37,5 (22,7) |
+| cache elastica | 33,2 (24,8) | 36,9 (22,3) | 35,5 (23,9) | 32,2 (26,7) | **32,5 (27,5)** | **34,2 (24,8)** |
+
+Colpi in cache: fissa 65,9 / 62,3 / 66,7 / 55,7 / 59,9%; elastica 67,6 / 66,3 / 67,7 / 55,9 / 61,9%. Sui primi tre
+casi pari entro il 2% (rumore), poi l'elastica vince: nel caso C01 la cache fissa ha pagato il 52% in piu' per riga
+proprio dove l'elastica ha visto la VRAM stringersi e ha ceduto 86 MiB in anticipo (lettura, non provata dai log
+della fissa: niente dice che Windows abbia spostato la sua VRAM). Totale -8,8% di costo per riga, +9% di t/s.
+
 ## Da fare
 - Nessun controllo durante un prefill lungo (131k ≈ 4-5 minuti): la coda e' prestata; un restringimento li' va studiato.
 - La VRAM «libera» e' `cudaMemGetInfo`; il budget WDDM (DXGI) del nostro M2 sarebbe una lettura migliore.

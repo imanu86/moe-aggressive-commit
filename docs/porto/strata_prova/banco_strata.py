@@ -47,6 +47,8 @@ PROFILI = {
     "curva": ([(i, "ctx32k") for i in ("L01", "L02", "L03", "L04")] + [("L01", "ctx131k"), ("L02", "ctx131k")]),
     # 29/9, F0: i prompt che ADDESTRANO il profilo degli esperti (mai usati nella misura) ...
     "addestra": ([("S%02d" % i, "corto") for i in range(1, 11)] + [(i, "corto") for i in ("L05", "L06", "L07", "L08")]),
+    # 29/9, A/B rapido (macchina libera, ~3 minuti per motore): solo prompt corti, niente prefill lunghi
+    "rapido": ([(i, "corto") for i in ("L01", "L02", "L03", "L04")] + [("C01", "corto")]),
     # ... e quelli che lo MISURANO (disgiunti dai precedenti)
     "f0": ([(i, "ctx32k") for i in ("L01", "L02", "L03", "L04")] + [("L01", "ctx131k"), ("L02", "ctx131k"),
                                                                     ("C01", "corto"), ("C02", "corto")]),

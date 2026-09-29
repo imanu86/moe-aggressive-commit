@@ -50,7 +50,7 @@ def args_punto(extra):
 
 
 def ferma():
-    for filtro in ('name="strata.exe"', 'name="python.exe" and commandline like "%serve\\\\server.py%curva_%"'):
+    for filtro in ('name="strata.exe"', 'name="python.exe" and commandline like "%serve\\\\server.py%--engine strata%"'):
         subprocess.run(["powershell", "-NoProfile", "-Command",
                         f"Get-CimInstance Win32_Process -Filter '{filtro}' | ForEach-Object {{ Stop-Process -Id $_.ProcessId -Force }}"],
                        capture_output=True)

@@ -27,6 +27,14 @@ anche la versione nuova occupa VRAM dopo aver dimensionato la cache. Colpi in ca
 italiano: **48,9%** con 2.114 esperti (il nostro daily sui casi lunghi: 69-83%). `--calibrate` (0.1.19) misura una volta
 tre impostazioni legate all'hardware; non segue la giornata e non tocca il profilo degli esperti.
 
+Ricerca sui fork e sulle novita' dell'originale: `RICERCA_FORK_29_SETTEMBRE.md`. Da li': la cache elastica funzionante
+non l'ha fatta nessuno (dalla PR #37 si riusano solo le chiamate VMM); 250K e' gia' dimostrato sul nostro file (fork
+RX5950XT: 31,9 t/s a 261K con 16 GB, RAM di picco 78-80 GB); `--prefill 8192` esplicito aggira il difetto dei punti di
+ripresa; il layer split della 0.1.21 spegne il KV streaming.
+
+**Patch del fork** (clone, main locale; copie in `patches/`):
+- `0001` — la traccia di instradamento (`--dump-routing`) scritta anche nelle finestre di verifica: col server era vuota.
+
 ## Ordine
 
 0. **F0 (ore):** profilo degli esperti dal NOSTRO lavoro (italiano, codice, agenti): `--dump-routing` sui nostri prompt

@@ -1,0 +1,41 @@
+From f1cd216f699bfdc5ad36e40e1962b1637b0f674f Mon Sep 17 00:00:00 2001
+From: imanu <imanu86@gmail.com>
+Date: Tue, 29 Sep 2026 07:41:48 +0200
+Subject: [PATCH] OPUS-ENGINE-Scrivi la traccia di instradamento anche nelle
+ finestre di verifica
+
+Con --serve il motore decodifica solo con finestre di verifica, e --dump-routing era scritto soltanto da drive_pool (token singolo): una sessione servita lasciava la traccia vuota. drive_pool_multi scrive lo stesso record per ogni riga della finestra (bozze comprese, pesi a 0) e fa flush per strato, cosi' la traccia sopravvive a un motore chiuso bruscamente. Serve per costruire il profilo degli esperti dall'uso reale (tools/make_profile.py).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/program/generate.cpp | 14 ++++++++++++++
+ 1 file changed, 14 insertions(+)
+
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 0364a73..6ee4d28 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -513,6 +513,20 @@ void drive_pool_multi(void* user, const float* x_f, const int32_t* ids, int64_t
+     strata::core::expert_pool_dispatch_multi(t->d, x_f, ids, n_tok, k, out);
+     t->cpu_ms += std::chrono::duration<double, std::milli>(Clock::now() - a).count();
+     ++t->calls;
++    // The routing trace in verify windows too (`--serve` decodes only through them, so a served session wrote an
++    // empty trace).  Same record as `drive_pool`, one per row of the window (drafts included: the cache serves them
++    // as well); the window carries no router weights here, so they are written as 0 - tools/make_profile.py skips
++    // them.  Flushed per layer: a served engine usually ends by being killed, and the trace must survive that.
++    if (t->routing != nullptr && layer >= 0 && layer < 48) {
++        static const float zeros[64] = {};
++        for (int64_t r = 0; r < n_tok; ++r) {
++            const int32_t rec[2] = {(int32_t) layer, (int32_t) k};
++            std::fwrite(rec, sizeof rec, 1, t->routing);
++            std::fwrite(ids + r * k, sizeof(int32_t), (size_t) k, t->routing);
++            std::fwrite(zeros, sizeof(float), (size_t) std::min<int64_t>(k, 64), t->routing);
++        }
++        std::fflush(t->routing);
++    }
+ }
+ 
+ /// Layer split: every verify stage shares one Drive (its counters, usage and failure flags); the GPU plan, the expert
+-- 
+2.54.0.windows.1
+

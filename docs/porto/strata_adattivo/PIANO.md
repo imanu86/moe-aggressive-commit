@@ -64,6 +64,14 @@ primo tentativo) e una riga e' costata 32,4 ms invece di 26,8. Dimensionare una 
 4. **F3:** speculazione adattiva dai costi misurati.
 5. **F4:** 262K; seconda GPU (2080 Ti) col layer split della 0.1.21 e la cache elastica per GPU.
 
+**Stato al 29/9 pomeriggio: fermo per decisione dell'utente.** Il confronto che voleva (Strata, Strata elastica, daily)
+ha i suoi dati: `RISULTATI_ELASTICO_29_SETTEMBRE.md` e `../strata_prova/RISULTATI_28_SETTEMBRE.md`. Aperti:
+l'oscillazione dell'elastica sotto carico e l'ipotesi del pool CPU come collo con gli altri programmi accesi (F2b).
+Hardware in arrivo: la 2080 Ti da 22 GB si aggiunge e la 3060 resta, in OCuLink da uno slot M.2 (34 GB di VRAM in
+tutto). Gli esperti sono 40 GiB (24.576, ~1,69 MiB per slot): tolti la parte fissa del motore (~6,6 GiB con una GPU),
+gli altri programmi e le riserve ne entrano circa 13-16 mila, piu' della meta', e la parte su CPU diventa piccola. Con la
+seconda GPU la F4 cambia peso: da ripianificare quando la macchina c'e'.
+
 Ogni passo: A/B col profilo `regime` contro la versione senza la modifica, stesso momento della giornata, VRAM e CPU
 degli altri programmi registrate; si tiene solo sopra il 5% (o se toglie un guasto).
 

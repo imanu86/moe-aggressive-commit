@@ -63,6 +63,24 @@ VRAM e 0,9-1,1 core di CPU (registrati). Prima B (il candidato), poi A e C per c
   29/9: 24-27,5 contro 15-17 t/s).
 - **Configurazione migliore oggi: C** = `build-0129` + `--elastic`, riserva di avvio 1393.
 
+## Cache a due zone (patch 0004, clone 30657c4; 19:00-19:03, stessi prompt)
+Nucleo = i primi slot riempiti dal profilo (mai scelti dagli scambi, mai ristretti, mai prestati); coda =
+`--elastic-tail-mib` (predefinito min(6144, meta' della cache)), l'unica che ruota, cala a passi di
+`--elastic-shrink-step-mib` (1024) e si presta al prefill. Crescita sul minimo della finestra con margine = rumore
+misurato; un calo entro 60 s da una crescita raddoppia l'attesa (fino a 8x), 5 minuti tranquilli la riportano a 1x.
+
+Avvio: 6.759 slot → **nucleo 3.347 (5,46 GiB), coda 3.412 (5,46 GiB)**. Durante le 5 richieste: +276, −241 (100 caldi
+spostati), +77 (con 1.205 MiB liberi: margine largo), poi fermo.
+
+| | L01 | L02 | L03 | L04 | C01 | totale t/s |
+|---|---:|---:|---:|---:|---:|---:|
+| D: due zone | 45,3 | 41,2 | 43,1 | 46,9 | 46,5 (prefill 672) | **44,3** |
+| A: fissa | 44,2 | 42,2 | 43,4 | 47,2 | 49,9 (662) | 45,1 |
+| C: elastica | 43,5 | 41,4 | 44,0 | 45,3 | 43,5 (644) | 43,4 |
+
+A regime le tre sono pari (entro il rumore). Resta un piccolo ciclo all'inizio delle richieste (+300/−240): a inizio
+richiesta qualcosa occupa 300-500 MiB di VRAM in piu' (da capire: grafi delle finestre? punti di ripresa?).
+
 ## L'originale e i fork al 30/9 pomeriggio
 Originale: da 0.1.21 a **0.1.29** in due giorni. Per noi: supporto ufficiale RTX 20 (0.1.27), cache su WDDM a passi da
 1 GiB (0.1.28), risposte campionate fino al 40% piu' veloci (0.1.29), prompt 4-28% piu' veloci (0.1.25-26), modalita'

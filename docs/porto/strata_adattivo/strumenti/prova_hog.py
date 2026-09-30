@@ -34,9 +34,14 @@ def main():
     ap.add_argument("--hog-at", type=float, default=20.0)
     ap.add_argument("--hog-secs", type=int, default=60)
     ap.add_argument("--max-tokens", type=int, default=4096)
+    # 30/9: altro eseguibile (es. build-0129) e nome della corsa
+    ap.add_argument("--exe", default=None)
+    ap.add_argument("--nome", default=None)
     a = ap.parse_args()
+    if a.exe:
+        C.BASE["exe"] = a.exe
     OUT.mkdir(parents=True, exist_ok=True)
-    nome = f"hog_{a.elastico}"
+    nome = a.nome or f"hog_{a.elastico}"
     args = [x for x in C.BASE["args"]]
     i = args.index("--vram-reserve-mib")
     args[i + 1] = "1393"

@@ -57,6 +57,11 @@ Dettagli: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTEMBRE.m
 
 ## Prossimi passi
 1. (Fatto 18:35: 0.1.29 + patch = +19% per riga; configurazione C.)
-2. Cache a due zone sopra 0003 (scambi solo nella coda, tetto 6 GB, crescita e calo a passi) + correzione oscillazione.
+2. (Fatto 19:03: **cache a due zone, patch 0004**, clone 30657c4, `patches/su-0.1.29/0004-...`: 44,3 t/s, pari a fissa ed
+   elastica a regime.) **In corso 19:05: prova sotto pressione** `strumenti/prova_hog.py --elastico si --exe
+   ...build-0129\strata.exe --hog-mib 4000 --nome hog_duezone_4g` (hog.exe ricompilato sm_75+86): verificare calo a
+   passi da 1 GiB, nucleo intatto, ricrescita senza oscillazioni.
+2b. F2 subito dopo: la 0.1.29 ha gia' `--prompt-cache 6` (catena di punti di ripresa su UNA storia, radice = fine del
+   prompt di sistema, bloccata); manca salvare/rimettere la KV di ogni conversazione (1,4 GB ogni 100k token in int8).
 3. Copia in RAM del nucleo: verificare prima se il prefill legge dalla RAM anche gli esperti residenti.
 4. Poi: profilo lungo (~100k), F2 (piu' conversazioni), disposizione a due schede.

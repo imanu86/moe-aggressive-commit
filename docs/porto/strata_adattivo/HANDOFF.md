@@ -61,6 +61,16 @@ Dettagli: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTEMBRE.m
    si presta al prefill; il resto sulla CPU.
 3. Riserva piccola (500 MiB): col KV streaming 1,4 GB liberi sono troppi.
 4. Con l'OCuLink: 2080 Ti piena e fissa (~20 strati interi) + 3060 sul PCIe 4.0 con la cache che ruota.
+4a. **Esperti divisi fra le due schede (idea dell'utente, 30/9 sera): esiste gia' nell'originale**, «CUDA1–3 expert
+   experiment» (`docs/SECOND_GPU.md` del clone; `--expert-cache-device1 N`, `--expert-cache-remote-placement
+   stripe|layer`): CUDA0 = densi, KV, MTP e la sua cache; CUDA1 (la 3060) = una cache di esperti in piu' (~10 GB, ~6.000
+   esperti: ~13.000 in VRAM in tutto contro 6.800); ogni strato manda lo stato (~25 KB) alla seconda scheda e aspetta i
+   suoi risultati via RAM bloccata (niente P2P: va bene l'OCuLink). Sperimentale, nessuna misura pubblicata; prefill solo
+   su CUDA0; su Windows la registrazione dell'arena si ferma a 8 GiB; la nostra elastica vale solo per CUDA0. Da misurare
+   con l'OCuLink: una scheda / esperti divisi / strati divisi, stessi prompt.
+4b. Idea dell'utente (30/9 sera): doppioni degli esperti. Su UNA scheda no (stessa banda, meno esperti diversi →
+   meno colpi). Con due schede si': i piu' caldi su entrambe e una conversazione per scheda in parallelo (agente
+   principale + subagente) = throughput ×2 con piu' agenti; dividere i token della stessa finestra fra le schede no.
 5. Limiti noti di Strata: una sola conversazione in cache (F2: issue #57, PR #41/#52), nessuna cache su disco.
 6. Difetto aperto dell'elastica 0003: oscilla quando la VRAM libera ha rumore (margine 192 MiB < ±300).
 
@@ -88,8 +98,10 @@ restare identico bit per bit); (2) piu' righe per warp. Obiettivo: da ~58 a 150-
 **(1) FATTO (22:09, patch 0007, clone «Decodifica una volta i pesi...»):** `native_gu_multi_kernel` /
 `native_down_multi_kernel` (+ `vdm_*` e `row_dot_multi` in `iq_kernels.cu`), uscite IDENTICHE bit per bit; banco strato 20:
 1 token 255→259 us, 2 token ×1,30, 3 ×1,51, 4 ×1,63 (strati 0 e 47: ×1,35 e ×1,49 a 3 token). `STRATA_EXPERT_MULTI=0` =
-kernel originali. **In corso 22:10:** A/B sul motore (stessi prompt, `k_multi_on` poi `k_multi_off`): nella finestra
-reale le coppie per gruppo sono ~1,3, il guadagno vero si vede solo li'.
+kernel originali. **A/B sul motore (22:09-22:20) NON VALIDO:** Jump Desktop (`JumpConnect.exe`) prendeva 4,2-4,5 core e
+il 32% del motore 3D della GPU (utente collegato da remoto): 42,8 ms per riga (nuovo) e 38,0 (vecchio) contro 18,9 del
+pomeriggio, pool CPU 42-46 ms per finestra contro 13,7. **Da rifare a macchina ferma** (senza Jump). Risultato
+collaterale: con Jump collegato Strata va a meta' velocita'.
 Vecchio blocco (21:45): `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
 l'utente deve abilitarli (Pannello NVIDIA → Desktop → Abilita impostazioni sviluppatore → Sviluppatore → Gestisci
 contatori di prestazioni GPU → Consenti a tutti gli utenti) oppure lanciare ncu da amministratore. Poi:

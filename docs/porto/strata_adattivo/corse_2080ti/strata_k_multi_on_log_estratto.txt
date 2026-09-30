@@ -1,0 +1,78 @@
+strata generate: PCIe probe: 12.2 GB/s host->device -> pcie_frac 0.26 (default 0.55)
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: D:\ds4_work\strata\Strata-data\packs\iq3_xxs experts (largest blob 2.33 MB), token embedding type 21 in mapped host memory (260 MiB)
+strata generate: 1466 MiB of weights loaded from D:\ds4_work\strata\Strata-data\packs\iq3_xxs (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1781.11 MiB of weights
+strata generate: KV streaming: 32768 of 139264 cells per QSA layer in VRAM, the K/V in 1.64 GiB of pinned RAM
+strata generate: PLE on, table 320001536 rows of C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf
+strata mtp: draft layer loaded, 835 MiB of VRAM (experts 675, dense 111), files read in 1.87 s (421 MiB/s)
+strata generate: expert arena: cudaHostRegister PORTABLE ok; large pages refused for 42916118528 B (GetLargePageMinimum=2097152, VirtualAlloc error 1314); using 4 KB pages
+strata generate: loaded 39.97 GiB at 1.05 GiB/s
+strata generate: profile D:\ds4_work\strata\Strata\data\expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: experimental native Q5_K head, 437043200 bytes
+strata generate: expert cache auto: 15.46 GiB free, 1393 MiB reserved (+73 MiB for the draft head) -> 6464 slots
+strata generate: only 0 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: only 521 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: expert cache 7231 slots, 11.68 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: pre-filled 7231 of 7231 slots from the profile; slot 0 verified
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 7 expert-pool workers + the host thread
+strata generate: session is up (engine 0.1.29)
+strata generate: token graph hit path: 7231 resident experts, decided on the device
+strata serve: prompt chunk auto: 8192 tokens
+strata serve: the prompt path borrows 2778 cache slots (4.44 GiB)
+strata verify: window up to 6 tokens, 69.7 MiB of device buffers
+strata mtp: draft head over 40525 tokens (68.0 MiB)
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (7231 slots now, 11.68 GiB, chunks of 64 MiB)
+strata elastic: two zones - core 3583 slots (5.84 GiB, fixed), tail 3648 slots (5.84 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)
+strata serve: 1149 MiB of VRAM free with everything loaded
+strata verify: captured the 6-token window (upload no error, sync no error)
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata verify: captured the 1-token window (upload no error, sync no error)
+strata verify: captured the 3-token window (upload no error, sync no error)
+strata serve: prompt 61 tokens = 0 reused + 61 read in 3457 ms (17.6 tok/s), 8 generated in 648 ms (12.3 tok/s), drafts accepted 6 of 8, 1 checkpoints
+strata serve: decode expert cache hit rate: 64.3% (3473 hits / 5405 lookups)
+strata serve: stage 0: 15 windows; per window: wait for the GPU 85.022 ms, pool + plan 133.617 ms, host staging 22.295 ms, commit 1.643 ms
+strata serve: KV streaming: 97.36% of 8172 block reads hit VRAM, 0.9 MiB read from RAM
+strata serve: prompt 61 tokens = 56 reused + 5 read in 192 ms (26.0 tok/s), 8 generated in 357 ms (22.4 tok/s), drafts accepted 6 of 6, 1 checkpoints
+strata serve: decode expert cache hit rate: 73.9% (3045 hits / 4123 lookups)
+strata serve: stage 0: 19 windows; per window: wait for the GPU 74.029 ms, pool + plan 123.673 ms, host staging 18.362 ms, commit 1.517 ms
+strata serve: KV streaming: 97.98% of 10692 block reads hit VRAM, 0.9 MiB read from RAM
+strata elastic: +199 experts (335 MiB) -> 7430 slots, 12.01 GiB; 649 MiB free
+strata elastic: -307 slots (250 moved in, 57 out) -> 7123 slots, 11.50 GiB; 556 MiB free, prompt chunk 8192
+strata elastic: -108 slots (61 moved in, 47 out) -> 7015 slots, 11.33 GiB; 581 MiB free, prompt chunk 8192
+strata elastic: -140 slots (61 moved in, 79 out) -> 6875 slots, 11.10 GiB; 586 MiB free, prompt chunk 8192
+strata serve: prompt 145 tokens = 0 reused + 145 read in 2704 ms (53.6 tok/s), 1024 generated in 46821 ms (21.9 tok/s), drafts accepted 499 of 688, 1 checkpoints
+strata serve: decode expert cache hit rate: 86.6% (493923 hits / 570137 lookups)
+strata serve: stage 0: 545 windows; per window: wait for the GPU 35.930 ms, pool + plan 39.929 ms, host staging 9.274 ms, commit 1.317 ms
+strata serve: KV streaming: 99.85% of 2389380 block reads hit VRAM, 14.1 MiB read from RAM
+strata serve: suffix drafts: 4 windows, 4 of 14 drafts accepted
+strata serve: prompt 136 tokens = 0 reused + 136 read in 2178 ms (62.4 tok/s), 1024 generated in 49642 ms (20.6 tok/s), drafts accepted 421 of 642, 1 checkpoints
+strata serve: decode expert cache hit rate: 88.1% (518604 hits / 588336 lookups)
+strata serve: stage 0: 1150 windows; per window: wait for the GPU 35.574 ms, pool + plan 35.231 ms, host staging 8.228 ms, commit 1.391 ms
+strata serve: KV streaming: 99.85% of 2397780 block reads hit VRAM, 14.1 MiB read from RAM
+strata serve: suffix drafts: 4 windows, 2 of 5 drafts accepted
+strata elastic: -112 slots (62 moved in, 50 out) -> 6763 slots, 10.93 GiB; 578 MiB free, prompt chunk 8192
+strata elastic: -73 slots (41 moved in, 32 out) -> 6690 slots, 10.82 GiB; 518 MiB free, prompt chunk 8192
+strata elastic: -52 slots (32 moved in, 20 out) -> 6638 slots, 10.74 GiB; 1764 MiB free, prompt chunk 8192
+strata serve: prompt 136 tokens = 0 reused + 136 read in 2840 ms (47.9 tok/s), 1024 generated in 59086 ms (17.3 tok/s), drafts accepted 406 of 609, 1 checkpoints
+strata serve: decode expert cache hit rate: 86.7% (500975 hits / 577711 lookups)
+strata serve: stage 0: 1769 windows; per window: wait for the GPU 39.357 ms, pool + plan 34.171 ms, host staging 7.812 ms, commit 1.527 ms
+strata serve: KV streaming: 99.86% of 2403300 block reads hit VRAM, 14.0 MiB read from RAM
+strata serve: prompt 230 tokens = 0 reused + 230 read in 2952 ms (77.9 tok/s), 689 generated in 38477 ms (17.9 tok/s), drafts accepted 453 of 573, 1 checkpoints
+strata serve: decode expert cache hit rate: 71.5% (261187 hits / 365219 lookups)
+strata serve: stage 0: 2006 windows; per window: wait for the GPU 40.730 ms, pool + plan 41.079 ms, host staging 7.895 ms, commit 1.521 ms
+strata serve: KV streaming: 99.80% of 1400304 block reads hit VRAM, 11.1 MiB read from RAM
+strata serve: suffix drafts: 13 windows, 19 of 33 drafts accepted
+strata elastic: +135 experts (224 MiB) -> 6773 slots, 10.96 GiB; 2020 MiB free
+strata verify: captured the 5-token window (upload no error, sync no error)
+strata serve: prompt 4247 tokens = 0 reused + 4247 read in 15926 ms (266.7 tok/s), 1024 generated in 48200 ms (21.2 tok/s), drafts accepted 653 of 801, 1 checkpoints
+strata serve: decode expert cache hit rate: 77.9% (418365 hits / 536796 lookups)
+strata serve: stage 0: 2378 windows; per window: wait for the GPU 41.260 ms, pool + plan 45.641 ms, host staging 7.309 ms, commit 1.495 ms
+strata serve: KV streaming: 99.78% of 7246416 block reads hit VRAM, 63.7 MiB read from RAM
+strata serve: suffix drafts: 71 windows, 191 of 207 drafts accepted

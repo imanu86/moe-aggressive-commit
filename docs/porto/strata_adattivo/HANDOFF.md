@@ -85,6 +85,11 @@ cresce con le coppie token-esperto (~14 us l'una), non coi byte:** `native_gu_ke
 con 1 token un warp fa una riga sola (~2,5 pezzi per lane: latenza scoperta). **Lavoro in corso (22:15):** (1) prodotto
 multi-token (decodifica una volta, prodotti per tutti i token del gruppo; formati 16/17/21/22 gate/up, 20/42 down, deve
 restare identico bit per bit); (2) piu' righe per warp. Obiettivo: da ~58 a 150-200 GB/s effettivi = +10-20% complessivo.
+**(1) FATTO (22:09, patch 0007, clone «Decodifica una volta i pesi...»):** `native_gu_multi_kernel` /
+`native_down_multi_kernel` (+ `vdm_*` e `row_dot_multi` in `iq_kernels.cu`), uscite IDENTICHE bit per bit; banco strato 20:
+1 token 255→259 us, 2 token ×1,30, 3 ×1,51, 4 ×1,63 (strati 0 e 47: ×1,35 e ×1,49 a 3 token). `STRATA_EXPERT_MULTI=0` =
+kernel originali. **In corso 22:10:** A/B sul motore (stessi prompt, `k_multi_on` poi `k_multi_off`): nella finestra
+reale le coppie per gruppo sono ~1,3, il guadagno vero si vede solo li'.
 Vecchio blocco (21:45): `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
 l'utente deve abilitarli (Pannello NVIDIA → Desktop → Abilita impostazioni sviluppatore → Sviluppatore → Gestisci
 contatori di prestazioni GPU → Consenti a tutti gli utenti) oppure lanciare ncu da amministratore. Poi:

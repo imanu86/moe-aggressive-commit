@@ -89,8 +89,15 @@ attenzione del daily (Strata ha i suoi).
    **Quota PCIe 0,5 NON paga (19:30):** 23,8 ms per riga contro 18,9 (35,8 t/s): la GPU legge dal PCIe 3.0 piu' lenta
    (attesa 34,8 ms) e la preparazione sale da 0,7 a 9,0 ms per finestra; la sonda (0,28) ha ragione. Le manopole
    dell'originale sono gia' all'ottimo: il margine e' DENTRO i 24 ms di GPU per finestra (i byte ne valgono ~6).
-   **In corso 19:33:** profilo Nsight Systems (`C:\Program Files\NVIDIA Corporation\Nsight Systems 2024.5.1\
-   target-windows-x64\nsys.exe`, `--cuda-graph-trace=node`, 15 s a meta' decodifica) → kernel piu' costosi.
+   **Profilo Nsight (19:37, `strumenti/prova_nsys_cli.py`: strata.exe da riga di comando, prompt L01; dietro il server
+   nsys non vede il figlio):** ripartizione del tempo GPU: `wait_flag_ge_kernel` 16,3% (la GPU aspetta la CPU),
+   `fetch_blobs_kernel` 7,7% (esperti via PCIe), esperti in VRAM `gr_up/down_multi` 12,7%, pesi densi ~30%; ~590
+   kernel per finestra (12 per strato). La cattura ha preso anche la fine della generazione: le percentuali di utilizzo
+   non valgono, la ripartizione si'. **Conclusione:** ~1/4 del tempo GPU e' legato ai mancanti (scende con piu' VRAM:
+   3060 in OCuLink); il resto e' fusione di kernel, che l'originale sta facendo (0.1.25→0.1.29 +19% per riga):
+   riallinearsi spesso invece di rifarla. Il fork punta su adattivita' e memoria.
+4. **Prossimo (proposto 19:40): F2, piu' conversazioni** (salvare/rimettere la KV per conversazione sopra la
+   `--prompt-cache` della 0.1.29).
    Prima prova (quota PCIe):
    Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X --env STRATA_SPLIT_TIMING=1
    --arg --pcie-frac=0.5` (`--arg K=V` sostituisce o aggiunge un argomento del motore).

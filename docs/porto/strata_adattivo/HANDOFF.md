@@ -83,9 +83,12 @@ attenzione del daily (Strata ha i suoi).
 3. **Tempi della finestra misurati (19:21, `STRATA_SPLIT_TIMING=1`, stessi prompt, 45,1 t/s):** finestra ~45 ms =
    CPU che aspetta la GPU 24,3 (54%) + GPU che aspetta la CPU per gli esperti mancanti 13,7 (30%) + preparazione e commit
    1,7 + resto ~5,7 (testa MTP, lancio). La GPU lavora 24 ms dove i byte valgono ~6: il costo e' fisso per strato, non nei
-   byte. **In corso 19:22:** `--spec-min-p 0.3` (bozze piu' lunghe: una riga in piu' costa poco), poi `--pcie-frac 0.5`
-   contro lo 0,28 della sonda. Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X`
-   + gli argomenti del motore (per ora a mano in `prova_sm75.py`, vedi sotto).
+   byte. **Bozze piu' lunghe NON pagano (19:25):** `--spec-min-p 0.3` = 2,40 token e 3,36 righe per finestra, 55,6 ms,
+   43,2 t/s contro 45,1: una riga in piu' costa ~10,7 ms, la parte fissa ~19,6 ms per finestra (0,4 ms per strato), le
+   bozze aggiunte passano al 37% → 0,5 e' gia' vicino all'ottimo, la F3 adattiva vale al massimo pochi punti.
+   **In corso 19:26:** `--pcie-frac 0.5` contro lo 0,28 della sonda (la GPU aspetta la CPU per il 30% della finestra).
+   Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X --env STRATA_SPLIT_TIMING=1
+   --arg --pcie-frac=0.5` (`--arg K=V` sostituisce o aggiunge un argomento del motore).
 2b. F2 subito dopo: la 0.1.29 ha gia' `--prompt-cache 6` (catena di punti di ripresa su UNA storia, radice = fine del
    prompt di sistema, bloccata); manca salvare/rimettere la KV di ogni conversazione (1,4 GB ogni 100k token in int8).
 3. Copia in RAM del nucleo: verificare prima se il prefill legge dalla RAM anche gli esperti residenti.

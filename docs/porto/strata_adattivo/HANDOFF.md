@@ -80,9 +80,12 @@ attenzione del daily (Strata ha i suoi).
    elastica a regime.) **Sotto pressione (4 GB per 60 s) fatto 19:15:** calo in 4 passi da ~1 GiB con la patch 0005
    (lettura 0 = passo pieno), nucleo intatto, niente oscillazioni; 4.096 token in 95,9 s (3060: 146/170 s).
    Clone: main = 0.1.29 + 0001-0005 (ultimo commit: «Con una lettura di 0 MiB cala di un passo intero»).
-3. **Prossimo (proposto all'utente 19:15):** misurare dove va il tempo della passata con `STRATA_SPLIT_TIMING=1`
-   (attesa della GPU, pool CPU, preparazione, commit per finestra), poi o sincronizzazione per strato (lezione DS4:
-   rendezvous 23,4%) o speculazione tarata sui costi (`--spec-min-p` 0,3-0,4, finestra fino a 6; poi F3 adattiva).
+3. **Tempi della finestra misurati (19:21, `STRATA_SPLIT_TIMING=1`, stessi prompt, 45,1 t/s):** finestra ~45 ms =
+   CPU che aspetta la GPU 24,3 (54%) + GPU che aspetta la CPU per gli esperti mancanti 13,7 (30%) + preparazione e commit
+   1,7 + resto ~5,7 (testa MTP, lancio). La GPU lavora 24 ms dove i byte valgono ~6: il costo e' fisso per strato, non nei
+   byte. **In corso 19:22:** `--spec-min-p 0.3` (bozze piu' lunghe: una riga in piu' costa poco), poi `--pcie-frac 0.5`
+   contro lo 0,28 della sonda. Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X`
+   + gli argomenti del motore (per ora a mano in `prova_sm75.py`, vedi sotto).
 2b. F2 subito dopo: la 0.1.29 ha gia' `--prompt-cache 6` (catena di punti di ripresa su UNA storia, radice = fine del
    prompt di sistema, bloccata); manca salvare/rimettere la KV di ogni conversazione (1,4 GB ogni 100k token in int8).
 3. Copia in RAM del nucleo: verificare prima se il prefill legge dalla RAM anche gli esperti residenti.

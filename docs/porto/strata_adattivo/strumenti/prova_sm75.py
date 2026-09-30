@@ -38,7 +38,18 @@ th = threading.Thread(target=campiona, args=(stop, F.OUT / f"cpu_{nome}.jsonl"),
 th.start()
 try:
     print("exe", C.BASE["exe"], "riserva", riserva, "elastica", elastica, flush=True)
-    F.corsa(nome, F.args_con(sostituisci={"--vram-reserve-mib": riserva}) + (["--elastic"] if elastica else []), "rapido")
+    # 30/9: --arg K=V sostituisce (o aggiunge) un argomento del motore, es. --arg --spec-min-p=0.3
+    sost = {"--vram-reserve-mib": riserva}
+    extra = []
+    for i, a in enumerate(sys.argv):
+        if a == "--arg":
+            k, v = sys.argv[i + 1].split("=", 1)
+            if k in C.BASE["args"]:
+                sost[k] = v
+            else:
+                extra += [k, v]
+    print("sostituiti", sost, "aggiunti", extra, flush=True)
+    F.corsa(nome, F.args_con(sostituisci=sost) + extra + (["--elastic"] if elastica else []), "rapido")
 finally:
     stop.set()
 print("FINE", time.strftime("%H:%M:%S"), flush=True)

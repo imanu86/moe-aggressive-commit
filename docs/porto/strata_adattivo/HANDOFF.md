@@ -14,7 +14,9 @@ solo con permesso, niente binari di terzi non compilati da noi.
 `Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat` (copia in `lanciatori/`): 0.1.29 + patch
 0001-0005, `--elastic` (due zone), riserva di avvio 1393, porta 8100 solo su 127.0.0.1; la chiave API solo dalla variabile
 `STRATA_API_KEY` (il file non la contiene); si ferma se strata.exe o llama-server sono gia' in esecuzione; la
-configurazione porta `env.STRATA_WATCHDOG_S=240` (la prima richiesta lunga dopo l'avvio puo' fermarsi oltre 60 s).
+configurazione porta `env.STRATA_WATCHDOG_S=240` e **`--ple-io mmap`** (20:40: con `direct`, il predefinito, la prima
+richiesta lunga dopo l'avvio si era bloccata oltre 60 s; con mmap nessun blocco, prefill 583 t/s, e la parte calda della
+tabella PLE per 131k di conversazione occupa ~2,8 GB di RAM, non i 27,5 che il daily carica tutti).
 Configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` (log in `D:\ds4_work\strata\sota\`).
 
 ## Attenzione: il daily di produzione NON gira sulla 2080 Ti

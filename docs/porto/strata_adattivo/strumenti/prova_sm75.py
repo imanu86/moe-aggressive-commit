@@ -49,7 +49,8 @@ try:
             else:
                 extra += [k, v]
     print("sostituiti", sost, "aggiunti", extra, flush=True)
-    F.corsa(nome, F.args_con(sostituisci=sost) + extra + (["--elastic"] if elastica else []), "rapido")
+    F.corsa(nome, F.args_con(sostituisci=sost) + extra + (["--elastic"] if elastica else []),
+            opz("--profilo", "rapido"))   # 30/9: --profilo lungo_131k per il punto operativo
 finally:
     stop.set()
 print("FINE", time.strftime("%H:%M:%S"), flush=True)

@@ -104,9 +104,13 @@ attenzione del daily (Strata ha i suoi).
    riallinearsi spesso invece di rifarla. Il fork punta su adattivita' e memoria.
 4. **Decisione utente (19:45): PRIMA LA VELOCITA'**, la F2 dopo. Via del prefetch degli esperti (tetto ~1/4 del tempo
    GPU; PCIe 3.0 a 13 GB/s: spostare tutti i mancanti costa ~18 ms per finestra; DS4 lo aveva falsificato: 70,8% copiato
-   e mai usato). **In corso 19:46:** prova 1 = scambi piu' frequenti e piccoli (`--arg --adapt-every=1 --arg
-   --adapt-swaps=24` contro 4/96). Poi prova 2 = simulazione dalla traccia di instradamento (quanti mancanti di una
-   finestra erano gia' instradati nelle precedenti: sopra il 60% si fa il prefetch nella coda).
+   e mai usato). **Chiusa per ora (20:17):** prova 1 = scambi a ogni passata, 24 alla volta: 19,3 ms per riga contro
+   18,9, colpi -1/-3 punti (i predefiniti 4/96 sono migliori); prova 2 = `strumenti/simula_prefetch.py` sulla traccia del
+   29/9: prefetch per recenza nella coda +10 punti di colpi ma 399 MiB di copie per finestra (70% del PCIe 3.0), mancanti
+   prevedibili dalla recenza solo 26/35/46/57% (1/2/4/8 finestre). Da riprovare con la 3060 sul PCIe 4.0.
+5. **In corso 20:18: misura a 131k** (profilo `lungo_131k`, configurazione SOTA): tutte le prove di oggi erano su prompt
+   corti, il punto operativo e' ~100k; su Turing il punteggio dell'attenzione QSA e' in FP32 (niente tf32): se a 100k
+   l'attenzione domina, un punteggio FP16 con i tensor core di Turing e' la leva specifica di questa scheda.
    Prima prova (quota PCIe):
    Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X --env STRATA_SPLIT_TIMING=1
    --arg --pcie-frac=0.5` (`--arg K=V` sostituisce o aggiunge un argomento del motore).

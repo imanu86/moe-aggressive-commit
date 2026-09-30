@@ -27,8 +27,10 @@ cambiato il percorso nel bat, **solo col permesso dell'utente**.
   `patches/su-0.1.29/`; la 0001 l'originale l'ha fatta da se', resta solo il nostro fflush). Punto di ripristino: tag git
   `pre-0129-rebase` (= 0.1.21 + patch). Build `build-0129\` (sm_75+86, `../strata_prova/build-strata-0129.bat`: dalla
   0.1.27 sm_75 non chiede piu' l'opzione sperimentale).
-- **Prossima prova (B):** `python strumenti/prova_sm75.py --exe D:\ds4_work\strata\Strata\build-0129\strata.exe
-  --riserva 500 --elastic --nome b0129_elastica_r500`; riferimento da battere 37,6 t/s (0.1.21 fissa, riserva 1393).
+- **30/9 18:35 — configurazione migliore: `build-0129` + `--elastic`, riserva di avvio 1393** (prova C: 43,4 t/s, 19,3 ms
+  per riga; A fissa 45,1 / 18,9, pari entro il rumore; 0.1.21 era 37,6 / 22,4). Con riserva di avvio 500 (B) la sessione
+  resta lenta (31,2): avvio largo, poi l'elastica cresce. Comando:
+  `python strumenti/prova_sm75.py --exe D:\ds4_work\strata\Strata\build-0129\strata.exe --riserva 1393 --elastic --nome X`.
 
 ## Misure (profilo `rapido`, t/s aggregati)
 | scheda / motore | t/s | note |
@@ -36,7 +38,8 @@ cambiato il percorso nel bat, **solo col permesso dell'utente**.
 | 3060, Strata 0.1.21 fissa / elastica, 29/9 quasi ferma | 22,7 / 24,8 | 37,5 / 34,2 ms per riga |
 | 3060 sotto CGControl, fissa / elastica | 13,2 / 13,7 | la CPU e' il collo |
 | 3060, daily M2 con agenti che compilano | 6,2 | cache a 0 nel 34%, RAM a 0,7 GB |
-| **2080 Ti, Strata 0.1.21 fissa (6.532 esperti)** | **37,6** | 22,4 ms per riga, colpi 73-89%, prefill 512 t/s |
+| 2080 Ti, Strata 0.1.21 fissa (6.532 esperti) | 37,6 | 22,4 ms per riga, colpi 73-89%, prefill 512 t/s |
+| **2080 Ti, Strata 0.1.29 + patch, elastica, avvio 1393** | **43,4** | 19,3 ms per riga (fissa: 45,1 / 18,9), prefill 644 t/s |
 | 2080 Ti, daily M2 sm_75 | 12,4 | si svuota a ogni prefill |
 | 2080 Ti, daily M3 sm_75, `LLAMA_MOE_ELASTIC_MAX=140` | 15,6 | copia di codice 8,4 |
 
@@ -53,7 +56,7 @@ Dettagli: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTEMBRE.m
 6. Difetto aperto dell'elastica 0003: oscilla quando la VRAM libera ha rumore (margine 192 MiB < ±300).
 
 ## Prossimi passi
-1. Finire la prova B sulla 0.1.29 (sopra); A (0.1.29 senza elastica) solo se B non batte 37,6.
+1. (Fatto 18:35: 0.1.29 + patch = +19% per riga; configurazione C.)
 2. Cache a due zone sopra 0003 (scambi solo nella coda, tetto 6 GB, crescita e calo a passi) + correzione oscillazione.
 3. Copia in RAM del nucleo: verificare prima se il prefill legge dalla RAM anche gli esperti residenti.
 4. Poi: profilo lungo (~100k), F2 (piu' conversazioni), disposizione a due schede.

@@ -42,6 +42,27 @@ M2: la cache arriva a 184 slot per strato (~8.800 esperti) ma a ogni prefill si 
 torna a 140 in un passo dopo il prefill (0,3 s), ma vuota; tiene la cache nel prefill solo per prompt piccoli (94 token
 nuovi si', 188 no). Il caso copia resta il difetto noto del daily (8,4 t/s).
 
+## Strata 0.1.29 + patch del fork (18:23-18:35, stessi prompt, CGControl acceso)
+Clone portato sulla 0.1.29 con le 3 patch (`patches/su-0.1.29/`), `build-0129` (sm_75+86). Altri programmi 3,5-5,1 GB di
+VRAM e 0,9-1,1 core di CPU (registrati). Prima B (il candidato), poi A e C per capire perche' B perdeva.
+
+| motore | cache | ms per riga | t/s | colpi |
+|---|---|---:|---:|---|
+| 0.1.21 fissa, riserva 1393 (sopra) | 6.532 | 22,4 | 37,6 | 73-89% |
+| B: 0.1.29 elastica, riserva di avvio 500 | 7.661 → 7.100-7.300 | 26,9 | 31,2 | 76-92% |
+| **A: 0.1.29 fissa, riserva 1393** | 6.772 | **18,9** | **45,1** | 75-89% |
+| **C: 0.1.29 elastica, riserva di avvio 1393** (esercizio 500) | 6.726 → 6.776-7.378 | 19,3 | 43,4 | 78-91% |
+
+- **La 0.1.29 vale +19% per riga sulla 0.1.21** (22,4 → 18,9 ms); prefill del caso copia 512 → 662 t/s.
+- **B e' una trappola dell'avvio, non dell'elastica:** con riserva 500 l'avvio scende a 0-33 MiB liberi prima di
+  stabilizzarsi, e tutta la sessione resta lenta (prefill 22-50 t/s sui prompt corti, 110 sul caso copia contro 662).
+  Probabile spostamento in RAM di allocazioni di Strata da parte di Windows, non provato. C, con la stessa riserva di
+  esercizio (500) ma avvio a 1393, va come A. Regola: **avvio largo (1393), poi l'elastica cresce da sola**.
+- C contro A: +2% per riga, dentro il rumore (testi diversi: C01 689/810 bozze contro 725/837), con 1-2 punti di colpi in
+  piu'. A carico fermo l'elastica non paga e non costa; protegge quando gli altri programmi si prendono la VRAM (3060,
+  29/9: 24-27,5 contro 15-17 t/s).
+- **Configurazione migliore oggi: C** = `build-0129` + `--elastic`, riserva di avvio 1393.
+
 ## L'originale e i fork al 30/9 pomeriggio
 Originale: da 0.1.21 a **0.1.29** in due giorni. Per noi: supporto ufficiale RTX 20 (0.1.27), cache su WDDM a passi da
 1 GiB (0.1.28), risposte campionate fino al 40% piu' veloci (0.1.29), prompt 4-28% piu' veloci (0.1.25-26), modalita'

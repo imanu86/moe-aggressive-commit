@@ -55,6 +55,25 @@ Dettagli: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTEMBRE.m
 5. Limiti noti di Strata: una sola conversazione in cache (F2: issue #57, PR #41/#52), nessuna cache su disco.
 6. Difetto aperto dell'elastica 0003: oscilla quando la VRAM libera ha rumore (margine 192 MiB < ±300).
 
+## Cosa portiamo su Strata da DS4, Qwen38 e llama (lista del 30/9, in ordine di guadagno atteso)
+Base: sulla 2080 Ti una riga costa ~19 ms, i byte da leggere a 616 GB/s ne valgono ~4-5: il margine e' in attese e
+sincronizzazioni, non nel calcolo.
+1. **Misurare le attese, poi tagliarle** (DS4: «il rendezvous costa 23,4% e compra 1,5%»). Strata sincronizza GPU e
+   CPU 48 volte per passata (una per strato); `STRATA_SPLIT_TIMING=1` da' per finestra: attesa della GPU, pool + piano,
+   preparazione, commit. Poi: piu' colpi (cache), quota PCIe al posto della CPU, o meno appuntamenti.
+2. **Speculazione tarata sui costi** (Qwen38 14/9: aritmetica del ciclo; DS4: il premio e' nel giro). Oggi ~2,1 token
+   per passata con `--spec-min-p 0.5`; se il costo fisso della passata domina, bozze piu' lunghe (`--spec-min-p`
+   0,3-0,4, finestra fino a 6) e poi la versione adattiva (F3).
+3. **Bozze che guardano la residenza** (DS4: AcceptMoE che scartava per residenza): accorciare la bozza quando i suoi
+   token vanno su esperti fuori dalla VRAM. Solo se la 2 paga.
+4. **Nucleo senza copia in RAM** (idea dell'utente): ~5,5 GiB di RAM ora, ~17 GB con l'OCuLink; base: `--mmap-experts`
+   della 0.1.26.
+5. **Piu' conversazioni (F2, dal doubleKVring di DS4):** salvare/rimettere la KV per conversazione (1,4 GB ogni 100k in
+   int8, copia RAM→RAM in una frazione di secondo contro minuti di rilettura); la 0.1.29 ha gia' `--prompt-cache` (catena
+   su una storia, radice bloccata).
+Da NON portare: profilo per massa (F0 provato: +1%), piu' lavoro alla CPU per esperto (cimitero di DS4), i kernel di
+attenzione del daily (Strata ha i suoi).
+
 ## Prossimi passi
 1. (Fatto 18:35: 0.1.29 + patch = +19% per riga; configurazione C.)
 2. (Fatto 19:03: **cache a due zone, patch 0004**, clone 30657c4, `patches/su-0.1.29/0004-...`: 44,3 t/s, pari a fissa ed

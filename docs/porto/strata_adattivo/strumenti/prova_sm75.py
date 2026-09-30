@@ -21,6 +21,13 @@ def opz(nome, predefinito):
     return sys.argv[sys.argv.index(nome) + 1] if nome in sys.argv else predefinito
 
 
+import os  # noqa: E402
+
+# 30/9: --env K=V (anche piu' volte) passa variabili al motore, es. STRATA_SPLIT_TIMING=1
+for i, a in enumerate(sys.argv):
+    if a == "--env":
+        k, v = sys.argv[i + 1].split("=", 1)
+        os.environ[k] = v
 C.BASE["exe"] = opz("--exe", r"D:\ds4_work\strata\Strata\build-sm75\strata.exe")
 riserva = opz("--riserva", "1393")
 elastica = "--elastic" in sys.argv

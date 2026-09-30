@@ -13,7 +13,8 @@ solo con permesso, niente binari di terzi non compilati da noi.
 ## Lanciatore SOTA per l'utente (30/9 sera)
 `Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat` (copia in `lanciatori/`): 0.1.29 + patch
 0001-0005, `--elastic` (due zone), riserva di avvio 1393, porta 8100 solo su 127.0.0.1; la chiave API solo dalla variabile
-`STRATA_API_KEY` (il file non la contiene); si ferma se strata.exe o llama-server sono gia' in esecuzione.
+`STRATA_API_KEY` (il file non la contiene); si ferma se strata.exe o llama-server sono gia' in esecuzione; la
+configurazione porta `env.STRATA_WATCHDOG_S=240` (la prima richiesta lunga dopo l'avvio puo' fermarsi oltre 60 s).
 Configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` (log in `D:\ds4_work\strata\sota\`).
 
 ## Attenzione: il daily di produzione NON gira sulla 2080 Ti
@@ -108,9 +109,15 @@ attenzione del daily (Strata ha i suoi).
    18,9, colpi -1/-3 punti (i predefiniti 4/96 sono migliori); prova 2 = `strumenti/simula_prefetch.py` sulla traccia del
    29/9: prefetch per recenza nella coda +10 punti di colpi ma 399 MiB di copie per finestra (70% del PCIe 3.0), mancanti
    prevedibili dalla recenza solo 26/35/46/57% (1/2/4/8 finestre). Da riprovare con la 3060 sul PCIe 4.0.
-5. **In corso 20:18: misura a 131k** (profilo `lungo_131k`, configurazione SOTA): tutte le prove di oggi erano su prompt
-   corti, il punto operativo e' ~100k; su Turing il punteggio dell'attenzione QSA e' in FP32 (niente tf32): se a 100k
-   l'attenzione domina, un punteggio FP16 con i tensor core di Turing e' la leva specifica di questa scheda.
+5. **Misura a 131k (20:28, configurazione SOTA):** L02 a 131k = **35,1 t/s**, prefill 614 t/s (131k in 3,6 min), 46,7 ms
+   per finestra (corti 45,4), GPU 26,1 ms per finestra (corti 24,3): l'attenzione a 131k costa poco (KV streaming 97% in
+   VRAM), il ripiego FP32 di Turing NON e' una leva; il calo viene dalla bozza (1,64 token per finestra contro 2,05).
+   **Difetto trovato:** la PRIMA richiesta lunga dopo l'avvio si e' bloccata («no progress for 60 s, reading the
+   prompt, from token 0», 0 strati serviti): il controllo di sicurezza ha chiuso il motore e il server l'ha riavviato;
+   dopo, la stessa richiesta e' andata a 614 t/s. Nei riscaldamenti la preparazione della finestra costava 74-89 ms
+   (di solito 0,7). Sospetto: tabella PLE letta dal disco senza cache (`--ple-io direct`, predefinito; il daily la tiene
+   tutta in RAM). Rimedio messo nel lanciatore SOTA: `env.STRATA_WATCHDOG_S=240` nella configurazione. **Da fare:** A/B
+   `--ple-io mmap` (cache di Windows) contro direct sulla prima richiesta lunga dopo l'avvio.
    Prima prova (quota PCIe):
    Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X --env STRATA_SPLIT_TIMING=1
    --arg --pcie-frac=0.5` (`--arg K=V` sostituisce o aggiunge un argomento del motore).

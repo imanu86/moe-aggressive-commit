@@ -62,6 +62,17 @@ Dettagli: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTEMBRE.m
 5. Limiti noti di Strata: una sola conversazione in cache (F2: issue #57, PR #41/#52), nessuna cache su disco.
 6. Difetto aperto dell'elastica 0003: oscilla quando la VRAM libera ha rumore (margine 192 MiB < ±300).
 
+## Leva di velocita' trovata la sera del 30/9: i kernel degli esperti su Turing
+Analisi della sequenza dei kernel (`strumenti/analizza_nsys.py` sul profilo `D:\ds4_work\strata\nsys\
+strata_2080ti_cli.sqlite`): durante la decodifica la GPU e' occupata il 94%, i buchi fra kernel sono 0,2 us → la
+FUSIONE di kernel darebbe poco (i piccoli, swiglu/quantizzazione/copie, sono <5%). Tratto tipico di strato 262 us:
+`native_gu_kernel` 177 us + `native_down_kernel` 70 us (verify.cpp:682-689: lo stesso kernel fa gli esperti in VRAM e poi
+i gruppi arrivati via PCIe). Per finestra ~1,5 GB di esperti letti in ~14 ms di kernel = **~100 GB/s su 616 (17%)**: i
+kernel i-quant (tipi 16/17/21/22 gate/up, 42/20 down) sono tarati per RTX 50/40. Obiettivo: 35-40% della banda = ~+15%
+complessivo. **Prossimo (deciso con l'utente 20:50, dopo la prova mmap):** Nsight Compute (installato: `C:\Program
+Files\NVIDIA Corporation\Nsight Compute 2024.3.2`) su `native_gu_kernel`: banda ottenuta, occupazione, motivi di stallo;
+poi ottimizzazione per sm_75 (2-4 token per finestra). I mancanti restano ~1/4 del tempo GPU (attesa CPU 16% + copie 8%).
+
 ## Cosa portiamo su Strata da DS4, Qwen38 e llama (lista del 30/9, in ordine di guadagno atteso)
 Base: sulla 2080 Ti una riga costa ~19 ms, i byte da leggere a 616 GB/s ne valgono ~4-5: il margine e' in attese e
 sincronizzazioni, non nel calcolo.

@@ -69,6 +69,13 @@ def campiona(stop, out):
                     k = p.info["name"] or str(p.pid)
                     riga["proc"][k] = round(riga["proc"].get(k, 0) + c / 100.0, 2)
             riga["ram_disp_gb"] = round(psutil.virtual_memory().available / 2**30, 1)
+            # 30/9: la RAM del motore (working set), per vedere quanto pesa la tabella PLE in mmap
+            for p in psutil.process_iter(["name"]):
+                if (p.info["name"] or "").lower() in ("strata.exe", "llama-server.exe"):
+                    try:
+                        riga["ws_motore_gb"] = round(p.memory_info().rss / 2**30, 2)
+                    except Exception:
+                        pass
             try:
                 riga["vram_mib"], riga["gpu_pct"] = nvsmi()
             except Exception:

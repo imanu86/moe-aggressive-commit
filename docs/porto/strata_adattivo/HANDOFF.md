@@ -74,7 +74,18 @@ kernel i-quant (tipi 16/17/21/22 gate/up, 42/20 down) sono tarati per RTX 50/40.
 complessivo. **Prossimo (deciso con l'utente 20:50, dopo la prova mmap):** Nsight Compute (installato: `C:\Program
 Files\NVIDIA Corporation\Nsight Compute 2024.3.2`) su `native_gu_kernel`: banda ottenuta, occupazione, motivi di stallo;
 poi ottimizzazione per sm_75 (2-4 token per finestra). I mancanti restano ~1/4 del tempo GPU (attesa CPU 16% + copie 8%).
-**BLOCCO (21:45):** `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
+**Nsight Compute NON si puo' usare sulla finestra di verifica (22:00):** ncu esegue i kernel uno alla volta e tiene
+ferma la CPU, ma il `wait_flag_ge_kernel` di ogni strato aspetta un segnale scritto dalla CPU → blocco per sempre (GPU
+al 100%, strata a 0 CPU). **Strumento al suo posto: `native_expert_bench`** (patch 0006, `build-0129\
+native_expert_bench.exe <shard1.gguf> [strato] [esperti] [token] [iterazioni]`; PATH con CUDA 12.6\bin): esperti veri, forma
+di una finestra, eventi CUDA, niente contatori. **Misure a GPU libera (22:10), 18 esperti, strato 20 (IQ3_S / Q2_0):**
+1 token 254 us (132 GB/s), 2 token 477 us (71), 3 token 578 us (58), 4 token 763 us (44); strati 0 e 47 simili. **Il tempo
+cresce con le coppie token-esperto (~14 us l'una), non coi byte:** `native_gu_kernel` / `native_down_kernel`
+(`iq_kernels.cu:352-403`) rifanno la decodifica i-quant della riga per ogni coppia del gruppo (`row_dot` per voce), e anche
+con 1 token un warp fa una riga sola (~2,5 pezzi per lane: latenza scoperta). **Lavoro in corso (22:15):** (1) prodotto
+multi-token (decodifica una volta, prodotti per tutti i token del gruppo; formati 16/17/21/22 gate/up, 20/42 down, deve
+restare identico bit per bit); (2) piu' righe per warp. Obiettivo: da ~58 a 150-200 GB/s effettivi = +10-20% complessivo.
+Vecchio blocco (21:45): `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
 l'utente deve abilitarli (Pannello NVIDIA → Desktop → Abilita impostazioni sviluppatore → Sviluppatore → Gestisci
 contatori di prestazioni GPU → Consenti a tutti gli utenti) oppure lanciare ncu da amministratore. Poi:
 `python strumenti/prova_ncu.py --salta 400 --quante 8` (gia' con metriche minime in una passata: con le sezioni complete

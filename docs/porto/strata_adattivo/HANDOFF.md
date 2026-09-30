@@ -86,7 +86,12 @@ attenzione del daily (Strata ha i suoi).
    byte. **Bozze piu' lunghe NON pagano (19:25):** `--spec-min-p 0.3` = 2,40 token e 3,36 righe per finestra, 55,6 ms,
    43,2 t/s contro 45,1: una riga in piu' costa ~10,7 ms, la parte fissa ~19,6 ms per finestra (0,4 ms per strato), le
    bozze aggiunte passano al 37% → 0,5 e' gia' vicino all'ottimo, la F3 adattiva vale al massimo pochi punti.
-   **In corso 19:26:** `--pcie-frac 0.5` contro lo 0,28 della sonda (la GPU aspetta la CPU per il 30% della finestra).
+   **Quota PCIe 0,5 NON paga (19:30):** 23,8 ms per riga contro 18,9 (35,8 t/s): la GPU legge dal PCIe 3.0 piu' lenta
+   (attesa 34,8 ms) e la preparazione sale da 0,7 a 9,0 ms per finestra; la sonda (0,28) ha ragione. Le manopole
+   dell'originale sono gia' all'ottimo: il margine e' DENTRO i 24 ms di GPU per finestra (i byte ne valgono ~6).
+   **In corso 19:33:** profilo Nsight Systems (`C:\Program Files\NVIDIA Corporation\Nsight Systems 2024.5.1\
+   target-windows-x64\nsys.exe`, `--cuda-graph-trace=node`, 15 s a meta' decodifica) → kernel piu' costosi.
+   Prima prova (quota PCIe):
    Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X --env STRATA_SPLIT_TIMING=1
    --arg --pcie-frac=0.5` (`--arg K=V` sostituisce o aggiunge un argomento del motore).
 2b. F2 subito dopo: la 0.1.29 ha gia' `--prompt-cache 6` (catena di punti di ripresa su UNA storia, radice = fine del

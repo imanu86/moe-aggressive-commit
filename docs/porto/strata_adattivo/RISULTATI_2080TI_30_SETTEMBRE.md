@@ -81,6 +81,20 @@ spostati), +77 (con 1.205 MiB liberi: margine largo), poi fermo.
 A regime le tre sono pari (entro il rumore). Resta un piccolo ciclo all'inizio delle richieste (+300/−240): a inizio
 richiesta qualcosa occupa 300-500 MiB di VRAM in piu' (da capire: grafi delle finestre? punti di ripresa?).
 
+### Sotto pressione (`strumenti/prova_hog.py`, 4.000 MiB presi da `hog.exe` fra 20 e 80 s, 4.096 token)
+t/s per 10 s:
+
+| | 0-20 s | pressione 20-80 s | dopo | 4.096 token |
+|---|---|---|---|---:|
+| due zone, passo = riserva + 64 MiB | 46,9 · 47,8 | **31,8 · 35,8** · 42,4 · 39,5 · 45,8 · 41,1 | 44,0 · 34,5 | 99,2 s |
+| due zone + passo pieno con lettura 0 (patch 0005) | 47,3 · 48,4 | **36,8 · 42,2** · 41,0 · 38,5 · 43,3 · 43,8 | 44,7 · 23,6 | **95,9 s** |
+| (3060, 29/9: elastica 0003 / fissa, 2,5 GB) | | 20,6-27,5 / 15,1-19,6 | | 146 / 170 s |
+
+- Calo a passi e **nucleo intatto**: 6.740-7.131 → 4.503 slot (nucleo 3.340), 8 passi da ~0,56 GiB (Windows legge
+  «0 MiB liberi»: il deficit vero non si vede) → con la 0005 4 passi da ~1 GiB + 2 ritocchi.
+- Dopo il calo nessuna oscillazione (+127 con 830 MiB liberi, poi fermo); ricrescita a passi da 512 MiB al rilascio.
+- L'ultima finestra (90 s, parziale) resta bassa in entrambe: da capire (rilascio dei 4 GB da parte di Windows?).
+
 ## L'originale e i fork al 30/9 pomeriggio
 Originale: da 0.1.21 a **0.1.29** in due giorni. Per noi: supporto ufficiale RTX 20 (0.1.27), cache su WDDM a passi da
 1 GiB (0.1.28), risposte campionate fino al 40% piu' veloci (0.1.29), prompt 4-28% piu' veloci (0.1.25-26), modalita'

@@ -1,0 +1,35 @@
+From 2feb8c777b63de56af5e2e634163f2fa10fd3897 Mon Sep 17 00:00:00 2001
+From: imanu <imanu86@gmail.com>
+Date: Wed, 30 Sep 2026 19:15:28 +0200
+Subject: [PATCH] OPUS-CACHE-Con una lettura di 0 MiB cala di un passo intero
+
+Sotto WDDM una lettura di ~0 MiB liberi dice solo 'almeno': il calo prende il
+passo pieno (--elastic-shrink-step-mib) invece di riserva + un blocco. Sotto
+4 GB di pressione: 4 passi invece di 8, primi 20 s a 36,8/42,2 t/s invece di
+31,8/35,8.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/program/generate.cpp | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index b64f540..fc90024 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -3707,7 +3707,11 @@ int main(int argc, char** argv) {
+             if (fr < el_reserve) {
+                 // in steps: at most el_shrink_step per check, the next check takes the next step if still short;
+                 // never below the core
+-                const int64_t need = std::min(el_reserve - fr + (int64_t) xcache.chunk_bytes(), el_shrink_step);
++                // under WDDM a reading of ~0 only says "at least this short" (the startup sizing gives back a whole
++                // GiB for it too): take the full step, not reserve + one chunk
++                const int64_t need = fr < (16ll << 20) ? el_shrink_step
++                                                       : std::min(el_reserve - fr + (int64_t) xcache.chunk_bytes(),
++                                                                  el_shrink_step);
+                 const uint64_t* off = xcache.slot_offsets();
+                 const int64_t S = xcache.slots();
+                 int64_t n = S;
+-- 
+2.54.0.windows.1
+

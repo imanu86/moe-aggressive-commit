@@ -58,8 +58,13 @@ def main():
     ap.add_argument("--contesto", type=int, default=None, help="sostituisce il valore di -c del bat")
     ap.add_argument("--runtime", default=None, help="cartella con un altro llama-server.exe (es. runtime-m2g)")
     ap.add_argument("--etichetta", default="daily_m2_lab", help="nome del log")
+    # 30/9: variabili sopra quelle del bat, senza modificarlo (es. --env LLAMA_MOE_ELASTIC_MAX=150)
+    ap.add_argument("--env", action="append", default=[], metavar="K=V")
     a = ap.parse_args()
     exe, args, env = leggi_bat()
+    for kv in a.env:
+        k, v = kv.split("=", 1)
+        env[k] = v
     if a.runtime:
         exe = str(Path(a.runtime) / "llama-server.exe")
         assert Path(exe).is_file(), exe

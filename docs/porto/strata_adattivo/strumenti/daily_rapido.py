@@ -93,15 +93,25 @@ def ferma():
 
 
 def main():
+    # 30/9: --runtime DIR --etichetta NOME per provare un altro llama-server (es. D:\ds4_work\daily_sm75\runtime)
+    global ETI
+    runtime = None
+    if "--runtime" in sys.argv:
+        runtime = Path(sys.argv[sys.argv.index("--runtime") + 1])
+    if "--etichetta" in sys.argv:
+        ETI = sys.argv[sys.argv.index("--etichetta") + 1]
+    dll = (runtime / "llama.dll") if runtime else RUNTIME_DLL
     vram0, gpu0 = nvsmi()
-    stato = {"quando": time.strftime("%Y-%m-%dT%H:%M:%S"), "runtime": "bin_elastico_m2 (llama.dll %s)"
-             % hashlib.sha256(RUNTIME_DLL.read_bytes()).hexdigest()[:8], "vram_usata_mib": vram0,
+    stato = {"quando": time.strftime("%Y-%m-%dT%H:%M:%S"), "runtime": "%s (llama.dll %s)"
+             % (runtime or "bin_elastico_m2", hashlib.sha256(dll.read_bytes()).hexdigest()[:8]), "vram_usata_mib": vram0,
              "ram_disponibile_mb": int(psutil.virtual_memory().available / 2**20), "contesto": 139264,
              "cgcontrol": any((p.info["name"] or "").lower() == "cgcontrol.exe" for p in psutil.process_iter(["name"]))}
     (LAB / ("stato_al_lancio_%s.json" % ETI)).write_text(json.dumps(stato, indent=1), encoding="utf-8")
     print("stato al lancio:", json.dumps(stato), flush=True)
     srv = subprocess.Popen([sys.executable, str(PROVA / "avvia_daily_lab.py"), "--porta", str(PORTA), "--contesto",
-                            "139264", "--etichetta", ETI], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
+                            "139264", "--etichetta", ETI] + (["--runtime", str(runtime)] if runtime else [])
+                           + [x for i, a in enumerate(sys.argv) if a == "--env" for x in ("--env", sys.argv[i + 1])],
+                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True)
     stop = threading.Event()
     th = threading.Thread(target=campiona, args=(stop, LAB / ("cpu_%s.jsonl" % ETI)), daemon=True)
     th.start()

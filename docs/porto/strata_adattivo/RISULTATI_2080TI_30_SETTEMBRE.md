@@ -27,7 +27,32 @@ primo token; 3060 elastica 333 t/s). Strata ha usato 2,4 core di CPU in media (s
 degli esperti sulla GPU la corsia CPU ha poco lavoro. Momento e carico diversi dalle righe della 3060, ma la differenza
 (−40% per riga, +66% di t/s) e' molto sopra il rumore.
 
+## Il daily ricompilato per la 2080 Ti (stessi prompt, subito dopo)
+`../daily_sm75/build_daily_sm75.py`: sorgente base di Codex (sola lettura) + i 3 file M2, opzioni CMake del build O2, sm_75,
+7,5 minuti → `D:\ds4_work\daily_sm75\runtime` (produzione e bat intatti). M3: i suoi 3 file di `src/` sopra, solo
+`llama.dll` ricompilata → `runtime-m3`. Lanciati con `strumenti/daily_rapido.py --runtime ... [--env K=V]`.
+
+| t/s | L01 | L02 | L03 | L04 | C01 copia | totale |
+|---|---:|---:|---:|---:|---:|---:|
+| daily M2 (altri 4,2 GB di VRAM) | 16,0 | 16,2 | 15,9 | 15,9 | 6,9 | 12,4 |
+| daily M3, `LLAMA_MOE_ELASTIC_MAX=140` | 19,6 | 21,2 | 21,0 | 19,2 | 8,4 | 15,6 |
+| Strata 0.1.21 fissa (sopra) | 37,7 | 35,4 | 38,8 | 39,7 | 37,1 | 37,6 |
+
+M2: la cache arriva a 184 slot per strato (~8.800 esperti) ma a ogni prefill si svuota a 0 e ricresce piano. M3 col tetto:
+torna a 140 in un passo dopo il prefill (0,3 s), ma vuota; tiene la cache nel prefill solo per prompt piccoli (94 token
+nuovi si', 188 no). Il caso copia resta il difetto noto del daily (8,4 t/s).
+
+## L'originale e i fork al 30/9 pomeriggio
+Originale: da 0.1.21 a **0.1.29** in due giorni. Per noi: supporto ufficiale RTX 20 (0.1.27), cache su WDDM a passi da
+1 GiB (0.1.28), risposte campionate fino al 40% piu' veloci (0.1.29), prompt 4-28% piu' veloci (0.1.25-26), modalita'
+poca RAM (`--mmap-experts` anche per i pack nativi), prefetch delle righe i-quant sul percorso AVX-2 (la nostra CPU non ha
+AVX-512). Fork (100 aggiornati dopo il 29/9, 7 con commit propri): niente su cache elastica o piu' conversazioni; utili
+he-be (output vincolato a uno schema JSON), jielin99/Strata-codex (Responses API), tntcannon5000 (batch di esperti fra
+richieste, concorrenza).
+
 ## Idee dell'utente da valutare
+- Cache a due zone: nucleo fisso (i migliori, mai ruotati ne' svuotati, senza copia in RAM) + coda elastica di al
+  massimo 6 GB, l'unica che ruota, cresce e cala a passi e si presta al prefill; il resto sulla CPU.
 - Gli esperti che restano fissi in VRAM non tengono la copia in RAM (oggi l'arena in RAM li contiene tutti: ~10,6 GiB
   di doppione con questa cache); chi esce si rilegge dal disco.
 - Con l'OCuLink: la 2080 Ti piena e fissa (~20 strati interi, 865 MiB per strato: niente scambi ne' PCIe, link x4

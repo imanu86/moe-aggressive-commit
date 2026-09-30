@@ -74,6 +74,12 @@ kernel i-quant (tipi 16/17/21/22 gate/up, 42/20 down) sono tarati per RTX 50/40.
 complessivo. **Prossimo (deciso con l'utente 20:50, dopo la prova mmap):** Nsight Compute (installato: `C:\Program
 Files\NVIDIA Corporation\Nsight Compute 2024.3.2`) su `native_gu_kernel`: banda ottenuta, occupazione, motivi di stallo;
 poi ottimizzazione per sm_75 (2-4 token per finestra). I mancanti restano ~1/4 del tempo GPU (attesa CPU 16% + copie 8%).
+**BLOCCO (21:45):** `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
+l'utente deve abilitarli (Pannello NVIDIA → Desktop → Abilita impostazioni sviluppatore → Sviluppatore → Gestisci
+contatori di prestazioni GPU → Consenti a tutti gli utenti) oppure lanciare ncu da amministratore. Poi:
+`python strumenti/prova_ncu.py --salta 400 --quante 8` (gia' con metriche minime in una passata: con le sezioni complete
+ncu ripeteva ogni kernel ripristinando anche l'arena da 40 GB mappata). Usare `ncu.exe`, non `ncu.bat` (il `|` del
+filtro). Nsight Systems non ha bisogno dei contatori.
 
 ## Cosa portiamo su Strata da DS4, Qwen38 e llama (lista del 30/9, in ordine di guadagno atteso)
 Base: sulla 2080 Ti una riga costa ~19 ms, i byte da leggere a 616 GB/s ne valgono ~4-5: il margine e' in attese e

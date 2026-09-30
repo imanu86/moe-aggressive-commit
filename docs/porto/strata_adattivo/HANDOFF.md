@@ -10,6 +10,12 @@ solo con permesso, niente binari di terzi non compilati da noi.
   uno slot M.2 (link x4).
 - OktoCGControl di solito acceso; gli agenti dell'utente a volte compilano C# (fino a 7 core): campionare sempre la CPU.
 
+## Lanciatore SOTA per l'utente (30/9 sera)
+`Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat` (copia in `lanciatori/`): 0.1.29 + patch
+0001-0005, `--elastic` (due zone), riserva di avvio 1393, porta 8100 solo su 127.0.0.1; la chiave API solo dalla variabile
+`STRATA_API_KEY` (il file non la contiene); si ferma se strata.exe o llama-server sono gia' in esecuzione.
+Configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` (log in `D:\ds4_work\strata\sota\`).
+
 ## Attenzione: il daily di produzione NON gira sulla 2080 Ti
 `D:\ds4_work\bin_elastico_m2` (quello del bat sul Desktop) contiene solo sm_86. Runtime per la 2080 Ti gia' pronti, in
 laboratorio: `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat non e' stato toccato: per usarli va
@@ -96,8 +102,11 @@ attenzione del daily (Strata ha i suoi).
    non valgono, la ripartizione si'. **Conclusione:** ~1/4 del tempo GPU e' legato ai mancanti (scende con piu' VRAM:
    3060 in OCuLink); il resto e' fusione di kernel, che l'originale sta facendo (0.1.25→0.1.29 +19% per riga):
    riallinearsi spesso invece di rifarla. Il fork punta su adattivita' e memoria.
-4. **Prossimo (proposto 19:40): F2, piu' conversazioni** (salvare/rimettere la KV per conversazione sopra la
-   `--prompt-cache` della 0.1.29).
+4. **Decisione utente (19:45): PRIMA LA VELOCITA'**, la F2 dopo. Via del prefetch degli esperti (tetto ~1/4 del tempo
+   GPU; PCIe 3.0 a 13 GB/s: spostare tutti i mancanti costa ~18 ms per finestra; DS4 lo aveva falsificato: 70,8% copiato
+   e mai usato). **In corso 19:46:** prova 1 = scambi piu' frequenti e piccoli (`--arg --adapt-every=1 --arg
+   --adapt-swaps=24` contro 4/96). Poi prova 2 = simulazione dalla traccia di instradamento (quanti mancanti di una
+   finestra erano gia' instradati nelle precedenti: sopra il 60% si fa il prefetch nella coda).
    Prima prova (quota PCIe):
    Comando: `prova_sm75.py --exe ...build-0129\strata.exe --riserva 1393 --elastic --nome X --env STRATA_SPLIT_TIMING=1
    --arg --pcie-frac=0.5` (`--arg K=V` sostituisce o aggiunge un argomento del motore).

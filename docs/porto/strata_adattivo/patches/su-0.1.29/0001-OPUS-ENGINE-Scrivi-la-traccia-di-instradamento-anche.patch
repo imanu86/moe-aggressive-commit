@@ -1,0 +1,29 @@
+From 1bd8fe49dd65396ab09e8148d7910bccbe4b8e3f Mon Sep 17 00:00:00 2001
+From: imanu <imanu86@gmail.com>
+Date: Tue, 29 Sep 2026 07:41:48 +0200
+Subject: [PATCH 1/3] OPUS-ENGINE-Scrivi la traccia di instradamento anche
+ nelle finestre di verifica
+
+Con --serve il motore decodifica solo con finestre di verifica, e --dump-routing era scritto soltanto da drive_pool (token singolo): una sessione servita lasciava la traccia vuota. drive_pool_multi scrive lo stesso record per ogni riga della finestra (bozze comprese, pesi a 0) e fa flush per strato, cosi' la traccia sopravvive a un motore chiuso bruscamente. Serve per costruire il profilo degli esperti dall'uso reale (tools/make_profile.py).
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+---
+ src/program/generate.cpp | 2 ++
+ 1 file changed, 2 insertions(+)
+
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 6070087..a38c455 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -539,6 +539,8 @@ void drive_pool_multi(void* user, const float* x_f, const int32_t* ids, int64_t
+             static const float one[64] = {};   // k <= 64 in a verify window; zeros read as unit weights
+             std::fwrite(one, sizeof(float), (size_t) k, t->routing);
+         }
++        // fork «Strata adattivo»: flushed per layer - a served engine usually ends by being killed
++        std::fflush(t->routing);
+     }
+ }
+ 
+-- 
+2.54.0.windows.1
+

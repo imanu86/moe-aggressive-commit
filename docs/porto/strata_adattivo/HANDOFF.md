@@ -1,9 +1,11 @@
-# HANDOFF — Strata adattivo sulla RTX 2080 Ti (0.1.30 + PR270, KV 262k promossa l'1/10/2026)
+# HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.31 + HC/vector/PR315, elastica e KV 262k)
 
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
 `research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,
 formato `MODELLO-SEZIONE-Descrizione` col modello autore effettivo, trailer
-`Co-Authored-By`, push subito. Regole dell'utente: file del daily intatti; chiave API mai letta, stampata o
+`Co-Authored-By`, push subito. Regole dell'utente aggiornate: **tutte le patch validate vanno integrate e
+promosse nell'operativo dopo la prova combinata**; il precedente vincolo di non toccare il lanciatore
+e' superato da questa richiesta esplicita. Chiave API mai letta, stampata o
 committata; download solo con permesso; niente binari di terzi non compilati da noi; **a ogni aggiornamento di questo
 file dare il link GitHub**:
 https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-tier-planner/docs/porto/strata_adattivo/HANDOFF.md
@@ -19,9 +21,23 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 
 ## 2. Cosa usare oggi
 - **Lanciatore SOTA** (copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
-  `build-0130-pr270\strata.exe` (0.1.30 + le 13 patch della sezione 3 + #270), `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
+  **`build-0131-daily\strata.exe`**, 0.1.31 + nove patch locali + HC/GDN FP16 + dequant vettoriale + #315.
+  Il BAT usa il server della stessa build in **`build-0131-daily\source\serve\server.py`**.
+  `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
   contesto 262144, KV int8, residenti 32768, tabella PLE in lettura diretta, `env.STRATA_WATCHDOG_S=240`; porta 8100 solo su 127.0.0.1;
   la chiave solo dalla variabile `STRATA_API_KEY`; si ferma se strata.exe o llama-server sono gia' accesi.
+- **Promozione operativa completata alle 21:26 l'1/10:** parita' del kernel combinato superata,
+  riferimento e candidata entrambi con cache auto/elastica e due richieste 131k/1024 token completate.
+  Prefill **714,58 → 822,66 t/s (+15,12%)**, TTFT **184,263 → 160,347 s**;
+  decode **37,866 → 38,995 t/s**, costo per riga **22,350 → 22,003 ms**. Singolo confronto
+  della combinazione, cache e testo/MTP variabili; nessun carico artificiale.
+  SHA256 exe `a74e4dadcd4fbb9e71b5cb0ae66922453c6a44a2704db25ddfb5e81601c5f766`.
+  JSON e BAT precedenti salvati in `D:\ds4_work\strata\ripristini\20261001_212635_0131_daily\`;
+  #270 conservata. Logits/retrieval precedenti limitano la validazione FP16: qualita' generale
+  non misurata, riempimento 250k non ripetuto nella combinazione elastica.
+  Dettagli **`PROMOZIONE_DAILY_0131_1_OTTOBRE.md`**, evidenza `corse_2080ti/20261001_daily_0131/`.
+  Processi lab chiusi, daily spento, **VIA a OCGC-IA e PROMO**; nessun'altra corsa programmata.
+  **Le voci successive di questa sezione documentano le tappe precedenti e le loro misure.**
 - **Validazione completata e lanciatore aggiornato (1/10):** 4.000 MiB di pressione per 60 s, 4.096 token in 99,2 s,
   nucleo fisso preservato, nessuno stallo; entrambe le richieste a 131k completate, 41,8 t/s e 20,4 ms per riga.
   Dettagli: `RISULTATI_1_OTTOBRE.md`, log in `corse_2080ti/20261001_0130_validazione/`. Confronti col 30/9 storici,
@@ -59,7 +75,8 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   `corse_2080ti/20261001_pr315/`, patch `0015-PR315-HC-bitwise-*.patch`, strumento `compila_pr315.py`.
   Pubblicazione inizialmente rinviata dal profilo di accesso in sola lettura su `.git` e senza
   scritture su `D:\ds4_work`/Desktop; l'accesso completo e' tornato nella ripresa successiva.
-  **Nessuna promozione della #315.** Processi lab chiusi e hash/configurazione operativa #270 verificati.
+  **A questa tappa nessuna promozione della #315; ora inclusa nel daily combinato sopra.**
+  Processi lab chiusi e hash/configurazione operativa #270 verificati alla precedente pausa.
 
 - **Pausa precedente della 0.1.31, prima della ripresa serale (1/10):** nove patch
   locali portate e ricostruzione riproducibile; controlli IQ/MMVQ/GDN/QSA superati.
@@ -89,6 +106,10 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   **Carichi chiusi e via dato a OCGC-IA. Nessuna ulteriore corsa Strata programmata.**
 
 ## 3. Il clone `D:\ds4_work\strata\Strata`
+- **Daily corrente:** bundle `build-0131-daily\`, sorgenti completi in `source\`, server della
+  0.1.31 e metadati di compilazione/promozione. Il checkout sotto resta a 0.1.30 +13:
+  ricompilarlo direttamente non ricostruisce il daily. Usare `strumenti/compila_daily_0131.py`
+  con gli input validati; composizione e hash nel rapporto della promozione.
 - `main` = **v0.1.30 (30ec18e) + 13 commit** (copie in `patches/su-0.1.30/`, ricostruibile con `git am`):
   1. 0001 traccia di instradamento con fflush · 0002 blocchi del prompt allineati ai punti di ripresa
   2. 0003 cache esperti elastica `--elastic` (arena VMM) · 0004 **due zone** (nucleo fisso + coda di al massimo
@@ -192,11 +213,12 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 
 ## 9. Prossimi passi, in ordine
 
-**Finestra serale conclusa: GPU restituita a OCGC-IA, nessun altro job Strata programmato.**
-HC/GDN FP16 ora provata sul modello a 131k (+14,15% prefill nel singolo A/B), primi logits
-misurati e prompt a 250022 token reali completato sulla candidata (ago recuperato). Alla prossima ripresa:
-conferma A/B/A, quality/retrieval piu' ampi prima di promuoverla; poi #372/#374.
-Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Lanciatore ancora #270.
+**Daily combinato promosso, GPU restituita a OCGC-IA e PROMO, nessun altro job Strata programmato.**
+HC/GDN FP16, vector e #315 ora sono nel lanciatore operativo, con elastica e KV262144.
+Alla prossima ripresa: curva contesto/t/s col medesimo daily/policy (4k,32k,64k,131k,250k),
+quality/retrieval piu' ampi e riempimento 250k sulla combinazione elastica; poi #372/#374.
+Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Regola: una patch
+validata va integrata, provata nella combinazione operativa e promossa con ripristino.
 
 1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
 2. **#270 verificata e promossa nel lanciatore:** patch `patches/da-valutare/0014-PR270-prefill-Turing.patch`, compilazione CUDA 12.6 e
@@ -205,7 +227,7 @@ Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Lanciat
    Il prompt pieno a circa 250k fu rinviato dall'utente per passare prima alla #270; ora provato sulla candidata HC.
    **Ripresa autorizzata l'1/10 con macchina libera:** #315 compilata e provata, numerica superata,
    kernel piu' rapido, guadagno modello contenuto (+3,62% t/s ma −1,35% ms/riga a cache fissa).
-   Confermare v1/v3 nello stesso binario prima di promuoverla. **Priorita' dopo la ricognizione:**
+   **Ora inclusa nel daily combinato dopo nuova parita' e confronto elastico.** Priorita' storica dopo la ricognizione:
    base di laboratorio 0.1.31 (ha gia' #242 densa e #270), poi dequant vettoriale e HC prefill FP16
    dal fork 2080ti, separatamente e con parita'/qualita'. Autorizzato dall'utente; clone operativo intatto.
    Misure #315 e piano aggiornato nei rispettivi documenti.
@@ -214,7 +236,8 @@ Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Lanciat
 4. Robustezza al carico degli altri programmi: priorita' sotto carico vero (4-5 core occupati), meno thread del pool
    (`--pool-workers`), quota PCIe adattiva.
 5. Quando torna la 3060: una scheda / esperti divisi / strati divisi sugli stessi prompt.
-6. Daily: solo se serve come riserva (runtime sm_75 pronti; M4 = ridimensionamento che conserva il contenuto).
+6. Vecchio daily llama: riserva (runtime sm_75 pronti; M4 = ridimensionamento che conserva il contenuto).
+   Il daily operativo corrente e' Strata: tenere il lanciatore allineato alle patch validate.
 
 ## 10. Strumenti e comandi
 - Prova sul motore: `python strumenti/prova_sm75.py --exe <strata.exe> --riserva 1393 --elastic --nome X
@@ -238,7 +261,8 @@ Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Lanciat
   Compilazioni e prove normali del motore restano nel lavoro; misurare con il carico reale gia' presente.
 
 ## 11. Decisioni e idee dell'utente
-1. Si lavora su Strata (MIT); il daily solo come riserva. Prima la velocita'.
+1. Si lavora su Strata (MIT); vecchio daily llama come riserva. Prima la velocita'.
+   **Chiarimento dell'utente l'1/10 sera: tutte le patch validate vanno nel daily operativo Strata.**
 2. Cache a due zone (fatta). Niente doppione in RAM degli esperti fissi (l'originale: `--resident-experts`).
 3. Con l'OCuLink: 2080 Ti piena e fissa + 3060 che ruota, oppure esperti divisi (sezione 8); doppioni dei piu' caldi
    solo per servire due conversazioni in parallelo.

@@ -1,0 +1,57 @@
+{
+  "base": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_sm75_20261001",
+  "hc": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_hc_fp16_20261001",
+  "hc_logits": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_logits_hc_20261001",
+  "vector": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_dequant_vec_20261001",
+  "pr315": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_pr315_20261001",
+  "scope": "0.1.31 + nine local patches + HC/GDN FP16 + vector dequant + PR315 + opt-in logits",
+  "steps": [
+    {
+      "name": "compile-fused_gr.cu.obj",
+      "exit": 0,
+      "seconds": 9.58
+    },
+    {
+      "name": "compile-verify.cpp.obj",
+      "exit": 0,
+      "seconds": 2.78
+    },
+    {
+      "name": "archive-strata_kernels.lib",
+      "exit": 0,
+      "seconds": 0.17
+    },
+    {
+      "name": "archive-strata_engine.lib",
+      "exit": 0,
+      "seconds": 0.09
+    },
+    {
+      "name": "link",
+      "exit": 0,
+      "seconds": 0.44
+    },
+    {
+      "name": "compile-hc-check",
+      "exit": 0,
+      "seconds": 0.11
+    },
+    {
+      "name": "hc-check",
+      "exit": 0,
+      "seconds": 0.27
+    }
+  ],
+  "exe_sha256": "a74e4dadcd4fbb9e71b5cb0ae66922453c6a44a2704db25ddfb5e81601c5f766",
+  "source_sha256": {
+    "include/strata/kernels/fused_gr.hpp": "579d2533232fa986132da7397cadd57f34d1a03b594399c6992b9b77c0fb5736",
+    "src/kernels/cuda/fused_gr.cu": "689ad19d93964bfbd382dd6e5950677b74acc6a7a3746169e0cb41ff7047f1df",
+    "src/kernels/cuda/dequant_bf16.cu": "63eeed85934b4540d0819e41e009d3b9411af99332fe2b5e2e28f1c819ce043c",
+    "src/core/verify.cpp": "b89559dcda154845be958a50a39d08d5b6dae620c8b9986c9b5b2bdc86a60345"
+  },
+  "reused_objects_sha256": {
+    "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_hc_fp16_20261001\\strata_prefill.lib": "696ee2e7e9e8e8eb02f1bb508e40b4da66deb3826046401810e7d0c44397c1d7",
+    "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_dequant_vec_20261001\\dequant_bf16.cu.obj": "63906a60d9f0d6feff7e19732a9dedaeb9aa0be8f8d54639917e583dee0a5338",
+    "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_0131_logits_hc_20261001\\CMakeFiles\\strata.dir\\src\\program\\generate.cpp.obj": "a48fa1194f664753e94d8c8e75d5c1f95c1ca8d8f68a23939bbbf18656b4e8ac"
+  }
+}

@@ -59,6 +59,9 @@ def main():
     ap.add_argument("--nome", default="kv262k_prompt131k")
     ap.add_argument("--out", type=Path)
     ap.add_argument("--exe", type=Path, help="Eseguibile candidato; altrimenti build-0130")
+    ap.add_argument("--server-source", type=Path, help="Sorgenti server della versione candidata; altrimenti clone operativo")
+    ap.add_argument("--needle-lengths", help="Dopo il banco: controllo retrieval upstream, ad esempio 32k,250k")
+    ap.add_argument("--retrieval-250k", action="store_true", help="Dopo il banco: prompt con almeno 250000 token reali e ago al 50%")
     ap.add_argument("--solo-avvio", action="store_true", help="Verifica avvio e capacita' senza inviare prompt")
     ap.add_argument("--cache-fissa", type=int, help="Solo laboratorio: budget slot richiesto, senza elasticita'; il pack puo' aumentare gli slot effettivi")
     a = ap.parse_args()
@@ -93,7 +96,9 @@ def main():
     bench_wrapper = out / "bench_bootstrap.py"
     bootstrap = ("import sys, runpy\n"
                  f"sys.path.insert(0, {str(CLONE / '.venv/Lib/site-packages')!r})\n")
-    server_wrapper.write_text(bootstrap + f"runpy.run_path({str(CLONE / 'serve/server.py')!r}, run_name='__main__')\n",
+    server_source = (a.server_source or CLONE).resolve(strict=True)
+    server_path = (server_source / "serve/server.py").resolve(strict=True)
+    server_wrapper.write_text(bootstrap + f"runpy.run_path({str(server_path)!r}, run_name='__main__')\n",
                               encoding="utf-8")
     bench_path = AREA.parent / "strata_prova/banco_strata.py"
     bench_wrapper.write_text(bootstrap + f"sys.path.insert(0, {str(bench_path.parent)!r})\n"
@@ -106,6 +111,8 @@ def main():
               "prompt_profile": None if a.solo_avvio else "lungo_131k", "out": str(out),
               "exe": cfg["exe"],
               "exe_sha256": hashlib.sha256(Path(cfg["exe"]).read_bytes()).hexdigest(),
+              "server_source": str(server_source),
+              "server_sha256": hashlib.sha256(server_path.read_bytes()).hexdigest(),
               "requested_fixed_cache_slots": a.cache_fissa,
               "artificial_load": False, "status": "starting"}
     print("OUTPUT", out, flush=True)
@@ -165,6 +172,31 @@ def main():
             summary = json.loads((runs[0].parent / "riassunto.json").read_text(encoding="utf-8"))
             result.update(status="completed", summary=summary)
             print(json.dumps(summary, indent=2), flush=True)
+            if a.needle_lengths:
+                needle_tool = (server_source / "tools/needle_bench.py").resolve(strict=True)
+                with (out / "needles.log").open("w", encoding="utf-8") as log:
+                    bench = subprocess.Popen([sys.executable, "-B", "-u", str(needle_tool),
+                        "--url", f"http://127.0.0.1:{PORT}", "--lengths", a.needle_lengths,
+                        "--depths", "10,50,90", "--out", str(out / "needles.json")],
+                        cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+                    code = bench.wait(timeout=7200)
+                result["needles"] = json.loads((out / "needles.json").read_text(encoding="utf-8"))
+                print((out / "needles.log").read_text(encoding="utf-8"), flush=True)
+                if code:
+                    raise RuntimeError("Retrieval needle fallito; vedere needles.json")
+            if a.retrieval_250k:
+                with (out / "retrieval-250k.log").open("w", encoding="utf-8") as log:
+                    bench = subprocess.Popen([sys.executable, "-B", "-u", str(HERE / "retrieval_250k.py"),
+                        "--source", str(server_source), "--tokenizer", cfg["tokenizer"],
+                        "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k")],
+                        cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+                    code = bench.wait(timeout=2400)
+                result["retrieval_250k"] = json.loads((out / "retrieval-250k/result.json").read_text(encoding="utf-8"))
+                print((out / "retrieval-250k.log").read_text(encoding="utf-8"), flush=True)
+                if code:
+                    raise RuntimeError("Controllo 250k fallito; vedere retrieval-250k/result.json")
     except Exception as exc:
         result.update(status="failed", error=str(exc))
         raise

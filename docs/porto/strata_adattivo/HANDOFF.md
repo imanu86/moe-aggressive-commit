@@ -135,9 +135,20 @@ Decisione utente (1/10 04:00): la seconda scheda e' FUORI PERIMETRO per ora; si 
   #317 (BlueKingMuch) `STRATA_SSD_KEEPALIVE` per la tabella PLE (probabile causa del blocco della prima richiesta
   lunga); #315 hc multi-token; #241 kernel Q2_0; #292 esperti NVFP4; #286/#285 poca RAM su Windows.
 - **Fork (69 aggiornati dopo la 0.1.29, 6 con commit propri):** niente sui kernel (Volta, AMD, API Codex).
-- **Piano proposto (in attesa dell'ok):** (1) fork sulla 0.1.30 (tenere 0002-0006/0008, sostituire 0007 con #242);
-  (2) #258, #186, #284, #242, #270 una alla volta (`git fetch origin pull/N/head`), ciascuna misurata col banco e con
-  l'A/B sul motore; (3) #317 sul blocco iniziale; (4) lanciatore SOTA aggiornato. Atteso: −3-4 ms su ~45 per finestra.
+- **Piano approvato dall'utente (1/10 04:15, «vai»):** (1) fork sulla 0.1.30; (2) #270, #258, #284, #317, poi #186 e
+  #315 (stesso file della #258), una alla volta, ciascuna misurata con l'A/B sul motore (`STRATA_SPLIT_TIMING=1`: GPU per
+  finestra) e col banco; (3) #242 contro la nostra 0007; (4) lanciatore SOTA aggiornato. Atteso: −3-4 ms su ~45 per finestra.
+- **STATO 1/10 04:25 — passo (1) FATTO:** main del clone = **v0.1.30 (30ec18e) + 9 commit nostri** (le 8 patch portate +
+  «Adatta la cache elastica al prestito per partecipante della 0.1.30», 8966caf: la 0.1.30 tiene il prestito al prefill
+  in `pf_parts`, la ripianificazione aggiorna `pf_parts[0]` e il vincolo «si presta solo la coda» sta in `fits`). Punto di
+  ripristino: tag `pre-0130-rebase` (= 0.1.29 + 8 patch). Build: `build-0130\strata.exe` (sm_75+86,
+  `../strata_prova/build-strata-0130.bat`). Rami delle PR gia' scaricati nel clone: `pr-258 pr-186 pr-284 pr-242 pr-270
+  pr-317 pr-315` (`git cherry-pick` del loro commit sopra main). **In corso:** riferimento `n0130_base` (profilo rapido,
+  elastica, riserva 1393). Poi per ogni PR: cherry-pick → `build-strata-0130.bat` → `prova_sm75.py --exe
+  ...build-0130\strata.exe --riserva 1393 --elastic --nome <pr> --env STRATA_SPLIT_TIMING=1` → confronto con
+  `costo_passata.py` e la riga `stage 0:` del log.
+- **Regola per le misure:** Jump Desktop spento (prende 4,5 core e 1/3 della GPU), niente `nvidia-smi` a ripetizione
+  durante una corsa, banco dei kernel con riscaldamento lungo (patch 0008).
 
 ## Cosa portiamo su Strata da DS4, Qwen38 e llama (lista del 30/9, in ordine di guadagno atteso)
 Base: sulla 2080 Ti una riga costa ~19 ms, i byte da leggere a 616 GB/s ne valgono ~4-5: il margine e' in attese e

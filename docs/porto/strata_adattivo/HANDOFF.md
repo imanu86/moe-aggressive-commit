@@ -147,6 +147,16 @@ Decisione utente (1/10 04:00): la seconda scheda e' FUORI PERIMETRO per ora; si 
   elastica, riserva 1393). Poi per ogni PR: cherry-pick → `build-strata-0130.bat` → `prova_sm75.py --exe
   ...build-0130\strata.exe --riserva 1393 --elastic --nome <pr> --env STRATA_SPLIT_TIMING=1` → confronto con
   `costo_passata.py` e la riga `stage 0:` del log.
+- **Misure sulla 0.1.30 (1/10 03:51-, profilo rapido, elastica, riserva 1393, altri ~1,2-1,3 core):**
+  | cosa | ms per riga | t/s | GPU per finestra | commit |
+  |---|---:|---:|---:|---:|
+  | riferimento: 0.1.30 + nostre patch (`n0130_base`) | 19,3 | 44,8 | 23,9 ms | 1,04 ms |
+  | + #258 kernel GDN TILE=1280 per sm_75 (`n0130_pr258`) | 19,0 | 44,9 | 23,4 ms | 1,05 ms |
+  Nel clone, sopra i 9 commit nostri: #258 (204cee8, conflitto risolto tenendo il `usable` per sm_60 della 0.1.30),
+  #284 (20273f4, conflitti in generate.cpp: tenuti i controlli nuovi della 0.1.30 + `set_commit_async` + il
+  `cudaDeviceSynchronize` a inizio richiesta), #186 (2 commit, puliti; **opt-in: `STRATA_GR_V3=1`**, non identica bit
+  per bit). **In corso 04:00:** build + `n0130_pr284` (commit senza attesa, predefinito) + `n0130_pr186` (con
+  `--env STRATA_GR_V3=1`). Restano: #270 (prefill, da misurare col profilo lungo), #317, #315, #242 contro la 0007.
 - **Regola per le misure:** Jump Desktop spento (prende 4,5 core e 1/3 della GPU), niente `nvidia-smi` a ripetizione
   durante una corsa, banco dei kernel con riscaldamento lungo (patch 0008).
 

@@ -1,4 +1,4 @@
-# HANDOFF — Strata adattivo sulla RTX 2080 Ti (0.1.30 validata e promossa l'1/10/2026)
+# HANDOFF — Strata adattivo sulla RTX 2080 Ti (0.1.30 + PR270, KV 262k promossa l'1/10/2026)
 
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
 `research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,
@@ -19,8 +19,8 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 
 ## 2. Cosa usare oggi
 - **Lanciatore SOTA** (copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
-  `build-0130\strata.exe` (0.1.30 + le 13 patch della sezione 3), `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
-  contesto 139264, KV int8, tabella PLE in lettura diretta, `env.STRATA_WATCHDOG_S=240`; porta 8100 solo su 127.0.0.1;
+  `build-0130-pr270\strata.exe` (0.1.30 + le 13 patch della sezione 3 + #270), `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
+  contesto 262144, KV int8, residenti 32768, tabella PLE in lettura diretta, `env.STRATA_WATCHDOG_S=240`; porta 8100 solo su 127.0.0.1;
   la chiave solo dalla variabile `STRATA_API_KEY`; si ferma se strata.exe o llama-server sono gia' accesi.
 - **Validazione completata e lanciatore aggiornato (1/10):** 4.000 MiB di pressione per 60 s, 4.096 token in 99,2 s,
   nucleo fisso preservato, nessuno stallo; entrambe le richieste a 131k completate, 41,8 t/s e 20,4 ms per riga.
@@ -28,6 +28,21 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   senza A/B nella stessa sessione: non attribuire tutto il guadagno alla versione.
 - **Ripristino 0.1.29:** copie del JSON operativo e del bat del Desktop prima della promozione in
   `D:\ds4_work\strata\ripristini\20261001_0130\`; istruzioni nel documento dei risultati. `build-0129` conservata.
+- **Contesto richiesto dall'utente: circa 250k**, cioe' 262.144 token (come il precedente daily). Configurazione
+  candidata in `lanciatori/strata-2080ti-256k.json`, KV int8 e residenti in VRAM 32.768. **Capacita' 262.144 provata**
+  su due prompt a 131k: avvio 61 s, KV in RAM bloccata 3,09 GiB, decode 43,0 t/s, prefill freddo 663 t/s,
+  nessuno stallo; RAM disponibile minima 32,59 GB. Dettagli in `RISULTATI_KV262K_1_OTTOBRE.md`.
+  Il riempimento del contesto fino a circa 250k resta da provare. **JSON operativo ora a 262.144**, con #270.
+  L'utente ha abilitato l'accesso completo e autorizzato la promozione, poi richiesto standby.
+- **PR #270 validata l'1/10 in build separata:** 8 casi di parita' numerica superati, zero fallimenti;
+  KV 262.144 e prompt 131k: prefill **808,91 contro 661,76 t/s (+22,24%)**, primo token **162,98 contro 199,10 s**.
+  Decode 43,90 contro 42,22 t/s, senza attribuire la differenza alla patch. Primo avvio 223 s, riavvio 61 s:
+  rallentamento del caricamento non ripetuto, causa non identificata. Nessun carico artificiale o motore rimasto
+  acceso. **Promossa nello stesso lanciatore Desktop**, in `D:\ds4_work\strata\Strata\build-0130-pr270\strata.exe`;
+  hash identico alla candidata verificata. Backup JSON e BAT prima della promozione in
+  `D:\ds4_work\strata\ripristini\20261001_060447_pr270_262k\`; build-0130 conservata. Sorgenti del clone intatti.
+  Verificati Python del lanciatore, parser server e help eseguibile; solo exe e max-context cambiati nel JSON.
+  Dettagli e limiti in `RISULTATI_PR270_1_OTTOBRE.md`, evidenza `corse_2080ti/20261001_pr270/`.
 
 ## 3. Il clone `D:\ds4_work\strata\Strata`
 - `main` = **v0.1.30 (30ec18e) + 13 commit** (copie in `patches/su-0.1.30/`, ricostruibile con `git am`):
@@ -46,6 +61,10 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 - Build (CUDA 12.6, sm_75+86): `../strata_prova/build-strata-0130.bat` → `build-0130\`; `build-strata-0129.bat` →
   `build-0129\` (ripristino precedente); `build\` = 0.1.21 sm_86; `build-sm75\` = 0.1.21 sm_75. Banco dei kernel:
   `D:\ds4_work\strata\build-bench.bat` (target `native_expert_bench`, per ora punta a `build-0129`).
+- Build operativa `build-0130-pr270\`: copia della candidata verificata; eseguibile, PDB, nuovo oggetto/libreria,
+  sorgente CUDA della PR e metadati conservati li'. Il checkout `main` resta a +13 commit: la #270 non e' stata
+  applicata ai suoi sorgenti. Prima di ricostruire questa variante usare `strumenti/compila_pr270.py` o applicare
+  la patch preservata; una normale ricompilazione del checkout base non include #270.
 - Dati: `D:\ds4_work\strata\Strata-data` (pack iq3_xxs, mtp). Modello: GSQ-RCO IQ3_XXS in `Downloads`.
 
 ## 4. Misure (profilo `rapido`: 4 prompt corti + copia di codice da 4k; t/s aggregati)
@@ -63,6 +82,8 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 | 0.1.30 + patch + PR, altri ~2 core (ultima prova) | 43,8-45,4 | 19,5-18,8 | commit 0,32-0,34 ms |
 | a 131k (0.1.29 + patch) | 35,1 | 24,2 | prefill 614 t/s; 1,64 token per finestra |
 | a 131k (0.1.30 + 13 patch, 1/10) | **41,8** | **20,4** | prefill 628,8 t/s; 1,72 token per finestra; altri 0,86 core in media |
+| KV 262.144, prompt 131k (0.1.30 + 13 patch, 1/10) | **43,0** | **19,8** | prefill 663 t/s; KV in RAM 3,09 GiB; carico reale, nessun hog |
+| + #270, KV 262.144, prompt 131k (1/10) | **43,9** | **19,3** | prefill 809 contro 662 t/s nel riferimento successivo; primo token -36,1 s |
 | sotto 4 GB di pressione per 60 s (due zone) | 4.096 token in 95,9 s | — | calo a passi da ~1 GiB, nucleo intatto (3060: 146 s / 170 s) |
 | sotto 4 GB di pressione per 60 s (0.1.30, 1/10) | 4.096 token in 99,2 s | — | cache 7.291 → 4.400 slot, nucleo 3.357 preservato, poi 4.461 slot |
 
@@ -108,12 +129,17 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 - **Esperti divisi su due schede** esistono gia' («CUDA1–3 expert experiment», `docs/SECOND_GPU.md`,
   `--expert-cache-device1 N`): per quando torna la 3060.
 - PR aperte da seguire: #242 (= la nostra 0007, piu' completa: anche il kernel denso), #270 (attenzione del prompt sui
-  tensor core di Turing: prefill +12%), #317, #315, #241, #292 (esperti NVFP4: decodifica piu' semplice), #286/#285.
+  tensor core di Turing: +12% dichiarato dall'autore su altra GPU, +22% misurato qui), #317, #315, #241, #292
+  (esperti NVFP4: decodifica piu' semplice), #286/#285.
 - Fork: niente sui kernel (Volta, AMD, API Codex). L'originale esce piu' volte al giorno: riallinearsi spesso.
 
 ## 9. Prossimi passi, in ordine
 1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
-2. PR rimaste: #270 (misurare col profilo `lungo_131k`), #317 (blocco iniziale), #315, #242 al posto della 0007.
+2. **#270 verificata e promossa nel lanciatore:** patch `patches/da-valutare/0014-PR270-prefill-Turing.patch`, compilazione CUDA 12.6 e
+   parita' superate, prefill +22% nel confronto base/candidata/base su KV 262.144. Rimaste #317 (SSD), #315, #242 al posto
+   della 0007. Preparazione in `PREPARAZIONE_256K_PR270.md`, misure in `RISULTATI_PR270_1_OTTOBRE.md`.
+   Il prompt pieno a circa 250k resta da provare: l'utente ha scelto di passare prima alla #270.
+   **Standby richiesto dall'utente dopo la promozione: nessun altro test o processo da avviare finche' non riprende.**
 3. Provare le due funzioni nuove della 0.1.30 nell'uso reale: `--conversation-cache-*` (agente + subagenti) e
    `--resident-experts` (RAM).
 4. Robustezza al carico degli altri programmi: priorita' sotto carico vero (4-5 core occupati), meno thread del pool
@@ -131,6 +157,9 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
   `strumenti/daily_rapido.py [--runtime DIR] [--env K=V]`. Fork: `../strata_prova/fork_strata.py`.
 - Regole di misura: Jump Desktop spento; niente `nvidia-smi` a ripetizione durante una corsa; motori alternati nella
   stessa sessione; confrontare le voci per finestra e i ms per riga, non solo i t/s (il testo cambia).
+- **Vincolo aggiornato dall'utente l'1/10:** c'e' gia' pressione reale; proseguire senza aggiungere pressione al sistema.
+  **Significa niente carichi artificiali per simulare la saturazione**, per esempio hog GPU o stress CPU/RAM.
+  Compilazioni e prove normali del motore restano nel lavoro; misurare con il carico reale gia' presente.
 
 ## 11. Decisioni e idee dell'utente
 1. Si lavora su Strata (MIT); il daily solo come riserva. Prima la velocita'.
@@ -138,3 +167,4 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 3. Con l'OCuLink: 2080 Ti piena e fissa + 3060 che ruota, oppure esperti divisi (sezione 8); doppioni dei piu' caldi
    solo per servire due conversazioni in parallelo.
 4. Limite da superare: una sola conversazione in cache (l'originale: `--conversation-cache-*`).
+5. Contesto desiderato circa 250k: 262.144 token. Non confondere il limite del banco a 139.264 con questo obiettivo.

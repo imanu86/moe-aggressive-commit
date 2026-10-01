@@ -107,8 +107,13 @@ velocita'. **A/B a macchina ferma (1/10 03:22-03:36, nuovo → vecchio → nuovo
 per riga (39,2 t/s), vecchio 20,5 (41,1), terzo giro non valido (preparazione 80 ms per finestra per via di mmap, ultimo
 caso fallito). La voce che conta: **GPU per finestra 22,6 ms (nuovo) contro 23,7 (vecchio) = −4,7%, cioe' ~2-3% sul
 totale** (nella finestra reale ~1,3 coppie per gruppo): sotto la soglia del 5%; resta acceso perche' e' esatto bit per
-bit. **Leva ancora aperta sui kernel:** l'efficienza con 1 token (132 GB/s su 616): piu' righe per warp, carichi
-vettoriali. Potenza misurata in generazione: 2080 Ti ~110-120 W (punte 160, limite 250); CPU non leggibile (stima 70-90
+bit. **Kernel degli esperti: chiuso per ora (1/10 03:50).** Banco reso stabile (patch 0008: 200 chiamate di
+riscaldamento, migliore di 5 giri): il caso base (un token per esperto) fa 171-176 us = **~195 GB/s**, non 132 (le prime
+misure prendevano la scheda che saliva di frequenza); con i pesi tenuti in L2 (`... same`) 163 us (−5-7%): **il limite e'
+il calcolo della decodifica i-quant, non la memoria**. Tempo GPU per gruppi (profilo Nsight): attesa CPU 16,3%, PCIe ~9%,
+esperti ~22%, ricorrenza GDN ~18%, pesi densi ~19%, resto ~15%: nessun kernel sopra il 22%, +20% sul kernel degli
+esperti = ~3% totale. **Rendimenti decrescenti su una scheda sola: la leva grossa rimasta e' il ~25% dei mancanti
+(seconda scheda con gli esperti divisi, punto 4a).** Potenza misurata in generazione: 2080 Ti ~110-120 W (punte 160, limite 250); CPU non leggibile (stima 70-90
 W); totale stimato alla presa 250-300 W in generazione, 110-140 a riposo (l'utente guardera' l'UPS).
 Vecchio blocco (21:45): `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
 l'utente deve abilitarli (Pannello NVIDIA → Desktop → Abilita impostazioni sviluppatore → Sviluppatore → Gestisci

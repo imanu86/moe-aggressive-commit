@@ -122,6 +122,23 @@ contatori di prestazioni GPU → Consenti a tutti gli utenti) oppure lanciare nc
 ncu ripeteva ogni kernel ripristinando anche l'arena da 40 GB mappata). Usare `ncu.exe`, non `ncu.bat` (il `|` del
 filtro). Nsight Systems non ha bisogno dei contatori.
 
+## Originale e PR al 1/10 mattina (controllo chiesto dall'utente prima di lavorare «sulla banda»)
+Decisione utente (1/10 04:00): la seconda scheda e' FUORI PERIMETRO per ora; si lavora sulla velocita' della 2080 Ti.
+- **Originale 0.1.30 (30/9 17:50):** piu' conversazioni in RAM (`--conversation-cache-mib 8192
+  --conversation-cache-slots 4`, opt-in, PR #189 = la nostra F2); modalita' poca RAM «residente» (`--resident-experts`:
+  in RAM solo gli esperti che la GPU non tiene = niente doppione); prompt da 1-4k +17-28%; `--idle-unload`, `POST
+  /unload|/load`; kernel CPU multi-token da un token (#152).
+- **PR aperte utili per noi:** #258 (hireymage) kernel GDN `down` TILE=1280 per sm_75, −30% su quei kernel (RTX 2070);
+  #186 (q8atnight) hyper-connection in 2 kernel, −1,5 ms per finestra; #284 (sergqwer) commit senza attesa, +5,6%;
+  **#242 (gputier) = la nostra 0007** (decodifica una volta per tutte le voci), piu' completa (anche `iq_mmvq` denso,
+  test `iq_multi_parity`); #270 (kenh0u) attenzione del prompt sui tensor core di Turing (m16n8k8), prefill +12%;
+  #317 (BlueKingMuch) `STRATA_SSD_KEEPALIVE` per la tabella PLE (probabile causa del blocco della prima richiesta
+  lunga); #315 hc multi-token; #241 kernel Q2_0; #292 esperti NVFP4; #286/#285 poca RAM su Windows.
+- **Fork (69 aggiornati dopo la 0.1.29, 6 con commit propri):** niente sui kernel (Volta, AMD, API Codex).
+- **Piano proposto (in attesa dell'ok):** (1) fork sulla 0.1.30 (tenere 0002-0006/0008, sostituire 0007 con #242);
+  (2) #258, #186, #284, #242, #270 una alla volta (`git fetch origin pull/N/head`), ciascuna misurata col banco e con
+  l'A/B sul motore; (3) #317 sul blocco iniziale; (4) lanciatore SOTA aggiornato. Atteso: −3-4 ms su ~45 per finestra.
+
 ## Cosa portiamo su Strata da DS4, Qwen38 e llama (lista del 30/9, in ordine di guadagno atteso)
 Base: sulla 2080 Ti una riga costa ~19 ms, i byte da leggere a 616 GB/s ne valgono ~4-5: il margine e' in attese e
 sincronizzazioni, non nel calcolo.

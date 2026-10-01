@@ -14,9 +14,11 @@ solo con permesso, niente binari di terzi non compilati da noi.
 `Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat` (copia in `lanciatori/`): 0.1.29 + patch
 0001-0005, `--elastic` (due zone), riserva di avvio 1393, porta 8100 solo su 127.0.0.1; la chiave API solo dalla variabile
 `STRATA_API_KEY` (il file non la contiene); si ferma se strata.exe o llama-server sono gia' in esecuzione; la
-configurazione porta `env.STRATA_WATCHDOG_S=240` e **`--ple-io mmap`** (20:40: con `direct`, il predefinito, la prima
-richiesta lunga dopo l'avvio si era bloccata oltre 60 s; con mmap nessun blocco, prefill 583 t/s, e la parte calda della
-tabella PLE per 131k di conversazione occupa ~2,8 GB di RAM, non i 27,5 che il daily carica tutti).
+configurazione porta `env.STRATA_WATCHDOG_S=240` e la tabella PLE in lettura diretta (predefinita). **`--ple-io mmap`
+TOLTO l'1/10 alle 03:40:** con mmap la preparazione della finestra costa 6-7 ms (fino a 80 ms quando Windows scarica le
+pagine) contro 0,7-0,9 ms con `direct` → ~12% in meno in decodifica e crolli (15,7 t/s); l'avevo messo il 30/9 guardando
+solo il blocco della prima richiesta lunga (che resta da capire: con `direct` e' successo una volta; rimedio per ora solo
+il limite a 240 s). Resta vero che la parte calda della tabella per 131k di conversazione sono ~2,8 GB, non 27,5.
 Configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` (log in `D:\ds4_work\strata\sota\`).
 
 ## Attenzione: il daily di produzione NON gira sulla 2080 Ti
@@ -100,8 +102,14 @@ restare identico bit per bit); (2) piu' righe per warp. Obiettivo: da ~58 a 150-
 1 token 255→259 us, 2 token ×1,30, 3 ×1,51, 4 ×1,63 (strati 0 e 47: ×1,35 e ×1,49 a 3 token). `STRATA_EXPERT_MULTI=0` =
 kernel originali. **A/B sul motore (22:09-22:20) NON VALIDO:** Jump Desktop (`JumpConnect.exe`) prendeva 4,2-4,5 core e
 il 32% del motore 3D della GPU (utente collegato da remoto): 42,8 ms per riga (nuovo) e 38,0 (vecchio) contro 18,9 del
-pomeriggio, pool CPU 42-46 ms per finestra contro 13,7. **Da rifare a macchina ferma** (senza Jump). Risultato
-collaterale: con Jump collegato Strata va a meta' velocita'.
+pomeriggio, pool CPU 42-46 ms per finestra contro 13,7. Risultato collaterale: con Jump collegato Strata va a meta'
+velocita'. **A/B a macchina ferma (1/10 03:22-03:36, nuovo → vecchio → nuovo, tutti con `--ple-io mmap`):** nuovo 21,4 ms
+per riga (39,2 t/s), vecchio 20,5 (41,1), terzo giro non valido (preparazione 80 ms per finestra per via di mmap, ultimo
+caso fallito). La voce che conta: **GPU per finestra 22,6 ms (nuovo) contro 23,7 (vecchio) = −4,7%, cioe' ~2-3% sul
+totale** (nella finestra reale ~1,3 coppie per gruppo): sotto la soglia del 5%; resta acceso perche' e' esatto bit per
+bit. **Leva ancora aperta sui kernel:** l'efficienza con 1 token (132 GB/s su 616): piu' righe per warp, carichi
+vettoriali. Potenza misurata in generazione: 2080 Ti ~110-120 W (punte 160, limite 250); CPU non leggibile (stima 70-90
+W); totale stimato alla presa 250-300 W in generazione, 110-140 a riposo (l'utente guardera' l'UPS).
 Vecchio blocco (21:45): `ERR_NVGPUCTRPERM`, l'utente Windows non ha accesso ai contatori di prestazioni della GPU:
 l'utente deve abilitarli (Pannello NVIDIA → Desktop → Abilita impostazioni sviluppatore → Sviluppatore → Gestisci
 contatori di prestazioni GPU → Consenti a tutti gli utenti) oppure lanciare ncu da amministratore. Poi:

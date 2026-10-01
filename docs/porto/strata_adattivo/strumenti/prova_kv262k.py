@@ -62,9 +62,20 @@ def main():
     ap.add_argument("--server-source", type=Path, help="Sorgenti server della versione candidata; altrimenti clone operativo")
     ap.add_argument("--needle-lengths", help="Dopo il banco: controllo retrieval upstream, ad esempio 32k,250k")
     ap.add_argument("--retrieval-250k", action="store_true", help="Dopo il banco: prompt con almeno 250000 token reali e ago al 50%")
+    ap.add_argument("--solo-retrieval-250k", action="store_true", help="Solo riempimento/retrieval 250k, senza ripetere il banco 131k")
+    ap.add_argument("--durata-max-s", type=int, default=3600, help="Limite totale della corsa, incluso avvio; termina i soli processi propri")
+    ap.add_argument("--logits-first", action="store_true", help="Diagnostica opt-in del primo token di ogni richiesta, se compilata")
     ap.add_argument("--solo-avvio", action="store_true", help="Verifica avvio e capacita' senza inviare prompt")
     ap.add_argument("--cache-fissa", type=int, help="Solo laboratorio: budget slot richiesto, senza elasticita'; il pack puo' aumentare gli slot effettivi")
     a = ap.parse_args()
+    if a.durata_max_s <= 0 or (a.solo_avvio and a.solo_retrieval_250k):
+        ap.error("Durata positiva e modalita' solo-avvio/solo-retrieval distinte")
+    deadline = time.monotonic() + a.durata_max_s
+    def remaining():
+        seconds = deadline - time.monotonic()
+        if seconds <= 0:
+            raise TimeoutError("Limite totale della corsa raggiunto")
+        return seconds
     active = [p.info["name"] for p in psutil.process_iter(["name"])
               if (p.info["name"] or "").lower() in ("strata.exe", "llama-server.exe")]
     if active:
@@ -79,6 +90,8 @@ def main():
         cfg["exe"] = str(candidate)
     cfg.update(cwd=str(out), log=str(out / "strata.log"), port=PORT, host="127.0.0.1")
     cfg["env"] = dict(cfg.get("env", {}), STRATA_WATCHDOG_S="240", STRATA_SPLIT_TIMING="1")
+    if a.logits_first:
+        cfg["env"]["STRATA_DUMP_FIRST_LOGITS"] = str(out / "first-logits")
     if a.cache_fissa is not None:
         if a.cache_fissa <= 0:
             raise ValueError("La cache fissa deve avere un numero positivo di slot")
@@ -108,7 +121,8 @@ def main():
     server = None
     bench = None
     result = {"name": a.nome, "kv_capacity": 262144,
-              "prompt_profile": None if a.solo_avvio else "lungo_131k", "out": str(out),
+              "prompt_profile": None if a.solo_avvio or a.solo_retrieval_250k else "lungo_131k", "out": str(out),
+              "duration_limit_s": a.durata_max_s,
               "exe": cfg["exe"],
               "exe_sha256": hashlib.sha256(Path(cfg["exe"]).read_bytes()).hexdigest(),
               "server_source": str(server_source),
@@ -136,6 +150,7 @@ def main():
                     pass
                 if time.monotonic() - started > 600:
                     raise TimeoutError("Server non pronto entro 600 s")
+                remaining()
                 time.sleep(3)
             if health.get("max_context") != 262144:
                 raise RuntimeError(f"Capacita' runtime inattesa: {health.get('max_context')}")
@@ -153,13 +168,27 @@ def main():
             if a.solo_avvio:
                 result.update(status="completed", test_type="startup_only")
                 return
+            if a.solo_retrieval_250k:
+                with (out / "retrieval-250k.log").open("w", encoding="utf-8") as log:
+                    bench = subprocess.Popen([sys.executable, "-B", "-u", str(HERE / "retrieval_250k.py"),
+                        "--source", str(server_source), "--tokenizer", cfg["tokenizer"],
+                        "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k")],
+                        cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
+                        creationflags=subprocess.CREATE_NO_WINDOW)
+                    code = bench.wait(timeout=remaining())
+                result["retrieval_250k"] = json.loads((out / "retrieval-250k/result.json").read_text(encoding="utf-8"))
+                print((out / "retrieval-250k.log").read_text(encoding="utf-8"), flush=True)
+                if code:
+                    raise RuntimeError("Controllo 250k fallito; vedere retrieval-250k/result.json")
+                result.update(status="completed", test_type="retrieval_250k_only")
+                return
             with (out / "banco.log").open("w", encoding="utf-8") as bench_log:
                 bench = subprocess.Popen([sys.executable, "-B", "-u", str(bench_wrapper), "--profilo", "lungo_131k",
                                           "--url", f"http://127.0.0.1:{PORT}", "--etichetta", a.nome,
                                           "--out", str(out / "banco"), "--nota", "KV 262144; prompt 131k; carico reale"],
                                          cwd=out, env=env, stdout=bench_log, stderr=subprocess.STDOUT,
                                          creationflags=subprocess.CREATE_NO_WINDOW)
-                if bench.wait(timeout=3600) != 0:
+                if bench.wait(timeout=remaining()) != 0:
                     raise RuntimeError("Banco fallito; vedere banco.log")
             runs = list((out / "banco").glob("*/results.jsonl"))
             if len(runs) != 1:
@@ -180,7 +209,7 @@ def main():
                         "--depths", "10,50,90", "--out", str(out / "needles.json")],
                         cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
                         creationflags=subprocess.CREATE_NO_WINDOW)
-                    code = bench.wait(timeout=7200)
+                    code = bench.wait(timeout=remaining())
                 result["needles"] = json.loads((out / "needles.json").read_text(encoding="utf-8"))
                 print((out / "needles.log").read_text(encoding="utf-8"), flush=True)
                 if code:
@@ -192,7 +221,7 @@ def main():
                         "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k")],
                         cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
                         creationflags=subprocess.CREATE_NO_WINDOW)
-                    code = bench.wait(timeout=2400)
+                    code = bench.wait(timeout=remaining())
                 result["retrieval_250k"] = json.loads((out / "retrieval-250k/result.json").read_text(encoding="utf-8"))
                 print((out / "retrieval-250k.log").read_text(encoding="utf-8"), flush=True)
                 if code:

@@ -1,0 +1,60 @@
+--- a/include/strata/core/verify.hpp
++++ b/include/strata/core/verify.hpp
+@@ -74,6 +74,8 @@
+     /// One window: `tokens[0..T)` at positions pos0.., the pool served per layer; `out[t]` = argmax after token t.
+     /// The PLE rows are gathered here from `ss.ple_prev` and the tokens.  Captures the T-token graph on first use.
+     bool run(int T, const int32_t* tokens, int64_t pos0, PoolMultiFn pool, void* user, int32_t* out, std::string& err);
++    bool copy_logits(int t, float* host) const;
++    int64_t vocab() const { return next_ ? next_->vocab() : n_vocab_; }
+     /// The sampling the verify window's head applies (temperature / top_p / top_k / seed).  Set per
+     /// request; greedy by default.  The sampling itself runs OUTSIDE the captured graph - its
+     /// parameters would otherwise be baked forever - so this can change between requests freely.
+--- a/src/core/verify.cpp
++++ b/src/core/verify.cpp
+@@ -1311,4 +1311,10 @@
+     return next_ == nullptr || next_->commit(n_keep, err);
+ }
+ 
++bool Verifier::copy_logits(int t, float* host) const {
++    if (next_ != nullptr) return next_->copy_logits(t, host);
++    if (head_logits_ == nullptr || host == nullptr || t != 0 || n_vocab_ <= 0) return false;
++    return cudaMemcpy(host, head_logits_, (size_t) n_vocab_ * sizeof(float), cudaMemcpyDeviceToHost) == cudaSuccess;
++}
++
+ }  // namespace strata::core
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -5391,6 +5391,16 @@
+                 for (int i = 0; i <= a; ++i) consumed.push_back(window[(size_t) i]);
+                 draft_offered += T - 1;
+                 draft_accepted += a;
++                if (first_window) {
++                    if (const char* prefix = std::getenv("STRATA_DUMP_FIRST_LOGITS")) {
++                        const std::string path = std::string(prefix) + ".pos" + std::to_string(p) + ".f32";
++                        std::vector<float> row((size_t) ver.vocab());
++                        std::FILE* f = ver.copy_logits(0, row.data()) ? std::fopen(path.c_str(), "wb") : nullptr;
++                        if (f == nullptr || std::fwrite(row.data(), sizeof(float), row.size(), f) != row.size())
++                            std::fprintf(stderr, "strata generate: cannot dump first logits %s\n", path.c_str());
++                        if (f) std::fclose(f);
++                    }
++                }
+                 first_window = false;
+                 bool eos = false;
+                 for (int i = 0; i <= a && produced_n < max_new && !eos; ++i) {
+@@ -6186,6 +6196,16 @@
+             int a = 0;
+             while (a < T - 1 && window[(size_t) a + 1] == outv[(size_t) a]) ++a;
+             if (first_window) {
++                if (first_window) {
++                    if (const char* prefix = std::getenv("STRATA_DUMP_FIRST_LOGITS")) {
++                        const std::string path = std::string(prefix) + ".pos" + std::to_string(p) + ".f32";
++                        std::vector<float> row((size_t) ver.vocab());
++                        std::FILE* f = ver.copy_logits(0, row.data()) ? std::fopen(path.c_str(), "wb") : nullptr;
++                        if (f == nullptr || std::fwrite(row.data(), sizeof(float), row.size(), f) != row.size())
++                            std::fprintf(stderr, "strata generate: cannot dump first logits %s\n", path.c_str());
++                        if (f) std::fclose(f);
++                    }
++                }
+                 first_window = false;
+                 ttft_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+             }

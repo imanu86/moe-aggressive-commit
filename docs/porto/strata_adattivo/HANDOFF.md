@@ -1,7 +1,8 @@
-# HANDOFF — Strata adattivo sulla RTX 2080 Ti (consolidato l'1/10/2026 alle 04:20)
+# HANDOFF — Strata adattivo sulla RTX 2080 Ti (0.1.30 validata e promossa l'1/10/2026)
 
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
-`research/ds4-iq1-subbit-tier-planner`. Commit con pathspec espliciti, formato `OPUS-SEZIONE-Descrizione`, trailer
+`research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,
+formato `MODELLO-SEZIONE-Descrizione` col modello autore effettivo, trailer
 `Co-Authored-By`, push subito. Regole dell'utente: file del daily intatti; chiave API mai letta, stampata o
 committata; download solo con permesso; niente binari di terzi non compilati da noi; **a ogni aggiornamento di questo
 file dare il link GitHub**:
@@ -11,19 +12,22 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 - Macchina: **solo la RTX 2080 Ti 22 GB** (sm_75, PCIe 3.0, 13,1 GB/s), Ryzen 7 5800X (8 core, AVX2), 96 GB di RAM. La
   3060 e' smontata; tornera' in OCuLink. **La seconda scheda e' fuori perimetro per ora** (decisione utente, 1/10).
 - Motore: **Strata** (github.com/Niko1221/Strata, MIT) col nostro fork locale. Sugli stessi prompt: Strata 44-45 t/s,
-  daily llama ricompilato 12-16 t/s. A 131k di contesto: 35 t/s, prefill 614 t/s.
+  daily llama ricompilato 12-16 t/s. A 131k di contesto: **41,8 t/s, prefill 628,8 t/s** (0.1.30, prova dell'1/10).
 - Lanciatore pronto per l'utente: `Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat`.
 - Il daily di produzione (`D:\ds4_work\bin_elastico_m2`, solo sm_86) **non gira sulla 2080 Ti**; runtime sm_75 pronti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
 - **Lanciatore SOTA** (copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
-  `build-0129\strata.exe` (0.1.29 + patch nostre 0001-0008), `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
+  `build-0130\strata.exe` (0.1.30 + le 13 patch della sezione 3), `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
   contesto 139264, KV int8, tabella PLE in lettura diretta, `env.STRATA_WATCHDOG_S=240`; porta 8100 solo su 127.0.0.1;
   la chiave solo dalla variabile `STRATA_API_KEY`; si ferma se strata.exe o llama-server sono gia' accesi.
-- **Candidato non ancora promosso:** `build-0130\strata.exe` = 0.1.30 + le 13 patch (sezione 3). Per riga ~4% meglio
-  nelle voci di GPU. Prima di metterlo nel lanciatore: prova sotto pressione (`prova_hog.py`) e prova a 131k
-  (`--profilo lungo_131k`), perche' la 0.1.30 ha cambiato il prestito al prefill e l'elastica e' stata adattata.
+- **Validazione completata e lanciatore aggiornato (1/10):** 4.000 MiB di pressione per 60 s, 4.096 token in 99,2 s,
+  nucleo fisso preservato, nessuno stallo; entrambe le richieste a 131k completate, 41,8 t/s e 20,4 ms per riga.
+  Dettagli: `RISULTATI_1_OTTOBRE.md`, log in `corse_2080ti/20261001_0130_validazione/`. Confronti col 30/9 storici,
+  senza A/B nella stessa sessione: non attribuire tutto il guadagno alla versione.
+- **Ripristino 0.1.29:** copie del JSON operativo e del bat del Desktop prima della promozione in
+  `D:\ds4_work\strata\ripristini\20261001_0130\`; istruzioni nel documento dei risultati. `build-0129` conservata.
 
 ## 3. Il clone `D:\ds4_work\strata\Strata`
 - `main` = **v0.1.30 (30ec18e) + 13 commit** (copie in `patches/su-0.1.30/`, ricostruibile con `git am`):
@@ -40,7 +44,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 - Tag di ripristino: `pre-0129-rebase` (0.1.21 + 3 patch), `pre-0130-rebase` (0.1.29 + 8 patch). Rami delle PR scaricati:
   `pr-258 pr-186 pr-284 pr-242 pr-270 pr-317 pr-315`. I commit del clone restano locali (pubblicare il fork = chiedere).
 - Build (CUDA 12.6, sm_75+86): `../strata_prova/build-strata-0130.bat` → `build-0130\`; `build-strata-0129.bat` →
-  `build-0129\` (quello del lanciatore); `build\` = 0.1.21 sm_86; `build-sm75\` = 0.1.21 sm_75. Banco dei kernel:
+  `build-0129\` (ripristino precedente); `build\` = 0.1.21 sm_86; `build-sm75\` = 0.1.21 sm_75. Banco dei kernel:
   `D:\ds4_work\strata\build-bench.bat` (target `native_expert_bench`, per ora punta a `build-0129`).
 - Dati: `D:\ds4_work\strata\Strata-data` (pack iq3_xxs, mtp). Modello: GSQ-RCO IQ3_XXS in `Downloads`.
 
@@ -58,7 +62,9 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 | + #284 (+ #186 con `STRATA_GR_V3=1`) | — | — | GPU 22,8 (22,6) ms, commit 0,37 ms; totale falsato da Codex e indicizzazione |
 | 0.1.30 + patch + PR, altri ~2 core (ultima prova) | 43,8-45,4 | 19,5-18,8 | commit 0,32-0,34 ms |
 | a 131k (0.1.29 + patch) | 35,1 | 24,2 | prefill 614 t/s; 1,64 token per finestra |
+| a 131k (0.1.30 + 13 patch, 1/10) | **41,8** | **20,4** | prefill 628,8 t/s; 1,72 token per finestra; altri 0,86 core in media |
 | sotto 4 GB di pressione per 60 s (due zone) | 4.096 token in 95,9 s | — | calo a passi da ~1 GiB, nucleo intatto (3060: 146 s / 170 s) |
+| sotto 4 GB di pressione per 60 s (0.1.30, 1/10) | 4.096 token in 99,2 s | — | cache 7.291 → 4.400 slot, nucleo 3.357 preservato, poi 4.461 slot |
 
 Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTEMBRE.md`, `corse_2080ti/`,
 `../strata_prova/RISULTATI_28_SETTEMBRE.md`.
@@ -106,7 +112,7 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 - Fork: niente sui kernel (Volta, AMD, API Codex). L'originale esce piu' volte al giorno: riallinearsi spesso.
 
 ## 9. Prossimi passi, in ordine
-1. Promuovere `build-0130` nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
+1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
 2. PR rimaste: #270 (misurare col profilo `lungo_131k`), #317 (blocco iniziale), #315, #242 al posto della 0007.
 3. Provare le due funzioni nuove della 0.1.30 nell'uso reale: `--conversation-cache-*` (agente + subagenti) e
    `--resident-experts` (RAM).

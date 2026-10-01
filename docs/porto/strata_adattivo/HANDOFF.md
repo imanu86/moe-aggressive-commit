@@ -155,8 +155,15 @@ Decisione utente (1/10 04:00): la seconda scheda e' FUORI PERIMETRO per ora; si 
   Nel clone, sopra i 9 commit nostri: #258 (204cee8, conflitto risolto tenendo il `usable` per sm_60 della 0.1.30),
   #284 (20273f4, conflitti in generate.cpp: tenuti i controlli nuovi della 0.1.30 + `set_commit_async` + il
   `cudaDeviceSynchronize` a inizio richiesta), #186 (2 commit, puliti; **opt-in: `STRATA_GR_V3=1`**, non identica bit
-  per bit). **In corso 04:00:** build + `n0130_pr284` (commit senza attesa, predefinito) + `n0130_pr186` (con
-  `--env STRATA_GR_V3=1`). Restano: #270 (prefill, da misurare col profilo lungo), #317, #315, #242 contro la 0007.
+  per bit). **Misurate 04:00-04:07 (ma con Codex sandbox, indicizzazione e OneDrive a 3,8-4,8 core: pool CPU 20 ms per
+  finestra invece di 15, totale 42 t/s):** per le voci di GPU, che il disturbo tocca poco: + #284 → GPU 22,8 ms, commit
+  **0,37 ms** (da 1,04); + #186 (`STRATA_GR_V3=1`) → GPU 22,6 ms, commit 0,41. Somma delle tre PR: ~−2,0 ms per
+  finestra su ~46 (~+4% a macchina ferma, da confermare). Restano: #270 (prefill, da misurare col profilo lungo), #317,
+  #315, #242 contro la 0007.
+- **Scoperta sul disturbo (04:08):** nell'uso reale gira sempre qualcosa (agenti, Codex, indicizzazione, OneDrive, Jump)
+  e la parte fragile e' la corsia CPU (thread fissati ai core, priorita' normale). **In corso:** A/B della priorita' di
+  processo (`prova_sm75.py --priorita high` alza `strata.exe` a HIGH appena parte) contro normale, sotto lo stesso
+  disturbo: `n0130_prio_high` poi `n0130_prio_norm`; guardare `pool + plan` per finestra.
 - **Regola per le misure:** Jump Desktop spento (prende 4,5 core e 1/3 della GPU), niente `nvidia-smi` a ripetizione
   durante una corsa, banco dei kernel con riscaldamento lungo (patch 0008).
 

@@ -36,6 +36,27 @@ F.OUT.mkdir(parents=True, exist_ok=True)
 stop = threading.Event()
 th = threading.Thread(target=campiona, args=(stop, F.OUT / f"cpu_{nome}.jsonl"), daemon=True)
 th.start()
+
+
+def alza_priorita(classe):
+    """1/10: --priorita high|above alza la classe di priorita' di strata.exe appena parte (i thread del pool sono
+    fissati ai core e a priorita' normale cedono il passo a indicizzazione, sincronizzazioni, sandbox...)."""
+    import psutil
+    cl = psutil.HIGH_PRIORITY_CLASS if classe == "high" else psutil.ABOVE_NORMAL_PRIORITY_CLASS
+    fatto = set()
+    while not stop.wait(1.0):
+        for p in psutil.process_iter(["name", "pid"]):
+            if (p.info["name"] or "").lower() == "strata.exe" and p.info["pid"] not in fatto:
+                try:
+                    p.nice(cl)
+                    fatto.add(p.info["pid"])
+                    print("priorita'", classe, "a strata.exe pid", p.info["pid"], flush=True)
+                except Exception as e:
+                    print("priorita' non impostata:", e, flush=True)
+
+
+if "--priorita" in sys.argv:
+    threading.Thread(target=alza_priorita, args=(opz("--priorita", "above"),), daemon=True).start()
 try:
     print("exe", C.BASE["exe"], "riserva", riserva, "elastica", elastica, flush=True)
     # 30/9: --arg K=V sostituisce (o aggiunge) un argomento del motore, es. --arg --spec-min-p=0.3

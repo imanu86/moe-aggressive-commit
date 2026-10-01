@@ -1,0 +1,101 @@
+From 20273f4e22dca104e61d84a36d00b175f3077546 Mon Sep 17 00:00:00 2001
+From: sergiywith <sergiywith@gmail.com>
+Date: Wed, 30 Sep 2026 22:25:39 +0300
+Subject: [PATCH 11/13] Verify: the commit graph no longer waits; it overlaps
+ the MTP draft
+
+The commit's cudaStreamSynchronize held the host ~0.45 ms a round. The next window follows it on the same stream and
+the drafter (its own stream) reads only this window's final rows and its own K/V, so a single-GPU session
+(Verifier::set_commit_async) returns at once. Whatever touches the session from another stream or the host afterwards
+synchronizes the device: the start of each --serve request (checkpoint restore, zeroing, the prompt path) and the end
+of a generate run; checkpoint saves already did. A layer split keeps the wait, as does STRATA_COMMIT_SYNC=1.
+
+IQ2_XS, 400-token answers, 3 runs each: 128.6 -> 135.8 tok/s decode (+5.6%), the same tokens. NVFP4 pack +0.8%.
+
+Co-Authored-By: Claude Opus 5.5 <noreply@anthropic.com>
+Claude-Session: https://claude.ai/code/session_01VZy1yKaDDiA8a7svdwaHio
+---
+ include/strata/core/verify.hpp |  5 +++++
+ src/core/verify.cpp            | 12 ++++++++++--
+ src/program/generate.cpp       |  5 +++++
+ 3 files changed, 20 insertions(+), 2 deletions(-)
+
+diff --git a/include/strata/core/verify.hpp b/include/strata/core/verify.hpp
+index bc0051d..4479184 100644
+--- a/include/strata/core/verify.hpp
++++ b/include/strata/core/verify.hpp
+@@ -109,6 +109,11 @@ public:
+ 
+     /// Keep the first `n_keep` (1..T) tokens of the last window; advances `ss.ple_prev` by them.
+     bool commit(int n_keep, std::string& err);
++    /// commit() returns without waiting for its graph (a single-GPU session sets it): the next window follows it on
++    /// the same stream and the drafter reads nothing it writes, so it overlaps the draft. Whoever reads or writes
++    /// the session from another stream or the host afterwards (a new request, a checkpoint) synchronizes the device
++    /// first.  STRATA_COMMIT_SYNC=1 keeps the wait.
++    static void set_commit_async(bool on);
+ 
+     /// Token t's residual after the last layer, (hc, n_embd) on the device, valid until the next `run`.
+     const float* final_R(int t) const;
+diff --git a/src/core/verify.cpp b/src/core/verify.cpp
+index cea630e..0a6e4a9 100644
+--- a/src/core/verify.cpp
++++ b/src/core/verify.cpp
+@@ -1170,6 +1170,9 @@ void Verifier::publish_plan(void* ctx) {
+     *(volatile uint32_t*) v->h_flagA_ = v->cur_layer_ + 1;
+ }
+ 
++namespace { bool g_commit_async = false; }
++void Verifier::set_commit_async(bool on) { g_commit_async = on && std::getenv("STRATA_COMMIT_SYNC") == nullptr; }
++
+ bool Verifier::commit(int n_keep, std::string& err) {
+     const OnDevice on_device(device_);
+     if (n_keep < 1 || n_keep > last_t_) { err = "verify: commit count out of range"; return false; }
+@@ -1180,8 +1183,13 @@ bool Verifier::commit(int n_keep, std::string& err) {
+     std::atomic_thread_fence(std::memory_order_seq_cst);
+     const cudaError_t le = cudaGraphLaunch(commit_exec_, cs_);
+     if (le != cudaSuccess) { err = std::string("verify: commit launch: ") + cudaGetErrorString(le); return false; }
+-    const cudaError_t se = cudaStreamSynchronize(cs_);
+-    if (se != cudaSuccess) { err = std::string("verify: commit: ") + cudaGetErrorString(se); return false; }
++    // set_commit_async: no wait here - the next window runs on the same stream after it, and the drafter (its own
++    // stream) reads only this window's final rows and its own K/V. h_commit_ is next written after the next window's
++    // results are read, i.e. after this graph has run.
++    if (!g_commit_async) {
++        const cudaError_t se = cudaStreamSynchronize(cs_);
++        if (se != cudaSuccess) { err = std::string("verify: commit: ") + cudaGetErrorString(se); return false; }
++    }
+     if (ple_stage())   // stages that share one session must advance it once
+         for (int t = 0; t < n_keep; ++t) {
+             ss_->ple_prev[0] = ss_->ple_prev[1];
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 5d2de03..26a9211 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -1280,6 +1280,7 @@ int main(int argc, char** argv) {
+         }
+     }
+     const bool multi_gpu = !split_devs.empty() && !split_same;
++    strata::core::Verifier::set_commit_async(!multi_gpu);   // PR #284: see Verifier::set_commit_async
+     if (o.mmap_experts && !o.shared_expert_arena.empty()) {
+         std::fprintf(stderr, "strata generate: --shared-expert-arena backs the resident arena and cannot be used with --mmap-experts\n");
+         return 2;
+@@ -4628,6 +4629,9 @@ int main(int argc, char** argv) {
+                 return imgs_below(req_imgs, L) == pre_imgs;
+             };
+             const bool want_cvec = strata::kernels::cvec().loaded() ? req_cvec != 0 : true;
++            // PR #284: the last request's final commit may still be running on the verifier's stream
++            // (set_commit_async): everything below reads, restores or zeroes the session from other streams and the host
++            cudaDeviceSynchronize();
+             int64_t resume = 0;
+             bool from_live = false;
+             if (o.prompt_cache > 0 && want_cvec == cvec_cached) {
+@@ -6002,6 +6006,7 @@ int main(int argc, char** argv) {
+     for (int64_t t : produced) std::printf(" %lld", (long long) t);
+     std::printf("\n");
+     const double decode_ms = decoded > 0 ? total_ms / (double) decoded : 0.0;
++    cudaDeviceSynchronize();   // the last commit (set_commit_async) before anything reads the session
+     std::printf("%-24s %lld tokens in %.1f ms  ->  %.2f tok/s\n", "decode", (long long) decoded, total_ms,
+                 decode_ms > 0.0 ? 1000.0 / decode_ms : 0.0);
+     if (n_prompt > 1)
+-- 
+2.54.0.windows.1
+

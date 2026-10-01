@@ -32,7 +32,8 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   candidata in `lanciatori/strata-2080ti-256k.json`, KV int8 e residenti in VRAM 32.768. **Capacita' 262.144 provata**
   su due prompt a 131k: avvio 61 s, KV in RAM bloccata 3,09 GiB, decode 43,0 t/s, prefill freddo 663 t/s,
   nessuno stallo; RAM disponibile minima 32,59 GB. Dettagli in `RISULTATI_KV262K_1_OTTOBRE.md`.
-  Il riempimento del contesto fino a circa 250k resta da provare. **JSON operativo ora a 262.144**, con #270.
+  Il riempimento fino a circa 250k era allora da provare; ora completato sulla candidata HC nella finestra serale.
+  **JSON operativo a 262.144**, con #270; riempimento reale 250k non ancora provato su questo lanciatore.
   L'utente ha abilitato l'accesso completo e autorizzato la promozione, poi richiesto standby;
   **ha ripreso il lavoro l'1/10 dichiarando la macchina libera** (prove #315 qui sotto).
 - **PR #270 validata l'1/10 in build separata:** 8 casi di parita' numerica superati, zero fallimenti;
@@ -60,7 +61,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   scritture su `D:\ds4_work`/Desktop; l'accesso completo e' tornato nella ripresa successiva.
   **Nessuna promozione della #315.** Processi lab chiusi e hash/configurazione operativa #270 verificati.
 
-- **Laboratorio 0.1.31 completato e IN PAUSA su richiesta dell'utente (1/10):** nove patch
+- **Pausa precedente della 0.1.31, prima della ripresa serale (1/10):** nove patch
   locali portate e ricostruzione riproducibile; controlli IQ/MMVQ/GDN/QSA superati.
   Dequantizzazione vettoriale: 18 confronti numerici superati e A/B/A a cache fissa 4.200
   (5.621 slot effettivi), KV262144/prompt131k: prefill **752,52 / 756,44 / 754,99 t/s**,
@@ -68,11 +69,24 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   Decode 36,828 / 39,875 / 38,403 t/s con testo/MTP diversi; non attribuirlo al kernel di prefill.
   HC/GDN FP16 compilata separatamente, 12 controlli delle copie superati; 69.729 valori
   dei pesi non esatti dopo conversione FP16. **Prova sul modello/qualita' ancora da fare.**
-  Prompt reale 250k: strumento preparato, **non eseguito**. Dettagli in
+  A quella pausa il prompt reale 250k era preparato ma non eseguito; prima prova nei risultati serali sotto. Dettagli in
   `RISULTATI_0131_FORK_1_OTTOBRE.md`, evidenza `corse_2080ti/20261001_0131_fork/`, patch
   `patches/su-0.1.31/`. Lanciatore #270 e hash preservati, processi del laboratorio chiusi.
   OCGC-IA informata della disponibilita' GPU rispetto a Strata; coordinarsi prima della ripresa.
   **Non avviare altri test o monitoraggi: attendere una nuova richiesta dell'utente.**
+
+- **Finestra serale conclusa l'1/10:** tre corse entro 30 minuti, macchina libera e nessun
+  carico artificiale. HC/GDN FP16 + diagnostica dei primi logits sul server persistente:
+  prefill **725,83 → 828,53 t/s (+14.15%)**, TTFT **181,432 → 159,000 s** a 131k;
+  decode aggregato 37,409 → 36,489 t/s, output/MTP diversi. Logits finiti ma non bitwise,
+  argmax primo token uguale sui due prompt lunghi; verifica generale della qualita' aperta.
+  **Prima prova reale 250k completata sulla candidata:** 250022 token runtime, ago a meta'
+  recuperato. Non e' una validazione del lanciatore elastico operativo. Nessuna promozione.
+  Upstream ora 0.1.32 (`c499bd102e`), 380 fork confrontati, 39 avanti, zero errori; fork 2080ti
+  invariato. Piste nuove #372 gather, #374 PLE, #378 KV VMM (non applicabile direttamente
+  con kv-resident), #407 policy adattiva. Dettagli `RISULTATI_SERA_HC_FP16_1_OTTOBRE.md`,
+  evidenza `corse_2080ti/20261001_sera_hc_fp16/`, patch diagnostica `0019`.
+  **Carichi chiusi e via dato a OCGC-IA. Nessuna ulteriore corsa Strata programmata.**
 
 ## 3. Il clone `D:\ds4_work\strata\Strata`
 - `main` = **v0.1.30 (30ec18e) + 13 commit** (copie in `patches/su-0.1.30/`, ricostruibile con `git am`):
@@ -178,16 +192,17 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 
 ## 9. Prossimi passi, in ordine
 
-**Stato corrente: IN PAUSA per richiesta esplicita dell'utente dopo A2.** Alla prossima
-ripresa, base 0.1.31 e confronto vettoriale sono gia' completati: partire dalla validazione
-sul modello HC/GDN FP16 (logits/qualita' e retrieval), poi dal riempimento reale 250k.
-Nessuna promozione delle candidate 0.1.31; coordinare l'uso GPU con OCGC-IA.
+**Finestra serale conclusa: GPU restituita a OCGC-IA, nessun altro job Strata programmato.**
+HC/GDN FP16 ora provata sul modello a 131k (+14,15% prefill nel singolo A/B), primi logits
+misurati e prompt a 250022 token reali completato sulla candidata (ago recuperato). Alla prossima ripresa:
+conferma A/B/A, quality/retrieval piu' ampi prima di promuoverla; poi #372/#374.
+Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Lanciatore ancora #270.
 
 1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
 2. **#270 verificata e promossa nel lanciatore:** patch `patches/da-valutare/0014-PR270-prefill-Turing.patch`, compilazione CUDA 12.6 e
    parita' superate, prefill +22% nel confronto base/candidata/base su KV 262.144. Rimaste #317 (SSD), #315, #242 al posto
    della 0007. Preparazione in `PREPARAZIONE_256K_PR270.md`, misure in `RISULTATI_PR270_1_OTTOBRE.md`.
-   Il prompt pieno a circa 250k resta da provare: l'utente ha scelto di passare prima alla #270.
+   Il prompt pieno a circa 250k fu rinviato dall'utente per passare prima alla #270; ora provato sulla candidata HC.
    **Ripresa autorizzata l'1/10 con macchina libera:** #315 compilata e provata, numerica superata,
    kernel piu' rapido, guadagno modello contenuto (+3,62% t/s ma −1,35% ms/riga a cache fissa).
    Confermare v1/v3 nello stesso binario prima di promuoverla. **Priorita' dopo la ricognizione:**
@@ -212,7 +227,8 @@ Nessuna promozione delle candidate 0.1.31; coordinare l'uso GPU con OCGC-IA.
   Il pack puo' trasformare il budget richiesto in un numero maggiore di slot; leggere `/metrics`.
   Nel laboratorio 0.1.31 budget 5.000 rifiutato (900 MiB liberi); A/B/A accettata con 4.200.
   `--server-source <sorgenti>` seleziona il server della base; `--needle-lengths` e
-  `--retrieval-250k` preparati per la prossima ripresa, non eseguiti in questa sessione.
+  `--retrieval-250k` conservati; nella finestra serale eseguito `--solo-retrieval-250k` sulla HC.
+  `--durata-max-s` limita tutta la corsa, `--logits-first` abilita il dump nella build con 0019.
 - Profilo: `strumenti/prova_nsys_cli.py` + `strumenti/analizza_nsys.py`. Daily di laboratorio:
   `strumenti/daily_rapido.py [--runtime DIR] [--env K=V]`. Fork: `../strata_prova/fork_strata.py`.
 - Regole di misura: Jump Desktop spento; niente `nvidia-smi` a ripetizione durante una corsa; motori alternati nella

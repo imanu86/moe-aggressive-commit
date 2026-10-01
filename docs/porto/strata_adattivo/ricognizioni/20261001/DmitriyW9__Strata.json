@@ -1,0 +1,54 @@
+{
+  "ahead_by": 5,
+  "behind_by": 0,
+  "commits": [
+    {
+      "sha": "24006278cbcbcead4f3fdcd09fd2d346e0c3a84d",
+      "message": "Enhance dequantization and PLE table handling in kernels\n\n- Added embedding dequantization support in `dequant_bf16_test.cpp`, including checks for embedding discrepancies.\n- Updated `iq_parity.cpp` to conditionally use `iq_dequant_f32` or `dequant_f32` based on IQ type.\n- Refactored `ngram.cpp` to introduce a new `ple_dequant_row` function for handling different row types in PLE tables.\n- Modified `ple_reader.cpp` and `ple_reader_test.cpp` to accommodate variable row sizes and ensure proper handling of PLE table data.\n- Enhanced `iq_pack.py` to support native packing for models with split layer roles across GGUF shards.\n- Added tests in `test_iq_pack.py` to verify correct handling of layer roles split across GGUF shards.",
+      "url": "https://github.com/Niko1221/Strata/commit/24006278cbcbcead4f3fdcd09fd2d346e0c3a84d"
+    },
+    {
+      "sha": "6410d9c5d60d648b7e6cf0842335deb520217f30",
+      "message": "_",
+      "url": "https://github.com/Niko1221/Strata/commit/6410d9c5d60d648b7e6cf0842335deb520217f30"
+    },
+    {
+      "sha": "312ec1870b027acd61412b2472388eb718f102dd",
+      "message": "Merge origin/main into main\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
+      "url": "https://github.com/Niko1221/Strata/commit/312ec1870b027acd61412b2472388eb718f102dd"
+    },
+    {
+      "sha": "34746832eb92102db4d7f29fe1bd1bd377fd2676",
+      "message": "Clarify quant dispatch predicates\n\nCo-authored-by: Copilot <223556219+Copilot@users.noreply.github.com>",
+      "url": "https://github.com/Niko1221/Strata/commit/34746832eb92102db4d7f29fe1bd1bd377fd2676"
+    },
+    {
+      "sha": "e10b5021572cd60c3cdf9e114472f2f95a4a3559",
+      "message": "Добавить функции dequant_gu_f16 и dequant_gu_kernel для обработки матриц gate/up в FP16, а также обновить соответствующие вызовы в native_expert_parity и prefill.",
+      "url": "https://github.com/Niko1221/Strata/commit/e10b5021572cd60c3cdf9e114472f2f95a4a3559"
+    }
+  ],
+  "files": [
+    "README.md",
+    "docs/ORCA.md",
+    "include/strata/kernels/cpu/expert_layout.hpp",
+    "include/strata/kernels/dequant_bf16.hpp",
+    "include/strata/kernels/iq_kernels.hpp",
+    "include/strata/kernels/ngram.hpp",
+    "include/strata/ngram/ple_reader.hpp",
+    "setup.py",
+    "src/core/native_head.cpp",
+    "src/kernels/cpu/expert_layout.cpp",
+    "src/kernels/cuda/dequant_bf16.cu",
+    "src/kernels/cuda/iq_kernels.cu",
+    "src/kernels/dequant_bf16_test.cpp",
+    "src/kernels/iq_parity.cpp",
+    "src/kernels/native_expert_parity.cpp",
+    "src/kernels/ngram.cpp",
+    "src/ngram/ple_reader.cpp",
+    "src/ngram/ple_reader_test.cpp",
+    "src/prefill/prefill.cpp",
+    "tools/iq_pack.py",
+    "tools/test_iq_pack.py"
+  ]
+}

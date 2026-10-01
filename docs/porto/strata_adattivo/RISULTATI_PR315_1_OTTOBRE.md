@@ -120,6 +120,11 @@ o cambiare il lanciatore sulla base del solo +3,62%. Dopo quel controllo, il pro
 per la velocita' resta la parte densa della #242: la parte esperti a decodifica unica e' gia'
 nella patch 0007; evitare di attribuirle un miglioramento nuovo.
 
+**Aggiornamento dalla ricognizione successiva:** la parte densa #242 e' gia' upstream nella
+0.1.31, insieme alla #270. L'utente ha autorizzato una base di laboratorio aggiornata e poi
+le ottimizzazioni sm75 del fork 2080ti. Seguire `RICERCA_FORK_1_OTTOBRE.md` per l'ordine attuale;
+non applicare la #242 una seconda volta alla nuova base.
+
 Alla fine delle corse tutti i processi di laboratorio sono stati chiusi; verificati zero motori
 e zero server di laboratorio attivi, hash e configurazione operativa ancora #270/KV 262.144.
 Durante le prove il profilo di accesso impediva commit/push e scritture su `D:\ds4_work`/Desktop.

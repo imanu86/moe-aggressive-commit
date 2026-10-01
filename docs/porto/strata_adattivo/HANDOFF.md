@@ -139,15 +139,28 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
   generazione, 110-140 a riposo. L'utente leggera' il valore vero dall'UPS.
 
 ## 8. L'originale (controllato l'1/10 mattina)
+- **Ricognizione aggiornata l'1/10, 10:28 UTC:** upstream **0.1.31**, SHA `9259cad4cf`, 61 commit
+  dopo 0.1.30. Gia' incluse #242 (anche densa), #270 con follow-up, #258 e #186 opt-in: non riapplicarle
+  alla nuova base. #284 ancora da mantenere. 326 fork accessibili confrontati, 35 con commit propri,
+  46 PR aperte censite. Dettagli e snapshot in `RICERCA_FORK_1_OTTOBRE.md` e `ricognizioni/20261001/`.
+  Fork prioritario **jklnvlink/Strata-2080ti**, 15 commit sopra 0.1.31: dequantizzazione vettoriale
+  (+5% prefill dichiarato), HC prefill FP16 (+14% dichiarato), gather raggruppato. Misure dell'autore
+  su due 2080 Ti/Coder: da replicare sulla nostra singola scheda/IQ3_XXS. Non sommare percentuali.
+  L'utente ha autorizzato di procedere: preparare sorgenti/build 0.1.31 separati nel laboratorio,
+  conservare le patch elastiche, provare prima dequant vettoriale e poi HC FP16 completo dei fix.
+  Il percorso HC FP16 cambia arrotondamenti: validare logits/qualita', non dichiararlo bitwise.
+  Nessuna modifica al lanciatore in questa ricognizione; risultati #315 pubblicati in `00542a8`.
 - **0.1.30** ha gia': piu' conversazioni in RAM (`--conversation-cache-mib 8192 --conversation-cache-slots 4`, opt-in);
   modalita' poca RAM «residente» (`--resident-experts`: in RAM solo gli esperti che la GPU non tiene); prompt da 1-4k
   +17-28%; `--idle-unload`, `POST /unload|/load`; RTX 20 ufficiali dalla 0.1.27.
 - **Esperti divisi su due schede** esistono gia' («CUDA1–3 expert experiment», `docs/SECOND_GPU.md`,
   `--expert-cache-device1 N`): per quando torna la 3060.
-- PR aperte da seguire: #242 (= la nostra 0007, piu' completa: anche il kernel denso), #270 (attenzione del prompt sui
-  tensor core di Turing: +12% dichiarato dall'autore su altra GPU, +22% misurato qui), #317, #315, #241, #292
-  (esperti NVFP4: decodifica piu' semplice), #286/#285.
-- Fork: niente sui kernel (Volta, AMD, API Codex). L'originale esce piu' volte al giorno: riallinearsi spesso.
+- PR aperte pertinenti: #282 (prefill auto 16k/32k), #317 (SSD), #315 (HC), #320 (profiler), #309
+  (riuso conversazioni). #242/#270 chiuse: il lavoro e' upstream pur senza `merged_at`.
+  #343 documenta una strada negativa: GEMV BF16 di decode su tensor core sm75 piu' lenta nel banco;
+  non confonderla con GEMM HC del prefill. #353 sostituisce #292 per NVFP4, non prioritaria sul nostro IQ3_XXS.
+- Fork: ora esiste lavoro concreto sm75 nel fork 2080ti. StrataGP ha misure 5090 ma base molto divergente,
+  ammissione sm80+ e molte parti gia' assorbite. Non usare i suoi guadagni come stime per la nostra scheda.
 
 ## 9. Prossimi passi, in ordine
 1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
@@ -157,8 +170,10 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
    Il prompt pieno a circa 250k resta da provare: l'utente ha scelto di passare prima alla #270.
    **Ripresa autorizzata l'1/10 con macchina libera:** #315 compilata e provata, numerica superata,
    kernel piu' rapido, guadagno modello contenuto (+3,62% t/s ma −1,35% ms/riga a cache fissa).
-   Confermare v1/v3 nello stesso binario prima di promuoverla. #242: esplorare la parte densa,
-   evitando di rifare la decodifica unica degli esperti gia' inclusa. Misure e limiti nel documento #315.
+   Confermare v1/v3 nello stesso binario prima di promuoverla. **Priorita' dopo la ricognizione:**
+   base di laboratorio 0.1.31 (ha gia' #242 densa e #270), poi dequant vettoriale e HC prefill FP16
+   dal fork 2080ti, separatamente e con parita'/qualita'. Autorizzato dall'utente; clone operativo intatto.
+   Misure #315 e piano aggiornato nei rispettivi documenti.
 3. Provare le due funzioni nuove della 0.1.30 nell'uso reale: `--conversation-cache-*` (agente + subagenti) e
    `--resident-experts` (RAM).
 4. Robustezza al carico degli altri programmi: priorita' sotto carico vero (4-5 core occupati), meno thread del pool

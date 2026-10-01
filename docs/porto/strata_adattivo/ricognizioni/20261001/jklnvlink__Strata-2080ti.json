@@ -1,0 +1,97 @@
+{
+  "ahead_by": 15,
+  "behind_by": 0,
+  "commits": [
+    {
+      "sha": "56495c36cb749492300a07098775b45a8436be2a",
+      "message": "perf(sm75): 超连接投影改走 fp16 张量核（Turing 上 4×，prefill +14%）\n\n背景：sm_75 没有 bf16 张量核，cuBLAS 的 bf16 GEMM 在 Turing 上退回 FFMA。\n引擎自带的 STRATA_PREFILL_TIMING 实测该段（hc read，超连接低秩投影\n10240->320->10240 x 2 half x 48 层）占 28K prompt GPU 时间的 19.5%（3610 ms）。\n\n改法（arena 保持 bf16，解码路径零改动）：\n- 新增 STRATA_TC_SM75 门控（默认 auto：cc==7.5 启用，可置 0 退回旧路径）；\n- 新增 bf16_to_f16 批量转换核：16bit->16bit、逐值无损（加载期已验范围）；\n- norm/silu 三个 kernel 增加可选 fp16 镜像输出（默认 nullptr，原调用点行为不变）；\n- 超连接三处投影在 Turing 上把权重逐矩阵转换到 6.55MB 暂存区后走 Gemm::f16。\n  （不采用\"arena 常驻 fp16 副本\"：需 1.9GB 显存且解码路径按 bf16 读同一份权重。）\n\n实测（2x2080Ti 22GB，Coder IQ1_M，K=26，256 greedy）：\n- hc read 3610ms(19.5%) -> 910ms(5.6%)，3.97x\n- prefill 1K 603->705 (+17%)、4K 1018->1154 (+13%)、28K 1372->1565 (+14%)\n- 每窗口 GPU 时间 37.2->36.1 ms（解码算力不回退）\n- 质量：官方 needle 32K 三个深度 3/3 命中；输出与基线同质\n\n踩坑记录：首次实现漏了 gr_write_norm_rs（第三个写 xn16 的 kernel），\n该路径下 fp16 镜像是陈旧值 -> needle 0/3、回答幻觉；补齐后 3/3。",
+      "url": "https://github.com/Niko1221/Strata/commit/56495c36cb749492300a07098775b45a8436be2a"
+    },
+    {
+      "sha": "95afc8d39aeff1d7f34a89c2444f737ffdb7c4a0",
+      "message": "perf(sm75): indexer block scores 每 warp 处理 8 个 block（数值不变）\n\nqsa select 在 2,048-token chunk 上占 8.6-9.5%（70 ms/chunk）。该 kernel 每个\nwarp 只算一个 block（4 head x 128 dim 点积 = 每 lane 32 次乘加），却要做 20 次\nshuffle 归约 —— 时间几乎全花在归约上。\n\n改法：q 每个 head 只加载一次，warp 内循环 8 个 block。**每个 block 的算术与\n原 kernel 逐值相同**（同样的 partial、同样的 5 级 xor 归约树、同样的顺序），\n所以不可能改变任何分数；变的只是消除了重复加载并给了 warp 8 倍的工作量来\n隐藏 key 的访存延迟。门控 STRATA_TC_SM75，原 kernel 保留。\n\n实测：qsa select 70 -> ~45 ms/chunk；4K 1,477 -> 1,492、28K 2,110 -> 2,141；\nneedle 32K 3/3。",
+      "url": "https://github.com/Niko1221/Strata/commit/95afc8d39aeff1d7f34a89c2444f737ffdb7c4a0"
+    },
+    {
+      "sha": "4984829100452f6a0af0cc44e7339d35e7758747",
+      "message": "perf(sm75): prompt attention 单级缓冲 + 寄存器级软件流水\n\nTuring 没有 cp.async，所以移植版里 cp_async16 是同步的 load+store：第二级\nkv 缓冲不提供任何重叠，却让 smem 从 28.4KB 涨到 44.3KB（Turing 每 SM 64KB，\n于是每 SM 只能放 1 个 block）。\n\n两处改动：\n1. sm_75 用单级缓冲（PA_STAGES=1）：拷贝移到 compute 之后（单级下必须如此），\n   结果与双缓冲逐值相同（拷贝本来就是同步的）；\n2. 把拷贝拆成\"加载到寄存器\"和\"写入 stage\"两半：load 在 compute 之前发起、\n   在 compute 之后提交，找回 cp.async 版本的重叠。\n\n实测：该改动本身在噪声内（4K 1,492-1,494），但 smem 减半 + 流水结构为后续\n优化留出空间；needle 32K 3/3（构造上数值不变）。",
+      "url": "https://github.com/Niko1221/Strata/commit/4984829100452f6a0af0cc44e7339d35e7758747"
+    },
+    {
+      "sha": "500d12e0cad5a28ef2d14b5fa3a35066162d76c2",
+      "message": "perf(sm75): GDN 的 ssm_alpha/beta 走 fp16 张量核 + 修正 prefill arena 计量\n\n1. ssm_alpha/ssm_beta 也是 BF16 GEMM（Turing 上退回 FFMA），输入 mixed_h 本就是\n   fp16 镜像，故复用 M1 的暂存 fp16 路径。实测落在噪声内（理论 ~1.6%），保留。\n2. **修正 arena 计量**：bytes_needed() 必须与 init() 的分配序列一致。sm_75 新增的\n   fp16 镜像与权重暂存之前只靠 8MB 余量兜底 —— 一旦超了就变成\"分配越界\"而不是\n   \"缓冲区偏小\"，实测表现为 `prefill copy_i32: an illegal memory access`。\n   本提交把这几项显式计入（注释写明两处必须同步）。\n\n质量：needle 32K 3/3；prefill 4K 1,492、28K 2,140。",
+      "url": "https://github.com/Niko1221/Strata/commit/500d12e0cad5a28ef2d14b5fa3a35066162d76c2"
+    },
+    {
+      "sha": "b4f8a4453cdebdfd478d48df5f6420298fc66c58",
+      "message": "fix(sm75): 把 Turing 路径严格限定在 cc 7.5，并加门控契约测试\n\n要求：本树的 2080 Ti 优化只对 sm75 生效，绝不影响其他 SM 型号。\n\n审计发现并修掉两个越界点：\n1. tc_sm75_enabled() 原来只判 major（cc_major == 7），会把 Volta 7.0/7.2 也算进去；\n   现在要求 major==7 且 minor==5，且三处调用点（prompt attention 门禁 / block scores\n   门禁 / prefill 的 tc_sm75()）都改为同时查询 major 与 minor。\n2. STRATA_TC_SM75=1 原来可以在**任意架构**上强制开启 Turing 路径（包括 sm_80+）。\n   现在该变量只能\"关闭\"（=0 回到改动前行为）；非 7.5 设备无论环境变量如何都返回 false。\n\n新增 src/core/tc_sm75_gate_test.cpp（host-only、无需 GPU、随构建生成）：21 条断言覆盖\n7.5 / 7.0 / 7.2 / 8.0 / 8.6 / 8.9 / 9.0 / 10.0 / 12.0 / 6.1 / 5.0 在默认、=0、=1 三种\n环境下的取值，其中\"=1 也无法开启 cc>=8\"是本次要求的关键性质。\n\n验证证据：\n- ./build/tc_sm75_gate_test -> PASS（21/21）\n- 跨架构编译：-DCMAKE_CUDA_ARCHITECTURES=\"80;120\" 全量构建通过（各 54 个 cubin），\n  证明内核侧 __CUDA_ARCH__ 门禁正确、其他 SM 型号不受影响\n- sm75 复验：4K 1,484/1,489、28K 2,137/2,138、needle 32K 3/3（与收紧前一致）\n\n代码审计：其余改动在其他架构上均惰性 —— 内核新代码全部位于 #if STRATA_PA_SM75 内；\nPA_STAGES 仅 7.5 为 1（其余仍为 2）；fp16 镜像/暂存仅在 tc_sm75() 为真时分配，\n其他架构拿到 nullptr、走原 bf16 路径；新增的 kernels.hpp 形参都带默认值。",
+      "url": "https://github.com/Niko1221/Strata/commit/b4f8a4453cdebdfd478d48df5f6420298fc66c58"
+    },
+    {
+      "sha": "caf592c5daf59c95bf315ff487ceab08f4aadefb",
+      "message": "perf(sm75): moe_combine 向量化（float4/线程，逐元素算术不变）\n\nnsys 剖析显示 combine 在 2,048-token chunk 上是 29 ms，而其访存下限只有 0.43 ms：\n原 kernel 每线程算 1 个输出元素、对 10 个专家行各做一次标量读、单条 FMA 链、无向量化。\n\n改法：每线程 4 个输出（float4 载入/存储、4 条独立 FMA 链、线程数 1/4）。**每个元素的\n算术与原来完全相同**（同样顺序的 10 次 fmaf、同样的 sigm(sg[t])）→ 不可能改变任何值。\n仅对 cc 7.5 生效（kernels.cu 内的 tc_sm75() 判定），其他 SM 型号继续走原 kernel。\n\n实测：combine kernel 20.4 ms（44 次调用）；整体在噪声内（该 phase 主要被 GPU 等待占据）。",
+      "url": "https://github.com/Niko1221/Strata/commit/caf592c5daf59c95bf315ff487ceab08f4aadefb"
+    },
+    {
+      "sha": "ad75581084d3325bc8831d585918648c5b4fae51",
+      "message": "perf(sm75): 层切分下启用草稿层的批处理 prefill（每 chunk 省 ~90 ms，4K +3.4%）\n\n根因：generate.cpp 里草稿层的 prompt 批处理被写成\n  const bool batched = !multi_gpu && sp.draft_kv(...);\n于是**任何层切分**都退回 drafter 自己的逐窗口 prefill。实测每 2,048-token chunk 花\n98 ms 宿主串行时间，而同批 token 的 GPU 计算只需约 2 ms —— 即 12% 的 chunk 墙钟。\n\n改法：draft_kv 用的是 mtp.kv_state_rw()（其 KV 属于**最后一张卡**，mtp.bind 绑定的也是\n最后一张卡的权重与 head）+ Prefill 自己的 region/gemm/mmq_ctx，所以正确接线是**最后一张\nstage 的 Prefill**（原代码用 sp = stage0，设备都不对，这大概就是当初用 !multi_gpu 关掉\n它的原因）。单卡路径不变；批处理不可用时仍回退 mtp.prefill。\n\n门控：本改动只对 cc 7.5 生效（查询最后一张 stage 的 cc + tc_sm75_enabled），其他 SM 型号\n的层切分保持原行为 —— 底层修复本身是通用的，上游若愿意可以去掉这个门控。\n\n实测（官方协议，三次独立）：\n- prefill 4K  1,489 -> **1,531 / 1,546 / 1,537**（目标 1,500 ✓，较基线 1,022 +50%）\n- prefill 28K 2,143 -> **2,208 / 2,187 / 2,195**（目标 2,000 ✓，较基线 1,375 +60%）\n- needle 32K 3/3；decode 不回退（4K 72.0-73.1 vs 基线 73.1）\n- STRATA_TC_SM75=0 与未修改的 0.1.29 输出**逐字节一致**（3 条 prompt 的 content+reasoning）",
+      "url": "https://github.com/Niko1221/Strata/commit/ad75581084d3325bc8831d585918648c5b4fae51"
+    },
+    {
+      "sha": "ea158a93ed30340092f1bf4a13522231062453f5",
+      "message": "perf(sm75): 稠密权重反量化改向量写（prompt +5%，数值逐位不变）\n\n背景：`Gemm::native` 每次乘法前把原生量化块反量化到 scratch，prompt 路径的稠密投影\n（Q5_K/Q6_K/IQ4_XS，形状 6144x2560 / 10240x2560 / 2560x640 等）都走它。原 kernel\n每个线程算一个 32 元素组、用 put() **逐元素 2 字节写**：同一条 store 指令跨 lane 相距\n64 字节 → 每条指令 32 个 2 字节事务。实测该 kernel 只跑到行带宽的约 18%。\n\n改法（**数值逐位不变**：同样的算术、同样的顺序，只是把结果先写进寄存器缓冲再整体搬运）：\n- `dequant_kernel` 增加模板参数 VEC：sm_75 用 `__align__(16) T buf[32]` + 4 次 uint4\n  写（float 形式 8 次），其余架构保持原 kernel；\n- 内层循环补 `#pragma unroll`，让缓冲留在寄存器而不是本地内存；\n- 选择由 `tc_sm75_enabled(major, minor)` 决定 —— **只对 cc 7.5 生效**。\n\n实测（官方协议，2×2080 Ti，K=26）：\n- prefill 4K 1,504-1,542 → **1,594 / 1,615**（+5%）\n- prefill 28K 2,188-2,189 → **2,311 / 2,284**（+5.5%）\n- decode 73.0-73.5 / 50.3-51.2（不变）；needle 32K 3/3",
+      "url": "https://github.com/Niko1221/Strata/commit/ea158a93ed30340092f1bf4a13522231062453f5"
+    },
+    {
+      "sha": "496a4f3a195b98a935c0ac1fd1f5dfbf46ab3f58",
+      "message": "perf(sm75): 专家 gather 按组批量拷贝（每组一次 launch）\n\nnsys：`copy16_kernel` 8,651 次、每次 8.7 µs、2.15 MB → 约 247 GB/s（峰值 531）。\n逐专家的 16 个 256 线程 block 填不满卡；本改动在组边界（MMQ_GROUP 个专家）发一次\n平坦 grid 的拷贝，源指针经一个小的设备指针数组（3×16 个指针，每次组一次 H2D）。\n\n**数值逐字节不变**：同样的字节、同样的目标槽位，只改拷贝的调度；专家 blob 的存活由\n原来的 per-expert 事件改为组边界统一记录（staging 槽位在事件记录前不会被复用）。\n\n实测（2×2080 Ti）：4K 1,582/1,617（与 1,594/1,615 持平）、28K **2,321/2,322**\n（此前 2,284-2,311，+0.4~1.6%）；引擎自身的 `dequant` phase 未见变化（35 ms），\n故收益有限；decode 73.1-74.1 / 51.0-51.3；needle 32K 3/3。\n仅对 cc 7.5 生效（`m.grp_src_dev` 只在 tc_sm75() 时分配，否则走原 per-expert 路径）。",
+      "url": "https://github.com/Niko1221/Strata/commit/496a4f3a195b98a935c0ac1fd1f5dfbf46ab3f58"
+    },
+    {
+      "sha": "bdea4cb4b8d166e0d7390562a619782876a723f1",
+      "message": "fix(sm75): 把 prompt 期新增缓冲计入显存预算（消除\"靠公式余量\"的隐患）\n\n本树为 sm_75 加的 fp16 镜像与权重暂存（xn16h = chunk*hc*n_embd*2 = 42 MB @2048、lo16h 1.3 MB、\nhc_w16 6.55 MB，合计约 50 MB）此前只是**靠经验公式的余量**装下的：prompt 缓冲各自 cudaMalloc（无\nborrow）时，专家缓存由 `prefill_mib = 160 + chunk*680/1024`（=1,520 MiB @2048）决定 —— 公式早于\n这些缓冲存在。实测边界：余量约能容纳 50 MB，再加 13 MB 的缓冲即触发\n`prefill copy_i32: an illegal memory access`。\n\n改法：`sm75_prompt_extra_bytes()` 按 `Prefill::init` 的真实尺寸算出这些字节，并在三处 reserve 计算\n（层切分 planner 的 `stage_room`、单卡自动缓存、层切分显式缓存）里补回；**仅对 cc 7.5 生效**\n（`tc_sm75_enabled`），其他 SM 型号的预算公式逐字不变。\n\nrebase 到 0.1.30 后的接线（同一改动的第二次落地）：0.1.30 给层切分也开了 prompt 借用（`pf_borrow`；\n此前层切分强制 `no_prefill_borrow`），于是 `prefill_mib`/`split_pf_mib` 只在**非借用**时为非零，\n借用路径改由 `Prefill::bytes_needed` 精确计价（每次 loan 都按它定尺寸）。故这三处补回改为**跟随同一\n个谓词**（`prefill_mib > 0` / `split_pf_mib > 0` 才加），避免借用路径重复计账；`bytes_needed` 一侧\n已由 de01052 与 `init` 对齐（含这三个缓冲），借用路径不会少算。\n\n实测（0.1.29 基线）：needle 32K 3/3；4K 1,618/1,615、28K 2,304/2,307、decode 76.4-76.2 / 52.5-52.2\n（与修前一致，无回退）；CUDA0 缓存减少约 33 槽（0.3%）。\n\n（附注：借此预算修正重试 PLE fp16 仍未通过，第三次在 `copy_i32` 越界，故该项未落地，\n详见报告 §6.7。）",
+      "url": "https://github.com/Niko1221/Strata/commit/bdea4cb4b8d166e0d7390562a619782876a723f1"
+    },
+    {
+      "sha": "80fae03ee1c78741f7e32b6fbb9d9378cfc259e1",
+      "message": "bench(sm75): 新增 prompt attention 微基准，并定位其真实瓶颈（KV 重复读）\n\n新增 `bench/micro/qsa_prompt_attn_bench.cu`（复用 `qsa_prompt_attn_parity` 的输入搭建，\n只加计时；`-DSTRATA_BUILD_TESTS=ON` 时构建，参数 `ctx nq reps`）。\n\n实测（2×2080 Ti，24 heads / hd 256，单次 `qsa_prompt_attn_batch`）：\n| ctx | cap | ms | 有效带宽 |\n|---:|---:|---:|---:|\n| 1024 | 1024 | 2.65 | **406 GB/s** |\n| 2048 | 2048 | 7.04 | 305 GB/s |\n| 4096 | 2051 | 13.95 | **154 GB/s** |\n| 8192 | 2051 | 14.04 | 153 GB/s |\n\n时间随 `nq × cap` **严格线性**（nq 512/1024/2048 → 3.6/7.0/14.0 ms），但有效带宽随 cap\n增大而塌陷：**瓶颈是每个 query 各自 gather 自己选中的 cell 造成的 KV 重复读** ——\nctx=1024 时 KV 池 6.3 MB 可进 L2（406 GB/s），ctx≥4096 时池 25 MB 超出 L2，2048 个 query\n把同一批 cell 反复从 DRAM 读（2.15 GB/次），故只有 154 GB/s、0.31 TFLOP/s（fp16 峰值的 0.7%）。\n\n结论：该 kernel **既非算力受限也非带宽上限**，而是被 gather 的重复读限住；对 cap 接近 ctx\n（4K 档选择近乎稠密）的情形，改走\"KV tile 常驻 smem、块内 query 共享\"的稠密路径预计可把\nDRAM 流量降约 3×（→ 时间约 5 ms/层）。属结构性改造，未在本轮落地，记入报告 §6.7。",
+      "url": "https://github.com/Niko1221/Strata/commit/80fae03ee1c78741f7e32b6fbb9d9378cfc259e1"
+    },
+    {
+      "sha": "c03755616141836f044c349f003b1a43b675e118",
+      "message": "diag(prefill): 选择重叠探针支持任意 tile 大小（STRATA_SEL_TILE）\n\n原探针把 tile 固定为 16 个 query，故只能回答\"16 query 共享 KV 能省多少\"。\n本改动把 tile 大小参数化（`STRATA_SEL_TILE`，默认 16，仅影响 `STRATA_SEL_OVERLAP=1`\n时的调试输出，不设该 env 时行为逐字不变），于是可以量出**设计点**的读流量比。\n\n实测（4K prompt，引擎真实选择；`并集/总和` 即共享 staging 后的读流量比）：\n\n| 共享 KV 的 query 数 | 1（现状） | 2 | **4** | 8 | 16 |\n|---|---:|---:|---:|---:|---:|\n| 读流量比 | 100.0% | 55.2% | **31.7%** | 18.2% | 9.2% |\n\n即：**4 个 query 共享一次 KV staging 可把读流量降到 31.7%（3.15×）**，而 16 个可降到\n9.2%（10.9×）。这为\"prompt attention 多 query 共享 KV tile\"的重写给出定量设计点：\n现 kernel 每 block = 1 query × 12 head（smem `qh/ql[16][QS]` ≈ 16 KB，每 SM 2 block）；\n改成 **4 query × 3 head**（head 槽位仍 12 个 ⇒ **smem 不变、占用率不变**）即可拿到 3.15×\n的读流量下降 —— 该 kernel 目前正是被这些重复读限在 154 GB/s（见 bench/micro/qsa_prompt_attn_bench.cu）。",
+      "url": "https://github.com/Niko1221/Strata/commit/c03755616141836f044c349f003b1a43b675e118"
+    },
+    {
+      "sha": "c8fd794e6bbde5be1f3dd9e98d40216e8d77683b",
+      "message": "bench(sm75): 让 native_mmvq 的多列布局可由开关选择，并实测其在 sm_75 上不更快\n\n`native_mmvq.hpp` 把 ncols > 1 的两种布局写成了「true（默认）= ncols == 1 的布局，\n逐列与单列调用 bitwise 相等；false = llama.cpp 的通用多列表，只到浮点舍入相等，\n**速度未测**」，而 `g_multi_exact` 默认 true、引擎里没有任何调用点——只有\n`mmvq_multi_parity` 会设它。也就是说那条上游布局在本仓**不可达**，注释里的\n「未测」永远不会有答案。\n\n本提交在 graph capture 之前把 `STRATA_MMVQ_MULTI_EXACT` 接到\n`native_mmvq_set_multi_exact`，让两种布局都能被真实引擎跑到（默认不变，仍是\nbitwise 精确的那一种）。\n\n实测（2× RTX 2080 Ti，Q2_0，4K prompt，256 token，交替 A/B，3 rep，判据\nW = decode_ms / windows）：\n\n  MULTI_EXACT=1（默认）  W = 26.90 / 27.12 / 27.60 ms，中位 27.11\n  MULTI_EXACT=0（上游表） W = 27.72 / 27.76 / 27.84 ms，中位 27.76\n\n3/3 rep 一致地慢 2.4%，分布不重叠。**上游那条通用多列表在 sm_75 上不更快，\n默认值是对的**——这条把源码里的「未测」变成了实测结论，也让下一个想动这块的人\n不必再猜。\n\n默认路径逐字不变（`getenv` 缺省即 true）；跨架构构建\n`-DCUDA_ARCH=80;120` 通过，44 个 kernel 目标里 0 个 sm_75 cubin。",
+      "url": "https://github.com/Niko1221/Strata/commit/c8fd794e6bbde5be1f3dd9e98d40216e8d77683b"
+    },
+    {
+      "sha": "e367ce4dabacdfb9446835b6ac818e181b948124",
+      "message": "note修改\n\nThis update adds a note about the optimization fork based on the upstream Strata repository.",
+      "url": "https://github.com/Niko1221/Strata/commit/e367ce4dabacdfb9446835b6ac818e181b948124"
+    },
+    {
+      "sha": "235350960d853674f0279e5838a16e68e71be2bd",
+      "message": "Update README to format Strata link correctly",
+      "url": "https://github.com/Niko1221/Strata/commit/235350960d853674f0279e5838a16e68e71be2bd"
+    }
+  ],
+  "files": [
+    "CMakeLists.txt",
+    "README.md",
+    "bench/micro/qsa_prompt_attn_bench.cu",
+    "include/strata/core/tc_sm75.hpp",
+    "include/strata/prefill/kernels.hpp",
+    "include/strata/prefill/moe_mmq.hpp",
+    "src/core/tc_sm75_gate_test.cpp",
+    "src/kernels/cuda/dequant_bf16.cu",
+    "src/kernels/cuda/qsa_prompt_attn.cu",
+    "src/kernels/cuda/qsa_select.cu",
+    "src/prefill/kernels.cu",
+    "src/prefill/moe_mmq.cu",
+    "src/prefill/prefill.cpp",
+    "src/program/generate.cpp"
+  ]
+}

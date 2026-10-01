@@ -1,0 +1,465 @@
+{
+  "head": "9259cad4cfa3543cd3b8decab5962672b968c649",
+  "ahead_by": 61,
+  "commits": [
+    {
+      "sha": "06b82fe52da788842ff469f58f6b75e59b481e57",
+      "message": "verify: STRATA_LOGPOS hook for per-position teacher-forced log-probabilities",
+      "url": "https://github.com/Niko1221/Strata/commit/06b82fe52da788842ff469f58f6b75e59b481e57"
+    },
+    {
+      "sha": "70204ca402eb6c3c284e054f8d27866f4e180c01",
+      "message": "gemm: name the cuBLAS/CUDA call that failed at init, and flag resource shortages",
+      "url": "https://github.com/Niko1221/Strata/commit/70204ca402eb6c3c284e054f8d27866f4e180c01"
+    },
+    {
+      "sha": "18827d8bcce64bf96c8958e3576423d44d681835",
+      "message": "tests: make iq_parity reproducible from a fresh checkout (TODO 24)",
+      "url": "https://github.com/Niko1221/Strata/commit/18827d8bcce64bf96c8958e3576423d44d681835"
+    },
+    {
+      "sha": "68f1362b26801f04798981d9c029e43520c31dd8",
+      "message": "fused_gr: sm_75 down kernel with TILE=1280 staging, other archs unchanged",
+      "url": "https://github.com/Niko1221/Strata/commit/68f1362b26801f04798981d9c029e43520c31dd8"
+    },
+    {
+      "sha": "9e9dce4e981f118887a1a5b0820b9acbbf38ae14",
+      "message": "q2_avx2: two-block 256-bit unpack for rows of 1-2 tokens (bit-exact)",
+      "url": "https://github.com/Niko1221/Strata/commit/9e9dce4e981f118887a1a5b0820b9acbbf38ae14"
+    },
+    {
+      "sha": "daaaf9d51cac7fce16c62acc0b6988a73d0d1486",
+      "message": "serve: a request settles its status, history and totals while it still holds the fifo (#266)",
+      "url": "https://github.com/Niko1221/Strata/commit/daaaf9d51cac7fce16c62acc0b6988a73d0d1486"
+    },
+    {
+      "sha": "ba2cf61d4ef73ec2b39679fb9f74cc6af68a38ba",
+      "message": "gemm (#240 follow-up): setup calls that failed before without a word are logged and survived as before (not fatal - hipBLAS can return not-supported), init_external names its failures too, the MiB stays in the scratch message; no unused resource_failure flag",
+      "url": "https://github.com/Niko1221/Strata/commit/ba2cf61d4ef73ec2b39679fb9f74cc6af68a38ba"
+    },
+    {
+      "sha": "e224a16456e50948949210f0fdab6ebd13babce1",
+      "message": "tests (#264 follow-up): the fixture step skips (exit 3) instead of failing when the vendored gguf-py is absent; no unused SCALE_F16",
+      "url": "https://github.com/Niko1221/Strata/commit/e224a16456e50948949210f0fdab6ebd13babce1"
+    },
+    {
+      "sha": "8aa8f5180e75f3267e98fb4ca4aee9ff4cbfecab",
+      "message": "tokenizer: a word longer than 64 symbols merges with a heap and a linked list, not a rescan per merge (#268)",
+      "url": "https://github.com/Niko1221/Strata/commit/8aa8f5180e75f3267e98fb4ca4aee9ff4cbfecab"
+    },
+    {
+      "sha": "925c3542587d9e9f0874043143eefacff90ecd01",
+      "message": "fix(serve): report a tool call cut off by the end of the output as unfinished",
+      "url": "https://github.com/Niko1221/Strata/commit/925c3542587d9e9f0874043143eefacff90ecd01"
+    },
+    {
+      "sha": "9a1fc19d99f941f8ad58c865478f649feca90a2f",
+      "message": "serve: a whole OpenAI answer leaves out a tool call whose arguments don't parse unless it ends in tool_calls (#211)",
+      "url": "https://github.com/Niko1221/Strata/commit/9a1fc19d99f941f8ad58c865478f649feca90a2f"
+    },
+    {
+      "sha": "b1d808de7d67700f1ef820909010373ac0d518af",
+      "message": "setup: the low-RAM mode's one-GPU warning says why, with the RAM math; --low-ram off --yes installs (#250)",
+      "url": "https://github.com/Niko1221/Strata/commit/b1d808de7d67700f1ef820909010373ac0d518af"
+    },
+    {
+      "sha": "1d0c6e17d75f86afb5a914b1eda3efb1c12feb99",
+      "message": "kernels: faster grouped and per-hit Q2_0 expert kernels, bitwise identical",
+      "url": "https://github.com/Niko1221/Strata/commit/1d0c6e17d75f86afb5a914b1eda3efb1c12feb99"
+    },
+    {
+      "sha": "a9868ca843c4c78a5aeba83f901aefc8ff8b5959",
+      "message": "s2_expert_grouped (#241 follow-up): the new chunk kernels' dp4a through STRATA_DP4A, so the sm_60 experimental build keeps its exact fallback",
+      "url": "https://github.com/Niko1221/Strata/commit/a9868ca843c4c78a5aeba83f901aefc8ff8b5959"
+    },
+    {
+      "sha": "8ec94aa2285b3b7642b3a8ee900da4c2e1139b55",
+      "message": "iq_kernels: decode each IQ weight part once for every column and entry",
+      "url": "https://github.com/Niko1221/Strata/commit/8ec94aa2285b3b7642b3a8ee900da4c2e1139b55"
+    },
+    {
+      "sha": "b6bdc70350b1ae54e2a1099aad8acfd7ae391915",
+      "message": "qsa_prompt_attn: the f16 tensor-core path runs on Turing (sm_75) as two m16n8k8 steps",
+      "url": "https://github.com/Niko1221/Strata/commit/b6bdc70350b1ae54e2a1099aad8acfd7ae391915"
+    },
+    {
+      "sha": "d9cbe3c349ece879818447d3c064a05c6a6c7005",
+      "message": "qsa_prompt_attn (#270 follow-up): the m16n8k8 pair only for sm_75+ CUDA device code (AMD and pre-Turing builds keep the trap, which the host never reaches); Turing chosen per call from the current device instead of a process-wide flag (a split can mix Turing with newer cards)",
+      "url": "https://github.com/Niko1221/Strata/commit/d9cbe3c349ece879818447d3c064a05c6a6c7005"
+    },
+    {
+      "sha": "ba5c38765b88483e7b66496bd10bbbe9eb65d5bb",
+      "message": "setup: reproducible installs - the checkout's own engine release, pinned Hugging Face revisions, pinned Python packages (#214)",
+      "url": "https://github.com/Niko1221/Strata/commit/ba5c38765b88483e7b66496bd10bbbe9eb65d5bb"
+    },
+    {
+      "sha": "48614ae48caea9cf4b780be30ced489b41c4261f",
+      "message": "serve: an opt-in hard thinking budget, reasoning_budget_tokens (#123)",
+      "url": "https://github.com/Niko1221/Strata/commit/48614ae48caea9cf4b780be30ced489b41c4261f"
+    },
+    {
+      "sha": "c8357b57974ef83a07eb96d502187f32bfc85206",
+      "message": "README: where things are stored (#226)",
+      "url": "https://github.com/Niko1221/Strata/commit/c8357b57974ef83a07eb96d502187f32bfc85206"
+    },
+    {
+      "sha": "74ccff3dedade50fcea6f446295efa864e6971bd",
+      "message": "load_experts_gguf reads with fread on a FILE* (#230)",
+      "url": "https://github.com/Niko1221/Strata/commit/74ccff3dedade50fcea6f446295efa864e6971bd"
+    },
+    {
+      "sha": "75c40ef2156b82f6ddfad5a438c117f5dd0370f9",
+      "message": "Windows: cap the sliced arena pin at the GPU's shared-memory budget (#243)",
+      "url": "https://github.com/Niko1221/Strata/commit/75c40ef2156b82f6ddfad5a438c117f5dd0370f9"
+    },
+    {
+      "sha": "7c24aedee727e85ab7b7b768787d04defd730cbc",
+      "message": "Verify window: bounded final wait; release the GPU's flag waits before the engine ends (#267)",
+      "url": "https://github.com/Niko1221/Strata/commit/7c24aedee727e85ab7b7b768787d04defd730cbc"
+    },
+    {
+      "sha": "9631c965b1caa8e2d64fa7bd039595c2e7e103ee",
+      "message": "Stall report: name the prompt chunk and layer; mark a finished verify window (#251)",
+      "url": "https://github.com/Niko1221/Strata/commit/9631c965b1caa8e2d64fa7bd039595c2e7e103ee"
+    },
+    {
+      "sha": "d4279d59d694583b11db246f3e10a8c849914631",
+      "message": "Refuse a CPU without AVX2 at start, by name",
+      "url": "https://github.com/Niko1221/Strata/commit/d4279d59d694583b11db246f3e10a8c849914631"
+    },
+    {
+      "sha": "32065939726da8cf8479d2d2248586f8d2fe5ddb",
+      "message": "Experimental Pascal/Volta build: admit sm_70, and the device check honours it (#236)",
+      "url": "https://github.com/Niko1221/Strata/commit/32065939726da8cf8479d2d2248586f8d2fe5ddb"
+    },
+    {
+      "sha": "95ac7512ade64ae6f49120e3cf90f2dac1de581c",
+      "message": "Merge branch 'f-131-fix' into r131-fix",
+      "url": "https://github.com/Niko1221/Strata/commit/95ac7512ade64ae6f49120e3cf90f2dac1de581c"
+    },
+    {
+      "sha": "3b1cbf51f2fe6c256f4300de69d9cb3459f9b7f1",
+      "message": "mcp: a server that stops quotes its last log line reliably (the stdout reader waited no time for the stderr reader, so the reason was sometimes missing - the flaky test_a_server_that_fails_is_left_out)",
+      "url": "https://github.com/Niko1221/Strata/commit/3b1cbf51f2fe6c256f4300de69d9cb3459f9b7f1"
+    },
+    {
+      "sha": "02cfe36a352f3ce0d4d64424e86530de1ed6a5e3",
+      "message": "Split GGUF artifacts: every shard found (a missing one is an error), tensors from their owning shard, per-role expert files (native_experts.txt v4)",
+      "url": "https://github.com/Niko1221/Strata/commit/02cfe36a352f3ce0d4d64424e86530de1ed6a5e3"
+    },
+    {
+      "sha": "53f967abd55b7777c44373be191d1db0564549aa",
+      "message": "iq_pack: per-role shards and data_start (v4 only for a split layer), split keys checked, experts.bin reused only with its source sidecar, atomic publication",
+      "url": "https://github.com/Niko1221/Strata/commit/53f967abd55b7777c44373be191d1db0564549aa"
+    },
+    {
+      "sha": "bede5ca70b54bf42f341f02dcc5a1b29289c75e6",
+      "message": "iq_pack: each tensor in the form the engine reads (FORM), exact F32->BF16 by default, PLE conv F32 -> F16 by the loader, conversions.json; the engine refuses a wide conv1d",
+      "url": "https://github.com/Niko1221/Strata/commit/bede5ca70b54bf42f341f02dcc5a1b29289c75e6"
+    },
+    {
+      "sha": "27860954560d7d3f4382fe34830b1c8eabdd158b",
+      "message": "tests: --real modes for gguf_split_test and expert_layout_test (a real model's shards / a real pack's spans, headers only)",
+      "url": "https://github.com/Niko1221/Strata/commit/27860954560d7d3f4382fe34830b1c8eabdd158b"
+    },
+    {
+      "sha": "efeffd806563ea338e6c50fac990af2f394d751f",
+      "message": "iq_kernels: Q4_K / Q5_K / Q5_1 / Q8_0 native experts (Unsloth UD-Q4_K_XL), per-role format lists, native_expert_supported at startup, Q8_0 embedding and PLE key",
+      "url": "https://github.com/Niko1221/Strata/commit/efeffd806563ea338e6c50fac990af2f394d751f"
+    },
+    {
+      "sha": "3889344bb1e30fee2268e9de51e8dc7a81f60370",
+      "message": "CS-T: native packs read their experts from the GGUF shards in place (--mmap-experts without experts.bin), --resident-budget-gib N, per-tier counters",
+      "url": "https://github.com/Niko1221/Strata/commit/3889344bb1e30fee2268e9de51e8dc7a81f60370"
+    },
+    {
+      "sha": "0e23f57503595aec3845f9f7b6c92711b4c52606",
+      "message": "verify (#267 follow-up): the window's final wait stays a blocking sync - the cudaStreamQuery poll cost IQ3_S ~3% decode; the stall watchdog's release of every verifier's GPU waits is what keeps a spin kernel from outliving the engine",
+      "url": "https://github.com/Niko1221/Strata/commit/0e23f57503595aec3845f9f7b6c92711b4c52606"
+    },
+    {
+      "sha": "87fbc00080a57f3a71d6265f19f1d800cd283312",
+      "message": "HIP: __byte_perm as v_perm_b32 and SWAR __vsub4/__vsubss4/__vcmpne4 (from #262 by ttio2tech)",
+      "url": "https://github.com/Niko1221/Strata/commit/87fbc00080a57f3a71d6265f19f1d800cd283312"
+    },
+    {
+      "sha": "b0dda4b14886293575e5fe5c92e5ba6636adc4a1",
+      "message": "AMD: gfx1101 (RX 7800 XT, #254 by jhohertz) and gfx1200 (RX 9060 XT, #256 by Efeisot) as community-validated cards",
+      "url": "https://github.com/Niko1221/Strata/commit/b0dda4b14886293575e5fe5c92e5ba6636adc4a1"
+    },
+    {
+      "sha": "cc97fcde526e1b2d4cbee39ba21e54a0ef7505b1",
+      "message": "setup: AMD layer splits with --gpus (every chosen card a supported AMD arch; the engine compiled for each)",
+      "url": "https://github.com/Niko1221/Strata/commit/cc97fcde526e1b2d4cbee39ba21e54a0ef7505b1"
+    },
+    {
+      "sha": "e9e2ba31abdc211a618b5faf7226732d40bbcf2b",
+      "message": "pinned (#243 follow-up): the shared-memory-budget cap on the sliced pin is opt-in (STRATA_ARENA_PIN_GIB=auto) - by default the arena pins as in 0.1.30; on this 64 GB PC the cap pinned 26 instead of 30 GiB and cost ~20% prompt speed and 2-4% IQ3_S decode",
+      "url": "https://github.com/Niko1221/Strata/commit/e9e2ba31abdc211a618b5faf7226732d40bbcf2b"
+    },
+    {
+      "sha": "cacffa95aff016939edd7c15534c0067ec0ee93c",
+      "message": "CS-T speed: the file tier fetched in parallel, PCIe planning without file reads, a partial pin of the RAM tier, bit-exact AVX2 multi-token kernels for Q4_K / Q5_1 / Q8_0 experts, decode-only tier stats",
+      "url": "https://github.com/Niko1221/Strata/commit/cacffa95aff016939edd7c15534c0067ec0ee93c"
+    },
+    {
+      "sha": "a348c7a4ed64f5f7f24ce3f1cba2d1439f673fed",
+      "message": "Merge branch 'f-131-srv' into r131-q4",
+      "url": "https://github.com/Niko1221/Strata/commit/a348c7a4ed64f5f7f24ce3f1cba2d1439f673fed"
+    },
+    {
+      "sha": "b93a00c65a21fcc5b6431b8091e348d2976259f0",
+      "message": "Merge branch 'f-q4-on242' into r131-q4",
+      "url": "https://github.com/Niko1221/Strata/commit/b93a00c65a21fcc5b6431b8091e348d2976259f0"
+    },
+    {
+      "sha": "8f5148c14d34c404e8a2d6a45188088714f3c9bb",
+      "message": "CS-T: the partial pin at most 24 GiB (STRATA_PARTIAL_PIN_GIB), the Q4_K/Q5_1/Q8_0 multi-token kernels from two tokens on",
+      "url": "https://github.com/Niko1221/Strata/commit/8f5148c14d34c404e8a2d6a45188088714f3c9bb"
+    },
+    {
+      "sha": "5ffda19098202b82943fc80281ce0eb34d8e08a3",
+      "message": "CS-T: the GGUF-in-place prefetch asks Windows for all of a layer's missed slices at once (PrefetchVirtualMemory)",
+      "url": "https://github.com/Niko1221/Strata/commit/5ffda19098202b82943fc80281ce0eb34d8e08a3"
+    },
+    {
+      "sha": "ed6c1244dcd31789007540cb9d8498fbd4134b7f",
+      "message": "#253: the 8 GiB arena pin cap only under WDDM; STRATA_ARENA_PIN_GIB; the split's prompt chunk steps down",
+      "url": "https://github.com/Niko1221/Strata/commit/ed6c1244dcd31789007540cb9d8498fbd4134b7f"
+    },
+    {
+      "sha": "450149d3f248438d8a2526c600b5a75c3dbea6c6",
+      "message": "--split-skip-if-fits (opt-in): an auto split runs on the main card alone when it holds every profiled expert + KV",
+      "url": "https://github.com/Niko1221/Strata/commit/450149d3f248438d8a2526c600b5a75c3dbea6c6"
+    },
+    {
+      "sha": "6926e0b4f4f72cda4f95a0218a89500135af7e4e",
+      "message": "Merge branch 'f-131-amd' into r131-amd",
+      "url": "https://github.com/Niko1221/Strata/commit/6926e0b4f4f72cda4f95a0218a89500135af7e4e"
+    },
+    {
+      "sha": "c7aa3e5c18a57433d2fe3e131bf3e44da9f82c0d",
+      "message": "Revert #257 (AVX2 two-block Q2_0 unpack): bit-exact but not faster on an AVX2-only CPU (Ryzen 9 3900X: gate/up -2.6..-4.7% at 1 token, down -3..-5% at 2 tokens)",
+      "url": "https://github.com/Niko1221/Strata/commit/c7aa3e5c18a57433d2fe3e131bf3e44da9f82c0d"
+    },
+    {
+      "sha": "2736bd0a70c0295c19c4670f1a8c18c75fed2f6d",
+      "message": "CS-T: the partial pin locks only what it does not register and ends at an expert boundary; the Q4_K/Q5_1/Q8_0 multi-token kernels opt-in (STRATA_KQ256=1)",
+      "url": "https://github.com/Niko1221/Strata/commit/2736bd0a70c0295c19c4670f1a8c18c75fed2f6d"
+    },
+    {
+      "sha": "de3f0454a762147a03698eb2860427cb1ff36aaa",
+      "message": "decode: hyper-connection read in 2 kernels - norm folded into a stream-split down kernel (164 blocks), rs/lo/inject in up's prologue (STRATA_GR_V3=0 = old)",
+      "url": "https://github.com/Niko1221/Strata/commit/de3f0454a762147a03698eb2860427cb1ff36aaa"
+    },
+    {
+      "sha": "8895c1263d00e648604a78e5dec579aebb30837f",
+      "message": "decode: hc read v3 is opt-in (STRATA_GR_V3=1: another summation order); its shared memory is sized from the card's opt-in limit - one or two column halves, else the default kernels (Turing/HIP 64 KB fit with two; capability-based split as proposed by @Adamyno); the neutral knobs (DOWN_R2, UP_PF, KSPLIT) dropped (review)",
+      "url": "https://github.com/Niko1221/Strata/commit/8895c1263d00e648604a78e5dec579aebb30837f"
+    },
+    {
+      "sha": "1508caab2823505f118d80949261cb6a9769ec69",
+      "message": "tests (#264 follow-up): iq_parity skips (exit 3) when no fixture was generated, as its generator does; a partly missing set still fails; the open handle of a half-present fixture is closed",
+      "url": "https://github.com/Niko1221/Strata/commit/1508caab2823505f118d80949261cb6a9769ec69"
+    },
+    {
+      "sha": "4d805bf37879226c499699374aea4bb2a4d60bad",
+      "message": "CS-T: routing-aware prefetch of the file tier - the next layer's router on this layer's MoE input warms its predicted experts' pages",
+      "url": "https://github.com/Niko1221/Strata/commit/4d805bf37879226c499699374aea4bb2a4d60bad"
+    },
+    {
+      "sha": "8b9bb4e3ee173e6f4b67c31be427f3d37b2492a2",
+      "message": "docs: add community benchmark submission guide",
+      "url": "https://github.com/Niko1221/Strata/commit/8b9bb4e3ee173e6f4b67c31be427f3d37b2492a2"
+    },
+    {
+      "sha": "b4f70e7c9fbacb5125f606264b25f1db39417414",
+      "message": "docs: add RTX 5090 community benchmark results",
+      "url": "https://github.com/Niko1221/Strata/commit/b4f70e7c9fbacb5125f606264b25f1db39417414"
+    },
+    {
+      "sha": "e30cd9bc3071f6492eb56a6455efa4e515138f06",
+      "message": "Bench: RTX 3090 / dual RTX 3090 on EPYC 7453",
+      "url": "https://github.com/Niko1221/Strata/commit/e30cd9bc3071f6492eb56a6455efa4e515138f06"
+    },
+    {
+      "sha": "6f21f2243aeea39a4e127d932a0a840a0c22aefb",
+      "message": "CS-T: the partial pin of the RAM tier opt-in (STRATA_PARTIAL_PIN=1)",
+      "url": "https://github.com/Niko1221/Strata/commit/6f21f2243aeea39a4e127d932a0a840a0c22aefb"
+    },
+    {
+      "sha": "c4175bdb20b94626dcd3ee4dcfb24c5b1cec7503",
+      "message": "Merge branch 'f-q4-on242' into r131-final",
+      "url": "https://github.com/Niko1221/Strata/commit/c4175bdb20b94626dcd3ee4dcfb24c5b1cec7503"
+    },
+    {
+      "sha": "f6c18ff90caf7b7d9a25ac4cc4abcb76c50e4155",
+      "message": "docs: Unsloth UD-Q4_K_XL manual import (docs/UNSLOTH_Q4.md); DETAILS: the mapped mode without experts.bin, --resident-budget-gib, the tier counters",
+      "url": "https://github.com/Niko1221/Strata/commit/f6c18ff90caf7b7d9a25ac4cc4abcb76c50e4155"
+    },
+    {
+      "sha": "652437b792975577a3b9975b3040fb783d6e6a06",
+      "message": "Merge branch 'f-q4-on242' into r131-final",
+      "url": "https://github.com/Niko1221/Strata/commit/652437b792975577a3b9975b3040fb783d6e6a06"
+    },
+    {
+      "sha": "9259cad4cfa3543cd3b8decab5962672b968c649",
+      "message": "Engine 0.1.31: Unsloth UD-Q4_K_XL runs on a 64 GB PC (experimental: split GGUF, Q4_K/Q5_K/Q5_1/Q8_0 experts, RAM budget + SSD tier with routing prefetch), the low-RAM mode reads GGUF experts in place, Windows GGUF load 2x (#230), server status race (#266) and tokenizer (#268) fixes, truncated tool calls (#211/#231), AMD intrinsics (#262); setup requires it",
+      "url": "https://github.com/Niko1221/Strata/commit/9259cad4cfa3543cd3b8decab5962672b968c649"
+    }
+  ],
+  "files": [
+    ".gitattributes",
+    "CMakeLists.txt",
+    "Dockerfile",
+    "README.md",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/README.md",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-1x3090/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-1x3090/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-1x3090/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K18/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K22/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K22/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K22/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K24/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K24/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K24/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K26/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K26/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K26/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K28/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K28/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K28/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K30/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K30/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K30/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-auto/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-auto/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-auto/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-needle/needle-16k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-needle/needle-28k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-needle/needle-8k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-two-turn/two-turn-16k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-needle/needle-16k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-needle/needle-28k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-needle/needle-8k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-two-turn/two-turn-16k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-128k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-128k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-128k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-1k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-1k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-1k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-262k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-262k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-262k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-4k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-4k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-4k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-needle/needle-16k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-needle/needle-28k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-needle/needle-8k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-two-turn/two-turn-16k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto/speed-32k-1.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto/speed-32k-2.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto/speed-32k-3.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/data/strata-bench.py",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/hw.txt",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/matrix.json",
+    "bench/results/2026-09-29-rtx3090-epyc-milan/matrix.md",
+    "bench/results/2026-09-30-community-rtx-5090/BUILD.json",
+    "bench/results/2026-09-30-community-rtx-5090/Dockerfile",
+    "bench/results/2026-09-30-community-rtx-5090/README.md",
+    "bench/results/2026-09-30-community-rtx-5090/artifact-hashes.json",
+    "bench/results/2026-09-30-community-rtx-5090/benchmark.py",
+    "bench/results/2026-09-30-community-rtx-5090/engine.log",
+    "bench/results/2026-09-30-community-rtx-5090/final-status.json",
+    "bench/results/2026-09-30-community-rtx-5090/initial-status.json",
+    "bench/results/2026-09-30-community-rtx-5090/memory-summary.json",
+    "bench/results/2026-09-30-community-rtx-5090/model-provenance.json",
+    "bench/results/2026-09-30-community-rtx-5090/monitor.py",
+    "bench/results/2026-09-30-community-rtx-5090/mtp-manifest.json",
+    "bench/results/2026-09-30-community-rtx-5090/needles.json",
+    "bench/results/2026-09-30-community-rtx-5090/python-packages.txt",
+    "bench/results/2026-09-30-community-rtx-5090/results.json",
+    "bench/results/2026-09-30-community-rtx-5090/strata-iq2_xs.json",
+    "bench/results/2026-09-30-community-rtx-5090/summary.json",
+    "bench/results/2026-09-30-community-rtx-5090/telemetry.jsonl",
+    "cmake/hip_backend.cmake",
+    "docs/AMD_HIP.md",
+    "docs/COMMUNITY_BENCHMARKS.md",
+    "docs/DETAILS.md",
+    "docs/MULTI_GPU.md",
+    "docs/SECOND_GPU.md",
+    "docs/UNSLOTH_Q4.md",
+    "include/strata/artifact/gguf_reader.hpp",
+    "include/strata/artifact/gguf_split.hpp",
+    "include/strata/core/expert_source.hpp",
+    "include/strata/core/native_head.hpp",
+    "include/strata/core/pinned.hpp",
+    "include/strata/core/progress.hpp",
+    "include/strata/core/verify.hpp",
+    "include/strata/hip_compat/intrinsics.hpp",
+    "include/strata/kernels/cpu/expert_layout.hpp",
+    "include/strata/kernels/cpu/kq_avx2.hpp",
+    "include/strata/kernels/iq_kernels.hpp",
+    "include/strata/kernels/s2_expert_grouped.hpp",
+    "include/strata/platform/memory.hpp",
+    "include/strata/prefill/prefill.hpp",
+    "requirements.txt",
+    "serve/frontend.py",
+    "serve/mcp.py",
+    "serve/server.py",
+    "serve/test_detok.py",
+    "serve/test_mcp.py",
+    "serve/test_server.py",
+    "setup.py",
+    "src/core/device.cu",
+    "src/core/expert_source.cpp",
+    "src/core/native_dense.cpp",
+    "src/core/native_head.cpp",
+    "src/core/pinned.cu",
+    "src/core/verify.cpp",
+    "src/kernels/cpu/expert_layout.cpp",
+    "src/kernels/cpu/kq_avx2.cpp",
+    "src/kernels/cpu/native_expert.cpp",
+    "src/kernels/cpu/pool.cpp",
+    "src/kernels/cuda/fused_gr.cu",
+    "src/kernels/cuda/iq_kernels.cu",
+    "src/kernels/cuda/ple.cu",
+    "src/kernels/cuda/qsa_prompt_attn.cu",
+    "src/kernels/cuda/s2_expert_grouped.cu",
+    "src/kernels/iq_multi_parity.cpp",
+    "src/kernels/iq_parity.cpp",
+    "src/kernels/native_expert_parity.cpp",
+    "src/kernels/s2_expert_grouped_parity.cpp",
+    "src/platform/memory.cpp",
+    "src/prefill/gemm.cu",
+    "src/prefill/prefill.cpp",
+    "src/program/generate.cpp",
+    "tests/core/expert_layout_test.cpp",
+    "tests/core/gguf_fixture.hpp",
+    "tests/core/gguf_split_test.cpp",
+    "tests/data/native_experts/coder-iq1_m.txt",
+    "tests/data/native_experts/iq2_xs.txt",
+    "tests/data/native_experts/iq3_s.txt",
+    "tests/data/native_experts/iq3_xxs.txt",
+    "tests/data/native_experts/q2_0.txt",
+    "tests/data/native_experts/swift-iq2_xs.txt",
+    "tests/hip/intrinsics.cpp",
+    "tools/iq_fixture.py",
+    "tools/iq_pack.py",
+    "tools/mtp_fetch.py",
+    "tools/strata_tokenizer.py",
+    "tools/test_iq_pack.py",
+    "tools/test_setup_amd.py",
+    "tools/test_setup_lowram.py",
+    "tools/test_setup_pins.py"
+  ]
+}

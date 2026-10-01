@@ -33,7 +33,8 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   su due prompt a 131k: avvio 61 s, KV in RAM bloccata 3,09 GiB, decode 43,0 t/s, prefill freddo 663 t/s,
   nessuno stallo; RAM disponibile minima 32,59 GB. Dettagli in `RISULTATI_KV262K_1_OTTOBRE.md`.
   Il riempimento del contesto fino a circa 250k resta da provare. **JSON operativo ora a 262.144**, con #270.
-  L'utente ha abilitato l'accesso completo e autorizzato la promozione, poi richiesto standby.
+  L'utente ha abilitato l'accesso completo e autorizzato la promozione, poi richiesto standby;
+  **ha ripreso il lavoro l'1/10 dichiarando la macchina libera** (prove #315 qui sotto).
 - **PR #270 validata l'1/10 in build separata:** 8 casi di parita' numerica superati, zero fallimenti;
   KV 262.144 e prompt 131k: prefill **808,91 contro 661,76 t/s (+22,24%)**, primo token **162,98 contro 199,10 s**.
   Decode 43,90 contro 42,22 t/s, senza attribuire la differenza alla patch. Primo avvio 223 s, riavvio 61 s:
@@ -43,6 +44,21 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   `D:\ds4_work\strata\ripristini\20261001_060447_pr270_262k\`; build-0130 conservata. Sorgenti del clone intatti.
   Verificati Python del lanciatore, parser server e help eseguibile; solo exe e max-context cambiati nel JSON.
   Dettagli e limiti in `RISULTATI_PR270_1_OTTOBRE.md`, evidenza `corse_2080ti/20261001_pr270/`.
+- **PR #315 provata l'1/10, candidata conservata:** controllo HC bit per bit superato su sm75,
+  v3 selezionata; kernel a 2/4 token −36,6%/−43,8% nel banco breve. Sul modello, prima serie
+  elastica A/B/A 39,34 / 42,39 / 44,65 t/s, con cache e CPU diverse: non causale. Con cache
+  fissa di laboratorio (budget 5.000, 6.705 slot reali): decode **39,78 → 41,22 t/s (+3,62%)**,
+  costo per riga **21,074 → 20,789 ms (−1,35%)**, prefill **754,60 / 754,34 t/s**.
+  Output e accettazione delle bozze diversi: beneficio contenuto da confermare. KV sempre 262.144,
+  prompt sempre circa 131k; dieci richieste lunghe accettate completate, nessun carico artificiale.
+  Una prova fissa a budget 6.600 e' stata interrotta/esclusa per zero VRAM libera: ora il banco
+  rifiuta prima dei prompt una cache fissa con meno di 1.000 MiB liberi. Lanciatore ancora #270.
+  Candidata `.codex_runs/strata_pr315_20261001/strata.exe`; integrazione preserva #258 e #270,
+  sostituisce HC opt-in #186. Dettagli: `RISULTATI_PR315_1_OTTOBRE.md`, evidenza
+  `corse_2080ti/20261001_pr315/`, patch `0015-PR315-HC-bitwise-*.patch`, strumento `compila_pr315.py`.
+  Pubblicazione inizialmente rinviata dal profilo di accesso in sola lettura su `.git` e senza
+  scritture su `D:\ds4_work`/Desktop; l'accesso completo e' tornato nella ripresa successiva.
+  **Nessuna promozione della #315.** Processi lab chiusi e hash/configurazione operativa #270 verificati.
 
 ## 3. Il clone `D:\ds4_work\strata\Strata`
 - `main` = **v0.1.30 (30ec18e) + 13 commit** (copie in `patches/su-0.1.30/`, ricostruibile con `git am`):
@@ -139,7 +155,10 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
    parita' superate, prefill +22% nel confronto base/candidata/base su KV 262.144. Rimaste #317 (SSD), #315, #242 al posto
    della 0007. Preparazione in `PREPARAZIONE_256K_PR270.md`, misure in `RISULTATI_PR270_1_OTTOBRE.md`.
    Il prompt pieno a circa 250k resta da provare: l'utente ha scelto di passare prima alla #270.
-   **Standby richiesto dall'utente dopo la promozione: nessun altro test o processo da avviare finche' non riprende.**
+   **Ripresa autorizzata l'1/10 con macchina libera:** #315 compilata e provata, numerica superata,
+   kernel piu' rapido, guadagno modello contenuto (+3,62% t/s ma −1,35% ms/riga a cache fissa).
+   Confermare v1/v3 nello stesso binario prima di promuoverla. #242: esplorare la parte densa,
+   evitando di rifare la decodifica unica degli esperti gia' inclusa. Misure e limiti nel documento #315.
 3. Provare le due funzioni nuove della 0.1.30 nell'uso reale: `--conversation-cache-*` (agente + subagenti) e
    `--resident-experts` (RAM).
 4. Robustezza al carico degli altri programmi: priorita' sotto carico vero (4-5 core occupati), meno thread del pool
@@ -153,6 +172,9 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
   `python ../strata_prova/costo_passata.py etichetta=D:\ds4_work\strata\f0\strata_X.log` e la riga `stage 0:` del log.
 - Pressione: `python strumenti/prova_hog.py --elastico si --exe <strata.exe> --hog-mib 4000 --nome X`.
 - Kernel: `native_expert_bench.exe <shard1.gguf> [strato] [esperti] [token] [iterazioni] [same]` (PATH con CUDA 12.6\bin).
+- KV 262k: `strumenti/prova_kv262k.py --nome X --exe <strata.exe>`; `--cache-fissa 5000`
+  solo per confronto di laboratorio (toglie elasticita', controlla VRAM iniziale >=1.000 MiB).
+  Il pack puo' trasformare il budget richiesto in un numero maggiore di slot; leggere `/metrics`.
 - Profilo: `strumenti/prova_nsys_cli.py` + `strumenti/analizza_nsys.py`. Daily di laboratorio:
   `strumenti/daily_rapido.py [--runtime DIR] [--env K=V]`. Fork: `../strata_prova/fork_strata.py`.
 - Regole di misura: Jump Desktop spento; niente `nvidia-smi` a ripetizione durante una corsa; motori alternati nella

@@ -1,0 +1,34 @@
+motore: {"model": "qwen3.8-flash-next-iq3_xxs", "max_context": 262144, "images": false, "version": "0.1.30", "context": 262144, "kv": "int8", "kv_resident": 32768, "expert_slots": 6742, "expert_cache_mib": 11161, "expert_slots_primary": 6742, "expert_cache_primary_mib": 11161, "spec": 6, "mtp_max": 4, "lookup": 3, "vram_free_mib": 1416, "cvec": 0, "arena_mib": 40925, "pool_workers": 7, "pcie_frac": "0.28", "spec_min_p": "0.50", "conversation_cache_mib": 0, "conversation_cache_slots": 4, "conversation_cache_min_free_mib": 2560, "engine": "0.1.30"}
+  riscaldamento_1    prompt     61 nuovi     61  prefill    42.11 t/s  decode  29.963 t/s  out     8  ttft    1.53 s  vram 20088 MiB  fine=length
+  riscaldamento_2    prompt     61 nuovi      5  prefill     49.5 t/s  decode  43.716 t/s  out     8  ttft    0.17 s  vram 20160 MiB  fine=length
+  L01@ctx131k        prompt 131248 nuovi 131248  prefill   765.18 t/s  decode  42.203 t/s  out  1024  ttft  172.27 s  vram 20160 MiB  fine=length
+  L02@ctx131k        prompt 131239 nuovi    167  prefill    74.38 t/s  decode  42.571 t/s  out  1024  ttft    2.82 s  vram 20796 MiB  fine=length
+{
+ "corsa": "20261001_111137_pr315_B_v3_lungo_131k",
+ "nota": "KV 262144; prompt 131k; carico reale",
+ "decode_aggregato_tps": 42.386,
+ "blocchi": {
+  "131k": {
+   "casi": 2,
+   "decode_tps": 42.386
+  }
+ },
+ "per_caso": [
+  {
+   "etichetta": "L01@ctx131k",
+   "prefill_tps_motore": 765.18,
+   "decode_tps_motore": 42.203,
+   "ttft_s": 172.271,
+   "vram_prima_mib": 20160,
+   "fine": "length"
+  },
+  {
+   "etichetta": "L02@ctx131k",
+   "prefill_tps_motore": 74.38,
+   "decode_tps_motore": 42.571,
+   "ttft_s": 2.824,
+   "vram_prima_mib": 20796,
+   "fine": "length"
+  }
+ ]
+}

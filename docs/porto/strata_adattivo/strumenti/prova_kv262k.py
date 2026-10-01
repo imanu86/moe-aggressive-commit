@@ -60,6 +60,7 @@ def main():
     ap.add_argument("--out", type=Path)
     ap.add_argument("--exe", type=Path, help="Eseguibile candidato; altrimenti build-0130")
     ap.add_argument("--solo-avvio", action="store_true", help="Verifica avvio e capacita' senza inviare prompt")
+    ap.add_argument("--cache-fissa", type=int, help="Solo laboratorio: budget slot richiesto, senza elasticita'; il pack puo' aumentare gli slot effettivi")
     a = ap.parse_args()
     active = [p.info["name"] for p in psutil.process_iter(["name"])
               if (p.info["name"] or "").lower() in ("strata.exe", "llama-server.exe")]
@@ -75,6 +76,12 @@ def main():
         cfg["exe"] = str(candidate)
     cfg.update(cwd=str(out), log=str(out / "strata.log"), port=PORT, host="127.0.0.1")
     cfg["env"] = dict(cfg.get("env", {}), STRATA_WATCHDOG_S="240", STRATA_SPLIT_TIMING="1")
+    if a.cache_fissa is not None:
+        if a.cache_fissa <= 0:
+            raise ValueError("La cache fissa deve avere un numero positivo di slot")
+        cfg["args"] = [arg for arg in cfg["args"] if arg != "--elastic"]
+        index = cfg["args"].index("--expert-cache")
+        cfg["args"][index + 1] = str(a.cache_fissa)
     cfg_path = out / "config.json"
     cfg_path.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
     env = dict(os.environ)
@@ -99,6 +106,7 @@ def main():
               "prompt_profile": None if a.solo_avvio else "lungo_131k", "out": str(out),
               "exe": cfg["exe"],
               "exe_sha256": hashlib.sha256(Path(cfg["exe"]).read_bytes()).hexdigest(),
+              "requested_fixed_cache_slots": a.cache_fissa,
               "artificial_load": False, "status": "starting"}
     print("OUTPUT", out, flush=True)
     sampler.start()
@@ -127,6 +135,14 @@ def main():
             result.update(status="ready", startup_s=round(time.monotonic() - started, 2), health=health)
             (out / "health.json").write_text(json.dumps(health, indent=2), encoding="utf-8")
             print("READY", health["max_context"], "token; avvio", result["startup_s"], "s", flush=True)
+            initial_metrics = get_json("/metrics")
+            (out / "metrics_initial.json").write_text(json.dumps(initial_metrics, indent=2), encoding="utf-8")
+            engine = initial_metrics["engine"]
+            result["initial_cache"] = {key: engine.get(key) for key in
+                                       ("expert_slots", "expert_cache_mib", "vram_free_mib")}
+            print("CACHE", json.dumps(result["initial_cache"]), flush=True)
+            if a.cache_fissa is not None and engine.get("vram_free_mib", 0) < 1000:
+                raise RuntimeError("Cache fissa senza margine VRAM di almeno 1000 MiB; nessun prompt inviato")
             if a.solo_avvio:
                 result.update(status="completed", test_type="startup_only")
                 return

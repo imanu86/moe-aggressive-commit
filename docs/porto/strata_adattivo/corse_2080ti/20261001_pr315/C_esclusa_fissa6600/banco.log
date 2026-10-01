@@ -1,0 +1,26 @@
+motore: {"model": "qwen3.8-flash-next-iq3_xxs", "max_context": 262144, "images": false, "version": "0.1.30", "context": 262144, "kv": "int8", "kv_resident": 32768, "expert_slots": 8577, "expert_cache_mib": 14224, "expert_slots_primary": 8577, "expert_cache_primary_mib": 14224, "spec": 6, "mtp_max": 4, "lookup": 3, "vram_free_mib": 0, "cvec": 0, "arena_mib": 40925, "pool_workers": 7, "pcie_frac": "0.28", "spec_min_p": "0.50", "conversation_cache_mib": 0, "conversation_cache_slots": 4, "conversation_cache_min_free_mib": 2560, "engine": "0.1.30"}
+  riscaldamento_1    prompt     61 nuovi     61  prefill    54.48 t/s  decode  26.819 t/s  out     8  ttft    1.21 s  vram 21648 MiB  fine=length
+  riscaldamento_2    prompt     61 nuovi      5  prefill    65.45 t/s  decode  30.984 t/s  out     8  ttft    0.11 s  vram 21802 MiB  fine=length
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\.codex_runs\20261001_112159_pr315_C_sota_fissa6600\bench_bootstrap.py", line 4, in <module>
+    runpy.run_path('C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_prova\\banco_strata.py', run_name='__main__')
+  File "<frozen runpy>", line 287, in run_path
+  File "<frozen runpy>", line 98, in _run_module_code
+  File "<frozen runpy>", line 88, in _run_code
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_prova\banco_strata.py", line 212, in <module>
+    main()
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_prova\banco_strata.py", line 190, in main
+    esegui("%s@%s" % (cid, ctx), messaggi, c["budget_token"]["screening"],
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_prova\banco_strata.py", line 150, in esegui
+    r = chat_stream(a.url, messaggi, max_tokens)
+        ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_prova\banco_strata.py", line 93, in chat_stream
+    for raw in r:
+               ^
+  File "C:\Users\imanu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\http\client.py", line 730, in readline
+    result = self.fp.readline(limit)
+             ^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\.cache\codex-runtimes\codex-primary-runtime\dependencies\python\Lib\socket.py", line 720, in readinto
+    return self._sock.recv_into(b)
+           ^^^^^^^^^^^^^^^^^^^^^^^
+ConnectionResetError: [WinError 10054] Connessione in corso interrotta forzatamente dall'host remoto

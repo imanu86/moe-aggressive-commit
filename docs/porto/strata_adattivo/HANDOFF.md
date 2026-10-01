@@ -60,6 +60,20 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   scritture su `D:\ds4_work`/Desktop; l'accesso completo e' tornato nella ripresa successiva.
   **Nessuna promozione della #315.** Processi lab chiusi e hash/configurazione operativa #270 verificati.
 
+- **Laboratorio 0.1.31 completato e IN PAUSA su richiesta dell'utente (1/10):** nove patch
+  locali portate e ricostruzione riproducibile; controlli IQ/MMVQ/GDN/QSA superati.
+  Dequantizzazione vettoriale: 18 confronti numerici superati e A/B/A a cache fissa 4.200
+  (5.621 slot effettivi), KV262144/prompt131k: prefill **752,52 / 756,44 / 754,99 t/s**,
+  vantaggio circa **0,36%**, nessuna promozione. Sei richieste lunghe completate.
+  Decode 36,828 / 39,875 / 38,403 t/s con testo/MTP diversi; non attribuirlo al kernel di prefill.
+  HC/GDN FP16 compilata separatamente, 12 controlli delle copie superati; 69.729 valori
+  dei pesi non esatti dopo conversione FP16. **Prova sul modello/qualita' ancora da fare.**
+  Prompt reale 250k: strumento preparato, **non eseguito**. Dettagli in
+  `RISULTATI_0131_FORK_1_OTTOBRE.md`, evidenza `corse_2080ti/20261001_0131_fork/`, patch
+  `patches/su-0.1.31/`. Lanciatore #270 e hash preservati, processi del laboratorio chiusi.
+  OCGC-IA informata della disponibilita' GPU rispetto a Strata; coordinarsi prima della ripresa.
+  **Non avviare altri test o monitoraggi: attendere una nuova richiesta dell'utente.**
+
 ## 3. Il clone `D:\ds4_work\strata\Strata`
 - `main` = **v0.1.30 (30ec18e) + 13 commit** (copie in `patches/su-0.1.30/`, ricostruibile con `git am`):
   1. 0001 traccia di instradamento con fflush · 0002 blocchi del prompt allineati ai punti di ripresa
@@ -163,6 +177,12 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
   ammissione sm80+ e molte parti gia' assorbite. Non usare i suoi guadagni come stime per la nostra scheda.
 
 ## 9. Prossimi passi, in ordine
+
+**Stato corrente: IN PAUSA per richiesta esplicita dell'utente dopo A2.** Alla prossima
+ripresa, base 0.1.31 e confronto vettoriale sono gia' completati: partire dalla validazione
+sul modello HC/GDN FP16 (logits/qualita' e retrieval), poi dal riempimento reale 250k.
+Nessuna promozione delle candidate 0.1.31; coordinare l'uso GPU con OCGC-IA.
+
 1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).
 2. **#270 verificata e promossa nel lanciatore:** patch `patches/da-valutare/0014-PR270-prefill-Turing.patch`, compilazione CUDA 12.6 e
    parita' superate, prefill +22% nel confronto base/candidata/base su KV 262.144. Rimaste #317 (SSD), #315, #242 al posto
@@ -190,6 +210,9 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 - KV 262k: `strumenti/prova_kv262k.py --nome X --exe <strata.exe>`; `--cache-fissa 5000`
   solo per confronto di laboratorio (toglie elasticita', controlla VRAM iniziale >=1.000 MiB).
   Il pack puo' trasformare il budget richiesto in un numero maggiore di slot; leggere `/metrics`.
+  Nel laboratorio 0.1.31 budget 5.000 rifiutato (900 MiB liberi); A/B/A accettata con 4.200.
+  `--server-source <sorgenti>` seleziona il server della base; `--needle-lengths` e
+  `--retrieval-250k` preparati per la prossima ripresa, non eseguiti in questa sessione.
 - Profilo: `strumenti/prova_nsys_cli.py` + `strumenti/analizza_nsys.py`. Daily di laboratorio:
   `strumenti/daily_rapido.py [--runtime DIR] [--env K=V]`. Fork: `../strata_prova/fork_strata.py`.
 - Regole di misura: Jump Desktop spento; niente `nvidia-smi` a ripetizione durante una corsa; motori alternati nella

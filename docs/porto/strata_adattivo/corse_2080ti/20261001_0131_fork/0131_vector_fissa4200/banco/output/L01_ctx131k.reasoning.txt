@@ -1,0 +1,17 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only few experts and hidden dims; bandwidth cost large because expert weights bytes. Need numeric examples.
+
+Need maybe tie to llama.cpp? User provided code but asks conceptual. Could mention tensor buffer overrides, CUDA mapped buffer? But likely not necessary. Need C++ colleague: analogies: cache miss, memory bandwidth vs FLOPs. Need invented numbers.
+
+Let's craft detailed but clear.
+
+Need ensure Italian. Need maybe include formulas:
+- MoE layer: E experts, each expert has FFN weights: up/gate/down matrices. For hidden d, intermediate m. Weight bytes per expert = 3*d*m*bytes (if SwiGLU). If top-k experts activated per token, bytes read = k * 3*d*m*bytes per MoE layer. For L MoE layers, bytes/token = L*k*3*d*m*bytes. If only some experts resident, non-resident streamed. If all experts resident, compute-bound maybe. If few resident, many tokens hit cold experts, PCIe transfer.
+
+Need examples:
+Example 1: small MoE: d=4096, m=14336, L=32 MoE layers, top-k=2, fp16 (2 bytes). Per expert FFN weights: 3*4096*14336*2 = 352,321,536 bytes ~336 MiB? Let's calculate: 4096*14336=58,720,256; *3=176,160,768; *2=352,321,536 bytes = 336 MiB. top-k 2 => 672 MiB per layer; 32 layers => 21.5 GiB per token if all experts cold. That's huge. But maybe too high? For 7B active? Actually 32*2*336MiB=21.5GiB. PCIe 32GB/s => 0.67s/token unrealistic. But MoE models often smaller experts or quantized. Need invented plausible.
+
+Maybe use d=2048, m=8192, L=24, top-k=2, Q4_0 ~0.5 bytes? Let's compute. Expert weights 3*2048*8192*2=100,663,296 bytes ~96 MiB fp16. top-k 2=192 MiB/layer; 24=4.6 GiB/token. PCIe 32GB/s => 144ms/token. If Q4_0 0.5 bytes: 1.15 GiB/token => 36ms/token. Compute: active params maybe 2*24*100MB=4.8GB fp16? FLOPs per token: 2*active params? For FFN only: 2*3*d*m*k*L = 2*3*2048*8192*2*24 = 1.2e9? Let's calculate: 3*2048*8192=50,331,648 MACs per expert? Actually matrix multiply FLOPs 2*d*m per matrix, 3 matrices => 6*d*m = 100,663,296 FLOPs per expert. top-k 2 => 201M per layer; 24 => 4.8 GFLOP/token. GPU 10 TFLOPS => 0.48ms. Bandwidth 4.6GB/token at 32GB/s => 144ms. So bandwidth dominates. Good.
+
+Need maybe include attention compute? Decode attention reads KV cache, but MoE expert weights dominate if experts streamed. Need mention if experts resident in VRAM, weights read from VRAM bandwidth (HBM) not PCIe; if few resident, cache misses cause host->device transfers. PCIe bandwidth: PCIe 4.0 x16 ~32 GB/s theoretical, effective 20-25 GB/s;

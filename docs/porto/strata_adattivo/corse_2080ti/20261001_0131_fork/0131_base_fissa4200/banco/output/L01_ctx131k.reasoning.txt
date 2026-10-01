@@ -1,0 +1,25 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only few experts and hidden dims; bandwidth cost large because expert weights bytes. Need numeric examples.
+
+Need maybe tie to llama.cpp? User provided code but asks conceptual. Could mention tensor buffer overrides, CUDA mapped buffer? But likely not necessary. Need C++ colleague: analogies: cache miss, memory bandwidth vs FLOPs. Need invented numbers.
+
+Let's craft detailed but clear.
+
+Need ensure Italian. Need maybe include formulas:
+- MoE layer: E experts, each expert has FFN weights: up/gate/down matrices. For hidden d, intermediate m. Weight bytes per expert = 3*d*m*bytes (if SwiGLU). If top-k experts activated per token, bytes read = k * 3*d*m*bytes per MoE layer. For L MoE layers, bytes/token = L*k*3*d*m*bytes. If only some experts resident, non-resident streamed. If all resident, no PCIe per token except maybe activations. If few resident, many tokens hit non-resident experts.
+
+Need invented example:
+Model: 12B total, 16 layers MoE? Let's choose simple:
+- hidden d=4096, intermediate m=14336, 3 matrices per expert (gate, up, down) => 3*4096*14336 = 176,160,768 params/expert. FP16 2 bytes => 352 MB/expert. If top-k=2, per MoE layer read 704 MB. If 16 MoE layers => 11.3 GB/token if all experts streamed. That's huge. But maybe too high? For 12B model with 16 experts? Let's calibrate.
+
+Maybe use smaller invented:
+- 8 MoE layers, d=2048, m=8192, 3 matrices => 3*2048*8192=50,331,648 params/expert. FP16 100.7 MB/expert. top-k=2 => 201 MB/layer. 8 layers => 1.61 GB/token. PCIe Gen4 x16 ~32 GB/s theoretical, effective 20-25 GB/s => 64-80 ms/token just streaming. Compute: FLOPs per token: for each expert 2*3*d*m MACs? FLOPs ~ 2*3*d*m per expert? Actually multiply-add counts 2 FLOPs per param. For 50M params/expert => 100 MFLOPs/expert. top-k 2 => 200 MFLOPs/layer, 8 layers => 1.6 GFLOPs/token. GPU 10 TFLOPS FP16 => 0.16 ms. So bandwidth dominates.
+
+Need maybe include if experts resident: if 2 experts resident out of 64? Probability? Need explain few experts resident: if only a small subset cached, top-k selection may often choose non-resident experts. If expert cache slots per layer = N, only N experts resident; if top-k experts not in cache, load weights. Could mention LRU cache, --moe-expert-cache. But user asks why decode limited by PCIe bus bandwidth. Need maybe mention random expert routing causes poor temporal locality; each token may need different experts; weights are large; activations small.
+
+Need C++ analogy: compute is like doing arithmetic on small arrays; bandwidth is like loading huge const arrays from main memory each call. If arrays don't fit in L1/L2, memory bus saturates. In MoE, expert weights are huge arrays; only few activated per token; if not resident, they are streamed.
+
+Need numeric examples:
+Example 1: single MoE layer:
+- d=4096, m=16384, 3 matrices, FP16: 3*4096*16384*2 = 402 MB/expert. top-k=2 => 804 MB read per layer. If 12 layers => 9.65 GB/token. PCIe 25 GB/s =>

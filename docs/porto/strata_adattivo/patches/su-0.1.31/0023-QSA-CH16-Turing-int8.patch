@@ -1,0 +1,123 @@
+--- a/src/kernels/cuda/qsa_prompt_attn.cu
++++ b/src/kernels/cuda/qsa_prompt_attn.cu
+@@ -19,7 +19,7 @@
+ #ifndef D1_CH
+ #define D1_CH 32
+ #endif
+-constexpr int CH = D1_CH;         // cells per chunk
++constexpr int DEFAULT_CH = D1_CH;         // cells per chunk
+ constexpr int THREADS = 128;      // 4 warps: scores by cell (8 each), p.v by dimension (64 each = one int8 scale group)
+ constexpr int QS = HD + 8;        // q row stride in halves (bank-conflict-free fragment loads)
+ 
+@@ -74,7 +74,7 @@
+ // KV_MODE 1: int8 codes + fp16 scale per 64 values. KV_MODE 0: fp16 values (scales 1).
+ // KV_MODE 3 (hybrid K8V4): K as mode 1, V as mode 0 - the row's q4_0 blocks are dequantized to fp16 at
+ // gather, so everything downstream of the load is the mode-0 V path; the caller un-rotates the output.
+-template <int KV_MODE>
++template <int KV_MODE, int CH>
+ struct Smem {
+     using KElem = typename std::conditional<KV_MODE == 0, __half, int8_t>::type;
+     using VElem = typename std::conditional<KV_MODE == 1, int8_t, __half>::type;
+@@ -94,14 +94,14 @@
+     long long row[CH];
+ };
+ 
+-template <int KV_MODE>
++template <int KV_MODE, int CH>
+ __global__ void __launch_bounds__(THREADS) prompt_attn_kernel(const float* __restrict__ q, QsaAttnPools p,
+                                                               const int32_t* __restrict__ ids,
+                                                               const int32_t* __restrict__ steps, int n_kv_heads,
+                                                               int page_size, float scale_log2, float* __restrict__ attn,
+                                                               int cap) {
+     extern __shared__ __align__(16) unsigned char smem_raw[];
+-    Smem<KV_MODE>& S = *reinterpret_cast<Smem<KV_MODE>*>(smem_raw);
++    Smem<KV_MODE, CH>& S = *reinterpret_cast<Smem<KV_MODE, CH>*>(smem_raw);
+     const int qi = blockIdx.x, kvh = blockIdx.y;
+     const int n_head = n_kv_heads * G;
+     q += (size_t) qi * n_head * HD + (size_t) kvh * G * HD;
+@@ -151,7 +151,7 @@
+         // gather the chunk's K and V rows (16-byte pieces; K8V4's V as q4_0 blocks dequantized to fp16)
+         // and their scales
+         {
+-            constexpr int KPIECES = HD * (int) sizeof(typename Smem<KV_MODE>::KElem) / 16;   // per K row
++            constexpr int KPIECES = HD * (int) sizeof(typename Smem<KV_MODE, CH>::KElem) / 16;   // per K row
+             for (int i = t; i < CH * KPIECES; i += THREADS) {
+                 const int c = i / KPIECES, pc = i % KPIECES;
+                 const long long r = S.row[c];
+@@ -184,7 +184,7 @@
+                     }
+                 }
+             } else {
+-                constexpr int VPIECES = HD * (int) sizeof(typename Smem<KV_MODE>::VElem) / 16;   // per V row
++                constexpr int VPIECES = HD * (int) sizeof(typename Smem<KV_MODE, CH>::VElem) / 16;   // per V row
+                 for (int i = t; i < CH * VPIECES; i += THREADS) {
+                     const int c = i / VPIECES, pc = i % VPIECES;
+                     const long long r = S.row[c];
+@@ -220,8 +220,8 @@
+         __syncthreads();
+         // scores: warp w takes cells 8w..8w+7 (one n-tile) over all 256 dims, per 64-dim scale group
+ #pragma unroll
+-        for (int nt = 0; nt < CH / 32; ++nt) {
+-            const int cb = (warp + 4 * nt) * 8;
++        for (int nt = warp; nt < CH / 8; nt += 4) {
++            const int cb = nt * 8;
+             float sc[4] = {0.f, 0.f, 0.f, 0.f};
+ #pragma unroll
+             for (int g = 0; g < 4; ++g) {
+@@ -654,26 +654,33 @@
+     return true;
+ }
+ 
+-template <int KV_MODE>
++template <int KV_MODE, int CH = DEFAULT_CH>
+ bool launch(const float* q, const QsaAttnPools& pools, const int32_t* ids, const int32_t* steps, int64_t cap,
+             const QsaShapes& s, float* attn, int64_t n_q, cudaStream_t st) {
+     static bool attr[64] = {};   // per device, as above
+     int dev = 0;
+     cudaGetDevice(&dev);
+-    const int bytes = (int) sizeof(Smem<KV_MODE>);
++    const int bytes = (int) sizeof(Smem<KV_MODE, CH>);
+     if (dev < 0 || dev >= 64) return false;
+     if (!attr[dev]) {
+-        if (cudaFuncSetAttribute(prompt_attn_kernel<KV_MODE>, cudaFuncAttributeMaxDynamicSharedMemorySize, bytes) !=
++        if (cudaFuncSetAttribute(prompt_attn_kernel<KV_MODE, CH>, cudaFuncAttributeMaxDynamicSharedMemorySize, bytes) !=
+             cudaSuccess) {
+             cudaGetLastError();
+             return false;
+         }
++        if constexpr (CH == 16 && KV_MODE == 1) {
++            if (cudaFuncSetAttribute(prompt_attn_kernel<KV_MODE, CH>,
++                    cudaFuncAttributePreferredSharedMemoryCarveout, 100) != cudaSuccess) {
++                cudaGetLastError();
++                return false;
++            }
++        }
+         attr[dev] = true;
+     }
+     const float scale_log2 = 1.4426950408889634f / sqrtf((float) HD);
+     for (int64_t q0 = 0; q0 < n_q; q0 += 65535) {
+         const int64_t nb = n_q - q0 < 65535 ? n_q - q0 : 65535;
+-        prompt_attn_kernel<KV_MODE><<<dim3((unsigned) nb, (unsigned) s.n_head_kv), THREADS, bytes, st>>>(
++        prompt_attn_kernel<KV_MODE, CH><<<dim3((unsigned) nb, (unsigned) s.n_head_kv), THREADS, bytes, st>>>(
+             q + q0 * s.n_head * HD, pools, ids + q0 * cap, steps + q0 * kStepCount, (int) s.n_head_kv,
+             (int) s.page_size, scale_log2, attn + q0 * s.n_head * HD, (int) cap);
+     }
+@@ -725,7 +732,17 @@
+         // for how far the model amplifies an FP32-level change.  Turing always takes it: v2's cp.async does not
+         // exist before sm_80.
+         static const bool v1 = std::getenv("STRATA_PROMPT_ATTN_V1") != nullptr;
+-        if (v1 || turing) return launch<1>(q, pools, ids, steps, cap, s, attn, n_q, st);
++        if (turing) {
++            const char* ch = std::getenv("STRATA_QSA_CH");
++            if (ch && ch[0] == '3' && ch[1] == '2' && ch[2] == '\0')
++                return launch<1, 32>(q, pools, ids, steps, cap, s, attn, n_q, st);
++            if (ch && !(ch[0] == '1' && ch[1] == '6' && ch[2] == '\0')) {
++                std::fprintf(stderr, "STRATA_QSA_CH must be 16 or 32\n");
++                std::exit(1);
++            }
++            return launch<1, 16>(q, pools, ids, steps, cap, s, attn, n_q, st);
++        }
++        if (v1) return launch<1>(q, pools, ids, steps, cap, s, attn, n_q, st);
+         return launch_i8(q, pools, ids, steps, cap, s, attn, n_q, st);
+     }
+     if (!pools.k_pool || !pools.v_pool) return false;

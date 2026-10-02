@@ -66,6 +66,7 @@ def main():
     ap.add_argument("--durata-max-s", type=int, default=3600, help="Limite totale della corsa, incluso avvio; termina i soli processi propri")
     ap.add_argument("--logits-first", action="store_true", help="Diagnostica opt-in del primo token di ogni richiesta, se compilata")
     ap.add_argument("--profilo-kernel", action="store_true", help="Timing GPU opt-in delle fasi prefill/decode; tempi diagnostici, non benchmark di velocita'")
+    ap.add_argument("--qsa-ch", choices=["16", "32"], help="A/B QSA Turing int8 nello stesso candidato")
     ap.add_argument("--gather-modo", choices=["uno", "batch"], help="A/B PR439 nello stesso binario; cache operativa preservata")
     ap.add_argument("--solo-avvio", action="store_true", help="Verifica avvio e capacita' senza inviare prompt")
     ap.add_argument("--cache-fissa", type=int, help="Solo laboratorio: budget slot richiesto, senza elasticita'; il pack puo' aumentare gli slot effettivi")
@@ -96,6 +97,8 @@ def main():
         cfg["env"]["STRATA_DUMP_FIRST_LOGITS"] = str(out / "first-logits")
     if a.profilo_kernel:
         cfg["env"].update(STRATA_VERIFY_PROFILE="1", STRATA_PREFILL_TIMING="1")
+    if a.qsa_ch is not None:
+        cfg["env"]["STRATA_QSA_CH"] = a.qsa_ch
     if a.gather_modo == "uno":
         cfg["env"]["STRATA_PREFILL_GATHER_ONE"] = "1"
     elif a.gather_modo == "batch":
@@ -116,6 +119,8 @@ def main():
         # La PR controlla la presenza, anche un valore "0" disattiva il batch.
         env.pop("STRATA_PREFILL_GATHER_ONE", None)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
+    if a.qsa_ch is not None:
+        env.pop("STRATA_QSA_CH", None)
     server_wrapper = out / "server_bootstrap.py"
     bench_wrapper = out / "bench_bootstrap.py"
     bootstrap = ("import sys, runpy\n"
@@ -141,6 +146,7 @@ def main():
               "requested_fixed_cache_slots": a.cache_fissa,
               "gather_mode": a.gather_modo,
               "kernel_profiling": a.profilo_kernel,
+              "qsa_ch": a.qsa_ch,
               "artificial_load": False, "status": "starting"}
     print("OUTPUT", out, flush=True)
     sampler.start()

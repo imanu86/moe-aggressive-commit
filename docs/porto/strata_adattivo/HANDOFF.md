@@ -23,13 +23,31 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
+- **2/10, validazione qualità A/B/A conclusa:** metodo teacher-forced e
+  oracoli versionati su main nel fork. A1/B/A2 hanno logits completi identici
+  su 2.557 posizioni valutate: top-1 100%, KL 0, PPL identica. Stessi 6.167
+  slot nel laboratorio, KV262144/int8/resident32768, chunk2048; il daily
+  resta auto/elastico. Sei controlli su sette corretti in ogni braccio,
+  incluso retrieval con tre codici a131072 token al10/50/90%, tutti stop.
+  **Gate complessivo FAIL**: 3*17+2*23+8 riceve92 invece105 in tutti i bracci
+  senza ragionamento. Anche zero bozze dà92; con ragionamento dà105. Non
+  fatto sweep di tutti i limiti MTP. Non cancellare il fallimento originale.
+  Cinque test CPU harness PASS. Tre avvii senza prompt conservati; corretto
+  esplicitamente il gate di ammissione post-buffer prima di valutare token.
+  Binario/lanciatore/config daily invariati; strumenti e risultati aggiunti
+  su main senza nuova build. PR512 resta bozza: queste non sono prove della
+  patch isolata. Nessun nuovo SOTA, nessun aumento bozze, motori conclusi.
+  Dettagli [QUALITA_0136_2_OTTOBRE.md](QUALITA_0136_2_OTTOBRE.md), evidenze
+  `corse_2080ti/20261002_quality_0136/`. Qualità generale/250k non certificata.
+  Fork e checkout operativo ora `main/2c39467`, strumenti QA inclusi;
+  48 file locali conservati e punto di recupero `20261002_202321_quality_tools`.
 - **2/10, main e daily0.1.36 aggiornati e verificati.**
   PRupstream [#512](https://github.com/Niko1221/Strata/pull/512) aperta in bozza,
   branchremoto autorizzato `prefill-topk-active-bound`, commit42131caf; aggiornata
   senza riscrivere storia alla main0.1.36/36fa455; mergeable,4file soltanto.
   La PRisolata attende A/B/A modello sulla nuova base; i test del fork completo
   non sono attribuiti alla PR. Nessun commento/review al controllo2/10.
-  Fork pubblicazione e dailyD sono ora **main/729eb4a14c0a102cf7a57149e8e3fd93a9d18a5f**,
+  Core del fork e daily validati al commit **729eb4a14c0a102cf7a57149e8e3fd93a9d18a5f**,
   tree completo upstream0.1.36 + sm75/elastica conservati,17file core di port.
   #315/commitasync mantenuti upstream; sola attesa pre-verifica #463 inclusa.
   #500 quantizzazione parallela inclusa **opt-in**, profilo daily seriale0:
@@ -54,7 +72,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   riprendere automaticamente la vecchia conversazione interrotta per bloccoUI.
   Dettagli **`ALLINEAMENTO_0136_2_OTTOBRE.md`**,evidenze
   `corse_2080ti/20261002_port_0136/`; preparazione0.1.35 storica conservata.
-- **Correttezza risposte e bozze, chiarimento2/10:** i6output del banco131k
+- **Correttezza risposte e bozze, nota precedente alla nuova QA:** i6output del banco131k
   sono troncati a1024 durante il ragionamento, nessuna risposta finale valutata.
   I100testserver sono mock; parita'kernel non dimostra qualita'generale.
   Letti i2ragionamenti seriali, temi pertinenti ma esempiGiB/GB intermedi
@@ -66,8 +84,8 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 - **Metodo upstream, controllo 2/10:** kernel confrontati con riferimenti
   indipendenti e tolleranze specifiche; modello confrontato in teacher forcing
   su testi fissi tramite logits, KL e perplexity. Non trovato un unico harness
-  pubblico obbligatorio. Sul nostro daily manca questo gate del modello:
-  farlo insieme alle risposte complete prima dello sweep delle bozze.
+  pubblico obbligatorio. Il gate locale è ora completato come riportato sopra;
+  resta il caso aritmetico negativo con ragionamento spento.
   Fonti e limiti: `corse_2080ti/20261002_port_0136/STANDARD_TEST_UPSTREAM.md`.
 - **Prova conversazionale del 2/10 interrotta per blocco UI Windows.**
   Richiesta utente:20k iniziali, turni da1k fino250k. Raccolti **89turni**,

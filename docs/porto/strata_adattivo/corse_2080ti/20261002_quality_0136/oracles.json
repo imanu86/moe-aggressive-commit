@@ -1,0 +1,65 @@
+[
+  {
+    "name": "binary_units",
+    "prompt": "Return only JSON with keys a_gib and b_gib. Compute 48 * 384 MiB in GiB, and 48 * 1.75 * 192 MiB in GiB. 1 GiB = 1024 MiB.",
+    "expected": {
+      "a_gib": 18,
+      "b_gib": 15.75
+    }
+  },
+  {
+    "name": "stable_unique",
+    "prompt": "Return only JSON with key result. Apply stable_unique to [7,2,7,1,2,9]: keep the first occurrence of each value in input order.",
+    "expected": {
+      "result": [
+        7,
+        2,
+        1,
+        9
+      ]
+    }
+  },
+  {
+    "name": "ledger",
+    "prompt": "Return only JSON with key balance. The initial balance is 1250. Add 375, subtract 480, then subtract 95. What is the final balance?",
+    "expected": {
+      "balance": 1050
+    }
+  },
+  {
+    "name": "dependency_order",
+    "prompt": "Return only JSON with key order. Tasks A, B, C, D: B requires A; C requires B; D requires C. Give their only valid order.",
+    "expected": {
+      "order": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    }
+  },
+  {
+    "name": "read_record",
+    "prompt": "Return only JSON with key code. Records: north=N731, south=S482, west=W916. What is the code of south?",
+    "expected": {
+      "code": "S482"
+    }
+  },
+  {
+    "name": "weighted_sum",
+    "prompt": "Return only JSON with key total. Three items cost 17 each, two items cost 23 each, and shipping costs 8. Compute the total.",
+    "expected": {
+      "total": 105
+    }
+  },
+  {
+    "name": "deep_three_records",
+    "expected": {
+      "north": "ARCO-731",
+      "south": "LUNA-482",
+      "west": "PORTO-916"
+    },
+    "prompt_tokens": 131072,
+    "ids_sha256": "e72ee4998b68c9790b2ec56cdcbb1bf6283ad6efd454122dc69f41fe73b986dc"
+  }
+]

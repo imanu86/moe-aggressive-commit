@@ -1,0 +1,164 @@
+{
+  "texts": {
+    "code": {
+      "A1_vs_B": {
+        "positions": 511,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 1.834109348743723,
+        "ppl_candidate": 1.834109348743723,
+        "nll_delta_mean": 0.0
+      },
+      "A1_vs_A2": {
+        "positions": 511,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 1.834109348743723,
+        "ppl_candidate": 1.834109348743723,
+        "nll_delta_mean": 0.0
+      },
+      "gate": {
+        "pass": true,
+        "checks": {
+          "nll": true,
+          "median_kl": true,
+          "p99_kl": true,
+          "top1": true
+        },
+        "limits": {
+          "nll_upper_nats": 0.01,
+          "median_kl": 0.001,
+          "p99_kl": 0.01,
+          "top1_min_pct": 99.0
+        },
+        "candidate_delta_nats": 0.0,
+        "candidate_block_half_interval": 0.0,
+        "reference_repeat_noise_bound": 0.0,
+        "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+      }
+    },
+    "doc": {
+      "A1_vs_B": {
+        "positions": 1023,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 1.8607315779254445,
+        "ppl_candidate": 1.8607315779254445,
+        "nll_delta_mean": 0.0
+      },
+      "A1_vs_A2": {
+        "positions": 1023,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 1.8607315779254445,
+        "ppl_candidate": 1.8607315779254445,
+        "nll_delta_mean": 0.0
+      },
+      "gate": {
+        "pass": true,
+        "checks": {
+          "nll": true,
+          "median_kl": true,
+          "p99_kl": true,
+          "top1": true
+        },
+        "limits": {
+          "nll_upper_nats": 0.01,
+          "median_kl": 0.001,
+          "p99_kl": 0.01,
+          "top1_min_pct": 99.0
+        },
+        "candidate_delta_nats": 0.0,
+        "candidate_block_half_interval": 0.0,
+        "reference_repeat_noise_bound": 0.0,
+        "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+      }
+    },
+    "chat": {
+      "A1_vs_B": {
+        "positions": 1023,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 2.290216567380514,
+        "ppl_candidate": 2.290216567380514,
+        "nll_delta_mean": 0.0
+      },
+      "A1_vs_A2": {
+        "positions": 1023,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 2.290216567380514,
+        "ppl_candidate": 2.290216567380514,
+        "nll_delta_mean": 0.0
+      },
+      "gate": {
+        "pass": true,
+        "checks": {
+          "nll": true,
+          "median_kl": true,
+          "p99_kl": true,
+          "top1": true
+        },
+        "limits": {
+          "nll_upper_nats": 0.01,
+          "median_kl": 0.001,
+          "p99_kl": 0.01,
+          "top1_min_pct": 99.0
+        },
+        "candidate_delta_nats": 0.0,
+        "candidate_block_half_interval": 0.0,
+        "reference_repeat_noise_bound": 0.0,
+        "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+      }
+    }
+  },
+  "policy": {
+    "description": "Local paired regression gate; not an upstream universal threshold",
+    "block_tokens": 32,
+    "nll_allowance_nats": 0.01,
+    "median_kl_floor": 0.001,
+    "p99_kl_floor": 0.01,
+    "baseline_kl_multiplier": 3.0,
+    "top1_allowance_percentage_points": 1.0
+  },
+  "aggregate_gate": {
+    "pass": true,
+    "checks": {
+      "nll": true,
+      "median_kl": true,
+      "p99_kl": true,
+      "top1": true
+    },
+    "limits": {
+      "nll_upper_nats": 0.01,
+      "median_kl": 0.001,
+      "p99_kl": 0.01,
+      "top1_min_pct": 99.0
+    },
+    "candidate_delta_nats": 0.0,
+    "candidate_block_half_interval": 0.0,
+    "reference_repeat_noise_bound": 0.0,
+    "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+  },
+  "oracle_pass": false,
+  "pass": false,
+  "limits": "Local fixed-residency corpus and 131k retrieval; not a general quality score, elastic-cache test, or isolated upstream PR benchmark."
+}

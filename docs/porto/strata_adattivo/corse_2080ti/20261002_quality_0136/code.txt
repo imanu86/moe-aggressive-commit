@@ -1,0 +1,52 @@
+Review this Python module. Explain the ordering invariant and the test cases.
+def stable_unique(values):
+    seen = set()
+    result = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+def test_stable_unique():
+    assert stable_unique([7, 2, 7, 1, 2, 9]) == [7, 2, 1, 9]
+    assert stable_unique([]) == []
+    assert stable_unique([4, 4, 4]) == [4]
+
+The set records membership, while the list preserves first occurrence order.
+The empty input returns an empty list. Repeated values never change the order.
+An unordered set alone does not satisfy the public API. Complexity is linear
+on average, assuming constant-time hashing. Objects must be hashable.
+Review this Python module. Explain the ordering invariant and the test cases.
+def stable_unique(values):
+    seen = set()
+    result = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+def test_stable_unique():
+    assert stable_unique([7, 2, 7, 1, 2, 9]) == [7, 2, 1, 9]
+    assert stable_unique([]) == []
+    assert stable_unique([4, 4, 4]) == [4]
+
+The set records membership, while the list preserves first occurrence order.
+The empty input returns an empty list. Repeated values never change the order.
+An unordered set alone does not satisfy the public API. Complexity is linear
+on average, assuming constant-time hashing. Objects must be hashable.
+Review this Python module. Explain the ordering invariant and the test cases.
+def stable_unique(values):
+    seen = set()
+    result = []
+    for value in values:
+        if value not in seen:
+            seen.add(value)
+            result.append(value)
+    return result
+
+def test_stable_unique():
+    assert stable_unique([7, 2, 7, 1, 2, 9]) == [7, 2, 1, 9]
+    assert stable_unique([]) == []
+    assert stable_unique([4, 4

@@ -1,0 +1,894 @@
+{
+  "plan": {
+    "protocol": "native-IQ A1(reference)/B(candidate)/A2(reference)",
+    "config_sha256": "ccffa537cdb264f99317948c1c6f41ffbc1e5ce370cafb1ca8c0ca717e77e112",
+    "args": [
+      "--pack",
+      "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+      "--native",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+      "--ple-gguf",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+      "--expert-profile",
+      "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+      "--spec",
+      "4",
+      "--spec-min-p",
+      "0.5",
+      "--mtp",
+      "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+      "--max-context",
+      "262144",
+      "--kv",
+      "int8",
+      "--kv-resident",
+      "32768",
+      "--vram-reserve-mib",
+      "1393",
+      "--expert-cache",
+      "4600",
+      "--prefill",
+      "2048",
+      "--prompt-cache",
+      "6",
+      "--conversation-cache-mib",
+      "0",
+      "--adapt-swaps",
+      "0",
+      "--pcie-frac",
+      "0",
+      "--suffix-draft",
+      "0",
+      "--mtp-max-t",
+      "4"
+    ],
+    "policy": {
+      "description": "Local paired regression gate; not an upstream universal threshold",
+      "block_tokens": 32,
+      "nll_allowance_nats": 0.01,
+      "median_kl_floor": 0.001,
+      "p99_kl_floor": 0.01,
+      "baseline_kl_multiplier": 3.0,
+      "top1_allowance_percentage_points": 1.0
+    },
+    "texts": {
+      "code": {
+        "tokens": 512,
+        "text_sha256": "d73ef898b3db4694d72a287154adcf7d7964ab8ed4a491d1da6d0b53d10c4448"
+      },
+      "doc": {
+        "tokens": 1024,
+        "text_sha256": "cf867ece4f03f8d8612507056da3166dffbc6d25b63025e54f910b70b0437312"
+      },
+      "chat": {
+        "tokens": 1024,
+        "text_sha256": "bb496a9b09a11c4439ab955e596c94b47d94a1e321722fad1b49153febed9228"
+      }
+    },
+    "oracle_cases": [
+      "binary_units",
+      "stable_unique",
+      "ledger",
+      "dependency_order",
+      "read_record",
+      "weighted_sum",
+      "deep_three_records"
+    ],
+    "deep_prompt_tokens": 131072,
+    "teacher_forcing": "growing prefixes; max_new=1; prediction discarded",
+    "prefill_scope": "teacher prefixes exercise decode; separate deep oracle exercises batched prefill",
+    "daily_configuration_modified": false,
+    "artificial_load": false,
+    "startup_free_vram_floor_mib": 768,
+    "gate_declared_before_runs": true,
+    "expert_profile_sha256": "8f59b4aa8873209dff11c11e37bcda9529a1335b724a1afeea37bf6388975baf",
+    "reference": {
+      "exe": "D:\\ds4_work\\strata\\Strata\\build-0131-daily\\strata.exe",
+      "sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34"
+    },
+    "candidate": {
+      "exe": "D:\\ds4_work\\strata\\Strata\\build-0136-daily\\strata.exe",
+      "sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a"
+    },
+    "tokenizer_sha256": {
+      "vocab.json": "4ba64f0332abcfb0b600b7df1537d1e836e68009d5fb7cdb77339738dc6365c4",
+      "merges.txt": "080cf95432173729d160346b7882bd2a644b07f7a3813a3eb73f4e66787bfde9",
+      "token_type.json": "5088c8c298fc06af8382ddb3b76c888703ac2634e82263b97eedcc2ad202738b",
+      "chat_template.jinja": "12827f24b742ea4e80cdc12dbcf9622227056b9f797252a3149263d4f9aaadce"
+    },
+    "token_ids_sha256": {
+      "code": "e899a8b5cf64bd767d577faaf0139cb7a2533e7a407d58bc9be4245c2c3cb9a4",
+      "doc": "6a314cf66c4c51ddddb368455ba4f76f15d7a78004a04c1579242e05300cce03",
+      "chat": "1ccddd94bbe5fd2ed2a28200ea72f3c3986e5cf6d6d8d9f2b5da9703814b5f48"
+    }
+  },
+  "arms": {
+    "A1": {
+      "exe_sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34",
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "719c6d042f6e404ec548e75e49036b24e20d183afa6ae7c87e99ec8d4a9741db"
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "f65216d04374babf72d8c9e4b035fbf1af5f93798bcc6a8d9bb5a1b7e0a97be1"
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "9896ee4e20760fe6f6d5d8d3a3774aaebdcade383c4752dc5abf294d65f84695"
+        }
+      },
+      "answers": [
+        {
+          "name": "binary_units",
+          "expected": {
+            "a_gib": 18,
+            "b_gib": 15.75
+          },
+          "output": "{\n  \"a_gib\": 18.0,\n  \"b_gib\": 15.75\n}",
+          "pass": true,
+          "generated": 30,
+          "prompt_tokens": 74,
+          "prompt_ms": 1054.9,
+          "decode_ms": 782.8,
+          "finish": "stop",
+          "drafts_accepted": 23,
+          "drafts_offered": 24,
+          "reused": 0,
+          "hits": 6025,
+          "lookups": 15840,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "stable_unique",
+          "expected": {
+            "result": [
+              7,
+              2,
+              1,
+              9
+            ]
+          },
+          "output": "{\n  \"result\": [7, 2, 1, 9]\n}",
+          "pass": true,
+          "generated": 21,
+          "prompt_tokens": 47,
+          "prompt_ms": 1015.7,
+          "decode_ms": 639.6,
+          "finish": "stop",
+          "drafts_accepted": 16,
+          "drafts_offered": 18,
+          "reused": 0,
+          "hits": 4121,
+          "lookups": 12000,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "ledger",
+          "expected": {
+            "balance": 1050
+          },
+          "output": "{\"balance\": 1050}",
+          "pass": true,
+          "generated": 10,
+          "prompt_tokens": 53,
+          "prompt_ms": 1204.1,
+          "decode_ms": 374.7,
+          "finish": "stop",
+          "drafts_accepted": 9,
+          "drafts_offered": 9,
+          "reused": 0,
+          "hits": 1902,
+          "lookups": 6240,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "dependency_order",
+          "expected": {
+            "order": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ]
+          },
+          "output": "{\"order\": [\"A\", \"B\", \"C\", \"D\"]}",
+          "pass": true,
+          "generated": 16,
+          "prompt_tokens": 46,
+          "prompt_ms": 1020.1,
+          "decode_ms": 547.6,
+          "finish": "stop",
+          "drafts_accepted": 13,
+          "drafts_offered": 15,
+          "reused": 0,
+          "hits": 3331,
+          "lookups": 10080,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "read_record",
+          "expected": {
+            "code": "S482"
+          },
+          "output": "{\n  \"code\": \"S482\"\n}",
+          "pass": true,
+          "generated": 15,
+          "prompt_tokens": 46,
+          "prompt_ms": 1090.3,
+          "decode_ms": 426.8,
+          "finish": "stop",
+          "drafts_accepted": 12,
+          "drafts_offered": 12,
+          "reused": 0,
+          "hits": 2700,
+          "lookups": 8160,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "weighted_sum",
+          "expected": {
+            "total": 105
+          },
+          "output": "{\"total\": 92}",
+          "pass": false,
+          "generated": 8,
+          "prompt_tokens": 45,
+          "prompt_ms": 953.0,
+          "decode_ms": 286.6,
+          "finish": "stop",
+          "drafts_accepted": 6,
+          "drafts_offered": 6,
+          "reused": 0,
+          "hits": 1494,
+          "lookups": 4800,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "deep_three_records",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "output": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "pass": true,
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 231653.0,
+          "decode_ms": 1328.4,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 8918,
+          "lookups": 23520,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        }
+      ],
+      "info": {
+        "version": "0.1.31",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6167,
+        "expert_cache_mib": 10218,
+        "expert_slots_primary": 6167,
+        "expert_cache_primary_mib": 10218,
+        "spec": 4,
+        "mtp_max": 4,
+        "lookup": 0,
+        "vram_free_mib": 1011,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.00",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.31"
+      }
+    },
+    "B": {
+      "exe_sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a",
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "719c6d042f6e404ec548e75e49036b24e20d183afa6ae7c87e99ec8d4a9741db"
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "f65216d04374babf72d8c9e4b035fbf1af5f93798bcc6a8d9bb5a1b7e0a97be1"
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "9896ee4e20760fe6f6d5d8d3a3774aaebdcade383c4752dc5abf294d65f84695"
+        }
+      },
+      "answers": [
+        {
+          "name": "binary_units",
+          "expected": {
+            "a_gib": 18,
+            "b_gib": 15.75
+          },
+          "output": "{\n  \"a_gib\": 18.0,\n  \"b_gib\": 15.75\n}",
+          "pass": true,
+          "generated": 30,
+          "prompt_tokens": 74,
+          "prompt_ms": 1094.1,
+          "decode_ms": 828.3,
+          "finish": "stop",
+          "drafts_accepted": 23,
+          "drafts_offered": 24,
+          "reused": 0,
+          "hits": 6025,
+          "lookups": 15840,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 74
+        },
+        {
+          "name": "stable_unique",
+          "expected": {
+            "result": [
+              7,
+              2,
+              1,
+              9
+            ]
+          },
+          "output": "{\n  \"result\": [7, 2, 1, 9]\n}",
+          "pass": true,
+          "generated": 21,
+          "prompt_tokens": 47,
+          "prompt_ms": 1156.0,
+          "decode_ms": 614.2,
+          "finish": "stop",
+          "drafts_accepted": 16,
+          "drafts_offered": 18,
+          "reused": 0,
+          "hits": 4121,
+          "lookups": 12000,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 47
+        },
+        {
+          "name": "ledger",
+          "expected": {
+            "balance": 1050
+          },
+          "output": "{\"balance\": 1050}",
+          "pass": true,
+          "generated": 10,
+          "prompt_tokens": 53,
+          "prompt_ms": 1185.3,
+          "decode_ms": 366.3,
+          "finish": "stop",
+          "drafts_accepted": 9,
+          "drafts_offered": 9,
+          "reused": 0,
+          "hits": 1902,
+          "lookups": 6240,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 53
+        },
+        {
+          "name": "dependency_order",
+          "expected": {
+            "order": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ]
+          },
+          "output": "{\"order\": [\"A\", \"B\", \"C\", \"D\"]}",
+          "pass": true,
+          "generated": 16,
+          "prompt_tokens": 46,
+          "prompt_ms": 990.9,
+          "decode_ms": 549.9,
+          "finish": "stop",
+          "drafts_accepted": 13,
+          "drafts_offered": 15,
+          "reused": 0,
+          "hits": 3331,
+          "lookups": 10080,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 46
+        },
+        {
+          "name": "read_record",
+          "expected": {
+            "code": "S482"
+          },
+          "output": "{\n  \"code\": \"S482\"\n}",
+          "pass": true,
+          "generated": 15,
+          "prompt_tokens": 46,
+          "prompt_ms": 1128.6,
+          "decode_ms": 496.8,
+          "finish": "stop",
+          "drafts_accepted": 12,
+          "drafts_offered": 12,
+          "reused": 0,
+          "hits": 2700,
+          "lookups": 8160,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 46
+        },
+        {
+          "name": "weighted_sum",
+          "expected": {
+            "total": 105
+          },
+          "output": "{\"total\": 92}",
+          "pass": false,
+          "generated": 8,
+          "prompt_tokens": 45,
+          "prompt_ms": 1064.3,
+          "decode_ms": 332.4,
+          "finish": "stop",
+          "drafts_accepted": 6,
+          "drafts_offered": 6,
+          "reused": 0,
+          "hits": 1494,
+          "lookups": 4800,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 45
+        },
+        {
+          "name": "deep_three_records",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "output": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "pass": true,
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 231927.1,
+          "decode_ms": 1299.6,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 8918,
+          "lookups": 23520,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 131072
+        }
+      ],
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6167,
+        "expert_cache_mib": 10218,
+        "expert_slots_primary": 6167,
+        "expert_cache_primary_mib": 10218,
+        "spec": 4,
+        "mtp_max": 4,
+        "lookup": 0,
+        "vram_free_mib": 986,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.00",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      }
+    },
+    "A2": {
+      "exe_sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34",
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "719c6d042f6e404ec548e75e49036b24e20d183afa6ae7c87e99ec8d4a9741db"
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "f65216d04374babf72d8c9e4b035fbf1af5f93798bcc6a8d9bb5a1b7e0a97be1"
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "9896ee4e20760fe6f6d5d8d3a3774aaebdcade383c4752dc5abf294d65f84695"
+        }
+      },
+      "answers": [
+        {
+          "name": "binary_units",
+          "expected": {
+            "a_gib": 18,
+            "b_gib": 15.75
+          },
+          "output": "{\n  \"a_gib\": 18.0,\n  \"b_gib\": 15.75\n}",
+          "pass": true,
+          "generated": 30,
+          "prompt_tokens": 74,
+          "prompt_ms": 1263.9,
+          "decode_ms": 770.0,
+          "finish": "stop",
+          "drafts_accepted": 23,
+          "drafts_offered": 24,
+          "reused": 0,
+          "hits": 6025,
+          "lookups": 15840,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "stable_unique",
+          "expected": {
+            "result": [
+              7,
+              2,
+              1,
+              9
+            ]
+          },
+          "output": "{\n  \"result\": [7, 2, 1, 9]\n}",
+          "pass": true,
+          "generated": 21,
+          "prompt_tokens": 47,
+          "prompt_ms": 1026.6,
+          "decode_ms": 638.4,
+          "finish": "stop",
+          "drafts_accepted": 16,
+          "drafts_offered": 18,
+          "reused": 0,
+          "hits": 4121,
+          "lookups": 12000,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "ledger",
+          "expected": {
+            "balance": 1050
+          },
+          "output": "{\"balance\": 1050}",
+          "pass": true,
+          "generated": 10,
+          "prompt_tokens": 53,
+          "prompt_ms": 1171.0,
+          "decode_ms": 348.3,
+          "finish": "stop",
+          "drafts_accepted": 9,
+          "drafts_offered": 9,
+          "reused": 0,
+          "hits": 1902,
+          "lookups": 6240,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "dependency_order",
+          "expected": {
+            "order": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ]
+          },
+          "output": "{\"order\": [\"A\", \"B\", \"C\", \"D\"]}",
+          "pass": true,
+          "generated": 16,
+          "prompt_tokens": 46,
+          "prompt_ms": 1044.9,
+          "decode_ms": 542.2,
+          "finish": "stop",
+          "drafts_accepted": 13,
+          "drafts_offered": 15,
+          "reused": 0,
+          "hits": 3331,
+          "lookups": 10080,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "read_record",
+          "expected": {
+            "code": "S482"
+          },
+          "output": "{\n  \"code\": \"S482\"\n}",
+          "pass": true,
+          "generated": 15,
+          "prompt_tokens": 46,
+          "prompt_ms": 1034.8,
+          "decode_ms": 421.3,
+          "finish": "stop",
+          "drafts_accepted": 12,
+          "drafts_offered": 12,
+          "reused": 0,
+          "hits": 2700,
+          "lookups": 8160,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "weighted_sum",
+          "expected": {
+            "total": 105
+          },
+          "output": "{\"total\": 92}",
+          "pass": false,
+          "generated": 8,
+          "prompt_tokens": 45,
+          "prompt_ms": 960.3,
+          "decode_ms": 309.1,
+          "finish": "stop",
+          "drafts_accepted": 6,
+          "drafts_offered": 6,
+          "reused": 0,
+          "hits": 1494,
+          "lookups": 4800,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        },
+        {
+          "name": "deep_three_records",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "output": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "pass": true,
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 231931.5,
+          "decode_ms": 1306.2,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 8918,
+          "lookups": 23520,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0
+        }
+      ],
+      "info": {
+        "version": "0.1.31",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6167,
+        "expert_cache_mib": 10218,
+        "expert_slots_primary": 6167,
+        "expert_cache_primary_mib": 10218,
+        "spec": 4,
+        "mtp_max": 4,
+        "lookup": 0,
+        "vram_free_mib": 1008,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.00",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.31"
+      }
+    }
+  },
+  "status": "completed",
+  "report": {
+    "texts": {
+      "code": {
+        "A1_vs_B": {
+          "positions": 511,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.834109348743723,
+          "ppl_candidate": 1.834109348743723,
+          "nll_delta_mean": 0.0
+        },
+        "A1_vs_A2": {
+          "positions": 511,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.834109348743723,
+          "ppl_candidate": 1.834109348743723,
+          "nll_delta_mean": 0.0
+        },
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      },
+      "doc": {
+        "A1_vs_B": {
+          "positions": 1023,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.8607315779254445,
+          "ppl_candidate": 1.8607315779254445,
+          "nll_delta_mean": 0.0
+        },
+        "A1_vs_A2": {
+          "positions": 1023,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.8607315779254445,
+          "ppl_candidate": 1.8607315779254445,
+          "nll_delta_mean": 0.0
+        },
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      },
+      "chat": {
+        "A1_vs_B": {
+          "positions": 1023,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 2.290216567380514,
+          "ppl_candidate": 2.290216567380514,
+          "nll_delta_mean": 0.0
+        },
+        "A1_vs_A2": {
+          "positions": 1023,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 2.290216567380514,
+          "ppl_candidate": 2.290216567380514,
+          "nll_delta_mean": 0.0
+        },
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      }
+    },
+    "policy": {
+      "description": "Local paired regression gate; not an upstream universal threshold",
+      "block_tokens": 32,
+      "nll_allowance_nats": 0.01,
+      "median_kl_floor": 0.001,
+      "p99_kl_floor": 0.01,
+      "baseline_kl_multiplier": 3.0,
+      "top1_allowance_percentage_points": 1.0
+    },
+    "aggregate_gate": {
+      "pass": true,
+      "checks": {
+        "nll": true,
+        "median_kl": true,
+        "p99_kl": true,
+        "top1": true
+      },
+      "limits": {
+        "nll_upper_nats": 0.01,
+        "median_kl": 0.001,
+        "p99_kl": 0.01,
+        "top1_min_pct": 99.0
+      },
+      "candidate_delta_nats": 0.0,
+      "candidate_block_half_interval": 0.0,
+      "reference_repeat_noise_bound": 0.0,
+      "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+    },
+    "oracle_pass": false,
+    "pass": false,
+    "limits": "Local fixed-residency corpus and 131k retrieval; not a general quality score, elastic-cache test, or isolated upstream PR benchmark."
+  }
+}

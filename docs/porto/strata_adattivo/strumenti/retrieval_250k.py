@@ -17,7 +17,11 @@ def main():
     ap.add_argument("--tokenizer", type=Path, required=True)
     ap.add_argument("--url", required=True)
     ap.add_argument("--out", type=Path, required=True)
+    ap.add_argument("--decode-tokens-after", type=int, default=0,
+                    help="Dopo il retrieval: output lungo sul contesto riusato per misurare il decode")
     a = ap.parse_args()
+    if not 0 <= a.decode_tokens_after <= 2048:
+        ap.error("decode-tokens-after deve essere fra 0 e 2048")
     if "STRATA_API_KEY" in os.environ: raise RuntimeError("Escludere STRATA_API_KEY")
     if not a.url.startswith("http://127.0.0.1:"): raise RuntimeError("Solo server loopback")
     sys.path.insert(0, str(BASE / ".venv/Lib/site-packages"))
@@ -71,6 +75,40 @@ def main():
     (a.out / "result.json").write_text(json.dumps(result,indent=2),encoding="utf-8")
     print(json.dumps({k:v for k,v in result.items() if k != "metrics"}),flush=True)
     if not result["capacity_validated"] or not result["found"]: raise RuntimeError("Controllo 250k fallito")
+    if a.decode_tokens_after:
+        messages = [{"role": "user", "content": content},
+                    {"role": "assistant", "content": result["answer"]},
+                    {"role": "user", "content": "Write at least 5000 words explaining the code above, "
+                     "its architecture, memory access patterns, numerical correctness and performance tradeoffs. "
+                     "Use detailed paragraphs with concrete examples. Continue until the output budget is exhausted."}]
+        depth = len(tok.encode(template.render(messages, enable_thinking=False), parse_special=True))
+        if depth + a.decode_tokens_after > 262144:
+            raise RuntimeError("Follow-up oltre la capacita' KV262144")
+        data.update(messages=messages, max_tokens=a.decode_tokens_after)
+        req = urllib.request.Request(a.url+"/v1/chat/completions", data=json.dumps(data).encode(),
+                                     headers={"Content-Type": "application/json"})
+        start = time.monotonic()
+        with urllib.request.urlopen(req, timeout=1800) as response:
+            answer = json.load(response)
+        with urllib.request.urlopen(a.url+"/metrics", timeout=10) as response:
+            metrics = json.load(response)
+        # /metrics presenta la history piu' recente per prima; usa il timestamp
+        # per restare corretto anche se cambia l'ordine del contratto.
+        row = max(metrics["requests"], key=lambda item: item["time"])
+        if row["prompt_tokens"] != answer["usage"]["prompt_tokens"] or row["output_tokens"] != answer["usage"]["completion_tokens"]:
+            raise RuntimeError("Metriche non corrispondenti al follow-up decode")
+        decode = {"seconds": round(time.monotonic()-start, 2), "local_prompt_tokens": depth,
+                  "requested_output_tokens": a.decode_tokens_after, "usage": answer["usage"],
+                  "finish": answer["choices"][0]["finish_reason"], "engine_request": row,
+                  "robust": row["output_tokens"] == a.decode_tokens_after and row["finish"] == "length",
+                  "engine": metrics["engine"]}
+        result["decode_after"] = decode
+        (a.out / "decode-after-answer.txt").write_text(
+            answer["choices"][0]["message"].get("content") or "", encoding="utf-8")
+        (a.out / "result.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+        print("DECODE_AFTER", json.dumps(decode), flush=True)
+        if not decode["robust"] or row["prompt_tokens"] < 250000:
+            raise RuntimeError("Decode lungo a250k incompleto; consultare result.json")
 
 
 if __name__ == "__main__": main()

@@ -63,16 +63,21 @@ def main():
     ap.add_argument("--needle-lengths", help="Dopo il banco: controllo retrieval upstream, ad esempio 32k,250k")
     ap.add_argument("--retrieval-250k", action="store_true", help="Dopo il banco: prompt con almeno 250000 token reali e ago al 50%")
     ap.add_argument("--solo-retrieval-250k", action="store_true", help="Solo riempimento/retrieval 250k, senza ripetere il banco 131k")
+    ap.add_argument("--retrieval-decode-tokens", type=int, default=0, help="Output lungo dopo il retrieval250k, sul contesto riusato")
     ap.add_argument("--durata-max-s", type=int, default=3600, help="Limite totale della corsa, incluso avvio; termina i soli processi propri")
     ap.add_argument("--logits-first", action="store_true", help="Diagnostica opt-in del primo token di ogni richiesta, se compilata")
     ap.add_argument("--profilo-kernel", action="store_true", help="Timing GPU opt-in delle fasi prefill/decode; tempi diagnostici, non benchmark di velocita'")
     ap.add_argument("--qsa-ch", choices=["16", "32"], help="A/B QSA Turing int8 nello stesso candidato")
+    ap.add_argument("--topk-modo", choices=["capacity", "active"], help="A/B top-k prefill: limite capacita' oppure blocchi attivi")
     ap.add_argument("--gather-modo", choices=["uno", "batch"], help="A/B PR439 nello stesso binario; cache operativa preservata")
     ap.add_argument("--solo-avvio", action="store_true", help="Verifica avvio e capacita' senza inviare prompt")
     ap.add_argument("--cache-fissa", type=int, help="Solo laboratorio: budget slot richiesto, senza elasticita'; il pack puo' aumentare gli slot effettivi")
     a = ap.parse_args()
     if a.durata_max_s <= 0 or (a.solo_avvio and a.solo_retrieval_250k):
         ap.error("Durata positiva e modalita' solo-avvio/solo-retrieval distinte")
+    if not 0 <= a.retrieval_decode_tokens <= 2048 or (a.retrieval_decode_tokens and not
+            (a.retrieval_250k or a.solo_retrieval_250k)):
+        ap.error("retrieval-decode-tokens 0..2048 richiede il controllo retrieval250k")
     deadline = time.monotonic() + a.durata_max_s
     def remaining():
         seconds = deadline - time.monotonic()
@@ -99,6 +104,12 @@ def main():
         cfg["env"].update(STRATA_VERIFY_PROFILE="1", STRATA_PREFILL_TIMING="1")
     if a.qsa_ch is not None:
         cfg["env"]["STRATA_QSA_CH"] = a.qsa_ch
+    if a.topk_modo == "capacity":
+        cfg["env"]["STRATA_TOPK_CAPACITY_GUARD"] = "1"
+    elif a.topk_modo == "active":
+        cfg["env"].pop("STRATA_TOPK_CAPACITY_GUARD", None)
+    if a.topk_modo is not None:
+        cfg["env"].pop("STRATA_TOPK_OLD", None)
     if a.gather_modo == "uno":
         cfg["env"]["STRATA_PREFILL_GATHER_ONE"] = "1"
     elif a.gather_modo == "batch":
@@ -121,6 +132,9 @@ def main():
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     if a.qsa_ch is not None:
         env.pop("STRATA_QSA_CH", None)
+    if a.topk_modo is not None:
+        env.pop("STRATA_TOPK_CAPACITY_GUARD", None)
+        env.pop("STRATA_TOPK_OLD", None)
     server_wrapper = out / "server_bootstrap.py"
     bench_wrapper = out / "bench_bootstrap.py"
     bootstrap = ("import sys, runpy\n"
@@ -147,7 +161,24 @@ def main():
               "gather_mode": a.gather_modo,
               "kernel_profiling": a.profilo_kernel,
               "qsa_ch": a.qsa_ch,
+              "topk_mode": a.topk_modo,
               "artificial_load": False, "status": "starting"}
+    def run_needles():
+        nonlocal bench
+        if a.needle_lengths:
+            needle_tool = (server_source / "tools/needle_bench.py").resolve(strict=True)
+            with (out / "needles.log").open("w", encoding="utf-8") as log:
+                bench = subprocess.Popen([sys.executable, "-B", "-u", str(needle_tool),
+                    "--url", f"http://127.0.0.1:{PORT}", "--lengths", a.needle_lengths,
+                    "--depths", "10,50,90", "--out", str(out / "needles.json")],
+                    cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
+                    creationflags=subprocess.CREATE_NO_WINDOW)
+                code = bench.wait(timeout=remaining())
+            result["needles"] = json.loads((out / "needles.json").read_text(encoding="utf-8"))
+            print((out / "needles.log").read_text(encoding="utf-8"), flush=True)
+            if code:
+                raise RuntimeError("Retrieval needle fallito; vedere needles.json")
+
     print("OUTPUT", out, flush=True)
     sampler.start()
     try:
@@ -188,10 +219,12 @@ def main():
                 result.update(status="completed", test_type="startup_only")
                 return
             if a.solo_retrieval_250k:
+                run_needles()
                 with (out / "retrieval-250k.log").open("w", encoding="utf-8") as log:
                     bench = subprocess.Popen([sys.executable, "-B", "-u", str(HERE / "retrieval_250k.py"),
                         "--source", str(server_source), "--tokenizer", cfg["tokenizer"],
-                        "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k")],
+                        "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k"),
+                        "--decode-tokens-after", str(a.retrieval_decode_tokens)],
                         cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
                         creationflags=subprocess.CREATE_NO_WINDOW)
                     code = bench.wait(timeout=remaining())
@@ -220,24 +253,13 @@ def main():
             summary = json.loads((runs[0].parent / "riassunto.json").read_text(encoding="utf-8"))
             result.update(status="completed", summary=summary)
             print(json.dumps(summary, indent=2), flush=True)
-            if a.needle_lengths:
-                needle_tool = (server_source / "tools/needle_bench.py").resolve(strict=True)
-                with (out / "needles.log").open("w", encoding="utf-8") as log:
-                    bench = subprocess.Popen([sys.executable, "-B", "-u", str(needle_tool),
-                        "--url", f"http://127.0.0.1:{PORT}", "--lengths", a.needle_lengths,
-                        "--depths", "10,50,90", "--out", str(out / "needles.json")],
-                        cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
-                        creationflags=subprocess.CREATE_NO_WINDOW)
-                    code = bench.wait(timeout=remaining())
-                result["needles"] = json.loads((out / "needles.json").read_text(encoding="utf-8"))
-                print((out / "needles.log").read_text(encoding="utf-8"), flush=True)
-                if code:
-                    raise RuntimeError("Retrieval needle fallito; vedere needles.json")
+            run_needles()
             if a.retrieval_250k:
                 with (out / "retrieval-250k.log").open("w", encoding="utf-8") as log:
                     bench = subprocess.Popen([sys.executable, "-B", "-u", str(HERE / "retrieval_250k.py"),
                         "--source", str(server_source), "--tokenizer", cfg["tokenizer"],
-                        "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k")],
+                        "--url", f"http://127.0.0.1:{PORT}", "--out", str(out / "retrieval-250k"),
+                        "--decode-tokens-after", str(a.retrieval_decode_tokens)],
                         cwd=out, env=env, stdout=log, stderr=subprocess.STDOUT,
                         creationflags=subprocess.CREATE_NO_WINDOW)
                     code = bench.wait(timeout=remaining())
@@ -260,12 +282,14 @@ def main():
                 children = psutil.Process(server.pid).children(recursive=True)
             except psutil.Error:
                 children = []
+            # Prima il supervisore: altrimenti puo' riavviare il motore appena
+            # terminato mentre stiamo chiudendo i processi della corsa.
+            server.terminate()
             for child in reversed(children):
                 try:
                     child.terminate()
                 except psutil.Error:
                     pass
-            server.terminate()
             try:
                 server.wait(timeout=10)
             except subprocess.TimeoutExpired:

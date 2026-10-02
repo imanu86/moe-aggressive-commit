@@ -1,0 +1,53 @@
+--- a/include/strata/kernels/qsa_select.hpp
++++ b/include/strata/kernels/qsa_select.hpp
+@@ -36,6 +36,10 @@
+ /// ids [nq, cap] (cells, ascending); `cap` >= the largest selection width.
+ void qsa_block_topk(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                     const QsaShapes& s, int32_t* ids, void* stream);
++/// Prefill only, not for a captured graph: active_blocks >= every query's n_bid+1.
++/// max_blocks remains the score-row stride; the register limit applies to active_blocks.
++void qsa_block_topk_active(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
++                           const QsaShapes& s, int32_t* ids, void* stream, int64_t active_blocks);
+ /// The original kernel (keys read from memory on every radix pass), for tests: the same ids.
+ void qsa_block_topk_ref(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                         const QsaShapes& s, int32_t* ids, void* stream);
+--- a/src/kernels/cuda/qsa_select.cu
++++ b/src/kernels/cuda/qsa_select.cu
+@@ -578,4 +578,24 @@
+     if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk: %s\n", cudaGetErrorString(e)); std::exit(1); }
+ }
+ 
++void qsa_block_topk_active(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks,
++                           int64_t cap, const QsaShapes& s, int32_t* ids, void* stream, int64_t active_blocks) {
++    if (nq <= 0) return;
++    // The caller supplies the batch's true upper bound. A captured decode graph
++    // must keep the original API: its input context can grow after capture.
++    if (active_blocks <= 0 || active_blocks > max_blocks || active_blocks > (int64_t)TK_T * TK_PER ||
++        std::getenv("STRATA_TOPK_CAPACITY_GUARD") || std::getenv("STRATA_TOPK_OLD")) {
++        qsa_block_topk(scores, steps, nq, max_blocks, cap, s, ids, stream);
++        return;
++    }
++    if (s.idx_block != R || cap < qsa_selection_width(kTopkMaxCells, s)) {
++        std::fprintf(stderr, "qsa_block_topk_active: unsupported geometry or cap\n");
++        std::exit(1);
++    }
++    block_topk_reg_kernel<<<(unsigned)nq, TK_T, 0, (cudaStream_t)stream>>>(
++        scores, steps, max_blocks, cap, ids);
++    const cudaError_t e = cudaGetLastError();
++    if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk_active: %s\n", cudaGetErrorString(e)); std::exit(1); }
++}
++
+ }  // namespace strata::kernels
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -1501,8 +1501,8 @@
+                                                                              m.cs, active))
+                             strata::kernels::qsa_block_scores(st.idx_pooled, st.idx_dead, m.q_idx + t0 * 512, steps0, nb,
+                                                               m.max_blocks, s, m.sel_scores, m.cs, active);
+-                        strata::kernels::qsa_block_topk(m.sel_scores, steps0, nb, m.max_blocks, m.cap, s,
+-                                                        m.sel_ids + t0 * m.cap, m.cs);
++                        strata::kernels::qsa_block_topk_active(m.sel_scores, steps0, nb, m.max_blocks, m.cap, s,
++                                                               m.sel_ids + t0 * m.cap, m.cs, active);
+                     }
+                     // STRATA_SEL_OVERLAP (debug, D-1's question): how much do neighbouring queries' selections share?
+                     // Per tile of 16 queries: the union of their selected cells against the sum of their widths.

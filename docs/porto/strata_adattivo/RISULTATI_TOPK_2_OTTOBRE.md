@@ -16,7 +16,8 @@ il runner lo elimina sia dal JSON sia dall'ambiente per il confronto active.
 Candidata compilata sugli input esatti del daily, ricompilando selezione CUDA
 e prefill e riusando HC/GDN FP16, vector, PR315 e gli altri oggetti.
 SHA256 exe **f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34**.
-Nessuna CH16/BPW aggiunta in questa candidata. Daily operativo a74e preservato.
+Nessuna CH16/BPW aggiunta in questa candidata. **Promossa alle07:18**, dopo
+le prove sotto; daily precedente a74e conservato per il ripristino.
 
 ## Parita' e banco nativo
 
@@ -69,8 +70,50 @@ qualita' rivendicata: la parita' bitwise riguarda gli indici del banco nativo.
 JumpConnect CPU media zero; altre CPU medie0,956/0,865/0,887core.
 Evidenza `corse_2080ti/20261002_topk_model/`, analizzatore riproducibile.
 
-Retrieval a tre posizioni e riempimento250k con decode lungo in corso.
-Nessuna promozione fino alla conclusione di questi controlli.
+## Retrieval250k, decode profondo e promozione
+
+Retrieval upstream a10/50/90%: **3/3FOUND**, prompt reali30742/30742/30743,
+tempi31/29/30s. Dimensione32k del tool e' stimata per caratteri; usare i token
+reali qui riportati. Poi ago al50% del testo della fixture, **250022 token
+reali**: ARCO-AMBRA-742913 recuperato, zero token riusati, prefill391472,7ms,
+**638,67t/s**, richiesta392,86s. Il successivo follow-up ha prompt250091,
+riusa250015 token e genera **1024 token fino a finish length**, raggiungendo
+251115 token totali, dentro la capacita'262144.
+
+Decode26110,5ms, **39,218t/s**; 76token nuovi letti in1317ms, richiesta28,48s.
+Draft583accettati su944offerti, cachehit88,3%, blocchi KV95,09% letti daVRAM;
+residenti32768 ed elastica preservati. E' un campione lungo di decode a250k,
+non il vecchio campione di13token. Le quattro copie dei primi logits conservate
+(due needle condividono lo stesso offset) hanno248320 valori finiti ciascuna.
+
+| Profondita' prompt | Prefill nuovo t/s | Decode t/s | Output del campione |
+|---|---:|---:|---:|
+| 131248/131239 | 886,38 sul primo | 39,272 aggregato | 2×1024 |
+| 250022, poi250091 | 638,67 sul primo | 39,218 sul follow-up | 1024 |
+
+Due punti della curva, stessa capacita'262144 e stessa build; prompt e MTP
+differenti, quindi non e' una curva controllata di un unico testo. Il confronto
+causale della patch resta A/B/A a131k. Il daily precedente ha misurato442,4t/s
+sulla stessa fixture250k in un'altra finestra: **non attribuire quella differenza
+di velocita' interamente al top-k**. Il nuovo dispatcher accelera solo il tratto
+prefill entro135164 celle, lasciando il decode e il tratto successivo invariati.
+
+Installata la candidata esatta in `D:\ds4_work\strata\Strata\build-0131-topk-active`;
+exe/source/hash uguali al lab. JSON SOTA punta al nuovo exe; BAT Desktop aggiorna
+commento, controllo exe e percorso server dello stesso bundle. Port8100loopback,
+KV262144/int8/residente32768, auto/elastica e riserva1393MiB preservati.
+Nessuna lettura della chiave API. Copie repository/operative byte-identiche.
+
+Ripristino: `D:\ds4_work\strata\ripristini\20261002_071823_0131_topk_active` contiene
+le copie precedenti di JSON/BAT operativi e repository; riportare ciascuna al
+percorso originale. Bundle a74e intatto. Helper `promuovi_topk_attivo.py` verifica
+branch, hash, A/B/A, parita' e retrieval/decode prima di modificare il lanciatore.
+
+**Avvio della copia installata superato** in42,84s, capacita'262144, cache6513;
+fonte server dello stesso bundle, SHA2563e556df4e13f783f9d961113dd0bbed7481f677e265b45c3a7f238b18530484a.
+Prova avvio su porta lab18120 senza chiave; il server operativo8100 si avvia dal
+BAT quando richiesto dall'utente. Tutti i processi lab chiusi, nessun messaggio
+ad altre chat. Evidenza `corse_2080ti/20261002_topk_quality/`.
 
 ## Pista BPW del fork2080Ti, tenuta separata
 

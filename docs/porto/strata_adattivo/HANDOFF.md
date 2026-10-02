@@ -1,4 +1,4 @@
-# HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.31 + HC/vector/PR315, elastica e KV 262k)
+# HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.31 + HC/vector/PR315/top-k, elastica e KV 262k)
 
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
 `research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,
@@ -15,15 +15,17 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   3060 e' smontata; tornera' in OCuLink. **La seconda scheda e' fuori perimetro per ora** (decisione utente, 1/10).
 - Motore: **Strata** (github.com/Niko1221/Strata, MIT) col nostro fork locale. Misure storiche su prompt brevi:
   Strata 44-45 t/s, daily llama ricompilato 12-16 t/s. Daily combinato realmente promosso, a 131k:
-  **38,995 t/s decode, 822,66 t/s prefill** (1/10, cache auto/elastica). Non confondere profondita' e capienza KV.
+  **39,272 t/s decode,886,38 t/s prefill a131k** (2/10, cache auto/elastica);
+  **39,218t/s decode e638,67t/s prefill a250k**, output lungo1024token.
+  Non confondere profondita' e capienza KV. Il decode a250k e' un follow-up riusato.
 - Lanciatore pronto per l'utente: `Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat`.
 - Il daily di produzione (`D:\ds4_work\bin_elastico_m2`, solo sm_86) **non gira sulla 2080 Ti**; runtime sm_75 pronti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
 - **Lanciatore SOTA** (copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
-  **`build-0131-daily\strata.exe`**, 0.1.31 + nove patch locali + HC/GDN FP16 + dequant vettoriale + #315.
-  Il BAT usa il server della stessa build in **`build-0131-daily\source\serve\server.py`**.
+  **`build-0131-topk-active\strata.exe`**, 0.1.31 + nove patch locali + HC/GDN FP16 + dequant vettoriale + #315 + top-k attivo.
+  Il BAT usa il server della stessa build in **`build-0131-topk-active\source\serve\server.py`**.
   `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
   contesto 262144, KV int8, residenti 32768, tabella PLE in lettura diretta, `env.STRATA_WATCHDOG_S=240`; porta 8100 solo su 127.0.0.1;
   la chiave solo dalla variabile `STRATA_API_KEY`; si ferma se strata.exe o llama-server sono gia' accesi.
@@ -40,7 +42,31 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   Dettagli **`PROMOZIONE_DAILY_0131_1_OTTOBRE.md`**, evidenza `corse_2080ti/20261001_daily_0131/`.
   Processi lab chiusi, daily spento, **VIA a OCGC-IA e PROMO**; nessun'altra corsa programmata.
   **Le tappe del 1/10 qui sotto sono storiche; seguono prima le prove e la ricognizione del 2/10.**
-- **Stato corrente 2/10 06:56: ripetizione senza Jump conclusa, CH16 non promossa.**
+- **Stato corrente 2/10 07:20: top-k promosso sul daily e lanciatore Desktop.**
+  Patch0025, API prefill col limite dei blocchi attivi: stride65538 del KV262k
+  impediva il kernel a registri anche a131k. Originale API/decode preservati,
+  fallback oltre33792blocchi (~135k). **16parita' bitwise superate**.
+  A/B/A nello stesso exe capacity/active/capacity: prefill831,20/886,38/828,26,
+  **+6,83%**, variazioneA/A0,35%; TTFT158,801→148,664s, −10,14s.
+  Decode38,251/39,272/39,293: nessun guadagno decode attribuito alla patch.
+  Jump CPU zero; cache auto/elastica e KV262144 sempre preservati.
+  Retrieval10/50/90% **3/3FOUND**, poi **250022token reali**, ago alcentro trovato,
+  prefill638,67t/s; follow-up250091/riusati250015, **1024output a39,218t/s**.
+  Primi logits finiti, qualita' generale non misurata; A/A modello non bitwise.
+  Exe **f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34**
+  in `D:\ds4_work\strata\Strata\build-0131-topk-active`, copia esatta testata;
+  JSON/BAT operativi e repository byte-identici. Avvio installato42,84s PASS.
+  Backup `D:\ds4_work\strata\ripristini\20261002_071823_0131_topk_active`,
+  daily precedente a74e conservato. **Tutti i processi lab chiusi**, nessun
+  messaggio ad altre chat; non interagire con OCGC-IA/PROMO.
+  **L'utente ha richiesto di concludere le prove per lasciare libera la macchina:**
+  sessione conclusa, standby, nessun altro test avviato o programmato.
+  Rapporto **`RISULTATI_TOPK_2_OTTOBRE.md`**, evidenze topk_active/model/quality.
+  **CH16 trattenuta** (vantaggio modello non dimostrato); **BPW trattenuta**
+  (16parita' score/indici superate, banco8192 non e' batch reale256, niente modello).
+  Prossime piste: scorer BPW su batch256 + prova combinata, oppure #363 decode.
+  Banda DRAM fisica non misurata: NCU ERR_NVGPUCTRPERM, niente modifica driver.
+- **Stato storico 2/10 06:56: ripetizione senza Jump conclusa, CH16 non promossa.**
   JumpConnect CPU media zero. A/B/A CH32/16/32: prefill828,28/833,75/443,72;
   decode38,690/39,069/38,193. A2 rallentata per causa non isolata: non usarla
   per attribuire guadagni. CH16 solo+0,66% suA1, beneficio non dimostrato.

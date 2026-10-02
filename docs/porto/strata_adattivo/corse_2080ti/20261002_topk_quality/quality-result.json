@@ -1,0 +1,184 @@
+{
+  "name": "topk_quality_250k",
+  "kv_capacity": 262144,
+  "prompt_profile": null,
+  "out": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\20261002_topk_quality_250k",
+  "duration_limit_s": 1500,
+  "exe": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_topk_active_20261002\\strata.exe",
+  "exe_sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34",
+  "server_source": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\strata_topk_active_20261002\\source",
+  "server_sha256": "3e556df4e13f783f9d961113dd0bbed7481f677e265b45c3a7f238b18530484a",
+  "requested_fixed_cache_slots": null,
+  "gather_mode": null,
+  "kernel_profiling": false,
+  "qsa_ch": null,
+  "topk_mode": "active",
+  "artificial_load": false,
+  "status": "completed",
+  "startup_s": 41.33,
+  "health": {
+    "status": "ok",
+    "max_context": 262144,
+    "model": "qwen3.8-flash-next-iq3_xxs",
+    "images": false,
+    "api_key": false,
+    "loaded": true
+  },
+  "initial_cache": {
+    "expert_slots": 6523,
+    "expert_cache_mib": 10811,
+    "vram_free_mib": 1162
+  },
+  "needles": [
+    {
+      "length": "32k",
+      "depth": 10,
+      "prompt_tokens": 30742,
+      "seconds": 31.4,
+      "found": true,
+      "word": "meadow-copper-504",
+      "answer": "meadow-copper-504"
+    },
+    {
+      "length": "32k",
+      "depth": 50,
+      "prompt_tokens": 30742,
+      "seconds": 29.1,
+      "found": true,
+      "word": "falcon-quartz-940",
+      "answer": "falcon-quartz-940"
+    },
+    {
+      "length": "32k",
+      "depth": 90,
+      "prompt_tokens": 30743,
+      "seconds": 29.5,
+      "found": true,
+      "word": "willow-cobalt-696",
+      "answer": "willow-cobalt-696"
+    }
+  ],
+  "test_type": "retrieval_250k_only",
+  "retrieval_250k": {
+    "target_tokens": 250000,
+    "local_tokens": 250022,
+    "needle_depth": 50,
+    "word": "ARCO-AMBRA-742913",
+    "prompt_sha256": "4c092a32936dcab286398d6567a098b2138a57fa72daf9e4bbd79b3e0030b652",
+    "filler_sha256": "ab76a0e01266e972631f9bb0f893077eccc4cd43eb62f048ff0ebc4597b64088",
+    "filler_characters": 987575,
+    "max_tokens": 40,
+    "artificial_load": false,
+    "seconds": 392.86,
+    "usage": {
+      "prompt_tokens": 250022,
+      "completion_tokens": 13,
+      "total_tokens": 250035,
+      "prompt_tokens_details": {
+        "cached_tokens": 0
+      }
+    },
+    "answer": "ARCO-AMBRA-742913",
+    "found": true,
+    "capacity_validated": true,
+    "decode_after": {
+      "seconds": 28.48,
+      "local_prompt_tokens": 250091,
+      "requested_output_tokens": 1024,
+      "usage": {
+        "prompt_tokens": 250091,
+        "completion_tokens": 1024,
+        "total_tokens": 251115,
+        "prompt_tokens_details": {
+          "cached_tokens": 250015
+        }
+      },
+      "finish": "length",
+      "engine_request": {
+        "projection": null,
+        "time": 1790918214.2156303,
+        "duration_s": 27.5,
+        "finish": "length",
+        "prompt_tokens": 250091,
+        "reused": 250015,
+        "output_tokens": 1024,
+        "engine_generated": 1024,
+        "prompt_ms": 1317.0,
+        "decode_ms": 26110.5,
+        "decode_tok_s": 39.2,
+        "hit_rate": 0.883,
+        "ram_blobs": 0,
+        "file_blobs": 0,
+        "file_mb": 0.0
+      },
+      "robust": true,
+      "engine": {
+        "model": "qwen3.8-flash-next-iq3_xxs",
+        "max_context": 262144,
+        "images": false,
+        "version": "0.1.31",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6523,
+        "expert_cache_mib": 10811,
+        "expert_slots_primary": 6523,
+        "expert_cache_primary_mib": 10811,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 1162,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.31"
+      },
+      "exact_decode_tps": 39.217939143256544
+    },
+    "prefill_request": {
+      "projection": null,
+      "time": 1790917820.4210596,
+      "duration_s": 391.9,
+      "finish": "stop",
+      "prompt_tokens": 250022,
+      "reused": 0,
+      "output_tokens": 13,
+      "engine_generated": 13,
+      "prompt_ms": 391472.7,
+      "decode_ms": 373.1,
+      "decode_tok_s": 34.8,
+      "hit_rate": 0.739,
+      "ram_blobs": 0,
+      "file_blobs": 0,
+      "file_mb": 0.0
+    },
+    "prefill_tps": 638.6703338444801
+  },
+  "first_logits": {
+    "first-logits.pos250021.f32": {
+      "values": 248320,
+      "finite": true,
+      "argmax": 905
+    },
+    "first-logits.pos250090.f32": {
+      "values": 248320,
+      "finite": true,
+      "argmax": 760
+    },
+    "first-logits.pos30741.f32": {
+      "values": 248320,
+      "finite": true,
+      "argmax": 69
+    },
+    "first-logits.pos30742.f32": {
+      "values": 248320,
+      "finite": true,
+      "argmax": 13974
+    }
+  }
+}

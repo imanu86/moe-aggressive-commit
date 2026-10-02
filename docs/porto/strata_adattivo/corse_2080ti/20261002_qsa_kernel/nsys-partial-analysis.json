@@ -1,0 +1,51 @@
+{
+  "scope": "Partial early prefill; 47 QSA launches, first-to-last QSA bounds; simultaneous internal profiling enabled; not normal throughput",
+  "window_seconds": 123.51115385,
+  "kernel_sum_seconds": 25.739176156,
+  "busy_union_seconds": 25.739176156,
+  "gpu_busy_fraction_in_window": 0.2083955606734865,
+  "attention": {
+    "calls": 47,
+    "mean_ms": 83.00765621276597,
+    "grid": [
+      8192,
+      2
+    ],
+    "threads": 128,
+    "registers_per_thread": 128,
+    "shared_bytes": 37904,
+    "local_bytes_per_thread": 0
+  },
+  "groups": {
+    "QSA prompt attention": {
+      "seconds": 3.901359842,
+      "calls": 47,
+      "fraction_kernel_sum": 0.15157283272606079
+    },
+    "Other": {
+      "seconds": 2.803524033,
+      "calls": 5659,
+      "fraction_kernel_sum": 0.10892050374916436
+    },
+    "Matrix/expert kernels": {
+      "seconds": 14.616170814,
+      "calls": 118558,
+      "fraction_kernel_sum": 0.5678569790040797
+    },
+    "Hyperconnection": {
+      "seconds": 0.801459131,
+      "calls": 368,
+      "fraction_kernel_sum": 0.031137714981338816
+    },
+    "GDN recurrence": {
+      "seconds": 1.925347656,
+      "calls": 828,
+      "fraction_kernel_sum": 0.07480222538323887
+    },
+    "QSA selection": {
+      "seconds": 1.69131468,
+      "calls": 2944,
+      "fraction_kernel_sum": 0.06570974415611751
+    }
+  }
+}

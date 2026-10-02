@@ -1,0 +1,14 @@
+==WARNING== Note: Running with uncontrolled GPU caches. Profiling results may be inconsistent.
+==WARNING== Note: Running with unmodified GPU clocks. If not controlled otherwise, profiling results may be inconsistent.
+==PROF== Connected to process 27120 (C:\Users\imanu\source\repos\moe-aggressive-commit\.codex_runs\20261002_qsa_paired\paired.exe)
+==ERROR== ERR_NVGPUCTRPERM - The user does not have permission to access NVIDIA GPU Performance Counters on the target device 0. For instructions on enabling permissions and to get more information see https://developer.nvidia.com/ERR_NVGPUCTRPERM
+==PROF== Disconnected from process 27120
+ABA int8 ctx 131072 queries 8192: CH32 89.344353 CH16 66.280495 CH32 86.978401 ms
+PASS int8 ctx 131072, 8192 queries: vs FP64 old 4.29e-06 new 4.41e-06 (output scale 3.53); new vs old 6.68e-06 (1.8e-06 of scale); 89.344 -> 66.280 ms per chunk (1.35x)
+ABA fp16 ctx 131072 queries 8192: CH32 108.457886 CH16 111.083313 CH32 110.502472 ms
+PASS fp16 ctx 131072, 8192 queries: vs FP64 old 3.51e-06 new 3.51e-06 (output scale 3.04); new vs old 0 (0 of scale); 108.458 -> 111.083 ms per chunk (0.98x)
+ABA int8 ctx 1500 queries 1500: CH32 5.787648 CH16 4.276224 CH32 5.180384 ms
+PASS int8 ctx 1500, 1500 queries: vs FP64 old 4.54e-06 new 4.66e-06 (output scale 3.69); new vs old 3.81e-06 (1e-06 of scale); 5.788 -> 4.276 ms per chunk (1.35x)
+ABA int8 ctx 2100 queries 256: CH32 3.532693 CH16 1.933291 CH32 2.384395 ms
+PASS int8 ctx 2100, 256 queries: vs FP64 old 4.44e-06 new 4.19e-06 (output scale 3.42); new vs old 4.29e-06 (1.2e-06 of scale); 3.533 -> 1.933 ms per chunk (1.83x)
+FAILURES: 0

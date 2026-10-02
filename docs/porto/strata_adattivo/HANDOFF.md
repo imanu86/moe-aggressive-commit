@@ -40,6 +40,30 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   Dettagli **`PROMOZIONE_DAILY_0131_1_OTTOBRE.md`**, evidenza `corse_2080ti/20261001_daily_0131/`.
   Processi lab chiusi, daily spento, **VIA a OCGC-IA e PROMO**; nessun'altra corsa programmata.
   **Le tappe del 1/10 qui sotto sono storiche; seguono prima le prove e la ricognizione del 2/10.**
+- **Ripresa attiva del 2/10 dalle05:54, richiesta dall'utente: tutti i test necessari.**
+  **Non interagire piu' con le chat OCGC-IA/PROMO** (istruzione esplicita utente).
+  Candidata QSA CH16 integrata solo Turing/int8, overrideCH32, altriKV/GPU preservati:
+  `.codex_runs/strata_qsa_ch16_20261002`, SHA437edc05de9c.
+  Banco FP64 ampliato8192 query:4PASS; A/B/A kernel128/2048/8192:12PASS,
+  FP16 output identico. Int8 chunk8192 **88,49/66,44/87,72ms (−24,59%)**.
+  NCU isolato: **ERR_NVGPUCTRPERM**, nessuna misura banda DRAM; driver intatto.
+  **A/B/A modello avviato06:00**, CH32/16/32, daily elasticoKV262144,
+  prompt131k e1024output, primi logits; poi250k se valido. Ancora nessuna promozione.
+  Patch0023 e strumenti `compila_qsa_ch16.py` / `prova_qsa_ab.py`.
+- **Ultima finestra 2/10 05:24–05:50: QSA CH16 promettente, non promossa.**
+  Daily operativo a74e, KV262144/elastica preservati. Profiling Nsight Systems
+  parziale + timer interni: timeout 480 s, nessun benchmark modello completo.
+  Kernel attivo Turing QSA v1 int8: 37904 B shared/blocco, limite un blocco/SM.
+  Nsight Compute fermo sul warmup 61 token, interrotto: **banda DRAM non misurata**.
+  Prototipo CH16 corretto (tile score da 8 celle; carveout int8): 27536 B shared,
+  quattro controlli FP64/CH32 superati, **21,904 → 16,142 ms (−26,30%)** nel
+  banco int8 ctx131072/2048 query. FP16 peggiora: non estendere CH16 a quel KV.
+  Nessuna prova CH16 sul modello, nessun nuovo t/s operativo, nessuna promozione.
+  **Prossimo step: integrare CH16 solo Turing/int8, A/B/A reale daily a131k,
+  poi retrieval250k/logits e promozione se valida.** #363 decode resta alternativa.
+  Rapporto `RISULTATI_QSA_KERNEL_2_OTTOBRE.md`, patch0022, strumento `prova_qsa_ch16.py`,
+  evidenza `corse_2080ti/20261002_qsa_kernel/`. Niente carico artificiale.
+  Processi propri chiusi, **VIA OCGC-IA/PROMO alle05:50**; niente altre corse programmate.
 - **Prove concluse il 2/10 alle 05:03, #439 non promossa:** daily operativo a74e,
   **250022 token reali, retrieval al centro riuscito**, richiesta 566,61 s, prefill 442,4 t/s.
   Solo 13 token generati: **non e' una misura robusta del decode a 250k**; curva KV/t/s ancora aperta.
@@ -53,8 +77,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   **JSON/BAT/Desktop e daily a74e preservati**; non eseguito il riempimento 250k della candidata dopo l'esito A/B/A.
   Rapporto `RISULTATI_PR439_2_OTTOBRE.md`, evidenza `corse_2080ti/20261002_pr439/`, patch `0021-PR439-*`.
   Seconda finestra 04:48–05:03, entro 30 min. Processi propri chiusi, **VIA a OCGC-IA/PROMO alle 05:04**.
-  **Prossima priorita' #363 decode**, non iniziata; nessun altro test/monitoraggio programmato.
-  Attendere una nuova richiesta dell'utente prima di usare ancora la GPU.
+  Priorita' a quella tappa: #363 decode. Successiva finestra QSA descritta sopra.
 - **Ripresa del 2/10, ricognizione completata senza prove GPU:** upstream **0.1.34**
   `1678de333d0e`, 39 commit dalla precedente scansione; 422 fork elencati, 420 confrontati,
   41 con commit propri, due eccezioni esplicite; 59 PR aperte alla lettura finale.

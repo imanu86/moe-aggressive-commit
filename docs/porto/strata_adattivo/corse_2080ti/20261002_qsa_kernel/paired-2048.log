@@ -1,0 +1,9 @@
+ABA int8 ctx 131072 queries 2048: CH32 31.122425 CH16 16.769842 CH32 22.980589 ms
+PASS int8 ctx 131072, 2048 queries: vs FP64 old 3.78e-06 new 3.79e-06 (output scale 3.16); new vs old 5.25e-06 (1.4e-06 of scale); 31.122 -> 16.770 ms per chunk (1.86x)
+ABA fp16 ctx 131072 queries 2048: CH32 28.465963 CH16 27.367014 CH32 27.585743 ms
+PASS fp16 ctx 131072, 2048 queries: vs FP64 old 4.15e-06 new 4.15e-06 (output scale 3.42); new vs old 0 (0 of scale); 28.466 -> 27.367 ms per chunk (1.04x)
+ABA int8 ctx 1500 queries 1500: CH32 5.702304 CH16 4.726375 CH32 5.732505 ms
+PASS int8 ctx 1500, 1500 queries: vs FP64 old 4.54e-06 new 4.66e-06 (output scale 3.69); new vs old 3.81e-06 (1e-06 of scale); 5.702 -> 4.726 ms per chunk (1.21x)
+ABA int8 ctx 2100 queries 256: CH32 2.679955 CH16 1.993523 CH32 2.656186 ms
+PASS int8 ctx 2100, 256 queries: vs FP64 old 4.44e-06 new 4.19e-06 (output scale 3.42); new vs old 4.29e-06 (1.2e-06 of scale); 2.680 -> 1.994 ms per chunk (1.34x)
+FAILURES: 0

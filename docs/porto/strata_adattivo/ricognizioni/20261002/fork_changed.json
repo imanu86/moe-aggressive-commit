@@ -1,0 +1,1293 @@
+[
+  {
+    "fork": "CC-David-CC/Strata-a5500",
+    "branch": "contrib/gfx1012-community",
+    "pushed_at": "2026-10-02T02:00:25Z",
+    "stars": 0,
+    "url": "https://github.com/CC-David-CC/Strata-a5500",
+    "ahead_by": 6,
+    "behind_by": 0,
+    "status": "ahead",
+    "commits": [
+      {
+        "sha": "e3211a40a53f242a24e0dcf855264479d37e4c70",
+        "title": "hip: add experimental gfx1012 support and legacy BLAS compatibility",
+        "url": "https://github.com/Niko1221/Strata/commit/e3211a40a53f242a24e0dcf855264479d37e4c70"
+      },
+      {
+        "sha": "3efbdf2098c5e94e2501c4f985c744474a491c40",
+        "title": "docs: record isolated gfx1012 validation and ROCm7 test gap",
+        "url": "https://github.com/Niko1221/Strata/commit/3efbdf2098c5e94e2501c4f985c744474a491c40"
+      },
+      {
+        "sha": "be9edbd4b95cd667ad6ad0f9e656d2cc3e894b65",
+        "title": "hip: preserve Q2_0 signed zero on gfx1012 with legacy HIP",
+        "url": "https://github.com/Niko1221/Strata/commit/be9edbd4b95cd667ad6ad0f9e656d2cc3e894b65"
+      },
+      {
+        "sha": "569bf78ef632d918473f3bc5ac45551bb3c61473",
+        "title": "hip: retain native wave synchronization on HIP 7",
+        "url": "https://github.com/Niko1221/Strata/commit/569bf78ef632d918473f3bc5ac45551bb3c61473"
+      },
+      {
+        "sha": "2d241fee2a68c1729c56952efc5c89cc768fbec8",
+        "title": "docs: record gfx1012 and modern HIP validation results",
+        "url": "https://github.com/Niko1221/Strata/commit/2d241fee2a68c1729c56952efc5c89cc768fbec8"
+      },
+      {
+        "sha": "861da63e967e1e9239d7583580befb34b26cdb73",
+        "title": "docs: record 0.1.34 rebase and targeted regression checks",
+        "url": "https://github.com/Niko1221/Strata/commit/861da63e967e1e9239d7583580befb34b26cdb73"
+      }
+    ],
+    "files": [
+      "CMakeLists.txt",
+      "README.md",
+      "cmake/hip_backend.cmake",
+      "docs/COMMUNITY_GFX1012_REVIEW.md",
+      "docs/benchmarks/2026-10-01-community-gfx1012.json",
+      "docs/benchmarks/2026-10-01-community-gfx1012.md",
+      "docs/benchmarks/2026-10-02-upstream-sync-hardware.json",
+      "docs/benchmarks/2026-10-02-upstream-sync-hardware.md",
+      "include/strata/hip_compat/cublas_v2.h",
+      "include/strata/hip_compat/cuda_runtime.h",
+      "include/strata/hip_compat/intrinsics.hpp",
+      "include/strata/hip_compat/math_constants.h",
+      "src/kernels/cuda/iq_kernels.cu",
+      "tests/hip/intrinsics.cpp",
+      "tests/hip/prefill_gemm.cpp",
+      "tests/hip/q2_zero.cpp"
+    ]
+  },
+  {
+    "fork": "christ-pher/Strata",
+    "branch": "main",
+    "pushed_at": "2026-10-01T19:31:37Z",
+    "stars": 0,
+    "url": "https://github.com/christ-pher/Strata",
+    "ahead_by": 12,
+    "behind_by": 39,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "bce340df6e50aed44e153e812e03fd772011942e",
+        "title": "Add Volta V100 support and scalar CPU expert fallbacks",
+        "url": "https://github.com/Niko1221/Strata/commit/bce340df6e50aed44e153e812e03fd772011942e"
+      },
+      {
+        "sha": "917e233b0fe229ed909109e6294af04a9b5e1ddf",
+        "title": "Merge upstream 0.1.30, retain V100 support, and externalize model storage",
+        "url": "https://github.com/Niko1221/Strata/commit/917e233b0fe229ed909109e6294af04a9b5e1ddf"
+      },
+      {
+        "sha": "886e5bf836d8c6e58e2d54a81bdfe60079ada32c",
+        "title": "Rename external model directory and tighten local artifact ignore rules",
+        "url": "https://github.com/Niko1221/Strata/commit/886e5bf836d8c6e58e2d54a81bdfe60079ada32c"
+      },
+      {
+        "sha": "5866c20fe70ec4f5be57c87fad9f24b4de58055d",
+        "title": "Document V100 fork and VM setup, preserve original upstream README",
+        "url": "https://github.com/Niko1221/Strata/commit/5866c20fe70ec4f5be57c87fad9f24b4de58055d"
+      },
+      {
+        "sha": "4a05416dd622b03f96f64a63f12f272b666d6fbf",
+        "title": "Benchmark installed IQ2_XS and IQ3_S on V100 and publish measured throughput",
+        "url": "https://github.com/Niko1221/Strata/commit/4a05416dd622b03f96f64a63f12f272b666d6fbf"
+      },
+      {
+        "sha": "2b4bf4787a9e28a1214ad5992e8fdd98b34f092c",
+        "title": "Support Orca IQ4_XS and rebuild native CPU kernels after VM feature changes",
+        "url": "https://github.com/Niko1221/Strata/commit/2b4bf4787a9e28a1214ad5992e8fdd98b34f092c"
+      },
+      {
+        "sha": "bfa0eb0121e0faf7604a496369022a93e887c289",
+        "title": "Merge upstream 0.1.31 while retaining V100 and Orca compatibility",
+        "url": "https://github.com/Niko1221/Strata/commit/bfa0eb0121e0faf7604a496369022a93e887c289"
+      },
+      {
+        "sha": "b30a25878875d58be9612e44db4c245b548189f7",
+        "title": "Preserve unified V100 launcher and Orca setup changes",
+        "url": "https://github.com/Niko1221/Strata/commit/b30a25878875d58be9612e44db4c245b548189f7"
+      },
+      {
+        "sha": "f32c56d489319a52ccabd4b601a179a078b954cf",
+        "title": "Merge upstream v0.1.32 and add optional Orca vision preparation",
+        "url": "https://github.com/Niko1221/Strata/commit/f32c56d489319a52ccabd4b601a179a078b954cf"
+      },
+      {
+        "sha": "c88138e048821ad07a8c73095a719ae08e3f3d1f",
+        "title": "Guard prepare-only vision mode and cover existing-model preparation",
+        "url": "https://github.com/Niko1221/Strata/commit/c88138e048821ad07a8c73095a719ae08e3f3d1f"
+      },
+      {
+        "sha": "b4e41e32d1e21a41338c3472e97e334f86f14c85",
+        "title": "Record Orca IQ4_XS GPU vision smoke validation on V100",
+        "url": "https://github.com/Niko1221/Strata/commit/b4e41e32d1e21a41338c3472e97e334f86f14c85"
+      },
+      {
+        "sha": "d3ba706be2364cca11fd446cd57712232049aeef",
+        "title": "docs: update fork baseline to upstream v0.1.32",
+        "url": "https://github.com/Niko1221/Strata/commit/d3ba706be2364cca11fd446cd57712232049aeef"
+      }
+    ],
+    "files": [
+      ".gitignore",
+      "CMakeLists.txt",
+      "README.md",
+      "README.original.md",
+      "START-V100.txt",
+      "bench/results/2026-10-01-orca-iq4-comparison/README.md",
+      "bench/results/2026-10-01-orca-iq4-comparison/iq4-config.json",
+      "bench/results/2026-10-01-orca-iq4-comparison/quick-benchmark.json",
+      "bench/results/2026-10-01-orca-vision/README.md",
+      "bench/results/2026-10-01-orca-vision/response.json",
+      "bench/results/2026-10-01-v100-avx2-native/README.md",
+      "bench/results/2026-10-01-v100-avx2-native/expert-parity.txt",
+      "bench/results/2026-10-01-v100-avx2-native/hardware.json",
+      "bench/results/2026-10-01-v100-avx2-native/iq2_xs-config.json",
+      "bench/results/2026-10-01-v100-avx2-native/iq3_s-config.json",
+      "bench/results/2026-10-01-v100-avx2-native/prompts.json",
+      "bench/results/2026-10-01-v100-avx2-native/results.json",
+      "bench/results/2026-10-01-v100/README.md",
+      "bench/results/2026-10-01-v100/hardware.json",
+      "bench/results/2026-10-01-v100/iq2_xs-config.json",
+      "bench/results/2026-10-01-v100/iq3_s-config.json",
+      "bench/results/2026-10-01-v100/prompts.json",
+      "bench/results/2026-10-01-v100/results.json",
+      "docs/ORCA-IQ4-XS.md",
+      "docs/ORCA-V100.md",
+      "docs/ORCA.md",
+      "docs/UPSTREAM-0.1.31-MERGE.md",
+      "docs/V100-validation.md",
+      "docs/V100.md",
+      "include/strata/core/device.hpp",
+      "include/strata/core/expert_source.hpp",
+      "include/strata/prefill/gemm.hpp",
+      "run-v100.sh",
+      "setup.py",
+      "src/core/device.cu",
+      "src/core/expert_source.cpp",
+      "src/core/native_dense.cpp",
+      "src/kernels/cpu/expert_layout.cpp",
+      "src/kernels/cpu/iq_avx2.cpp",
+      "src/kernels/cpu/native_expert.cpp",
+      "src/kernels/cuda/qsa_prompt_attn.cu",
+      "src/kernels/kv_hybrid_parity.cpp",
+      "src/prefill/gemm.cu",
+      "src/program/generate.cpp",
+      "tests/core/expert_layout_test.cpp",
+      "tests/core/file_expert_source_test.cpp",
+      "tests/core/scalar_experts.cpp",
+      "tests/cuda/bf16_gemm.cpp",
+      "tools/stop_server.py",
+      "tools/test_iq_pack.py",
+      "tools/test_setup_choices.py",
+      "tools/test_setup_cpu.py",
+      "tools/test_unified_launcher.py",
+      "tools/v100_bench.py"
+    ]
+  },
+  {
+    "fork": "DmitriyW9/Strata",
+    "branch": "main",
+    "pushed_at": "2026-10-01T22:42:08Z",
+    "stars": 0,
+    "url": "https://github.com/DmitriyW9/Strata",
+    "ahead_by": 8,
+    "behind_by": 22,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "24006278cbcbcead4f3fdcd09fd2d346e0c3a84d",
+        "title": "Enhance dequantization and PLE table handling in kernels",
+        "url": "https://github.com/Niko1221/Strata/commit/24006278cbcbcead4f3fdcd09fd2d346e0c3a84d"
+      },
+      {
+        "sha": "6410d9c5d60d648b7e6cf0842335deb520217f30",
+        "title": "_",
+        "url": "https://github.com/Niko1221/Strata/commit/6410d9c5d60d648b7e6cf0842335deb520217f30"
+      },
+      {
+        "sha": "312ec1870b027acd61412b2472388eb718f102dd",
+        "title": "Merge origin/main into main",
+        "url": "https://github.com/Niko1221/Strata/commit/312ec1870b027acd61412b2472388eb718f102dd"
+      },
+      {
+        "sha": "34746832eb92102db4d7f29fe1bd1bd377fd2676",
+        "title": "Clarify quant dispatch predicates",
+        "url": "https://github.com/Niko1221/Strata/commit/34746832eb92102db4d7f29fe1bd1bd377fd2676"
+      },
+      {
+        "sha": "e10b5021572cd60c3cdf9e114472f2f95a4a3559",
+        "title": "Добавить функции dequant_gu_f16 и dequant_gu_kernel для обработки матриц gate/up в FP16, а также обновить соответствующие вызовы в native_expert_parity и prefill.",
+        "url": "https://github.com/Niko1221/Strata/commit/e10b5021572cd60c3cdf9e114472f2f95a4a3559"
+      },
+      {
+        "sha": "21382c486113084e4bcb779fbbfe7257df5173ae",
+        "title": "Merge strata/main into main",
+        "url": "https://github.com/Niko1221/Strata/commit/21382c486113084e4bcb779fbbfe7257df5173ae"
+      },
+      {
+        "sha": "8e26dd5c26817c1181524276b0b72558c03a4d34",
+        "title": "Merge remote-tracking branch 'strata/main'",
+        "url": "https://github.com/Niko1221/Strata/commit/8e26dd5c26817c1181524276b0b72558c03a4d34"
+      },
+      {
+        "sha": "7646eda996cc86cfdd759559bdebf11b234fb11e",
+        "title": "Изменить нормализацию пути в функции normalize для корректной замены имени исполняемого файла",
+        "url": "https://github.com/Niko1221/Strata/commit/7646eda996cc86cfdd759559bdebf11b234fb11e"
+      }
+    ],
+    "files": [
+      "README.md",
+      "docs/ORCA.md",
+      "include/strata/kernels/cpu/expert_layout.hpp",
+      "include/strata/kernels/dequant_bf16.hpp",
+      "include/strata/kernels/iq_kernels.hpp",
+      "include/strata/kernels/ngram.hpp",
+      "include/strata/ngram/ple_reader.hpp",
+      "setup.py",
+      "src/core/native_head.cpp",
+      "src/kernels/cpu/expert_layout.cpp",
+      "src/kernels/cuda/dequant_bf16.cu",
+      "src/kernels/cuda/iq_kernels.cu",
+      "src/kernels/dequant_bf16_test.cpp",
+      "src/kernels/iq_parity.cpp",
+      "src/kernels/native_expert_parity.cpp",
+      "src/kernels/ngram.cpp",
+      "src/kernels/ple_q5_parity.cpp",
+      "src/ngram/ple_reader.cpp",
+      "src/ngram/ple_reader_test.cpp",
+      "src/prefill/prefill.cpp",
+      "tools/iq_pack.py",
+      "tools/test_iq_pack.py",
+      "tools/test_setup_choices.py",
+      "tools/test_setup_golden.py"
+    ]
+  },
+  {
+    "fork": "he-be/Strata",
+    "branch": "main",
+    "pushed_at": "2026-10-01T23:12:57Z",
+    "stars": 0,
+    "url": "https://github.com/he-be/Strata",
+    "ahead_by": 8,
+    "behind_by": 22,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "f92ec7219d7124822a7d5cdf9229af015fa489e0",
+        "title": "Local: split sampler and the Orca compat pack's PLE key",
+        "url": "https://github.com/Niko1221/Strata/commit/f92ec7219d7124822a7d5cdf9229af015fa489e0"
+      },
+      {
+        "sha": "b4f238be7dd1b982d6301ae04c926f3a43bc99ae",
+        "title": "response_format: constrain decoding to the request's JSON schema, as llama-server does",
+        "url": "https://github.com/Niko1221/Strata/commit/b4f238be7dd1b982d6301ae04c926f3a43bc99ae"
+      },
+      {
+        "sha": "60c5879097273136e27fcd371545b5be6bd385ae",
+        "title": "Local: allow compute capability 7.0 (Volta) for llm-server's card",
+        "url": "https://github.com/Niko1221/Strata/commit/60c5879097273136e27fcd371545b5be6bd385ae"
+      },
+      {
+        "sha": "449a047c83e9a7ca9aeb0879f7c277013e4efb65",
+        "title": "Merge origin/main (0.1.31): take upstream's split sampler and PLE key rule; keep response_format mask_logits",
+        "url": "https://github.com/Niko1221/Strata/commit/449a047c83e9a7ca9aeb0879f7c277013e4efb65"
+      },
+      {
+        "sha": "b1156958c6c77eca48b602a245f277dfda610c67",
+        "title": "Local: treat a later split shard as additional even when it names the architecture",
+        "url": "https://github.com/Niko1221/Strata/commit/b1156958c6c77eca48b602a245f277dfda610c67"
+      },
+      {
+        "sha": "7dde47571cdd3ea1a503c4291d71f70a37756517",
+        "title": "Merge fork/main: Volta (cc 7.0) support now comes from upstream's -DSTRATA_EXPERIMENTAL_SM60",
+        "url": "https://github.com/Niko1221/Strata/commit/7dde47571cdd3ea1a503c4291d71f70a37756517"
+      },
+      {
+        "sha": "133a046ce046f0d043c892cfab3cb012fcf4ae6f",
+        "title": "Local: resident RAM mode with a layer split, and Volta keeps the old prompt attention",
+        "url": "https://github.com/Niko1221/Strata/commit/133a046ce046f0d043c892cfab3cb012fcf4ae6f"
+      },
+      {
+        "sha": "28e63d6bfb0ecc3bae2c36ffcd18372150cf05bf",
+        "title": "Merge origin/main (0.1.33): keep the resident RAM mode with a layer split; take upstream's V100 prompt-attention check",
+        "url": "https://github.com/Niko1221/Strata/commit/28e63d6bfb0ecc3bae2c36ffcd18372150cf05bf"
+      }
+    ],
+    "files": [
+      "include/strata/core/verify.hpp",
+      "include/strata/kernels/sampler.hpp",
+      "serve/grammar.py",
+      "serve/server.py",
+      "serve/test_grammar.py",
+      "setup.py",
+      "src/core/native_dense.cpp",
+      "src/core/verify.cpp",
+      "src/kernels/cuda/sampler.cu",
+      "src/program/generate.cpp",
+      "src/program/token_grammar.hpp"
+    ]
+  },
+  {
+    "fork": "jmnargi/Strata-V100",
+    "branch": "main",
+    "pushed_at": "2026-10-01T19:56:41Z",
+    "stars": 2,
+    "url": "https://github.com/jmnargi/Strata-V100",
+    "ahead_by": 33,
+    "behind_by": 189,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "3292cea0ea18b21ce8e24365496b424153d03066",
+        "title": "Add Tesla V100 support and deployment benchmarks",
+        "url": "https://github.com/Niko1221/Strata/commit/3292cea0ea18b21ce8e24365496b424153d03066"
+      },
+      {
+        "sha": "3c6e0d42d21ae4fa4f28ed1271818684504b99b2",
+        "title": "Fix Volta prefill GEMM corruption",
+        "url": "https://github.com/Niko1221/Strata/commit/3c6e0d42d21ae4fa4f28ed1271818684504b99b2"
+      },
+      {
+        "sha": "cb708c735c3bc4d298bd9cd2a67aabf77f84ba18",
+        "title": "Prefill fast path for Volta: FP16 tensor-core GEMMs, io_uring PLE reads, NVMe storage",
+        "url": "https://github.com/Niko1221/Strata/commit/cb708c735c3bc4d298bd9cd2a67aabf77f84ba18"
+      },
+      {
+        "sha": "648713fb1d34e07082e6a9baf7c67c6138a50032",
+        "title": "Enable Q2_0 MMQ prefill path",
+        "url": "https://github.com/Niko1221/Strata/commit/648713fb1d34e07082e6a9baf7c67c6138a50032"
+      },
+      {
+        "sha": "ecccc8c7350225144892778a3535b3defc00cda2",
+        "title": "Limit prefill QSA scoring to live blocks",
+        "url": "https://github.com/Niko1221/Strata/commit/ecccc8c7350225144892778a3535b3defc00cda2"
+      },
+      {
+        "sha": "c665c39ef1d0938b3812efe755806ce0e504c23a",
+        "title": "Merge pull request #1 from jmnargi/prefill-speed-v100",
+        "url": "https://github.com/Niko1221/Strata/commit/c665c39ef1d0938b3812efe755806ce0e504c23a"
+      },
+      {
+        "sha": "cb96f131ecac76fa5c6200f24eb734f02fcfa922",
+        "title": "Re-benchmark the V100 fast path on merged main; add the benchmark tool",
+        "url": "https://github.com/Niko1221/Strata/commit/cb96f131ecac76fa5c6200f24eb734f02fcfa922"
+      },
+      {
+        "sha": "4686c0f1e1388b63d62d1bdef1cb66efa1613fe9",
+        "title": "Merge upstream multi-GPU support with V100 compatibility",
+        "url": "https://github.com/Niko1221/Strata/commit/4686c0f1e1388b63d62d1bdef1cb66efa1613fe9"
+      },
+      {
+        "sha": "695a1c218845ac921d8875f4ec08d357359dbca0",
+        "title": "Remove local identifiers and add benchmark index",
+        "url": "https://github.com/Niko1221/Strata/commit/695a1c218845ac921d8875f4ec08d357359dbca0"
+      },
+      {
+        "sha": "c05eb32d65bb6e8487040228cff255035fb765cf",
+        "title": "decode: batch the verify window's per-token kernels (bit-identical)",
+        "url": "https://github.com/Niko1221/Strata/commit/c05eb32d65bb6e8487040228cff255035fb765cf"
+      },
+      {
+        "sha": "9dbaa2fd35aff241b9b2c2891ced5c64d3b9df8f",
+        "title": "prefill: tile the QSA block scorer's key reads across queries (bit-identical)",
+        "url": "https://github.com/Niko1221/Strata/commit/9dbaa2fd35aff241b9b2c2891ced5c64d3b9df8f"
+      },
+      {
+        "sha": "609a1599b863dcb68f31744bb80e09ae581f3474",
+        "title": "bench: V100 prefill/decode speed results (2026-09-29) + README table update",
+        "url": "https://github.com/Niko1221/Strata/commit/609a1599b863dcb68f31744bb80e09ae581f3474"
+      },
+      {
+        "sha": "4f96da29f5a4e0481db2c3b1e9630cbe753e200c",
+        "title": "prefill: Volta m8n8k4 tensor-core prompt attention (1.6-1.9x on the QSA kernel)",
+        "url": "https://github.com/Niko1221/Strata/commit/4f96da29f5a4e0481db2c3b1e9630cbe753e200c"
+      },
+      {
+        "sha": "657fa85d7fb51d5461c4befe904d2241e9219efb",
+        "title": "Merge pull request #2 from jmnargi/prefill-decode-perf",
+        "url": "https://github.com/Niko1221/Strata/commit/657fa85d7fb51d5461c4befe904d2241e9219efb"
+      },
+      {
+        "sha": "e4e3807b298bbac4a7db2a037ce624719d3ab969",
+        "title": "build: fix configure and link after the upstream merge",
+        "url": "https://github.com/Niko1221/Strata/commit/e4e3807b298bbac4a7db2a037ce624719d3ab969"
+      },
+      {
+        "sha": "74849fdf433848c0f0ea9d8680f1b02abf174ffc",
+        "title": "Merge pull request #3 from jmnargi/fix/build-after-upstream-merge",
+        "url": "https://github.com/Niko1221/Strata/commit/74849fdf433848c0f0ea9d8680f1b02abf174ffc"
+      },
+      {
+        "sha": "0325b0b3e8b8f46351a7f71a3c8620992fa99e42",
+        "title": "Merge upstream v0.1.30 with V100 (Volta) support preserved",
+        "url": "https://github.com/Niko1221/Strata/commit/0325b0b3e8b8f46351a7f71a3c8620992fa99e42"
+      },
+      {
+        "sha": "837223f1a43178320cd5b6949b11f71823f46473",
+        "title": "V100 adaptation: FP16-bits in the F-1/F-2 fused kernels, K8V4 on Volta",
+        "url": "https://github.com/Niko1221/Strata/commit/837223f1a43178320cd5b6949b11f71823f46473"
+      },
+      {
+        "sha": "c27ff9a7e61bcc2f26e79923590260aa848dbad0",
+        "title": "docs: note the 0.1.30-based engine in the V100 benchmark sections",
+        "url": "https://github.com/Niko1221/Strata/commit/c27ff9a7e61bcc2f26e79923590260aa848dbad0"
+      },
+      {
+        "sha": "acbacbfe7a53e34a6c9cb2dff1ce7c34c45caf82",
+        "title": "Merge pull request #4 from jmnargi/merge/upstream-0.1.30",
+        "url": "https://github.com/Niko1221/Strata/commit/acbacbfe7a53e34a6c9cb2dff1ce7c34c45caf82"
+      },
+      {
+        "sha": "74de51369c707c9cb64f4e4fef218a0e90dcaba0",
+        "title": "cmake: fix the CUDA configure for sm_70 (Volta) builds",
+        "url": "https://github.com/Niko1221/Strata/commit/74de51369c707c9cb64f4e4fef218a0e90dcaba0"
+      },
+      {
+        "sha": "e3375c861954b98f8200522c49f464aac1bb8c3c",
+        "title": "Merge pull request #5 from jmnargi/fix/cuda-cmake-extra-endif",
+        "url": "https://github.com/Niko1221/Strata/commit/e3375c861954b98f8200522c49f464aac1bb8c3c"
+      },
+      {
+        "sha": "ecba5358393a598529a36b2b82f62b2869166bd7",
+        "title": "Improve asymmetric V100 transfers and decode efficiency",
+        "url": "https://github.com/Niko1221/Strata/commit/ecba5358393a598529a36b2b82f62b2869166bd7"
+      },
+      {
+        "sha": "bc1bd442482227e2433fc4766a8817df79f41bf0",
+        "title": "Merge pull request #6 from jmnargi/perf/v100-asymmetric-pcie",
+        "url": "https://github.com/Niko1221/Strata/commit/bc1bd442482227e2433fc4766a8817df79f41bf0"
+      },
+      {
+        "sha": "b4f2025ce5eeeef5bddd05c7f8b705671c5c24dd",
+        "title": "Merge upstream v0.1.31 with V100 (Volta) support preserved",
+        "url": "https://github.com/Niko1221/Strata/commit/b4f2025ce5eeeef5bddd05c7f8b705671c5c24dd"
+      },
+      {
+        "sha": "06f74ad93b801116b0ec6b59cee5b2911d35ef71",
+        "title": "Merge pull request #7 from jmnargi/merge/upstream-0.1.31",
+        "url": "https://github.com/Niko1221/Strata/commit/06f74ad93b801116b0ec6b59cee5b2911d35ef71"
+      },
+      {
+        "sha": "d091c4b5600818340c11883ff936bec3d3504011",
+        "title": "setup: a config's model_name survives regeneration (the JSON file configures it locally)",
+        "url": "https://github.com/Niko1221/Strata/commit/d091c4b5600818340c11883ff936bec3d3504011"
+      },
+      {
+        "sha": "5134ebb9d7c9e94396e17f38d2af76e38175d506",
+        "title": "Merge pull request #8 from jmnargi/fix/model-name-qwen",
+        "url": "https://github.com/Niko1221/Strata/commit/5134ebb9d7c9e94396e17f38d2af76e38175d506"
+      },
+      {
+        "sha": "b50ea1415041f8a40a96e459a91a7d58e24e3b33",
+        "title": "verify: fix the stage profiler's stale-timestamp (gap) entries",
+        "url": "https://github.com/Niko1221/Strata/commit/b50ea1415041f8a40a96e459a91a7d58e24e3b33"
+      },
+      {
+        "sha": "28f60091875f414be26d315b1c0bf2fea14f68e4",
+        "title": "Merge pull request #9 from jmnargi/perf/decode-threading",
+        "url": "https://github.com/Niko1221/Strata/commit/28f60091875f414be26d315b1c0bf2fea14f68e4"
+      },
+      {
+        "sha": "b3516de3037d00fd1d345d738195c94192ef7e7f",
+        "title": "Merge pull request #10 from jmnargi/merge/upstream-0.1.31",
+        "url": "https://github.com/Niko1221/Strata/commit/b3516de3037d00fd1d345d738195c94192ef7e7f"
+      },
+      {
+        "sha": "35a8ad14da7d8fda5e41e69cdb6d70cfec0410ee",
+        "title": "perf: fuse Volta GR windows and batch verifier KV append",
+        "url": "https://github.com/Niko1221/Strata/commit/35a8ad14da7d8fda5e41e69cdb6d70cfec0410ee"
+      },
+      {
+        "sha": "4fa08fe15ae4b0ab345820d4c7ed0e7764bf3fad",
+        "title": "Merge pull request #11 from jmnargi/perf/v100-prefill-decode-oct01",
+        "url": "https://github.com/Niko1221/Strata/commit/4fa08fe15ae4b0ab345820d4c7ed0e7764bf3fad"
+      }
+    ],
+    "files": [
+      ".gitattributes",
+      ".gitignore",
+      "CMakeLists.txt",
+      "Dockerfile",
+      "README.md",
+      "bench/results/2026-09-28-v100-fastpath/README.md",
+      "bench/results/2026-09-28-v100-fastpath/matrix.json",
+      "bench/results/2026-09-29-baseline-long/matrix.json",
+      "bench/results/2026-09-29-baseline-short/matrix.json",
+      "bench/results/2026-09-29-cool-short/matrix.json",
+      "bench/results/2026-09-29-final-long/matrix.json",
+      "bench/results/2026-09-29-final-s8-128k/matrix.json",
+      "bench/results/2026-09-29-new-long/matrix.json",
+      "bench/results/2026-09-29-new-short/matrix.json",
+      "bench/results/2026-09-29-pr139-triage/baseline-pass1.json",
+      "bench/results/2026-09-29-pr139-triage/baseline-pass2.json",
+      "bench/results/2026-09-29-pr139-triage/ctrl-final-pass1.json",
+      "bench/results/2026-09-29-pr139-triage/ctrl-final-pass2.json",
+      "bench/results/2026-09-29-pr139-triage/ctrl-new-pass1.json",
+      "bench/results/2026-09-29-pr139-triage/ctrl-new-pass2.json",
+      "bench/results/2026-09-29-pr139-triage/notes.md",
+      "bench/results/2026-09-29-pr139-triage/ring8-4096-pass1.json",
+      "bench/results/2026-09-29-pr139-triage/ring8-4096-pass2.json",
+      "bench/results/2026-09-29-pr139-triage/ring8-pass1.json",
+      "bench/results/2026-09-29-pr139-triage/ring8-pass2.json",
+      "bench/results/2026-09-29-prefill-decode/README.md",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/README.md",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-1x3090/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-1x3090/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-1x3090/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K18/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K22/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K22/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K22/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K24/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K24/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K24/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K26/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K26/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K26/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K28/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K28/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K28/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K30/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K30/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-K30/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-auto/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-auto/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-Coder-2x3090-auto/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-needle/needle-16k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-needle/needle-28k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-needle/needle-8k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto-two-turn/two-turn-16k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_S-2x3090-auto/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-needle/needle-16k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-needle/needle-28k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-needle/needle-8k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090-two-turn/two-turn-16k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-128k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-128k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-128k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-1k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-1k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-1k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-262k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-262k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-262k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-4k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-4k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-1x3090/speed-4k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-needle/needle-16k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-needle/needle-28k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-needle/needle-8k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto-two-turn/two-turn-16k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto/speed-32k-1.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto/speed-32k-2.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/native-v0.1.26-IQ3_XXS-2x3090-auto/speed-32k-3.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/data/strata-bench.py",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/hw.txt",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/matrix.json",
+      "bench/results/2026-09-29-rtx3090-epyc-milan/matrix.md",
+      "bench/results/2026-09-29-volta-prompt-attn-baseline/matrix.json",
+      "bench/results/2026-09-29-volta-prompt-attn-warm/matrix.json",
+      "bench/results/2026-09-29-volta-prompt-attn/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/auto/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/baseline-repeats/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/complete-matrix/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/complete-repeats/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/final-repeats/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/fixed/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/k16/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/k18/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/k20-chunk16k/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/k20-ring128/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/k20/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/long-context/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/reverse28/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/seeded-baseline/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/spec04-repeats/matrix.json",
+      "bench/results/2026-09-30-asymmetric-v100/verification.json",
+      "bench/results/2026-09-30-community-rtx-5090/BUILD.json",
+      "bench/results/2026-09-30-community-rtx-5090/Dockerfile",
+      "bench/results/2026-09-30-community-rtx-5090/README.md",
+      "bench/results/2026-09-30-community-rtx-5090/artifact-hashes.json",
+      "bench/results/2026-09-30-community-rtx-5090/benchmark.py",
+      "bench/results/2026-09-30-community-rtx-5090/engine.log",
+      "bench/results/2026-09-30-community-rtx-5090/final-status.json",
+      "bench/results/2026-09-30-community-rtx-5090/initial-status.json",
+      "bench/results/2026-09-30-community-rtx-5090/memory-summary.json",
+      "bench/results/2026-09-30-community-rtx-5090/model-provenance.json",
+      "bench/results/2026-09-30-community-rtx-5090/monitor.py",
+      "bench/results/2026-09-30-community-rtx-5090/mtp-manifest.json",
+      "bench/results/2026-09-30-community-rtx-5090/needles.json",
+      "bench/results/2026-09-30-community-rtx-5090/python-packages.txt",
+      "bench/results/2026-09-30-community-rtx-5090/results.json",
+      "bench/results/2026-09-30-community-rtx-5090/strata-iq2_xs.json",
+      "bench/results/2026-09-30-community-rtx-5090/summary.json",
+      "bench/results/2026-09-30-community-rtx-5090/telemetry.jsonl",
+      "bench/results/2026-10-01-v100-autonomous/baseline/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/comparison.json",
+      "bench/results/2026-10-01-v100-autonomous/final-split20/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/fullfusion-prefill12k-split14/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/fullfusion-prefill16k-split16/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/fused-pcie65/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/fused-split16/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/fused-split20/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/kv-resident64k/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/optimized-grv3/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/optimized-minp50/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/optimized-minp85/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/optimized-split12/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/optimized-split16/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/routed-only/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/spec-split-uninstrumented/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/split16/matrix.json",
+      "bench/results/2026-10-01-v100-autonomous/verification.json",
+      "bench/run_v100_bench.py",
+      "benchmarks/README.md",
+      "benchmarks/v100-asymmetric-pcie-q2_0-2026-09-30.md",
+      "benchmarks/v100-pcie-16gb-q2_0-2026-09-28.md",
+      "cmake/hip_backend.cmake",
+      "docs/AMD_HIP.md",
+      "docs/COMMUNITY_BENCHMARKS.md",
+      "docs/DETAILS.md",
+      "docs/MULTI_GPU.md",
+      "docs/SECOND_GPU.md",
+      "docs/UNSLOTH_Q4.md",
+      "include/strata/artifact/gguf_reader.hpp",
+      "include/strata/artifact/gguf_split.hpp",
+      "include/strata/core/device.hpp",
+      "include/strata/core/expert_source.hpp",
+      "include/strata/core/layer.hpp",
+      "include/strata/core/native_head.hpp",
+      "include/strata/core/pinned.hpp",
+      "include/strata/core/progress.hpp",
+      "include/strata/core/verify.hpp",
+      "include/strata/hip_compat/intrinsics.hpp",
+      "include/strata/kernels/cpu/expert_layout.hpp",
+      "include/strata/kernels/cpu/kq_avx2.hpp",
+      "include/strata/kernels/elementwise.hpp",
+      "include/strata/kernels/iq_kernels.hpp",
+      "include/strata/kernels/kv_q4.hpp",
+      "include/strata/kernels/kv_q8.hpp",
+      "include/strata/kernels/qsa.hpp",
+      "include/strata/kernels/s2_expert_grouped.hpp",
+      "include/strata/kernels/shared_expert.hpp",
+      "include/strata/kernels/verify_kernels.hpp",
+      "include/strata/platform/memory.hpp",
+      "include/strata/prefill/gemm.hpp",
+      "include/strata/prefill/kernels.hpp",
+      "include/strata/prefill/prefill.hpp",
+      "requirements.txt",
+      "serve/frontend.py",
+      "serve/mcp.py",
+      "serve/server.py",
+      "serve/test_detok.py",
+      "serve/test_mcp.py",
+      "serve/test_server.py",
+      "setup.py",
+      "src/core/device.cu",
+      "src/core/device_main.cpp",
+      "src/core/expert_source.cpp",
+      "src/core/layer.cpp",
+      "src/core/mtp.cpp",
+      "src/core/native_dense.cpp",
+      "src/core/native_head.cpp",
+      "src/core/pinned.cu",
+      "src/core/verify.cpp",
+      "src/kernels/cpu/expert_layout.cpp",
+      "src/kernels/cpu/kq_avx2.cpp",
+      "src/kernels/cpu/native_expert.cpp",
+      "src/kernels/cpu/pool.cpp",
+      "src/kernels/cuda/elementwise.cu",
+      "src/kernels/cuda/fused_gr.cu",
+      "src/kernels/cuda/iq_kernels.cu",
+      "src/kernels/cuda/kv_q4.cu",
+      "src/kernels/cuda/kv_q8.cu",
+      "src/kernels/cuda/ple.cu",
+      "src/kernels/cuda/qsa.cu",
+      "src/kernels/cuda/qsa_prompt_attn.cu",
+      "src/kernels/cuda/qsa_select.cu",
+      "src/kernels/cuda/s2_expert_grouped.cu",
+      "src/kernels/cuda/shared_expert.cu",
+      "src/kernels/cuda/verify_kernels.cu",
+      "src/kernels/decode_opt_regress.cpp",
+      "src/kernels/gr_parity.cpp",
+      "src/kernels/iq_multi_parity.cpp",
+      "src/kernels/iq_parity.cpp",
+      "src/kernels/kv_hybrid_parity.cpp",
+      "src/kernels/kv_q4_parity.cpp",
+      "src/kernels/kv_q8_parity.cpp",
+      "src/kernels/kv_stream_parity.cpp",
+      "src/kernels/native_expert_parity.cpp",
+      "src/kernels/s2_expert_grouped_parity.cpp",
+      "src/ngram/ple_reader.cpp",
+      "src/platform/direct_file.cpp",
+      "src/platform/memory.cpp",
+      "src/prefill/gemm.cu",
+      "src/prefill/kernels.cu",
+      "src/prefill/moe_mmq.cu",
+      "src/prefill/prefill.cpp",
+      "src/program/generate.cpp",
+      "strata-v100.service",
+      "tests/core/expert_layout_test.cpp",
+      "tests/core/gguf_fixture.hpp",
+      "tests/core/gguf_split_test.cpp",
+      "tests/data/native_experts/coder-iq1_m.txt",
+      "tests/data/native_experts/iq2_xs.txt",
+      "tests/data/native_experts/iq3_s.txt",
+      "tests/data/native_experts/iq3_xxs.txt",
+      "tests/data/native_experts/q2_0.txt",
+      "tests/data/native_experts/swift-iq2_xs.txt",
+      "tests/diagnose_hermes_flow.py",
+      "tests/diagnose_openai.py",
+      "tests/hip/intrinsics.cpp",
+      "tests/prefill_gemm_parity.cpp",
+      "tools/iq_fixture.py",
+      "tools/iq_pack.py",
+      "tools/mtp_fetch.py",
+      "tools/strata_tokenizer.py",
+      "tools/test_iq_pack.py",
+      "tools/test_setup_amd.py",
+      "tools/test_setup_lowram.py",
+      "tools/test_setup_pins.py"
+    ]
+  },
+  {
+    "fork": "RandoTeam/StrataRealLowVRAM",
+    "branch": "main",
+    "pushed_at": "2026-10-01T23:24:39Z",
+    "stars": 0,
+    "url": "https://github.com/RandoTeam/StrataRealLowVRAM",
+    "ahead_by": 15,
+    "behind_by": 22,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "43ea91a069f750da20b6d546d461b6210abf7366",
+        "title": "feat: StrataRealLowVRAM edition - 4GB VRAM mobile GPU optimizations, Windows WDDM tuning & DeepSeek Harness integration",
+        "url": "https://github.com/Niko1221/Strata/commit/43ea91a069f750da20b6d546d461b6210abf7366"
+      },
+      {
+        "sha": "4dae2be5d72201d6d09bd38ff1a630b2e2b9cbf1",
+        "title": "docs(bench): add empirical head-to-head comparison audit between StrataRealLowVRAM and Vanilla Baseline",
+        "url": "https://github.com/Niko1221/Strata/commit/4dae2be5d72201d6d09bd38ff1a630b2e2b9cbf1"
+      },
+      {
+        "sha": "103b165239b5adb37a1dfa8645c1819e7a148152",
+        "title": "docs: enrich README with head-to-head empirical metrics and developer impact analysis",
+        "url": "https://github.com/Niko1221/Strata/commit/103b165239b5adb37a1dfa8645c1819e7a148152"
+      },
+      {
+        "sha": "df16ffc8b1be07a530bc050a3f572002db2a98ec",
+        "title": "fix(setup): isolate baseline config from root to avoid duplicate startup prompt",
+        "url": "https://github.com/Niko1221/Strata/commit/df16ffc8b1be07a530bc050a3f572002db2a98ec"
+      },
+      {
+        "sha": "c189fc8e8fe2d96e61bebab1f3db5bc193615eb2",
+        "title": "fix(engine): WDDM expert cache patch for 4GB VRAM and CI build workflow",
+        "url": "https://github.com/Niko1221/Strata/commit/c189fc8e8fe2d96e61bebab1f3db5bc193615eb2"
+      },
+      {
+        "sha": "e2e1fdcffe58b90e562c446389244bc1a8c79c17",
+        "title": "feat(rust): high-performance strata-gateway, upstream sync tools and README overhaul",
+        "url": "https://github.com/Niko1221/Strata/commit/e2e1fdcffe58b90e562c446389244bc1a8c79c17"
+      },
+      {
+        "sha": "c640c85961cfd36814b586f3422df74a67619354",
+        "title": "fix(engine): complete WDDM expert cache patch for 4GB VRAM in expert_cache.cpp and generate.cpp",
+        "url": "https://github.com/Niko1221/Strata/commit/c640c85961cfd36814b586f3422df74a67619354"
+      },
+      {
+        "sha": "3f6aad3bfe5703f330abb2a9063f7c3bc3cb028a",
+        "title": "perf: native_mmvq warp kernel, fused_gr_read acceleration, and setup fix",
+        "url": "https://github.com/Niko1221/Strata/commit/3f6aad3bfe5703f330abb2a9063f7c3bc3cb028a"
+      },
+      {
+        "sha": "6751f50ae112a8a1317ee34ee00092a1b305e14e",
+        "title": "merge: upstream v0.1.32 with StrataRealLowVRAM optimizations preserved",
+        "url": "https://github.com/Niko1221/Strata/commit/6751f50ae112a8a1317ee34ee00092a1b305e14e"
+      },
+      {
+        "sha": "082dca54ea5f5c9a92770f0a9dcb1ed9d476a6bf",
+        "title": "fix(serve): resolve remaining conflict marker in server.py",
+        "url": "https://github.com/Niko1221/Strata/commit/082dca54ea5f5c9a92770f0a9dcb1ed9d476a6bf"
+      },
+      {
+        "sha": "35b17347d9c3ab8523a61f431a5b0ca59a0330eb",
+        "title": "fix(engine): unconditional budget when not auto-cache on WDDM",
+        "url": "https://github.com/Niko1221/Strata/commit/35b17347d9c3ab8523a61f431a5b0ca59a0330eb"
+      },
+      {
+        "sha": "631964e9055150316ad54128ee6c73abbeca474c",
+        "title": "Merge remote-tracking branch 'upstream/main'",
+        "url": "https://github.com/Niko1221/Strata/commit/631964e9055150316ad54128ee6c73abbeca474c"
+      },
+      {
+        "sha": "d4b49e758792aa14f1743b1a1741bcbf79d22383",
+        "title": "feat(engine): sync upstream v0.1.33, stabilize Coder IQ1_M and Q2_0 configs and Tournament 5",
+        "url": "https://github.com/Niko1221/Strata/commit/d4b49e758792aa14f1743b1a1741bcbf79d22383"
+      },
+      {
+        "sha": "a3e710c91a80d93dc53b49fd05f4a3d118074cb4",
+        "title": "docs(readme): document dual-model verified status (Coder IQ1_M & Q2_0) and Engine 0.1.33",
+        "url": "https://github.com/Niko1221/Strata/commit/a3e710c91a80d93dc53b49fd05f4a3d118074cb4"
+      },
+      {
+        "sha": "312f9c884559091e5ce6cc1808c203bd4d85cedf",
+        "title": "fix(setup): protect local patched engine from upstream auto-update overwrite",
+        "url": "https://github.com/Niko1221/Strata/commit/312f9c884559091e5ce6cc1808c203bd4d85cedf"
+      }
+    ],
+    "files": [
+      ".github/workflows/build-engine.yml",
+      ".gitignore",
+      ".superpowers/sdd/2026-10-01-optimization-architecture/progress.md",
+      "CMakeLists.txt",
+      "README.md",
+      "bench/HEAD_TO_HEAD_COMPARISON.md",
+      "bench/archive/INDEX.md",
+      "bench/archive/pre-tournament/README.md",
+      "bench/archive/pre-tournament/strata-coder-iq1_m.pre-tournament.json",
+      "bench/archive/tournament1-winner/README.md",
+      "bench/archive/tournament1-winner/strata-coder-iq1_m.tournament1-champion.json",
+      "bench/archive/tournament1-winner/tournament1_matrix.md",
+      "bench/archive/tournament2-winner/GC2b_candidate.json",
+      "bench/archive/tournament2-winner/GC2b_candidate_result.json",
+      "bench/archive/tournament2-winner/README.md",
+      "bench/archive/tournament2-winner/leaderboard.json",
+      "bench/archive/tournament2-winner/leaderboard.md",
+      "bench/archive/tournament2-winner/strata-coder-iq1_m.tournament2-champion.json",
+      "bench/archive/tournament3-olympic/OGC3_candidate_result.json",
+      "bench/archive/tournament3-olympic/leaderboard.json",
+      "bench/archive/tournament3-olympic/leaderboard.md",
+      "bench/archive/tournament3-olympic/strata-coder-iq1_m.tournament3-champion.json",
+      "bench/archive/tournament4/leaderboard.json",
+      "bench/archive/tournament4/leaderboard.md",
+      "bench/archive/tournament4/strata-coder-iq1_m.tournament4-champion.json",
+      "bench/archive/tournament4/validation_log.md",
+      "bench/coder_iq1_m_metrics.json",
+      "bench/comparison_results.json",
+      "bench/full_q2_0_metrics.json",
+      "bench/quick_test.py",
+      "bench/run_comparison_ab.py",
+      "bench/run_comprehensive_bench.py",
+      "bench/spec_tuning.py",
+      "bench/strata_help.txt",
+      "bench/strata_serve_help.txt",
+      "bench/tournament2/candidate_S19.json",
+      "bench/tournament2/candidates/GC2_candidate.json",
+      "bench/tournament2/candidates/GC2_candidate_result.json",
+      "bench/tournament2/candidates/GC2b_candidate.json",
+      "bench/tournament2/candidates/GC2b_candidate_result.json",
+      "bench/tournament2/candidates/S01_candidate.json",
+      "bench/tournament2/candidates/S01_candidate_result.json",
+      "bench/tournament2/candidates/S02_candidate.json",
+      "bench/tournament2/candidates/S02_candidate_result.json",
+      "bench/tournament2/candidates/S03_candidate.json",
+      "bench/tournament2/candidates/S03_candidate_result.json",
+      "bench/tournament2/candidates/S04_candidate.json",
+      "bench/tournament2/candidates/S04_candidate_result.json",
+      "bench/tournament2/candidates/S05_candidate.json",
+      "bench/tournament2/candidates/S05_candidate_result.json",
+      "bench/tournament2/candidates/S06_candidate.json",
+      "bench/tournament2/candidates/S06_candidate_result.json",
+      "bench/tournament2/candidates/S07_candidate.json",
+      "bench/tournament2/candidates/S07_candidate_result.json",
+      "bench/tournament2/candidates/S08_candidate.json",
+      "bench/tournament2/candidates/S08_candidate_result.json",
+      "bench/tournament2/candidates/S09_candidate.json",
+      "bench/tournament2/candidates/S09_candidate_result.json",
+      "bench/tournament2/candidates/S10_candidate.json",
+      "bench/tournament2/candidates/S10_candidate_result.json",
+      "bench/tournament2/candidates/S11_candidate.json",
+      "bench/tournament2/candidates/S11_candidate_result.json",
+      "bench/tournament2/candidates/S12_candidate.json",
+      "bench/tournament2/candidates/S12_candidate_result.json",
+      "bench/tournament2/candidates/S13_candidate.json",
+      "bench/tournament2/candidates/S13_candidate_result.json",
+      "bench/tournament2/candidates/S14_candidate.json",
+      "bench/tournament2/candidates/S14_candidate_result.json",
+      "bench/tournament2/candidates/S15_candidate.json",
+      "bench/tournament2/candidates/S15_candidate_result.json",
+      "bench/tournament2/candidates/S16_candidate.json",
+      "bench/tournament2/candidates/S16_candidate_result.json",
+      "bench/tournament2/candidates/S17_candidate.json",
+      "bench/tournament2/candidates/S17_candidate_result.json",
+      "bench/tournament2/candidates/S18_candidate.json",
+      "bench/tournament2/candidates/S18_candidate_result.json",
+      "bench/tournament2/candidates/S19_candidate.json",
+      "bench/tournament2/candidates/S19_candidate_result.json",
+      "bench/tournament2/candidates/S20_candidate.json",
+      "bench/tournament2/candidates/S20_candidate_result.json",
+      "bench/tournament2/extract_reports.py",
+      "bench/tournament2/leaderboard.json",
+      "bench/tournament2/leaderboard.md",
+      "bench/tournament2/orchestrator.py",
+      "bench/tournament2/populate_candidates.py",
+      "bench/tournament2/reports/S01_VRAM_Liberation.md",
+      "bench/tournament2/reports/S02_KV_Streaming.md",
+      "bench/tournament2/reports/S03_Context_Crusher.md",
+      "bench/tournament2/reports/S04_Expert_Profile_Master.md",
+      "bench/tournament2/reports/S05_Huge_Pages_Engineer.md",
+      "bench/tournament2/reports/S06_SSD_Direct_Oracle.md",
+      "bench/tournament2/reports/S07_MTP_Kill_MaxVRAM.md",
+      "bench/tournament2/reports/S08_Quant_Explorer.md",
+      "bench/tournament2/reports/S09_CPU_Pool_Architect.md",
+      "bench/tournament2/reports/S10_PCIe_Frac_Scientist.md",
+      "bench/tournament2/reports/S11_Speculation_Mathematician.md",
+      "bench/tournament2/reports/S12_StrataGP_Hunter.md",
+      "bench/tournament2/reports/S13_Reddit_Scout_Fresh.md",
+      "bench/tournament2/reports/S14_OS_Kernel_Tuner.md",
+      "bench/tournament2/reports/S15_PLE_IO_Optimizer.md",
+      "bench/tournament2/reports/S16_Attention_Geometry.md",
+      "bench/tournament2/reports/S17_Graph_Capture_Expert.md",
+      "bench/tournament2/reports/S18_Native_Shard_Pioneer.md",
+      "bench/tournament2/reports/S19_Hybrid_Frankenstein.md",
+      "bench/tournament2/reports/S20_Cross_Engine_Analyst.md",
+      "bench/tournament2/runner.py",
+      "bench/tournament2/write_report.py",
+      "bench/tournament3/MASTER_PROMPT.md",
+      "bench/tournament3/candidates/O01_candidate.json",
+      "bench/tournament3/candidates/O01_candidate_result.json",
+      "bench/tournament3/candidates/O02_candidate.json",
+      "bench/tournament3/candidates/O02_candidate_result.json",
+      "bench/tournament3/candidates/O03_candidate.json",
+      "bench/tournament3/candidates/O03_candidate_result.json",
+      "bench/tournament3/candidates/O04_candidate.json",
+      "bench/tournament3/candidates/O04_candidate_result.json",
+      "bench/tournament3/candidates/OGC3_candidate.json",
+      "bench/tournament3/candidates/OGC3_candidate_result.json",
+      "bench/tournament3/leaderboard.json",
+      "bench/tournament3/leaderboard.md",
+      "bench/tournament3/orchestrator_olympic.py",
+      "bench/tournament3/reports/O01_Alpha.md",
+      "bench/tournament3/reports/O02_Beta.md",
+      "bench/tournament3/reports/O03_Gamma.md",
+      "bench/tournament3/reports/O04_Delta.md",
+      "bench/tournament3/runner_olympic.py",
+      "bench/tournament4/MASTER_PROMPT.md",
+      "bench/tournament4/candidates/T4_01_candidate.json",
+      "bench/tournament4/candidates/T4_01_candidate_result.json",
+      "bench/tournament4/candidates/T4_02_candidate.json",
+      "bench/tournament4/candidates/T4_02_candidate_result.json",
+      "bench/tournament4/candidates/T4_03_candidate.json",
+      "bench/tournament4/candidates/T4_03_candidate_result.json",
+      "bench/tournament4/candidates/T4_04_candidate.json",
+      "bench/tournament4/candidates/T4_04_candidate_result.json",
+      "bench/tournament4/candidates/T4_GC_candidate.json",
+      "bench/tournament4/candidates/T4_GC_candidate_result.json",
+      "bench/tournament4/leaderboard.json",
+      "bench/tournament4/leaderboard.md",
+      "bench/tournament4/orchestrator_t4.py",
+      "bench/tournament4/pretest_matrix.md",
+      "bench/tournament4/reports/T4_01.md",
+      "bench/tournament4/reports/T4_02.md",
+      "bench/tournament4/reports/T4_03.md",
+      "bench/tournament4/reports/T4_04.md",
+      "bench/tournament4/runner_t4.py",
+      "bench/tournament4/validation_log.md",
+      "bench/tournament5/MASTER_PROMPT.md",
+      "bench/tournament5/candidates/T5_02_candidate.json",
+      "bench/tournament5/candidates/T5_03_candidate.json",
+      "bench/tournament5/orchestrator_t5.py",
+      "bench/tournament5/reports/T5_02.md",
+      "bench/tournament5/reports/T5_03.md",
+      "bench/tournament5/runner_t5.py",
+      "bench/tournament_batch_1.json",
+      "bench/tournament_batch_10.json",
+      "bench/tournament_batch_11.json",
+      "bench/tournament_batch_12.json",
+      "bench/tournament_batch_3.json",
+      "bench/tournament_batch_4.json",
+      "bench/tournament_batch_6.json",
+      "bench/tournament_batch_7.json",
+      "bench/tournament_batch_8.json",
+      "bench/tournament_runner.py",
+      "build-patched-engine.bat",
+      "configs/template-coder-iq1_m-rtx3050.json",
+      "docs/PROJECT_PRINCIPLES.md",
+      "docs/QWEN3.6-35B-A3B-ANALYSIS.md",
+      "docs/UPSTREAM_SYNC.md",
+      "docs/superpowers/plans/2026-10-01-optimization-architecture.md",
+      "docs/superpowers/plans/2026-10-01-strata-models-stabilization-and-benchmarking.md",
+      "patches/0001-wddm-expert-cache-4gb.patch",
+      "rust/strata-gateway/.gitignore",
+      "rust/strata-gateway/Cargo.lock",
+      "rust/strata-gateway/Cargo.toml",
+      "rust/strata-gateway/src/engine.rs",
+      "rust/strata-gateway/src/main.rs",
+      "rust/strata-gateway/src/openai.rs",
+      "rust/strata-gateway/src/protocol.rs",
+      "serve/frontend.py",
+      "serve/server.py",
+      "setup.py",
+      "src/core/expert_cache.cpp",
+      "src/core/layer.cpp",
+      "src/kernels/cuda/native_mmvq.cu",
+      "src/program/generate.cpp",
+      "start_strata_with_harness.bat",
+      "start_strata_with_harness.ps1",
+      "strata-coder-iq1_m.json",
+      "strata-q2_0.json",
+      "tools/optimize_memory.ps1",
+      "tools/sync_upstream.ps1"
+    ]
+  },
+  {
+    "fork": "RenZekta/Strata",
+    "branch": "main",
+    "pushed_at": "2026-10-01T23:01:10Z",
+    "stars": 0,
+    "url": "https://github.com/RenZekta/Strata",
+    "ahead_by": 2,
+    "behind_by": 22,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "15c8f7301d389a375984155bd6848f5fb98b32cd",
+        "title": "Added Windows HIP support",
+        "url": "https://github.com/Niko1221/Strata/commit/15c8f7301d389a375984155bd6848f5fb98b32cd"
+      },
+      {
+        "sha": "9fba1161e50c1343e309079e5dd4f86439b48105",
+        "title": "Merge branch 'Niko1221:main' into main",
+        "url": "https://github.com/Niko1221/Strata/commit/9fba1161e50c1343e309079e5dd4f86439b48105"
+      }
+    ],
+    "files": [
+      ".gitignore",
+      "README.md",
+      "START-HERE.bat",
+      "docs/AMD_HIP.md",
+      "setup.py",
+      "src/core/session.cpp",
+      "tests/hip/handoff.cpp",
+      "tools/test_setup_amd.py"
+    ]
+  },
+  {
+    "fork": "victorjavierhernandez739-hub/Strata",
+    "branch": "main",
+    "pushed_at": "2026-10-01T22:49:15Z",
+    "stars": 0,
+    "url": "https://github.com/victorjavierhernandez739-hub/Strata",
+    "ahead_by": 3,
+    "behind_by": 22,
+    "status": "diverged",
+    "commits": [
+      {
+        "sha": "8165da9ca309832b6731c153a40c48481a339aa2",
+        "title": "Add Docker Image CI workflow",
+        "url": "https://github.com/Niko1221/Strata/commit/8165da9ca309832b6731c153a40c48481a339aa2"
+      },
+      {
+        "sha": "c4df16644b5cd747d3179cbb221bad91faad94b2",
+        "title": "Add C/C++ CI workflow configuration",
+        "url": "https://github.com/Niko1221/Strata/commit/c4df16644b5cd747d3179cbb221bad91faad94b2"
+      },
+      {
+        "sha": "7fb1dfce7c846612685fb6014040f930763f804d",
+        "title": "Add GitHub Actions workflow for Python package with Conda",
+        "url": "https://github.com/Niko1221/Strata/commit/7fb1dfce7c846612685fb6014040f930763f804d"
+      }
+    ],
+    "files": [
+      ".github/workflows/c-cpp.yml",
+      ".github/workflows/docker-image.yml",
+      ".github/workflows/python-package-conda.yml"
+    ]
+  },
+  {
+    "fork": "webzone/strata-gfx906",
+    "branch": "gfx906",
+    "pushed_at": "2026-10-02T02:09:28Z",
+    "stars": 0,
+    "url": "https://github.com/webzone/strata-gfx906",
+    "ahead_by": 14,
+    "behind_by": 0,
+    "status": "ahead",
+    "commits": [
+      {
+        "sha": "4a09a8029d067abeb91e6271f337ae9b25b2d89c",
+        "title": "feat(mi50): port gfx906 wave64 and validate dual-GPU IQ2_XS generation",
+        "url": "https://github.com/Niko1221/Strata/commit/4a09a8029d067abeb91e6271f337ae9b25b2d89c"
+      },
+      {
+        "sha": "65bcdc2b27ede7e4339f270107863bfadd8034b1",
+        "title": "gfx906: translate docs and remove unrelated ECC records",
+        "url": "https://github.com/Niko1221/Strata/commit/65bcdc2b27ede7e4339f270107863bfadd8034b1"
+      },
+      {
+        "sha": "3e0a077caa1aee34c98e020b43dd5308b03f72ae",
+        "title": "gfx906: replace upstream README with MI50 results",
+        "url": "https://github.com/Niko1221/Strata/commit/3e0a077caa1aee34c98e020b43dd5308b03f72ae"
+      },
+      {
+        "sha": "e3e0bad73d4a6380f048168f1fe3e93bed356253",
+        "title": "docs: add gfx906 install and run instructions",
+        "url": "https://github.com/Niko1221/Strata/commit/e3e0bad73d4a6380f048168f1fe3e93bed356253"
+      },
+      {
+        "sha": "b8fe485a937ee373f615ba2dd023c25ca0c43f25",
+        "title": "docs: clarify GGUF quantization and MI50 launch defaults",
+        "url": "https://github.com/Niko1221/Strata/commit/b8fe485a937ee373f615ba2dd023c25ca0c43f25"
+      },
+      {
+        "sha": "0e2c7db444413ab27e6ff3ac16e9d5547ce240e9",
+        "title": "Merge upstream v0.1.31 into gfx906; retain MI50/MI60 support",
+        "url": "https://github.com/Niko1221/Strata/commit/0e2c7db444413ab27e6ff3ac16e9d5547ce240e9"
+      },
+      {
+        "sha": "6188acba7d48056312675a0c97940f5015bb5343",
+        "title": "Document JSON runtime environment for gfx906 deployment",
+        "url": "https://github.com/Niko1221/Strata/commit/6188acba7d48056312675a0c97940f5015bb5343"
+      },
+      {
+        "sha": "b544147e7abff293d079d7eb684d54ac994034b5",
+        "title": "Record v0.1.31 MI50 validation and loopback API deployment",
+        "url": "https://github.com/Niko1221/Strata/commit/b544147e7abff293d079d7eb684d54ac994034b5"
+      },
+      {
+        "sha": "c611d4885acaa68525cb9980d56111a05fe2a278",
+        "title": "Document live T5810 inference performance telemetry",
+        "url": "https://github.com/Niko1221/Strata/commit/c611d4885acaa68525cb9980d56111a05fe2a278"
+      },
+      {
+        "sha": "3529edfe553afdd6e4c3c7800b4643bae105f810",
+        "title": "Document live MI50 inference and cache telemetry",
+        "url": "https://github.com/Niko1221/Strata/commit/3529edfe553afdd6e4c3c7800b4643bae105f810"
+      },
+      {
+        "sha": "3a6c7c08dd7c10325cd321be428a18bb6c073f7c",
+        "title": "Replace legacy MI50 rates with v0.1.31 telemetry",
+        "url": "https://github.com/Niko1221/Strata/commit/3a6c7c08dd7c10325cd321be428a18bb6c073f7c"
+      },
+      {
+        "sha": "be23587e559060c9d6a704e6b34490f5be9fce7b",
+        "title": "Remove upstream sync history from README",
+        "url": "https://github.com/Niko1221/Strata/commit/be23587e559060c9d6a704e6b34490f5be9fce7b"
+      },
+      {
+        "sha": "e07930bd9f03dd979887cc59866eea5cf36d7c56",
+        "title": "Merge upstream v0.1.34 into gfx906",
+        "url": "https://github.com/Niko1221/Strata/commit/e07930bd9f03dd979887cc59866eea5cf36d7c56"
+      },
+      {
+        "sha": "0e12f868f11497a224172294bffbf7658d935534",
+        "title": "Require README source-version updates with every upstream merge",
+        "url": "https://github.com/Niko1221/Strata/commit/0e12f868f11497a224172294bffbf7658d935534"
+      }
+    ],
+    "files": [
+      ".gitattributes",
+      ".gitignore",
+      "AGENTS.md",
+      "CMakeLists.txt",
+      "CMakePresets.json",
+      "README.md",
+      "cmake/hip_backend.cmake",
+      "configs/gfx906-runtime-env.example.json",
+      "docs/AMD_HIP.md",
+      "docs/GFX906.md",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/README.md",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/api-arithmetic.request.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/api-arithmetic.response.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/api-literal.request.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/api-literal.response.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/api-models.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/build-state.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/ctest-full.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/ctest.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/ctest.xml",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/deploy-state.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/deployment-receipt.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/gfx906-python.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/hip_device1.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/hip_layer_handoff.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/hip_wave64_probe.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/manifest.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/model-sha256.log",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/model-smoke.py",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/smoke-dual.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/smoke-reverse.json",
+      "docs/gfx906-results/20261001-deployment-v0.1.31/smoke-single.json",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/README.md",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/cpu-ctest.log",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/gfx906-cmake-first.log",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/gfx906-first.log",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/gfx906.log",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/manifest.json",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/pack.log",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/serve.log",
+      "docs/gfx906-results/20261001-upstream-v0.1.31/upstream-python.log",
+      "docs/gfx906-results/20261001/README.md",
+      "docs/gfx906-results/20261001/cli-no-mtp-v2.json",
+      "docs/gfx906-results/20261001/cli-rejected-spec0.json",
+      "docs/gfx906-results/20261001/ctest-final.log",
+      "docs/gfx906-results/20261001/ctest-first-clock.log",
+      "docs/gfx906-results/20261001/ctest-first-registration.log",
+      "docs/gfx906-results/20261001/environment-final.json",
+      "docs/gfx906-results/20261001/hip-layer-handoff.log",
+      "docs/gfx906-results/20261001/model-plan-ready.json",
+      "docs/gfx906-results/20261001/model-sha256-verified.log",
+      "docs/gfx906-results/20261001/python-tests-final.log",
+      "docs/gfx906-results/20261001/reference.exit",
+      "docs/gfx906-results/20261001/reference.stderr.log",
+      "docs/gfx906-results/20261001/reference.stdout.log",
+      "docs/gfx906-results/20261001/smoke-dual-threshold1.json",
+      "docs/gfx906-results/20261001/smoke-dual.json",
+      "docs/gfx906-results/20261001/smoke-reverse.json",
+      "docs/gfx906-results/20261001/smoke-single.json",
+      "docs/gfx906-results/20261001/summary.json",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/README.md",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/cpu-build.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/cpu-configure.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/cpu-ctest.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/gfx906-final.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/gfx906-first.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/gfx906.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/manifest.json",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/serve-first.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/serve.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/setup-final.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/setup-first.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/setup.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/tools-final.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/tools-first.log",
+      "docs/gfx906-results/20261002-upstream-v0.1.34/tools.log",
+      "include/strata/core/device.hpp",
+      "include/strata/core/mapped_handoff.hpp",
+      "include/strata/hip_compat/intrinsics.hpp",
+      "requirements-gfx906.txt",
+      "serve/server.py",
+      "setup.py",
+      "src/core/device.cu",
+      "src/core/device_main.cpp",
+      "src/kernels/cuda/verify_kernels.cu",
+      "src/program/generate.cpp",
+      "tests/hip/intrinsics.cpp",
+      "tests/hip/layer_handoff.cpp",
+      "tests/hip/operator_probe.cpp",
+      "tests/hip/wave64_probe.cpp",
+      "tests/test_gfx906_setup.py",
+      "tests/test_gfx906_upstream.py",
+      "tests/test_gfx906_v034.py",
+      "tools/gfx906_cli_baseline.py",
+      "tools/gfx906_model.py",
+      "tools/gfx906_smoke.py",
+      "tools/gfx906_summary.py",
+      "tools/mtp_fetch.py",
+      "tools/strata_mcp.py",
+      "tools/test_mtp_fetch.py",
+      "tools/test_setup_amd.py",
+      "tools/test_setup_golden.py",
+      "tools/test_setup_pins.py"
+    ]
+  }
+]

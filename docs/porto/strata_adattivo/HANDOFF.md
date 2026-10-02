@@ -37,7 +37,16 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   non misurata, riempimento 250k non ripetuto nella combinazione elastica.
   Dettagli **`PROMOZIONE_DAILY_0131_1_OTTOBRE.md`**, evidenza `corse_2080ti/20261001_daily_0131/`.
   Processi lab chiusi, daily spento, **VIA a OCGC-IA e PROMO**; nessun'altra corsa programmata.
-  **Le voci successive di questa sezione documentano le tappe precedenti e le loro misure.**
+  **Le tappe del 1/10 qui sotto sono storiche; segue prima la ricognizione del 2/10.**
+- **Ripresa del 2/10, ricognizione completata senza prove GPU:** upstream **0.1.34**
+  `1678de333d0e`, 39 commit dalla precedente scansione; 422 fork elencati, 420 confrontati,
+  41 con commit propri, due eccezioni esplicite; 59 PR aperte alla lettura finale.
+  Fork2080Ti invariato. **Prima candidata prefill #439** (gather, IQ3_XXS/Windows/PCIe3.0,
+  +3,6–4,3% dell'autore), alternativa alla #372; **decode #363** (beneficio contenuto).
+  #413 recurrence richiede sm80+ e non accelera quel kernel su2080Ti; #443 sperimentale.
+  Fix server disconnect #430/#431 e metodo numerico #410 letti. Curva contesto e
+  riempimento250k della combinazione elastica ancora da fare. **Daily attuale preservato**.
+  Rapporto `RICERCA_FORK_2_OTTOBRE.md`, snapshot `ricognizioni/20261002/`.
 - **Validazione completata e lanciatore aggiornato (1/10):** 4.000 MiB di pressione per 60 s, 4.096 token in 99,2 s,
   nucleo fisso preservato, nessuno stallo; entrambe le richieste a 131k completate, 41,8 t/s e 20,4 ms per riga.
   Dettagli: `RISULTATI_1_OTTOBRE.md`, log in `corse_2080ti/20261001_0130_validazione/`. Confronti col 30/9 storici,
@@ -187,7 +196,13 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 - **Potenza**: 2080 Ti ~110-120 W in generazione (punte 160, limite 250); totale stimato alla presa 250-300 W in
   generazione, 110-140 a riposo. L'utente leggera' il valore vero dall'UPS.
 
-## 8. L'originale (controllato l'1/10 mattina)
+## 8. L'originale (aggiornato il 2/10; sotto anche la ricognizione storica)
+- **2/10, 04:16 Roma:** release0.1.34, SHA `1678de333d0e`, +39 commit da0.1.32.
+  Molti cambiamenti AMD/installer; non un guadagno generale sm75. Novita' pertinenti
+  #439 gather con test bitwise, #363 decode lean, cancellazione server11ad074262a8.
+  La #413 ha gate compute capability>=8 e la #443 mantiene esperimenti opt-in.
+  Non sommare #439/#372/gather2080Ti. Fork2080Ti fermo a `235350960d85`.
+  Dettagli, eccezioni dei confronti e priorita' in `RICERCA_FORK_2_OTTOBRE.md`.
 - **Ricognizione aggiornata l'1/10, 10:28 UTC:** upstream **0.1.31**, SHA `9259cad4cf`, 61 commit
   dopo 0.1.30. Gia' incluse #242 (anche densa), #270 con follow-up, #258 e #186 opt-in: non riapplicarle
   alla nuova base. #284 ancora da mantenere. 326 fork accessibili confrontati, 35 con commit propri,
@@ -213,11 +228,13 @@ Dettagli e log: `RISULTATI_2080TI_30_SETTEMBRE.md`, `RISULTATI_ELASTICO_29_SETTE
 
 ## 9. Prossimi passi, in ordine
 
-**Daily combinato promosso, GPU restituita a OCGC-IA e PROMO, nessun altro job Strata programmato.**
+**Daily combinato promosso; utente ha ripreso il 2/10 con macchina libera. Ricognizione fatta,
+nessun nuovo job GPU avviato o programmato da questa chat.**
 HC/GDN FP16, vector e #315 ora sono nel lanciatore operativo, con elastica e KV262144.
 Alla prossima ripresa: curva contesto/t/s col medesimo daily/policy (4k,32k,64k,131k,250k),
-quality/retrieval piu' ampi e riempimento 250k sulla combinazione elastica; poi #372/#374.
-Valutare porting 0.1.32 senza duplicare #315/commit async gia' upstream. Regola: una patch
+quality/retrieval piu' ampi e riempimento 250k sulla combinazione elastica; poi **#439 prefill
+(alternativa #372), #363 decode**, fix server disconnect/stager, #374.
+Valutare porting 0.1.34 senza duplicare #315/commit async gia' upstream. Regola: una patch
 validata va integrata, provata nella combinazione operativa e promossa con ripristino.
 
 1. **Fatto l'1/10:** `build-0130` promossa nel lanciatore dopo la prova sotto pressione e quella a 131k (sezione 2).

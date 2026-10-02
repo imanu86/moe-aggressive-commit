@@ -65,6 +65,7 @@ def main():
     ap.add_argument("--solo-retrieval-250k", action="store_true", help="Solo riempimento/retrieval 250k, senza ripetere il banco 131k")
     ap.add_argument("--durata-max-s", type=int, default=3600, help="Limite totale della corsa, incluso avvio; termina i soli processi propri")
     ap.add_argument("--logits-first", action="store_true", help="Diagnostica opt-in del primo token di ogni richiesta, se compilata")
+    ap.add_argument("--gather-modo", choices=["uno", "batch"], help="A/B PR439 nello stesso binario; cache operativa preservata")
     ap.add_argument("--solo-avvio", action="store_true", help="Verifica avvio e capacita' senza inviare prompt")
     ap.add_argument("--cache-fissa", type=int, help="Solo laboratorio: budget slot richiesto, senza elasticita'; il pack puo' aumentare gli slot effettivi")
     a = ap.parse_args()
@@ -92,6 +93,10 @@ def main():
     cfg["env"] = dict(cfg.get("env", {}), STRATA_WATCHDOG_S="240", STRATA_SPLIT_TIMING="1")
     if a.logits_first:
         cfg["env"]["STRATA_DUMP_FIRST_LOGITS"] = str(out / "first-logits")
+    if a.gather_modo == "uno":
+        cfg["env"]["STRATA_PREFILL_GATHER_ONE"] = "1"
+    elif a.gather_modo == "batch":
+        cfg["env"].pop("STRATA_PREFILL_GATHER_ONE", None)
     if a.cache_fissa is not None:
         if a.cache_fissa <= 0:
             raise ValueError("La cache fissa deve avere un numero positivo di slot")
@@ -104,6 +109,9 @@ def main():
     # Il chiamante esclude STRATA_API_KEY senza leggerla prima di avviare questo processo.
     if "STRATA_API_KEY" in env:
         raise RuntimeError("Escludere STRATA_API_KEY dall'ambiente del solo processo di laboratorio")
+    if a.gather_modo is not None:
+        # La PR controlla la presenza, anche un valore "0" disattiva il batch.
+        env.pop("STRATA_PREFILL_GATHER_ONE", None)
     env["PYTHONDONTWRITEBYTECODE"] = "1"
     server_wrapper = out / "server_bootstrap.py"
     bench_wrapper = out / "bench_bootstrap.py"
@@ -128,6 +136,7 @@ def main():
               "server_source": str(server_source),
               "server_sha256": hashlib.sha256(server_path.read_bytes()).hexdigest(),
               "requested_fixed_cache_slots": a.cache_fissa,
+              "gather_mode": a.gather_modo,
               "artificial_load": False, "status": "starting"}
     print("OUTPUT", out, flush=True)
     sampler.start()

@@ -1,0 +1,299 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -833,6 +833,12 @@
+     target_link_libraries(strata_mmq PUBLIC ggml-base ${_strata_gpu_runtime_target})
+     target_link_libraries(strata_prefill PUBLIC strata_mmq)
+     target_compile_definitions(strata_prefill PUBLIC STRATA_PREFILL_MMQ=1)
++    if(STRATA_BUILD_TESTS)
++      add_executable(prefill_gather_batch_test tests/cuda/prefill_gather_batch_test.cpp)
++      target_link_libraries(prefill_gather_batch_test PRIVATE strata_mmq ${_strata_gpu_runtime_target})
++      add_test(NAME prefill_gather_batch_test COMMAND prefill_gather_batch_test)
++      set_tests_properties(prefill_gather_batch_test PROPERTIES TIMEOUT 60)
++    endif()
+   elseif(STRATA_PREFILL_MMQ)
+     # Compile only the pinned GGML MMQ and activation-quantizer sources used by prefill. This uses
+     # common.cuh's native HIP path without enabling a second GGML HIP backend.
+--- a/include/strata/prefill/moe_mmq.hpp
++++ b/include/strata/prefill/moe_mmq.hpp
+@@ -59,6 +59,20 @@
+ /// slot: gate rows then up rows at `gu_dst`, down at `d_dst`.
+ void gather_native(const void* gate, const void* up, size_t gu_half_bytes, const void* down, size_t d_bytes,
+                    void* gu_dst, void* d_dst, void* stream);
++/// `gather_native` for up to kGatherMax experts of one layer (same sizes) in ONE launch.  The prompt path gathers
++/// every routed expert of every layer of every chunk - ~22,000 per chunk - and one launch each cost ~23 us of launch
++/// and event overhead for ~2 us of copying (STRATA_PREFILL_TIMING's "dequant", 22-42% of the prompt path's GPU
++/// time).  The same bytes land in the same places, so the products are bitwise those of the per-expert gather.
++constexpr int kGatherMax = 16;
++struct GatherBatch {
++    int n = 0;
++    const void* gate[kGatherMax] = {};
++    const void* up[kGatherMax] = {};
++    const void* down[kGatherMax] = {};
++    void* gu_dst[kGatherMax] = {};
++    void* d_dst[kGatherMax] = {};
++};
++void gather_native_batch(const GatherBatch& b, size_t gu_half_bytes, size_t d_bytes, void* stream);
+ /// A Strata-pack Q2_0 expert blob (codes and fp16 scales in separate planes, gate/up rows interleaved) into GGUF
+ /// Q2_0 blocks: gate/up [1280, 2560] at `gu_dst` (rows stay interleaved), down [2560, 640] at `d_dst`.  Same values.
+ void gather_strata_q2(const uint8_t* blob, void* gu_dst, void* d_dst, void* stream);
+--- a/src/prefill/moe_mmq.cu
++++ b/src/prefill/moe_mmq.cu
+@@ -28,6 +28,14 @@
+     if (i < na) ab_dst[i] = a[i];
+     else if (i < na + nb) ab_dst[i] = b[i - na];
+     else if (i < na + nb + nc) c_dst[i - na - nb] = c[i - na - nb];
++}
++// gather_native_batch: expert blockIdx.y of the batch, the same element layout as copy16_kernel
++__global__ void copy16_batch_kernel(GatherBatch g, int64_t na, int64_t nc) {
++    const int e = (int) blockIdx.y;
++    const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
++    if (i < na) ((uint4*) g.gu_dst[e])[i] = ((const uint4*) g.gate[e])[i];
++    else if (i < 2 * na) ((uint4*) g.gu_dst[e])[i] = ((const uint4*) g.up[e])[i - na];
++    else if (i < 2 * na + nc) ((uint4*) g.d_dst[e])[i - 2 * na] = ((const uint4*) g.down[e])[i - 2 * na];
+ }
+ __global__ void copy1_kernel(const uint8_t* __restrict__ a, int64_t na, const uint8_t* __restrict__ b, int64_t nb,
+                              uint8_t* __restrict__ ab_dst, const uint8_t* __restrict__ c, int64_t nc, uint8_t* __restrict__ c_dst) {
+@@ -167,6 +175,22 @@
+     ck(cudaGetLastError(), "gather_native");
+ }
+ 
++void gather_native_batch(const GatherBatch& b, size_t gu_half_bytes, size_t d_bytes, void* stream) {
++    if (b.n <= 0) return;
++    bool a16 = (gu_half_bytes | d_bytes) % 16 == 0;
++    for (int e = 0; e < b.n && a16; ++e)
++        a16 = ((uintptr_t) b.gate[e] | (uintptr_t) b.up[e] | (uintptr_t) b.down[e] | (uintptr_t) b.gu_dst[e] |
++               (uintptr_t) b.d_dst[e]) % 16 == 0;
++    if (!a16) {   // a blob off 16-byte alignment: the per-expert kernels, as before
++        for (int e = 0; e < b.n; ++e)
++            gather_native(b.gate[e], b.up[e], gu_half_bytes, b.down[e], d_bytes, b.gu_dst[e], b.d_dst[e], stream);
++        return;
++    }
++    const int64_t na = (int64_t) gu_half_bytes / 16, nc = (int64_t) d_bytes / 16;
++    copy16_batch_kernel<<<dim3(blocks(2 * na + nc), (unsigned) b.n), 256, 0, (cudaStream_t) stream>>>(b, na, nc);
++    ck(cudaGetLastError(), "gather_native_batch");
++}
++
+ void gather_strata_q2(const uint8_t* blob, void* gu_dst, void* d_dst, void* stream) {
+     strata_q2_kernel<<<blocks(1280LL * 40 + 2560LL * 10), 256, 0, (cudaStream_t) stream>>>(blob, (uint16_t*) gu_dst,
+                                                                                          (uint16_t*) d_dst);
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -55,6 +55,7 @@
+ Context::~Context() {}
+ void Context::run(const Product&, void*) {}
+ void gather_native(const void*, const void*, size_t, const void*, size_t, void*, void*, void*) {}
++void gather_native_batch(const GatherBatch&, size_t, size_t, void*) {}
+ void gather_strata_q2(const uint8_t*, void*, void*, void*) {}
+ void swiglu(const float*, float*, int64_t, int64_t, bool, void*) {}
+ void iota(int32_t*, int64_t, void*) {}
+@@ -1719,12 +1720,51 @@
+                         m.stager->start(std::move(js));
+                     }
+                     StagerDone stager_done{stream_all ? nullptr : m.stager.get()};
++                    // The group's gathers in one launch (mmq::gather_native_batch) instead of one per expert: they
++                    // wait in `gb` until the group's products need them.  A ring slot an expert waits in is given
++                    // back (its `used` event, and on the streamed walk the issuer's `consumed`) only once its gather
++                    // has been launched, so the copy engine never refills a slot that is still to be read; a slot the
++                    // staging ring wants back first (!stream_all, 8 slots) launches what is waiting.
++                    // STRATA_PREFILL_GATHER_ONE=1: one launch per expert, as before (A/B).
++                    static_assert(MMQ_GROUP <= mmq::kGatherMax, "a group's gathers fit one batch");
++                    static const bool gather_one = std::getenv("STRATA_PREFILL_GATHER_ONE") != nullptr;
++                    const bool batch_gather = use_mmq && lay.native && !gather_one &&
++                                              (!stream_all || m.ring > 2 * mmq::kGatherMax);
++                    mmq::GatherBatch gb;
++                    int gb_slot[mmq::kGatherMax];
++                    size_t gb_k = 0;            // the streamed walk: how far the deferred give-back reaches
++                    bool gb_k_pending = false;
++                    auto flush_gather = [&]() {
++                        if (gb.n == 0) return;
++                        mmq::gather_native_batch(gb, mmq_gub / 2, mmq_db, m.cs);
++                        for (int i = 0; i < gb.n; ++i)
++                            if (gb_slot[i] >= 0) cudaEventRecord(m.used[gb_slot[i]], m.cs);
++                        gb.n = 0;
++                        if (gb_k_pending) {
++                            consumed = gb_k;
++                            give_back(consumed);
++                            gb_k_pending = false;
++                        }
++                    };
++                    // the streamed walk's give-back: deferred while a gather is waiting, so `consumed` never passes a
++                    // slot that is still to be read
++                    auto walked = [&](size_t k_now) {
++                        if (gb.n > 0) {
++                            gb_k = k_now;
++                            gb_k_pending = true;
++                        } else {
++                            consumed = k_now;
++                            give_back(consumed);
++                        }
++                    };
+                     auto stage_one = [&](size_t j) -> bool {
+                         const int32_t e = order[j];
+                         const bool resident = m.host_res && m.cache && m.host_res[(size_t) l * m.g->n_expert + e] >= 0;
+                         if (resident) return true;
+                         const int sl = stage_next;
+                         stage_next = (stage_next + 1) % STAGE;
++                        for (int i = 0; i < gb.n; ++i)   // the slot's last expert is still to be gathered: launch it
++                            if (gb_slot[i] == sl) { flush_gather(); break; }
+                         const auto th = Clock::now();
+                         const bool pinned = m.src->pinned(l, e);   // pinned: never transient
+                         const uint8_t* b = pinned ? m.src->blob(l, e) : nullptr;
+@@ -1756,15 +1796,28 @@
+                         if (use_mmq) {
+                             // gather the expert into its group slot (GGUF blocks, unchanged or converted)
+                             const size_t q = j % MMQ_GROUP;
+-                            if (lay.native) {
++                            if (batch_gather) {
+                                 const auto& f = lay.fmt[(size_t) l];
+-                                mmq::gather_native(blob_dev, blob_dev + f.up_off, mmq_gub / 2, blob_dev + f.down_off,
+-                                                   mmq_db, m.grp_gu + q * mmq_gub, m.grp_d + q * mmq_db, m.cs);
++                                const int i = gb.n++;
++                                gb.gate[i] = blob_dev;
++                                gb.up[i] = blob_dev + f.up_off;
++                                gb.down[i] = blob_dev + f.down_off;
++                                gb.gu_dst[i] = m.grp_gu + q * mmq_gub;
++                                gb.d_dst[i] = m.grp_d + q * mmq_db;
++                                gb_slot[i] = slot;
++                                if (q + 1 < MMQ_GROUP && j + 1 < order.size()) return true;
++                                flush_gather();
+                             } else {
+-                                mmq::gather_strata_q2(blob_dev, m.grp_gu + q * mmq_gub, m.grp_d + q * mmq_db, m.cs);
++                                if (lay.native) {
++                                    const auto& f = lay.fmt[(size_t) l];
++                                    mmq::gather_native(blob_dev, blob_dev + f.up_off, mmq_gub / 2, blob_dev + f.down_off,
++                                                       mmq_db, m.grp_gu + q * mmq_gub, m.grp_d + q * mmq_db, m.cs);
++                                } else {
++                                    mmq::gather_strata_q2(blob_dev, m.grp_gu + q * mmq_gub, m.grp_d + q * mmq_db, m.cs);
++                                }
++                                if (slot >= 0) cudaEventRecord(m.used[slot], m.cs);
++                                if (q + 1 < MMQ_GROUP && j + 1 < order.size()) return true;
+                             }
+-                            if (slot >= 0) cudaEventRecord(m.used[slot], m.cs);
+-                            if (q + 1 < MMQ_GROUP && j + 1 < order.size()) return true;
+                             // the group's products: gate/up, swiglu, the group's H to q8_1, down
+                             const size_t j0 = j - q, g = j0 / MMQ_GROUP, n = order.size();
+                             const int ngx = (int) (q + 1);
+@@ -1836,8 +1889,7 @@
+                         auto release_to = [&](int32_t e_stop) {
+                             while (k < kend && seq[k].e < e_stop) {
+                                 cudaEventRecord(m.used[k % (size_t) m.ring], m.cs);
+-                                consumed = ++k;
+-                                give_back(consumed);
++                                walked(++k);
+                             }
+                         };
+                         for (size_t j = 0; j < order.size(); ++j) {
+@@ -1849,8 +1901,7 @@
+                                 wait_issued(k);
+                                 cudaStreamWaitEvent(m.cs, m.copied[sl], 0);
+                                 if (!compute(j, m.stage_dev[sl], sl)) return false;
+-                                consumed = ++k;
+-                                give_back(consumed);
++                                walked(++k);
+                             } else {
+                                 ++stats_.experts_resident;
+                                 if (!compute(j, m.cache->device_slot(m.host_res[(size_t) l * m.g->n_expert + e]), -1)) return false;
+--- /dev/null
++++ b/tests/cuda/prefill_gather_batch_test.cpp
+@@ -0,0 +1,101 @@
++// prefill_gather_batch_test - mmq::gather_native_batch against one mmq::gather_native per expert, byte for byte.  The
++// prompt path launches a group's expert gathers together (prefill.cpp), so the group buffers must hold exactly what
++// the per-expert launches wrote: batches of 1..16 experts with blobs laid out as a native pack's (gate, up, down at
++// their offsets), group positions that start mid-group (a batch launched early, before its group was full), and the
++// unaligned case, which falls back to one launch per expert.  Synthetic bytes, no model, a second or two.
++#include "strata/prefill/moe_mmq.hpp"
++
++#include <cuda_runtime.h>
++
++#include <cstdint>
++#include <cstdio>
++#include <cstring>
++#include <random>
++#include <stdexcept>
++#include <string>
++#include <vector>
++
++namespace {
++namespace mmq = strata::prefill::mmq;
++
++void ck(cudaError_t e, const char* what) {
++    if (e != cudaSuccess) throw std::runtime_error(std::string(what) + ": " + cudaGetErrorString(e));
++}
++
++struct Dev {
++    uint8_t* p = nullptr;
++    explicit Dev(size_t n) { ck(cudaMalloc((void**) &p, n), "cudaMalloc"); }
++    ~Dev() { cudaFree(p); }
++    Dev(const Dev&) = delete;
++    Dev& operator=(const Dev&) = delete;
++};
++
++// `n` experts from group position `q0`; `shift` moves every source by that many bytes (1: the unaligned fallback)
++void check(cudaStream_t s, const char* name, size_t gu_half, size_t d_bytes, int n, int q0, size_t shift, unsigned seed) {
++    const size_t blob = (2 * gu_half + d_bytes + 255) / 256 * 256 + 256;   // a slot of the arena, with room to shift
++    const size_t gub = 2 * gu_half;
++    Dev src(blob * (size_t) n), a_gu(gub * mmq::kGatherMax), a_d(d_bytes * mmq::kGatherMax),
++        b_gu(gub * mmq::kGatherMax), b_d(d_bytes * mmq::kGatherMax);
++    std::mt19937 rng(seed);
++    std::vector<uint8_t> h(blob * (size_t) n);
++    for (auto& x : h) x = (uint8_t) rng();
++    ck(cudaMemcpy(src.p, h.data(), h.size(), cudaMemcpyHostToDevice), "upload");
++    // both destinations start from the same bytes, so whatever a launch did not write compares equal too
++    std::vector<uint8_t> fill_gu(gub * mmq::kGatherMax), fill_d(d_bytes * mmq::kGatherMax);
++    for (auto& x : fill_gu) x = (uint8_t) rng();
++    for (auto& x : fill_d) x = (uint8_t) rng();
++    for (uint8_t* p : {a_gu.p, b_gu.p}) ck(cudaMemcpy(p, fill_gu.data(), fill_gu.size(), cudaMemcpyHostToDevice), "fill");
++    for (uint8_t* p : {a_d.p, b_d.p}) ck(cudaMemcpy(p, fill_d.data(), fill_d.size(), cudaMemcpyHostToDevice), "fill");
++    mmq::GatherBatch b;
++    for (int i = 0; i < n; ++i) {
++        const uint8_t* base = src.p + blob * (size_t) i + shift;
++        const int q = q0 + i;
++        mmq::gather_native(base, base + gu_half, gu_half, base + gub, d_bytes, a_gu.p + gub * q, a_d.p + d_bytes * q, s);
++        b.gate[b.n] = base;
++        b.up[b.n] = base + gu_half;
++        b.down[b.n] = base + gub;
++        b.gu_dst[b.n] = b_gu.p + gub * q;
++        b.d_dst[b.n] = b_d.p + d_bytes * q;
++        ++b.n;
++    }
++    mmq::gather_native_batch(b, gu_half, d_bytes, s);
++    ck(cudaStreamSynchronize(s), "sync");
++    std::vector<uint8_t> x(fill_gu.size()), y(fill_gu.size()), u(fill_d.size()), v(fill_d.size());
++    ck(cudaMemcpy(x.data(), a_gu.p, x.size(), cudaMemcpyDeviceToHost), "download");
++    ck(cudaMemcpy(y.data(), b_gu.p, y.size(), cudaMemcpyDeviceToHost), "download");
++    ck(cudaMemcpy(u.data(), a_d.p, u.size(), cudaMemcpyDeviceToHost), "download");
++    ck(cudaMemcpy(v.data(), b_d.p, v.size(), cudaMemcpyDeviceToHost), "download");
++    if (x != y || u != v) throw std::runtime_error(std::string(name) + ": the batch differs from one gather per expert");
++    // and the copies are the blobs' bytes (not merely equal to each other)
++    for (int i = 0; i < n; ++i) {
++        const uint8_t* hb = h.data() + blob * (size_t) i + shift;
++        const int q = q0 + i;
++        if (std::memcmp(y.data() + gub * q, hb, gub) != 0 || std::memcmp(v.data() + d_bytes * q, hb + gub, d_bytes) != 0)
++            throw std::runtime_error(std::string(name) + ": expert " + std::to_string(i) + " is not its blob");
++    }
++    std::printf("  %-34s %2d experts from position %2d: identical\n", name, n, q0);
++}
++
++}  // namespace
++
++int main() {
++    try {
++        cudaStream_t s = nullptr;
++        ck(cudaStreamCreateWithFlags(&s, cudaStreamNonBlocking), "stream");
++        // an IQ3_XXS layer's sizes (gate/up 640 rows x 980 B each half, down 2,560 x 260 B) and a small odd one
++        const size_t gu_half = 640 * 980, d_bytes = 2560 * 260;
++        unsigned seed = 1;
++        for (int n = 1; n <= mmq::kGatherMax; ++n) check(s, "IQ3_XXS-sized, aligned", gu_half, d_bytes, n, 0, 0, seed++);
++        for (int q0 = 1; q0 < mmq::kGatherMax; ++q0)
++            check(s, "IQ3_XXS-sized, mid-group", gu_half, d_bytes, mmq::kGatherMax-q0, q0, 0, seed++);
++        check(s, "unaligned sources (fallback)", gu_half, d_bytes, 4, 3, 1, seed++);
++        check(s, "sizes not a multiple of 16 (fallback)", 1000 + 8, 3000 + 4, 6, 2, 0, seed++);
++        check(s, "small, aligned", 4096, 2048, 16, 0, 0, seed++);
++        ck(cudaStreamDestroy(s), "destroy");
++        std::printf("prefill gather batch: identical to one gather per expert\n");
++        return 0;
++    } catch (const std::exception& e) {
++        std::fprintf(stderr, "prefill gather batch test failed: %s\n", e.what());
++        return 1;
++    }
++}

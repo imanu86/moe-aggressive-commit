@@ -1,0 +1,1952 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,4 +1,4 @@
+-﻿# Strata Engine - top-level build (P1.S1).
++# Strata Engine - top-level build (P1.S1).
+ #
+ # Targets (phase-1 Ă‚Â§P1.S1): `strata_artifact` (no CUDA dependency), `tests`.  `strata_plan` and the C++
+ # `strata-pack` are added when their sources exist - a target with no sources would make the build graph
+@@ -277,6 +277,13 @@
+   # the QSA selection (block scores on the warp kernel and the tensor-core one, top-k): a GPU bench with a
+   # scorer-vs-scorer comparison and an FP64 accuracy gate (synthetic, no model); the ctest runs a 32K context under a
+   # 262144-cell capacity (the top-k dispatch follows the capacity) and exits non-zero on a failed gate
++  if((STRATA_BUILD_TESTS OR STRATA_PARITY_PROMPT_ATTN) AND STRATA_ENABLE_CUDA)
++    add_executable(qsa_topk_active_parity src/kernels/qsa_topk_active_parity.cpp)
++    target_include_directories(qsa_topk_active_parity PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
++    target_link_libraries(qsa_topk_active_parity PRIVATE strata_kernels CUDA::cudart)
++    add_test(NAME qsa_topk_active_parity COMMAND qsa_topk_active_parity)
++    set_tests_properties(qsa_topk_active_parity PROPERTIES SKIP_RETURN_CODE 77)
++  endif()
+   if((STRATA_BUILD_TESTS OR STRATA_PARITY_PROMPT_ATTN) AND STRATA_ENABLE_HIP)
+     add_executable(qsa_select_bench src/kernels/qsa_select_bench.cpp)
+     set_source_files_properties(src/kernels/qsa_select_bench.cpp PROPERTIES LANGUAGE HIP)
+@@ -343,6 +350,10 @@
+     src/core/conversation_snapshot.cpp src/core/conversation_state.cpp src/core/conversation_memory.cpp)
+   target_include_directories(strata_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+   target_link_libraries(strata_engine PUBLIC strata_core strata_kernels strata_kernels_cpu ${_strata_gpu_runtime_target})
++  # fork «Strata adattivo»: the elastic expert cache maps its arena with the driver's virtual memory API (cuMem*)
++  if(TARGET CUDA::cuda_driver)
++    target_link_libraries(strata_engine PUBLIC CUDA::cuda_driver)
++  endif()
+   if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/file_expert_source_test.cpp")
+     enable_testing()
+     add_executable(file_expert_source_test tests/core/file_expert_source_test.cpp)
+@@ -869,6 +880,12 @@
+   endif()
+   target_link_libraries(strata_kernels_cpu PUBLIC ggml-cpu ggml-base)
+   target_compile_definitions(strata_kernels_cpu PUBLIC STRATA_NATIVE_EXPERTS=1)
++  option(STRATA_PARITY_POOL_QUANT "Build the native expert pool quantization parity check" OFF)
++  if(STRATA_BUILD_TESTS OR STRATA_PARITY_POOL_QUANT)
++    add_executable(pool_quant_parity src/kernels/cpu/pool_quant_parity.cpp)
++    target_link_libraries(pool_quant_parity PRIVATE strata_kernels_cpu)
++    # Requires a real GGUF shard; invoke explicitly, like native_expert_parity.
++  endif()
+   set(_strata_mmq_types q2_0 iq2_xxs iq2_xs iq2_s iq3_xxs iq3_s iq4_nl iq4_xs q8_0)
+   # #296: OrcaRouter Q4_K_S's Q5_0 experts (Q4_K and Q5_1 come with STRATA_MMQ_KQUANTS on CUDA, S5's branch)
+   if(STRATA_ORCA_Q4KS_MMQ)
+@@ -996,6 +1013,10 @@
+       add_test(NAME native_expert_parity_refuses_q6_K COMMAND native_expert_parity --synthetic q6_K/q8_0)
+       set_tests_properties(native_expert_parity_refuses_q6_K PROPERTIES WILL_FAIL TRUE)
+     endif()
++    # fork «Strata adattivo»: the grouped expert kernel's speed on real rows (microseconds per call, GB/s)
++    add_executable(native_expert_bench src/kernels/native_expert_bench.cpp)
++    target_include_directories(native_expert_bench PRIVATE ${_strata_gpu_include_directories})
++    target_link_libraries(native_expert_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+   endif()
+   # #296's real-weight checks (OrcaRouter Q4_K_S files; docs/ORCA_Q4_K_S.md) - test programs, not part of a release
+   if(STRATA_ENABLE_CUDA AND STRATA_BUILD_TESTS)
+--- a/include/strata/core/expert_cache.hpp
++++ b/include/strata/core/expert_cache.hpp
+@@ -91,6 +91,25 @@
+     /// Byte offset of each slot in the arena (null for uniform slots).
+     const uint64_t* slot_offsets() const { return off_.empty() ? nullptr : off_.data(); }
+     void close();
++
++    /// ELASTIC ARENA (fork «Strata adattivo»).  The same sized slots as `open_sized`, but the arena is a reserved
++    /// virtual range of `va_bytes`, backed by physical chunks of `chunk_bytes` (CUDA virtual memory management),
++    /// so the cache can GROW past its first size and SHRINK below it while the VRAM other programs use comes and
++    /// goes - and **the arena's address never moves**: the verify plan, the prompt path and the device residency
++    /// table keep the pointers they were handed at startup, and `slot_offsets()` has room reserved for every
++    /// (layer, expert) so it is never reallocated either.  False (err set) when the driver has no VMM; the caller
++    /// then opens the plain arena.
++    bool open_sized_elastic(const std::vector<int64_t>& slot_bytes, int64_t n_layers, int64_t n_expert,
++                            uint64_t va_bytes, uint64_t chunk_bytes, std::string& err);
++    bool elastic() const { return vmm_; }
++    /// Appends slots of the given sizes after the last one, mapping chunks as needed and zeroing them.  All or
++    /// nothing: on failure the cache is exactly as before.
++    bool grow(const std::vector<int64_t>& slot_bytes, std::string& err);
++    /// Drops the slots from `n_slots` on and unmaps every chunk wholly above the new end.  The caller has taken
++    /// every expert out of those slots and synchronized the device: nothing may read them any more.
++    bool shrink(int64_t n_slots, std::string& err);
++    uint64_t mapped_bytes() const { return mapped_; }
++    uint64_t chunk_bytes() const { return chunk_; }
+ 
+     bool valid() const { return base_ != nullptr; }
+     int64_t slots() const { return slots_; }
+@@ -178,6 +197,16 @@
+     std::vector<int32_t> layer_next_;   ///< [n_layers] -> that layer's next free slot
+     std::vector<uint64_t> off_;         ///< plan v0.3 P6: slot offsets (slots + 1 entries) when sized
+     int64_t admitted_ = 0;
++    // the elastic arena (CUdeviceptr and CUmemGenericAllocationHandle are both unsigned long long)
++    bool map_to(uint64_t end, std::string& err);   ///< maps chunks until `end` bytes are backed
++    void unmap_above(uint64_t keep);               ///< releases every chunk wholly above `keep` bytes
++    bool vmm_ = false;
++    unsigned long long va_ = 0;
++    uint64_t va_bytes_ = 0;
++    uint64_t chunk_ = 0;
++    uint64_t mapped_ = 0;
++    int device_ = 0;
++    std::vector<unsigned long long> handles_;     ///< one per mapped chunk, in address order
+ };
+ 
+ }  // namespace strata::core
+--- a/include/strata/core/tc_sm75.hpp
++++ b/include/strata/core/tc_sm75.hpp
+@@ -0,0 +1,28 @@
++// include/strata/core/tc_sm75.hpp - sm_75 (RTX 20 / Turing) tensor-core paths.
++//
++// Turing has no tf32 MMA and no cp.async, so three of this engine's prompt-path kernels are compiled out below
++// sm_80 and fall back to slower paths (see `qsa_prompt_attn.cu`, `qsa_select.cu`).  It does have fp16 MMA
++// (m16n8k8; m16n8k16 is sm_80+) and cuBLAS has no bf16 GEMM kernel below sm_80 - it runs an FFMA one, which
++// measured 19.5% of the prompt's GPU time on a 2x2080 Ti.  These switches select the Turing paths.
++//
++// **ONLY sm_75 IS EVER AFFECTED.**  The predicate below answers true for compute capability 7.5 and for nothing
++// else: cc 7.0/7.2 (Volta) keeps its own behaviour, and every cc >= 8 keeps the paths the engine was written
++// with.  `STRATA_TC_SM75` can only turn the Turing paths OFF (for an A/B or a bisect); it cannot turn them on
++// somewhere else, so a machine that is not a 2080 Ti cannot be moved onto them by an environment variable.
++// The kernels themselves are gated a second time, at compile time, by `__CUDA_ARCH__ == 750`.
++#pragma once
++
++#include <cstdlib>
++
++namespace strata::core {
++
++/// The Turing paths are for compute capability 7.5 exactly.  `auto` (the default): on.  "0": off (the
++/// pre-patch behaviour).  Any other value, and any other device, is off.
++inline bool tc_sm75_enabled(int cc_major, int cc_minor) {
++    if (cc_major != 7 || cc_minor != 5) return false;   // 7.5 and only 7.5 - never another SM model
++    const char* e = std::getenv("STRATA_TC_SM75");
++    if (e != nullptr && e[0] == '0') return false;
++    return true;
++}
++
++}  // namespace strata::core
+--- a/include/strata/kernels/cpu/pool.hpp
++++ b/include/strata/kernels/cpu/pool.hpp
+@@ -265,6 +265,12 @@
+     };
+     const NativeFmt* nfmt_ = nullptr;
+     std::vector<SplitBufMulti> split_multi_;
++    struct QuantTask {
++        int e = 0;
++        int t = 0;
++    };
++    std::vector<QuantTask> quant_tasks_;
++    bool parallel_quant_ = false;
+     PoolAffinity affinity_ = PoolAffinity::All;
+     CpuTopology topo_;
+ };
+--- a/include/strata/kernels/qsa_select.hpp
++++ b/include/strata/kernels/qsa_select.hpp
+@@ -41,7 +41,9 @@
+                     int64_t active_blocks = -1);   ///< > 0: no query of the call has more than this many blocks (n_bid + 1;
+                                                    ///< the same contract as qsa_block_scores's). The register kernel is
+                                                    ///< chosen by this, not by the capacity max_blocks (a long
+-                                                   ///< --max-context otherwise sends every short prompt to the slow one)
++                                                   ///< --max-context otherwise sends every short prompt to the slow one).
++                                                   ///< CUDA uses the bound only on sm_75; HIP keeps its existing policy.
++                                                   ///< Omit it for captured graphs whose context can grow after capture.
+ /// The same ids on a thread-block cluster of 8 CTAs per query (sm_90+, CUDA; S19). qsa_block_topk takes it for calls
+ /// of up to 16 queries unless STRATA_QSA_CLUSTER=0. False (nothing launched) where it cannot run: HIP, a card or a
+ /// build below sm_90, or a capacity whose keys do not fit one cluster's shared memory. Capturable.
+--- a/include/strata/prefill/kernels.hpp
++++ b/include/strata/prefill/kernels.hpp
+@@ -16,19 +16,19 @@
+ /// xn[t, c*2560 + d] = R[t,c,d] * rsqrt(mean_d R[t,c,:]^2 + eps) * w_norm[c*2560 + d]; also its BF16 image.
+ /// `xn16_lo` (null: none) takes bf16(x - xn16): W.xn16 + W.xn16_lo is the product with ~16 mantissa bits of x.
+ void gr_norm(const float* R, const float* w_norm, float eps, float* xn, uint16_t* xn16, int64_t T, void* stream,
+-             uint16_t* xn16_lo = nullptr);
++             uint16_t* xn16_lo = nullptr, uint16_t* xn16h = nullptr);
+ /// F-1: gr_norm without its FP32 output: the row scales rs[t*4 + c] and the BF16 image; gr_mix_r then reads R.
+ void gr_norm_rs(const float* R, const float* w_norm, float eps, float* rs, uint16_t* xn16, int64_t T, void* stream,
+-                uint16_t* xn16_lo = nullptr);
++                uint16_t* xn16_lo = nullptr, uint16_t* xn16h = nullptr);
+ /// gr_mix with xn recomputed from R, rs and w_norm exactly as gr_norm computes it (the same bits).
+ void gr_mix_r(const float* R, const float* rs, const float* w_norm, const float* gated, float* mixed, uint16_t* mixed16,
+               int64_t T, void* stream, uint16_t* mixed_h = nullptr, uint16_t* mixed16_lo = nullptr);
+ /// F-2: gr_write, then gr_norm_rs of the next half (its norm weights) over the rows just written - the same bits as
+ /// the two calls, without reading R back.
+ void gr_write_norm_rs(float* R, const float* bo, const float* inj, int64_t inj_ld, const float* w_norm_next, float eps,
+-                      float* rs, uint16_t* xn16, int64_t T, void* stream, uint16_t* xn16_lo = nullptr);
++                      float* rs, uint16_t* xn16, int64_t T, void* stream, uint16_t* xn16_lo = nullptr, uint16_t* xn16h = nullptr);
+ /// lo16[t, k] = bf16(silu(lo[t, k] / hc))
+-void gr_silu(const float* lo, uint16_t* lo16, int64_t T, void* stream, uint16_t* lo16_lo = nullptr);
++void gr_silu(const float* lo, uint16_t* lo16, int64_t T, void* stream, uint16_t* lo16_lo = nullptr, uint16_t* lo16h = nullptr);
+ /// mixed[t, d] = mean_c xn[t, c, d] * sigmoid(gated[t, c, d]); FP32, BF16 and FP16 (either image may be null).
+ void gr_mix(const float* xn, const float* gated, float* mixed, uint16_t* mixed16, int64_t T, void* stream,
+             uint16_t* mixed_h = nullptr, uint16_t* mixed16_lo = nullptr);
+@@ -95,3 +95,7 @@
+ void blob_dequant_f16(const uint8_t* blob, uint16_t* gu16, uint16_t* down16, void* stream);
+ 
+ }  // namespace strata::prefill
++
++namespace strata::prefill {
++void bf16_to_f16(const uint16_t* x, uint16_t* y, int64_t n, void* stream);
++}
+--- a/include/strata/prefill/prefill.hpp
++++ b/include/strata/prefill/prefill.hpp
+@@ -60,9 +60,12 @@
+     /// `host_res`: the static residency table (n_layers x n_expert, slot or -1) or null; `cache` its slots.
+     /// `borrow`/`borrow_bytes`: device memory to carve every buffer from (the top slots of the expert cache,
+     /// lent for the prompt and refilled after it); null = allocate normally.
++    /// `chunk_max` (fork, elastic cache): the largest chunk a later `relayout` may ask for - the host buffers are
++    /// sized for it, the device buffers for `chunk`; 0 = `chunk` (a cache that cannot grow never lends a bigger one).
+     bool init(const core::WeightTable& wt, const core::ModelGeometry& g, core::SessionState& ss,
+               core::ExpertSource* src, const core::ExpertCache* cache, const int32_t* host_res, int64_t chunk,
+-              void* stream, std::string& err, void* borrow = nullptr, uint64_t borrow_bytes = 0);
++              void* stream, std::string& err, void* borrow = nullptr, uint64_t borrow_bytes = 0,
++              int64_t chunk_max = 0);
+ 
+     /// With borrowed buffers: lay them out again for chunks of `chunk` tokens (at most `init`'s) in `borrow` - a
+     /// request lends only the slots its prompt needs.  The stream must be idle (between prompts).
+@@ -100,6 +103,13 @@
+     /// Checked before every chunk: true stops the prompt early (`run` returns false with err "cancelled").
+     std::function<bool()> should_stop;
+ 
++    /// Chunk edges on a grid: a chunk that would cross the next point `align_origin + k * align_every` (absolute
++    /// positions) is cut there.  The conversation cache saves its checkpoints at chunk ends every
++    /// `--prompt-cache-every` tokens; with a chunk that does not divide it (6144 against 16384) they drifted to
++    /// 18432, 36864, ... and a follow-up on a 32K prompt re-read ~14.5K tokens.  0 (default) = the plain chunking.
++    int64_t align_every = 0;
++    int64_t align_origin = 0;
++
+     /// The vision path: HOST rows (n_embd floats) indexed by absolute position, read in place of the token
+     /// embedding where non-null (an image's <|image_pad|> cells).  Null (default): every position embeds its token.
+     const float* const* embd_rows = nullptr;
+--- a/src/core/expert_cache.cpp
++++ b/src/core/expert_cache.cpp
+@@ -1,6 +1,7 @@
+ // src/core/expert_cache.cpp - R4's slot storage and residency table.  Read the header first.
+ #include "strata/core/expert_cache.hpp"
+ 
++#include <cuda.h>
+ #include <cuda_runtime.h>
+ 
+ #include <algorithm>
+@@ -266,6 +267,151 @@
+     return true;
+ }
+ 
++namespace {
++bool drv_ok(CUresult r, const char* what, std::string& err) {
++    if (r == CUDA_SUCCESS) return true;
++    const char* s = nullptr;
++    cuGetErrorString(r, &s);
++    err = std::string("ExpertCache (elastic): ") + what + ": " + (s ? s : "unknown driver error");
++    return false;
++}
++CUmemAllocationProp chunk_prop(int device) {
++    CUmemAllocationProp p = {};
++    p.type = CU_MEM_ALLOCATION_TYPE_PINNED;
++    p.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
++    p.location.id = device;
++    return p;
++}
++}  // namespace
++
++bool ExpertCache::map_to(uint64_t end, std::string& err) {
++    const CUmemAllocationProp prop = chunk_prop(device_);
++    CUmemAccessDesc acc = {};
++    acc.location.type = CU_MEM_LOCATION_TYPE_DEVICE;
++    acc.location.id = device_;
++    acc.flags = CU_MEM_ACCESS_FLAGS_PROT_READWRITE;
++    while (mapped_ < end) {
++        if (mapped_ + chunk_ > va_bytes_) { err = "ExpertCache (elastic): the reserved address range is full"; return false; }
++        CUmemGenericAllocationHandle h = 0;
++        if (!drv_ok(cuMemCreate(&h, chunk_, &prop, 0), "cuMemCreate", err)) return false;
++        const CUdeviceptr at = (CUdeviceptr) va_ + mapped_;
++        if (!drv_ok(cuMemMap(at, chunk_, 0, h, 0), "cuMemMap", err)) { cuMemRelease(h); return false; }
++        if (!drv_ok(cuMemSetAccess(at, chunk_, &acc, 1), "cuMemSetAccess", err)) {
++            cuMemUnmap(at, chunk_);
++            cuMemRelease(h);
++            return false;
++        }
++        handles_.push_back((unsigned long long) h);
++        mapped_ += chunk_;
++    }
++    return true;
++}
++
++void ExpertCache::unmap_above(uint64_t keep) {
++    const uint64_t keep_chunks = chunk_ ? (keep + chunk_ - 1) / chunk_ : 0;
++    while ((uint64_t) handles_.size() > keep_chunks) {
++        const uint64_t at = (uint64_t) (handles_.size() - 1) * chunk_;
++        cuMemUnmap((CUdeviceptr) va_ + at, chunk_);
++        cuMemRelease((CUmemGenericAllocationHandle) handles_.back());
++        handles_.pop_back();
++        mapped_ -= chunk_;
++    }
++}
++
++bool ExpertCache::open_sized_elastic(const std::vector<int64_t>& slot_bytes, int64_t n_layers, int64_t n_expert,
++                                     uint64_t va_bytes, uint64_t chunk_bytes, std::string& err) {
++    close();
++    if (slot_bytes.empty() || n_layers <= 0 || n_expert <= 0) { err = "ExpertCache (elastic): no slots"; return false; }
++    // the runtime has made the device's primary context current; the driver API works in the same one
++    if (cudaFree(nullptr) != cudaSuccess) { err = "ExpertCache (elastic): no CUDA context"; return false; }
++    int dev = 0;
++    cudaGetDevice(&dev);
++    CUdevice cudev = 0;
++    if (!drv_ok(cuDeviceGet(&cudev, dev), "cuDeviceGet", err)) return false;
++    int vmm = 0;
++    cuDeviceGetAttribute(&vmm, CU_DEVICE_ATTRIBUTE_VIRTUAL_MEMORY_MANAGEMENT_SUPPORTED, cudev);
++    if (!vmm) { err = "ExpertCache (elastic): the driver has no virtual memory management on this card"; return false; }
++    const CUmemAllocationProp prop = chunk_prop(dev);
++    size_t gran = 0;
++    if (!drv_ok(cuMemGetAllocationGranularity(&gran, &prop, CU_MEM_ALLOC_GRANULARITY_MINIMUM), "granularity", err))
++        return false;
++    if (gran == 0) gran = 2u << 20;
++    chunk_ = (std::max<uint64_t>(chunk_bytes, gran) + gran - 1) / gran * gran;
++    va_bytes_ = (va_bytes + chunk_ - 1) / chunk_ * chunk_;
++    std::vector<uint64_t> off(slot_bytes.size() + 1, 0);
++    int64_t mx = 0;
++    for (size_t i = 0; i < slot_bytes.size(); ++i) {
++        off[i + 1] = off[i] + ((uint64_t) slot_bytes[i] + 255) / 256 * 256;
++        mx = std::max(mx, slot_bytes[i]);
++    }
++    if (off.back() > va_bytes_) { err = "ExpertCache (elastic): the first slots exceed the reserved range"; return false; }
++    CUdeviceptr va = 0;
++    if (!drv_ok(cuMemAddressReserve(&va, va_bytes_, 0, 0, 0), "cuMemAddressReserve", err)) return false;
++    va_ = (unsigned long long) va;
++    device_ = dev;
++    vmm_ = true;
++    mapped_ = 0;
++    handles_.clear();
++    if (!map_to(off.back(), err)) { close(); return false; }
++    base_ = (uint8_t*) (uintptr_t) va_;
++    if (cudaMemset(base_, 0, (size_t) off.back()) != cudaSuccess) {
++        err = "ExpertCache (elastic): cudaMemset of the first slots failed";
++        close();
++        return false;
++    }
++    residency_.assign((size_t) (n_layers * n_expert), kNotResident);
++    slots_ = (int64_t) slot_bytes.size();
++    n_layers_ = n_layers;
++    n_expert_ = n_expert;
++    blob_ = mx;
++    next_free_ = 0;
++    fills_ = 0;
++    admitted_ = 0;
++    // room for every (layer, expert): `slot_offsets()` is handed to the pool once and must never reallocate
++    off_.clear();
++    off_.reserve((size_t) (n_layers * n_expert) + 1);
++    off_.insert(off_.end(), off.begin(), off.end());
++    layer_next_.assign((size_t) n_layers, 0);
++    return true;
++}
++
++bool ExpertCache::grow(const std::vector<int64_t>& slot_bytes, std::string& err) {
++    if (!vmm_) { err = "ExpertCache: grow needs the elastic arena"; return false; }
++    if (slot_bytes.empty()) return true;
++    if (off_.size() + slot_bytes.size() > off_.capacity()) {
++        err = "ExpertCache (elastic): more slots than (layer, expert) pairs";
++        return false;
++    }
++    const uint64_t old_end = off_.back();
++    uint64_t end = old_end;
++    std::vector<uint64_t> add;
++    add.reserve(slot_bytes.size());
++    for (const int64_t b : slot_bytes) {
++        end += ((uint64_t) b + 255) / 256 * 256;
++        add.push_back(end);
++    }
++    if (!map_to(end, err)) { unmap_above(old_end); return false; }
++    if (cudaMemset(base_ + old_end, 0, (size_t) (end - old_end)) != cudaSuccess) {
++        err = "ExpertCache (elastic): cudaMemset of the new slots failed";
++        unmap_above(old_end);
++        return false;
++    }
++    off_.insert(off_.end(), add.begin(), add.end());
++    for (const int64_t b : slot_bytes) blob_ = std::max(blob_, b);
++    slots_ += (int64_t) slot_bytes.size();
++    return true;
++}
++
++bool ExpertCache::shrink(int64_t n_slots, std::string& err) {
++    if (!vmm_) { err = "ExpertCache: shrink needs the elastic arena"; return false; }
++    if (n_slots < 0 || n_slots > slots_) { err = "ExpertCache (elastic): shrink outside 0..slots"; return false; }
++    if (n_slots == slots_) return true;
++    off_.resize((size_t) n_slots + 1);
++    slots_ = n_slots;
++    unmap_above(off_.back());
++    return true;
++}
++
+ void ExpertCache::close() {
+ #if defined(STRATA_USE_HIP)
+     if (blocking_staging_) (void) cudaFreeHost(blocking_staging_);
+@@ -273,7 +419,16 @@
+     blocking_staging_bytes_ = 0;
+ #endif
+     off_.clear();
+-    if (base_ != nullptr) {
++    if (vmm_) {
++        unmap_above(0);
++        if (va_ != 0) cuMemAddressFree((CUdeviceptr) va_, va_bytes_);
++        va_ = 0;
++        va_bytes_ = 0;
++        chunk_ = 0;
++        mapped_ = 0;
++        vmm_ = false;
++        base_ = nullptr;   // never cudaMalloc'd
++    } else if (base_ != nullptr) {
+         cudaFree(base_);
+         base_ = nullptr;
+     }
+--- a/src/kernels/cpu/pool.cpp
++++ b/src/kernels/cpu/pool.cpp
+@@ -532,6 +532,17 @@
+             const int e = (int) i / parts_b_, part = (int) i % parts_b_;
+             const int r0 = H * part / parts_b_, r1 = H * (part + 1) / parts_b_;
+             s2_expert_down_rows(jobs_[e].blob, split_[(size_t) e].a2, jobs_[e].out, r0, r1);
++        } else if (mode_ == 7) {
++            const QuantTask& q = quant_tasks_[i];
++            const int e = q.e, t = q.t;
++            if (nfmt_ != nullptr) {
++                if (nfmt_->d_type == 42)
++                    act_quant_any(split_multi_[(size_t) e].ff[t], FF, split_multi_[(size_t) e].a2[t]);
++                else
++                    native_quant_h(*nfmt_, split_multi_[(size_t) e].ff[t], split_multi_[(size_t) e].hq[t]);
++            } else {
++                act_quant_q8_1(split_multi_[(size_t) e].ff[t], FF, split_multi_[(size_t) e].a2[t]);
++            }
+         } else if (mode_ >= 5) {
+             // plan v0.3 P6: native layers, 5 = gate/up rows, 6 = down rows
+             const int per = mode_ == 5 ? FF : H;
+@@ -639,15 +650,26 @@
+         return;
+     }
+     const auto t0 = std::chrono::steady_clock::now();
++    const char* pq = std::getenv("STRATA_PARALLEL_INTERMEDIATE_QUANT");
++    parallel_quant_ = pq && pq[0] == '1';
+     mjobs_ = jobs;
++    nfmt_ = nullptr;
+     const int threads = n_ + (host_works_ ? 1 : 0);
+     mtasks_ = 3 * threads;
+     mrows_ = (int64_t) n * FF;
+     run_phase(3, mtasks_);
+     const auto t1 = std::chrono::steady_clock::now();
++    quant_tasks_.clear();
+     for (int e = 0; e < n; ++e)
+         for (int t = 0; t < jobs[e].nt; ++t)
+-            act_quant_q8_1(split_multi_[(size_t) e].ff[t], FF, split_multi_[(size_t) e].a2[t]);
++            quant_tasks_.push_back({e, t});
++    if (parallel_quant_ && quant_tasks_.size() > 1) run_phase(7, (int) quant_tasks_.size());
++    else for (const QuantTask& q : quant_tasks_) {
++        auto& b = split_multi_[(size_t) q.e];
++        if (!nfmt_) act_quant_q8_1(b.ff[q.t], FF, b.a2[q.t]);
++        else if (nfmt_->d_type == 42) act_quant_any(b.ff[q.t], FF, b.a2[q.t]);
++        else native_quant_h(*nfmt_, b.ff[q.t], b.hq[q.t]);
++    }
+     const auto t2 = std::chrono::steady_clock::now();
+     mrows_ = (int64_t) n * H;
+     run_phase(4, mtasks_);
+@@ -666,6 +688,8 @@
+     // more distinct experts than buffers: run them in batches
+     for (int b0 = 0; b0 < n; b0 += kMaxSplitMulti) {
+         const int nb = (std::min)(kMaxSplitMulti, n - b0);
++        const char* pq = std::getenv("STRATA_PARALLEL_INTERMEDIATE_QUANT");
++        parallel_quant_ = pq && pq[0] == '1';
+         mjobs_ = jobs + b0;
+         nfmt_ = &f;
+         const int threads = n_ + (host_works_ ? 1 : 0);
+@@ -674,10 +698,17 @@
+         const auto a = std::chrono::steady_clock::now();
+         run_phase(5, mtasks_);
+         const auto b = std::chrono::steady_clock::now();
++        quant_tasks_.clear();
+         for (int e = 0; e < nb; ++e)
+             for (int t = 0; t < mjobs_[e].nt; ++t)
+-                if (f.d_type == 42) act_quant_any(split_multi_[(size_t) e].ff[t], FF, split_multi_[(size_t) e].a2[t]);
+-                else native_quant_h(f, split_multi_[(size_t) e].ff[t], split_multi_[(size_t) e].hq[t]);
++                quant_tasks_.push_back({e, t});
++        if (parallel_quant_ && quant_tasks_.size() > 1) run_phase(7, (int) quant_tasks_.size());
++    else for (const QuantTask& q : quant_tasks_) {
++        auto& b = split_multi_[(size_t) q.e];
++        if (!nfmt_) act_quant_q8_1(b.ff[q.t], FF, b.a2[q.t]);
++        else if (nfmt_->d_type == 42) act_quant_any(b.ff[q.t], FF, b.a2[q.t]);
++        else native_quant_h(*nfmt_, b.ff[q.t], b.hq[q.t]);
++    }
+         const auto c = std::chrono::steady_clock::now();
+         mrows_ = (int64_t) nb * H;
+         run_phase(6, mtasks_);
+--- a/src/kernels/cpu/pool_quant_parity.cpp
++++ b/src/kernels/cpu/pool_quant_parity.cpp
+@@ -0,0 +1,87 @@
++// Exercise #500 through the actual pool, including serial/parallel transitions and >96 jobs.
++#include "strata/artifact/gguf_reader.hpp"
++#include "strata/kernels/cpu/pool.hpp"
++#include "strata/kernels/cpu/expert_layout.hpp"
++#include <array>
++#include <cmath>
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <random>
++#include <vector>
++
++namespace c = strata::kernels::cpu;
++struct Act { alignas(64) uint8_t data[c::kNativeActBytes]; };
++int main(int argc, char** argv) {
++    if (argc != 2) { std::fprintf(stderr, "usage: pool_quant_parity shard1.gguf\n"); return 2; }
++    try {
++        strata::GgufFile gguf(argv[1]);
++        int cases = 0;
++        for (int layer : {0, 20}) {
++            const strata::TensorInfo* tensor[3] = {};
++            const char* role[] = {"gate", "up", "down"};
++            for (const auto& t : gguf.tensors())
++                for (int r = 0; r < 3; ++r)
++                    if (t.name == "blk." + std::to_string(layer) + ".ffn_" + role[r] + "_exps.weight") tensor[r] = &t;
++            if (!tensor[0] || !tensor[1] || !tensor[2]) return 2;
++            c::NativeFmt f; std::string err;
++            if (!c::native_fmt(tensor[0]->type, tensor[2]->type, c::H, c::FF, f, err)) {
++                std::fprintf(stderr, "%s\n", err.c_str()); return 2;
++            }
++            std::vector<uint8_t> blobs(8 * f.bytes);
++            for (int e = 0; e < 8; ++e) {
++                auto* p = blobs.data() + e * f.bytes;
++                std::memcpy(p, gguf.tensor_data(*tensor[0]) + e*f.up_off, f.up_off);
++                std::memcpy(p+f.up_off, gguf.tensor_data(*tensor[1]) + e*f.up_off, f.up_off);
++                std::memcpy(p+f.down_off, gguf.tensor_data(*tensor[2]) + e*(f.bytes-f.down_off), f.bytes-f.down_off);
++            }
++            std::printf("layer %d native gu=%d down=%d, %zu bytes/expert\n", layer, f.gu_type, f.d_type, f.bytes);
++            for (bool host : {false, true}) {
++                // Two workers suffice to exercise publication and keep this a small correctness test.
++                c::ExpertPool pool(2, false, host);
++                for (int n : {1, 3, 9, 97}) {
++                    std::vector<c::ExpertJobMulti> jobs(n);
++                    std::vector<Act> acts(n*c::MAXT);
++                    std::vector<float> out((size_t)n*c::MAXT*c::H), ref(out.size());
++                    std::vector<float> x(c::H);
++                    std::mt19937 rng(6917+n);
++                    std::normal_distribution<float> rnd(0.f, .2f);
++                    for (int e = 0; e < n; ++e) {
++                        jobs[e].blob = blobs.data() + (e % 8)*f.bytes;
++                        jobs[e].nt = n == 1 ? c::MAXT : 1 + e % c::MAXT;
++                        for (int t = 0; t < jobs[e].nt; ++t) {
++                            for (auto& v : x) v = rnd(rng);
++                            auto& a = acts[e*c::MAXT+t];
++                            c::native_quant_act(f, x.data(), a.data);
++                            jobs[e].nact[t] = a.data;
++                            jobs[e].out[t] = out.data()+((size_t)e*c::MAXT+t)*c::H;
++                        }
++                    }
++                    _putenv_s("STRATA_PARALLEL_INTERMEDIATE_QUANT", "0");
++                    pool.run_split_multi_native(f, jobs.data(), n);
++                    ref = out;
++                    for (int repeat = 0; repeat < 4; ++repeat) {
++                        _putenv_s("STRATA_PARALLEL_INTERMEDIATE_QUANT", repeat % 2 ? "0" : "1");
++                        std::fill(out.begin(), out.end(), NAN);
++                        pool.run_split_multi_native(f, jobs.data(), n);
++                        for (int e = 0; e < n; ++e)
++                            for (int t = 0; t < jobs[e].nt; ++t) {
++                                const size_t start = ((size_t)e*c::MAXT+t)*c::H;
++                                for (int d = 0; d < c::H; ++d) {
++                                    if (!std::isfinite(out[start+d]) ||
++                                        std::memcmp(&out[start+d], &ref[start+d], sizeof(float))) {
++                                        std::fprintf(stderr, "FAIL l=%d host=%d n=%d repeat=%d e=%d t=%d d=%d\n",
++                                                     layer, host, n, repeat, e, t, d); return 1;
++                                    }
++                                }
++                            }
++                        ++cases;
++                    }
++                }
++            }
++        }
++        std::printf("PASS: %d native pool cases, outputs finite and bitwise serial; tokens 1..8, batch boundary 96/97\n", cases);
++    } catch (const std::exception& e) { std::fprintf(stderr, "%s\n", e.what()); return 2; }
++    _putenv_s("STRATA_PARALLEL_INTERMEDIATE_QUANT", "");
++    return 0;
++}
+--- a/src/kernels/cuda/dequant_bf16.cu
++++ b/src/kernels/cuda/dequant_bf16.cu
+@@ -3,6 +3,7 @@
+ // Arithmetic transcribed from ggml/src/ggml-quants.c at the pinned llama.cpp (MIT License, Copyright (c) 2023-2026
+ // The ggml authors): dequantize_row_q2_0/q4_0/q5_0/q8_0/q3_K/q4_K/q5_K/q6_K/iq4_nl/iq4_xs.
+ #include "strata/kernels/dequant_bf16.hpp"
++#include "strata/core/tc_sm75.hpp"
+ #include "strata/kernels/iq_kernels.hpp"
+ 
+ #include <cuda_fp16.h>
+@@ -45,6 +46,7 @@
+         const float d = h2f(b);
+         const int e0 = (gi_in_row % 2) * 32;
+ #pragma unroll
++        #pragma unroll
+         for (int j = 0; j < 32; ++j) {
+             const int e = e0 + j;
+             const int q = (b[2 + e / 4] >> ((e % 4) * 2)) & 3;
+@@ -53,6 +55,7 @@
+     } else if constexpr (TYPE == 2) {                              // Q4_0
+         const uint8_t* b = row_blocks + (size_t) gi_in_row * 18;
+         const float d = h2f(b);
++        #pragma unroll
+         for (int j = 0; j < 16; ++j) {
+             put(out, j, (float) ((b[2 + j] & 0x0F) - 8) * d);
+             put(out, j + 16, (float) ((b[2 + j] >> 4) - 8) * d);
+@@ -61,6 +64,7 @@
+         const uint8_t* b = row_blocks + (size_t) gi_in_row * 22;
+         const float d = h2f(b);
+         const uint32_t qh = (uint32_t) b[2] | ((uint32_t) b[3] << 8) | ((uint32_t) b[4] << 16) | ((uint32_t) b[5] << 24);
++        #pragma unroll
+         for (int j = 0; j < 16; ++j) {
+             const int xh0 = ((qh >> j) << 4) & 0x10;
+             const int xh1 = (qh >> (j + 12)) & 0x10;
+@@ -85,6 +89,7 @@
+     } else if constexpr (TYPE == 20) {                             // IQ4_NL
+         const uint8_t* b = row_blocks + (size_t) gi_in_row * 18;
+         const float d = h2f(b);
++        #pragma unroll
+         for (int j = 0; j < 16; ++j) {
+             put(out, j, d * (float) kv_iq4nl[b[2 + j] & 0xf]);
+             put(out, j + 16, d * (float) kv_iq4nl[b[2 + j] >> 4]);
+@@ -158,6 +163,7 @@
+         const int ls = ((b[4 + ib / 2] >> (4 * (ib % 2))) & 0xf) | (((scales_h >> (2 * ib)) & 3) << 4);
+         const float dl = d * (float) (ls - 32);
+         const uint8_t* qs = b + 8 + 16 * ib;
++        #pragma unroll
+         for (int j = 0; j < 16; ++j) {
+             put(out, j, dl * (float) kv_iq4nl[qs[j] & 0xf]);
+             put(out, j + 16, dl * (float) kv_iq4nl[qs[j] >> 4]);
+@@ -165,13 +171,31 @@
+     }
+ }
+ 
+-template <int TYPE, typename T>
++/// `VEC` is the sm_75 form: the group is dequantised into a register buffer and flushed with 16-byte stores.
++/// The plain form writes each element where it is computed, which for a warp means 32 store instructions whose
++/// lanes are 64 bytes apart - 32 two-byte transactions per instruction.  **The values are identical** (the same
++/// arithmetic, the same order), only the stores are wider; the Turing build measured this kernel at 18% of the
++/// row's bandwidth.
++template <int TYPE, typename T, bool VEC>
+ __global__ void dequant_kernel(const uint8_t* __restrict__ blocks, int64_t row_bytes, int64_t row0, int64_t rows,
+                                int64_t groups_per_row, T* __restrict__ out) {
+     const int64_t g = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+     if (g >= rows * groups_per_row) return;
+     const int64_t r = g / groups_per_row, gi = g % groups_per_row;
+-    group32<TYPE>(blocks + (row0 + r) * row_bytes, (int) gi, out + r * groups_per_row * 32 + gi * 32);
++    T* dst = out + r * groups_per_row * 32 + gi * 32;
++    if constexpr (!VEC) {
++        group32<TYPE>(blocks + (row0 + r) * row_bytes, (int) gi, dst);
++    } else {
++        __align__(16) T buf[32];        // the uint4 flush below reads it as 16-byte vectors
++        group32<TYPE>(blocks + (row0 + r) * row_bytes, (int) gi, buf);
++        // 32 elements: 64 B for the 16-bit forms (4 x uint4), 128 B for the float one (8 x uint4)
++        constexpr int CHUNKS = (sizeof(T) == 2 ? 4 : 8);
++#pragma unroll
++        for (int c = 0; c < CHUNKS; ++c) {
++            const uint4 v = reinterpret_cast<const uint4*>(buf)[c];
++            reinterpret_cast<uint4*>(dst)[c] = v;
++        }
++    }
+ }
+ 
+ bool geometry(int type, int& block_elems, int& block_bytes) {
+@@ -199,11 +223,21 @@
+                      (long long) cols);
+         std::exit(1);
+     }
++    // sm_75 (and only cc 7.5) takes the vectorised-store form; every other SM model keeps the plain kernel.
++    int dev = 0, cmaj = 0, cmin = 0;
++    const bool vec = cudaGetDevice(&dev) == cudaSuccess &&
++                     cudaDeviceGetAttribute(&cmaj, cudaDevAttrComputeCapabilityMajor, dev) == cudaSuccess &&
++                     cudaDeviceGetAttribute(&cmin, cudaDevAttrComputeCapabilityMinor, dev) == cudaSuccess &&
++                     strata::core::tc_sm75_enabled(cmaj, cmin);
++    if (!vec) cudaGetLastError();
+     const int64_t row_bytes = cols / be * bb, gpr = cols / 32, total = rows * gpr;
+     const unsigned grid = (unsigned) ((total + 255) / 256);
+     const uint8_t* p = (const uint8_t*) blocks;
+     cudaStream_t st = (cudaStream_t) stream;
+-#define STRATA_DQ(TY) dequant_kernel<TY, T><<<grid, 256, 0, st>>>(p, row_bytes, row0, rows, gpr, out); break
++#define STRATA_DQ(TY)                                                                                       \
++    if (vec) dequant_kernel<TY, T, true><<<grid, 256, 0, st>>>(p, row_bytes, row0, rows, gpr, out);          \
++    else dequant_kernel<TY, T, false><<<grid, 256, 0, st>>>(p, row_bytes, row0, rows, gpr, out);             \
++    break
+     switch (type) {
+     case 2: STRATA_DQ(2);
+     case 6: STRATA_DQ(6);
+--- a/src/kernels/cuda/qsa_select.cu
++++ b/src/kernels/cuda/qsa_select.cu
+@@ -968,6 +968,24 @@
+     if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk: %s\n", cudaGetErrorString(e)); std::exit(1); }
+ }
+ 
++#if !defined(__HIPCC__)
++// Only Turing has a retained model measurement for this CUDA dispatch. Other CUDA devices keep the capacity rule
++// (the RTX 5070 regression below). Cache the properties per calling thread; layer-split device switches are checked.
++static bool topk_active_turing_device() {
++    int dev = 0;
++    if (cudaGetDevice(&dev) != cudaSuccess) return false;
++    static thread_local int cached_device = -1;
++    static thread_local bool turing = false;
++    if (dev != cached_device) {
++        cudaDeviceProp prop{};
++        if (cudaGetDeviceProperties(&prop, dev) != cudaSuccess) return false;
++        turing = prop.major == 7 && prop.minor == 5;
++        cached_device = dev;
++    }
++    return turing;
++}
++#endif
++
+ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                             const QsaShapes& s, int32_t* ids, void* stream) {
+ #if defined(__HIPCC__)
+@@ -1055,10 +1073,13 @@
+ #if defined(__HIPCC__)
+     const bool counted = active_blocks > 0;
+ #else
+-    // CUDA keeps 0.1.32's capacity rule: #337's dispatch was measured on RDNA4 only, and on the RTX 5070 the 64K
+-    // prompts read 1-3% slower with it
+-    const bool counted = false;
+-    (void) active_blocks;
++    // Turing: --max-context 262144 makes the stride 65538, even while a 131K prompt's active blocks fit in
++    // TK_T * TK_PER registers. Use the prefill bound on sm_75, keeping max_blocks as the score-row stride.
++    // Other CUDA devices keep 0.1.32's capacity rule: #337 was measured on RDNA4, and RTX 5070 64K prompts were
++    // 1-3% slower. Decode/captured graphs omit the bound and never query the device here.
++    static const bool capacity_guard = std::getenv("STRATA_TOPK_CAPACITY_GUARD") != nullptr;
++    const bool counted = !capacity_guard && active_blocks > 0 && active_blocks <= max_blocks &&
++                         topk_active_turing_device();
+ #endif
+     const int64_t reach = counted && active_blocks < max_blocks ? active_blocks : max_blocks;
+     const int64_t fit = (int64_t) TK_T * (counted ? TK_PER_MAX : TK_PER);
+--- a/src/kernels/native_expert_bench.cpp
++++ b/src/kernels/native_expert_bench.cpp
+@@ -0,0 +1,130 @@
++// src/kernels/native_expert_bench.cpp - fork «Strata adattivo»: how fast the GPU's grouped native expert kernel reads
++// a layer's experts, on real GGUF rows, with the shape of a verify window (a few tokens, a group per expert).
++//
++//     build/native_expert_bench <shard1.gguf> [layer] [experts] [tokens] [iters]
++//
++// Uploads `experts` real experts of `layer`, routes each token to about two thirds of them (the entries of a verify
++// window: every group holds the tokens that picked its expert), quantizes random activations to q8_1 and times
++// `native_expert_grouped` (gate/up, SwiGLU, down) with CUDA events.  Prints microseconds per call and the effective
++// bandwidth: every expert's whole blob is read once per call.  No profiler and no counters needed.
++#include "strata/artifact/gguf_reader.hpp"
++#include "strata/kernels/cpu/native_expert.hpp"
++#include "strata/kernels/iq_kernels.hpp"
++
++#include <cuda_runtime.h>
++
++#include <cstdio>
++#include <cstdlib>
++#include <cstring>
++#include <random>
++#include <string>
++#include <vector>
++
++namespace cpu = strata::kernels::cpu;
++
++int main(int argc, char** argv) {
++    if (argc < 2) {
++        std::fprintf(stderr, "usage: native_expert_bench <shard1.gguf> [layer] [experts] [tokens] [iters]\n");
++        return 2;
++    }
++    strata::GgufFile gguf(argv[1]);
++    const int l = argc > 2 ? std::atoi(argv[2]) : 20;
++    const int G = argc > 3 ? std::atoi(argv[3]) : 18;
++    const int T = argc > 4 ? std::atoi(argv[4]) : 3;
++    const int iters = argc > 5 ? std::atoi(argv[5]) : 200;
++    const int64_t H = 2560, FF = 640;
++    const strata::TensorInfo* t[3] = {};
++    const char* roles[3] = {"gate", "up", "down"};
++    for (const auto& ti : gguf.tensors())
++        for (int r = 0; r < 3; ++r)
++            if (ti.name == "blk." + std::to_string(l) + ".ffn_" + roles[r] + "_exps.weight") t[r] = &ti;
++    if (!t[0] || !t[1] || !t[2]) { std::printf("layer %d: no expert tensors\n", l); return 1; }
++    cpu::NativeFmt f;
++    std::string err;
++    if (!cpu::native_fmt((int) t[0]->type, (int) t[2]->type, H, FF, f, err)) { std::printf("%s\n", err.c_str()); return 1; }
++    const size_t stride = (f.bytes + 255) / 256 * 256;
++    std::vector<uint8_t> blobs((size_t) G * stride);
++    for (int e = 0; e < G; ++e) {
++        uint8_t* b = blobs.data() + (size_t) e * stride;
++        std::memcpy(b, gguf.tensor_data(*t[0]) + (size_t) e * f.up_off, f.up_off);
++        std::memcpy(b + f.up_off, gguf.tensor_data(*t[1]) + (size_t) e * f.up_off, f.up_off);
++        std::memcpy(b + f.down_off, gguf.tensor_data(*t[2]) + (size_t) e * (f.bytes - f.down_off), f.bytes - f.down_off);
++    }
++    // entries: group g holds the tokens that picked expert g (about two thirds of them, at least one)
++    std::vector<int32_t> start(1, 0), dst, tok;
++    for (int g = 0; g < G; ++g) {
++        for (int k = 0; k < T; ++k)
++            if ((g * 7 + k * 3) % 3 != 2 || k == 0) { tok.push_back(k); dst.push_back((int32_t) dst.size()); }
++        start.push_back((int32_t) dst.size());
++    }
++    const int NE = (int) dst.size();
++    std::vector<float> x((size_t) T * H);
++    std::mt19937 rng(7);
++    std::normal_distribution<float> nd(0.0f, 1.0f);
++    for (auto& v : x) v = nd(rng);
++    const auto L = strata::kernels::native_expert_layout(f.gu_type, f.d_type, H, FF);
++    void *dblob, *dx, *dxq, *dscr;
++    float* dout;
++    unsigned long long* dptr;
++    int32_t *dstart, *dn, *ddst, *dtok;
++    cudaMalloc(&dblob, blobs.size());
++    cudaMalloc(&dx, x.size() * 4);
++    cudaMalloc(&dxq, (size_t) T * H / 32 * 36);
++    cudaMalloc(&dscr, strata::kernels::native_expert_scratch_bytes(NE, FF));
++    cudaMalloc((void**) &dout, (size_t) NE * H * 4);
++    cudaMalloc((void**) &dptr, (size_t) G * 8);
++    cudaMalloc((void**) &dstart, (size_t) (G + 1) * 4);
++    cudaMalloc((void**) &dn, 4);
++    cudaMalloc((void**) &ddst, (size_t) NE * 4);
++    cudaMalloc((void**) &dtok, (size_t) NE * 4);
++    cudaMemcpy(dblob, blobs.data(), blobs.size(), cudaMemcpyHostToDevice);
++    cudaMemcpy(dx, x.data(), x.size() * 4, cudaMemcpyHostToDevice);
++    std::vector<unsigned long long> p((size_t) G);
++    // "same" as the 6th argument: every group reads the FIRST expert, so its weights stay in the GPU's L2 - what is
++    // left is the kernel's own cost (decode, launch, latency), not the memory's
++    const bool one_blob = argc > 6 && std::string(argv[6]) == "same";
++    for (int g = 0; g < G; ++g)
++        p[(size_t) g] = (unsigned long long) ((uint8_t*) dblob + (one_blob ? 0 : (size_t) g * stride));
++    cudaMemcpy(dptr, p.data(), (size_t) G * 8, cudaMemcpyHostToDevice);
++    cudaMemcpy(dstart, start.data(), (size_t) (G + 1) * 4, cudaMemcpyHostToDevice);
++    cudaMemcpy(dn, &G, 4, cudaMemcpyHostToDevice);
++    cudaMemcpy(ddst, dst.data(), (size_t) NE * 4, cudaMemcpyHostToDevice);
++    cudaMemcpy(dtok, tok.data(), (size_t) NE * 4, cudaMemcpyHostToDevice);
++    cudaStream_t s;
++    cudaStreamCreate(&s);
++    strata::kernels::quantize_q8_1_rows((const float*) dx, T, H, dxq, s);
++    cudaEvent_t a, b;
++    cudaEventCreate(&a);
++    cudaEventCreate(&b);
++    // both kernels on the same data: the per-entry original (0) and the decode-once one (1); outputs compared bit for bit
++    std::vector<float> res[2];
++    double us[2] = {0, 0};
++    for (int m = 0; m < 2; ++m) {
++        strata::kernels::iq_set_old_kernels(m == 0);
++        cudaMemset(dout, 0, (size_t) NE * H * 4);
++        for (int i = 0; i < 200; ++i)   // long warm-up: the card's clocks ramp up from idle
++            strata::kernels::native_expert_grouped(L, dptr, dstart, dn, ddst, dtok, G, NE, dxq, dscr, dout, s);
++        us[m] = 1e30;
++        for (int rep = 0; rep < 5; ++rep) {   // the best of 5 rounds: other programs share the card
++            cudaEventRecord(a, s);
++            for (int i = 0; i < iters; ++i)
++                strata::kernels::native_expert_grouped(L, dptr, dstart, dn, ddst, dtok, G, NE, dxq, dscr, dout, s);
++            cudaEventRecord(b, s);
++            cudaEventSynchronize(b);
++            float ms = 0;
++            cudaEventElapsedTime(&ms, a, b);
++            us[m] = std::min(us[m], 1000.0 * (double) ms / iters);
++        }
++        res[m].resize((size_t) NE * H);
++        cudaMemcpy(res[m].data(), dout, res[m].size() * 4, cudaMemcpyDeviceToHost);
++    }
++    const cudaError_t e = cudaGetLastError();
++    const bool same = std::memcmp(res[0].data(), res[1].data(), res[0].size() * 4) == 0;
++    const double gb = (double) G * f.bytes / 1e9;
++    std::printf("layer %d gate/up type %d down type %d, %d experts x %.2f MB, %d tokens, %d entries: per entry %.1f us "
++                "(%.0f GB/s), decode once %.1f us (%.0f GB/s), x%.2f, outputs %s%s\n", l, f.gu_type, f.d_type, G,
++                f.bytes / 1e6, T, NE, us[0], gb / (us[0] * 1e-6), us[1], gb / (us[1] * 1e-6), us[0] / us[1],
++                same ? "IDENTICAL" : "DIFFERENT",
++                e == cudaSuccess ? "" : (std::string(" - CUDA error: ") + cudaGetErrorString(e)).c_str());
++    return (e == cudaSuccess && same) ? 0 : 1;
++}
+--- a/src/kernels/qsa_topk_active_parity.cpp
++++ b/src/kernels/qsa_topk_active_parity.cpp
+@@ -0,0 +1,89 @@
++// Capacity 262144, live prefill up to the register boundary, and the legacy fallbacks.
++// Compare selected IDs only: unused output padding is not part of the API contract.
++#include "strata/kernels/qsa.hpp"
++#include "strata/kernels/qsa_select.hpp"
++#include <cuda_runtime.h>
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <random>
++#include <vector>
++
++namespace k = strata::kernels;
++namespace {
++void ck(cudaError_t e) {
++    if (e != cudaSuccess) {
++        std::fprintf(stderr, "CUDA: %s\n", cudaGetErrorString(e));
++        std::exit(2);
++    }
++}
++struct Case { int64_t ctx, queries; int mode; };
++bool check(Case c) {
++    constexpr int64_t stride = 262144 / 4 + 2;
++    const auto s = k::qsa_real_shapes();
++    const int64_t cap = k::qsa_selection_width(k::kTopkMaxCells, s);
++    std::vector<int32_t> steps((size_t)(c.queries * k::kStepCount));
++    std::vector<float> scores((size_t)(c.queries * stride), -999.f);
++    std::mt19937 rng(742913);
++    std::uniform_real_distribution<float> random(0.f, 200.f);
++    for (int64_t i = 0; i < c.queries; ++i) {
++        auto* st = steps.data() + i * k::kStepCount;
++        const int64_t pos = c.ctx - c.queries + i;
++        st[k::kStepPos] = (int32_t)pos;
++        st[k::kStepNKv] = (int32_t)(pos + 1);
++        st[k::kStepNBid] = (int32_t)((pos + 1) / s.idx_block);
++        st[k::kStepWidth] = (int32_t)k::qsa_selection_width(pos + 1, s);
++        for (int64_t j = 0; j <= st[k::kStepNBid]; ++j)
++            scores[(size_t)(i * stride + j)] = c.mode == 1 ? 0.f : c.mode == 2 ? float(j % 7) : random(rng);
++        if ((pos + 1) % s.idx_block)
++            scores[(size_t)(i * stride + st[k::kStepNBid])] += 1e9f;
++    }
++    int64_t active = steps[(size_t)((c.queries - 1) * k::kStepCount + k::kStepNBid)] + 1;
++    if (c.mode == 3) active = 0;
++    if (c.mode == 4) active = stride + 1;
++    float* ds = nullptr;
++    int32_t *dt = nullptr, *da = nullptr, *db = nullptr;
++    ck(cudaMalloc(&ds, scores.size() * sizeof(float)));
++    ck(cudaMalloc(&dt, steps.size() * sizeof(int32_t)));
++    ck(cudaMalloc(&da, (size_t)(c.queries * cap) * sizeof(int32_t)));
++    ck(cudaMalloc(&db, (size_t)(c.queries * cap) * sizeof(int32_t)));
++    ck(cudaMemcpy(ds, scores.data(), scores.size() * sizeof(float), cudaMemcpyHostToDevice));
++    ck(cudaMemcpy(dt, steps.data(), steps.size() * sizeof(int32_t), cudaMemcpyHostToDevice));
++    // No bound: the exact capacity-based dispatch used by captured decode.
++    k::qsa_block_topk(ds, dt, c.queries, stride, cap, s, da, nullptr);
++    k::qsa_block_topk(ds, dt, c.queries, stride, cap, s, db, nullptr, active);
++    ck(cudaDeviceSynchronize());
++    std::vector<int32_t> a((size_t)(c.queries * cap)), b(a.size());
++    ck(cudaMemcpy(a.data(), da, a.size() * sizeof(int32_t), cudaMemcpyDeviceToHost));
++    ck(cudaMemcpy(b.data(), db, b.size() * sizeof(int32_t), cudaMemcpyDeviceToHost));
++    bool ok = true;
++    for (int64_t i = 0; i < c.queries; ++i) {
++        const int64_t w = steps[(size_t)(i * k::kStepCount + k::kStepWidth)];
++        if (!std::equal(a.begin() + i * cap, a.begin() + i * cap + w, b.begin() + i * cap)) {
++            std::fprintf(stderr, "FAIL ctx=%lld queries=%lld mode=%d row=%lld\n",
++                         (long long)c.ctx, (long long)c.queries, c.mode, (long long)i);
++            ok = false;
++            break;
++        }
++    }
++    ck(cudaFree(ds)); ck(cudaFree(dt)); ck(cudaFree(da)); ck(cudaFree(db));
++    return ok;
++}
++}
++
++int main() {
++    int devices = 0;
++    if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
++        std::puts("SKIP: no CUDA device");
++        return 77;
++    }
++    const Case cases[] = {
++        {1111, 256, 0}, {8192, 256, 0}, {32768, 256, 0}, {131072, 256, 0},
++        {131075, 255, 0}, {135164, 256, 0}, {135168, 256, 0}, {250022, 256, 0},
++        {262144, 256, 0}, {131072, 1, 0}, {131072, 8, 0}, {131072, 257, 0},
++        {131072, 256, 1}, {131072, 256, 2}, {131072, 256, 3}, {131072, 256, 4},
++    };
++    for (const auto c : cases) if (!check(c)) return 1;
++    std::puts("PASS: 16 top-k active-bound cases, selected IDs bitwise identical");
++    return 0;
++}
+--- a/src/prefill/kernels.cu
++++ b/src/prefill/kernels.cu
+@@ -63,7 +63,7 @@
+ 
+ // ---------------------------------------------------------------- hyper-connection
+ __global__ void gr_norm_kernel(const float* __restrict__ R, const float* __restrict__ w, float eps,
+-                               float* __restrict__ xn, uint16_t* __restrict__ xn16, uint16_t* __restrict__ xn16_lo) {
++                               float* __restrict__ xn, uint16_t* __restrict__ xn16, uint16_t* __restrict__ xn16_lo, uint16_t* __restrict__ xn16h) {
+     __shared__ float sh[32];
+     const int64_t row = blockIdx.x;                 // t * 4 + c
+     const int c = (int) (row % HC);
+@@ -77,13 +77,14 @@
+         const uint16_t h = bf(v);
+         xn16[row * N + d] = h;
+         if (xn16_lo) xn16_lo[row * N + d] = bf_lo(v, h);
++        if (xn16h) xn16h[row * N + d] = hf(v);
+     }
+ }
+ // F-1: the row scale only (and the BF16 image); gr_mix_r_kernel recomputes r * rs * w itself, in the same order,
+ // so the FP32 copy of the normalized rows (T x 10240 floats) is neither written nor read
+ __global__ void gr_norm_rs_kernel(const float* __restrict__ R, const float* __restrict__ w, float eps,
+                                   float* __restrict__ rs_out, uint16_t* __restrict__ xn16,
+-                                  uint16_t* __restrict__ xn16_lo) {
++                                  uint16_t* __restrict__ xn16_lo, uint16_t* __restrict__ xn16h) {
+     __shared__ float sh[32];
+     const int64_t row = blockIdx.x;                 // t * 4 + c
+     const int c = (int) (row % HC);
+@@ -97,6 +98,7 @@
+         const uint16_t h = bf(v);
+         xn16[row * N + d] = h;
+         if (xn16_lo) xn16_lo[row * N + d] = bf_lo(v, h);
++        if (xn16h) xn16h[row * N + d] = hf(v);
+     }
+ }
+ __global__ void gr_mix_r_kernel(const float* __restrict__ R, const float* __restrict__ rs, const float* __restrict__ w,
+@@ -129,7 +131,7 @@
+                                                                const float* __restrict__ inj, int64_t inj_ld,
+                                                                const float* __restrict__ w, float eps,
+                                                                float* __restrict__ rs_out, uint16_t* __restrict__ xn16,
+-                                                               uint16_t* __restrict__ xn16_lo) {
++                                                               uint16_t* __restrict__ xn16_lo, uint16_t* __restrict__ xn16h) {
+     __shared__ float sh[32];
+     const int64_t row = blockIdx.x;                 // t * 4 + c
+     const int64_t t = row / HC;
+@@ -155,10 +157,11 @@
+         const uint16_t h = bf(x);
+         xn16[row * N + d] = h;
+         if (xn16_lo) xn16_lo[row * N + d] = bf_lo(x, h);
++        if (xn16h) xn16h[row * N + d] = hf(x);
+     }
+ }
+ __global__ void gr_silu_kernel(const float* __restrict__ lo, uint16_t* __restrict__ lo16, uint16_t* __restrict__ lo16_lo,
+-                               int64_t n) {
++                               int64_t n, uint16_t* __restrict__ lo16h) {
+     const int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x;
+     if (i >= n) return;
+     const float x = lo[i] / (float) HC;
+@@ -166,6 +169,7 @@
+     const uint16_t h = bf(v);
+     lo16[i] = h;
+     if (lo16_lo) lo16_lo[i] = bf_lo(v, h);
++    if (lo16h) lo16h[i] = hf(v);
+ }
+ __global__ void gr_mix_kernel(const float* __restrict__ xn, const float* __restrict__ g, float* __restrict__ mixed,
+                               uint16_t* __restrict__ mixed16, int64_t T, uint16_t* __restrict__ mixed_h,
+@@ -658,6 +662,13 @@
+         if (ylo) ylo[i] = bf_lo(x[i], h);
+     }
+ }
++// sm_75: bf16 bits -> fp16 bits.  The value is unchanged whenever fp16 can hold it (checked when the pack is
++// loaded), and this is what lets the hyper-connection projections reach a tensor core on Turing: cuBLAS has no
++// bf16 GEMM kernel below sm_80 and runs an FFMA one, which measured 19.5% of the prompt's GPU time on this box.
++__global__ void bf16_to_f16_kernel(const uint16_t* __restrict__ x, uint16_t* __restrict__ y, int64_t n) {
++    for (int64_t i = (int64_t) blockIdx.x * blockDim.x + threadIdx.x; i < n; i += (int64_t) gridDim.x * blockDim.x)
++        y[i] = hf(__uint_as_float((uint32_t) x[i] << 16));
++}
+ 
+ }  // namespace
+ 
+@@ -675,6 +686,12 @@
+     to_f16_kernel<<<(unsigned) ((n + 255) / 256 < 4096 ? (n + 255) / 256 : 4096), 256, 0, (cudaStream_t) stream>>>(x, y, n);
+     check("to_f16");
+ }
++void bf16_to_f16(const uint16_t* x, uint16_t* y, int64_t n, void* stream) {
++    if (n <= 0) return;
++    bf16_to_f16_kernel<<<(unsigned) ((n + 255) / 256 < 4096 ? (n + 255) / 256 : 4096), 256, 0,
++                         (cudaStream_t) stream>>>(x, y, n);
++    check("bf16_to_f16");
++}
+ void round_f16(const float* x, float* y, int64_t n, void* stream) {
+     if (n <= 0) return;
+     round_f16_kernel<<<(unsigned) ((n + 255) / 256 < 4096 ? (n + 255) / 256 : 4096), 256, 0, (cudaStream_t) stream>>>(x, y, n);
+@@ -687,13 +704,13 @@
+ }
+ 
+ void gr_norm(const float* R, const float* w_norm, float eps, float* xn, uint16_t* xn16, int64_t T, void* stream,
+-             uint16_t* xn16_lo) {
+-    gr_norm_kernel<<<(unsigned) (T * HC), 256, 0, (cudaStream_t) stream>>>(R, w_norm, eps, xn, xn16, xn16_lo);
++             uint16_t* xn16_lo, uint16_t* xn16h) {
++    gr_norm_kernel<<<(unsigned) (T * HC), 256, 0, (cudaStream_t) stream>>>(R, w_norm, eps, xn, xn16, xn16_lo, xn16h);
+     check("gr_norm");
+ }
+ void gr_norm_rs(const float* R, const float* w_norm, float eps, float* rs, uint16_t* xn16, int64_t T, void* stream,
+-                uint16_t* xn16_lo) {
+-    gr_norm_rs_kernel<<<(unsigned) (T * HC), 256, 0, (cudaStream_t) stream>>>(R, w_norm, eps, rs, xn16, xn16_lo);
++                uint16_t* xn16_lo, uint16_t* xn16h) {
++    gr_norm_rs_kernel<<<(unsigned) (T * HC), 256, 0, (cudaStream_t) stream>>>(R, w_norm, eps, rs, xn16, xn16_lo, xn16h);
+     check("gr_norm_rs");
+ }
+ void gr_mix_r(const float* R, const float* rs, const float* w_norm, const float* gated, float* mixed, uint16_t* mixed16,
+@@ -703,13 +720,13 @@
+     check("gr_mix_r");
+ }
+ void gr_write_norm_rs(float* R, const float* bo, const float* inj, int64_t inj_ld, const float* w_norm_next, float eps,
+-                      float* rs, uint16_t* xn16, int64_t T, void* stream, uint16_t* xn16_lo) {
++                      float* rs, uint16_t* xn16, int64_t T, void* stream, uint16_t* xn16_lo, uint16_t* xn16h) {
+     gr_write_norm_rs_kernel<<<(unsigned) (T * HC), 256, 0, (cudaStream_t) stream>>>(R, bo, inj, inj_ld, w_norm_next, eps,
+-                                                                                      rs, xn16, xn16_lo);
++                                                                                      rs, xn16, xn16_lo, xn16h);
+     check("gr_write_norm_rs");
+ }
+-void gr_silu(const float* lo, uint16_t* lo16, int64_t T, void* stream, uint16_t* lo16_lo) {
+-    gr_silu_kernel<<<blocks_for(T * LR), 256, 0, (cudaStream_t) stream>>>(lo, lo16, lo16_lo, T * LR);
++void gr_silu(const float* lo, uint16_t* lo16, int64_t T, void* stream, uint16_t* lo16_lo, uint16_t* lo16h) {
++    gr_silu_kernel<<<blocks_for(T * LR), 256, 0, (cudaStream_t) stream>>>(lo, lo16, lo16_lo, T * LR, lo16h);
+     check("gr_silu");
+ }
+ void gr_mix(const float* xn, const float* gated, float* mixed, uint16_t* mixed16, int64_t T, void* stream,
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -5,6 +5,8 @@
+ #include "strata/core/on_device.hpp"
+ 
+ #include "strata/core/layout.hpp"
++#include "strata/core/tc_sm75.hpp"
++
+ #include "strata/kernels/cpu/expert.hpp"
+ #include "strata/kernels/native_qsa_indexer.hpp"
+ #include "strata/kernels/ngram.hpp"
+@@ -81,6 +83,11 @@
+ #endif
+ 
+ namespace strata::prefill {
++
++namespace {
++/// Defined beside the projection helpers below; declared here because `Prefill::init` sizes buffers from it.
++bool tc_sm75();
++}  // namespace
+ namespace {
+ 
+ using Clock = std::chrono::steady_clock;
+@@ -344,6 +351,9 @@
+     float *emb = nullptr, *R = nullptr, *xn = nullptr, *lo = nullptr, *gated = nullptr, *inj = nullptr;
+     float* grs = nullptr;                    // F-1: the hyper-connection read's row scales (T x 4)
+     uint16_t *xn16 = nullptr, *lo16 = nullptr;
++    // sm_75: the fp16 images the hyper-connection projections' tensor-core path reads (and the
++    // staging the bf16 weights are re-encoded into, one matrix at a time - 6.55 MB, not 1.9 GB).
++    uint16_t *xn16h = nullptr, *lo16h = nullptr, *hc_w16 = nullptr;
+     float* mixed = nullptr;
+     uint16_t *mixed_bf = nullptr, *mixed_h = nullptr;
+     uint16_t *xn16_lo = nullptr, *lo16_lo = nullptr, *mixed_bf_lo = nullptr;   // bf16x2(): the BF16 GEMMs' low parts
+@@ -576,8 +586,11 @@
+ 
+ bool Prefill::init(const core::WeightTable& wt, const core::ModelGeometry& g, core::SessionState& ss,
+                    core::ExpertSource* src, const core::ExpertCache* cache, const int32_t* host_res, int64_t chunk,
+-                   void* stream, std::string& err, void* borrow, uint64_t borrow_bytes) {
++                   void* stream, std::string& err, void* borrow, uint64_t borrow_bytes, int64_t chunk_max) {
+     Impl& m = *impl_;
++    // the host side is sized for the largest chunk a relayout may ask for; the device side (carved below from the
++    // borrowed slots) for this one
++    const int64_t cap_T = std::max<int64_t>(chunk, chunk_max);
+     m.wt = &wt; m.g = &g; m.ss = &ss; m.src = src; m.cache = cache; m.host_res = host_res;
+     m.T = chunk; m.cs = (cudaStream_t) stream; m.stats = &stats_;
+     if (g.n_embd != N || g.hc != HC || g.hc_lr != LR || g.n_expert < 1 || ss.k != K) {
+@@ -590,7 +603,7 @@
+         return false;
+     }
+     for (int b = 0; next_ != nullptr && b < 2; ++b)
+-        if (!m.hand[b] && cudaHostAlloc((void**) &m.hand[b], (size_t) chunk * D * 4, cudaHostAllocPortable) != cudaSuccess) {
++        if (!m.hand[b] && cudaHostAlloc((void**) &m.hand[b], (size_t) cap_T * D * 4, cudaHostAllocPortable) != cudaSuccess) {
+             err = "prefill: the layer split's hand-off buffers";
+             return false;
+         }
+@@ -603,8 +616,8 @@
+         m.tok_host.resize((size_t) chunk);
+     }
+     if (cudaStreamCreateWithFlags(&m.copy, cudaStreamNonBlocking) != cudaSuccess) { err = "prefill: copy stream"; return false; }
+-    const size_t T = (size_t) chunk;
+-    m.T_max = chunk;
++    const size_t T = (size_t) cap_T;   // the host buffers below; `carve` gets this chunk's own size
++    m.T_max = cap_T;
+     m.borrowed = borrow != nullptr;
+     bool ok = true;
+     // one-time: events, the stager, the host buffers (for the largest chunk), the identity page table
+@@ -680,7 +693,7 @@
+         if (!ok) { err = "prefill: GEMM scratch does not fit"; return false; }
+         if (!m.gemm.init_external(stream, gs, GEMM_SCRATCH, ws, GEMM_WS, err)) return false;
+     }
+-    if (!carve(T, &o)) {
++    if (!carve((size_t) chunk, &o)) {
+         err = "prefill: device buffers for a chunk of " + std::to_string(chunk) + " tokens do not fit";
+         return false;
+     }
+@@ -699,6 +712,10 @@
+     m.xn = gr_unfused() ? o.take<float>(T * D, ok) : nullptr;   // F-1: not needed (gr_mix_r reads R)
+     m.grs = o.take<float>(T * HC, ok);
+     m.xn16 = o.take<uint16_t>(T * D, ok); m.lo = o.take<float>(T * LR, ok); m.lo16 = o.take<uint16_t>(T * LR, ok);
++    if (tc_sm75()) {
++        m.xn16h = o.take<uint16_t>(T * D, ok); m.lo16h = o.take<uint16_t>(T * LR, ok);
++        m.hc_w16 = o.take<uint16_t>((size_t) g.hc * (size_t) g.n_embd * (size_t) LR, ok);
++    }
+     m.gated = o.take<float>(T * D, ok); m.inj = o.take<float>(T * HC, ok);
+     m.mixed = o.take<float>(T * N, ok); m.mixed_bf = o.take<uint16_t>(T * N, ok);
+     m.mixed_h = o.take<uint16_t>(T * N, ok); m.bo = o.take<float>(T * N, ok);
+@@ -918,6 +935,10 @@
+         proj(hn, hn16, w_fh, h2, nb * g.hc, Nn, Nn, 1);   // every stream through fc_hidden
+         strata::kernels::add_streams_broadcast(h2, e2, Rm, Nn, (int) g.hc, (int) nb, m.cs);
+         // the attention hyper-connection's read (its mixed input only: this pass writes nothing back)
++        // THE DRAFT LAYER STAYS BF16.  It was moved to the fp16 tensor core with the main layers and that cost
++        // 27 points of draft acceptance (93% -> 66% on the 1K prompt, measured): the drafted tokens are a
++        // discrete choice, so an accumulation-order change there is a behaviour change and not a speed one, and
++        // the GEMMs are a few tokens wide - there was nothing to win.
+         gr_norm_rs(Rm, w_hn, EPS, grs, xn16, nb, m.cs);
+         m.gemm.bf16(xn16, w_dn, lo, nb, LR, HCN);
+         gr_silu(lo, lo16, nb, m.cs);
+@@ -960,6 +981,13 @@
+     o.take<uint8_t>(GEMM_WS, ok);
+     auto f = [&](size_t n) { o.take<float>(n, ok); };
+     f(T * N); f(T * D); f(T * D); o.take<uint16_t>(T * D, ok); f(T * LR); o.take<uint16_t>(T * LR, ok);
++    // sm_75: the fp16 images and the two weight stagings `init` allocates right here.  THIS LIST MUST STAY IN
++    // STEP WITH `init`: the region is sized from it, and a missing entry is not a smaller buffer but an
++    // allocation past the end of the arena (measured: "prefill copy_i32: an illegal memory access").
++    if (tc_sm75()) {
++        o.take<uint16_t>(T * D, ok); o.take<uint16_t>(T * LR, ok);
++        o.take<uint16_t>((size_t) g.hc * (size_t) g.n_embd * (size_t) LR, ok);
++    }
+     f(T * D); f(T * HC); f(T * N); o.take<uint16_t>(T * N, ok); o.take<uint16_t>(T * N, ok); f(T * N);
+     if (bf16x2_hc()) { o.take<uint16_t>(T * D, ok); o.take<uint16_t>(T * LR, ok); }
+     if (bf16x2()) o.take<uint16_t>(T * N, ok);
+@@ -1005,6 +1033,42 @@
+     if (w->kind != core::WeightKind::Bf16InF32 || !w->data) { err = "prefill: " + name + " is not a resident BF16 tensor"; return false; }
+     gm.bf16(X, (const uint16_t*) w->data, Y, T, w->ne1 > 0 ? w->ne1 : 1, w->ne0, ldy);
+     if (X_lo) gm.bf16(X_lo, (const uint16_t*) w->data, Y, T, w->ne1 > 0 ? w->ne1 : 1, w->ne0, ldy, 1.0f);
++    return true;
++}
++
++/// sm_75: is the Turing tensor-core path on for the device this prompt runs on?  Cached per thread and device;
++/// a mixed-device layer split must not inherit the first card's capability.
++bool tc_sm75() {
++    int dev = 0;
++    if (cudaGetDevice(&dev) != cudaSuccess) { cudaGetLastError(); return false; }
++    static thread_local int cached_device = -1;
++    static thread_local bool on = false;
++    if (cached_device != dev) {
++        int major = 0, minor = 0;
++        if (cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev) != cudaSuccess ||
++            cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, dev) != cudaSuccess) {
++            cudaGetLastError();
++            return false;
++        }
++        on = core::tc_sm75_enabled(major, minor);
++        cached_device = dev;
++    }
++    return on;
++}
++
++/// A projection whose weight is BF16 in the arena, re-encoded to fp16 into `w16` (one matrix at a time: 6.55 MB
++/// for the largest) and multiplied on the fp16 tensor core.  The re-encoding is value-preserving - a speed path,
++/// not a precision one - and the conversion shares the compute stream with the GEMM, so the staging buffer
++/// cannot be overwritten while cuBLAS still reads it.
++bool f16_proj_staged(Gemm& gm, const core::WeightRef* w, const uint16_t* X16, uint16_t* w16, float* Y, int64_t T,
++                     const std::string& name, std::string& err, int64_t ldy = 0, void* stream = nullptr) {
++    if (w->kind != core::WeightKind::Bf16InF32 || !w->data || w16 == nullptr) {
++        err = "prefill: " + name + " is not a resident BF16 tensor (or has no fp16 staging)";
++        return false;
++    }
++    const int64_t N = w->ne1 > 0 ? w->ne1 : 1, K = w->ne0;
++    bf16_to_f16((const uint16_t*) w->data, w16, K * N, stream);
++    gm.f16(X16, w16, Y, T, N, K, ldy);
+     return true;
+ }
+ 
+@@ -1096,8 +1160,19 @@
+                            (ss.ple.w.key_bf16 != nullptr || ss.ple.w.key_native_data != nullptr) &&
+                            m.region_bytes / ((uint64_t) (3 * strata::kernels::NG_HC_DIM + N + 4) * 4 + (uint64_t) N * 2 + 4096) >= 64;
+     const int32_t prev0[2] = {prev[0], prev[1]};
+-    auto ple_gather = [&m, &ss, tokens, n, prev0](int64_t c0, int buf, std::string& e) -> bool {
+-        const int64_t T = std::min(m.T, n - c0);
++    // this chunk's length: the plan's chunk, the rest of the prompt, and never across the next point of the
++    // checkpoint grid (align_origin + k * align_every), so the checkpoint saved at a chunk end lands on it exactly
++    auto chunk_len = [this, &m, n, pos0](int64_t c0) -> int64_t {
++        int64_t T = std::min(m.T, n - c0);
++        const int64_t p = pos0 + c0;
++        if (align_every > 0 && p >= align_origin) {
++            const int64_t edge = align_origin + ((p - align_origin) / align_every + 1) * align_every;
++            if (edge - p < T) T = edge - p;
++        }
++        return T;
++    };
++    auto ple_gather = [&m, &ss, tokens, n, prev0, &chunk_len](int64_t c0, int buf, std::string& e) -> bool {
++        const int64_t T = chunk_len(c0);
+         auto at = [&](int64_t i) { return i < 2 ? prev0[i] : (int32_t) tokens[i - 2]; };   // prev0, then the tokens
+         int32_t pv[2] = {at(c0), at(c0 + 1)};
+         for (int64_t t = 0; t < T; ++t) {
+@@ -1113,10 +1188,14 @@
+     std::future<bool> ple_next;             // declared after everything it reads: an early return waits for it
+     int ple_buf = 0;
+ 
+-    for (int64_t c0 = 0; c0 < n; c0 += m.T) {
++    int64_t T_step = 0;        // the length of the chunk the loop just read: chunks are no longer all m.T long
++    int64_t c0_last = 0;       // where the last chunk started (the debug dump below reads its last row)
++    for (int64_t c0 = 0; c0 < n; c0 += T_step) {
+         if (should_stop && should_stop()) { err = "cancelled"; return false; }
+         if (std::getenv("STRATA_TRACE")) { std::fprintf(stderr, "strata trace: prompt chunk %lld of %lld\n", (long long) c0, (long long) n); std::fflush(stderr); }
+-        const int64_t T = std::min(m.T, n - c0), p0 = pos0 + c0;
++        const int64_t T = chunk_len(c0), p0 = pos0 + c0;
++        T_step = T;
++        c0_last = c0;
+         core::progress_at("reading the prompt (batched): preparing the chunk from token", p0);   // #251
+         ++stats_.chunks;
+         pt.mark(kPfStart, cs);
+@@ -1186,9 +1265,9 @@
+             }
+             cudaMemcpyAsync(m.ple_emb, m.ple_emb_host[ple_buf], (size_t) T * N * 4, cudaMemcpyHostToDevice, m.cs);
+             cudaEventRecord(m.ple_copied[ple_buf], m.cs);
+-            if (c0 + m.T < n) {
++            if (c0 + T < n) {   // the next chunk starts where this one ends (not at c0 + m.T: chunks can be cut)
+                 cudaEventSynchronize(m.ple_copied[ple_buf ^ 1]);   // the other buffer's upload (a chunk ago) is done
+-                ple_next = std::async(std::launch::async, [&ple_gather, &ple_next_err, c1 = c0 + m.T, b = ple_buf ^ 1] {
++                ple_next = std::async(std::launch::async, [&ple_gather, &ple_next_err, c1 = c0 + T, b = ple_buf ^ 1] {
+                     return ple_gather(c1, b, ple_next_err);
+                 });
+             }
+@@ -1353,6 +1432,9 @@
+                     uint16_t* e16 = (uint16_t*) carve_f((size_t) nb * N / 2);
+                     uint16_t* e16_lo = bf16x2() ? (uint16_t*) carve_f((size_t) nb * N / 2) : nullptr;
+                     const float* emb = m.ple_emb + s0 * N;
++                    // sm_75: these two are BF16 GEMMs as well (FFMA on Turing).  The weights are re-encoded
++                    // to fp16 into a staging buffer once per prompt - 13.1 MB of traffic against the tens of
++                    // milliseconds the FFMA GEMMs take over the whole prompt.
+                     if (pw.key_bf16 != nullptr) {
+                         to_bf16(emb, e16, nb * N, m.cs, e16_lo);
+                         m.gemm.bf16(e16, pw.key_bf16, key, nb, HD, N);
+@@ -1394,16 +1476,23 @@
+                                       *wu = need(v, su.c_str(), err), *wi = need(v, si.c_str(), err);
+                 if (!wn || !wd || !wu || !wi) return false;
+                 pt.mark(kPfHc, cs);
+-                if (gr_unfused()) gr_norm(m.R, (const float*) wn->data, EPS, m.xn, m.xn16, T, m.cs, m.xn16_lo);
+-                else if (!normed) gr_norm_rs(m.R, (const float*) wn->data, EPS, m.grs, m.xn16, T, m.cs, m.xn16_lo);
++                // BF16X2 is an explicit accuracy option: keep it when requested.
++                const bool hc16 = !bf16x2_hc() && m.xn16h && m.lo16h && m.hc_w16;
++                if (gr_unfused()) gr_norm(m.R, (const float*) wn->data, EPS, m.xn, m.xn16, T, m.cs, m.xn16_lo, hc16 ? m.xn16h : nullptr);
++                else if (!normed) gr_norm_rs(m.R, (const float*) wn->data, EPS, m.grs, m.xn16, T, m.cs, m.xn16_lo, hc16 ? m.xn16h : nullptr);
+                 normed = false;
+-                if (!bf16_proj(m.gemm, wd, m.xn16, m.lo, T, sd, err, 0, m.xn16_lo)) return false;
+-                gr_silu(m.lo, m.lo16, T, m.cs, m.lo16_lo);
+-                if (!bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err, 0, m.lo16_lo)) return false;
+-                if (!bf16_proj(m.gemm, wi, m.xn16, m.inj, T, si, err, 0, m.xn16_lo)) return false;
++                if (hc16) {
++                    if (!f16_proj_staged(m.gemm, wd, m.xn16h, m.hc_w16, m.lo, T, sd, err, 0, m.cs)) return false;
++                } else if (!bf16_proj(m.gemm, wd, m.xn16, m.lo, T, sd, err, 0, m.xn16_lo)) return false;
++                gr_silu(m.lo, m.lo16, T, m.cs, m.lo16_lo, hc16 ? m.lo16h : nullptr);
++                if (hc16) {
++                    if (!f16_proj_staged(m.gemm, wu, m.lo16h, m.hc_w16, m.gated, T, su, err, 0, m.cs)) return false;
++                } else if (!bf16_proj(m.gemm, wu, m.lo16, m.gated, T, su, err, 0, m.lo16_lo)) return false;
++                if (hc16) {
++                    if (!f16_proj_staged(m.gemm, wi, m.xn16h, m.hc_w16, m.inj, T, si, err, 0, m.cs)) return false;
++                } else if (!bf16_proj(m.gemm, wi, m.xn16, m.inj, T, si, err, 0, m.xn16_lo)) return false;
+                 if (gr_unfused()) gr_mix(m.xn, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h, m.mixed_bf_lo);
+-                else gr_mix_r(m.R, m.grs, (const float*) wn->data, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h,
+-                              m.mixed_bf_lo);
++                else gr_mix_r(m.R, m.grs, (const float*) wn->data, m.gated, m.mixed, m.mixed_bf, T, m.cs, m.mixed_h, m.mixed_bf_lo);
+ 
+                 if (half == 0 && !core::is_qsa_layer(g, l)) {
+                     // ======================= GDN =======================
+@@ -1418,8 +1507,17 @@
+                     float* conv = state + (uint64_t) g.ssm_state_size * g.ssm_v_heads * g.ssm_state_size;
+                     if (!native_proj(m.gemm, wqkv, m.mixed_h, m.qkv, T, v.name("attn_qkv.weight"), err)) return false;
+                     if (!native_proj(m.gemm, wg, m.mixed_h, m.z, T, v.name("attn_gate.weight"), err)) return false;
+-                    if (!bf16_proj(m.gemm, wa, m.mixed_bf, m.ab, T, v.name("ssm_alpha.weight"), err, 2 * HV, m.mixed_bf_lo)) return false;
+-                    if (!bf16_proj(m.gemm, wb, m.mixed_bf, m.ab + HV, T, v.name("ssm_beta.weight"), err, 2 * HV, m.mixed_bf_lo)) return false;
++                    // sm_75: these two are BF16 GEMMs too (cuBLAS runs them on FFMA on Turing - there is no
++                    // bf16 kernel below sm_80), and their input `mixed_h` is already the fp16 image, so they
++                    // take the same staged fp16 tensor-core path as the hyper-connection projections.
++                    if (hc16 && !bf16x2() && wa->kind == core::WeightKind::Bf16InF32) {
++                        if (!f16_proj_staged(m.gemm, wa, m.mixed_h, m.hc_w16, m.ab, T,
++                                             v.name("ssm_alpha.weight"), err, 2 * HV, m.cs)) return false;
++                    } else if (!bf16_proj(m.gemm, wa, m.mixed_bf, m.ab, T, v.name("ssm_alpha.weight"), err, 2 * HV, m.mixed_bf_lo)) return false;
++                    if (hc16 && !bf16x2() && wb->kind == core::WeightKind::Bf16InF32) {
++                        if (!f16_proj_staged(m.gemm, wb, m.mixed_h, m.hc_w16, m.ab + HV, T,
++                                             v.name("ssm_beta.weight"), err, 2 * HV, m.cs)) return false;
++                    } else if (!bf16_proj(m.gemm, wb, m.mixed_bf, m.ab + HV, T, v.name("ssm_beta.weight"), err, 2 * HV, m.mixed_bf_lo)) return false;
+                     pt.mark(kPfGdnConv, cs);   // "gdn" is the projections in; the rest on their own lines
+                     gdn_gates(m.ab, (const float*) wdt->data, (const float*) wsa->data, m.gate, m.beta, T, m.cs);
+                     gdn_conv(conv, m.qkv, (const float*) wc->data, m.hbuf, T, EPS, m.cs);
+@@ -1983,7 +2081,7 @@
+                 }
+                 if (wnn) {
+                     gr_write_norm_rs(m.R, m.bo, m.inj, HC, (const float*) wnn->data, EPS, m.grs, m.xn16, T, m.cs,
+-                                     m.xn16_lo);
++                                     m.xn16_lo, !bf16x2_hc() ? m.xn16h : nullptr);
+                     normed = true;
+                 } else {
+                     gr_write(m.R, m.bo, m.inj, HC, T, m.cs);
+@@ -2058,7 +2156,7 @@
+             for (float v : h) { c += !std::isfinite(v); if (std::isfinite(v)) mx = std::max(mx, (double) std::fabs(v)); }
+             std::fprintf(stderr, " %lld non-finite (max |x| %.3g)", (long long) c, mx);
+         };
+-        const int64_t last = (n - 1) % m.T;
++        const int64_t last = (n - 1) - c0_last;   // the last row of the last chunk (chunks can be cut on the grid)
+         std::fprintf(stderr, "strata dbg: prompt end: last residual row");
+         bad(m.R + last * D, D);
+         if (ss.ple.ready()) { std::fprintf(stderr, "; PLE history"); bad(ss.ple.hist, (int64_t) strata::kernels::NG_HIST * strata::kernels::NG_HC_DIM); }
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -1,3 +1,4 @@
++#include "strata/core/tc_sm75.hpp"
+ // src/program/generate.cpp - P2.S6: `strata generate`.
+ //
+ // THE DRIVER, and the first program in this project that answers a question.  Everything below it is a
+@@ -97,6 +98,30 @@
+ #include <string>
+ #include <set>
+ #include <vector>
++
++/// sm_75 (cc 7.5, and only 7.5) adds fp16 images and weight stagings to the prompt path.  Where the prompt path
++/// owns its buffers - no borrow - each one is its own cudaMalloc and the expert cache, sized from the empirical
++/// MiB formula below, is what leaves room for them.  The formula predates these buffers, so add their bytes back.
++/// Sizes from `Prefill::init`: xn16h = chunk * hc * n_embd * 2 (42 MB at chunk 2048), lo16h = chunk * hc_lr * 2,
++/// the staged weights = hc * n_embd * hc_lr * 2, the PLE staging = n_embd^2 * 2.
++/// Measured: without this the region relied on the formula's own slack (~50 MB), and a further 13 MB buffer
++/// failed with "prefill copy_i32: an illegal memory access".
++///
++/// The callers add this only where the empirical reserve actually stands in for the prompt path (the
++/// `prefill_mib`/`split_pf_mib` predicate).  When a stage borrows - the default with a profile - its loan is
++/// sized by the exact `Prefill::bytes_needed`, which prices these same buffers, so adding them again there
++/// would double-count.
++static int64_t sm75_prompt_extra_bytes(const strata::core::ModelGeometry& g, int64_t chunk, int dev) {
++    int maj = 0, min = 0;
++    if (cudaDeviceGetAttribute(&maj, cudaDevAttrComputeCapabilityMajor, dev) != cudaSuccess ||
++        cudaDeviceGetAttribute(&min, cudaDevAttrComputeCapabilityMinor, dev) != cudaSuccess) {
++        cudaGetLastError();
++        return 0;
++    }
++    if (!strata::core::tc_sm75_enabled(maj, min) || chunk <= 0) return 0;
++    return chunk * g.hc * g.n_embd * 2 + chunk * g.hc_lr * 2 + g.hc * g.n_embd * g.hc_lr * 2 +
++           0;
++}
+ 
+ namespace {
+ // Windows' WDDM driver model: native Windows, or WSL2 (its GPU goes through /dev/dxg to the Windows driver).  There,
+@@ -327,6 +352,23 @@
+     /// Plan v0.3 P4: `--expert-cache auto` sizes the VRAM tier from what is free after the weights, the session
+     /// and the KV state, minus this reserve for the graphs, the hit scratch and the head.
+     int vram_reserve_mib = 700;
++    /// Fork «Strata adattivo»: an ELASTIC expert cache (`--serve`, one GPU).  The startup sizes the cache with
++    /// `--vram-reserve-mib` as before, then the cache follows the free VRAM while it runs: it keeps
++    /// `elastic_reserve_mib` free, grows with the most-used missing experts (then the profile's order) once the
++    /// VRAM has stayed free for `elastic_stable_ms`, and shrinks at once when it has not - the tail's hottest
++    /// experts moving into colder slots first, never a flush.  Checked every `elastic_period_ms` at the decode's
++    /// safe point and at every request's start.
++    bool elastic = false;
++    int elastic_reserve_mib = 500;
++    int elastic_chunk_mib = 64;
++    int elastic_period_ms = 1000;
++    int elastic_stable_ms = 5000;
++    /// Fork: the TWO-ZONE cache.  The first slots (filled from the profile at startup) are the CORE: the adaptive
++    /// swaps never pick their experts to leave, the elastic cache never shrinks below them and the prompt path never
++    /// borrows them.  Only the TAIL - at most this many MiB of the startup cache, -1 = min(6144, half of it), 0 = no
++    /// core - rotates, shrinks, grows and is lent.  A shrink gives back at most `elastic_shrink_step_mib` per check.
++    int elastic_tail_mib = -1;
++    int elastic_shrink_step_mib = 1024;
+     /// Plan v0.3 P5: batched prompt processing in chunks of this many tokens (0 = the token path).
+     int64_t prefill_chunk = 0;
+     /// `--prefill auto`: the largest chunk (up to 8192) whose buffers the expert cache can lend.  Every expert a chunk
+@@ -548,6 +590,17 @@
+                  "                       GPU via `moe_hit_grouped_s2`.  DEFAULT 0.  Measured at 4096 slots\n"
+                  "                       with --expert-cache-per-layer: 54.4%% hits, CPU pool drain 19.1 -> 10.3\n"
+                  "                       ms/token, -2.7 ms/token end to end.\n"
++                 "  --elastic            (serve, one GPU) the expert cache follows the free VRAM while it runs:\n"
++                 "                       grows with the most-used missing experts, shrinks the least-used first\n"
++                 "  --elastic-reserve-mib N  VRAM it keeps free (default 500)\n"
++                 "  --elastic-chunk-mib N    granularity of growing and shrinking (default 64)\n"
++                 "  --elastic-period-ms N    how often it checks (default 1000)\n"
++                 "  --elastic-stable-ms N    how long the room must last before it grows (default 5000; doubles after a\n"
++                 "                           shrink that follows a growth, back to N after 5 minutes without one)\n"
++                 "  --elastic-tail-mib N     two zones: only this much of the startup cache (its tail) rotates, shrinks\n"
++                 "                           and is lent to the prompt path; the rest is a fixed core (default\n"
++                 "                           min(6144, half the cache); 0 = the whole cache is tail)\n"
++                 "  --elastic-shrink-step-mib N  at most this much given back per check (default 1024)\n"
+                  "  --expert-cache-device1 N  pre-fill N experts on CUDA1 (experimental)\n"
+                  "  --expert-cache-device2 N  pre-fill N more experts on CUDA2\n"
+                  "  --expert-cache-device3 N  pre-fill N more experts on CUDA3\n"
+@@ -666,6 +719,8 @@
+             static const float one[64] = {};   // k <= 64 in a verify window; zeros read as unit weights
+             std::fwrite(one, sizeof(float), (size_t) k, t->routing);
+         }
++        // fork «Strata adattivo»: flushed per layer - a served engine usually ends by being killed
++        std::fflush(t->routing);
+     }
+ }
+ 
+@@ -1125,6 +1180,13 @@
+         else if (a == "--expert-cache-remote-placement")
+             o.expert_cache_remote_placement = next("--expert-cache-remote-placement");
+         else if (a == "--vram-reserve-mib") o.vram_reserve_mib = std::atoi(next("--vram-reserve-mib"));
++        else if (a == "--elastic") o.elastic = true;
++        else if (a == "--elastic-reserve-mib") o.elastic_reserve_mib = std::atoi(next("--elastic-reserve-mib"));
++        else if (a == "--elastic-chunk-mib") o.elastic_chunk_mib = std::atoi(next("--elastic-chunk-mib"));
++        else if (a == "--elastic-period-ms") o.elastic_period_ms = std::atoi(next("--elastic-period-ms"));
++        else if (a == "--elastic-stable-ms") o.elastic_stable_ms = std::atoi(next("--elastic-stable-ms"));
++        else if (a == "--elastic-tail-mib") o.elastic_tail_mib = std::atoi(next("--elastic-tail-mib"));
++        else if (a == "--elastic-shrink-step-mib") o.elastic_shrink_step_mib = std::atoi(next("--elastic-shrink-step-mib"));
+         else if (a == "--prefill") {
+             const std::string v = next("--prefill");
+             o.prefill_auto = v == "auto" || v.rfind("auto:", 0) == 0;
+@@ -2329,8 +2391,9 @@
+             std::fprintf(stderr, "strata generate: layer split: CUDA%d free memory: %s\n", dev < 0 ? 0 : dev,
+                          cudaGetErrorString(e));
+         const int64_t pf = search && split_own_auto && !place_with_reserve ? 0 : split_pf_mib;
+-        const int64_t reserve = ((int64_t) o.vram_reserve_mib + pf + (later ? kWindowMib : 0) +
+-                                 (drafter ? kDrafterMib : 0)) << 20;
++        const int64_t reserve = (((int64_t) o.vram_reserve_mib + pf + (later ? kWindowMib : 0) +
++                                 (drafter ? kDrafterMib : 0)) << 20) +
++                                 (pf > 0 ? sm75_prompt_extra_bytes(g, o.prefill_chunk, dev) : 0);
+         return std::max<int64_t>((int64_t) fb - reserve, 0);
+     };
+     if (multi_gpu && split_auto) {
+@@ -2698,7 +2761,8 @@
+         // ~110-180 MiB larger, and out of the reserve they left 16 GB cards below the stall line (#199)
+         const int64_t mtp_bind = (!o.mtp.empty() && native_head.loaded())
+                                      ? (int64_t) mtp.bind_bytes(native_head.row_bytes(), n_vocab) : 0;
+-        const int64_t reserve = (((int64_t) o.vram_reserve_mib + prefill_mib) << 20) + mtp_bind;
++        const int64_t reserve = (((int64_t) o.vram_reserve_mib + prefill_mib) << 20) + mtp_bind +
++                                (prefill_mib > 0 ? sm75_prompt_extra_bytes(g, o.prefill_chunk, 0) : 0);
+         int64_t slots = ((int64_t) free_b - reserve) / (int64_t) strata::kernels::cpu::expert_layout().max_blob;
+         if (!profile.empty()) slots = std::min<int64_t>(slots, (int64_t) profile.size());
+         o.expert_cache = (int) std::max<int64_t>(slots, 0);
+@@ -2715,7 +2779,8 @@
+         size_t free_b = 0, total_b = 0;
+         cudaMemGetInfo(&free_b, &total_b);
+         const int64_t prefill_mib = (o.prefill_chunk > 0 && !pf_borrow) ? 160 + (o.prefill_chunk * 680) / 1024 : 0;
+-        const int64_t reserve = ((int64_t) o.vram_reserve_mib + prefill_mib) << 20;
++        const int64_t reserve = (((int64_t) o.vram_reserve_mib + prefill_mib) << 20) +
++                                (prefill_mib > 0 ? sm75_prompt_extra_bytes(g, o.prefill_chunk, 0) : 0);
+         const int64_t fit = std::max<int64_t>(((int64_t) free_b - reserve) / (int64_t) strata::kernels::cpu::expert_layout().max_blob, 0);
+         if (o.expert_cache > fit) {
+             // a WARNING that names the knob: the user asked for this size, and gets fewer slots
+@@ -2785,9 +2850,22 @@
+                 --fake_fails;
+                 err = "ExpertCache: cudaMalloc failed: out of memory (STRATA_TEST_CACHE_FAIL)";
+             } else {
+-                ok = sized_slots.empty()
+-                    ? xcache.open(o.expert_cache, g.n_layers, g.n_expert, (int64_t) strata::kernels::cpu::expert_layout().max_blob, err)
+-                    : xcache.open_sized(sized_slots, g.n_layers, g.n_expert, err);
++                if (!sized_slots.empty() && o.elastic) {
++                    // fork: the elastic arena reserves the whole card's address range; without VMM, the plain one
++                    size_t fb = 0, tb = 0;
++                    cudaMemGetInfo(&fb, &tb);
++                    ok = xcache.open_sized_elastic(sized_slots, g.n_layers, g.n_expert, (uint64_t) tb,
++                                                   (uint64_t) o.elastic_chunk_mib << 20, err);
++                    if (!ok) {
++                        std::fprintf(stderr, "strata generate: %s - the cache stays fixed\n", err.c_str());
++                        o.elastic = false;
++                        ok = xcache.open_sized(sized_slots, g.n_layers, g.n_expert, err);
++                    }
++                } else {
++                    ok = sized_slots.empty()
++                        ? xcache.open(o.expert_cache, g.n_layers, g.n_expert, (int64_t) strata::kernels::cpu::expert_layout().max_blob, err)
++                        : xcache.open_sized(sized_slots, g.n_layers, g.n_expert, err);
++                }
+             }
+             if (!ok) {
+                 // Issue #60: on Windows a device allocation is also charged to the system commit (RAM + page file),
+@@ -3755,6 +3833,18 @@
+                                     : ((tokens + 255) / 256) * 256;
+         return std::min(max_chunk, rounded);
+     };
++    // fork «Strata adattivo»: the TWO-ZONE cache.  Slots [0, el_core) are the core - filled from the profile at startup,
++    // never picked by the adaptive swaps to leave, never shrunk, never lent; the tail after it is the elastic zone.
++    int64_t el_core = 0;
++    if (o.elastic && o.serve && xcache.elastic() && !multi_gpu && xcache.slot_offsets() != nullptr) {
++        const uint64_t* off = xcache.slot_offsets();
++        const int64_t S = xcache.slots();
++        const uint64_t tail = o.elastic_tail_mib >= 0 ? (uint64_t) o.elastic_tail_mib << 20
++                                                      : std::min<uint64_t>(6144ull << 20, off[S] / 2);
++        int64_t c = S;
++        while (c > 0 && off[S] - off[c - 1] <= tail) --c;   // the smallest core whose tail fits in `tail`
++        el_core = tail == 0 ? 0 : c;
++    }
+     // The prompt path's chunk and the slots it borrows for its buffers: the requested chunk halved until it fits,
+     // or with --prefill auto the largest of kAutoChunks whose buffers take at most kAutoLendPct % of the slots (a
+     // lent slot's expert is streamed during the prompt and refilled after it; measured on a 12 GB card, 32K Q2_0
+@@ -3775,18 +3865,22 @@
+         // NVFP4 pack at 262K: 3,535 -> 5,201)
+         static constexpr int64_t kAutoChunks[] = {32768, 16384, 8192, 6144, 4096, 3072, 2048, 1024, 512, 256};
+         auto slots_for = lend_slots;
++        const int64_t tail_slots = xcache.slots() - el_core;   // fork: only the tail is lent (all of it without a core)
+         if (o.prefill_auto) {
+             for (const int64_t c : kAutoChunks) {
+                 // above 8192: only when asked for, and only when a prompt of the context can use it
+                 if (c > 8192 && (c > o.prefill_auto_max || c > o.max_context)) continue;
+                 const int64_t k = slots_for(c);
+-                if (k + 128 <= xcache.slots() && k * 100 <= kAutoLendPct * xcache.slots()) { chunk = c; return k; }
++                if (k + 128 <= xcache.slots() && k * 100 <= kAutoLendPct * xcache.slots() && k <= tail_slots) {
++                    chunk = c;
++                    return k;
++                }
+             }
+             return 0;
+         }
+         for (int64_t c = chunk; c >= 256; c /= 2) {
+             const int64_t k = slots_for(c);
+-            if (k + 128 <= xcache.slots()) { chunk = c; return k; }
++            if (k + 128 <= xcache.slots() && k <= tail_slots) { chunk = c; return k; }
+         }
+         return 0;
+     };
+@@ -3931,6 +4025,7 @@
+             // (no split) this reduces to plan_lend exactly, so the single-GPU loan is unchanged from main.
+             auto fits_one = [&](const PfPart& p, int64_t c, bool cap) -> bool {
+                 const int64_t k = part_slots(p, c);
++                if (p.cache == &xcache && k > xcache.slots() - el_core) return false;
+                 if (k <= 0 || k + 128 > p.cache->slots()) return false;
+                 return !(cap && k * 100 > kAutoLendPct * p.cache->slots());
+             };
+@@ -4062,6 +4157,7 @@
+         // the prompt path's own buffers (no loan) are not priced into them: with the whole arena pinned (#253) a
+         // `--prefill auto` split could stop at start with "device buffers for a chunk of 2048 tokens do not fit".  A
+         // chunk that does not fit is tried again one size smaller, down to 512 tokens (a smaller chunk only reads slower).
++        const int64_t sp_chunk_max = (o.elastic && xcache.elastic() && o.prefill_auto && borrow != nullptr) ? 8192 : 0;
+         auto init_prompt_paths = [&]() -> int {   // 0: ready; 1: failed (err set); 2: failed with "do not fit"
+             for (size_t i = 0; i < stages.size(); ++i) {
+                 GpuStage& st = *stages[i];
+@@ -4081,7 +4177,7 @@
+                 }
+             }
+             if (multi_gpu) sp.set_stage(0, split_at[0], &stages[0]->sp);
+-            if (!sp.init(wt, g, ss, srcp, &xcache, host_res.data(), o.prefill_chunk, main_cs, err, borrow, borrow_bytes))
++            if (!sp.init(wt, g, ss, srcp, &xcache, host_res.data(), o.prefill_chunk, main_cs, err, borrow, borrow_bytes, sp_chunk_max))
+                 return err.find("do not fit") != std::string::npos ? 2 : 1;
+             return 0;
+         };
+@@ -4563,7 +4659,7 @@
+                 const int32_t* r = host_res.data() + l * g.n_expert;
+                 for (int32_t e = 0; e < (int32_t) g.n_expert; ++e) {
+                     if (r[e] < 0) { if (u[e] >= 2.0f) cand.emplace_back(u[e], e); }
+-                    else vict.emplace_back(u[e], e);
++                    else if (r[e] >= el_core) vict.emplace_back(u[e], e);   // fork: the core never leaves
+                 }
+                 if (cand.empty() || vict.empty()) continue;
+                 std::sort(cand.begin(), cand.end(), [](auto& a, auto& b) { return a.first > b.first; });
+@@ -4609,6 +4705,239 @@
+             for (float& v : drive.d.usage) v *= 0.7f;
+             return true;
+         };
++        // ---- fork «Strata adattivo»: THE ELASTIC EXPERT CACHE.  The arena is a reserved address range backed by
++        // chunks (ExpertCache::open_sized_elastic), so its slots can be added or dropped at the TAIL without any
++        // pointer moving.  `host_res` stays the one truth about which expert sits where (the adaptive tier writes it
++        // too); the prompt path borrows the tail, so after the tail moved its buffers are laid out again (and a cache
++        // that shrank too far lends a smaller chunk, the same rule as plan_lend).  Run only where nothing is in
++        // flight: a request's start (nothing lent yet) and the decode's safe point (window, commit, draft and the
++        // adaptive swaps all finished).
++        const bool el_on = o.elastic && xcache.elastic() && d_res != nullptr && !multi_gpu && !host_res.empty();
++        const int64_t el_reserve = (int64_t) o.elastic_reserve_mib << 20;
++        const int64_t el_hyst_min = 192ll << 20;   // growth only past the reserve plus max(this, the measured noise)
++        static const bool el_trace = std::getenv("STRATA_ELASTIC_TRACE") != nullptr;
++        const int64_t el_step_max = 512ll << 20;   // at most this much per growth step (its copies are async)
++        const int64_t el_shrink_step = std::max<int64_t>(64ll << 20, (int64_t) o.elastic_shrink_step_mib << 20);
++        const int64_t el_min_slots = std::max<int64_t>(256, el_core);   // the core is never shrunk
++        const int64_t el_chunk_max = sp_chunk_max > 0 ? sp_chunk_max : o.prefill_chunk;
++        Clock::time_point el_last{};
++        Clock::time_point el_stable_since = Clock::now();
++        // growth against noise: the free readings since the last resize (a resize changes the level, so it clears
++        // them); a growth must hold on the MINIMUM of the stable window and leaves reserve + margin free, where the
++        // margin is the spread the readings have shown.  A shrink soon after a growth doubles the wait (at most 8x),
++        // five quiet minutes restore it.
++        std::deque<std::pair<Clock::time_point, int64_t>> el_seen;
++        Clock::time_point el_last_grow{}, el_last_shrink{};
++        int el_backoff = 1;
++        auto el_free = []() -> int64_t {
++            size_t f = 0, t = 0;
++            return cudaMemGetInfo(&f, &t) == cudaSuccess ? (int64_t) f : -1;
++        };
++        // the tail moved: the prompt path's chunk and first lendable slot are planned again by the startup's own rule
++        // (plan_lend: auto takes the largest chunk that lends at most its share of the slots), and the next lend lays
++        // the buffers out again
++        auto el_replan_lend = [&]() {
++            if (pf_parts.empty() || pf_parts[0].first < 0) return;
++            int64_t c = el_chunk_max;
++            const int64_t k = plan_lend(c);
++            if (k <= 0 || c > el_chunk_max) return;   // nothing fits (not above el_min_slots): keep the plan
++            o.prefill_chunk = c;
++            // 0.1.30: the loan lives in the participant (CUDA0 is the first; the elastic cache is single-GPU)
++            pf_parts[0].first = (int32_t) (xcache.slots() - part_slots(pf_parts[0], c));
++            pf_parts[0].first_now = -1;               // the next lend lays the buffers out again
++            lend_first = pf_parts[0].first;
++        };
++        // SHRINK to `n` slots: in each layer the tail's experts, hottest first, move (a device copy) into the slots
++        // below `n` that hold that layer's coldest experts, while they are clearly hotter; the rest leave the tier
++        // (the CPU computes them) and the tail's chunks go back to the driver
++        auto el_shrink = [&](int64_t n, std::string& e) -> bool {
++            const int64_t S = xcache.slots();
++            if (n >= S) return true;
++            apply_pending(true);
++            cudaDeviceSynchronize();
++            const auto& lay = strata::kernels::cpu::expert_layout();
++            const bool have_usage = !drive.d.usage.empty();
++            std::vector<std::vector<std::pair<float, int32_t>>> keep((size_t) g.n_layers), tail((size_t) g.n_layers);
++            for (int64_t l = 0; l < g.n_layers; ++l)
++                for (int32_t ex = 0; ex < (int32_t) g.n_expert; ++ex) {
++                    const size_t i = (size_t) (l * g.n_expert + ex);
++                    if (host_res[i] < el_core) continue;   // not resident, or in the core (never displaced)
++                    const float u = have_usage ? drive.d.usage[i] : 0.0f;
++                    (host_res[i] >= n ? tail : keep)[(size_t) l].emplace_back(u, ex);
++                }
++            int moved = 0, dropped = 0;
++            for (int64_t l = 0; l < g.n_layers; ++l) {
++                auto& tl = tail[(size_t) l];
++                if (tl.empty()) continue;
++                auto& kp = keep[(size_t) l];
++                std::sort(tl.begin(), tl.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
++                std::sort(kp.begin(), kp.end(), [](const auto& a, const auto& b) { return a.first < b.first; });
++                size_t ci = 0;
++                for (const auto& [u, ex] : tl) {
++                    const size_t from = (size_t) (l * g.n_expert + ex);
++                    if (have_usage && ci < kp.size() && u > kp[ci].first + 1.0f) {
++                        const size_t to = (size_t) (l * g.n_expert + kp[ci].second);
++                        const int32_t to_slot = host_res[to];
++                        if (cudaMemcpyAsync(xcache.device_slot(to_slot), xcache.device_slot(host_res[from]),
++                                            (size_t) lay.blob_bytes(l), cudaMemcpyDeviceToDevice, adapt_stream) != cudaSuccess) {
++                            e = "elastic cache: a device copy failed";
++                            return false;
++                        }
++                        host_res[to] = strata::core::kNotResident;
++                        host_res[from] = to_slot;
++                        ++ci;
++                        ++moved;
++                    } else {
++                        host_res[from] = strata::core::kNotResident;
++                        ++dropped;
++                    }
++                }
++            }
++            if (cudaStreamSynchronize(adapt_stream) != cudaSuccess) { e = "elastic cache: the copy stream failed"; return false; }
++            res_upload();
++            cudaDeviceSynchronize();
++            if (!xcache.shrink(n, e)) return false;
++            el_replan_lend();
++            std::fprintf(stderr, "strata elastic: -%lld slots (%d moved in, %d out) -> %lld slots, %.2f GiB; %lld MiB free, "
++                                 "prompt chunk %lld\n", (long long) (S - n), moved, dropped, (long long) xcache.slots(),
++                         xcache.gib(), (long long) (el_free() >> 20), (long long) o.prefill_chunk);
++            return true;
++        };
++        // GROW by at most `room` bytes: the missing experts the conversation routes most (usage >= 2, as the adaptive
++        // tier's candidates), then the profile's order for what it has not asked for yet; filled on the refill
++        // stream and published like the adaptive swaps (apply_pending), so the windows never wait for them
++        auto el_grow = [&](int64_t room, std::string& e) -> bool {
++            const auto& lay = strata::kernels::cpu::expert_layout();
++            std::vector<std::pair<float, int32_t>> cand;
++            if (!drive.d.usage.empty())
++                for (size_t i = 0; i < host_res.size(); ++i)
++                    if (host_res[i] < 0 && drive.d.usage[i] >= 2.0f) cand.emplace_back(drive.d.usage[i], (int32_t) i);
++            std::sort(cand.begin(), cand.end(), [](const auto& a, const auto& b) { return a.first > b.first; });
++            std::vector<char> chosen(host_res.size(), 0);
++            std::vector<int32_t> pick;
++            std::vector<int64_t> bytes;
++            int64_t used = 0;
++            auto take = [&](int32_t i) -> bool {
++                const int64_t b = (int64_t) lay.blob_bytes(i / g.n_expert);
++                const int64_t al = (b + 255) / 256 * 256;
++                if (used + al > room) return false;
++                used += al;
++                chosen[(size_t) i] = 1;
++                pick.push_back(i);
++                bytes.push_back(b);
++                return true;
++            };
++            for (const auto& c : cand)
++                if (!take(c.second)) break;
++            for (const auto& pr : profile) {
++                if (used + (int64_t) lay.max_blob > room) break;
++                const int32_t i = (int32_t) (pr.first * g.n_expert + pr.second);
++                if (host_res[(size_t) i] >= 0 || chosen[(size_t) i]) continue;
++                if (!take(i)) break;
++            }
++            if (pick.empty()) return true;
++            const int64_t first = xcache.slots();
++            if (!xcache.grow(bytes, e)) {
++                std::fprintf(stderr, "strata elastic: growing failed (%s); staying at %lld slots\n", e.c_str(), (long long) first);
++                e.clear();
++                return true;
++            }
++            // under WDDM the free figure is only trustworthy once the pages are written: `grow` zeroed them
++            cudaDeviceSynchronize();
++            if (el_free() < el_reserve) {
++                xcache.shrink(first, e);
++                std::fprintf(stderr, "strata elastic: growth undone, the VRAM was not really free\n");
++                e.clear();
++                return true;
++            }
++            for (size_t j = 0; j < pick.size(); ++j) {
++                const int32_t i = pick[j];
++                const uint8_t* b = srcp->blob(i / g.n_expert, i % g.n_expert);
++                if (b == nullptr || cudaMemcpyAsync(xcache.device_slot((int32_t) (first + (int64_t) j)), b, (size_t) bytes[j],
++                                                    cudaMemcpyHostToDevice, adapt_stream) != cudaSuccess) {
++                    e = "elastic cache: a fill copy failed";
++                    return false;
++                }
++                pending.emplace_back(i, (int32_t) (first + (int64_t) j));
++            }
++            cudaEventRecord(adapt_ev, adapt_stream);
++            // a bigger cache may lend a bigger chunk (the prompt reads faster)
++            el_replan_lend();
++            std::fprintf(stderr, "strata elastic: +%lld experts (%.0f MiB) -> %lld slots, %.2f GiB; %lld MiB free\n",
++                         (long long) pick.size(), (double) used / 1048576.0, (long long) xcache.slots(), xcache.gib(),
++                         (long long) (el_free() >> 20));
++            return true;
++        };
++        // one step of the policy: shrink at once below the reserve; grow once the room has stayed for stable_ms.  At a
++        // request's start it only shrinks: a growth's fills land asynchronously in the tail, and the prompt is about
++        // to borrow the tail - the decode's safe point grows, and apply_pending publishes the fills before any lend
++        auto elastic_step = [&](bool request_start, std::string& e) -> bool {
++            if (!el_on) return true;
++            const Clock::time_point t = Clock::now();
++            if (!request_start && t - el_last < std::chrono::milliseconds(o.elastic_period_ms)) return true;
++            el_last = t;
++            apply_pending(true);
++            const int64_t fr = el_free();
++            if (fr < 0) return true;
++            if (el_trace)
++                std::fprintf(stderr, "strata elastic trace: %s free %lld MiB, %lld slots (%.2f GiB), room held %lld ms\n",
++                             request_start ? "request" : "decode", (long long) (fr >> 20), (long long) xcache.slots(),
++                             xcache.gib(),
++                             (long long) std::chrono::duration_cast<std::chrono::milliseconds>(t - el_stable_since).count());
++            if (fr < el_reserve) {
++                // in steps: at most el_shrink_step per check, the next check takes the next step if still short;
++                // never below the core
++                // under WDDM a reading of ~0 only says "at least this short" (the startup sizing gives back a whole
++                // GiB for it too): take the full step, not reserve + one chunk
++                const int64_t need = fr < (16ll << 20) ? el_shrink_step
++                                                       : std::min(el_reserve - fr + (int64_t) xcache.chunk_bytes(),
++                                                                  el_shrink_step);
++                const uint64_t* off = xcache.slot_offsets();
++                const int64_t S = xcache.slots();
++                int64_t n = S;
++                while (n > el_min_slots && (int64_t) (off[S] - off[n]) < need) --n;
++                el_stable_since = t;
++                if (n >= S) return true;
++                if (el_last_grow.time_since_epoch().count() != 0 && t - el_last_grow < std::chrono::seconds(60))
++                    el_backoff = std::min(el_backoff * 2, 8);   // a shrink right after a growth: it grew too far
++                el_last_shrink = t;
++                el_seen.clear();
++                return el_shrink(n, e);
++            }
++            if (el_last_shrink.time_since_epoch().count() != 0 && t - el_last_shrink > std::chrono::minutes(5))
++                el_backoff = 1;
++            el_seen.emplace_back(t, fr);
++            while (!el_seen.empty() && t - el_seen.front().first > std::chrono::seconds(30)) el_seen.pop_front();
++            const auto hold = std::chrono::milliseconds((int64_t) o.elastic_stable_ms * el_backoff);
++            if (request_start || t - el_stable_since < hold) return true;
++            // the room must have held on its minimum over the wait, past the reserve plus the noise seen
++            const int64_t none = std::numeric_limits<int64_t>::max();
++            int64_t lo = none, hi = 0;
++            for (const auto& [ts, v] : el_seen) {
++                hi = std::max(hi, v);
++                if (t - ts <= hold) lo = std::min(lo, v);
++            }
++            if (lo == none) lo = fr;
++            const int64_t margin = std::max(el_hyst_min, hi - lo);
++            const int64_t spare = lo - el_reserve - margin;
++            if (spare < (int64_t) xcache.chunk_bytes()) return true;
++            el_stable_since = t;
++            el_last_grow = t;
++            el_seen.clear();
++            return el_grow(std::min(spare, el_step_max), e);
++        };
++        if (el_on) {
++            std::fprintf(stderr, "strata elastic: on - keeps %d MiB of VRAM free, grows after %d ms of room, checks every "
++                                 "%d ms (%lld slots now, %.2f GiB, chunks of %lld MiB)\n", o.elastic_reserve_mib,
++                         o.elastic_stable_ms, o.elastic_period_ms, (long long) xcache.slots(), xcache.gib(),
++                         (long long) (xcache.chunk_bytes() >> 20));
++            const uint64_t* off = xcache.slot_offsets();
++            std::fprintf(stderr, "strata elastic: two zones - core %lld slots (%.2f GiB, fixed), tail %lld slots (%.2f GiB: "
++                                 "rotates, shrinks in steps of %lld MiB, is lent to the prompt path)\n",
++                         (long long) el_core, (double) off[el_core] / 1073741824.0, (long long) (xcache.slots() - el_core),
++                         (double) (off[xcache.slots()] - off[el_core]) / 1073741824.0,
++                         (long long) (el_shrink_step >> 20));
++        }
+         // #477: write the learned profile (between requests and at QUIT: a prompt's lent slots are back by then).
+         // A swap still in flight counts as done - its expert is resident once the copy lands.  `why`: for the log.
+         auto save_profile = [&](const char* why) {
+@@ -5126,6 +5455,10 @@
+                 part_at.clear();
+                 std::fill(part_next.begin(), part_next.end(), pp_next_check);
+             }
++            // fork «Strata adattivo»: chunks cut on the same grid, so every checkpoint lands exactly on
++            // resume + k * prompt_cache_every (a layer split keeps the plain chunking: its stages hand chunks on)
++            sp.align_every = (reread_to > 0 || multi_gpu || o.prompt_cache_every <= 0) ? 0 : o.prompt_cache_every;
++            sp.align_origin = resume;
+             std::printf("RESUME %lld\n", (long long) resume);   // before reading: this many prompt tokens are reused
+             strata::core::progress_at("reading the prompt, from token", read_from);
+             std::fflush(stdout);
+@@ -5258,6 +5591,7 @@
+             // participant's own cache, and marking only that participant's own layers
+             auto lend = [&](int64_t tokens, std::string& e) -> bool {
+                 if (pf_parts.empty()) return true;                     // its own buffers: nothing to lend
++                apply_pending(true);   // fork: fills still landing in the tail must be published before it is lent
+                 const auto t_ln = Clock::now();
+                 // what this segment needs, capped by the configured chunk: a request lends only what its own
+                 // prompt needs, so a large chunk costs a short prompt nothing
+@@ -5307,6 +5641,14 @@
+                 return true;
+             };
+             apply_pending(true);
++            // fork: the elastic cache follows the VRAM before the prompt borrows its tail (nothing is lent yet)
++            {
++                std::string ee;
++                if (!elastic_step(true, ee)) {
++                    std::printf("ERR %s\n", ee.c_str());
++                    return 1;
++                }
++            }
+             // per-request sampling for the verify window's head (greedy when temperature is absent)
+             strata::kernels::SamplerParams req_sp;
+             req_sp.greedy = req_temperature <= 0.0f;
+@@ -5469,7 +5811,8 @@
+                 drive.d.layers = 0;
+                 drive.d.experts = 0;
+                 drive.d.failed = false;
+-                apply_pending(false);
++                // Publish completed adaptive fills before the verifier chooses CPU/GPU expert paths (#463).
++                apply_pending(true);
+                 if (hist_n > 0) {
+                     // the tails the penalties count over, ONE PER ROW: the tokens the state has consumed, the
+                     // fed-back head `x` (it joins `consumed` only after this window commits), then the drafts
+@@ -5504,6 +5847,16 @@
+                 for (int i = 0; i <= a; ++i) consumed.push_back(window[(size_t) i]);
+                 draft_offered += T - 1;
+                 draft_accepted += a;
++                if (first_window) {
++                    if (const char* prefix = std::getenv("STRATA_DUMP_FIRST_LOGITS")) {
++                        const std::string path = std::string(prefix) + ".pos" + std::to_string(p) + ".f32";
++                        std::vector<float> row((size_t) ver.vocab());
++                        std::FILE* f = ver.copy_logits(0, row.data()) ? std::fopen(path.c_str(), "wb") : nullptr;
++                        if (f == nullptr || std::fwrite(row.data(), sizeof(float), row.size(), f) != row.size())
++                            std::fprintf(stderr, "strata generate: cannot dump first logits %s\n", path.c_str());
++                        if (f) std::fclose(f);
++                    }
++                }
+                 first_window = false;
+                 bool eos = false;
+                 for (int i = 0; i <= a && produced_n < max_new && !eos; ++i) {
+@@ -5542,6 +5895,14 @@
+                                    std::chrono::duration<double, std::milli>(Clock::now() - round0).count());
+                 if (eos) { finish = "stop"; break; }
+                 if (stop_req.load()) { finish = "cancel"; break; }
++                // fork: the elastic cache's step, after the round's timing is recorded (the draft policy reads it)
++                {
++                    std::string ee;
++                    if (!elastic_step(false, ee)) {
++                        std::printf("ERR %s\n", ee.c_str());
++                        return 1;
++                    }
++                }
+                 x = outv[(size_t) a];
+                 p += a + 1;
+             }
+@@ -6293,7 +6654,8 @@
+             drive.d.layers = 0;
+             drive.d.experts = 0;
+             drive.d.failed = false;
+-            apply_pending(false);
++            // Publish completed adaptive fills before the verifier chooses CPU/GPU expert paths (#463).
++                apply_pending(true);
+             if (!ver.run(T, window.data(), p, &drive_pool_multi, &drive, outv.data(), err)) {
+                 std::fprintf(stderr, "strata generate: %s\n", err.c_str());
+                 return 1;
+@@ -6307,6 +6669,16 @@
+             int a = 0;
+             while (a < T - 1 && window[(size_t) a + 1] == outv[(size_t) a]) ++a;
+             if (first_window) {
++                if (first_window) {
++                    if (const char* prefix = std::getenv("STRATA_DUMP_FIRST_LOGITS")) {
++                        const std::string path = std::string(prefix) + ".pos" + std::to_string(p) + ".f32";
++                        std::vector<float> row((size_t) ver.vocab());
++                        std::FILE* f = ver.copy_logits(0, row.data()) ? std::fopen(path.c_str(), "wb") : nullptr;
++                        if (f == nullptr || std::fwrite(row.data(), sizeof(float), row.size(), f) != row.size())
++                            std::fprintf(stderr, "strata generate: cannot dump first logits %s\n", path.c_str());
++                        if (f) std::fclose(f);
++                    }
++                }
+                 first_window = false;
+                 ttft_ms = std::chrono::duration<double, std::milli>(Clock::now() - t_start).count();
+                 // Diagnostics: the first window runs the prompt's last token over the state the prompt path left
+@@ -6466,6 +6838,7 @@
+     for (int64_t t : produced) std::printf(" %lld", (long long) t);
+     std::printf("\n");
+     const double decode_ms = decoded > 0 ? total_ms / (double) decoded : 0.0;
++    cudaDeviceSynchronize();   // the last commit (set_commit_async) before anything reads the session
+     std::printf("%-24s %lld tokens in %.1f ms  ->  %.2f tok/s\n", "decode", (long long) decoded, total_ms,
+                 decode_ms > 0.0 ? 1000.0 / decode_ms : 0.0);
+     if (n_prompt > 1)

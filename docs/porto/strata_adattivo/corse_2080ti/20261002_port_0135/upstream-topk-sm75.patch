@@ -1,0 +1,166 @@
+--- a/src/kernels/cuda/qsa_select.cu
++++ b/src/kernels/cuda/qsa_select.cu
+@@ -745,6 +745,24 @@
+     if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk: %s\n", cudaGetErrorString(e)); std::exit(1); }
+ }
+ 
++#if !defined(__HIPCC__)
++// Only Turing has a retained model measurement for this CUDA dispatch. Other CUDA devices keep the capacity rule
++// (the RTX 5070 regression below). Cache the properties per calling thread; layer-split device switches are checked.
++static bool topk_active_turing_device() {
++    int dev = 0;
++    if (cudaGetDevice(&dev) != cudaSuccess) return false;
++    static thread_local int cached_device = -1;
++    static thread_local bool turing = false;
++    if (dev != cached_device) {
++        cudaDeviceProp prop{};
++        if (cudaGetDeviceProperties(&prop, dev) != cudaSuccess) return false;
++        turing = prop.major == 7 && prop.minor == 5;
++        cached_device = dev;
++    }
++    return turing;
++}
++#endif
++
+ void qsa_block_topk(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                     const QsaShapes& s, int32_t* ids, void* stream, int64_t active_blocks) {
+     // keys in registers when every query's blocks fit (contexts up to ~135K cells); the same ids. STRATA_TOPK_OLD=1:
+@@ -756,10 +774,13 @@
+ #if defined(__HIPCC__)
+     const bool counted = active_blocks > 0;
+ #else
+-    // CUDA keeps 0.1.32's capacity rule: #337's dispatch was measured on RDNA4 only, and on the RTX 5070 the 64K
+-    // prompts read 1-3% slower with it
+-    const bool counted = false;
+-    (void) active_blocks;
++    // Turing: --max-context 262144 makes the stride 65538, even while a 131K prompt's active blocks fit in
++    // TK_T * TK_PER registers. Use the prefill bound on sm_75, keeping max_blocks as the score-row stride.
++    // Other CUDA devices keep 0.1.32's capacity rule: #337 was measured on RDNA4, and RTX 5070 64K prompts were
++    // 1-3% slower. Decode/captured graphs omit the bound and never query the device here.
++    static const bool capacity_guard = std::getenv("STRATA_TOPK_CAPACITY_GUARD") != nullptr;
++    const bool counted = !capacity_guard && active_blocks > 0 && active_blocks <= max_blocks &&
++                         topk_active_turing_device();
+ #endif
+     const int64_t reach = counted && active_blocks < max_blocks ? active_blocks : max_blocks;
+     const int64_t fit = (int64_t) TK_T * (counted ? TK_PER_MAX : TK_PER);
+--- a/include/strata/kernels/qsa_select.hpp
++++ b/include/strata/kernels/qsa_select.hpp
+@@ -40,7 +40,9 @@
+                     int64_t active_blocks = -1);   ///< > 0: no query of the call has more than this many blocks (n_bid + 1;
+                                                    ///< the same contract as qsa_block_scores's). The register kernel is
+                                                    ///< chosen by this, not by the capacity max_blocks (a long
+-                                                   ///< --max-context otherwise sends every short prompt to the slow one)
++                                                   ///< --max-context otherwise sends every short prompt to the slow one).
++                                                   ///< CUDA uses the bound only on sm_75; HIP keeps its existing policy.
++                                                   ///< Omit it for captured graphs whose context can grow after capture.
+ /// The original kernel (keys read from memory on every radix pass), for tests: the same ids.
+ void qsa_block_topk_ref(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                         const QsaShapes& s, int32_t* ids, void* stream);
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -277,6 +277,13 @@
+   # the QSA selection (block scores on the warp kernel and the tensor-core one, top-k): a GPU bench with a
+   # scorer-vs-scorer comparison and an FP64 accuracy gate (synthetic, no model); the ctest runs a 32K context under a
+   # 262144-cell capacity (the top-k dispatch follows the capacity) and exits non-zero on a failed gate
++  if(STRATA_BUILD_TESTS AND STRATA_ENABLE_CUDA)
++    add_executable(qsa_topk_active_parity src/kernels/qsa_topk_active_parity.cpp)
++    target_include_directories(qsa_topk_active_parity PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
++    target_link_libraries(qsa_topk_active_parity PRIVATE strata_kernels CUDA::cudart)
++    add_test(NAME qsa_topk_active_parity COMMAND qsa_topk_active_parity)
++    set_tests_properties(qsa_topk_active_parity PROPERTIES SKIP_RETURN_CODE 77)
++  endif()
+   if((STRATA_BUILD_TESTS OR STRATA_PARITY_PROMPT_ATTN) AND STRATA_ENABLE_HIP)
+     add_executable(qsa_select_bench src/kernels/qsa_select_bench.cpp)
+     set_source_files_properties(src/kernels/qsa_select_bench.cpp PROPERTIES LANGUAGE HIP)
+--- /dev/null
++++ b/src/kernels/qsa_topk_active_parity.cpp
+@@ -0,0 +1,89 @@
++// Capacity 262144, live prefill up to the register boundary, and the legacy fallbacks.
++// Compare selected IDs only: unused output padding is not part of the API contract.
++#include "strata/kernels/qsa.hpp"
++#include "strata/kernels/qsa_select.hpp"
++#include <cuda_runtime.h>
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <random>
++#include <vector>
++
++namespace k = strata::kernels;
++namespace {
++void ck(cudaError_t e) {
++    if (e != cudaSuccess) {
++        std::fprintf(stderr, "CUDA: %s\n", cudaGetErrorString(e));
++        std::exit(2);
++    }
++}
++struct Case { int64_t ctx, queries; int mode; };
++bool check(Case c) {
++    constexpr int64_t stride = 262144 / 4 + 2;
++    const auto s = k::qsa_real_shapes();
++    const int64_t cap = k::qsa_selection_width(k::kTopkMaxCells, s);
++    std::vector<int32_t> steps((size_t)(c.queries * k::kStepCount));
++    std::vector<float> scores((size_t)(c.queries * stride), -999.f);
++    std::mt19937 rng(742913);
++    std::uniform_real_distribution<float> random(0.f, 200.f);
++    for (int64_t i = 0; i < c.queries; ++i) {
++        auto* st = steps.data() + i * k::kStepCount;
++        const int64_t pos = c.ctx - c.queries + i;
++        st[k::kStepPos] = (int32_t)pos;
++        st[k::kStepNKv] = (int32_t)(pos + 1);
++        st[k::kStepNBid] = (int32_t)((pos + 1) / s.idx_block);
++        st[k::kStepWidth] = (int32_t)k::qsa_selection_width(pos + 1, s);
++        for (int64_t j = 0; j <= st[k::kStepNBid]; ++j)
++            scores[(size_t)(i * stride + j)] = c.mode == 1 ? 0.f : c.mode == 2 ? float(j % 7) : random(rng);
++        if ((pos + 1) % s.idx_block)
++            scores[(size_t)(i * stride + st[k::kStepNBid])] += 1e9f;
++    }
++    int64_t active = steps[(size_t)((c.queries - 1) * k::kStepCount + k::kStepNBid)] + 1;
++    if (c.mode == 3) active = 0;
++    if (c.mode == 4) active = stride + 1;
++    float* ds = nullptr;
++    int32_t *dt = nullptr, *da = nullptr, *db = nullptr;
++    ck(cudaMalloc(&ds, scores.size() * sizeof(float)));
++    ck(cudaMalloc(&dt, steps.size() * sizeof(int32_t)));
++    ck(cudaMalloc(&da, (size_t)(c.queries * cap) * sizeof(int32_t)));
++    ck(cudaMalloc(&db, (size_t)(c.queries * cap) * sizeof(int32_t)));
++    ck(cudaMemcpy(ds, scores.data(), scores.size() * sizeof(float), cudaMemcpyHostToDevice));
++    ck(cudaMemcpy(dt, steps.data(), steps.size() * sizeof(int32_t), cudaMemcpyHostToDevice));
++    // No bound: the exact capacity-based dispatch used by captured decode.
++    k::qsa_block_topk(ds, dt, c.queries, stride, cap, s, da, nullptr);
++    k::qsa_block_topk(ds, dt, c.queries, stride, cap, s, db, nullptr, active);
++    ck(cudaDeviceSynchronize());
++    std::vector<int32_t> a((size_t)(c.queries * cap)), b(a.size());
++    ck(cudaMemcpy(a.data(), da, a.size() * sizeof(int32_t), cudaMemcpyDeviceToHost));
++    ck(cudaMemcpy(b.data(), db, b.size() * sizeof(int32_t), cudaMemcpyDeviceToHost));
++    bool ok = true;
++    for (int64_t i = 0; i < c.queries; ++i) {
++        const int64_t w = steps[(size_t)(i * k::kStepCount + k::kStepWidth)];
++        if (!std::equal(a.begin() + i * cap, a.begin() + i * cap + w, b.begin() + i * cap)) {
++            std::fprintf(stderr, "FAIL ctx=%lld queries=%lld mode=%d row=%lld\n",
++                         (long long)c.ctx, (long long)c.queries, c.mode, (long long)i);
++            ok = false;
++            break;
++        }
++    }
++    ck(cudaFree(ds)); ck(cudaFree(dt)); ck(cudaFree(da)); ck(cudaFree(db));
++    return ok;
++}
++}
++
++int main() {
++    int devices = 0;
++    if (cudaGetDeviceCount(&devices) != cudaSuccess || devices == 0) {
++        std::puts("SKIP: no CUDA device");
++        return 77;
++    }
++    const Case cases[] = {
++        {1111, 256, 0}, {8192, 256, 0}, {32768, 256, 0}, {131072, 256, 0},
++        {131075, 255, 0}, {135164, 256, 0}, {135168, 256, 0}, {250022, 256, 0},
++        {262144, 256, 0}, {131072, 1, 0}, {131072, 8, 0}, {131072, 257, 0},
++        {131072, 256, 1}, {131072, 256, 2}, {131072, 256, 3}, {131072, 256, 4},
++    };
++    for (const auto c : cases) if (!check(c)) return 1;
++    std::puts("PASS: 16 top-k active-bound cases, selected IDs bitwise identical");
++    return 0;
++}

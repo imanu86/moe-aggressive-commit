@@ -60,6 +60,7 @@ def main():
     ap.add_argument("--out", type=Path)
     ap.add_argument("--exe", type=Path, help="Eseguibile candidato; altrimenti build-0130")
     ap.add_argument("--server-source", type=Path, help="Sorgenti server della versione candidata; altrimenti clone operativo")
+    ap.add_argument("--config-template", type=Path, help="Configurazione reale da copiare per la prova; altrimenti profilo di laboratorio")
     ap.add_argument("--needle-lengths", help="Dopo il banco: controllo retrieval upstream, ad esempio 32k,250k")
     ap.add_argument("--retrieval-250k", action="store_true", help="Dopo il banco: prompt con almeno 250000 token reali e ago al 50%")
     ap.add_argument("--solo-retrieval-250k", action="store_true", help="Solo riempimento/retrieval 250k, senza ripetere il banco 131k")
@@ -92,7 +93,8 @@ def main():
         sock.bind(("127.0.0.1", PORT))
     out = (a.out or REPO / ".codex_runs" / (time.strftime("%Y%m%d_%H%M%S_") + a.nome)).resolve()
     out.mkdir(parents=True, exist_ok=False)
-    cfg = json.loads((AREA / "lanciatori/strata-2080ti-256k.json").read_text(encoding="utf-8-sig"))
+    config_template = (a.config_template or AREA / "lanciatori/strata-2080ti-256k.json").resolve(strict=True)
+    cfg = json.loads(config_template.read_text(encoding="utf-8-sig"))
     if a.exe:
         candidate = a.exe.resolve(strict=True)
         cfg["exe"] = str(candidate)
@@ -151,6 +153,8 @@ def main():
     server = None
     bench = None
     result = {"name": a.nome, "kv_capacity": 262144,
+              "config_template": str(config_template),
+              "config_template_sha256": hashlib.sha256(config_template.read_bytes()).hexdigest(),
               "prompt_profile": None if a.solo_avvio or a.solo_retrieval_250k else "lungo_131k", "out": str(out),
               "duration_limit_s": a.durata_max_s,
               "exe": cfg["exe"],

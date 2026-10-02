@@ -1,0 +1,62 @@
+{
+  "name": "candidate0136_serial",
+  "kv_capacity": 262144,
+  "prompt_profile": "lungo_131k",
+  "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\model-tests\\candidate0136_serial",
+  "duration_limit_s": 1000,
+  "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\build0136\\strata.exe",
+  "exe_sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a",
+  "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\candidate0136",
+  "server_sha256": "73f90f417e9207811fdc47e5e6240f69bbde0f61ff027b9e0d8cb7b7bb2f4d81",
+  "requested_fixed_cache_slots": null,
+  "gather_mode": null,
+  "kernel_profiling": false,
+  "qsa_ch": null,
+  "topk_mode": "active",
+  "artificial_load": false,
+  "status": "completed",
+  "startup_s": 41.33,
+  "health": {
+    "status": "ok",
+    "max_context": 262144,
+    "model": "qwen3.8-flash-next-iq3_xxs",
+    "images": false,
+    "api_key": false,
+    "loaded": true,
+    "service": "strata"
+  },
+  "initial_cache": {
+    "expert_slots": 6786,
+    "expert_cache_mib": 11231,
+    "vram_free_mib": 976
+  },
+  "summary": {
+    "corsa": "20261002_190254_candidate0136_serial_lungo_131k",
+    "nota": "KV 262144; prompt 131k; carico reale",
+    "decode_aggregato_tps": 40.123,
+    "blocchi": {
+      "131k": {
+        "casi": 2,
+        "decode_tps": 40.123
+      }
+    },
+    "per_caso": [
+      {
+        "etichetta": "L01@ctx131k",
+        "prefill_tps_motore": 972.68,
+        "decode_tps_motore": 42.667,
+        "ttft_s": 135.655,
+        "vram_prima_mib": 20316,
+        "fine": "length"
+      },
+      {
+        "etichetta": "L02@ctx131k",
+        "prefill_tps_motore": 88.87,
+        "decode_tps_motore": 37.866,
+        "ttft_s": 2.498,
+        "vram_prima_mib": 20802,
+        "fine": "length"
+      }
+    ]
+  }
+}

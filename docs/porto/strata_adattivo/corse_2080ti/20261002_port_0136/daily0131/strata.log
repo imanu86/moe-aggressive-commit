@@ -1,0 +1,61 @@
+strata generate: PCIe probe: 13.0 GB/s host->device -> pcie_frac 0.28 (default 0.55)
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: D:\ds4_work\strata\Strata-data\packs\iq3_xxs experts (largest blob 2.33 MB), token embedding type 21 in mapped host memory (260 MiB)
+strata generate: 1466 MiB of weights loaded from D:\ds4_work\strata\Strata-data\packs\iq3_xxs (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1781.11 MiB of weights
+strata generate: profile D:\ds4_work\strata\Strata\data\expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: KV streaming: 32768 of 262144 cells per QSA layer in VRAM, the K/V in 3.09 GiB of pinned RAM
+strata generate: PLE on, table 320001536 rows of C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf
+strata mtp: draft layer loaded, 835 MiB of VRAM (experts 675, dense 111), files read in 1.77 s (444 MiB/s)
+strata generate: expert arena: cudaHostRegister PORTABLE ok; large pages refused for 42916118528 B (GetLargePageMinimum=2097152, VirtualAlloc error 1314); using 4 KB pages
+strata generate: loaded 39.97 GiB at 1.79 GiB/s
+strata generate: experimental native Q5_K head, 437043200 bytes
+strata generate: expert cache auto: 15.25 GiB free, 1393 MiB reserved (+73 MiB for the draft head) -> 6369 slots
+strata generate: only 0 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: only 0 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: only 1140 MiB free once the slots are written (reserve 1393 MiB); shrinking the expert cache
+strata generate: expert cache 6592 slots, 10.66 GiB of VRAM; policy is
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: pre-filled 6592 of 6592 slots from the profile; slot 0 verified
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 7 expert-pool workers + the host thread
+strata generate: session is up (engine 0.1.31)
+strata generate: token graph hit path: 6592 resident experts, decided on the device
+strata serve: prompt chunk auto: 8192 tokens
+strata serve: the prompt path borrows 2960 CUDA0 cache slots (4.73 GiB)
+strata hc: CUDA0: the hyper-connection read runs as v3 (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against v1 on this card (STRATA_HC_V2=2 or 0 for the earlier ones)
+strata verify: window up to 6 tokens, 70.4 MiB of device buffers
+strata mtp: draft head over 40525 tokens (68.0 MiB)
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6592 slots now, 10.66 GiB, chunks of 64 MiB)
+strata elastic: two zones - core 3265 slots (5.33 GiB, fixed), tail 3327 slots (5.33 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)
+strata serve: 594 MiB of VRAM free with everything loaded
+strata verify: captured the 6-token window (upload no error, sync no error)
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata verify: captured the 1-token window (upload no error, sync no error)
+strata verify: captured the 3-token window (upload no error, sync no error)
+strata serve: prompt 61 tokens = 0 reused + 61 read in 1346 ms (45.3 tok/s), 8 generated in 316 ms (25.3 tok/s), drafts accepted 6 of 8, 1 checkpoints
+strata serve: decode expert cache hit rate: 61.6% (3295 hits / 5349 lookups)
+strata serve: stage 0: 15 windows; per window: wait for the GPU 34.449 ms, pool + plan 55.052 ms, host staging 1.979 ms, commit 0.267 ms
+strata serve: KV streaming: 97.36% of 8172 block reads hit VRAM, 0.9 MiB read from RAM
+strata serve: prompt 61 tokens = 56 reused + 5 read in 105 ms (47.5 tok/s), 8 generated in 248 ms (32.3 tok/s), drafts accepted 6 of 8, 1 checkpoints
+strata serve: decode expert cache hit rate: 68.3% (3693 hits / 5404 lookups)
+strata serve: stage 0: 20 windows; per window: wait for the GPU 31.669 ms, pool + plan 50.292 ms, host staging 1.489 ms, commit 0.283 ms
+strata serve: KV streaming: 98.09% of 11304 block reads hit VRAM, 0.9 MiB read from RAM
+strata elastic: +235 experts (398 MiB) -> 6827 slots, 11.05 GiB; 1000 MiB free
+strata elastic: +175 experts (296 MiB) -> 7002 slots, 11.34 GiB; 723 MiB free
+strata elastic: -85 slots (33 moved in, 52 out) -> 6917 slots, 11.20 GiB; 1318 MiB free, prompt chunk 8192
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 134744 ms (974.1 tok/s), 1024 generated in 23134 ms (44.3 tok/s), drafts accepted 533 of 701, 6 checkpoints
+strata serve: decode expert cache hit rate: 87.0% (488868 hits / 561755 lookups)
+strata serve: stage 0: 515 windows; per window: wait for the GPU 25.390 ms, pool + plan 14.287 ms, host staging 1.292 ms, commit 0.230 ms
+strata serve: KV streaming: 97.37% of 7388208 block reads hit VRAM, 782.7 MiB read from RAM
+strata serve: suffix drafts: 2 windows, 2 of 8 drafts accepted
+strata elastic: -58 slots (24 moved in, 34 out) -> 6859 slots, 11.10 GiB; 975 MiB free, prompt chunk 8192
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1997 ms (83.6 tok/s), 1024 generated in 26509 ms (38.6 tok/s), drafts accepted 384 of 587, 6 checkpoints
+strata serve: decode expert cache hit rate: 88.1% (511157 hits / 580341 lookups)
+strata serve: stage 0: 1158 windows; per window: wait for the GPU 24.185 ms, pool + plan 11.710 ms, host staging 1.470 ms, commit 0.235 ms
+strata serve: KV streaming: 97.63% of 14986032 block reads hit VRAM, 1429.4 MiB read from RAM
+strata serve: suffix drafts: 4 windows, 6 of 13 drafts accepted

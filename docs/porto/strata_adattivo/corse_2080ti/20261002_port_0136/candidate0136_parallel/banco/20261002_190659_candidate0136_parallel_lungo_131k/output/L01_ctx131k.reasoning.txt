@@ -1,0 +1,21 @@
+We need answer in Italian. User asks: "Spiega in italiano, per un collega che conosce il C++ ma non i modelli MoE, perche' il decode di un Mixture-of-Experts con pochi esperti residenti in VRAM puo' essere limitato dalla banda del bus PCIe invece che dal calcolo. Usa esempi numerici inventati da te per mostrare il conto dei byte per token, e chiudi elencando tre misure che distinguono un collo di bottiglia di banda da uno di calcolo."
+
+Need produce final answer. Need explain MoE decode, few experts resident in VRAM, PCIe bandwidth bottleneck vs compute. Use invented numeric examples byte per token. Close with three measurements distinguishing bandwidth vs compute bottleneck.
+
+Need likely mention MoE: each token activates subset of experts via router. If experts not resident, need load weights from host RAM/SSD to GPU over PCIe. Decode is autoregressive, batch size 1, small compute per token but large weight movement. Compare bytes moved vs FLOPs. Need C++ colleague: analogies maybe cache miss, memory-bound vs compute-bound. Need numeric examples: model with 128 experts, top-k 8, hidden dim etc. Let's craft plausible numbers.
+
+Need be careful: MoE with few experts resident in VRAM: maybe only some experts cached, others streamed. For each token, router selects experts; if selected expert not in VRAM, load its weights. If many experts not resident, PCIe transfer dominates.
+
+Need examples:
+- Suppose MoE FFN expert has 3 matrices: gate/up/down, hidden 4096, intermediate 14336? For Llama-like FFN: w1, w3, w2. Expert params: 3 * hidden * intermediate = 3*4096*14336 = 176M params. At Q4_0 ~0.5 bytes/param? Actually Q4_0 4.5 bits? ~0.5625 bytes? Could use 0.5 bytes for simplicity. 176M*0.5=88 MB per expert. If top-k=8, 704 MB per token if all experts cold. PCIe Gen4 x16 ~32 GB/s theoretical, effective 20-25 GB/s -> 28-35 ms/token just transfer. Compute: 2*params FLOPs? 176M*2*8=2.8 GFLOP? Actually per token per expert 2*176M MACs? 352 MFLOP? For 8 experts 2.8 GFLOP. GPU 100 TFLOPS -> 28 us. So memory dominates.
+
+But if experts resident, no PCIe transfer, compute maybe 2.8 GFLOP/token, at 100 TFLOPS 28 us, but memory bandwidth on VRAM: weights read 704 MB per token? Wait if resident, still read weights from VRAM each token: 704 MB/token. VRAM bandwidth 1 TB/s -> 0.7 ms. But if batched, reuse weights. Decode batch 1 memory-bound on VRAM too. But question specifically PCIe bus with few experts resident. Need explain if only few experts resident, router may select non-resident experts, causing host->device transfers. If cache hit rate low, PCIe bytes per token high.
+
+Need maybe include cache: if 16 experts resident out of 128, top-k 8 random selection expected resident hits? If uniform, expected non-resident experts = 8*(112/128)=7. So 7 experts streamed per token. If expert 88 MB -> 616 MB/token. At 25 GB/s -> 24.6 ms/token. Compute maybe 2.8 GFLOP -> 28 us. So bandwidth bottleneck.
+
+Need maybe mention overhead: router compute small, loading metadata, synchronization, small transfers, fragmentation. PCIe latency and DMA overhead. Also if experts are paged in/out, eviction thrashing.
+
+Need three measurements:
+1. Throughput vs batch size: bandwidth-bound scales poorly with batch? Actually compute-bound improves with batch; bandwidth-bound may improve if weights reused across batch, but if expert selection differs, less. Better: measure bytes moved per token via profiler (PCIe counters, nvidia-smi, nvprof) and compare to theoretical. If PCIe utilization near max and GPU SM utilization low -> bandwidth.
+2. Change PCIe link or host memory speed: if throughput changes with PCIe Gen4 vs Gen5 or CPU RAM bandwidth, bandwidth-bound. If compute-bound, changing GPU FLOPs/threads changes.
+3. Increase batch size / parallel tokens: compute-bound improves near linearly until compute saturated; bandwidth-bound

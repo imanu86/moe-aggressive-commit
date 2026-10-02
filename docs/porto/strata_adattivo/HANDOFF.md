@@ -1,4 +1,4 @@
-# HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.31 + HC/vector/PR315/top-k, elastica e KV 262k)
+# HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.36 + port sm75/top-k/PR463, elastica e KV 262k)
 
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
 `research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,
@@ -14,7 +14,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 - Macchina: **solo la RTX 2080 Ti 22 GB** (sm_75, PCIe 3.0, 13,1 GB/s), Ryzen 7 5800X (8 core, AVX2), 96 GB di RAM. La
   3060 e' smontata; tornera' in OCuLink. **La seconda scheda e' fuori perimetro per ora** (decisione utente, 1/10).
 - Motore: **Strata** (github.com/Niko1221/Strata, MIT) col nostro fork locale. Misure storiche su prompt brevi:
-  Strata 44-45 t/s, daily llama ricompilato 12-16 t/s. Daily combinato realmente promosso, a 131k:
+  Strata 44-45 t/s, daily llama ricompilato 12-16 t/s. Riferimento storico0.1.31 a 131k:
   **39,272 t/s decode,886,38 t/s prefill a131k** (2/10, cache auto/elastica);
   **39,218t/s decode e638,67t/s prefill a250k**, output lungo1024token.
   Non confondere profondita' e capienza KV. Il decode a250k e' un follow-up riusato.
@@ -23,6 +23,52 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
+- **2/10, main e daily0.1.36 aggiornati e verificati.**
+  PRupstream [#512](https://github.com/Niko1221/Strata/pull/512) aperta in bozza,
+  branchremoto autorizzato `prefill-topk-active-bound`, commit42131caf; aggiornata
+  senza riscrivere storia alla main0.1.36/36fa455; mergeable,4file soltanto.
+  La PRisolata attende A/B/A modello sulla nuova base; i test del fork completo
+  non sono attribuiti alla PR. Nessun commento/review al controllo2/10.
+  Fork pubblicazione e dailyD sono ora **main/729eb4a14c0a102cf7a57149e8e3fd93a9d18a5f**,
+  tree completo upstream0.1.36 + sm75/elastica conservati,17file core di port.
+  #315/commitasync mantenuti upstream; sola attesa pre-verifica #463 inclusa.
+  #500 quantizzazione parallela inclusa **opt-in**, profilo daily seriale0:
+  gain decode0,37% non causale, pool+plan11,631→12,136ms, nessun vantaggio CPU.
+  Tre bracci2x1024 completati, prompt131248freddo/131239riusato, KV262144:
+  **0.1.31:974,05prefill/41,255decode;0.1.36seriale:972,68/40,123;
+  0.1.36parallela:970,60/40,272t/s**. Record osservato131k aggiornato a974,05;
+  il precedente daily lo raggiunge anch'esso, nessuno speedup nuove patch dedotto.
+  Cache/MTP/pressione reali variabili; nessun carico artificiale o altra chat.
+  Build CMake completa sm75PASS,16parita'top-k,64pool realibitwise,HCzeroerrori,
+  **100testserverPASS**,sourcecheck575file+manifeststoricoPASS. I nuovi fused
+  prefill0.1.36 richiedono sm80+, decodecluster sm90+: indisponibili suTuring.
+  LanciatoreDesktop/JSONcanonico ora **`build-0136-daily\strata.exe`** e
+  **`build-0136-daily\source\serve\server.py`**; copie repo byte-identiche.
+  Exe **c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a**,cap262144/int8/resident32768,riserva1393,
+  cacheauto/elastica,MTP,poolquant0. Smoke configurazione reale **40,72sPASS**.
+  Backup **`D:\ds4_work\strata\ripristini\20261002_191326_0136_main_daily`**;48untrackedpreservati, vecchiof469/build0131
+  disponibile, manifest0.1.31 conservato separatamente. Nessun workflow.
+  Release [v0.1.36-sm75-20261002-r1](https://github.com/imanu86/Strata-2080Ti/releases/tag/v0.1.36-sm75-20261002-r1) pubblicata,exe/PDB/manifest esatti;
+  releaseprecedente conservata. Processi propri conclusi, nessuna prova futura
+  pianificata. Retrieval250k0.1.36 e qualita'generale **non** validati; non
+  riprendere automaticamente la vecchia conversazione interrotta per bloccoUI.
+  Dettagli **`ALLINEAMENTO_0136_2_OTTOBRE.md`**,evidenze
+  `corse_2080ti/20261002_port_0136/`; preparazione0.1.35 storica conservata.
+- **Correttezza risposte e bozze, chiarimento2/10:** i6output del banco131k
+  sono troncati a1024 durante il ragionamento, nessuna risposta finale valutata.
+  I100testserver sono mock; parita'kernel non dimostra qualita'generale.
+  Letti i2ragionamenti seriali, temi pertinenti ma esempiGiB/GB intermedi
+  incoerenti: non segnare PASS del modello. Nessun'altra chat/reviewer coinvolto.
+  `spec=6,mtp_max=4` runtime significa fino3bozzeMTP e5lookup, includendo il
+  token corrente. Non fatto sweep MTP4/6/8 sulla0.1.36. Vecchio minp0,3:
+  43,2contro45,1t/s. Prossime prove: risposte complete con oracoli, poi bozze;
+  nessuna nuova corsa avviata. `corse_2080ti/20261002_port_0136/CORRETTEZZA_E_BOZZE.md`.
+- **Metodo upstream, controllo 2/10:** kernel confrontati con riferimenti
+  indipendenti e tolleranze specifiche; modello confrontato in teacher forcing
+  su testi fissi tramite logits, KL e perplexity. Non trovato un unico harness
+  pubblico obbligatorio. Sul nostro daily manca questo gate del modello:
+  farlo insieme alle risposte complete prima dello sweep delle bozze.
+  Fonti e limiti: `corse_2080ti/20261002_port_0136/STANDARD_TEST_UPSTREAM.md`.
 - **Prova conversazionale del 2/10 interrotta per blocco UI Windows.**
   Richiesta utente:20k iniziali, turni da1k fino250k. Raccolti **89turni**,
   **19999→131790token**, **22920token generati**, tutti89finish=stop,
@@ -60,7 +106,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   Nessuna nuova build/prova GPU; processi motore spenti, macchina libera.
   Dettagli **`PUBBLICAZIONE_FORK_2_OTTOBRE.md`**. La precedente nota sul checkout
   operativo fermo a0.1.30 nei rapporti dell'1/10 e' storica, ora superata.
-- **Lanciatore SOTA** (copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
+- **Lanciatore SOTA storico0.1.31** (ora superato dalla0.1.36 sopra; copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
   **`build-0131-daily\strata.exe`**, 0.1.31 + nove patch locali + HC/GDN FP16 + dequant vettoriale + #315 + top-k attivo.
   Il BAT usa il server della stessa build in **`build-0131-daily\source\serve\server.py`**.
   `--elastic` (cache a due zone), riserva di avvio 1393 MiB,

@@ -1,0 +1,27 @@
+--- a/src/kernels/cuda/qsa_prompt_attn.cu
++++ b/src/kernels/cuda/qsa_prompt_attn.cu
+@@ -220,8 +220,8 @@
+         __syncthreads();
+         // scores: warp w takes cells 8w..8w+7 (one n-tile) over all 256 dims, per 64-dim scale group
+ #pragma unroll
+-        for (int nt = 0; nt < CH / 32; ++nt) {
+-            const int cb = (warp + 4 * nt) * 8;
++        for (int nt = warp; nt < CH / 8; nt += 4) {
++            const int cb = nt * 8;
+             float sc[4] = {0.f, 0.f, 0.f, 0.f};
+ #pragma unroll
+             for (int g = 0; g < 4; ++g) {
+@@ -668,6 +668,13 @@
+             cudaGetLastError();
+             return false;
+         }
++        if constexpr (D1_CH == 16 && KV_MODE == 1) {
++            if (cudaFuncSetAttribute(prompt_attn_kernel<KV_MODE>,
++                    cudaFuncAttributePreferredSharedMemoryCarveout, 100) != cudaSuccess) {
++                cudaGetLastError();
++                return false;
++            }
++        }
+         attr[dev] = true;
+     }
+     const float scale_log2 = 1.4426950408889634f / sqrtf((float) HD);

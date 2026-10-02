@@ -39,25 +39,29 @@ def enrich_native(rows, native, initial_slots):
                 current['expert_slots'] = current_slots
         m = re.search(r'KV streaming: ([\d.]+)% of (\d+) block reads hit VRAM, ([\d.]+) MiB read from RAM', line)
         if m and current is not None:
-            current.update(kv_vram_hit_pct=float(m[1]), kv_block_reads=int(m[2]), kv_ram_mib=float(m[3]))
+            current.update(kv_vram_hit_pct_cumulative=float(m[1]),
+                           kv_block_reads_cumulative=int(m[2]), kv_ram_mib_cumulative=float(m[3]))
     return rows
 
 
 def plot(summary, rows, out, node, sharp):
-    from reportlab.graphics.shapes import Drawing, String, Line, Circle
+    from reportlab.graphics.shapes import Drawing, String, Line, Rect
     from reportlab.graphics.charts.lineplots import LinePlot
     from reportlab.graphics import renderSVG
     from reportlab.lib import colors
     drawing = Drawing(1200, 1020)
+    drawing.add(Rect(0, 0, 1200, 1020, fillColor=colors.white, strokeColor=None))
     dark, blue, gray = colors.HexColor('#173b66'), colors.HexColor('#84b4df'), colors.HexColor('#d8e2ec')
-    drawing.add(String(48, 976, 'Strata SM75: one conversation from 20k to 250k', fontName='Helvetica-Bold', fontSize=23, fillColor=dark))
+    maximum_k = summary['context_max']/1000
+    drawing.add(String(48, 976, f'Strata SM75: one conversation from 20k to {maximum_k:.1f}k', fontName='Helvetica-Bold', fontSize=23, fillColor=dark))
     drawing.add(String(48, 950, 'Modified RTX 2080 Ti 22 GB | KV 262144 / resident 32768 | elastic cache | MTP | IQ3_XXS', fontSize=13))
-    drawing.add(String(48, 926, f"{len(rows)} generated replies; initial 20k, then approximately 1k user tokens; full history retained", fontSize=13))
-    specs = [('decode_tps', 'Decode: engine generated tokens / native decode time', 654, 0),
-             ('prefill_tps', 'Incremental prefill: new tokens only / native prompt time', 376, 0),
-             ('ttft_s', 'Time to first visible token: HTTP + tokenization + prefill', 98, 0)]
+    label = 'Complete' if summary['status'] == 'completed' else 'Interrupted for Windows UI unresponsiveness; 250k not reached'
+    drawing.add(String(48, 926, f"{len(rows)} replies; full history retained. {label}", fontSize=13))
+    specs = [('decode_tps', 'Decode (tokens/s): engine generated tokens / native decode time', 654, 0),
+             ('prefill_tps', 'Incremental prefill (tokens/s): new tokens only / native prompt time', 376, 0),
+             ('ttft_s', 'Time to first visible token (s): HTTP + tokenization + prefill', 98, 0)]
     for key, title, y, minimum in specs:
-        selected = rows[1:] if key == 'prefill_tps' else rows
+        selected = rows[1:] if key in ('prefill_tps', 'ttft_s') else rows
         raw = [(r['prompt_tokens']/1000, r[key]) for r in selected]
         pooled = [(b['center_k'], b[key if key != 'ttft_s' else 'ttft_mean_s']) for b in summary['bins_10k']]
         high = max(v for _, v in raw)*1.15
@@ -68,8 +72,9 @@ def plot(summary, rows, out, node, sharp):
         lp.data = [raw, pooled]
         lp.lines[0].strokeColor, lp.lines[0].strokeWidth = blue, 1
         lp.lines[1].strokeColor, lp.lines[1].strokeWidth = dark, 3
-        lp.xValueAxis.valueMin, lp.xValueAxis.valueMax = 19, 251
-        lp.xValueAxis.valueSteps = [20, 50, 100, 130, 160, 200, 250]
+        axis_max = max(25, math.ceil(maximum_k)+1)
+        lp.xValueAxis.valueMin, lp.xValueAxis.valueMax = 19, axis_max
+        lp.xValueAxis.valueSteps = [v for v in [20, 50, 80, 100, 130, 160, 200, 250] if v <= axis_max]
         lp.yValueAxis.valueMin, lp.yValueAxis.valueMax = minimum, high
         lp.yValueAxis.valueSteps = list(range(minimum, int(high)+1, step))
         lp.xValueAxis.labels.fontSize = lp.yValueAxis.labels.fontSize = 11
@@ -78,15 +83,16 @@ def plot(summary, rows, out, node, sharp):
         drawing.add(lp)
         drawing.add(String(86, y+220, title, fontName='Helvetica-Bold', fontSize=16, fillColor=dark))
         drawing.add(String(86, y-34, 'Actual prompt depth (thousands of tokens)', fontSize=11))
-        x = 86+(135.164-19)/(251-19)*1064
-        drawing.add(Line(x, y, x, y+190, strokeColor=colors.HexColor('#b4bac2'), strokeWidth=1, strokeDashArray=[3, 4]))
+        if axis_max >= 135.164:
+            x = 86+(135.164-19)/(axis_max-19)*1064
+            drawing.add(Line(x, y, x, y+190, strokeColor=colors.HexColor('#b4bac2'), strokeWidth=1, strokeDashArray=[3, 4]))
         if key == 'prefill_tps':
             drawing.add(String(86, y+199, f"Initial cold 20k prefill: {rows[0]['prefill_tps']:.2f} tokens/s (separate workload)", fontSize=11))
     drawing.add(Line(870, 914, 904, 914, strokeColor=blue, strokeWidth=1))
     drawing.add(String(912, 910, 'per turn', fontSize=11))
     drawing.add(Line(1015, 914, 1049, 914, strokeColor=dark, strokeWidth=3))
     drawing.add(String(1057, 910, '10k bins', fontSize=11))
-    drawing.add(String(48, 28, '10k rates pool tokens/time. First turn excluded from pooled warm curve. Dashed: 135164 active-top-k limit.', fontSize=10))
+    drawing.add(String(48, 28, '10k rates pool tokens/time. First turn excluded from pooled warm curve. Cold 20k prefill is a separate workload.', fontSize=10))
     svg = out/'curve.svg'
     renderSVG.drawToFile(drawing, str(svg))
     if node and sharp:
@@ -148,7 +154,11 @@ def main():
             'Incremental ~1k prefill differs from cold full-context prefill benchmarks.',
             'Decode rates depend on generated content, MTP acceptance, expert residency and normal desktop activity.',
             'Technical answer correctness not fully evaluated; recall mentions are limited checks.',
-            'Native KV streaming counters are engine-reported; no physical DRAM GB/s measured.']}
+            'Native KV streaming counters are cumulative over the process; no physical DRAM GB/s measured.']}
+    interruption_path = a.run/'ui-interruption.json'
+    if interruption_path.exists():
+        summary['interruption'] = json.loads(interruption_path.read_text(encoding='utf-8'))
+        summary['status'] = 'stopped_for_ui_unresponsiveness'
     a.out.mkdir(parents=True, exist_ok=True)
     (a.out/'summary.json').write_text(json.dumps(summary, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
     fields = list(dict.fromkeys(k for r in rows for k in r))
@@ -161,13 +171,15 @@ def main():
                  'question_tail': r['user'][-1200:], 'answer': r['assistant']} for r in samples]
     (a.out/'conversation-samples.json').write_text(json.dumps(examples, ensure_ascii=False, indent=2)+'\n', encoding='utf-8')
     plot(summary, rows, a.out, a.node, a.sharp)
-    lines = ['# Conversazione cumulativa 20k → 250k — 2 ottobre 2026', '',
+    lines = [f"# Conversazione cumulativa 20k → {rows[-1]['prompt_tokens']} — 2 ottobre 2026", '',
         f"Daily f469, {len(rows)} turni, {summary['generated_tokens']} token generati; contesto reale {rows[0]['prompt_tokens']} → {rows[-1]['prompt_tokens']}.", '',
         'RTX2080Ti modificata a22GB, Ryzen7 5800X,96GB RAM. KV262144/int8/resident32768, cache auto/elastica, MTP, nessun carico artificiale.', '',
         'Dossier iniziale da20k con documentazione reale Strata, poi estratti nuovi da circa1000token per messaggio utente. Tutte le risposte effettive conservate nella cronologia, nessuna troncatura o riavvio intermedio.', '',
         f"Primo prefill freddo: **{rows[0]['prefill_tps']:.2f}t/s**, TTFT{rows[0]['ttft_s']:.2f}s. Le righe seguenti misurano il prefill incrementale e il decode.", '',
         '| Contesto circa | Turni nella finestra ±5k | Prefill incrementale t/s | Decode t/s | TTFT medio s |',
         '|---:|---:|---:|---:|---:|']
+    if summary['status'] != 'completed':
+        lines[2:2] = ['**Prova interrotta: Windows non era piu\' cliccabile. Target250k NON raggiunto.** Strata e\' stato fermato al termine del turno corrente; non attribuire questo arresto a un errore di inferenza.', '']
     for m in milestones:
         lines.append(f"|{m['at_k']}k|{m['turns']}|{m['prefill_tps']:.2f}|{m['decode_tps']:.2f}|{m['ttft_mean_s']:.2f}|")
     lines += ['', 'Velocita\' aggregate come somma token / somma tempi nativi; prima richiesta esclusa dalle finestre warm. TTFT misurato al primo contenuto visibile nel flusso HTTP.', '',

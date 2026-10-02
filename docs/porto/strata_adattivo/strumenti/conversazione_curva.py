@@ -237,7 +237,8 @@ def main():
                 if time.monotonic() >= deadline:
                     raise TimeoutError('Conversation duration limit')
                 if (out/'STOP').exists():
-                    result['status'] = 'stopped_by_user'
+                    result['status'] = 'stopped'
+                    result['stop_reason'] = (out/'STOP').read_text(encoding='utf-8').strip() or 'stop_requested'
                     break
                 turn += 1
                 user_content = messages[-1]['content']

@@ -23,6 +23,26 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
+- **Prova conversazionale del 2/10 interrotta per blocco UI Windows.**
+  Richiesta utente:20k iniziali, turni da1k fino250k. Raccolti **89turni**,
+  **19999→131790token**, **22920token generati**, tutti89finish=stop,
+  nessuna cronologia troncata, stesso daily f469/KV262144/elastica/MTP.
+  Prefill freddo20k **913,95t/s**; incrementale1k circa335,72t/s a20k
+  e272,19t/s a130k. Decode aggregato per finestre:38,37t/s a20k,
+  39,20a50k,39,87a80k,43,46a100k,39,88a130k. Un singolo percorso con
+  testi/MTP diversi: niente nuovo SOTA causale o sweep controllato.
+  L'utente ha segnalato che **nessuna app/finestra Windows era cliccabile**.
+  RAMlibera29,55GiB/95,89; CPU29,4%; VRAMusata21229MiB/libera1002MiB,
+  GPU99%. DiscoC circa6MiB/s lettura,0,32scrittura; coda0, idleC96%/D98%.
+  Strata RSS46,03GiB. Nessuna saturazione RAM/disco osservata; contesa
+  GPU/desktop plausibile ma recupero UI da confermare con l'utente.
+  **Fermati i soli processi della prova** al termine del turno corrente:
+  RAMlibera76,56GiB, VRAMlibera18736MiB; nessun engine attivo.
+  **Target250k NON raggiunto.** Non rilanciare automaticamente lo stesso
+  profilo mentre Windows e' inutilizzabile. Configurazione daily invariata.
+  Curva parziale, CSV, esempi, diagnostica e limiti:
+  `corse_2080ti/20261002_conversazione_curva/README.md`.
+  Raw transcript/server/native in `.codex_runs/20261002_conversazione_20k_250k`.
 - **Pubblicazione e allineamento del 2/10, 09:59 Europe/Rome completati.**
   Fork pubblico: https://github.com/imanu86/Strata-2080Ti ; release esatta:
   https://github.com/imanu86/Strata-2080Ti/releases/tag/v0.1.31-sm75-20261002-r1 .

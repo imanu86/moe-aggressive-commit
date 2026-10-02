@@ -1,7 +1,7 @@
 @echo off
 rem Strata daily validata il 2/10/2026: 0.1.31 + patch elastiche locali + HC/GDN FP16 + vector + PR315 + top-k attivo.
 rem Cache esperti auto/elastica a due zone, riserva 1393 MiB, KV int8 262144 con residenti 32768, MTP.
-rem Sorgenti completi e server della build: D:\ds4_work\strata\Strata\build-0131-topk-active\source.
+rem Sorgenti completi e server della build: D:\ds4_work\strata\Strata\build-0131-daily\source.
 rem Misure e ripristino: docs/porto/strata_adattivo/RISULTATI_TOPK_2_OTTOBRE.md.
 rem Porta 8100 su 127.0.0.1; chiave API dalla variabile STRATA_API_KEY, mai salvata qui.
 setlocal
@@ -18,10 +18,10 @@ if not errorlevel 1 (
   exit /b 1
 )
 set "S=D:\ds4_work\strata\Strata"
-if not exist "%S%\build-0131-topk-active\strata.exe" (
-  echo ERRORE: manca %S%\build-0131-topk-active\strata.exe
+if not exist "%S%\build-0131-daily\strata.exe" (
+  echo ERRORE: manca %S%\build-0131-daily\strata.exe
   pause
   exit /b 1
 )
-"%S%\.venv\Scripts\python.exe" "%S%\build-0131-topk-active\source\serve\server.py" --engine strata --config "%S%\strata-2080ti-sota.json" --host 127.0.0.1 --port 8100
+"%S%\.venv\Scripts\python.exe" "%S%\build-0131-daily\source\serve\server.py" --engine strata --config "%S%\strata-2080ti-sota.json" --host 127.0.0.1 --port 8100
 if errorlevel 1 pause

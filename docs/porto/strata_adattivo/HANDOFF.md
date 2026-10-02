@@ -23,9 +23,26 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
+- **Pubblicazione e allineamento del 2/10, 09:59 Europe/Rome completati.**
+  Fork pubblico: https://github.com/imanu86/Strata-2080Ti ; release esatta:
+  https://github.com/imanu86/Strata-2080Ti/releases/tag/v0.1.31-sm75-20261002-r1 .
+  Il checkout operativo **`D:\ds4_work\strata\Strata` e' ora `main` del nostro
+  fork**, commit `ad4700d61852af3481c8c36a98e5411a76e167cc`; preservati i 13
+  commit locali con un merge il cui tree coincide con lo snapshot validato.
+  `origin` punta a `imanu86/Strata-2080Ti`, `upstream` a `Niko1221/Strata`.
+  **`build-0131-daily` e' aggiornato al binario f469**, server e sorgenti esatti
+  del bundle top-k validato. JSON/BAT operativi e copie repository puntano ora
+  al percorso canonico daily, e sono byte-identici. KV262144, resident32768,
+  riserva1393MiB, cache auto/elastica e MTP preservati.
+  Backup completo daily precedente, cronologia Git e JSON/BAT:
+  `D:\ds4_work\strata\ripristini\20261002_095931_allinea_daily_sota`.
+  **Workflow rimosso e GitHub Actions disabilitato** su richiesta dell'utente.
+  Nessuna nuova build/prova GPU; processi motore spenti, macchina libera.
+  Dettagli **`PUBBLICAZIONE_FORK_2_OTTOBRE.md`**. La precedente nota sul checkout
+  operativo fermo a0.1.30 nei rapporti dell'1/10 e' storica, ora superata.
 - **Lanciatore SOTA** (copia in `lanciatori/`): configurazione `D:\ds4_work\strata\Strata\strata-2080ti-sota.json` →
-  **`build-0131-topk-active\strata.exe`**, 0.1.31 + nove patch locali + HC/GDN FP16 + dequant vettoriale + #315 + top-k attivo.
-  Il BAT usa il server della stessa build in **`build-0131-topk-active\source\serve\server.py`**.
+  **`build-0131-daily\strata.exe`**, 0.1.31 + nove patch locali + HC/GDN FP16 + dequant vettoriale + #315 + top-k attivo.
+  Il BAT usa il server della stessa build in **`build-0131-daily\source\serve\server.py`**.
   `--elastic` (cache a due zone), riserva di avvio 1393 MiB,
   contesto 262144, KV int8, residenti 32768, tabella PLE in lettura diretta, `env.STRATA_WATCHDOG_S=240`; porta 8100 solo su 127.0.0.1;
   la chiave solo dalla variabile `STRATA_API_KEY`; si ferma se strata.exe o llama-server sono gia' accesi.

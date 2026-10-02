@@ -42,9 +42,35 @@ a un miglioramento: e' lo stesso kernel. Nessuna misura fisica dei GB/s.
 Oltre135164 celle il nuovo percorso prefill torna al legacy: un eventuale
 guadagno sul prefill250k riguarda il tratto iniziale, non il decode profondo.
 
-Confronto modello capacity/active/capacity con due prompt131k/1024output per
-corsa, KV262144 e cache auto/elastica: in corso. Nessuna promozione fino
-all'esito combinato e al retrieval250k con decode lungo.
+## Confronto sul modello completato 06:53–07:07
+
+Capacity/active/capacity, stessa candidata, due prompt131k/1024output per
+corsa, KV262144, int8 residente32768, cache auto/elastica, nessun carico
+artificiale. Prompt reali131248 e131239; il secondo riusa131072 token.
+
+| Modalita' | Prefill nuovo t/s | TTFT s | Decode aggregato t/s | ms/riga verificata | Slot iniziali |
+|---|---:|---:|---:|---:|---:|
+| A1 capacity | 831,20 | 158,509 | 38,251 | 21,970 | 6537 |
+| B active | 886,38 | 148,664 | 39,272 | 21,720 | 6524 |
+| A2 capacity | 828,26 | 159,092 | 39,293 | 21,352 | 6872 |
+
+Riferimento medio829,73t/s: **+6,83% prefill**, variazione A/A0,35%; B supera
+entrambi i riferimenti, con cache iniziale molto simile adA1. TTFT medio
+158,801→148,664s, risparmio10,137s. Beneficio nel singolo A/B/A molto superiore
+alla variazione dei riferimenti; cache elastica e MTP variabili restano limiti
+dell'attribuzione. Anche l'exe daily a74e misurato alle06:38 e' allineato:
+827,53t/s prefill,39,048t/s decode.
+
+Decode B identico adA2 entro0,02t/s: **nessun guadagno decode attribuito al
+top-k prefill**. La nuova API non e' chiamata dal percorso decode.
+Primi logits248320 finiti, argmax1596 in tutti i casi; A/A maxabs1,30/1,71,
+A/B1,56/1,89. Nessuna parita' dell'intero modello o validazione generale della
+qualita' rivendicata: la parita' bitwise riguarda gli indici del banco nativo.
+JumpConnect CPU media zero; altre CPU medie0,956/0,865/0,887core.
+Evidenza `corse_2080ti/20261002_topk_model/`, analizzatore riproducibile.
+
+Retrieval a tre posizioni e riempimento250k con decode lungo in corso.
+Nessuna promozione fino alla conclusione di questi controlli.
 
 ## Pista BPW del fork2080Ti, tenuta separata
 

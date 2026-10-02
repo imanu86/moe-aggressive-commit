@@ -1,0 +1,207 @@
+{
+  "scope": "model ABA, real 131k, KV262144, elastic",
+  "runs": {
+    "A1": {
+      "exe_sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34",
+      "qsa_ch": null,
+      "topk_mode": "capacity",
+      "initial_cache": {
+        "expert_slots": 6537,
+        "expert_cache_mib": 10834,
+        "vram_free_mib": 973
+      },
+      "prefill_tps": 831.2,
+      "ttft_s": 158.509,
+      "decode_tps": 38.251,
+      "cost_per_verified_row_ms": 21.96963479688141,
+      "native": [
+        {
+          "generated": 1024,
+          "decode_ms": 25861.0,
+          "accepted": 498,
+          "offered": 698
+        },
+        {
+          "generated": 1024,
+          "decode_ms": 27679.0,
+          "accepted": 388,
+          "offered": 577
+        }
+      ],
+      "cpu_other_mean_cores": 0.9564,
+      "cpu_jump_mean_cores": 0.0,
+      "real_prompt_tokens": [
+        131248,
+        131239
+      ],
+      "reused_prompt_tokens": [
+        0,
+        131072
+      ],
+      "logits": {
+        "131247": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        },
+        "131238": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        }
+      }
+    },
+    "B": {
+      "exe_sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34",
+      "qsa_ch": null,
+      "topk_mode": "active",
+      "initial_cache": {
+        "expert_slots": 6524,
+        "expert_cache_mib": 10812,
+        "vram_free_mib": 1049
+      },
+      "prefill_tps": 886.38,
+      "ttft_s": 148.664,
+      "decode_tps": 39.272,
+      "cost_per_verified_row_ms": 21.720116618075803,
+      "native": [
+        {
+          "generated": 1024,
+          "decode_ms": 24596.0,
+          "accepted": 520,
+          "offered": 702
+        },
+        {
+          "generated": 1024,
+          "decode_ms": 27554.0,
+          "accepted": 383,
+          "offered": 554
+        }
+      ],
+      "cpu_other_mean_cores": 0.8645833333333334,
+      "cpu_jump_mean_cores": 0.0,
+      "real_prompt_tokens": [
+        131248,
+        131239
+      ],
+      "reused_prompt_tokens": [
+        0,
+        131072
+      ],
+      "logits": {
+        "131247": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        },
+        "131238": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        }
+      }
+    },
+    "A2": {
+      "exe_sha256": "f469e096e868e4579daaec71ceef63693790e300e7a4cc5b49a8853d075a1d34",
+      "qsa_ch": null,
+      "topk_mode": "capacity",
+      "initial_cache": {
+        "expert_slots": 6872,
+        "expert_cache_mib": 11365,
+        "vram_free_mib": 936
+      },
+      "prefill_tps": 828.26,
+      "ttft_s": 159.092,
+      "decode_tps": 39.293,
+      "cost_per_verified_row_ms": 21.352314625153625,
+      "native": [
+        {
+          "generated": 1024,
+          "decode_ms": 24612.0,
+          "accepted": 524,
+          "offered": 710
+        },
+        {
+          "generated": 1024,
+          "decode_ms": 27509.0,
+          "accepted": 380,
+          "offered": 587
+        }
+      ],
+      "cpu_other_mean_cores": 0.8872,
+      "cpu_jump_mean_cores": 0.0,
+      "real_prompt_tokens": [
+        131248,
+        131239
+      ],
+      "reused_prompt_tokens": [
+        0,
+        131072
+      ],
+      "logits": {
+        "131247": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        },
+        "131238": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        }
+      }
+    }
+  },
+  "prefill": {
+    "baseline_mean_tps": 829.73,
+    "candidate_tps": 886.38,
+    "gain_percent": 6.827522206018832,
+    "baseline_variation_percent": 0.3543321321393772,
+    "candidate_beats_both_references": true,
+    "benefit_demonstrated": true
+  },
+  "logits_comparisons": {
+    "A1-B": {
+      "131247": {
+        "max_abs": 1.5576119422912598,
+        "mean_abs": 0.20659075677394867,
+        "equal_values": 0,
+        "same_argmax": true
+      },
+      "131238": {
+        "max_abs": 1.8939893245697021,
+        "mean_abs": 0.28477221727371216,
+        "equal_values": 0,
+        "same_argmax": true
+      }
+    },
+    "A2-B": {
+      "131247": {
+        "max_abs": 2.1202378273010254,
+        "mean_abs": 0.2013617306947708,
+        "equal_values": 0,
+        "same_argmax": true
+      },
+      "131238": {
+        "max_abs": 1.3813899755477905,
+        "mean_abs": 0.2343328297138214,
+        "equal_values": 1,
+        "same_argmax": true
+      }
+    },
+    "A1-A2": {
+      "131247": {
+        "max_abs": 1.3011624813079834,
+        "mean_abs": 0.19965960085391998,
+        "equal_values": 0,
+        "same_argmax": true
+      },
+      "131238": {
+        "max_abs": 1.7133874893188477,
+        "mean_abs": 0.2599373459815979,
+        "equal_values": 0,
+        "same_argmax": true
+      }
+    }
+  }
+}

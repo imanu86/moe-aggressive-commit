@@ -40,6 +40,19 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   Dettagli **`PROMOZIONE_DAILY_0131_1_OTTOBRE.md`**, evidenza `corse_2080ti/20261001_daily_0131/`.
   Processi lab chiusi, daily spento, **VIA a OCGC-IA e PROMO**; nessun'altra corsa programmata.
   **Le tappe del 1/10 qui sotto sono storiche; seguono prima le prove e la ricognizione del 2/10.**
+- **Stato corrente 2/10 06:56: ripetizione senza Jump conclusa, CH16 non promossa.**
+  JumpConnect CPU media zero. A/B/A CH32/16/32: prefill828,28/833,75/443,72;
+  decode38,690/39,069/38,193. A2 rallentata per causa non isolata: non usarla
+  per attribuire guadagni. CH16 solo+0,66% suA1, beneficio non dimostrato.
+  Ulteriore riferimento **daily operativo esatto a74e**, alle06:38:
+  **827,53t/s prefill,39,048t/s decode**, prompt131k/KV262144, elastica.
+  Primi logits finiti/stessoargmax, ancheA/A non bitwise; qualita' generale non misurata.
+  Evidenza `corse_2080ti/20261002_qsa_model_nojump/`.
+  **Nuova candidata top-k attivo in prova**: stride65538 dal KV262k impediva
+  il kernel a registri anche a131k. Nuova API solo prefill usa limite blocchi
+  attivi <=33792, vecchia API/decode e fallback oltre135k preservati.
+  16casi con stride reale/partial/tie/confine superati, indici identici;
+  A/B/A modello131k in corso. Daily e lanciatori invariati fino a validazione.
 - **Ripresa attiva del 2/10 dalle05:54, richiesta dall'utente: tutti i test necessari.**
   **Non interagire piu' con le chat OCGC-IA/PROMO** (istruzione esplicita utente).
   Candidata QSA CH16 integrata solo Turing/int8, overrideCH32, altriKV/GPU preservati:
@@ -47,8 +60,9 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   Banco FP64 ampliato8192 query:4PASS; A/B/A kernel128/2048/8192:12PASS,
   FP16 output identico. Int8 chunk8192 **88,49/66,44/87,72ms (−24,59%)**.
   NCU isolato: **ERR_NVGPUCTRPERM**, nessuna misura banda DRAM; driver intatto.
-  **A/B/A modello avviato06:00**, CH32/16/32, daily elasticoKV262144,
-  prompt131k e1024output, primi logits; poi250k se valido. Ancora nessuna promozione.
+  Prima A/B/A modello06:00 **esclusa**: JumpConnect attivo e carico variabile,
+  A2 interrotta su richiesta utente alle06:12. Ripetere l'intera serie dopo chiusura
+  JumpConnect; ripetizione ora conclusa come sopra, nessuna promozione CH16.
   Patch0023 e strumenti `compila_qsa_ch16.py` / `prova_qsa_ab.py`.
 - **Ultima finestra 2/10 05:24–05:50: QSA CH16 promettente, non promossa.**
   Daily operativo a74e, KV262144/elastica preservati. Profiling Nsight Systems

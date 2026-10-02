@@ -1,0 +1,204 @@
+{
+  "scope": "model ABA, real 131k, KV262144, elastic",
+  "runs": {
+    "A1": {
+      "exe_sha256": "437edc05de9cf0d755138d49e6d479c1660b7e3cea0204280d8133f80eac731d",
+      "qsa_ch": "32",
+      "initial_cache": {
+        "expert_slots": 6802,
+        "expert_cache_mib": 11261,
+        "vram_free_mib": 2012
+      },
+      "prefill_tps": 828.28,
+      "ttft_s": 159.062,
+      "decode_tps": 38.69,
+      "cost_per_verified_row_ms": 22.073811509591327,
+      "native": [
+        {
+          "generated": 1024,
+          "decode_ms": 24896.0,
+          "accepted": 512,
+          "offered": 697
+        },
+        {
+          "generated": 1024,
+          "decode_ms": 28037.0,
+          "accepted": 400,
+          "offered": 565
+        }
+      ],
+      "cpu_other_mean_cores": 1.1552,
+      "cpu_jump_mean_cores": 0.0,
+      "real_prompt_tokens": [
+        131248,
+        131239
+      ],
+      "reused_prompt_tokens": [
+        0,
+        131072
+      ],
+      "logits": {
+        "131247": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        },
+        "131238": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        }
+      }
+    },
+    "B": {
+      "exe_sha256": "437edc05de9cf0d755138d49e6d479c1660b7e3cea0204280d8133f80eac731d",
+      "qsa_ch": "16",
+      "initial_cache": {
+        "expert_slots": 6396,
+        "expert_cache_mib": 10592,
+        "vram_free_mib": 1121
+      },
+      "prefill_tps": 833.75,
+      "ttft_s": 158.011,
+      "decode_tps": 39.069,
+      "cost_per_verified_row_ms": 21.896825396825395,
+      "native": [
+        {
+          "generated": 1024,
+          "decode_ms": 25356.0,
+          "accepted": 513,
+          "offered": 698
+        },
+        {
+          "generated": 1024,
+          "decode_ms": 27065.0,
+          "accepted": 382,
+          "offered": 543
+        }
+      ],
+      "cpu_other_mean_cores": 1.0072,
+      "cpu_jump_mean_cores": 0.0,
+      "real_prompt_tokens": [
+        131248,
+        131239
+      ],
+      "reused_prompt_tokens": [
+        0,
+        131072
+      ],
+      "logits": {
+        "131247": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        },
+        "131238": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        }
+      }
+    },
+    "A2": {
+      "exe_sha256": "437edc05de9cf0d755138d49e6d479c1660b7e3cea0204280d8133f80eac731d",
+      "qsa_ch": "32",
+      "initial_cache": {
+        "expert_slots": 6195,
+        "expert_cache_mib": 10264,
+        "vram_free_mib": 1405
+      },
+      "prefill_tps": 443.72,
+      "ttft_s": 296.365,
+      "decode_tps": 38.193,
+      "cost_per_verified_row_ms": 22.10346248969497,
+      "native": [
+        {
+          "generated": 1024,
+          "decode_ms": 25807.0,
+          "accepted": 498,
+          "offered": 708
+        },
+        {
+          "generated": 1024,
+          "decode_ms": 27816.0,
+          "accepted": 395,
+          "offered": 563
+        }
+      ],
+      "cpu_other_mean_cores": 0.862051282051282,
+      "cpu_jump_mean_cores": 0.0,
+      "real_prompt_tokens": [
+        131248,
+        131239
+      ],
+      "reused_prompt_tokens": [
+        0,
+        131072
+      ],
+      "logits": {
+        "131247": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        },
+        "131238": {
+          "values": 248320,
+          "finite": true,
+          "argmax": 1596
+        }
+      }
+    }
+  },
+  "prefill": {
+    "baseline_mean_tps": 636.0,
+    "candidate_tps": 833.75,
+    "gain_percent": 31.09276729559749,
+    "baseline_variation_percent": 60.46540880503144,
+    "candidate_beats_both_references": true,
+    "benefit_demonstrated": false
+  },
+  "logits_comparisons": {
+    "A1-B": {
+      "131247": {
+        "max_abs": 1.877594232559204,
+        "mean_abs": 0.27950528264045715,
+        "equal_values": 0,
+        "same_argmax": true
+      },
+      "131238": {
+        "max_abs": 1.570770263671875,
+        "mean_abs": 0.2198898196220398,
+        "equal_values": 0,
+        "same_argmax": true
+      }
+    },
+    "A2-B": {
+      "131247": {
+        "max_abs": 1.8973982334136963,
+        "mean_abs": 0.23330795764923096,
+        "equal_values": 0,
+        "same_argmax": true
+      },
+      "131238": {
+        "max_abs": 2.0634045600891113,
+        "mean_abs": 0.31237080693244934,
+        "equal_values": 0,
+        "same_argmax": true
+      }
+    },
+    "A1-A2": {
+      "131247": {
+        "max_abs": 1.852241039276123,
+        "mean_abs": 0.29537856578826904,
+        "equal_values": 0,
+        "same_argmax": true
+      },
+      "131238": {
+        "max_abs": 1.793416976928711,
+        "mean_abs": 0.23378856480121613,
+        "equal_values": 0,
+        "same_argmax": true
+      }
+    }
+  }
+}

@@ -143,3 +143,47 @@ I tempi stampati nella corsa NCU fallita sono esclusi dal confronto di velocita'
 **A/B/A reale avviato alle06:00**, stessa candidata con CH32/CH16/CH32,
 cache auto/elastica, due richieste131k/1024output per corsa, diagnostica primi
 logits. Seguiranno esiti e controllo250k prima di un'eventuale promozione.
+
+Alle06:12 l'utente ha chiuso JumpConnect e richiesto di ripetere il test.
+Prima serie modello **esclusa**: A1 prefill761,43/decode32,681, B772,05/
+circa29,9; A2 interrotta dopo cambio carico. JumpConnect osservato fra1,3 e2,4
+core. A1 cache6332, B/A2 cache7671: ulteriore differenza da dichiarare.
+Questi numeri non misurano causalmente CH16 e non sostituiscono il riferimento
+operativo storico. Ripetizione completa CH32/CH16/CH32 dopo chiusura app.
+
+## Ripetizione senza Jump e decisione CH16
+
+Serie completata 06:13–06:32, JumpConnect CPU media zero in tutte le corse.
+Due richieste per corsa, prompt reali 131248/131239 token, 1024 token generati
+per richiesta, stessa candidata e capacita' KV262144, cache auto/elastica.
+
+| Modalita' | Prefill t/s | TTFT s | Decode aggregato t/s | ms/riga verificata | Slot cache iniziali |
+|---|---:|---:|---:|---:|---:|
+| A1 CH32 | 828,28 | 159,062 | 38,690 | 22,074 | 6802 |
+| B CH16 | 833,75 | 158,011 | 39,069 | 21,897 | 6396 |
+| A2 CH32 | 443,72 | 296,365 | 38,193 | 22,103 | 6195 |
+
+A2 ha un ritardo ampio nel primo chunk e rallentamenti intermittenti iniziali;
+causa non isolata. **Non usare il riferimento A2 lento come prova di guadagno**.
+B contro A1: +0,66%, insufficiente per dimostrare il trasferimento del vantaggio
+del kernel isolato al modello. Costo per riga: tempo decode / (token generati
+− draft accettati + draft offerti), aggregato sulle due richieste lunghe.
+
+Ulteriore corsa dell'**exe daily operativo esatto a74e**, conclusa alle06:38:
+prefill **827,53 t/s**, TTFT159,167s, decode **39,048 t/s**; cache iniziale6518,
+1140MiB liberi. CH16 supera questo riferimento solo dello0,75%.
+**CH16 non promossa**; JSON/BAT e daily a74e restano operativi.
+
+Primi logits:248320 valori finiti, argmax1596 in tutte le richieste; anche A/A
+non bit-identico (maxabs1,85/1,79), quindi l'identico argmax non valida la qualita'
+generale. Evidenza `corse_2080ti/20261002_qsa_model_nojump/`.
+
+## Nuova pista: selezione top-k e capacita' KV
+
+Nel daily max_blocks e' lo stride dei punteggi, calcolato sulla capacita'262144:
+65538 blocchi. Il top-k a registri e' consentito solo fino a33792 blocchi, percio'
+il daily usa sempre il percorso legacy anche con contesto effettivo131k.
+Il prefill conosce gia' il limite attivo di ciascun batch monotono di256 query.
+Una nuova API puo' usarlo mantenendo lo stride e gli stessi kernel; il decode
+con grafi catturati deve conservare l'API originale perche' il contesto cresce.
+La candidata e' compilata e in confronto sul modello; nessuna promozione ancora.

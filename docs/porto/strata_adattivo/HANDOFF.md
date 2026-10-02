@@ -13,8 +13,9 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 ## 1. In breve
 - Macchina: **solo la RTX 2080 Ti 22 GB** (sm_75, PCIe 3.0, 13,1 GB/s), Ryzen 7 5800X (8 core, AVX2), 96 GB di RAM. La
   3060 e' smontata; tornera' in OCuLink. **La seconda scheda e' fuori perimetro per ora** (decisione utente, 1/10).
-- Motore: **Strata** (github.com/Niko1221/Strata, MIT) col nostro fork locale. Sugli stessi prompt: Strata 44-45 t/s,
-  daily llama ricompilato 12-16 t/s. A 131k di contesto: **41,8 t/s, prefill 628,8 t/s** (0.1.30, prova dell'1/10).
+- Motore: **Strata** (github.com/Niko1221/Strata, MIT) col nostro fork locale. Misure storiche su prompt brevi:
+  Strata 44-45 t/s, daily llama ricompilato 12-16 t/s. Daily combinato realmente promosso, a 131k:
+  **38,995 t/s decode, 822,66 t/s prefill** (1/10, cache auto/elastica). Non confondere profondita' e capienza KV.
 - Lanciatore pronto per l'utente: `Desktop\SERVER IA LOCALE\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat`.
 - Il daily di produzione (`D:\ds4_work\bin_elastico_m2`, solo sm_86) **non gira sulla 2080 Ti**; runtime sm_75 pronti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
@@ -34,18 +35,35 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   SHA256 exe `a74e4dadcd4fbb9e71b5cb0ae66922453c6a44a2704db25ddfb5e81601c5f766`.
   JSON e BAT precedenti salvati in `D:\ds4_work\strata\ripristini\20261001_212635_0131_daily\`;
   #270 conservata. Logits/retrieval precedenti limitano la validazione FP16: qualita' generale
-  non misurata, riempimento 250k non ripetuto nella combinazione elastica.
+  non misurata; a quella promozione riempimento 250k non ripetuto nella combinazione elastica.
+  **Ora completato il 2/10 sul daily operativo**, come riportato sotto.
   Dettagli **`PROMOZIONE_DAILY_0131_1_OTTOBRE.md`**, evidenza `corse_2080ti/20261001_daily_0131/`.
   Processi lab chiusi, daily spento, **VIA a OCGC-IA e PROMO**; nessun'altra corsa programmata.
-  **Le tappe del 1/10 qui sotto sono storiche; segue prima la ricognizione del 2/10.**
+  **Le tappe del 1/10 qui sotto sono storiche; seguono prima le prove e la ricognizione del 2/10.**
+- **Prove concluse il 2/10 alle 05:03, #439 non promossa:** daily operativo a74e,
+  **250022 token reali, retrieval al centro riuscito**, richiesta 566,61 s, prefill 442,4 t/s.
+  Solo 13 token generati: **non e' una misura robusta del decode a 250k**; curva KV/t/s ancora aperta.
+  Cache sempre auto/elastica, nessun carico artificiale. Port #439 compilato sulla combinazione daily:
+  **34 parita' gather superate**, A/B/A stesso exe candidato con gather singolo/batch/singolo,
+  prompt 131248 nuovo + secondo prompt riusato, due output di 1024 token per corsa.
+  Prefill **852,99 / 849,50 / 833,67 t/s**, batch **+0,73%** sulla media A, variazione A/A **2,29%**:
+  beneficio non dimostrato. Decode **39,684 / 38,553 / 39,004 t/s**, non attribuibile al gather.
+  Primi logits finiti e stesso argmax, ma anche A/A non bit-identico nel profilo elastico.
+  Candidata conservata `build-0131-pr439`, SHA256 `686be366da45626d4f67ad696b152c862f95b74b46a7c4445a5bfd52ce084a51`.
+  **JSON/BAT/Desktop e daily a74e preservati**; non eseguito il riempimento 250k della candidata dopo l'esito A/B/A.
+  Rapporto `RISULTATI_PR439_2_OTTOBRE.md`, evidenza `corse_2080ti/20261002_pr439/`, patch `0021-PR439-*`.
+  Seconda finestra 04:48–05:03, entro 30 min. Processi propri chiusi, **VIA a OCGC-IA/PROMO alle 05:04**.
+  **Prossima priorita' #363 decode**, non iniziata; nessun altro test/monitoraggio programmato.
+  Attendere una nuova richiesta dell'utente prima di usare ancora la GPU.
 - **Ripresa del 2/10, ricognizione completata senza prove GPU:** upstream **0.1.34**
   `1678de333d0e`, 39 commit dalla precedente scansione; 422 fork elencati, 420 confrontati,
   41 con commit propri, due eccezioni esplicite; 59 PR aperte alla lettura finale.
-  Fork2080Ti invariato. **Prima candidata prefill #439** (gather, IQ3_XXS/Windows/PCIe3.0,
-  +3,6–4,3% dell'autore), alternativa alla #372; **decode #363** (beneficio contenuto).
+  Fork2080Ti invariato. **Prima candidata individuata prefill #439** (gather, IQ3_XXS/Windows/PCIe3.0,
+  +3,6–4,3% dell'autore), alternativa alla #372; **ora provata senza vantaggio dimostrato sopra**.
+  **Decode #363** resta la prossima priorita' (beneficio contenuto).
   #413 recurrence richiede sm80+ e non accelera quel kernel su2080Ti; #443 sperimentale.
-  Fix server disconnect #430/#431 e metodo numerico #410 letti. Curva contesto e
-  riempimento250k della combinazione elastica ancora da fare. **Daily attuale preservato**.
+  Fix server disconnect #430/#431 e metodo numerico #410 letti. Curva contesto ancora da fare;
+  riempimento250k della combinazione elastica completato nella prova sopra. **Daily attuale preservato**.
   Rapporto `RICERCA_FORK_2_OTTOBRE.md`, snapshot `ricognizioni/20261002/`.
 - **Validazione completata e lanciatore aggiornato (1/10):** 4.000 MiB di pressione per 60 s, 4.096 token in 99,2 s,
   nucleo fisso preservato, nessuno stallo; entrambe le richieste a 131k completate, 41,8 t/s e 20,4 ms per riga.

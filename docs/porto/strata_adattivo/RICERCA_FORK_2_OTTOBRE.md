@@ -4,6 +4,12 @@ Ricognizione richiesta dall'utente con macchina libera. Solo letture API/Git e
 analisi dei sorgenti; nessuna compilazione, prova GPU o modifica al daily.
 Branch di documentazione autorizzato `research/ds4-iq1-subbit-tier-planner`.
 
+Seguito autorizzato dopo la ricognizione, concluso alle 05:03: retrieval reale
+250k del daily riuscito; #439 portata, 34 parita' gather superate, A/B/A a 131k
+senza vantaggio separabile dal rumore. Daily preservato, #439 non promossa;
+prossima priorita' #363 decode. Vedi `RISULTATI_PR439_2_OTTOBRE.md` e `HANDOFF.md`.
+Lo snapshot e le valutazioni preliminari qui sotto restano quelli della ricognizione.
+
 ## Stato verificato
 
 - Snapshot principale **04:16 Europe/Rome**, 02:16 UTC: upstream

@@ -1,0 +1,16 @@
+{
+  "base_exe_sha256": "a74e4dadcd4fbb9e71b5cb0ae66922453c6a44a2704db25ddfb5e81601c5f766",
+  "pr": 439,
+  "pr_head_sha": "2a3a99b2d49ea9e8466e4657430535a56ddaf9ad",
+  "changes": [
+    "CMakeLists.txt",
+    "include/strata/prefill/moe_mmq.hpp",
+    "src/prefill/moe_mmq.cu",
+    "src/prefill/prefill.cpp",
+    "tests/cuda/prefill_gather_batch_test.cpp"
+  ],
+  "adaptations": [
+    "CMake test target in CUDA MMQ branch of0.1.31",
+    "parity covers every batch size1..16 and each mid-group start1..15; original misalignment/odd-size cases retained"
+  ]
+}

@@ -1,0 +1,83 @@
+"""Port locale del riuso query BPW del fork2080ti95afc8d, percorso prefill.
+
+Mantiene scorer multi-query decode e top-k del daily. Ogni prodotto e riduzione
+ha lo stesso ordine del riferimento; la parita' bitwise va comunque verificata.
+"""
+
+
+def integrate_score(before):
+    anchor = '__global__ void __launch_bounds__(TOPK_T) block_topk_kernel('
+    assert before.count(anchor) == 1
+    kernel = '''template <int BPW>
+__global__ void __launch_bounds__(SCORE_WARPS * 32) block_scores_bpw_kernel(
+        const float* __restrict__ pooled, const float* __restrict__ dead, const float* __restrict__ q_idx,
+        const int32_t* __restrict__ steps, int64_t max_blocks, float* __restrict__ out) {
+    const int64_t qi = blockIdx.y;
+    const int32_t* st = steps + qi * kStepCount;
+    const int64_t n_kv = st[kStepNKv], n_bid = st[kStepNBid];
+    const int warp = threadIdx.x >> 5, lane = threadIdx.x & 31;
+    const int64_t b0 = ((int64_t) blockIdx.x * SCORE_WARPS + warp) * BPW;
+    float4 qv[IDX_HEADS];
+#pragma unroll
+    for (int h = 0; h < IDX_HEADS; ++h)
+        qv[h] = *reinterpret_cast<const float4*>(q_idx + qi * IDX_HEADS * IDX_DIM + h * IDX_DIM + lane * 4);
+#pragma unroll
+    for (int j = 0; j < BPW; ++j) {
+        const int64_t b = b0 + j;
+        if (b > n_bid || b >= max_blocks) continue; // uniform over each warp
+        const float* key = (b == n_bid) ? dead : pooled + b * IDX_DIM;
+        const float4 k4 = *reinterpret_cast<const float4*>(key + lane * 4);
+        float score = 0.0f;
+#pragma unroll
+        for (int h = 0; h < IDX_HEADS; ++h) {
+            float d = k4.x * qv[h].x + k4.y * qv[h].y + k4.z * qv[h].z + k4.w * qv[h].w;
+#pragma unroll
+            for (int o = 16; o > 0; o >>= 1) d += __shfl_xor_sync(0xffffffffu, d, o);
+            score += d > 0.0f ? d : 0.0f;
+        }
+        if (lane == 0) {
+            if (b == n_bid && n_kv % R != 0) score += 1e9f;
+            out[qi * max_blocks + b] = score;
+        }
+    }
+}
+
+template <int BPW>
+void launch_score_bpw(const float* pooled, const float* dead, const float* q_idx, const int32_t* steps,
+                      int64_t nq, int64_t max_blocks, int64_t reach, float* scores, void* stream) {
+    const dim3 grid((unsigned)((reach + SCORE_WARPS * BPW - 1) / (SCORE_WARPS * BPW)), (unsigned)nq);
+    block_scores_bpw_kernel<BPW><<<grid, SCORE_WARPS * 32, 0, (cudaStream_t)stream>>>(
+        pooled, dead, q_idx, steps, max_blocks, scores);
+    const cudaError_t e = cudaGetLastError();
+    if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_scores BPW: %s\\n", cudaGetErrorString(e)); std::exit(1); }
+}
+
+bool score_bpw_sm75() {
+    static int supported[64] = {};
+    int dev = 0;
+    if (cudaGetDevice(&dev) != cudaSuccess || dev < 0 || dev >= 64) { cudaGetLastError(); return false; }
+    if (supported[dev] == 0) {
+        int major = 0, minor = 0;
+        if (cudaDeviceGetAttribute(&major, cudaDevAttrComputeCapabilityMajor, dev) != cudaSuccess ||
+            cudaDeviceGetAttribute(&minor, cudaDevAttrComputeCapabilityMinor, dev) != cudaSuccess) {
+            cudaGetLastError(); return false;
+        }
+        supported[dev] = major == 7 && minor == 5 ? 1 : -1;
+    }
+    return supported[dev] == 1;
+}
+
+'''
+    after = before.replace(anchor, kernel+anchor)
+    anchor = '    const dim3 grid((unsigned) ((reach + SCORE_WARPS - 1) / SCORE_WARPS), (unsigned) nq);'
+    assert after.count(anchor) == 1
+    dispatch = '''    if (nq > MQ && score_bpw_sm75()) { // preserve the existing multi-query decode path
+        const char* value = std::getenv("STRATA_SCORE_BPW");
+        const int bpw = value ? std::atoi(value) : 16;
+        if (bpw == 4) { launch_score_bpw<4>(pooled, dead, q_idx, steps, nq, max_blocks, reach, scores, stream); return; }
+        if (bpw == 8) { launch_score_bpw<8>(pooled, dead, q_idx, steps, nq, max_blocks, reach, scores, stream); return; }
+        if (bpw == 16) { launch_score_bpw<16>(pooled, dead, q_idx, steps, nq, max_blocks, reach, scores, stream); return; }
+        if (bpw != 1) { std::fprintf(stderr, "STRATA_SCORE_BPW must be 1, 4, 8 or 16\\n"); std::exit(1); }
+    }
+'''
+    return after.replace(anchor, dispatch+anchor)

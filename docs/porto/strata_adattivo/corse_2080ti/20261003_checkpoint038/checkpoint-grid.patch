@@ -1,0 +1,92 @@
+diff --git a/include/strata/prefill/prefill.hpp b/include/strata/prefill/prefill.hpp
+--- a/include/strata/prefill/prefill.hpp
++++ b/include/strata/prefill/prefill.hpp
+@@ -107,6 +107,11 @@
+     /// Checked before every chunk: true stops the prompt early (`run` returns false with err "cancelled").
+     std::function<bool()> should_stop;
+ 
++    /// Clip chunks at align_origin + k * align_every, so conversation checkpoints do not drift past the grid.
++    /// 0 keeps fixed-size chunks. Layer-split callers leave it disabled.
++    int64_t align_every = 0;
++    int64_t align_origin = 0;
++
+     /// The vision path: HOST rows (n_embd floats) indexed by absolute position, read in place of the token
+     /// embedding where non-null (an image's <|image_pad|> cells).  Null (default): every position embeds its token.
+     const float* const* embd_rows = nullptr;
+diff --git a/src/prefill/prefill.cpp b/src/prefill/prefill.cpp
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -1342,8 +1342,17 @@
+                            (ss.ple.w.key_bf16 != nullptr || ss.ple.w.key_native_data != nullptr) &&
+                            m.region_bytes / ((uint64_t) (3 * strata::kernels::NG_HC_DIM + N + 4) * 4 + (uint64_t) N * 2 + 4096) >= 64;
+     const int32_t prev0[2] = {prev[0], prev[1]};
+-    auto ple_gather = [&m, &ss, tokens, n, prev0](int64_t c0, int buf, std::string& e) -> bool {
+-        const int64_t T = std::min(m.T, n - c0);
++    auto chunk_len = [this, &m, n, pos0](int64_t c0) -> int64_t {
++        int64_t T = std::min(m.T, n - c0);
++        const int64_t p = pos0 + c0;
++        if (align_every > 0 && p >= align_origin) {
++            const int64_t edge = align_origin + ((p - align_origin) / align_every + 1) * align_every;
++            T = std::min(T, edge - p);
++        }
++        return T;
++    };
++    auto ple_gather = [&m, &ss, tokens, n, prev0, &chunk_len](int64_t c0, int buf, std::string& e) -> bool {
++        const int64_t T = chunk_len(c0);
+         auto at = [&](int64_t i) { return i < 2 ? prev0[i] : (int32_t) tokens[i - 2]; };   // prev0, then the tokens
+         int32_t pv[2] = {at(c0), at(c0 + 1)};
+         for (int64_t t = 0; t < T; ++t) {
+@@ -1359,10 +1368,13 @@
+     std::future<bool> ple_next;             // declared after everything it reads: an early return waits for it
+     int ple_buf = 0;
+ 
+-    for (int64_t c0 = 0; c0 < n; c0 += m.T) {
++    int64_t T_step = 0, c0_last = 0;
++    for (int64_t c0 = 0; c0 < n; c0 += T_step) {
+         if (should_stop && should_stop()) { err = "cancelled"; return false; }
+         if (std::getenv("STRATA_TRACE")) { std::fprintf(stderr, "strata trace: prompt chunk %lld of %lld\n", (long long) c0, (long long) n); std::fflush(stderr); }
+-        const int64_t T = std::min(m.T, n - c0), p0 = pos0 + c0;
++        const int64_t T = chunk_len(c0), p0 = pos0 + c0;
++        T_step = T;
++        c0_last = c0;
+         core::progress_at("reading the prompt (batched): preparing the chunk from token", p0);   // #251
+         ++stats_.chunks;
+         pt.mark(kPfStart, cs);
+@@ -1444,13 +1456,13 @@
+                 err = std::string("prefill: the PLE rows' upload failed: ") + cudaGetErrorString(cudaGetLastError());
+                 return false;
+             }
+-            if (c0 + m.T < n) {
++            if (c0 + T < n) {
+                 // the other buffer's upload (a chunk ago) is done before the SSD thread refills it
+                 if (cudaEventSynchronize(m.ple_copied[ple_buf ^ 1]) != cudaSuccess) {
+                     err = std::string("prefill: the PLE rows' upload failed: ") + cudaGetErrorString(cudaGetLastError());
+                     return false;
+                 }
+-                ple_next = std::async(std::launch::async, [&ple_gather, &ple_next_err, c1 = c0 + m.T, b = ple_buf ^ 1] {
++                ple_next = std::async(std::launch::async, [&ple_gather, &ple_next_err, c1 = c0 + T, b = ple_buf ^ 1] {
+                     return ple_gather(c1, b, ple_next_err);
+                 });
+             }
+@@ -2654,7 +2666,7 @@
+             for (float v : h) { c += !std::isfinite(v); if (std::isfinite(v)) mx = std::max(mx, (double) std::fabs(v)); }
+             std::fprintf(stderr, " %lld non-finite (max |x| %.3g)", (long long) c, mx);
+         };
+-        const int64_t last = (n - 1) % m.T;
++        const int64_t last = (n - 1) - c0_last;
+         std::fprintf(stderr, "strata dbg: prompt end: last residual row");
+         bad(m.R + last * D, D);
+         if (ss.ple.ready()) { std::fprintf(stderr, "; PLE history"); bad(ss.ple.hist, (int64_t) strata::kernels::NG_HIST * strata::kernels::NG_HC_DIM); }
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -5378,6 +5378,9 @@
+             pp_reached = read_from;
+             pp_t0 = r0;
+             pp_next_check = reread_to > 0 ? INT64_MAX : resume + o.prompt_cache_every;
++            // A layer split passes fixed chunks between stages; keep its existing geometry.
++            sp.align_every = (reread_to > 0 || multi_gpu || o.prompt_cache <= 0 || o.prompt_cache_every <= 0) ? 0 : o.prompt_cache_every;
++            sp.align_origin = resume;
+             {
+                 std::lock_guard<std::mutex> lk(part_mu);
+                 part_at.clear();

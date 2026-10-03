@@ -1,0 +1,55 @@
+{
+  "original_1536_gate": {
+    "pass": false,
+    "checks": {
+      "nll": false,
+      "median_kl": true,
+      "p99_kl": false,
+      "top1": true
+    },
+    "limits": {
+      "nll_upper_nats": 0.01,
+      "median_kl": 0.001,
+      "p99_kl": 0.01,
+      "top1_min_pct": 99.0
+    },
+    "candidate_delta_nats": 0.004877733071201762,
+    "candidate_block_half_interval": 0.008783523219705986,
+    "reference_repeat_noise_bound": 0.0,
+    "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+  },
+  "candidate_1536": {
+    "positions": 64,
+    "top1_agreement_pct": 100.0,
+    "kl_mean": 0.0023579178733497456,
+    "kl_median": 0.0004412515912583286,
+    "kl_p99": 0.03213332165987998,
+    "kl_max": 0.03601600991744783,
+    "ppl_reference": 1.2699002737908203,
+    "ppl_candidate": 1.2761096398572815,
+    "nll_delta_mean": 0.004877733071201762
+  },
+  "repeat_1536": {
+    "positions": 64,
+    "top1_agreement_pct": 100.0,
+    "kl_mean": 0.0,
+    "kl_median": 0.0,
+    "kl_p99": 0.0,
+    "kl_max": 0.0,
+    "ppl_reference": 1.2699002737908203,
+    "ppl_candidate": 1.2699002737908203,
+    "nll_delta_mean": 0.0
+  },
+  "note": "Diagnostic supported-chunk control; does not overwrite or relax the original local gate",
+  "upstream_only_1536_to_6144": {
+    "positions": 64,
+    "top1_agreement_pct": 100.0,
+    "kl_mean": 0.0007132005362402763,
+    "kl_median": 0.0001341154800378701,
+    "kl_p99": 0.008434779156486947,
+    "kl_max": 0.011410907786632408,
+    "ppl_reference": 1.2699002737908203,
+    "ppl_candidate": 1.2725379465147388,
+    "nll_delta_mean": 0.0020749166285958798
+  }
+}

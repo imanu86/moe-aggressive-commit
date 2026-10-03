@@ -4,8 +4,17 @@
 - **3 ottobre, accesso completo ripristinato:** pubblicati i report spec4/spec5,
   quattro ore e ripetizione PR512 sul branch research autorizzato, con manifest
   verificati. I blocchi Git descritti nelle note precedenti sono storici.
-  Nuova proposta checkpoint-grid preparata su upstream0.1.38, tre soli file:
-  misure intercalate e QA numerica in corso, nessuna nuova PR/commento pubblico.
+  Checkpoint-grid su upstream0.1.38, tre soli file: misure e QA concluse.
+  **Gate numerico FAIL: nessuna nuova PR di merge o promozione.**
+  Follow-up33.8k TTFT37.284→3.510s (chunk1536) e17.047→3.517s (chunk6144),
+  tre coppie/configurazione; costo sul fresco+2.35%/+6.33%.42 risposte corrette,
+  384 righe teacher finite/top1 100%, riferimenti bitwise; KL p990.0321/0.0885
+  oltre soglia. Con --prompt-cache0 logits bitwise. Non chiamare SOTA o qualità
+  generale attestata.197 test server:190pass/7skip. GGML1376file identici al pin.
+  I due tentativi QA con ABI Prefill incompatibile sono invalidi e restano solo
+  locali; dopo il ripristino dei timestamp Ninja ricompila entrambe le unità.
+  Daily/launcher invariati per SHA; motori propri chiusi, RAM67.9GiB/VRAM18409MiB
+  libere. [Misure, limiti e fallimenti](CHECKPOINT_GRID_0138_3_OTTOBRE.md).
 
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
 `research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,

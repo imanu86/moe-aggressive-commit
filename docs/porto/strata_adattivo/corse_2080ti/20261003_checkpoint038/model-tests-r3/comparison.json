@@ -1,0 +1,362 @@
+{
+  "quality": {
+    "1536": {
+      "candidate": {
+        "positions": 64,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0023579178733497456,
+        "kl_median": 0.0004412515912583286,
+        "kl_p99": 0.03213332165987998,
+        "kl_max": 0.03601600991744783,
+        "ppl_reference": 1.2699002737908203,
+        "ppl_candidate": 1.2761096398572815,
+        "nll_delta_mean": 0.004877733071201762
+      },
+      "reference_repeat": {
+        "positions": 64,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 1.2699002737908203,
+        "ppl_candidate": 1.2699002737908203,
+        "nll_delta_mean": 0.0
+      },
+      "bitwise_candidate": false,
+      "bitwise_repeat": true,
+      "gate": {
+        "pass": false,
+        "checks": {
+          "nll": false,
+          "median_kl": true,
+          "p99_kl": false,
+          "top1": true
+        },
+        "limits": {
+          "nll_upper_nats": 0.01,
+          "median_kl": 0.001,
+          "p99_kl": 0.01,
+          "top1_min_pct": 99.0
+        },
+        "candidate_delta_nats": 0.004877733071201762,
+        "candidate_block_half_interval": 0.008783523219705986,
+        "reference_repeat_noise_bound": 0.0,
+        "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+      },
+      "fresh_first": {
+        "kl_candidate": 0.07958377784250754,
+        "kl_reference_repeat": 0.0,
+        "same_top1_candidate": true,
+        "same_top1_repeat": true
+      },
+      "follow_first": {
+        "kl_candidate": 0.0015374860747473414,
+        "kl_reference_repeat": 0.0,
+        "same_top1_candidate": true,
+        "same_top1_repeat": true
+      },
+      "first_row_gate": {
+        "description": "Additional first-output check: KL <= max(0.01,3*repeat), same top1",
+        "pass": false
+      }
+    },
+    "6144": {
+      "candidate": {
+        "positions": 64,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.006070144953119974,
+        "kl_median": 0.001562160693332796,
+        "kl_p99": 0.08849078139039065,
+        "kl_max": 0.09333323477291128,
+        "ppl_reference": 1.2725379465147388,
+        "ppl_candidate": 1.2856833860178871,
+        "nll_delta_mean": 0.010277105453184998
+      },
+      "reference_repeat": {
+        "positions": 64,
+        "top1_agreement_pct": 100.0,
+        "kl_mean": 0.0,
+        "kl_median": 0.0,
+        "kl_p99": 0.0,
+        "kl_max": 0.0,
+        "ppl_reference": 1.2725379465147388,
+        "ppl_candidate": 1.2725379465147388,
+        "nll_delta_mean": 0.0
+      },
+      "bitwise_candidate": false,
+      "bitwise_repeat": true,
+      "gate": {
+        "pass": false,
+        "checks": {
+          "nll": false,
+          "median_kl": false,
+          "p99_kl": false,
+          "top1": true
+        },
+        "limits": {
+          "nll_upper_nats": 0.01,
+          "median_kl": 0.001,
+          "p99_kl": 0.01,
+          "top1_min_pct": 99.0
+        },
+        "candidate_delta_nats": 0.010277105453184998,
+        "candidate_block_half_interval": 0.010259873620316015,
+        "reference_repeat_noise_bound": 0.0,
+        "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+      },
+      "fresh_first": {
+        "kl_candidate": 0.03289847359690277,
+        "kl_reference_repeat": 0.0,
+        "same_top1_candidate": true,
+        "same_top1_repeat": true
+      },
+      "follow_first": {
+        "kl_candidate": 0.09333323477291128,
+        "kl_reference_repeat": 0.0,
+        "same_top1_candidate": true,
+        "same_top1_repeat": true
+      },
+      "first_row_gate": {
+        "description": "Additional first-output check: KL <= max(0.01,3*repeat), same top1",
+        "pass": false
+      }
+    }
+  },
+  "performance": {
+    "1536": {
+      "A": {
+        "fresh_ttft_s": {
+          "median": 71.82723899999837,
+          "min": 71.32070590000512,
+          "max": 71.86948540000594,
+          "all": [
+            71.32070590000512,
+            71.86948540000594,
+            71.82723899999837
+          ]
+        },
+        "follow_ttft_s": {
+          "median": 37.28404910000245,
+          "min": 37.00052970000252,
+          "max": 37.39189279999846,
+          "all": [
+            37.00052970000252,
+            37.28404910000245,
+            37.39189279999846
+          ]
+        },
+        "fresh_reused": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "all": [
+            0,
+            0,
+            0
+          ]
+        },
+        "follow_reused": {
+          "median": 16896,
+          "min": 16896,
+          "max": 16896,
+          "all": [
+            16896,
+            16896,
+            16896
+          ]
+        },
+        "follow_read": {
+          "median": 16926,
+          "min": 16926,
+          "max": 16926,
+          "all": [
+            16926,
+            16926,
+            16926
+          ]
+        }
+      },
+      "B": {
+        "fresh_ttft_s": {
+          "median": 73.51748640000005,
+          "min": 73.35832659999869,
+          "max": 73.59029159999773,
+          "all": [
+            73.51748640000005,
+            73.35832659999869,
+            73.59029159999773
+          ]
+        },
+        "follow_ttft_s": {
+          "median": 3.5102750999940326,
+          "min": 3.4943763999981456,
+          "max": 3.597321000001102,
+          "all": [
+            3.597321000001102,
+            3.4943763999981456,
+            3.5102750999940326
+          ]
+        },
+        "fresh_reused": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "all": [
+            0,
+            0,
+            0
+          ]
+        },
+        "follow_reused": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "all": [
+            32768,
+            32768,
+            32768
+          ]
+        },
+        "follow_read": {
+          "median": 1054,
+          "min": 1054,
+          "max": 1054,
+          "all": [
+            1054,
+            1054,
+            1054
+          ]
+        }
+      },
+      "follow_ttft_reduction_percent": 90.58504860730429,
+      "paired_follow_savings_s": [
+        33.403208700001414,
+        33.7896727000043,
+        33.881617700004426
+      ]
+    },
+    "6144": {
+      "A": {
+        "fresh_ttft_s": {
+          "median": 34.67901880000136,
+          "min": 34.02442270000029,
+          "max": 34.82953499999712,
+          "all": [
+            34.02442270000029,
+            34.82953499999712,
+            34.67901880000136
+          ]
+        },
+        "follow_ttft_s": {
+          "median": 17.047323099992354,
+          "min": 16.915134400005627,
+          "max": 17.108512799997698,
+          "all": [
+            16.915134400005627,
+            17.047323099992354,
+            17.108512799997698
+          ]
+        },
+        "fresh_reused": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "all": [
+            0,
+            0,
+            0
+          ]
+        },
+        "follow_reused": {
+          "median": 18432,
+          "min": 18432,
+          "max": 18432,
+          "all": [
+            18432,
+            18432,
+            18432
+          ]
+        },
+        "follow_read": {
+          "median": 15390,
+          "min": 15390,
+          "max": 15390,
+          "all": [
+            15390,
+            15390,
+            15390
+          ]
+        }
+      },
+      "B": {
+        "fresh_ttft_s": {
+          "median": 36.87583850000374,
+          "min": 36.794530299986945,
+          "max": 37.035725100009586,
+          "all": [
+            36.87583850000374,
+            36.794530299986945,
+            37.035725100009586
+          ]
+        },
+        "follow_ttft_s": {
+          "median": 3.517301199986832,
+          "min": 3.5152140999998664,
+          "max": 3.5210158999980194,
+          "all": [
+            3.5152140999998664,
+            3.517301199986832,
+            3.5210158999980194
+          ]
+        },
+        "fresh_reused": {
+          "median": 0,
+          "min": 0,
+          "max": 0,
+          "all": [
+            0,
+            0,
+            0
+          ]
+        },
+        "follow_reused": {
+          "median": 32768,
+          "min": 32768,
+          "max": 32768,
+          "all": [
+            32768,
+            32768,
+            32768
+          ]
+        },
+        "follow_read": {
+          "median": 1054,
+          "min": 1054,
+          "max": 1054,
+          "all": [
+            1054,
+            1054,
+            1054
+          ]
+        }
+      },
+      "follow_ttft_reduction_percent": 79.36742807444995,
+      "paired_follow_savings_s": [
+        13.39992030000576,
+        13.530021900005522,
+        13.587496899999678
+      ]
+    }
+  },
+  "limitations": [
+    "single modified RTX2080Ti22GB",
+    "IQ3_XXS; one recall workload and fixed teacher corpus",
+    "timing output is a complete short recall answer; no long-output decode speed claim",
+    "fixed cache; adaptation disabled; no artificial pressure"
+  ],
+  "oracle_pass": true,
+  "qa_oracle_pass": true,
+  "cache0_bitwise": true,
+  "pass": false
+}

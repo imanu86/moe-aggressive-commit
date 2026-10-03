@@ -573,3 +573,9 @@ validata va integrata, provata nella combinazione operativa e promossa con ripri
    solo per servire due conversazioni in parallelo.
 4. Limite da superare: una sola conversazione in cache (l'originale: `--conversation-cache-*`).
 5. Contesto desiderato circa 250k: 262.144 token. Non confondere il limite del banco a 139.264 con questo obiettivo.
+
+## 12. Ripresa 3/10: profilo 0.1.38 e accounting prefill
+
+Misurato il profilo ai contesti 131k e 250k, senza carico artificiale. QSA selection è il maggiore costo a 250k (33,5%, circa 124 s); gate/up GEMM è il successivo (12,7%). Incremental tokenization non è la priorità per aumentare i t/s del prompt in questa traccia. Report e limiti: `corse_2080ti/20261003_profilo_tempi/RISULTATI_PROFILO_E_PR547.md`.
+
+La correzione di memoria di [PR #547](https://github.com/Niko1221/Strata/pull/547) è stata portata sul fork `main`, compilata SM75, verificata e installata nel Daily 0.1.38 con backup. Migliora l'accounting e recupera circa 0,31 GiB di riserva al chunk 8192, ma A/B/A non mostra un guadagno di velocità sopra la variabilità: non aggiornare la SOTA. Non ripetere benchmark finché OktoCGControl è acceso. Prossimo lavoro consigliato: isolare il costo QSA e valutare un'ottimizzazione con parità numerica; mantenere FP16 e tokenizzazione incrementale come ipotesi separate.

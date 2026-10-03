@@ -1,0 +1,87 @@
+--- a/include/strata/prefill/prefill.hpp
++++ b/include/strata/prefill/prefill.hpp
+@@ -80,8 +80,10 @@
+     /// (0 = that rule). Set before any `bytes_needed`/`init` (both count the ring); STRATA_PREFILL_RING still wins.
+     static void set_ring_override(int slots);
+ 
+-    /// Device bytes `init` needs for a chunk of `chunk` tokens (what a borrowed region must hold).
+-    static uint64_t bytes_needed(const core::ModelGeometry& g, const core::SessionState& ss, int64_t chunk);
++    /// Device bytes `init` needs for a chunk of `chunk` tokens (what a borrowed region must hold). `src`: `init` gets an
++    /// ExpertSource (only then can a chunk take the fused layout, whose MoE buffers are smaller).
++    static uint64_t bytes_needed(const core::ModelGeometry& g, const core::SessionState& ss, int64_t chunk,
++                                 bool src = true);
+ 
+     /// Positions [pos0, pos0 + n) holding `tokens`; `ss.ple_prev` must be the two tokens before pos0 (oldest
+     /// first, -1 for none) and is advanced to the last two of these.
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -971,8 +971,8 @@
+ void Prefill::set_ring_override(int slots) { g_ring_override = slots > 0 ? slots : 0; }
+ double Prefill::pinned_share() { return g_pinned_share; }
+ 
+-uint64_t Prefill::bytes_needed(const core::ModelGeometry& g, const core::SessionState& ss, int64_t chunk) {
+-    // the same allocation sequence as `init`, counted
++uint64_t Prefill::bytes_needed(const core::ModelGeometry& g, const core::SessionState& ss, int64_t chunk, bool src) {
++    // Match carve: xn only for unfused GR, grs always, and source-dependent MoE layout.
+     const size_t T = (size_t) chunk;
+     bool ok = true;
+     Alloc o;
+@@ -980,7 +980,10 @@
+     o.take<uint16_t>((size_t) GEMM_SCRATCH, ok);
+     o.take<uint8_t>(GEMM_WS, ok);
+     auto f = [&](size_t n) { o.take<float>(n, ok); };
+-    f(T * N); f(T * D); f(T * D); o.take<uint16_t>(T * D, ok); f(T * LR); o.take<uint16_t>(T * LR, ok);
++    f(T * N); f(T * D);
++    if (gr_unfused()) f(T * D);
++    f(T * HC);
++    o.take<uint16_t>(T * D, ok); f(T * LR); o.take<uint16_t>(T * LR, ok);
+     // sm_75: the fp16 images and the two weight stagings `init` allocates right here.  THIS LIST MUST STAY IN
+     // STEP WITH `init`: the region is sized from it, and a missing entry is not a smaller buffer but an
+     // allocation past the end of the arena (measured: "prefill copy_i32: an illegal memory access").
+@@ -998,7 +1001,7 @@
+     const int64_t cap = strata::kernels::qsa_selection_width(strata::kernels::kTopkMaxCells, s);
+     const int64_t max_blocks = ss.qsa_states[ss.qsa_primary()].max_cells / s.idx_block + 2;
+     o.take<uint8_t>((size_t) std::max({gdn_set_bytes(T), qsa_set_bytes(T, cap, max_blocks, 256, 32, s),
+-                                       moe_set_bytes(T, g.n_expert, fused_layout(T, true))}), ok);
++                                       moe_set_bytes(T, g.n_expert, fused_layout(T, src))}), ok);
+     for (int i = 0; i < DQ; ++i) { o.take<uint16_t>(1280 * 2560, ok); o.take<uint16_t>(2560 * 640, ok); }
+     if (mmq_plan().any) {
+         const MmqPlan& mp = mmq_plan();
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -3864,7 +3864,7 @@
+         strata::prefill::Prefill::set_pinned_share(total ? (double) pinned / (double) total : 1.0);
+     }
+     auto lend_slots = [&](int64_t c) -> int64_t {
+-        const uint64_t need = strata::prefill::Prefill::bytes_needed(g, ss, c);
++        const uint64_t need = strata::prefill::Prefill::bytes_needed(g, ss, c, srcp != nullptr);
+         const int64_t blob = (int64_t) strata::kernels::cpu::expert_layout().max_blob;
+         int64_t k = (int64_t) ((need + (uint64_t) blob - 1) / (uint64_t) blob);
+         if (xcache.slot_offsets() != nullptr) {   // sized slots: take slots from the end until they hold `need`
+@@ -4028,7 +4028,7 @@
+             std::vector<std::pair<int32_t, int32_t>> lent;
+         };
+         auto part_slots = [&](const PfPart& p, int64_t c) -> int64_t {
+-            const uint64_t need = strata::prefill::Prefill::bytes_needed(g, *p.ses, c);
++            const uint64_t need = strata::prefill::Prefill::bytes_needed(g, *p.ses, c, srcp != nullptr);
+             strata::core::ExpertCache& xc = *p.cache;
+             if (xc.slot_offsets() != nullptr) {   // sized slots: from the end until they hold `need`
+                 int64_t k = 0;
+@@ -4157,7 +4157,7 @@
+                         const strata::core::OnDevice on(p.dev);
+                         size_t fb = 0, tb = 0;
+                         if (cudaMemGetInfo(&fb, &tb) != cudaSuccess) { (void) cudaGetLastError(); continue; }
+-                        const uint64_t need = strata::prefill::Prefill::bytes_needed(g, *p.ses, chunk);
++                        const uint64_t need = strata::prefill::Prefill::bytes_needed(g, *p.ses, chunk, srcp != nullptr);
+                         if ((uint64_t) fb >= need + (3ull << 29)) {
+                             std::fprintf(stderr, "strata serve:   CUDA%d keeps its own prompt buffers (%.2f GiB of "
+                                                  "%.2f GiB free): no loan\n", p.dev < 0 ? 0 : p.dev,
+@@ -4245,7 +4245,7 @@
+                     const strata::core::OnDevice on(dev);
+                     size_t fb = 0, tb = 0;
+                     cudaMemGetInfo(&fb, &tb);
+-                    const int64_t need = (int64_t) strata::prefill::Prefill::bytes_needed(g, i == 0 ? ss : stages[i - 1]->ss, c);
++                    const int64_t need = (int64_t) strata::prefill::Prefill::bytes_needed(g, i == 0 ? ss : stages[i - 1]->ss, c, srcp != nullptr);
+                     if (need + kHeadroom > (int64_t) fb) {
+                         dev_out = dev < 0 ? 0 : dev; need_out = need; free_out = (int64_t) fb;
+                         return false;

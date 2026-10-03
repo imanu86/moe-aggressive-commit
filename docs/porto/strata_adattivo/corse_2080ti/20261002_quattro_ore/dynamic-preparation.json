@@ -1,0 +1,17 @@
+{
+  "base": "aligned037 source; open PR453/487 and shared-LUT excluded",
+  "env": "STRATA_TOPK_DYNAMIC=1",
+  "default": "off",
+  "architecture": "CUDA cc7.5 only",
+  "live_interval_blocks": [
+    8193,
+    33792
+  ],
+  "captured_replay": "Device steps choose the writing kernel on each replay; other kernel is a block-uniform no-op",
+  "original_sha256": "5dae2774cea39e9a2b85a22ecec275312921acd1c576f2451ccc648cf6bd51bf",
+  "candidate_sha256": "5c6660e401f8e8a08b072113a8a5d34d863f81d0941dd2261337dbded4790cda",
+  "harness_sha256": "7c68e90ca0edc149073d67aa5309a9eb39232bff4cb38069aa43e909f0b157b4",
+  "activation_gate": "Captured dynamic graph must contain exactly two kernel nodes",
+  "expanded_harness_sha256": "d9375b5fa59f6ad423f0075cdda3e84038b611dad6d706128e01d5dbc87a7f86",
+  "expanded_cases": 228
+}

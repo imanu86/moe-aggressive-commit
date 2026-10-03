@@ -1,0 +1,210 @@
+{
+  "protocol": "same executable, shared LUT OFF A1 / ON B / OFF A2; unchanged operational elastic configuration",
+  "arms": {
+    "A1": {
+      "ring": "0",
+      "exit": 0,
+      "result": {
+        "name": "shared_daily_A1",
+        "kv_capacity": 262144,
+        "config_template": "D:\\ds4_work\\strata\\Strata\\strata-2080ti-sota.json",
+        "config_template_sha256": "ccffa537cdb264f99317948c1c6f41ffbc1e5ce370cafb1ca8c0ca717e77e112",
+        "prompt_profile": "lungo_131k",
+        "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\shared_daily_A1",
+        "duration_limit_s": 900,
+        "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-shared\\strata.exe",
+        "exe_sha256": "ab7baf61aa9f871e6602cc23212d19fbf6bc9ef7ca776c682e9b425ff012e281",
+        "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\shared-source",
+        "server_sha256": "73f90f417e9207811fdc47e5e6240f69bbde0f61ff027b9e0d8cb7b7bb2f4d81",
+        "requested_fixed_cache_slots": null,
+        "gather_mode": null,
+        "kernel_profiling": false,
+        "qsa_ch": null,
+        "topk_mode": null,
+        "artificial_load": false,
+        "status": "completed",
+        "startup_s": 42.5,
+        "health": {
+          "status": "ok",
+          "max_context": 262144,
+          "model": "qwen3.8-flash-next-iq3_xxs",
+          "images": false,
+          "api_key": false,
+          "loaded": true,
+          "service": "strata"
+        },
+        "initial_cache": {
+          "expert_slots": 6210,
+          "expert_cache_mib": 10294,
+          "vram_free_mib": 1149
+        },
+        "summary": {
+          "corsa": "20261002_223350_shared_daily_A1_lungo_131k",
+          "nota": "KV 262144; prompt 131k; carico reale",
+          "decode_aggregato_tps": 39.631,
+          "blocchi": {
+            "131k": {
+              "casi": 2,
+              "decode_tps": 39.631
+            }
+          },
+          "per_caso": [
+            {
+              "etichetta": "L01@ctx131k",
+              "prefill_tps_motore": 982.95,
+              "decode_tps_motore": 40.88,
+              "ttft_s": 134.325,
+              "vram_prima_mib": 19357,
+              "fine": "length"
+            },
+            {
+              "etichetta": "L02@ctx131k",
+              "prefill_tps_motore": 85.98,
+              "decode_tps_motore": 38.457,
+              "ttft_s": 2.781,
+              "vram_prima_mib": 20494,
+              "fine": "length"
+            }
+          ]
+        }
+      }
+    },
+    "B": {
+      "ring": "1",
+      "exit": 0,
+      "result": {
+        "name": "shared_daily_B",
+        "kv_capacity": 262144,
+        "config_template": "D:\\ds4_work\\strata\\Strata\\strata-2080ti-sota.json",
+        "config_template_sha256": "ccffa537cdb264f99317948c1c6f41ffbc1e5ce370cafb1ca8c0ca717e77e112",
+        "prompt_profile": "lungo_131k",
+        "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\shared_daily_B",
+        "duration_limit_s": 900,
+        "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-shared\\strata.exe",
+        "exe_sha256": "ab7baf61aa9f871e6602cc23212d19fbf6bc9ef7ca776c682e9b425ff012e281",
+        "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\shared-source",
+        "server_sha256": "73f90f417e9207811fdc47e5e6240f69bbde0f61ff027b9e0d8cb7b7bb2f4d81",
+        "requested_fixed_cache_slots": null,
+        "gather_mode": null,
+        "kernel_profiling": false,
+        "qsa_ch": null,
+        "topk_mode": null,
+        "artificial_load": false,
+        "status": "completed",
+        "startup_s": 41.94,
+        "health": {
+          "status": "ok",
+          "max_context": 262144,
+          "model": "qwen3.8-flash-next-iq3_xxs",
+          "images": false,
+          "api_key": false,
+          "loaded": true,
+          "service": "strata"
+        },
+        "initial_cache": {
+          "expert_slots": 6576,
+          "expert_cache_mib": 10889,
+          "vram_free_mib": 607
+        },
+        "summary": {
+          "corsa": "20261002_223747_shared_daily_B_lungo_131k",
+          "nota": "KV 262144; prompt 131k; carico reale",
+          "decode_aggregato_tps": 40.308,
+          "blocchi": {
+            "131k": {
+              "casi": 2,
+              "decode_tps": 40.308
+            }
+          },
+          "per_caso": [
+            {
+              "etichetta": "L01@ctx131k",
+              "prefill_tps_motore": 975.63,
+              "decode_tps_motore": 41.511,
+              "ttft_s": 135.199,
+              "vram_prima_mib": 19390,
+              "fine": "length"
+            },
+            {
+              "etichetta": "L02@ctx131k",
+              "prefill_tps_motore": 90.86,
+              "decode_tps_motore": 39.173,
+              "ttft_s": 2.464,
+              "vram_prima_mib": 20554,
+              "fine": "length"
+            }
+          ]
+        }
+      }
+    },
+    "A2": {
+      "ring": "0",
+      "exit": 0,
+      "result": {
+        "name": "shared_daily_A2",
+        "kv_capacity": 262144,
+        "config_template": "D:\\ds4_work\\strata\\Strata\\strata-2080ti-sota.json",
+        "config_template_sha256": "ccffa537cdb264f99317948c1c6f41ffbc1e5ce370cafb1ca8c0ca717e77e112",
+        "prompt_profile": "lungo_131k",
+        "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\shared_daily_A2",
+        "duration_limit_s": 900,
+        "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-shared\\strata.exe",
+        "exe_sha256": "ab7baf61aa9f871e6602cc23212d19fbf6bc9ef7ca776c682e9b425ff012e281",
+        "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\shared-source",
+        "server_sha256": "73f90f417e9207811fdc47e5e6240f69bbde0f61ff027b9e0d8cb7b7bb2f4d81",
+        "requested_fixed_cache_slots": null,
+        "gather_mode": null,
+        "kernel_profiling": false,
+        "qsa_ch": null,
+        "topk_mode": null,
+        "artificial_load": false,
+        "status": "completed",
+        "startup_s": 41.03,
+        "health": {
+          "status": "ok",
+          "max_context": 262144,
+          "model": "qwen3.8-flash-next-iq3_xxs",
+          "images": false,
+          "api_key": false,
+          "loaded": true,
+          "service": "strata"
+        },
+        "initial_cache": {
+          "expert_slots": 6786,
+          "expert_cache_mib": 11231,
+          "vram_free_mib": 827
+        },
+        "summary": {
+          "corsa": "20261002_224143_shared_daily_A2_lungo_131k",
+          "nota": "KV 262144; prompt 131k; carico reale",
+          "decode_aggregato_tps": 40.935,
+          "blocchi": {
+            "131k": {
+              "casi": 2,
+              "decode_tps": 40.935
+            }
+          },
+          "per_caso": [
+            {
+              "etichetta": "L01@ctx131k",
+              "prefill_tps_motore": 977.32,
+              "decode_tps_motore": 42.226,
+              "ttft_s": 135.061,
+              "vram_prima_mib": 20480,
+              "fine": "length"
+            },
+            {
+              "etichetta": "L02@ctx131k",
+              "prefill_tps_motore": 90.6,
+              "decode_tps_motore": 39.721,
+              "ttft_s": 2.61,
+              "vram_prima_mib": 20745,
+              "fine": "length"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "status": "completed"
+}

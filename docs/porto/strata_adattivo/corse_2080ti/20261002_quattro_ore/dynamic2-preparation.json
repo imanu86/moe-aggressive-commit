@@ -1,0 +1,12 @@
+{
+  "base": "dynamic-v1, aligned037",
+  "mode": "Same captured graphs; per-device constant controls which guarded kernel writes; synchronize at request boundary",
+  "control": "strata_tune.topk_dynamic=0|1; only when STRATA_TOPK_DYNAMIC=1, single GPU",
+  "files": {
+    "src/kernels/cuda/qsa_select.cu": "7472f551bfec76d7d8a0c9bd5a2878dc20f9f44231cb2d5b75c6755129e6e117",
+    "include/strata/kernels/qsa_select.hpp": "f299f2ed0bb5b03b8e6577b114e3cb1a30ed2703eb0de8dade8b0252cb2b2cdf",
+    "src/program/generate.cpp": "8118625e02cf3a2a4bd78d92cb758a2089b3ca3610aa28d85a9a22da0d0461d4",
+    "serve/server.py": "eb1d7ecc2f0066239404026535f3dfb8c92dd73dbdaf8094cb97a72e80014738",
+    "tests/sm75/qsa_dynamic.cpp": "e4791239ec3d49525ddc58dbc9218ca1d3c3c6ee91e7836aa39b262d91800988"
+  }
+}

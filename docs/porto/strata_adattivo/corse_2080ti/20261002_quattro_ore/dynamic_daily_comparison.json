@@ -1,0 +1,210 @@
+{
+  "protocol": "same executable, captured dynamic top-k OFF A1 / ON B / OFF A2; explicit PCIe0.28, unchanged elastic KV profile; unchanged operational elastic configuration",
+  "arms": {
+    "A1": {
+      "ring": "0",
+      "exit": 0,
+      "result": {
+        "name": "dynamic_daily_A1",
+        "kv_capacity": 262144,
+        "config_template": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\config-pcie028.json",
+        "config_template_sha256": "343ef716f47410f57c94227f8f03897fa8a3cb4a2c299a2e101b8941914d5e4e",
+        "prompt_profile": "lungo_131k",
+        "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\dynamic_daily_A1",
+        "duration_limit_s": 900,
+        "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-dynamic\\strata.exe",
+        "exe_sha256": "62c279b96f749ecc03ef70e4e2ca7479895ead9c2b3435d6f1a746c752d95c48",
+        "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\dynamic-source",
+        "server_sha256": "80ca3220d450170cc5f2cac305b687694245a42bf2b27d0be419bbd664f8035d",
+        "requested_fixed_cache_slots": null,
+        "gather_mode": null,
+        "kernel_profiling": false,
+        "qsa_ch": null,
+        "topk_mode": null,
+        "artificial_load": false,
+        "status": "completed",
+        "startup_s": 46.09,
+        "health": {
+          "status": "ok",
+          "max_context": 262144,
+          "model": "qwen3.8-flash-next-iq3_xxs",
+          "images": false,
+          "api_key": false,
+          "loaded": true,
+          "service": "strata"
+        },
+        "initial_cache": {
+          "expert_slots": 6517,
+          "expert_cache_mib": 10799,
+          "vram_free_mib": 513
+        },
+        "summary": {
+          "corsa": "20261002_231155_dynamic_daily_A1_lungo_131k",
+          "nota": "KV 262144; prompt 131k; carico reale",
+          "decode_aggregato_tps": 40.247,
+          "blocchi": {
+            "131k": {
+              "casi": 2,
+              "decode_tps": 40.247
+            }
+          },
+          "per_caso": [
+            {
+              "etichetta": "L01@ctx131k",
+              "prefill_tps_motore": 478.47,
+              "decode_tps_motore": 41.362,
+              "ttft_s": 275.05,
+              "vram_prima_mib": 19804,
+              "fine": "length"
+            },
+            {
+              "etichetta": "L02@ctx131k",
+              "prefill_tps_motore": 87.65,
+              "decode_tps_motore": 39.19,
+              "ttft_s": 2.514,
+              "vram_prima_mib": 21070,
+              "fine": "length"
+            }
+          ]
+        }
+      }
+    },
+    "B": {
+      "ring": "1",
+      "exit": 0,
+      "result": {
+        "name": "dynamic_daily_B",
+        "kv_capacity": 262144,
+        "config_template": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\config-pcie028.json",
+        "config_template_sha256": "343ef716f47410f57c94227f8f03897fa8a3cb4a2c299a2e101b8941914d5e4e",
+        "prompt_profile": "lungo_131k",
+        "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\dynamic_daily_B",
+        "duration_limit_s": 900,
+        "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-dynamic\\strata.exe",
+        "exe_sha256": "62c279b96f749ecc03ef70e4e2ca7479895ead9c2b3435d6f1a746c752d95c48",
+        "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\dynamic-source",
+        "server_sha256": "80ca3220d450170cc5f2cac305b687694245a42bf2b27d0be419bbd664f8035d",
+        "requested_fixed_cache_slots": null,
+        "gather_mode": null,
+        "kernel_profiling": false,
+        "qsa_ch": null,
+        "topk_mode": null,
+        "artificial_load": false,
+        "status": "completed",
+        "startup_s": 43.02,
+        "health": {
+          "status": "ok",
+          "max_context": 262144,
+          "model": "qwen3.8-flash-next-iq3_xxs",
+          "images": false,
+          "api_key": false,
+          "loaded": true,
+          "service": "strata"
+        },
+        "initial_cache": {
+          "expert_slots": 6469,
+          "expert_cache_mib": 10718,
+          "vram_free_mib": 773
+        },
+        "summary": {
+          "corsa": "20261002_231814_dynamic_daily_B_lungo_131k",
+          "nota": "KV 262144; prompt 131k; carico reale",
+          "decode_aggregato_tps": 41.79,
+          "blocchi": {
+            "131k": {
+              "casi": 2,
+              "decode_tps": 41.79
+            }
+          },
+          "per_caso": [
+            {
+              "etichetta": "L01@ctx131k",
+              "prefill_tps_motore": 969.4,
+              "decode_tps_motore": 44.53,
+              "ttft_s": 136.143,
+              "vram_prima_mib": 19802,
+              "fine": "length"
+            },
+            {
+              "etichetta": "L02@ctx131k",
+              "prefill_tps_motore": 88.83,
+              "decode_tps_motore": 39.367,
+              "ttft_s": 2.494,
+              "vram_prima_mib": 20777,
+              "fine": "length"
+            }
+          ]
+        }
+      }
+    },
+    "A2": {
+      "ring": "0",
+      "exit": 0,
+      "result": {
+        "name": "dynamic_daily_A2",
+        "kv_capacity": 262144,
+        "config_template": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\config-pcie028.json",
+        "config_template_sha256": "343ef716f47410f57c94227f8f03897fa8a3cb4a2c299a2e101b8941914d5e4e",
+        "prompt_profile": "lungo_131k",
+        "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\dynamic_daily_A2",
+        "duration_limit_s": 900,
+        "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-dynamic\\strata.exe",
+        "exe_sha256": "62c279b96f749ecc03ef70e4e2ca7479895ead9c2b3435d6f1a746c752d95c48",
+        "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\dynamic-source",
+        "server_sha256": "80ca3220d450170cc5f2cac305b687694245a42bf2b27d0be419bbd664f8035d",
+        "requested_fixed_cache_slots": null,
+        "gather_mode": null,
+        "kernel_profiling": false,
+        "qsa_ch": null,
+        "topk_mode": null,
+        "artificial_load": false,
+        "status": "completed",
+        "startup_s": 40.91,
+        "health": {
+          "status": "ok",
+          "max_context": 262144,
+          "model": "qwen3.8-flash-next-iq3_xxs",
+          "images": false,
+          "api_key": false,
+          "loaded": true,
+          "service": "strata"
+        },
+        "initial_cache": {
+          "expert_slots": 6527,
+          "expert_cache_mib": 10818,
+          "vram_free_mib": 1125
+        },
+        "summary": {
+          "corsa": "20261002_232209_dynamic_daily_A2_lungo_131k",
+          "nota": "KV 262144; prompt 131k; carico reale",
+          "decode_aggregato_tps": 39.057,
+          "blocchi": {
+            "131k": {
+              "casi": 2,
+              "decode_tps": 39.057
+            }
+          },
+          "per_caso": [
+            {
+              "etichetta": "L01@ctx131k",
+              "prefill_tps_motore": 968.09,
+              "decode_tps_motore": 40.215,
+              "ttft_s": 136.274,
+              "vram_prima_mib": 20138,
+              "fine": "length"
+            },
+            {
+              "etichetta": "L02@ctx131k",
+              "prefill_tps_motore": 88.93,
+              "decode_tps_motore": 37.964,
+              "ttft_s": 2.512,
+              "vram_prima_mib": 20694,
+              "fine": "length"
+            }
+          ]
+        }
+      }
+    }
+  },
+  "status": "completed"
+}

@@ -1,0 +1,313 @@
+{
+  "utc": "20261002_203228",
+  "queries": {
+    "upstream_commits": [
+      {
+        "sha": "db4f91a1171d697928b0d2e1f50ef95e25559d4c",
+        "date": "2026-10-02T17:26:00Z",
+        "message": "Engine 0.1.37: a silent engine is restarted (#481), Windows AMD counts the desktop's VRAM (#380 #377 #497), a steadier PCIe probe (#485), fixes #496 #495 #498 #505 #493; setup requires it"
+      },
+      {
+        "sha": "97fc539e90edcd5e6f9651617a65d6c817f86578",
+        "date": "2026-10-02T17:23:24Z",
+        "message": "Merge branch 'f-137-srv' into rel-0.1.37"
+      },
+      {
+        "sha": "100ebe47e76872426c030ab744ea6a8dd7b526a2",
+        "date": "2026-10-02T17:22:46Z",
+        "message": "docs: Windows AMD's free-VRAM figure within the WDDM budget (#380) and the host-timed PCIe probe (#377)"
+      },
+      {
+        "sha": "4e308ebb2f0a4ec7de9e6a4feb6e88428e28bd72",
+        "date": "2026-10-02T17:22:45Z",
+        "message": "PCIe probe (#485): best of four timed bursts, a continuous share, the samples logged"
+      },
+      {
+        "sha": "b9c2d5e6af56d9174e7ada7deff78ed18a06bd28",
+        "date": "2026-10-02T16:52:23Z",
+        "message": "setup: --vram-reserve-mib N, and INSTALL.md documents it (#493)"
+      },
+      {
+        "sha": "869ebad9563b9bb8cde14e9392dcbe19c30e19bf",
+        "date": "2026-10-02T16:50:12Z",
+        "message": "setup: UD-Q4_K_XL across GPUs without the RAM budget when the RAM holds it; no budget on a --gpus start (#498)"
+      },
+      {
+        "sha": "aa0e21bd1807e1390c70680e4a907e160ddbf766",
+        "date": "2026-10-02T16:46:07Z",
+        "message": "setup: honour HF_ENDPOINT, and say where the model files go (#495)"
+      },
+      {
+        "sha": "6e05aa981bad41d59f3a6d83b2cca6a5395ce929",
+        "date": "2026-10-02T16:44:19Z",
+        "message": "serve: the start narrator says what happens to the experts with --mmap-experts (#505)"
+      },
+      {
+        "sha": "f7df4ef1a92bb1f574d78372c4161f255f907488",
+        "date": "2026-10-02T16:42:56Z",
+        "message": "serve: the engine-exited-before-READY error shows this start's last 20 log lines (#496)"
+      },
+      {
+        "sha": "e07540f84a09639c40f26c176881f66dfdce1e19",
+        "date": "2026-10-02T16:42:20Z",
+        "message": "serve: end an engine that lost step with the server instead of waiting forever (#481)"
+      },
+      {
+        "sha": "a596f159788d9f2f7108680184fe71bc186e8ceb",
+        "date": "2026-10-02T16:38:53Z",
+        "message": "HIP: count the desktop's VRAM on Windows (WDDM budget, STRATA_WDDM_BUDGET)"
+      },
+      {
+        "sha": "da719fc85e6c7c3043b7497c7bbc03cef435c784",
+        "date": "2026-10-02T16:38:35Z",
+        "message": "HIP: time the PCIe probe on the host on Windows"
+      }
+    ],
+    "pr453": {
+      "number": 453,
+      "state": "open",
+      "merged": false,
+      "draft": false,
+      "updated_at": "2026-10-02T04:05:18Z",
+      "title": "prefill: the draft layer's batched K/V for a ring too (KV streaming) - prefill +4.6% with --kv-resident",
+      "html_url": "https://github.com/Niko1221/Strata/pull/453",
+      "head_sha": "efd79baec7fcda276fbeea175503d95762be58ea",
+      "body": "## What\r\n\r\nWith KV streaming (`--kv-resident`), the MTP drafter's K/V is a ring of its window: `kv_mode` 2, page p in slot\r\np % n_slots, over a host copy. `Prefill::draft_kv` (E-9) refused anything but `kv_mode` 0, so every prompt fell back to\r\nthe drafter's own pass (`MtpDrafter::prefill`), one graph per few rows over the window's cells. On a streamed session\r\nthat was about 4.5% of every long prompt.\r\n\r\n- **The batched path now takes the ring.** It uses the same appends (`kv_append_q4` / `kv_append`) with the ring's\r\n  page table and host copy, as a streamed main layer appends.\r\n- **No two cells of a batch share a slot.**\r\n  - The cells written are those the window can still reach (`first_needed`, as before), and the ring holds them.\r\n  - A batch is also capped at the ring's slots minus one page, since a batch can straddle one extra page.\r\n- **A/B switch.** `STRATA_MTP_BATCH_RING=0` restores the drafter's own pass.\r\n- **Debug.** `STRATA_DRAFT_TIMING=1` prints the pass's time, synced.\r\n\r\n## Measured\r\n\r\n**Setup:**\r\n- RTX 5070 Ti 16 GB on PCIe 3.0 x16 (X370), Ryzen 9 5900XT, DDR4-2133, Windows 11, CUDA 13.0, built on v0.1.34.\r\n- Qwen3.8-Flash-Next IQ3_XXS, `--kv q4_0 --kv-resident 32768`, text-only args, `--prefill auto` (8,192-token chunks),\r\n  `--spec 4 --mtp`.\r\n\r\n**The draft layer's step after the prompt** (`STRATA_PREFILL_TIMING`'s \"after each chunk\"; the same prompts in both\r\narms, display off):\r\n\r\n| Prompt tokens | Drafter's own pass | Batched (`STRATA_DRAFT_TIMING`) |\r\n| ---: | ---: | --- |\r\n| 6,949 | 204 ms | 17 ms: 6,942 cells in 16.4 ms |\r\n| 14,297 | 421 ms | 34 ms: 8,192 + 6,098 cells in 19.5 + 14.6 ms |\r\n\r\n**Prefill, end to end.**\r\n- Only this switch differs: `STRATA_MTP_BATCH_RING=0` against the default, everything else as v0.1.34.\r\n- The same three prompts in every run: a priming run first (not counted), then three rounds of on, off. Display off.\r\n\r\n| Prompt tokens | Drafter's own pass (tok/s, 3 runs) | Batched (tok/s, 3 runs) | Change |\r\n| ---: | ---: | ---: | ---: |\r\n| 8,128 | 1,656 / 1,650 / 1,654 | 1,731 / 1,725 / 1,734 | +4.6% |\r\n| 15,547 | 1,670 / 1,663 / 1,668 | 1,754 / 1,735 / 1,744 | +4.6% |\r\n| 31,649 | 1,684 / 1,686 / 1,677 | 1,770 / 1,757 / 1,758 | +4.7% |\r\n\r\nThe saving grows with the prompt (median 215 / 407 / 873 ms). With a 32K-cell ring the drafter's window covers the\r\nwhole prompt, and its own pass cost about 27 ms per 1K prompt tokens.\r\n\r\n**The drafts.** 128 greedy tokens after an 8K and a 16K prompt, two runs (the second with `STRATA_IQ_MT_MIN=1`):\r\n\r\n| | Drafter's own pass | Batched |\r\n| --- | --- | --- |\r\n| Drafts accepted | 73/108, 64/101, 71/111, 73/107 (64-68%) | 75/117, 65/102, 69/113, 70/105 (61-67%) |\r\n| Decode (tok/s) | 49.0, 59.9, 49.1, 58.4 | 46.6, 60.1, 47.5, 58.7 |\r\n\r\n**Exactness.**\r\n- The batched pass is not bitwise the drafter's own pass. As E-9 states for the non-ring case, its FP16/Q8 GEMMs\r\n  round differently, so drafts can differ.\r\n- The target's logits never depend on the drafts, but its greedy tokens can: a verify window's arithmetic depends on\r\n  how many drafts it holds (#152).\r\n- In the runs above the target's continuations parted after 2-35 tokens, also with `STRATA_IQ_MT_MIN=1`. That is the\r\n  same thing a change of drafter or of `--spec` does.\r\n\r\n## Not tested here\r\n\r\n- An INT8 KV ring: the same `kv_append` with the ring's page table and host copy. Only `--kv q4_0` was run.\r\n- HIP.\r\n- Linux.\r\n- A layer split: that path does not use `draft_kv`.\r\n\r\nDeveloped with an AI coding assistant; all numbers measured on the machine above.\r\n\r\n\ud83e\udd16 Generated with [Claude Code](https://claude.com/claude-code)\r\n"
+    },
+    "pr487": {
+      "number": 487,
+      "state": "open",
+      "merged": false,
+      "draft": false,
+      "updated_at": "2026-10-02T10:22:40Z",
+      "title": "PCIe probe: median of several primed bursts instead of one",
+      "html_url": "https://github.com/Niko1221/Strata/pull/487",
+      "head_sha": "c434fcce204c3bbfdf0b576908eff1c8f5e54a02",
+      "body": "`probe_pcie_h2d_gbps()` took a single 256 MiB x4 pinned burst after one warmup. On one x16 PCIe 4.0 link the same binary read 18.5, 6.9 and 5.8 GB/s across starts, and the low samples pin `pcie_frac` at 0.12-0.15 where calibration picks 0.35 (see #485).\n\nThis primes the link with two untimed copies and returns the **median of five** timed bursts, so one contended or not-yet-ramped sample cannot set the load's share. A >= 20 GB/s link still yields `pcie_frac 0.55`; a genuinely slow link now reports its true (low) rate instead of a worse outlier.\n\nNo new dependencies (`<algorithm>` is already included).\n\nRefs #485.\n"
+    },
+    "turing_commits": [
+      {
+        "sha": "235350960d853674f0279e5838a16e68e71be2bd",
+        "date": "2026-10-01T09:54:29Z",
+        "message": "Update README to format Strata link correctly"
+      },
+      {
+        "sha": "e367ce4dabacdfb9446835b6ac818e181b948124",
+        "date": "2026-10-01T08:10:52Z",
+        "message": "note\u4fee\u6539"
+      },
+      {
+        "sha": "c8fd794e6bbde5be1f3dd9e98d40216e8d77683b",
+        "date": "2026-10-01T07:43:03Z",
+        "message": "bench(sm75): \u8ba9 native_mmvq \u7684\u591a\u5217\u5e03\u5c40\u53ef\u7531\u5f00\u5173\u9009\u62e9\uff0c\u5e76\u5b9e\u6d4b\u5176\u5728 sm_75 \u4e0a\u4e0d\u66f4\u5feb"
+      },
+      {
+        "sha": "c03755616141836f044c349f003b1a43b675e118",
+        "date": "2026-10-01T07:43:03Z",
+        "message": "diag(prefill): \u9009\u62e9\u91cd\u53e0\u63a2\u9488\u652f\u6301\u4efb\u610f tile \u5927\u5c0f\uff08STRATA_SEL_TILE\uff09"
+      },
+      {
+        "sha": "80fae03ee1c78741f7e32b6fbb9d9378cfc259e1",
+        "date": "2026-10-01T07:43:03Z",
+        "message": "bench(sm75): \u65b0\u589e prompt attention \u5fae\u57fa\u51c6\uff0c\u5e76\u5b9a\u4f4d\u5176\u771f\u5b9e\u74f6\u9888\uff08KV \u91cd\u590d\u8bfb\uff09"
+      },
+      {
+        "sha": "bdea4cb4b8d166e0d7390562a619782876a723f1",
+        "date": "2026-10-01T07:43:03Z",
+        "message": "fix(sm75): \u628a prompt \u671f\u65b0\u589e\u7f13\u51b2\u8ba1\u5165\u663e\u5b58\u9884\u7b97\uff08\u6d88\u9664\"\u9760\u516c\u5f0f\u4f59\u91cf\"\u7684\u9690\u60a3\uff09"
+      },
+      {
+        "sha": "496a4f3a195b98a935c0ac1fd1f5dfbf46ab3f58",
+        "date": "2026-10-01T07:43:03Z",
+        "message": "perf(sm75): \u4e13\u5bb6 gather \u6309\u7ec4\u6279\u91cf\u62f7\u8d1d\uff08\u6bcf\u7ec4\u4e00\u6b21 launch\uff09"
+      },
+      {
+        "sha": "ea158a93ed30340092f1bf4a13522231062453f5",
+        "date": "2026-10-01T07:43:03Z",
+        "message": "perf(sm75): \u7a20\u5bc6\u6743\u91cd\u53cd\u91cf\u5316\u6539\u5411\u91cf\u5199\uff08prompt +5%\uff0c\u6570\u503c\u9010\u4f4d\u4e0d\u53d8\uff09"
+      }
+    ],
+    "latest_forks": [
+      {
+        "full_name": "sskver/Strata",
+        "pushed_at": "2026-10-02T20:28:23Z",
+        "created_at": "2026-10-02T20:09:18Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "eadra/Strata",
+        "pushed_at": "2026-10-02T19:41:43Z",
+        "created_at": "2026-10-02T19:41:20Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "slip2/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T19:12:29Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "zemanzhang809/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T19:10:05Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "chimpera/Strata",
+        "pushed_at": "2026-10-02T19:51:03Z",
+        "created_at": "2026-10-02T18:48:18Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "Raven424242/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:42:49Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "Karenax/Strata",
+        "pushed_at": "2026-10-02T18:56:17Z",
+        "created_at": "2026-10-02T18:40:25Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "dellathefella/Strata",
+        "pushed_at": "2026-10-02T18:42:58Z",
+        "created_at": "2026-10-02T18:39:28Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "fullstacksushil/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:38:40Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "Riomexes/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:30:53Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "adewin/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:30:36Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "bbirdkt/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:30:30Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "paazuuu/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:25:12Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "matthewjt/Strata",
+        "pushed_at": "2026-10-02T18:37:58Z",
+        "created_at": "2026-10-02T18:20:19Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "ckti/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T18:00:12Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "rubund/Strata",
+        "pushed_at": "2026-10-02T18:01:46Z",
+        "created_at": "2026-10-02T17:59:02Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "lijieming/Strata",
+        "pushed_at": "2026-10-02T18:12:06Z",
+        "created_at": "2026-10-02T17:57:06Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "GabrielNassar98/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:57:02Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "mthrysoe/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:52:52Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "mikolajkrawczyk50/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:50:26Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "malconeliuliu/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:46:55Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "ai-skynet-labs/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:40:18Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "ZiChen-hub/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:31:27Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "enli/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:30:18Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "misterclarity/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:23:19Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "technocrat-10/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T17:16:13Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "rigister/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T16:53:50Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "tetra878/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T16:51:10Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "FGDumitru/Strata",
+        "pushed_at": "2026-10-02T16:38:47Z",
+        "created_at": "2026-10-02T16:48:59Z",
+        "default_branch": "main"
+      },
+      {
+        "full_name": "philmcneely/Strata",
+        "pushed_at": "2026-10-02T09:05:27Z",
+        "created_at": "2026-10-02T16:38:38Z",
+        "default_branch": "main"
+      }
+    ]
+  }
+}

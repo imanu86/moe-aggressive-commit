@@ -1,0 +1,1968 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,6 +1,6 @@
+ # Strata Engine - top-level build (P1.S1).
+ #
+-# Targets (phase-1 Ă‚Â§P1.S1): `strata_artifact` (no CUDA dependency), `tests`.  `strata_plan` and the C++
++# Targets (phase-1 Ã„â€šÃ¢â‚¬Å¡Ãƒâ€šÃ‚Â§P1.S1): `strata_artifact` (no CUDA dependency), `tests`.  `strata_plan` and the C++
+ # `strata-pack` are added when their sources exist - a target with no sources would make the build graph
+ # claim something the tree does not have, which is worse than an absent target.
+ #
+@@ -8,7 +8,7 @@
+ # below refuses anything older: silently building for a pre-Ampere arch would produce a binary that runs
+ # and is wrong about its own performance, which is the worst of both outcomes.
+ cmake_minimum_required(VERSION 3.24)
+-project(strata VERSION 0.1.36 LANGUAGES CXX)
++project(strata VERSION 0.1.37 LANGUAGES CXX)
+ add_compile_definitions(STRATA_VERSION="${PROJECT_VERSION}")
+ # issue #31: release builds keep a PDB beside the exe (not shipped in it), so a minidump from a stalled engine can
+ # be read back to the exact source line
+@@ -350,7 +350,7 @@
+     src/core/conversation_snapshot.cpp src/core/conversation_state.cpp src/core/conversation_memory.cpp)
+   target_include_directories(strata_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+   target_link_libraries(strata_engine PUBLIC strata_core strata_kernels strata_kernels_cpu ${_strata_gpu_runtime_target})
+-  # fork «Strata adattivo»: the elastic expert cache maps its arena with the driver's virtual memory API (cuMem*)
++  # fork Ã‚Â«Strata adattivoÃ‚Â»: the elastic expert cache maps its arena with the driver's virtual memory API (cuMem*)
+   if(TARGET CUDA::cuda_driver)
+     target_link_libraries(strata_engine PUBLIC CUDA::cuda_driver)
+   endif()
+@@ -1013,7 +1013,7 @@
+       add_test(NAME native_expert_parity_refuses_q6_K COMMAND native_expert_parity --synthetic q6_K/q8_0)
+       set_tests_properties(native_expert_parity_refuses_q6_K PROPERTIES WILL_FAIL TRUE)
+     endif()
+-    # fork «Strata adattivo»: the grouped expert kernel's speed on real rows (microseconds per call, GB/s)
++    # fork Ã‚Â«Strata adattivoÃ‚Â»: the grouped expert kernel's speed on real rows (microseconds per call, GB/s)
+     add_executable(native_expert_bench src/kernels/native_expert_bench.cpp)
+     target_include_directories(native_expert_bench PRIVATE ${_strata_gpu_include_directories})
+     target_link_libraries(native_expert_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+@@ -1079,3 +1079,13 @@
+     add_subdirectory(tests)
+   endif()
+ endif()
++
++if(STRATA_ENABLE_CUDA AND (STRATA_BUILD_TESTS OR STRATA_PARITY_PROMPT_ATTN))
++  add_executable(qsa_dynamic_bench tests/sm75/qsa_dynamic.cpp)
++  target_include_directories(qsa_dynamic_bench PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
++  target_link_libraries(qsa_dynamic_bench PRIVATE strata_kernels CUDA::cudart)
++  if(STRATA_BUILD_TESTS)
++    add_test(NAME qsa_dynamic_parity COMMAND qsa_dynamic_bench)
++    set_tests_properties(qsa_dynamic_parity PROPERTIES ENVIRONMENT "STRATA_TOPK_DYNAMIC=1" SKIP_RETURN_CODE 77)
++  endif()
++endif()
+--- a/docs/AMD_HIP.md
++++ b/docs/AMD_HIP.md
+@@ -84,6 +84,13 @@
+   succeeded, on Windows only. `hipHostGetDevicePointer` returns the host pointer itself on Windows: kernels read
+   mapped memory through it correctly, but a device-to-device copy into it does not land, which is why
+   `tests/hip/handoff` times out there (the engine does not use that copy; `tests/hip/mapped_alias` reports it).
++- Two more (#380, #377, by BlueKingMuch, measured on an RX 6800 that drives the desktop): `hipMemGetInfo` on Windows
++  does not subtract what the desktop and other programs hold on the card, so `--expert-cache auto` filled the card
++  past what Windows keeps in VRAM and decode fell from 41 to 30 tok/s. The engine now lowers that free figure by
++  what Windows' video memory budget for the process withholds (logged once: `strata: Windows budgets N of this
++  card's M MiB ...`; `STRATA_WDDM_BUDGET=0` turns it off). And the PCIe probe times its copies on the host clock
++  there, since HIP's events read impossible speeds (3,300-26,000 GB/s), so a slow link now gets a smaller
++  `pcie_frac` as on NVIDIA.
+ 
+ **What is validated (0.1.34):** #325's author ran the engine of this port on an RX 9070 XT (Windows 11, ROCm
+ 10.2.0a20260930 in `.venv`, compiled on the PC): Coder IQ1_M at 32K, 29.2 tok/s decode, ~181 tok/s prefill,
+--- a/docs/DETAILS.md
++++ b/docs/DETAILS.md
+@@ -816,6 +816,7 @@
+ | Pictures are slow (10-30 s) | The encoder runs on the CPU: run setup again with `--vision gpu` (needs ~1.4 GB of VRAM). |
+ | A request never finishes: "reading the prompt", GPU "100%" at low power | The GPU ran out of VRAM (engines before 0.1.9 could end with ~30 MiB free at large contexts). Run `START-HERE.bat` once to get engine 0.1.9 or newer; the log then says `... MiB of VRAM free with everything loaded` (a few hundred) and names the `--vram-reserve-mib` to add if it is low. |
+ | Generation stops mid-answer, GPU "100%", one CPU core busy | Fixed in engine 0.1.12 (issue #29, a race in the CPU expert pool on big-VRAM cards). Since then a request that stops moving ends with an error instead of hanging (after 2 minutes; 1 minute from 0.1.13): the log says `no progress for ... s ... (issue #29)` with where it stopped, and the next request starts the engine again. If you see that line, please open an issue with it. Engine 0.1.13 adds a stall report under it (what every expert-pool thread and the GPU handshake were doing, memory and page faults) and, on Windows, a `strata-stall-<pid>.dmp` file with every thread's stack: attach both. (`STRATA_WATCHDOG_S` sets the time in seconds; 0 turns it off.) Engine 0.1.14 fixes the stall those reports found (issue #31: with the IQ packs the host could wait forever inside the NVIDIA driver while copying experts in a verify window; the experts are now copied by a GPU kernel, `--pcie-mode dma` restores the old way). |
++| `the engine said nothing for ... s during the request` or `... did not finish the request after it was stopped (STOP)` | Issue #481: the engine and the server lost step (the engine waits for its next command, the server for the request's end; GPU at 0 %, nothing in the log). The server ends the engine after 300 s without a line from it during a request (while a prompt is read: each chunk may take three times the previous one's time, the first one up to its tokens at 50 tok/s more), the request ends with an error and the next request starts the engine again. `"engine_silence_s": 600` in `strata-<model>.json` sets the time (0 = wait forever, as before). If you see it, please add the end of the engine log to #481. |
+ | `out of memory: cudaFuncSetAttribute` in the log (IQ3_XXS, long prompt) | Fixed in engine 0.1.15: CUDA loaded a kernel's code when it was first needed, and mid-prompt there was no VRAM left for it. Run `START-HERE.bat` (Windows) or `./setup.sh` (Linux) once to update. |
+ | Anything else | The engine log is `strata-<model>.log` in this folder. |
+ 
+--- a/docs/INSTALL.md
++++ b/docs/INSTALL.md
+@@ -186,11 +186,26 @@
+ START-HERE.bat --port 8081                      another port
+ START-HERE.bat --gpu 1                          another GPU (setup picks the one with the most VRAM)
+ START-HERE.bat --gpus 0,2                       several GPUs sharing the model
++START-HERE.bat --vram-reserve-mib 2048          leave 2 GB of VRAM free for other programs (remembered)
+ START-HERE.bat --setup --backend hip            the AMD engine on a PC that also has an NVIDIA card
+ START-HERE.bat --setup --host 0.0.0.0 --api-key <secret>     reachable from other devices, with a key
+ START-HERE.bat --calibrate                      tune the engine for this PC (about 5-10 minutes), then start
+ START-HERE.bat --check                          only check this PC
+ ```
+ 
++**Leaving VRAM for other programs (#493):** Strata fills the graphics card's free VRAM with experts (the expert cache)
++and leaves `--vram-reserve-mib` MiB free: 700 by default. For a game, a 3D program or another model beside it, leave
++more: `START-HERE.bat --vram-reserve-mib 2048` (Linux: `./setup.sh --vram-reserve-mib 2048`) writes it into the
++model's `strata-<model>.json` and starts it; at setup (`--setup --vram-reserve-mib 2048`) it goes into the new config.
++By hand: add `"--vram-reserve-mib", "2048"` to the config's `"args"` list and restart. The expert cache is then that
++much smaller, so answers can be a little slower. The engine sizes its cache from the VRAM free when it starts: what
++another program already holds then is left alone anyway; the reserve is room for what it takes later.
++
++**Model files downloaded by hand, or from a mirror (#495):** setup's step 5 prints the folder it expects them in
++(`Strata-data\models\<SIZE>\`, e.g. `Strata-data\models\IQ3_XXS\`): put them there with their original names, or
++point setup at them with `--gguf-dir`. To let setup download from a Hugging Face mirror itself, set `HF_ENDPOINT`
++first (Windows: `set HF_ENDPOINT=https://hf-mirror.com`, Linux: `export HF_ENDPOINT=https://hf-mirror.com`): the same
++pinned revisions and checks apply, and the MTP draft layer comes from there too.
++
+ On Linux the same options go to `./setup.sh`. `START-HERE.bat --help` lists them all. The server's own settings
+ (sharing the GPU with games, MCP tools, CORS, API keys, the API itself) are in the [details](DETAILS.md#using-it).
+--- a/docs/MULTI_GPU.md
++++ b/docs/MULTI_GPU.md
+@@ -8,7 +8,8 @@
+ 
+ This is pipeline (layer) parallelism, not tensor parallelism: a token crosses from one card to the next once per
+ verify window (a few hundred KB through pinned RAM), not twice per layer. No NVLink or peer-to-peer access is
+-needed; cards on x4 or x1 slots work, and the PCIe share of each card is probed on its own link.
++needed; cards on x4 or x1 slots work, and the PCIe share of each card is probed on its own link. A `--pcie-frac` you give
++is every card's share and skips those probes; there is no per-card setting yet.
+ 
+ ## Using it
+ 
+--- a/docs/UNSLOTH_Q4.md
++++ b/docs/UNSLOTH_Q4.md
+@@ -25,8 +25,16 @@
+ - It needs 48 GB of RAM or more (with less it asks, default no; `--model UD-Q4_K_XL --yes` installs it anyway) and
+   engine 0.1.32 or newer (checked before anything is downloaded), and an NVIDIA
+   GPU: it has not been run on AMD cards (its prompt kernels for the Q4_K / Q5_K experts are NVIDIA-only), so with
+-  `--backend hip` setup says so and asks before the download (#429; `--model UD-Q4_K_XL --yes` tries it). One GPU only: with `--gpus` it uses the first one and says so. No images (the vision encoder is not wired to
+-  this file yet) and no experimental speed projection (not tested with it).
++  `--backend hip` setup says so and asks before the download (#429; `--model UD-Q4_K_XL --yes` tries it). One GPU
++  by default: the RAM budget below has no layer split (the engine refuses `--resident-budget-gib` with one). No
++  images (the vision encoder is not wired to this file yet) and no experimental speed projection (not tested with it).
++- Several GPUs (#498): when the RAM holds the GGUF files and 24 GB more (~135 GB of RAM) and two or more cards can
++  share it, setup asks (one GPU stays the default; `--gpus 0,1` takes the split). The split runs **without** the RAM budget: all 77 GB of experts are loaded into RAM from the GGUFs at
++  start, the files pass through the OS file cache while they load, and the config gets `"gpu": [0, 1]` and
++  `"layer_split": "auto"`. Measured on 2x RTX 3090 with 165 GiB (#498): decode 31 tok/s on one card with the budget,
++  64-78 tok/s split (55 tok/s at a 128K prompt), with `MemAvailable` never under 68 GiB. With less RAM, `--gpus`
++  keeps one GPU and says so, and `START-HERE.bat --gpus 0,1` on an installed UD-Q4_K_XL stops with the reason
++  (it used to keep the budget, and the engine exited with code 2).
+ - It downloads the four shards below from the pinned revision `38bb39e` (resumable, like the other models), then
+   checks each one's size and SHA-256 against the table below; the check takes a few minutes once and is remembered
+   in the file's finish mark. A file with the wrong hash is deleted, so the next run downloads it again.
+--- a/include/strata/hip_compat/cuda_runtime.h
++++ b/include/strata/hip_compat/cuda_runtime.h
+@@ -62,7 +62,18 @@
+ #define cudaLaunchHostFunc hipLaunchHostFunc
+ #define cudaMalloc hipMalloc
+ #define cudaMallocHost(...) (::strata::hip_compat::malloc_host(__VA_ARGS__))
++#if defined(_WIN32)
++// Windows: hipMemGetInfo counts this process's own allocations only, so the desktop's and other programs' share of
++// the card is invisible to it, and VRAM sized by it overfills the card (WDDM then moves memory out to system RAM and
++// the GPU slows down).  Its free figure is lowered by what Windows' video memory budget for this process withholds
++// (src/core/device.cu; STRATA_WDDM_BUDGET=0: hipMemGetInfo as it is).
++namespace strata::hip_compat {
++hipError_t mem_get_info(size_t* free_bytes, size_t* total_bytes);
++}
++#define cudaMemGetInfo ::strata::hip_compat::mem_get_info
++#else
+ #define cudaMemGetInfo hipMemGetInfo
++#endif
+ #define cudaMemcpy hipMemcpy
+ #define cudaMemcpy2DAsync hipMemcpy2DAsync
+ #define cudaMemcpyAsync hipMemcpyAsync
+--- a/include/strata/kernels/qsa_select.hpp
++++ b/include/strata/kernels/qsa_select.hpp
+@@ -49,6 +49,9 @@
+ /// build below sm_90, or a capacity whose keys do not fit one cluster's shared memory. Capturable.
+ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                             const QsaShapes& s, int32_t* ids, void* stream);
++/// Experimental per-device captured-mode control. Synchronizes before changing the device flag.
++/// Effective only with STRATA_TOPK_DYNAMIC=1 on sm75; other architectures are a no-op.
++bool qsa_topk_dynamic_set(bool enabled);
+ /// The original kernel (keys read from memory on every radix pass), for tests: the same ids.
+ void qsa_block_topk_ref(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                         const QsaShapes& s, int32_t* ids, void* stream);
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -66,6 +66,16 @@
+ # token (the Monitor showed five-digit numbers) and then undershoots for the first second of every answer.
+ RATE_WINDOW_S = 2.0
+ RATE_MIN_SPAN_S = 0.25      # younger than this there is no rate yet: the mean so far, with the span floored here
++# #481: a running request whose engine prints nothing (no T, PP or any other line) for this long has lost step with the
++# server (the engine's main thread waits, untimed, for its next command): the engine is ended and the request fails;
++# the next request starts it again.  The config's "engine_silence_s" sets it (0: wait forever, as before).
++ENGINE_SILENCE_S = 300.0
++# ... except while a prompt is read: a PP line comes once per chunk (up to 32768 tokens with --prefill auto, issue
++# #282), and the slowest PCs read ~100 tok/s, so a first chunk can take minutes before the first line.  Until the first
++# PP the wait adds the chunk's tokens at PP_FLOOR_TOK_S; after one, a chunk may take PP_SLACK x the last one's time.
++PP_CHUNK_MAX = 32768
++PP_FLOOR_TOK_S = 50.0
++PP_SLACK = 3.0
+ 
+ 
+ # ------------------------------------------------------------------------------------------------ engines
+@@ -111,6 +121,12 @@
+ 
+ class ModelBusy(RuntimeError):
+     """Explicit model controls must not interrupt active or queued requests."""
++
++
++class EngineSilent(EngineDied):
++    """#481: the engine said nothing for too long during a request (or never acknowledged a STOP): the two sides lost
++    step - the engine waiting for its next command, the server for this request's end - and the server ended it.  An
++    EngineDied, so the request ends with an error and the next one starts the engine again."""
+ 
+ 
+ class EngineStuck(RuntimeError):
+@@ -156,6 +172,27 @@
+     said = [x.strip()[len("strata mtp: "):] for x in text.splitlines()
+             if x.strip().startswith("strata mtp: ") and ("draft head over" in x or "hint:" in x)]
+     return ". mtp: " + DRAFT_HEAD_FAIL + ". " + (" ".join(said) if said else "Hint: " + DRAFT_HEAD_HINT)
++
++
++def start_log_tail(log: str | None, offset: int, n: int = 20) -> str:
++    """#496: the last n lines this start wrote to the engine log, for the error when the engine ended before READY -
++    whatever the failure, the engine's own reason is in them (people posted the traceback without the log).  "" when
++    there is no log or nothing in it from this start."""
++    if not log:
++        return ""
++    try:
++        with open(log, "rb") as f:
++            f.seek(0, 2)
++            start = max(offset, f.tell() - 64 * 1024)   # enough for 20 lines, never an earlier start's
++            f.seek(start)
++            text = f.read().decode("utf-8", "replace")
++    except (OSError, ValueError):
++        return ""
++    lines = text.splitlines()[1 if start > offset else 0:]   # not a line cut in half
++    lines = [x.rstrip() for x in lines if x.strip()][-n:]
++    if not lines:
++        return ""
++    return "\nthe engine log's last lines:\n" + "\n".join("  " + x for x in lines)
+ 
+ 
+ def echo_requests(log_path: str, offset: int) -> None:
+@@ -181,6 +218,27 @@
+                                                  m["tg"]), flush=True)
+ 
+ 
++def experts_loading_words(args: list, size: str) -> str:
++    """#505: what the start does with the experts, by the engine's flags (generate.cpp's option parsing): a RAM budget
++    copies the hottest N GiB into RAM (--resident-budget-gib), the resident low-RAM mode the ones the GPU does not hold
++    (--resident-experts), plain --mmap-experts reads them from the model files through the OS file cache (nothing is
++    loaded into RAM up front); otherwise all of them go into RAM."""
++    if "--resident-budget-gib" in args:
++        try:
++            n = f"up to {float(args[args.index('--resident-budget-gib') + 1]):g} GiB"
++        except (IndexError, ValueError):
++            n = "a RAM budget"
++        return (f"loading the most-used experts into RAM ({n}; the rest are read from the model files as needed) "
++                "and locking part of them for the GPU.")
++    if "--resident-experts" in args:
++        return (f"loading the experts the GPU does not hold into RAM (of {size}) and locking part of them for the "
++                "GPU.")
++    if "--mmap-experts" in args:
++        return (f"mapping the experts from the model files ({size}, --mmap-experts): they are not loaded into RAM - "
++                "the OS file cache reads them as the GPU's expert cache fills and as requests need them.")
++    return f"loading the experts into RAM ({size}) and locking part of them for the GPU."
++
++
+ def narrate_start(log_path: str, offset: int, args: list, done: threading.Event, heartbeat=20.0) -> None:
+     """While the engine starts, say in the server window what it is doing, from its log: the start reads tens of GB
+     into RAM and locks part of it for the GPU, and on many PCs everything is slow or frozen for a minute or more -
+@@ -192,6 +250,7 @@
+         except (OSError, IndexError):
+             pass
+     size = f"about {gb:.0f} GB" if gb >= 1 else "tens of GB"
++    loading = experts_loading_words(args, size)
+     t0 = last = time.time()
+     said = set()
+ 
+@@ -215,8 +274,8 @@
+             cut = chunk.rfind(b"\n") + 1
+             pos += cut
+             for line in chunk[:cut].decode("utf-8", "replace").splitlines():
+-                if "PLE on" in line or "expert arena:" in line:
+-                    say("arena", f"[strata] loading the experts into RAM ({size}) and locking part of them for the GPU.\n"
++                if "PLE on" in line or "expert arena:" in line or "experts via mmap" in line:   # #505: mapped
++                    say("arena", f"[strata] {loading}\n"
+                                  "         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.\n"
+                                  "         Please wait and don't close this window; the browser opens when it is ready.")
+                 elif " loaded " in line and "GiB at" in line:
+@@ -240,6 +299,8 @@
+     (`temperature=F top_p=F top_k=N seed=N`, the engine's own spelling).  An absent temperature keeps the
+     engine's default, which is greedy; `temperature=0` means the same thing, so it is not forwarded.
+     """
++    silence_s = ENGINE_SILENCE_S         # #481: main() sets the config's engine_silence_s (survives restart())
++    silent_note = None                   # #481: why the server ended a silent engine (death_note says it)
+ 
+     def __init__(self, exe: str, args: list[str], cwd: str | None = None, log: str | None = None,
+                  env: dict | None = None, lazy: bool = False):
+@@ -255,7 +316,8 @@
+         self.info = {}                   # INFO key=value facts (engine 0.1.8+): kv, expert slots, ... (Monitor tab)
+         self.prefill_tok_s_mean = None
+         self.progress = None             # (read, total) prompt tokens while a prompt is read, from PP lines
+-        try:                             # a ready-made engine's BUILD.json says its version
++        self.silent_note = None
++        try:                            # a ready-made engine's BUILD.json says its version
+             self.info["version"] = json.loads((Path(exe).parent / "BUILD.json").read_text()).get("version")
+         except (OSError, ValueError):
+             self.info["version"] = None
+@@ -288,8 +350,16 @@
+                 break
+         loading.set()
+         if self.max_context <= 0:
++            try:                                        # its pipes and our handle on its log (the log stays)
++                self.proc.wait(timeout=5)
++                self.proc.stdin.close()
++                self.proc.stdout.close()
++                if log:
++                    self.log.close()
++            except (OSError, subprocess.TimeoutExpired):
++                pass
+             raise RuntimeError("the engine exited before it was ready" + (f" (see {log})" if log else "") +
+-                               start_failure_hint(log, log_start))
++                               start_failure_hint(log, log_start) + start_log_tail(log, log_start))
+         # (from PR #41, midhatn) a locally built engine can sit next to another release's BUILD.json: engines that
+         # report their own version (INFO engine=, 0.1.8+) win, the manifest stays the fallback for older ones
+         if self.info.get("engine"):
+@@ -310,6 +380,8 @@
+ 
+     def death_note(self) -> str:
+         """Why the engine most likely ended, from the end of its log: its own watchdog (issue #29), else RAM."""
++        if getattr(self, "silent_note", None):          # #481: the server ended it, not the OS or the engine itself
++            return self.silent_note
+         tail = ""
+         try:
+             with open(self.log_path, "rb") as f:
+@@ -412,7 +484,7 @@
+         # setup's calibration (tools/calibrate.py): engine settings for this request only, measured without a restart
+         tune = sampling.get("strata_tune")
+         if isinstance(tune, dict):
+-            for k in ("pcie_frac", "spec_min_p"):
++            for k in ("pcie_frac", "spec_min_p", "topk_dynamic"):
+                 v = tune.get(k)
+                 if isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= float(v) <= 1.0:
+                     keys += f" {k}={float(v)!r}"
+@@ -440,19 +512,34 @@
+         except OSError:                                  # the pipe is gone: the engine died (not the client)
+             raise EngineDied(f"the engine stopped unexpectedly (exit code {self.exit_code()})") from None
+         done = False
++        # #481: how long the engine may stay silent from here.  Until the first line: the request's first prompt
++        # chunk at the slowest prompt reading on top of silence_s; a PP line resets it to its own chunk's time.
++        silence = float(self.silence_s or 0)
++        allow = silence + min(len(ids), PP_CHUNK_MAX) / PP_FLOOR_TOK_S if silence > 0 else 0.0
++        heard, read_to = time.monotonic(), 0
+         try:
+             while True:
++                wait = 10.0
++                if allow > 0:
++                    wait = min(wait, allow - (time.monotonic() - heard))
++                    if wait <= 0:
++                        done = True                       # no STOP and no drain: nothing is listening
++                        raise self._silent(f"the engine said nothing for {time.monotonic() - heard:.0f} s during "
++                                           "the request")
+                 try:
+-                    line = self.lines.get(timeout=10)
++                    line = self.lines.get(timeout=wait)
+                 except queue.Empty:
+                     if cancel.is_set():
+                         return
+-                    yield None
++                    if wait >= 10.0:
++                        yield None                        # the 10 s heartbeat (the deadline's short waits are not)
+                     continue
+                 if line is None:
+                     done = True
+                     raise EngineDied(f"the engine stopped unexpectedly (exit code {self.exit_code()})")
++                heard = time.monotonic()                  # any line is output: T, PP, RESUME, INFO ...
+                 if line.startswith("T "):
++                    allow = silence
+                     if cancel.is_set():
+                         return
+                     yield int(line[2:])
+@@ -461,9 +548,18 @@
+                     if len(f) >= 3 and f[1].isdigit() and f[2].isdigit():
+                         self.progress = (int(f[1]), int(f[2]))             # prompt progress, one per chunk: also a heartbeat (the
+                         self.prefill_tok_s_mean = float(f[4]) if len(f) >= 5 else None
++                        rate, chunk = self.prefill_tok_s_mean or 0.0, int(f[1]) - read_to
++                        read_to = int(f[1])
++                        if silence > 0 and rate > 0 and chunk > 0:   # #481: the next chunk, as long as this one
++                            allow = max(silence, PP_SLACK * chunk / rate)
+                     if cancel.is_set():                   # lines reset the 10 s wait, so without this a long prompt
+                         return                            # would send no keep-alives at all)
+                     yield None
++                elif line.startswith("RESUME "):          # the reused tokens: the first chunk starts after them
++                    try:
++                        read_to = int(line.split()[1])
++                    except (IndexError, ValueError):
++                        pass
+                 elif line.startswith("DONE"):
+                     self._parse_done(line)
+                     done = True
+@@ -479,13 +575,41 @@
+                         self.proc.stdin.flush()
+                     except OSError:
+                         pass
++                # #481: never an untimed wait here - it holds the request FIFO, and an engine that lost step never
++                # answers.  An engine that honours STOP gets the current allowance in all (a STOP during a prompt
++                # chunk is seen after it); an older one runs on to max_new, so each line only has to come in time.
++                heard = time.monotonic()
+                 while True:
+-                    line = self.lines.get()
++                    left = allow - (time.monotonic() - heard) if allow > 0 else None
++                    try:
++                        if left is not None and left <= 0:
++                            raise queue.Empty
++                        line = self.lines.get(timeout=left)
++                    except queue.Empty:
++                        raise self._silent("the engine did not finish the request after it was stopped (STOP) "
++                                           f"within {allow:.0f} s") from None
+                     if line is None or line.startswith("ERR"):
+                         break
+                     if line.startswith("DONE"):
+                         self._parse_done(line)
+                         break
++                    if not self.can_stop:
++                        heard = time.monotonic()
++
++    def _silent(self, what: str) -> EngineSilent:
++        """#481: end an engine that lost step with the server (its main thread waits for a command the server never
++        sends), so the next request starts it again: killed now, its GPU and RAM go back with the process."""
++        self.silent_note = ("The engine and the server lost step (issue #481; a very slow PC can raise "
++                            "\"engine_silence_s\" in the config, 0 = wait forever). If it happens again, please add "
++                            "the end of the engine log to github.com/Niko1221/Strata/issues/481.")
++        self.ended = True                               # not alive from now: the next request restarts it
++        proc = self.proc
++        try:
++            proc.kill()
++            proc.wait(timeout=20)                       # restart() -> close() handles one that is still exiting
++        except (OSError, AttributeError, subprocess.TimeoutExpired):
++            pass
++        return EngineSilent(f"{what}; the server ended the engine")
+ 
+     def close(self):
+         """End the engine process: QUIT first (the engine frees its memory itself - unpinning tens of GB can take
+@@ -653,6 +777,17 @@
+     return [int(str(x).strip()) for x in items if str(x).strip() != ""]
+ 
+ 
++def engine_silence_s(cfg: dict) -> float:
++    """#481: the config's "engine_silence_s" - seconds an engine may print nothing during a request before the server
++    ends it (default ENGINE_SILENCE_S; 0 = wait forever).  ValueError for anything but a number >= 0."""
++    v = cfg.get("engine_silence_s")
++    if v is None:
++        return ENGINE_SILENCE_S
++    if isinstance(v, bool) or not isinstance(v, (int, float)) or v < 0:
++        raise ValueError(f'"engine_silence_s" must be a number of seconds >= 0 (0 = no limit), not {v!r}')
++    return float(v)
++
++
+ def engine_args(cfg: dict) -> list[str]:
+     """The engine's arguments: the config's, and with several GPUs the layer split across them ("layer_split" in the
+     config: "auto" by default, or the first layer of each later GPU's share, e.g. "18" or "16,32")."""
+@@ -800,7 +935,7 @@
+             return self.inc.decode(self.tok.token_bytes(t))
+         self.ids.append(t)
+         text = self.tok.decode(self.ids)
+-        if text.endswith("�"):
++        if text.endswith("ï¿½"):
+             return ""
+         delta, self.sent = text[self.sent:], len(text)
+         return delta
+@@ -948,6 +1083,13 @@
+                   "(a minute or two) ...", flush=True)
+         self.engine.restart()
+         print("[strata] the engine is running again", flush=True)
++
++    def _say_died(self, e: Exception) -> None:
++        """The server window's line for an engine that died (or was ended, #481) in the middle of a request."""
++        note = self.engine.death_note() if hasattr(self.engine, "death_note") else ""
++        log = getattr(self.engine, "log_path", None)
++        print(f"[strata] {e}. {note} The next request starts the engine again."
++              f"{' Its log: ' + log if log else ''}", flush=True)
+ 
+     def load(self):
+         """POST /load and every generation request: start the engine now if it is unloaded (raises GpuBusy)."""
+@@ -1319,7 +1461,7 @@
+                     while True:
+                         gen = self.engine.generate(prompt, max_new - n, sampling, cancel, embeddings=emb) if emb \
+                             else self.engine.generate(prompt, max_new - n, sampling, cancel)
+-                        seg, wrap = [], False           # this pass's tokens; the budget is reached
++                        seg, wrap, leaving = [], False, False   # this pass's tokens; the budget is reached; closed
+                         try:
+                             for t in gen:
+                                 if t is None:               # heartbeat while the engine is quiet
+@@ -1349,19 +1491,25 @@
+                                         break
+                         except EngineDied as e:
+                             finish = "error"
+-                            note = self.engine.death_note() if hasattr(self.engine, "death_note") else ""
+-                            log = getattr(self.engine, "log_path", None)
+-                            print(f"[strata] {e}. {note} The next request starts the engine again."
+-                                  f"{' Its log: ' + log if log else ''}", flush=True)
++                            self._say_died(e)
+                             raise
+                         except ValueError as e:             # the engine's ERR line (it may have ended after it)
+                             finish = "error"
+                             print(f"[strata] the engine reported an error: {e}", flush=True)
+                             raise
++                        except GeneratorExit:               # the client went away: an engine that never acknowledges
++                            leaving = True                  # the STOP below is ended, but no error replaces this
++                            raise
+                         finally:
+-                            gen.close()                 # STOP+drain to THIS request's DONE while still holding the
+-                            #                             fifo, so a stop-token break can't leave the shared engine
+-                            #                             queue mid-drain for the next request to read as its own DONE
++                            try:
++                                gen.close()             # STOP+drain to THIS request's DONE while still holding the
++                                #                         fifo, so a stop-token break can't leave the shared engine
++                                #                         queue mid-drain for the next request to read as its own DONE
++                            except EngineSilent as e:   # #481: the STOP was never acknowledged: the engine is ended
++                                finish = "error"
++                                self._say_died(e)
++                                if not leaving and not cancel.is_set():
++                                    raise
+                         if not wrap or cancel.is_set():
+                             break
+                         # #123: the thinking reached reasoning_budget_tokens.  Close it the way the model would (a
+@@ -2577,7 +2725,12 @@
+         # a relative "exe" is the config's cwd's: Windows' CreateProcess resolves "engine/strata.exe" against nothing
+         # it is told about (WinError 2), so it is made absolute here
+         exe = cfg["exe"] if os.path.isabs(cfg["exe"]) else os.path.abspath(os.path.join(cfg.get("cwd") or ".", cfg["exe"]))
++        try:
++            silence = engine_silence_s(cfg)             # #481: checked before the (minutes-long) start
++        except ValueError as e:
++            raise SystemExit(f"[strata] config {e}")
+         engine = StrataEngine(exe, engine_args(cfg), cwd=cfg.get("cwd"), log=cfg.get("log"), env=env, lazy=lazy)
++        engine.silence_s = silence                      # an attribute of its own: restart() keeps it
+         warn_tight_ram(engine.info.get("arena_mib"))
+     else:
+         engine, vision, sampling_defaults = MockEngine(tok, a.script or [
+--- a/serve/test_server.py
++++ b/serve/test_server.py
+@@ -874,6 +874,91 @@
+         self.assertEqual(start_failure_hint(p, off), "")
+         self.assertEqual(start_failure_hint(None, 0), "")
+         self.assertEqual(start_failure_hint(str(Path(tempfile.mkdtemp()) / "missing.log"), 0), "")
++
++
++class StartFailureLog(unittest.TestCase):
++    """#496: whatever stopped the engine before READY, the error carries this start's last log lines."""
++
++    def test_the_last_lines_of_this_start(self):
++        from serve.server import start_log_tail
++        d = tempfile.mkdtemp()
++        p = Path(d) / "engine.log"
++        before = "strata serve: an earlier start's line\n"
++        p.write_text(before + "".join(f"strata serve: line {i}\n" for i in range(30)) + "\n"
++                     "strata serve: cannot open the pack\n", encoding="utf-8")
++        tail = start_log_tail(str(p), len(before.encode()))
++        self.assertIn("the engine log's last lines:", tail)
++        self.assertIn("cannot open the pack", tail)
++        self.assertIn("line 29", tail)
++        self.assertNotIn("line 10\n", tail + "\n")                 # 20 lines: 11..29 and the last one
++        self.assertIn("line 11", tail)
++        self.assertNotIn("earlier start", tail)
++        short = start_log_tail(str(p), len(before.encode()), n=3)
++        self.assertEqual(short.count("\n  "), 3)
++        self.assertEqual(start_log_tail(str(p), p.stat().st_size), "")   # nothing from this start
++        self.assertEqual(start_log_tail(None, 0), "")
++        self.assertEqual(start_log_tail(str(Path(d) / "missing.log"), 0), "")
++
++    def test_the_start_error_has_them(self):
++        import serve.server as server
++        fake = "import sys\nsys.stderr.write('strata serve: cannot open the pack packs/x\\n')\nsys.exit(2)\n"
++        with tempfile.TemporaryDirectory() as d:
++            script, log = Path(d) / "fake_strata.py", Path(d) / "strata.log"
++            script.write_text(fake, encoding="utf-8")
++            log.write_text("an earlier start\n", encoding="utf-8")
++            real = server.subprocess.Popen
++            with mock.patch.object(server.subprocess, "Popen",
++                                   lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)), \
++                    mock.patch.object(server, "narrate_start", lambda *a, **k: None):
++                with self.assertRaises(RuntimeError) as cm:
++                    StrataEngine("strata", [], log=str(log))
++            text = str(cm.exception)
++            self.assertIn("exited before it was ready", text)
++            self.assertIn("cannot open the pack packs/x", text)
++            self.assertNotIn("an earlier start", text)
++
++
++class StartNarrator(unittest.TestCase):
++    """#505: the start's words say what happens to the experts - --mmap-experts loads nothing into RAM up front."""
++
++    def test_the_words_follow_the_flags(self):
++        from serve.server import experts_loading_words
++        self.assertIn("loading the experts into RAM (about 38 GB)", experts_loading_words([], "about 38 GB"))
++        mapped = experts_loading_words(["--mmap-experts"], "about 47 GB")
++        self.assertIn("mapping the experts from the model files (about 47 GB", mapped)
++        self.assertIn("not loaded into RAM", mapped)
++        self.assertIn("the GPU does not hold", experts_loading_words(["--resident-experts"], "about 47 GB"))
++        budget = experts_loading_words(["--mmap-experts", "--resident-budget-gib", "71"], "about 50 GB")
++        self.assertIn("up to 71 GiB", budget)
++        self.assertNotIn("about 50 GB", budget)
++
++    def narrate(self, args, lines):
++        import contextlib
++        import io
++        from serve.server import narrate_start
++        d = tempfile.mkdtemp()
++        log = Path(d) / "engine.log"
++        log.write_text("".join(x + "\n" for x in lines), encoding="utf-8")
++        done, out = threading.Event(), io.StringIO()
++        with contextlib.redirect_stdout(out):
++            t = threading.Thread(target=narrate_start, args=(str(log), 0, args, done))
++            t.start()
++            time.sleep(0.8)
++            done.set()
++            t.join(5)
++        return out.getvalue()
++
++    def test_a_mapped_start(self):
++        said = self.narrate(["--mmap-experts"], ["strata generate: experts via mmap (--mmap-experts; the GGUF shards "
++                                                 "in place, no experts.bin)"])
++        self.assertIn("mapping the experts from the model files", said)
++        self.assertNotIn("loading the experts into RAM", said)
++
++    def test_an_arena_start(self):
++        said = self.narrate([], ["strata generate: expert arena: resident, 31.64 GiB",
++                                 "strata generate: loaded 31.64 GiB at 3.17 GiB/s"])
++        self.assertIn("loading the experts into RAM (tens of GB)", said)
++        self.assertIn("experts loaded: 31.64 GiB at 3.17 GiB/s", said)
+ 
+ 
+ class CancelledRead(unittest.TestCase):
+@@ -2043,5 +2128,163 @@
+                 self.assertEqual(svc.free_vram_mib(), 26 << 10)
+ 
+ 
++class SilentEngine(unittest.TestCase):
++    """#481: an engine that prints nothing for engine_silence_s during a request (or never acknowledges a STOP) has
++    lost step with the server: it is ended and the request fails with EngineDied, instead of waiting forever."""
++
++    def bare(self, silence, can_stop=False):
++        import io
++        import queue
++        engine = StrataEngine.__new__(StrataEngine)
++        engine.proc = mock.Mock()
++        engine.proc.stdin = io.StringIO()
++        engine.proc.poll.return_value = None
++        engine.lines, engine.can_stop, engine.max_context = queue.Queue(), can_stop, 4096
++        engine.silence_s, engine.log_path = silence, None
++        return engine
++
++    def later(self, engine, delay, *lines):
++        def put():
++            time.sleep(delay)
++            for x in lines:
++                engine.lines.put(x)
++        threading.Thread(target=put, daemon=True).start()
++
++    def test_silence_mid_answer_ends_the_engine(self):
++        from serve.server import EngineSilent
++        engine = self.bare(0.3)
++        engine.lines.put("T 5")
++        gen = engine.generate([1], 10, {}, threading.Event())
++        self.assertEqual(next(gen), 5)
++        t0 = time.monotonic()
++        with self.assertRaises(EngineSilent) as cm:
++            next(gen)
++        self.assertIsInstance(cm.exception, EngineDied)          # every EngineDied path handles it
++        self.assertLess(time.monotonic() - t0, 5)
++        engine.proc.kill.assert_called_once()
++        self.assertFalse(engine.alive())                          # the next request restarts it
++        self.assertIn("#481", engine.death_note())
++        self.assertNotIn("STOP", engine.proc.stdin.getvalue())    # nothing is listening: no STOP, no drain
++
++    def test_prompt_chunks_set_the_wait(self):
++        # a PP line every second, at 100 tok/s: far over a 0.3 s silence, but each chunk is on time for its size
++        engine = self.bare(0.3)
++        engine.lines.put("RESUME 0")
++        engine.lines.put("PP 100 300 1000 100.0")
++        self.later(engine, 1.0, "PP 200 300 2000 100.0", "T 7", "DONE 1 300 2000 1 length")
++        self.assertEqual(list(engine.generate([1], 10, {}, threading.Event())), [None, None, 7])
++        engine.proc.kill.assert_not_called()
++
++    def test_a_long_first_chunk_is_allowed(self):
++        # 100 prompt tokens at the slowest prompt reading (50 tok/s): 2 s on top of the silence before the first PP
++        engine = self.bare(0.3)
++        self.later(engine, 1.0, "PP 100 100 1000 100.0", "DONE 0 100 1000 0 length")
++        self.assertEqual(list(engine.generate([1] * 100, 10, {}, threading.Event())), [None])
++        engine.proc.kill.assert_not_called()
++
++    def test_a_stop_never_acknowledged(self):
++        from serve.server import EngineSilent
++        engine = self.bare(0.3, can_stop=True)
++        engine.lines.put("T 5")
++        gen = engine.generate([1], 10, {}, threading.Event())
++        self.assertEqual(next(gen), 5)
++        with self.assertRaises(EngineSilent):
++            gen.close()                                           # the consumer stopped: STOP, then the drain
++        self.assertIn("STOP", engine.proc.stdin.getvalue())
++        engine.proc.kill.assert_called_once()
++        self.assertFalse(engine.alive())
++
++    def test_zero_waits_as_before(self):
++        engine = self.bare(0)
++        self.later(engine, 0.5, "T 5", "DONE 1 1 1 1 length")
++        self.assertEqual(list(engine.generate([1], 10, {}, threading.Event())), [5])
++
++    def test_config(self):
++        from serve.server import ENGINE_SILENCE_S, engine_silence_s
++        self.assertEqual(engine_silence_s({}), ENGINE_SILENCE_S)
++        self.assertEqual(engine_silence_s({"engine_silence_s": 0}), 0.0)
++        self.assertEqual(engine_silence_s({"engine_silence_s": 900}), 900.0)
++        for bad in (-1, "300", True):
++            with self.assertRaises(ValueError):
++                engine_silence_s({"engine_silence_s": bad})
++
++
++FAKE_LOST_STEP = '''import pathlib, sys, time
++mark = pathlib.Path(sys.argv[sys.argv.index("--mark") + 1])
++mode = sys.argv[sys.argv.index("--mode") + 1]
++print("READY 4096 stop", flush=True)
++for line in sys.stdin:
++    if line.startswith("QUIT"):
++        break
++    if line.startswith("GEN"):
++        if not mark.exists():                    # the first engine loses step (#481): it never says DONE
++            mark.touch()
++            print("T 104", flush=True)
++            if mode == "stop":
++                print("T 257", flush=True)       # <|im_end|>: the server STOPs and drains, and the engine is silent
++            time.sleep(3600)
++        print("T 111", flush=True)
++        print("T 107", flush=True)
++        print("DONE 2 5 1.0 1.0 length", flush=True)
++'''
++
++
++class LostStep(unittest.TestCase):
++    """#481 over HTTP, with a real process: the request with the silent engine ends with an error, and the next one
++    starts the engine again and is answered (the server used to wait forever, holding the request FIFO)."""
++
++    def run_mode(self, mode, stream):
++        import serve.server as server
++        with tempfile.TemporaryDirectory() as d:
++            script, mark = Path(d) / "fake_strata.py", Path(d) / "lost"
++            script.write_text(FAKE_LOST_STEP, encoding="utf-8")
++            real = server.subprocess.Popen
++            with mock.patch.object(server.subprocess, "Popen",
++                                   lambda cmd, **kw: real([sys.executable, str(script), *cmd[1:]], **kw)):
++                eng = StrataEngine("strata", ["--mark", str(mark), "--mode", mode])
++                eng.silence_s = 0.5
++                tok = ByteTokenizer()
++                svc = Service(eng, tok, ChatTemplate(ROOT / "serve/chat_template.jinja"))
++                httpd = serve(svc, port=0)
++                base = f"http://127.0.0.1:{httpd.server_address[1]}"
++                body = {"model": "m", "max_tokens": 2, "reasoning_effort": "none", "stream": stream,
++                        "messages": [{"role": "user", "content": "hi"}]}
++                try:
++                    first = eng.proc
++                    req = urllib.request.Request(base + "/v1/chat/completions", data=json.dumps(body).encode(),
++                                                 headers={"Content-Type": "application/json"})
++                    try:
++                        with urllib.request.urlopen(req, timeout=60) as r:
++                            text = r.read().decode()
++                    except urllib.error.HTTPError as e:
++                        self.assertEqual(e.code, 503)
++                        text = e.read().decode()
++                    self.assertIn("the next request restarts it", text)
++                    self.assertIsNotNone(first.poll(), "the silent engine still runs")
++                    self.assertEqual(svc.history[-1]["finish"], "error")
++                    with urllib.request.urlopen(req, timeout=60) as r:
++                        text = r.read().decode()
++                    self.assertIsNot(eng.proc, first)
++                    if stream:
++                        answer = "".join(json.loads(x[6:])["choices"][0]["delta"].get("content") or ""
++                                         for x in text.splitlines() if x.startswith("data: {") and "choices" in x)
++                    else:
++                        answer = json.loads(text)["choices"][0]["message"]["content"]
++                    self.assertEqual(answer, "ok")
++                finally:
++                    httpd.shutdown()
++                    httpd.server_close()
++                    eng.unload()
++
++    def test_silent_mid_answer(self):
++        self.run_mode("silent", stream=False)
++
++    def test_silent_mid_stream(self):
++        self.run_mode("silent", stream=True)
++
++    def test_stop_never_acknowledged(self):
++        self.run_mode("stop", stream=False)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+--- a/setup.py
++++ b/setup.py
+@@ -69,14 +69,23 @@
+ }
+ 
+ 
++HF_DEFAULT = "https://huggingface.co"
++
++
++def hf_endpoint() -> str:
++    """#495: the Hugging Face host - HF_ENDPOINT as huggingface_hub reads it (a mirror, e.g. https://hf-mirror.com),
++    else huggingface.co.  The pinned revisions and the SHA-256 checks are the same whichever host serves the files."""
++    return (os.environ.get("HF_ENDPOINT") or "").strip().rstrip("/") or HF_DEFAULT
++
++
+ def hf(repo: str) -> str:
+     """The download folder of a Hugging Face repository at its pinned revision."""
+-    return f"https://huggingface.co/{repo}/resolve/{HF_REVISIONS[repo]}/"
++    return f"{hf_endpoint()}/{repo}/resolve/{HF_REVISIONS[repo]}/"
+ 
+ 
+ def hf_unpinned(url: str) -> str:
+     """The same file at the repository's current revision (main)."""
+-    return re.sub(r"(https://huggingface\.co/.+?/resolve/)[0-9a-f]{40}/", r"\1main/", url, count=1)
++    return re.sub(r"^(https?://[^/]+/.+?/resolve/)[0-9a-f]{40}/", r"\1main/", url, count=1)
+ 
+ 
+ HF = hf("ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF")
+@@ -94,7 +103,7 @@
+ # the CUDA libraries the ready-made engine loads (the same CUDA 13.0 it is built with), from NVIDIA's pip packages
+ CUDA_WHEELS = ["nvidia-cublas==13.0.2.14", "nvidia-cuda-runtime==13.0.96"]
+ MIN_DRIVER = 580                       # CUDA 13.0
+-MIN_ENGINE = (0, 1, 36)                # v0.1.36: a cancelled prompt logged as read so far (#471), the draft-head hint (#474), UPDATE.bat (#475), --expert-profile-save (#477); v0.1.35: Windows AMD uses its bundled HIP runtime (#468 #461), the low-RAM resident mode on Windows 32 GB (#467), fixes #460 #459 #446 #447 #457 #448 #444; v0.1.34: AMD on Windows (a ready-made HIP engine), an MCP server for AI assistants (tools/strata_mcp.py), a shorter README; v0.1.33: a portable image encoder again (#411 #412), setup recommends instead of forcing (#406 #403 #364 #384), fixes #352 #365 #369 #371 #375 #393 #408 #414; v0.1.32: split prompts faster (#340), AMD router +12%, Unsloth Q4 in setup, faster Q4 prompts, #326/#327/#342/#344 fixes, PR batch; v0.1.31: Unsloth UD-Q4_K_XL (experimental), GGUF-in-place low-RAM mode, Windows GGUF load 2x, server race + tokenizer fixes, AMD intrinsics; v0.1.30: short prompts faster (streaming from 1024 tokens), resident low-RAM variant, multi-GPU session carve, RDNA4; v0.1.29: sampled answers faster (split top-k), #154 correctness fixes; v0.1.28: the expert cache reserves the draft head, a cancelled request no longer fails the next; v0.1.27: RTX 20 (sm_75) in the ready-made engine, the HIP build without CUDA headers; v0.1.26: the draft layer's prompt pass in batches; v0.1.25: faster prompts (grouping off the copy engine, fused hyper-connection kernels), AMD HIP backend, --kv k8v4; v0.1.24: long prompts faster (QSA select on tensor cores); v0.1.23: image requests honor sampling, 8 GB cards start, batched verify window; v0.1.22: faster prompts (tensor-core attention), multi-GPU across images/steering/KV streaming; v0.1.21: multi-GPU layer split (--gpus); v0.1.20: system-prompt checkpoint, PCIe probe, hit rate; v0.1.19: penalties
++MIN_ENGINE = (0, 1, 37)                # v0.1.37: a silent engine is restarted (#481), Windows AMD counts the desktop's VRAM (#380 #377 #497), a steadier PCIe probe (#485), fixes #496 #495 #498 #505 #493; v0.1.36: a cancelled prompt logged as read so far (#471), the draft-head hint (#474), UPDATE.bat (#475), --expert-profile-save (#477); v0.1.35: Windows AMD uses its bundled HIP runtime (#468 #461), the low-RAM resident mode on Windows 32 GB (#467), fixes #460 #459 #446 #447 #457 #448 #444; v0.1.34: AMD on Windows (a ready-made HIP engine), an MCP server for AI assistants (tools/strata_mcp.py), a shorter README; v0.1.33: a portable image encoder again (#411 #412), setup recommends instead of forcing (#406 #403 #364 #384), fixes #352 #365 #369 #371 #375 #393 #408 #414; v0.1.32: split prompts faster (#340), AMD router +12%, Unsloth Q4 in setup, faster Q4 prompts, #326/#327/#342/#344 fixes, PR batch; v0.1.31: Unsloth UD-Q4_K_XL (experimental), GGUF-in-place low-RAM mode, Windows GGUF load 2x, server race + tokenizer fixes, AMD intrinsics; v0.1.30: short prompts faster (streaming from 1024 tokens), resident low-RAM variant, multi-GPU session carve, RDNA4; v0.1.29: sampled answers faster (split top-k), #154 correctness fixes; v0.1.28: the expert cache reserves the draft head, a cancelled request no longer fails the next; v0.1.27: RTX 20 (sm_75) in the ready-made engine, the HIP build without CUDA headers; v0.1.26: the draft layer's prompt pass in batches; v0.1.25: faster prompts (grouping off the copy engine, fused hyper-connection kernels), AMD HIP backend, --kv k8v4; v0.1.24: long prompts faster (QSA select on tensor cores); v0.1.23: image requests honor sampling, 8 GB cards start, batched verify window; v0.1.22: faster prompts (tensor-core attention), multi-GPU across images/steering/KV streaming; v0.1.21: multi-GPU layer split (--gpus); v0.1.20: system-prompt checkpoint, PCIe probe, hit rate; v0.1.19: penalties
+ PY_PACKAGES = ["numpy", "jinja2", "regex", "pyyaml", "tqdm", "requests", "cmake", "ninja", "pillow", "psutil"]
+ REQUIREMENTS = ROOT / "requirements.txt"   # the same packages and their dependencies, pinned (#214)
+ 
+@@ -598,6 +607,33 @@
+     return True
+ 
+ 
++def unsloth_split_need_gb(model="UD-Q4_K_XL") -> float:
++    """#498: the RAM UD-Q4_K_XL needs on several GPUs, where it has no RAM budget (the engine refuses
++    --resident-budget-gib with a layer split): its GGUF files and UNSLOTH_RAM_LEFT_GB more (~135 GB).  Measured safe
++    at 165 GiB (2x RTX 3090: MemAvailable never under 68 GiB); the 0-free case of #384 was 47 GB with a 70 GB model."""
++    return MODELS[model]["download_gb"] + UNSLOTH_RAM_LEFT_GB
++
++
++def split_budget(cfg: dict) -> bool:
++    """#498: a UD-Q4_K_XL config (its RAM budget, --resident-budget-gib) started on several GPUs.  The engine refuses
++    the budget with a layer split (it exited with code 2), so the split runs without it - all the experts loaded into
++    RAM at start - where the RAM holds the GGUFs and 24 GB more; else setup stops, before the config is saved.  True
++    when the config changed."""
++    a = cfg.get("args", [])
++    if "--resident-budget-gib" not in a:
++        return False
++    need, ram = unsloth_split_need_gb(), ram_gb()
++    if ram < need:
++        fail(f"UD-Q4_K_XL cannot share its RAM budget across GPUs (the engine has no layer split with it), and without "
++             f"the budget it needs ~{need:.0f} GB of RAM (its GGUF files and {UNSLOTH_RAM_LEFT_GB} GB more); this PC "
++             f"has {ram:.0f} GB", "start it on one GPU: START-HERE.bat --gpu N (Linux: ./setup.sh --gpu N)")
++    i = a.index("--resident-budget-gib")
++    del a[i:i + 2]
++    ok("UD-Q4_K_XL on several GPUs: no RAM budget (the engine has none with a layer split) - all its experts are "
++       "loaded into RAM from the model files at start, and the files pass through the OS file cache (#498)")
++    return True
++
++
+ def offer_together(cfg_path: Path, cfg: dict, yes: bool) -> dict:
+     """Starting a model set up for one card on a PC with two or more that can share it: asked once (the answer is
+     saved in its config)."""
+@@ -606,6 +642,10 @@
+     found = gpus()
+     can = together_ok(found)
+     if not can:
++        return cfg
++    # #498: UD-Q4_K_XL's RAM budget has no layer split; without it the RAM must hold the GGUFs and 24 GB more
++    budget = "--resident-budget-gib" in cfg.get("args", [])
++    if budget and ram_gb() < unsloth_split_need_gb():
+         return cfg
+     pair = can[:2]
+     cfg["gpus_asked"] = True
+@@ -618,6 +658,10 @@
+         say("  This model runs in the low-RAM mode with its experts kept in RAM, on one GPU (recommended: steady RAM")
+         say("  use). On both, the experts the GPUs do not hold are read through the OS file cache instead: faster in")
+         say("  two reports (#364, #384), but RAM can fill up to 0 free during long prompts.")
++    if budget:
++        say("  This model (UD-Q4_K_XL) runs on one GPU with a RAM budget of its experts (recommended: the tested")
++        say("  setup). On both it has no budget: all its experts are loaded into RAM at start, which this PC's RAM")
++        say("  holds - about twice as fast in #498 (2x RTX 3090: 31 -> 64-78 tokens/s).")
+     short = split_short(pair)             # #448: one card recommended (asked "n" by default), as for --resident
+     for g in short:
+         say(f"  {split_short_note(g)}.")
+@@ -626,10 +670,11 @@
+         say("  The installed engine has no code for " + ", ".join(g["name"] for g in missing) + ": to use them "
+             "together, run START-HERE.bat --setup --gpus " + ",".join(str(g["index"]) for g in pair))
+     elif ask("  Use both from now on? (you can change it later: START-HERE.bat --gpu N for one card)",
+-             ["y", "n"], "n" if resident or short else "y", yes) == "y":
++             ["y", "n"], "n" if resident or short or budget else "y", yes) == "y":
+         cfg["gpu"] = [g["index"] for g in pair]
+         cfg["layer_split"] = cfg.get("layer_split") or "auto"
+         split_mmap(cfg)
++        split_budget(cfg)
+         ok("from now on this model runs on " + " + ".join(gpu_name(g) for g in pair))
+     else:
+         ok("staying on one GPU (START-HERE.bat --gpus " + ",".join(str(g["index"]) for g in pair) + " switches)")
+@@ -2068,6 +2113,43 @@
+     return False
+ 
+ 
++def unsloth_together(a, model, ram, gpu, chosen) -> bool:
++    """#498: UD-Q4_K_XL with several GPUs chosen.  Its RAM budget (--resident-budget-gib) has no layer split, so a
++    split runs without it: all its experts loaded into RAM from the GGUFs at start, as with the 2-3-bit models - only
++    where the RAM holds the GGUF files and 24 GB more (unsloth_split_need_gb; 165 GiB, 2x RTX 3090: 31 -> 64-78
++    tok/s).  An explicit --gpus is honoured there; otherwise asked, one GPU by default (--yes: one GPU, as before); an
++    explicit --resident-budget-gib keeps one GPU.  True: all of them."""
++    names = " + ".join(gpu_name(g) for g in chosen)
++    need = unsloth_split_need_gb(model)
++    if ram < need:
++        warn(f"{model} runs on one GPU here: on several it has no RAM budget and needs ~{need:.0f} GB of RAM (its GGUF "
++             f"files and {UNSLOTH_RAM_LEFT_GB} GB more), this PC has {ram:.0f} - using {gpu_name(gpu)} only")
++        return False
++    if a.resident_budget_gib is not None:
++        warn(f"--resident-budget-gib has no layer split: {model} runs on one GPU with it - using {gpu_name(gpu)} only "
++             f"(leave the budget out to use {names} together)")
++        return False
++    note = (f"no RAM budget - all of its experts (~{MODELS[model]['arena_gb']:.0f} GB) are loaded into RAM from the "
++            f"model files at start, and the files pass through the OS file cache (needs ~{need:.0f} GB of RAM, this "
++            f"PC has {ram:.0f})")
++    if a.gpus:
++        ok(f"{model} on {names}, as you chose (--gpus): {note}")
++        return True
++    if not a.yes:
++        say()
++        say(f"  {model} can run on one GPU with a RAM budget of its experts, or on {names} together without one:")
++        say(f"  1) {gpu_name(gpu)} only: the most-used experts kept in RAM, the rest read from the SSD   (recommended: "
++            "the tested setup)")
++        say(f"  2) {names} together: {note};")
++        say("     about twice as fast in #498 (2x RTX 3090: 31 -> 64-78 tokens/s)")
++        if ask(f"{model}: which GPUs?", ["1", "2"], "1", a.yes) == "2":
++            ok(f"{model} on {names}: {note}")
++            return True
++    warn(f"{model} runs on one GPU: using {gpu_name(gpu)} only (--gpus " + ",".join(str(g["index"]) for g in chosen) +
++         f" shares it across {names} without the RAM budget: this PC's RAM holds it)")
++    return False
++
++
+ def confirm_risk(msg, explicit, yes, stop, hint=None, question="  Go on anyway?", default="n") -> None:
+     """The owner's rule: setup recommends, it never forces.  A choice setup expects to fail or run badly is said
+     plainly (msg), then asked (default n; `default` keeps an older question's own default), or with --yes taken as
+@@ -2332,7 +2414,10 @@
+             "vision": ("gpu" if vis.get("gpu") else "cpu") if isinstance(vis, dict) else "none",
+             "esp": ("on" if Path(esp_path).name == ESP_VECTOR.name else esp_path) if esp_path else "off",
+             "host": cfg.get("host"), "api_key": cfg.get("api_key"), "port": cfg.get("port"), "gpu": cfg.get("gpu"),
+-            "layer_split": cfg.get("layer_split")}
++            "layer_split": cfg.get("layer_split"),
++            # #493: --vram-reserve-mib given at setup (images write the default 700 themselves)
++            "vram_reserve_mib": int(val("--vram-reserve-mib")) if (val("--vram-reserve-mib") or "").isdigit() and (
++                vis is None or int(val("--vram-reserve-mib")) != VISION["gpu"]["reserve_mib"]) else None}
+ 
+ 
+ def find_in(roots: list, rel: str):
+@@ -2484,12 +2569,22 @@
+ 
+ def start(cfg_path: Path, port: int | None, gpu: int | list | None = None, open_browser=True, yes=False,
+           layer_split=None, keep=None) -> int:
+-    """keep: settings given on this start that the model keeps from now on (--host, --api-key, --draft-vocab)."""
++    """keep: settings given on this start that the model keeps from now on (--host, --api-key, --draft-vocab,
++    --vram-reserve-mib)."""
+     cfg = upgrade_config(cfg_path, json.loads(cfg_path.read_text(encoding="utf-8-sig")))
+     missing = [p for p in [cfg["exe"], *[a for a in cfg["args"] if a.endswith(".gguf")]] if not Path(p).exists()]
+     if missing:
+         fail(f"{cfg_path.name} refers to missing files: {missing[0]}", "run it again with --setup to repair")
+     keep = {k: v for k, v in (keep or {}).items() if v is not None}
++    reserve = keep.pop("vram_reserve_mib", None)       # #493: an engine argument, kept in the config's args
++    if reserve is not None:
++        args = cfg["args"]
++        if "--vram-reserve-mib" in args[:-1]:
++            args[args.index("--vram-reserve-mib") + 1] = str(reserve)
++        else:
++            args += ["--vram-reserve-mib", str(reserve)]
++        write_config(cfg_path, cfg)
++        ok(f"saved for this model: {reserve} MiB of VRAM kept free for other programs (--vram-reserve-mib)")
+     if keep and any(cfg.get(k) != v for k, v in keep.items()):   # #179: a --host/--api-key on a start was ignored
+         cfg.update(keep)
+         write_config(cfg_path, cfg)
+@@ -2513,6 +2608,7 @@
+                      "set it up for these cards: ./setup.sh --setup --backend hip --gpus " + ",".join(map(str, gpu)))
+             cfg["gpu"], cfg["gpus_asked"] = gpu, True
+             cfg["layer_split"] = layer_split or cfg.get("layer_split") or "auto"
++            split_budget(cfg)                          # #498: before it is saved (it stops when the RAM is short)
+             write_config(cfg_path, cfg)
+             gpu = None
+         elif gpu is not None:
+@@ -2536,6 +2632,7 @@
+         check_gpus(gpu, found, yes=yes, named=True)
+         cfg["gpu"], cfg["gpus_asked"] = gpu, True
+         cfg["layer_split"] = layer_split or cfg.get("layer_split") or "auto"
++        split_budget(cfg)                              # #498: before it is saved (it stops when the RAM is short)
+         write_config(cfg_path, cfg)
+         gpu = None
+     elif gpu is not None:                              # --gpu N: this start only, on that card
+@@ -2544,7 +2641,8 @@
+     else:
+         cfg = offer_together(cfg_path, cfg, yes)
+     use = gpu if gpu is not None else cfg.get("gpu")
+-    if isinstance(use, list) and split_mmap(cfg):     # #364 #384: a resident low-RAM config on several GPUs
++    # #364 #384: a resident low-RAM config on several GPUs; #498: a UD-Q4_K_XL config with its RAM budget (by hand)
++    if isinstance(use, list) and (split_mmap(cfg) | split_budget(cfg)):
+         write_config(cfg_path, cfg)
+     if cfg.get("backend") == "hip":
+         pass
+@@ -2569,8 +2667,15 @@
+             pass
+     say()
+     say("  " + "-" * 100)
+-    say(f"  Starting {cfg.get('model_name', 'the model')}: it loads {f'about {gb:.0f} GB' if gb >= 1 else '34-55 GB'} "
+-        "into RAM and locks part of it for the GPU.")
++    size = f'about {gb:.0f} GB' if gb >= 1 else '34-55 GB'
++    a_ = cfg["args"]
++    if "--mmap-experts" in a_ and "--resident-budget-gib" not in a_ and "--resident-experts" not in a_:
++        # #505: the mapped low-RAM mode loads nothing into RAM up front (the server's narrator says the same)
++        say(f"  Starting {cfg.get('model_name', 'the model')}: it maps {size} of experts from the model files (the OS "
++            "file cache reads them).")
++    else:
++        say(f"  Starting {cfg.get('model_name', 'the model')}: it loads {size} into RAM and locks part of it for the "
++            "GPU.")
+     say("  While it does, YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES (longer the first time after a")
+     say("  restart). That is normal: please wait and don't close this window - the browser opens when it is ready.")
+     say("  Later, closing this window stops the model.")
+@@ -2786,6 +2891,9 @@
+     ap.add_argument("--resident-budget-gib", type=float, metavar="N",
+                     help="UD-Q4_K_XL: the GiB of its experts kept in RAM (default: the RAM less 24 GB, 40 on 64 GB; "
+                          "more is kept as you choose, with a note)")
++    ap.add_argument("--vram-reserve-mib", type=int, metavar="N",
++                    help="VRAM in MiB the engine leaves free for other programs (a game, another model; the engine's "
++                         "default: 700); the expert cache takes that much less")
+     ap.add_argument("--kv-streaming", choices=["auto", "on", "off"], default="auto",
+                     help="from a 64K context: keep the KV cache in RAM and only the attention's window in VRAM (more "
+                          "experts fit on the GPU); auto: when the RAM has room for it")
+@@ -2796,6 +2904,8 @@
+     a = ap.parse_args()
+     if a.resident_budget_gib is not None and not a.resident_budget_gib > 0:
+         ap.error("--resident-budget-gib takes a number of GiB above 0, e.g. --resident-budget-gib 32")
++    if a.vram_reserve_mib is not None and a.vram_reserve_mib < 0:
++        ap.error("--vram-reserve-mib takes a number of MiB, 0 or more, e.g. --vram-reserve-mib 2048")
+     if a.gpu is not None:                             # --gpu 0,2 means --gpus 0,2 (a user tried it: issue report)
+         if "," in a.gpu:
+             a.gpus, a.gpu = a.gpus or a.gpu, None
+@@ -2827,6 +2937,8 @@
+                 a.experimental_speed_projection = a.experimental_speed_projection or ch["esp"]
+                 a.host, a.api_key = a.host or ch["host"], a.api_key or ch["api_key"]
+                 a.port = a.port or ch["port"]
++                if a.vram_reserve_mib is None:          # #493: an explicit reserve set up before
++                    a.vram_reserve_mib = ch.get("vram_reserve_mib")
+                 if isinstance(ch.get("gpu"), list):     # a layer split: set up across the same cards again
+                     a.gpus = a.gpus or ",".join(str(g) for g in ch["gpu"])
+                     a.layer_split = a.layer_split or ch.get("layer_split")
+@@ -2853,13 +2965,15 @@
+             warn("this PC is NOT tuned: the tuning failed (the reason is above); the model "
+                  + ("keeps" if a.no_start else "starts with") + " the default settings")
+         return 0 if a.no_start else start(pick_cfg, a.port, run_gpu, yes=a.yes, layer_split=a.layer_split,
+-                     keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab})
++                     keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab,
++                           "vram_reserve_mib": a.vram_reserve_mib})
+     if have and not (a.setup or a.model or a.family or a.check or a.no_start):
+         if not a.build:
+             update_installed_engine(a.prebuilt)
+         if len(have) == 1:
+             return start(have[0], a.port, run_gpu, yes=a.yes, layer_split=a.layer_split,
+-                     keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab})
++                     keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab,
++                           "vram_reserve_mib": a.vram_reserve_mib})
+         say()
+         for i, c in enumerate(have, 1):
+             say(f"  {i}) {json.loads(c.read_text(encoding='utf-8-sig')).get('model_name', c.stem)}")
+@@ -2867,7 +2981,8 @@
+         pick = int(ask("Which one?", [str(i) for i in range(1, len(have) + 2)], "1", a.yes))
+         if pick <= len(have):
+             return start(have[pick - 1], a.port, run_gpu, yes=a.yes, layer_split=a.layer_split,
+-                     keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab})
++                     keep={"host": a.host, "api_key": a.api_key, "draft_vocab": a.draft_vocab,
++                           "vram_reserve_mib": a.vram_reserve_mib})
+ 
+     # ---- 1. the PC
+     step(1, "checking your PC")
+@@ -3019,10 +3134,11 @@
+         say(f"  {i}) {m:8s} {d['about']}; download {d['download_gb']:.0f} GB, uses ~{d['arena_gb']:.0f} GB of RAM{fit}")
+     rec = str(names.index("IQ3_XXS") + 1) if ram >= 60 and "IQ3_XXS" in names else "1"
+     model = a.model or names[int(ask("Which size?", [str(i) for i in range(1, len(names) + 1)], rec, a.yes)) - 1]
+-    budget = None
++    budget, q4_split = None, False
+     if MODELS[model].get("budget"):
+         # Unsloth's UD-Q4_K_XL: a RAM budget of experts, the rest from the GGUF on the SSD - not the low-RAM mode (no
+-        # experts.bin: it would be another 77 GB on the disk), and one GPU (the budget mode has no layer split)
++        # experts.bin: it would be another 77 GB on the disk), and one GPU (the budget mode has no layer split) unless
++        # the RAM holds the GGUFs and 24 GB more: then several, without the budget, if asked for (#498)
+         warn(f"{model} is EXPERIMENTAL (docs/UNSLOTH_Q4.md): most of its experts are read from the SSD while it "
+              "answers, so it is several times slower than the 2-3-bit models; quality checked against llama.cpp")
+         if hip:
+@@ -3042,12 +3158,13 @@
+                          "install it anyway", "  Install it anyway?")
+             warn(f"installing {model} with {ram:.0f} GB of RAM, as you chose")
+         budget = budget_choice(model, ram, a.resident_budget_gib)
+-        ok(f"RAM budget: {budget:g} GiB of {model}'s experts in RAM, the rest read from the model files on the SSD")
++        if multi and not unsloth_together(a, model, ram, gpu, chosen):
++            multi, sel, chosen = [], [gpu["index"]], [gpu]
++        q4_split = bool(multi)                         # #498: on several GPUs without the RAM budget
++        if not q4_split:
++            ok(f"RAM budget: {budget:g} GiB of {model}'s experts in RAM, the rest read from the model files on the SSD")
+         if a.low_ram not in ("auto", "off"):
+             warn(f"--low-ram {a.low_ram} does not apply to {model}: it always reads part of its experts from the files")
+-        if multi:
+-            warn(f"{model} runs on one GPU: using " + gpu_name(gpu) + " only")
+-            multi, sel, chosen = [], [gpu["index"]], [gpu]
+     elif a.resident_budget_gib is not None:
+         warn(f"--resident-budget-gib is for UD-Q4_K_XL: {model} keeps all of its experts in RAM or in the low-RAM mode")
+     low_ram = budget is None and (a.low_ram in ("on", "resident", "mmap") or
+@@ -3254,6 +3371,13 @@
+     # ---- 5. the model files
+     step(5, f"downloading {fam['title']} {model}")
+     if not a.gguf_dir:
++        missing = [s.name for s in shards if not (s.exists() and done(s))]
++        if missing:                                    # #495: files downloaded by hand go here, or --gguf-dir
++            say(f"  The model files go in {models_dir}")
++            say(f"  Files you already have: put them here with their original names ({', '.join(missing)}), or use "
++                "--gguf-dir <their folder>.")
++            if hf_endpoint() != HF_DEFAULT:
++                say(f"  Downloading from {hf_endpoint()} (HF_ENDPOINT)")
+         for s in shards:
+             if s.exists() and done(s):
+                 ok(f"{s.name} already downloaded")
+@@ -3379,7 +3503,9 @@
+             warn(f"KV streaming needs ~{kv_ram_gb:.1f} GB of RAM beside the ~{MODELS[model]['ram_gb']} GB {model} "
+                  f"uses; this PC has {ram:.0f}. Kept as you chose (--kv-streaming on): it may page or run out of RAM "
+                  "under load")
+-        if budget is not None and a.resident_budget_gib is None:   # its RAM comes out of the experts' budget
++        if q4_split:                                   # #498: no budget to take it out of
++            pass
++        elif budget is not None and a.resident_budget_gib is None:   # its RAM comes out of the experts' budget
+             budget = resident_budget_gib(model, ram, kv_ram_gb)
+             ok(f"RAM budget: {budget} GiB (less the KV cache's RAM)")
+         elif budget is not None and budget > resident_budget_gib(model, ram, kv_ram_gb):
+@@ -3387,10 +3513,21 @@
+                  f"would take them out of it: {resident_budget_gib(model, ram, kv_ram_gb)} GiB); kept as you chose")
+     elif a.kv_streaming == "on":
+         warn("--kv-streaming on: a context under 64K is not streamed (the attention's window holds all of it): off")
+-    if budget is not None:     # UD-Q4_K_XL: the experts read from the GGUF in place, the most-used N GiB kept in RAM
+-        args += ["--resident-budget-gib", f"{budget:g}"]
++    if budget is not None and not q4_split:   # UD-Q4_K_XL: the experts read from the GGUF in place, the most-used N
++        args += ["--resident-budget-gib", f"{budget:g}"]   # GiB kept in RAM (#498: a layer split has no budget)
+     if vision != "none":
+         args += ["--vision", "--vram-reserve-mib", str(VISION[vision]["reserve_mib"])]
++    if a.vram_reserve_mib is not None:                 # #493: VRAM left free for other programs (only when given)
++        if "--vram-reserve-mib" in args:
++            i = args.index("--vram-reserve-mib") + 1
++            if vision == "gpu" and a.vram_reserve_mib < int(args[i]):
++                warn(f"--vram-reserve-mib {a.vram_reserve_mib}: the image encoder on the GPU needs ~{args[i]} MiB of "
++                     "it; kept as you chose (it may run out of VRAM when it reads a picture)")
++            args[i] = str(a.vram_reserve_mib)
++        else:
++            args += ["--vram-reserve-mib", str(a.vram_reserve_mib)]
++        ok(f"VRAM kept free for other programs: {a.vram_reserve_mib} MiB (--vram-reserve-mib; the expert cache takes "
++           "that much less)")
+     if esp is not None:
+         # the package's profile, with llama.cpp's flags (the engine takes the same ones)
+         args += ["--control-vector-scaled", f"{esp}:1.0", "--control-vector-layer-range", "4", "44",
+--- a/src/core/device.cu
++++ b/src/core/device.cu
+@@ -100,6 +100,97 @@
+     detail = buf;
+     return true;
+ }
++
++}  // namespace strata::core
++
++#if defined(STRATA_USE_HIP) && defined(_WIN32)
++// The free VRAM figure on Windows HIP (include/strata/hip_compat/cuda_runtime.h maps cudaMemGetInfo here).
++//
++// hipMemGetInfo (ROCclr's PAL backend, Device::globalFreeMemory) is the card's size minus this process's own
++// allocations: it asks Windows for this process's usage only, never for what the desktop and other programs hold.
++// So on a card that also drives the desktop the engine counted ~930 MiB that was not there, the expert cache filled
++// the card, and WDDM moved memory out to system RAM: decode at 30 tok/s instead of 41 (RX 6800, HIP SDK 7.2).
++// Windows itself gives each process a video memory budget (DXGI QueryVideoMemoryInfo) that does account for the
++// others.  Measured on that card: the budget sits 0.8 GiB below the card's size while this process is small and
++// 1.8 GiB below once it holds 11 GiB; allocations past it still succeed, and are what Windows moves out.  The
++// free figure here is hipMemGetInfo's lowered by what the budget withholds (the card's size minus the budget).
++// Subtracting from HIP's own figure, rather than taking the budget minus DXGI's usage, keeps memory the HIP runtime
++// has freed and holds in its cache counted as free, as hipMemGetInfo counts it.  dxgi.dll is loaded at run time, so
++// nothing new is linked; when it or the card's adapter cannot be found, hipMemGetInfo's figure stands.
++#ifndef WIN32_LEAN_AND_MEAN
++#define WIN32_LEAN_AND_MEAN
++#endif
++#ifndef NOMINMAX
++#define NOMINMAX
++#endif
++#include <windows.h>
++#include <dxgi1_4.h>
++#include <atomic>
++#include <cstdlib>
++#include <mutex>
++
++namespace strata::hip_compat {
++namespace {
++IDXGIAdapter3* budget_adapter(int device) {
++    constexpr int kMaxDevices = 16;
++    static std::mutex mu;
++    static IDXGIAdapter3* adapters[kMaxDevices] = {};
++    static bool tried[kMaxDevices] = {};
++    if (device < 0 || device >= kMaxDevices) return nullptr;
++    std::lock_guard<std::mutex> lock(mu);
++    if (tried[device]) return adapters[device];
++    tried[device] = true;
++    hipDeviceProp_t p{};
++    if (hipGetDeviceProperties(&p, device) != hipSuccess) {
++        (void) hipGetLastError();
++        return nullptr;
++    }
++    LUID luid{};
++    std::memcpy(&luid, p.luid, sizeof luid);
++    using CreateFactory = HRESULT(WINAPI*)(REFIID, void**);
++    static HMODULE dxgi = LoadLibraryW(L"dxgi.dll");   // kept for the process' lifetime, like the adapters
++    const auto create = dxgi ? (CreateFactory) (void*) GetProcAddress(dxgi, "CreateDXGIFactory1") : nullptr;
++    IDXGIFactory4* factory = nullptr;
++    if (create == nullptr || FAILED(create(__uuidof(IDXGIFactory4), (void**) &factory))) return nullptr;
++    IDXGIAdapter3* adapter = nullptr;
++    if (FAILED(factory->EnumAdapterByLuid(luid, __uuidof(IDXGIAdapter3), (void**) &adapter))) adapter = nullptr;
++    factory->Release();
++    adapters[device] = adapter;
++    return adapter;
++}
++}  // namespace
++
++hipError_t mem_get_info(size_t* free_bytes, size_t* total_bytes) {
++    const hipError_t e = hipMemGetInfo(free_bytes, total_bytes);
++    static const bool off = [] {
++        const char* v = std::getenv("STRATA_WDDM_BUDGET");
++        return v != nullptr && std::atoi(v) == 0;
++    }();
++    if (e != hipSuccess || off || free_bytes == nullptr || total_bytes == nullptr) return e;
++    int device = 0;
++    if (hipGetDevice(&device) != hipSuccess) {
++        (void) hipGetLastError();
++        return e;
++    }
++    IDXGIAdapter3* adapter = budget_adapter(device);
++    DXGI_QUERY_VIDEO_MEMORY_INFO local{};
++    if (adapter == nullptr || FAILED(adapter->QueryVideoMemoryInfo(0, DXGI_MEMORY_SEGMENT_GROUP_LOCAL, &local)) ||
++        local.Budget == 0 || local.Budget >= *total_bytes)
++        return e;
++    const size_t withheld = *total_bytes - (size_t) local.Budget;   // the desktop's and other programs' share
++    static std::atomic<bool> said{false};
++    if (!said.exchange(true)) {
++        std::fprintf(stderr, "strata: Windows budgets %llu of this card's %llu MiB for this process; free VRAM is "
++                             "counted within that (STRATA_WDDM_BUDGET=0: off)\n",
++                     (unsigned long long) (local.Budget >> 20), (unsigned long long) (*total_bytes >> 20));
++    }
++    *free_bytes = *free_bytes > withheld ? *free_bytes - withheld : 0;
++    return e;
++}
++}  // namespace strata::hip_compat
++#endif
++
++namespace strata::core {
+ 
+ std::string gpu_arch_problem(int ordinal) {
+ #if defined(STRATA_USE_HIP)
+--- a/src/kernels/cuda/qsa_select.cu
++++ b/src/kernels/cuda/qsa_select.cu
+@@ -17,6 +17,20 @@
+ constexpr int IDX_DIM = 128, IDX_HEADS = 4, R = 4;
+ constexpr int SCORE_WARPS = 8;
+ constexpr int TOPK_T = 256;
++// Experimental decode interval. Both captured kernels test the current device-side steps,
++// so the same graph remains valid when a conversation enters or leaves this interval.
++constexpr int DYN_MIN_BLOCKS = 8192, DYN_MAX_BLOCKS = 33792;
++#if !defined(__HIPCC__)
++__constant__ int dynamic_topk_mode = 1;
++#endif
++__device__ __forceinline__ bool dynamic_topk_on() {
++#if !defined(__HIPCC__)
++    return dynamic_topk_mode != 0;
++#else
++    return false;
++#endif
++}
++
+ 
+ __device__ __forceinline__ uint32_t order_key(float s) {
+     const float v = s + 0.0f;
+@@ -54,6 +68,7 @@
+     }
+ }
+ 
++template<bool DYNAMIC = false>
+ __global__ void __launch_bounds__(TOPK_T) block_topk_kernel(const float* __restrict__ scores,
+                                                             const int32_t* __restrict__ steps, int64_t max_blocks,
+                                                             int64_t cap, int32_t* __restrict__ ids) {
+@@ -63,6 +78,10 @@
+     const int64_t qi = blockIdx.x;
+     const int32_t* st = steps + qi * kStepCount;
+     const int64_t n_kv = st[kStepNKv], n_bid = st[kStepNBid], width = st[kStepWidth];
++    if constexpr (DYNAMIC) {
++        const int64_t live = n_bid + 1;
++        if (dynamic_topk_on() && live > DYN_MIN_BLOCKS && live <= DYN_MAX_BLOCKS) return;
++    }
+     int32_t* out = ids + qi * cap;
+     const int t = threadIdx.x;
+     if (n_kv <= width) {                               // everything is selected: the identity, ascending
+@@ -503,7 +522,7 @@
+     return r;
+ }
+ 
+-template <int PER>
++template <int PER, bool DYNAMIC = false>
+ __global__ void __launch_bounds__(TK_T) block_topk_reg_kernel(const float* __restrict__ scores,
+                                                               const int32_t* __restrict__ steps, int64_t max_blocks,
+                                                               int64_t cap, int32_t* __restrict__ ids) {
+@@ -513,6 +532,11 @@
+     const int64_t qi = blockIdx.x;
+     const int32_t* st = steps + qi * kStepCount;
+     const int64_t n_kv = st[kStepNKv], n_bid = st[kStepNBid], width = st[kStepWidth];
++    if constexpr (DYNAMIC) {
++        static_assert(TK_T * PER == DYN_MAX_BLOCKS, "Keep the guarded register capacity exact");
++        const int64_t live = n_bid + 1;
++        if (!dynamic_topk_on() || live <= DYN_MIN_BLOCKS || live > DYN_MAX_BLOCKS) return;
++    }
+     int32_t* out = ids + qi * cap;
+     const int t = threadIdx.x, lane = t & 31, warp = t >> 5;
+     if (n_kv <= width) {
+@@ -963,7 +987,7 @@
+         std::fprintf(stderr, "qsa_block_topk: unsupported geometry or cap\n");
+         std::exit(1);
+     }
+-    block_topk_kernel<<<(unsigned) nq, TOPK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
++    block_topk_kernel<false><<<(unsigned) nq, TOPK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
+     const cudaError_t e = cudaGetLastError();
+     if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk: %s\n", cudaGetErrorString(e)); std::exit(1); }
+ }
+@@ -985,6 +1009,19 @@
+     return turing;
+ }
+ #endif
++
++bool qsa_topk_dynamic_set(bool enabled) {
++#if !defined(__HIPCC__)
++    if (!topk_active_turing_device()) return true;  // other architectures keep their existing dispatch
++    // A mode change must not occur between the two guarded nodes of a running graph.
++    if (cudaDeviceSynchronize() != cudaSuccess) return false;
++    const int value = enabled ? 1 : 0;
++    return cudaMemcpyToSymbol(dynamic_topk_mode, &value, sizeof(value)) == cudaSuccess;
++#else
++    (void) enabled;
++    return true;
++#endif
++}
+ 
+ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                             const QsaShapes& s, int32_t* ids, void* stream) {
+@@ -1089,6 +1126,26 @@
+ #else
+     const bool too_small = false;
+ #endif
++#if !defined(__HIPCC__)
++    static const bool dynamic_decode = [] {
++        const char* v = std::getenv("STRATA_TOPK_DYNAMIC");
++        return v && std::atoi(v) == 1;
++    }();
++    if (dynamic_decode && !old && !capacity_guard && active_blocks <= 0 &&
++        max_blocks > DYN_MAX_BLOCKS && topk_active_turing_device()) {
++        if (s.idx_block != R || cap < qsa_selection_width(kTopkMaxCells, s)) {
++            std::fprintf(stderr, "qsa_block_topk dynamic: unsupported geometry or cap\n");
++            std::exit(1);
++        }
++        // Guards are block-uniform and precede every barrier. Exactly one kernel writes each query's IDs.
++        // Keep the allocated score-row stride. No host context estimate or graph invalidation is needed.
++        block_topk_kernel<true><<<(unsigned) nq, TOPK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
++        block_topk_reg_kernel<TK_PER, true><<<(unsigned) nq, TK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
++        const cudaError_t e = cudaGetLastError();
++        if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk dynamic: %s\n", cudaGetErrorString(e)); std::exit(1); }
++        return;
++    }
++#endif
+     if (old || too_small || reach > fit) {
+         qsa_block_topk_ref(scores, steps, nq, max_blocks, cap, s, ids, stream);
+         return;
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -46,6 +46,7 @@
+ #include "strata/kernels/mrope.hpp"
+ #include "strata/kernels/kv_q4.hpp"
+ #include "strata/kernels/qsa.hpp"
++#include "strata/kernels/qsa_select.hpp"
+ #include "strata/core/native_head.hpp"
+ #include "strata/core/verify.hpp"
+ #include "strata/core/mtp.hpp"
+@@ -352,7 +353,7 @@
+     /// Plan v0.3 P4: `--expert-cache auto` sizes the VRAM tier from what is free after the weights, the session
+     /// and the KV state, minus this reserve for the graphs, the hit scratch and the head.
+     int vram_reserve_mib = 700;
+-    /// Fork «Strata adattivo»: an ELASTIC expert cache (`--serve`, one GPU).  The startup sizes the cache with
++    /// Fork Ã‚Â«Strata adattivoÃ‚Â»: an ELASTIC expert cache (`--serve`, one GPU).  The startup sizes the cache with
+     /// `--vram-reserve-mib` as before, then the cache follows the free VRAM while it runs: it keeps
+     /// `elastic_reserve_mib` free, grows with the most-used missing experts (then the profile's order) once the
+     /// VRAM has stayed free for `elastic_stable_ms`, and shrinks at once when it has not - the tail's hottest
+@@ -719,7 +720,7 @@
+             static const float one[64] = {};   // k <= 64 in a verify window; zeros read as unit weights
+             std::fwrite(one, sizeof(float), (size_t) k, t->routing);
+         }
+-        // fork «Strata adattivo»: flushed per layer - a served engine usually ends by being killed
++        // fork Ã‚Â«Strata adattivoÃ‚Â»: flushed per layer - a served engine usually ends by being killed
+         std::fflush(t->routing);
+     }
+ }
+@@ -1011,33 +1012,79 @@
+ // The effective host->device bandwidth of the PCIe link: copies from pinned host memory, as the expert arena's
+ // reads are.  The native default share (0.55) was measured on x16 links (~26-28 GB/s); a x8 card in a x8 slot
+ // carries about half of that.  Returns < 0 when the probe cannot run (then the caller keeps the default).
+-double probe_pcie_h2d_gbps() {
++//
++// #485: a single timed burst read an x16 PCIe 4 link (RTX A3000 laptop) at 18.5, 6.9 and 5.8 GB/s in three starts -
++// a link still in a low-power state, other DMA, a context not yet up to speed - and the low reading set the share.
++// Such a disturbance only ever slows a copy: nothing makes a correctly timed copy faster than the link carries.  So
++// the same 1 GiB is now copied as four bursts of 256 MiB, timed one by one, and the fastest is the link's figure (the
++// median would still follow a disturbance that lasts through half the bursts).  Each burst takes ~10 ms on an x16
++// PCIe 4 link, so the probe takes no longer than the one 1 GiB burst did.  `samples`, when given, gets every
++// burst's reading for the log.
++double probe_pcie_h2d_gbps(std::string* samples = nullptr) {
+     constexpr size_t kBytes = 256ull << 20;
+-    constexpr int kIters = 4;
++    constexpr int kBursts = 4;
+     void* h = nullptr;
+     void* d = nullptr;
+-    cudaEvent_t ev0, ev1;
+     if (cudaMallocHost(&h, kBytes) != cudaSuccess) return -1.0;
+-    if (cudaMalloc(&d, kBytes) != cudaSuccess || cudaEventCreate(&ev0) != cudaSuccess ||
+-        cudaEventCreate(&ev1) != cudaSuccess) {
+-        if (d != nullptr) cudaFree(d);
++    if (cudaMalloc(&d, kBytes) != cudaSuccess) {
+         cudaFreeHost(h);
+         return -1.0;
+     }
+     std::memset(h, 0, kBytes);   // fault the pages in before timing
+     cudaMemcpyAsync(d, h, kBytes, cudaMemcpyHostToDevice);   // warmup: context up, copy engine primed
+-    cudaEventRecord(ev0);
+-    for (int i = 0; i < kIters; ++i) cudaMemcpyAsync(d, h, kBytes, cudaMemcpyHostToDevice);
+-    cudaEventRecord(ev1);
+-    const bool ok = cudaEventSynchronize(ev1) == cudaSuccess;
+-    float ms = 0.f;
+-    const bool timed = ok && cudaEventElapsedTime(&ms, ev0, ev1) == cudaSuccess && ms > 0.01f;
+-    const double bw = timed ? ((double) kIters * (double) kBytes / (ms * 1e-3)) / 1e9 : -1.0;
+-    cudaEventDestroy(ev0);
+-    cudaEventDestroy(ev1);
++    float ms[kBursts] = {};
++#if defined(STRATA_USE_HIP) && defined(_WIN32)
++    // Windows HIP: the events do not bracket the copies there (an RX 6800 read 3,300-26,000 GB/s, so every link kept
++    // the x16 share), so each burst is timed on the host between two synchronizes: 256 MiB takes ~10 ms, so the
++    // synchronize around it hardly matters
++    bool ok = cudaDeviceSynchronize() == cudaSuccess;
++    for (int b = 0; b < kBursts && ok; ++b) {
++        const Clock::time_point t0 = Clock::now();
++        cudaMemcpyAsync(d, h, kBytes, cudaMemcpyHostToDevice);
++        ok = cudaDeviceSynchronize() == cudaSuccess;
++        ms[b] = (float) std::chrono::duration<double, std::milli>(Clock::now() - t0).count();
++    }
++#else
++    // the bursts run back to back on the stream, an event between each two
++    cudaEvent_t ev[kBursts + 1];
++    int n_ev = 0;
++    while (n_ev <= kBursts && cudaEventCreate(&ev[n_ev]) == cudaSuccess) ++n_ev;
++    bool ok = n_ev == kBursts + 1;
++    if (ok) {
++        cudaEventRecord(ev[0]);
++        for (int b = 0; b < kBursts; ++b) {
++            cudaMemcpyAsync(d, h, kBytes, cudaMemcpyHostToDevice);
++            cudaEventRecord(ev[b + 1]);
++        }
++        ok = cudaEventSynchronize(ev[kBursts]) == cudaSuccess;
++        for (int b = 0; b < kBursts && ok; ++b) ok = cudaEventElapsedTime(&ms[b], ev[b], ev[b + 1]) == cudaSuccess;
++    }
++    for (int i = 0; i < n_ev; ++i) cudaEventDestroy(ev[i]);
++#endif
++    double bw = -1.0;
++    if (samples != nullptr) samples->clear();
++    for (int b = 0; b < kBursts && ok; ++b) {
++        const double s = ms[b] > 0.01f ? (double) kBytes / (ms[b] * 1e-3) / 1e9 : -1.0;
++        bw = std::max(bw, s);
++        if (samples != nullptr) {
++            char buf[32];
++            std::snprintf(buf, sizeof(buf), "%s%.1f", b == 0 ? "" : " ", s);
++            *samples += buf;
++        }
++    }
++    if (!ok) (void) cudaGetLastError();
+     cudaFree(d);
+     cudaFreeHost(h);
+     return bw;
++}
++
++// The PCIe share of the missed experts for a link measured at `gbps`: `base` (the share measured on x16 links) from
++// 20 GB/s up, and below that in proportion to the bandwidth, so the time the link spends on its share stays about
++// what the x16 share costs.  Continuous (#485): before, 19.9 GB/s gave 0.42 and 20.0 the full 0.55 (and 4.0 GB/s
++// gave 0.08, 3.9 none), so a reading near either edge moved the share by a quarter of its range.  From 20 GB/s up
++// (an x16 PCIe 4/5 link: ~26-28 GB/s) the share is unchanged.
++double pcie_frac_for_gbps(double gbps, double base) {
++    return gbps <= 0.0 ? base : base * std::min(1.0, gbps / 20.0);
+ }
+ 
+ }  // namespace
+@@ -1339,6 +1386,8 @@
+     // the next visible ones); "auto" places the K from each GPU's free VRAM once the weights are in (below).  Across
+     // GPUs, not yet: KV streaming, images, control vectors, the helper caches (--expert-cache-remote), and lending
+     // cache slots to the prompt path (each stage's prompt path has its own buffers).
++    // --pcie-frac given: that one share is every stage's (the stages' own link probes are skipped), so a split over
++    // a fast and a slow link cannot set the two apart from the command line (#485)
+     const bool pcie_given = o.pcie_frac >= 0.0;
+     std::vector<int64_t> split_at;
+     std::vector<int> split_devs;
+@@ -1794,15 +1843,14 @@
+     // pack's 0.2 was never measured against the link, so it is left alone.  `--calibrate` measures it outright.
+     if (o.pcie_frac < 0.0) {
+         const double base = native_pack ? 0.55 : 0.2;
+-        const double bw = native_pack ? probe_pcie_h2d_gbps() : -1.0;
++        std::string bursts;
++        const double bw = native_pack ? probe_pcie_h2d_gbps(&bursts) : -1.0;
+         if (!native_pack) {
+             o.pcie_frac = base;
+         } else if (bw > 0.0) {
+-            // below ~4 GB/s (an x1 link: ~0.9 GB/s) a missed expert's 1.4 MB takes longer to cross than the CPU
+-            // pool takes to compute it, so none of them go over the link
+-            o.pcie_frac = bw >= 20.0 ? base : bw < 4.0 ? 0.0 : std::min(base, std::max(0.05, base * (bw / 26.0)));
+-            std::fprintf(stderr, "strata generate: PCIe probe: %.1f GB/s host->device -> pcie_frac %.2f (default %.2f)\n",
+-                         bw, o.pcie_frac, base);
++            o.pcie_frac = pcie_frac_for_gbps(bw, base);
++            std::fprintf(stderr, "strata generate: PCIe probe: %.1f GB/s host->device (best of %s) -> pcie_frac %.2f "
++                                 "(default %.2f)\n", bw, bursts.c_str(), o.pcie_frac, base);
+         } else {
+             o.pcie_frac = base;
+             std::fprintf(stderr, "strata generate: PCIe probe failed -> pcie_frac default %.2f\n", base);
+@@ -2303,13 +2351,15 @@
+             }
+             strata::kernels::mrope_table_set(st.mrope);
+         }
+-        // its own PCIe share of the missed experts (the same rule as CUDA0's above: its link is probed)
++        // its own PCIe share of the missed experts (the same rule as CUDA0's above: its link is probed).  A given
++        // --pcie-frac is every stage's share and skips these probes (pcie_given); there is no per-stage setting yet.
+         st.pcie_frac = o.pcie_frac;
+         if (!pcie_given && native_pack) {
+-            const double bw = probe_pcie_h2d_gbps();
+-            if (bw > 0.0) st.pcie_frac = bw >= 20.0 ? 0.55 : bw < 4.0 ? 0.0 : std::min(0.55, std::max(0.05, 0.55 * (bw / 26.0)));
+-            std::fprintf(stderr, "strata generate: layer split: CUDA%d PCIe probe %.1f GB/s -> pcie_frac %.2f\n", st.dev,
+-                         bw, st.pcie_frac);
++            std::string bursts;
++            const double bw = probe_pcie_h2d_gbps(&bursts);
++            if (bw > 0.0) st.pcie_frac = pcie_frac_for_gbps(bw, 0.55);
++            std::fprintf(stderr, "strata generate: layer split: CUDA%d PCIe probe %.1f GB/s (best of %s) -> pcie_frac "
++                                 "%.2f\n", st.dev, bw, bursts.c_str(), st.pcie_frac);
+         }
+         size_t fb = 0, tb = 0;
+         cudaMemGetInfo(&fb, &tb);
+@@ -3833,7 +3883,7 @@
+                                     : ((tokens + 255) / 256) * 256;
+         return std::min(max_chunk, rounded);
+     };
+-    // fork «Strata adattivo»: the TWO-ZONE cache.  Slots [0, el_core) are the core - filled from the profile at startup,
++    // fork Ã‚Â«Strata adattivoÃ‚Â»: the TWO-ZONE cache.  Slots [0, el_core) are the core - filled from the profile at startup,
+     // never picked by the adaptive swaps to leave, never shrunk, never lent; the tail after it is the elastic zone.
+     int64_t el_core = 0;
+     if (o.elastic && o.serve && xcache.elastic() && !multi_gpu && xcache.slot_offsets() != nullptr) {
+@@ -4705,7 +4755,7 @@
+             for (float& v : drive.d.usage) v *= 0.7f;
+             return true;
+         };
+-        // ---- fork «Strata adattivo»: THE ELASTIC EXPERT CACHE.  The arena is a reserved address range backed by
++        // ---- fork Ã‚Â«Strata adattivoÃ‚Â»: THE ELASTIC EXPERT CACHE.  The arena is a reserved address range backed by
+         // chunks (ExpertCache::open_sized_elastic), so its slots can be added or dropped at the TAIL without any
+         // pointer moving.  `host_res` stays the one truth about which expert sits where (the adaptive tier writes it
+         // too); the prompt path borrows the tail, so after the tail moved its buffers are laid out again (and a cache
+@@ -5148,6 +5198,7 @@
+             // tuning keys (setup's calibration measures settings without restarting the engine): the PCIe share of
+             // the missed experts and the draft-probability floor, for this request only
+             double req_pcie_frac = o.pcie_frac, req_spec_min_p = o.spec_min_p;
++            bool req_topk_dynamic = true;
+             if (endp != nullptr) {   // GENI takes the same keys (#75: image requests were always greedy); its
+                                      // embedding file path is the first token without an =
+                 for (;;) {
+@@ -5172,6 +5223,7 @@
+                     else if (key == "seed") req_seed = std::strtoull(tok.c_str() + eq + 1, nullptr, 10);
+                     else if (key == "pcie_frac") req_pcie_frac = std::clamp((double) fv, 0.0, 1.0);
+                     else if (key == "spec_min_p") req_spec_min_p = std::clamp((double) fv, 0.0, 1.0);
++                    else if (key == "topk_dynamic") req_topk_dynamic = fv >= 0.5f;
+                     // unknown keys are skipped: the ids start at the first token without '='
+                 }
+             }
+@@ -5188,6 +5240,17 @@
+                 continue;
+             }
+             const int64_t n = (int64_t) ids.size();
++            // Calibration only: keep the existing graphs and alternate their guarded top-k path.
++            const char* dyn_env = std::getenv("STRATA_TOPK_DYNAMIC");
++            if (!multi_gpu && dyn_env && std::atoi(dyn_env) == 1) {
++                if (!strata::kernels::qsa_topk_dynamic_set(req_topk_dynamic)) {
++                    std::printf("ERR dynamic top-k mode change failed\n");
++                    continue;
++                }
++                if (std::getenv("STRATA_TOPK_DYNAMIC_TRACE"))
++                    std::fprintf(stderr, "strata topk dynamic request: %d\n", (int) req_topk_dynamic);
++            }
++
+             req_imgs.clear();
+             if (geni && !o.vision) { std::printf("ERR this engine was started without --vision\n"); continue; }
+             if (geni || !mrope_identity) {
+@@ -5455,7 +5518,7 @@
+                 part_at.clear();
+                 std::fill(part_next.begin(), part_next.end(), pp_next_check);
+             }
+-            // fork «Strata adattivo»: chunks cut on the same grid, so every checkpoint lands exactly on
++            // fork Ã‚Â«Strata adattivoÃ‚Â»: chunks cut on the same grid, so every checkpoint lands exactly on
+             // resume + k * prompt_cache_every (a layer split keeps the plain chunking: its stages hand chunks on)
+             sp.align_every = (reread_to > 0 || multi_gpu || o.prompt_cache_every <= 0) ? 0 : o.prompt_cache_every;
+             sp.align_origin = resume;
+--- /dev/null
++++ b/tests/sm75/qsa_dynamic.cpp
+@@ -0,0 +1,100 @@
++// Replay unchanged graphs across the live-register boundary and compare every selected ID.
++#include "strata/kernels/qsa.hpp"
++#include "strata/kernels/qsa_select.hpp"
++#include <cuda_runtime.h>
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <random>
++#include <vector>
++namespace k = strata::kernels;
++void ck(cudaError_t e) { if(e!=cudaSuccess){std::fprintf(stderr,"CUDA: %s\n",cudaGetErrorString(e));std::exit(2);} }
++struct Graph {
++    cudaGraph_t g{}; cudaGraphExec_t exec{};
++    ~Graph(){if(exec)cudaGraphExecDestroy(exec);if(g)cudaGraphDestroy(g);}
++};
++int main(){
++    int count=0; if(cudaGetDeviceCount(&count)!=cudaSuccess||!count){std::puts("SKIP no CUDA");return 77;}
++    cudaDeviceProp prop{};ck(cudaGetDeviceProperties(&prop,0));
++    if(prop.major!=7||prop.minor!=5){std::puts("SKIP requires real sm75");return 77;}
++    const char* enabled=std::getenv("STRATA_TOPK_DYNAMIC");
++    if(!enabled||std::atoi(enabled)!=1){std::fputs("Requires STRATA_TOPK_DYNAMIC=1\n",stderr);return 2;}
++    constexpr int64_t stride=262144/4+2,maxq=11;
++    const auto shape=k::qsa_real_shapes();const int64_t cap=k::qsa_selection_width(k::kTopkMaxCells,shape);
++    float* ds{};int32_t *dt{},*da{},*db{};cudaStream_t stream{};
++    ck(cudaStreamCreate(&stream));ck(cudaMalloc(&ds,maxq*stride*sizeof(float)));
++    ck(cudaMalloc(&dt,maxq*k::kStepCount*sizeof(int32_t)));
++    ck(cudaMalloc(&da,maxq*cap*sizeof(int32_t)));ck(cudaMalloc(&db,maxq*cap*sizeof(int32_t)));
++    std::vector<float> scores(maxq*stride);std::vector<int32_t> steps(maxq*k::kStepCount),a(maxq*cap),b(maxq*cap);
++    auto fill=[&](int64_t ctx,int64_t nq,int mode,bool mixed){
++        std::fill(scores.begin(),scores.end(),-999.f);std::fill(steps.begin(),steps.end(),0);
++        std::mt19937 rng(742913);std::uniform_real_distribution<float> random(0.f,200.f);
++        for(int64_t q=0;q<nq;++q){
++            int64_t pos=ctx-nq+q;if(mixed)pos=(q%2?250021:131071);
++            auto* st=steps.data()+q*k::kStepCount;st[k::kStepPos]=(int32_t)pos;
++            st[k::kStepNKv]=(int32_t)(pos+1);st[k::kStepNBid]=(int32_t)((pos+1)/shape.idx_block);
++            st[k::kStepWidth]=(int32_t)k::qsa_selection_width(pos+1,shape);
++            for(int64_t j=0;j<=st[k::kStepNBid];++j)scores[q*stride+j]=mode==1?0.f:mode==2?float(j%7):random(rng);
++            if((pos+1)%shape.idx_block)scores[q*stride+st[k::kStepNBid]]+=1e9f;
++        }
++        ck(cudaMemcpyAsync(ds,scores.data(),scores.size()*sizeof(float),cudaMemcpyHostToDevice,stream));
++        ck(cudaMemcpyAsync(dt,steps.data(),steps.size()*sizeof(int32_t),cudaMemcpyHostToDevice,stream));
++        ck(cudaStreamSynchronize(stream));
++    };
++    int cases=0;
++    for(int64_t nq:{1,2,3,4,6,8,11}){
++        fill(131072,nq,0,false);
++        // Prime the device-query caches before capture; each graph keeps the same pointers and dimensions.
++        k::qsa_block_topk(ds,dt,nq,stride,cap,shape,db,stream);ck(cudaStreamSynchronize(stream));
++        Graph ref,dyn;
++        ck(cudaStreamBeginCapture(stream,cudaStreamCaptureModeGlobal));
++        k::qsa_block_topk_ref(ds,dt,nq,stride,cap,shape,da,stream);
++        ck(cudaStreamEndCapture(stream,&ref.g));ck(cudaGraphInstantiate(&ref.exec,ref.g,nullptr,nullptr,0));
++        ck(cudaStreamBeginCapture(stream,cudaStreamCaptureModeGlobal));
++        k::qsa_block_topk(ds,dt,nq,stride,cap,shape,db,stream);
++        ck(cudaStreamEndCapture(stream,&dyn.g));ck(cudaGraphInstantiate(&dyn.exec,dyn.g,nullptr,nullptr,0));
++        size_t nodes=0;ck(cudaGraphGetNodes(dyn.g,nullptr,&nodes));
++        if(nodes!=2){std::fprintf(stderr,"FAIL dynamic graph has %zu nodes, expected two guarded kernels\n",nodes);return 1;}
++        std::printf("GRAPH nq=%lld dynamic_nodes=%zu\n",(long long)nq,nodes);
++        auto check=[&](int64_t ctx,int mode,bool mixed){
++            fill(ctx,nq,mode,mixed);
++            ck(cudaMemsetAsync(da,0xcc,a.size()*sizeof(int32_t),stream));ck(cudaMemsetAsync(db,0x55,b.size()*sizeof(int32_t),stream));
++            if(!k::qsa_topk_dynamic_set(true)){std::fputs("mode set failed\n",stderr);std::exit(2);}
++            ck(cudaGraphLaunch(ref.exec,stream));ck(cudaGraphLaunch(dyn.exec,stream));ck(cudaStreamSynchronize(stream));
++            ck(cudaMemcpy(a.data(),da,a.size()*sizeof(int32_t),cudaMemcpyDeviceToHost));
++            ck(cudaMemcpy(b.data(),db,b.size()*sizeof(int32_t),cudaMemcpyDeviceToHost));
++            for(int64_t q=0;q<nq;++q){
++                const int width=steps[q*k::kStepCount+k::kStepWidth],nkv=steps[q*k::kStepCount+k::kStepNKv];
++                for(int i=0;i<width;++i)if(a[q*cap+i]!=b[q*cap+i]||b[q*cap+i]<0||b[q*cap+i]>=nkv){
++                    std::fprintf(stderr,"FAIL ctx=%lld nq=%lld mode=%d mixed=%d q=%lld id=%d ref=%d dyn=%d\n",(long long)ctx,(long long)nq,mode,int(mixed),(long long)q,i,a[q*cap+i],b[q*cap+i]);std::exit(1);
++                }
++            }
++            if(!k::qsa_topk_dynamic_set(false)){std::fputs("mode set failed\n",stderr);std::exit(2);}
++            ck(cudaMemsetAsync(db,0x55,b.size()*sizeof(int32_t),stream));
++            ck(cudaGraphLaunch(dyn.exec,stream));ck(cudaStreamSynchronize(stream));
++            ck(cudaMemcpy(b.data(),db,b.size()*sizeof(int32_t),cudaMemcpyDeviceToHost));
++            for(int64_t q=0;q<nq;++q)for(int i=0;i<steps[q*k::kStepCount+k::kStepWidth];++i)
++                if(a[q*cap+i]!=b[q*cap+i]){std::fputs("FAIL mode OFF replay\n",stderr);std::exit(1);}
++            if(!k::qsa_topk_dynamic_set(true)){std::fputs("mode set failed\n",stderr);std::exit(2);}
++            ++cases;std::printf("PARITY ctx=%lld nq=%lld mode=%d mixed=%d bitwise\n",(long long)ctx,(long long)nq,mode,int(mixed));
++        };
++        for(int64_t ctx:{1111,8192,32768,65536,131072,135164,135168,135172,250022,262144})for(int mode=0;mode<3;++mode)check(ctx,mode,false);
++        if(nq>1)for(int mode=0;mode<3;++mode)check(250022,mode,true);
++        if(nq!=1 && nq!=8)continue;
++        cudaEvent_t e0{},e1{};ck(cudaEventCreate(&e0));ck(cudaEventCreate(&e1));
++        auto time=[&](Graph& g){
++            ck(cudaEventRecord(e0,stream));for(int i=0;i<50;++i)ck(cudaGraphLaunch(g.exec,stream));
++            ck(cudaEventRecord(e1,stream));ck(cudaEventSynchronize(e1));float ms{};ck(cudaEventElapsedTime(&ms,e0,e1));return double(ms)*1000/50;
++        };
++        for(int64_t ctx:{20000,65536,131072,250022}){
++            fill(ctx,nq,0,false);for(int i=0;i<10;++i){ck(cudaGraphLaunch(ref.exec,stream));ck(cudaGraphLaunch(dyn.exec,stream));}ck(cudaStreamSynchronize(stream));
++            for(int rep=0;rep<3;++rep){double a1=time(ref),d=time(dyn),a2=time(ref);
++                std::printf("TIMING ctx=%lld nq=%lld rep=%d ref1_us=%.3f dynamic_us=%.3f ref2_us=%.3f\n",(long long)ctx,(long long)nq,rep,a1,d,a2);
++            }
++        }
++        ck(cudaEventDestroy(e0));ck(cudaEventDestroy(e1));
++    }
++    ck(cudaFree(ds));ck(cudaFree(dt));ck(cudaFree(da));ck(cudaFree(db));ck(cudaStreamDestroy(stream));
++    std::printf("PASS %d captured-replay cases, selected IDs bitwise; capacity262144 including mixed boundaries\n",cases);
++    return 0;
++}
+--- a/tools/mtp_fetch.py
++++ b/tools/mtp_fetch.py
+@@ -31,8 +31,10 @@
+ # repository no longer has it, the current files are read instead, with a message (resolve_repo).
+ PINNED_REVISION = "de4b8e4d43b917e7706784d8bb445c9af86a3540"
+ REVISION = os.environ.get("STRATA_MTP_REVISION") or PINNED_REVISION
+-REPO = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/%s/" % REVISION
+-PINNED = "https://huggingface.co/Qwen/Qwen3.8-Flash-Next/resolve/%s/" % PINNED_REVISION   # SHA256's revision
++# #495: HF_ENDPOINT (a mirror, e.g. https://hf-mirror.com) serves the same revision; the SHA256 checks below still apply
++HF_ENDPOINT = (os.environ.get("HF_ENDPOINT") or "").strip().rstrip("/") or "https://huggingface.co"
++REPO = HF_ENDPOINT + "/Qwen/Qwen3.8-Flash-Next/resolve/%s/" % REVISION
++PINNED = HF_ENDPOINT + "/Qwen/Qwen3.8-Flash-Next/resolve/%s/" % PINNED_REVISION   # SHA256's revision
+ DTYPE_BYTES = {"BF16": 2, "F16": 2, "F32": 4, "F8_E4M3": 1, "I64": 8, "I32": 4}
+ BAD = 3                                             # `verify`'s exit code: a tensor is missing or corrupt
+ 
+--- a/tools/test_setup_choices.py
++++ b/tools/test_setup_choices.py
+@@ -267,5 +267,68 @@
+         self.assertNotIn("vision_src", meta)
+ 
+ 
++class VramReserve(unittest.TestCase):
++    """#493: --vram-reserve-mib N - VRAM the engine leaves free for other programs - goes into the config only when
++    given (the default config is tools/test_setup_golden.py's, unchanged), at setup and on a start."""
++
++    def setUp(self):
++        from test_setup_golden import PROFILES
++        self.ram, self.found = PROFILES["64GB-1x32GB"]
++
++    def install(self, *extra):
++        from test_setup_golden import install
++        return install(self.ram, self.found, ["--family", "qwen", "--model", "Q2_0", "--no-start", *extra])
++
++    def test_given_at_setup(self):
++        code, out, cfg, _ = self.install("--vram-reserve-mib", "2048")
++        self.assertEqual(code, 0, out)
++        a = cfg["args"]
++        self.assertEqual(a.count("--vram-reserve-mib"), 1)
++        self.assertEqual(a[a.index("--vram-reserve-mib") + 1], "2048")
++        self.assertIn("VRAM kept free for other programs: 2048 MiB", out)
++        code, out, cfg, _ = self.install()
++        self.assertNotIn("--vram-reserve-mib", cfg["args"])          # not given: the engine's default, as before
++
++    def test_with_images_one_value(self):
++        code, out, cfg, _ = self.install("--vision", "cpu", "--vram-reserve-mib", "1500")
++        self.assertEqual(code, 0, out)
++        a = cfg["args"]
++        self.assertEqual(a.count("--vram-reserve-mib"), 1)
++        self.assertEqual(a[a.index("--vram-reserve-mib") + 1], "1500")
++
++    def test_a_negative_value_is_refused(self):
++        with contextlib.redirect_stderr(io.StringIO()) as err:
++            code, out, cfg, _ = self.install("--vram-reserve-mib", "-1")
++        self.assertEqual(code, 2)
++        self.assertIn("--vram-reserve-mib takes a number of MiB", err.getvalue())
++
++    def test_kept_from_an_earlier_install(self):
++        with tempfile.TemporaryDirectory() as d:
++            p = Path(d) / "strata-q2_0.json"
++            p.write_text(json.dumps({"args": ["--max-context", "8192", "--vram-reserve-mib", "2048"]}))
++            self.assertEqual(setup.choices_from_config(p)["vram_reserve_mib"], 2048)
++            p.write_text(json.dumps({"args": ["--vision", "--vram-reserve-mib", "700"], "vision": {"gpu": True}}))
++            self.assertIsNone(setup.choices_from_config(p)["vram_reserve_mib"])   # the images' own reserve
++            p.write_text(json.dumps({"args": ["--max-context", "8192"]}))
++            self.assertIsNone(setup.choices_from_config(p)["vram_reserve_mib"])
++
++    def test_given_on_a_start(self):
++        with tempfile.TemporaryDirectory() as d:
++            exe = Path(d) / "strata.exe"
++            exe.write_bytes(b"")
++            p = Path(d) / "strata-q2_0.json"
++            p.write_text(json.dumps({"exe": str(exe), "args": ["--kv", "int8"], "gpu": 0, "gpus_asked": True}))
++            call = mock.Mock(return_value=0)
++            with mock.patch.object(setup, "gpus", lambda: self.found), \
++                    mock.patch.object(setup, "is_wsl", lambda: False), \
++                    mock.patch.object(setup, "ensure_engine_for", lambda cards, path, cfg, yes: cfg), \
++                    mock.patch.object(setup.subprocess, "call", call):
++                for n in ("2048", "1024"):
++                    _, out = quiet(setup.start, p, None, None, False, True, None, {"vram_reserve_mib": int(n)})
++                    self.assertEqual(json.loads(p.read_text())["args"], ["--kv", "int8", "--vram-reserve-mib", n])
++        self.assertIn("1024 MiB of VRAM kept free", out)
++        self.assertTrue(call.called)
++
++
+ if __name__ == "__main__":
+     unittest.main()
+--- a/tools/test_setup_pins.py
++++ b/tools/test_setup_pins.py
+@@ -98,6 +98,48 @@
+         finally:
+             mtp_fetch.REPO = pinned
+ 
++    def test_hf_endpoint(self):
++        # #495: HF_ENDPOINT (a mirror) serves the same pinned revision; a trailing slash and blanks are dropped
++        repo = "ISTA-DASLab/Qwen3.8-Flash-Next-GSQ-RCO-GGUF"
++        with mock.patch.dict(setup.os.environ, {}, clear=False):
++            setup.os.environ.pop("HF_ENDPOINT", None)
++            self.assertEqual(setup.hf(repo), f"https://huggingface.co/{repo}/resolve/{setup.HF_REVISIONS[repo]}/")
++            for value in ("https://hf-mirror.com", "https://hf-mirror.com/", " https://hf-mirror.com/ "):
++                setup.os.environ["HF_ENDPOINT"] = value
++                url = setup.hf(repo)
++                self.assertEqual(url, f"https://hf-mirror.com/{repo}/resolve/{setup.HF_REVISIONS[repo]}/")
++                self.assertRegex(url, SHA)
++                self.assertEqual(setup.hf_unpinned(url + "x.gguf"), f"https://hf-mirror.com/{repo}/resolve/main/x.gguf")
++            setup.os.environ["HF_ENDPOINT"] = ""
++            self.assertEqual(setup.hf_endpoint(), "https://huggingface.co")
++
++    def test_mtp_fetch_honours_hf_endpoint(self):
++        import importlib
++        import mtp_fetch
++        try:
++            with mock.patch.dict(mtp_fetch.os.environ, {"HF_ENDPOINT": "https://hf-mirror.com/"}):
++                importlib.reload(mtp_fetch)
++                self.assertTrue(mtp_fetch.REPO.startswith("https://hf-mirror.com/Qwen/Qwen3.8-Flash-Next/resolve/"))
++                self.assertRegex(mtp_fetch.REPO, SHA)
++                self.assertTrue(mtp_fetch.pinned())                 # the tensors' SHA-256 checks still apply
++        finally:
++            importlib.reload(mtp_fetch)
++        self.assertTrue(mtp_fetch.REPO.startswith("https://huggingface.co/"))
++
++    def test_step5_names_the_folder(self):
++        # #495: where setup expects the model files, and how to give it files downloaded by hand
++        from test_setup_golden import PROFILES, install
++        ram, found = PROFILES["96GB-1x16GB"]
++        with mock.patch.dict(setup.os.environ, {"HF_ENDPOINT": "https://hf-mirror.com"}):
++            code, out, cfg, _ = install(ram, found, ["--family", "qwen", "--model", "IQ3_XXS", "--no-start"])
++        self.assertEqual(code, 0)
++        text = out.replace("\\", "/")
++        self.assertRegex(text, r"The model files go in .*/models/IQ3_XXS")
++        self.assertIn("put them here with their original names (Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
++                      text)
++        self.assertIn("--gguf-dir", text)
++        self.assertIn("Downloading from https://hf-mirror.com (HF_ENDPOINT)", text)
++
+ 
+ class Engine(unittest.TestCase):
+     def setUp(self):
+--- a/tools/test_setup_unsloth.py
++++ b/tools/test_setup_unsloth.py
+@@ -319,6 +319,117 @@
+         self.assertNotIn("--mmap-experts", cfg["args"])
+         self.assertFalse(any("--experts-bin" in r for r in self.runs))
+ 
++    def test_split_when_the_ram_holds_it(self):
++        # #498: 165 GiB and --gpus 0,1: the split without the RAM budget (the engine refuses the pair)
++        code, out, cfg = self.main(["--context", "8192", "--gpus", "0,1"], n_gpus=2, ram=165.0)
++        self.assertEqual(code, 0, out)
++        self.assertEqual(cfg["gpu"], [0, 1])
++        self.assertEqual(cfg["layer_split"], "auto")
++        for flag in ("--resident-budget-gib", "--mmap-experts", "--resident-experts"):
++            self.assertNotIn(flag, cfg["args"])
++        self.assertIn("as you chose (--gpus): no RAM budget", out)
++        self.assertIn("OS file cache", out)
++        self.assertNotIn("RAM budget: ", out)
++
++    def test_split_refused_without_the_ram(self):
++        need = setup.unsloth_split_need_gb()
++        self.assertAlmostEqual(need, setup.MODELS[M]["download_gb"] + setup.UNSLOTH_RAM_LEFT_GB)
++        code, out, cfg = self.main(["--context", "8192", "--gpus", "0,1"], n_gpus=2, ram=127.8)
++        self.assertEqual(code, 0, out)
++        self.assertIn("runs on one GPU here", out)
++        self.assertNotIn("layer_split", cfg)
++        self.assertEqual(cfg["args"][cfg["args"].index("--resident-budget-gib") + 1], "71")   # all of them
++
++    def test_an_explicit_budget_keeps_one_gpu(self):
++        code, out, cfg = self.main(["--context", "8192", "--gpus", "0,1", "--resident-budget-gib", "60"], n_gpus=2,
++                                   ram=165.0)
++        self.assertEqual(code, 0, out)
++        self.assertIn("--resident-budget-gib has no layer split", out)
++        self.assertNotIn("layer_split", cfg)
++        self.assertEqual(cfg["args"][cfg["args"].index("--resident-budget-gib") + 1], "60")
++
++    def test_yes_alone_keeps_one_gpu(self):
++        code, out, cfg = self.main(["--context", "8192"], n_gpus=2, ram=165.0)
++        self.assertEqual(code, 0, out)
++        self.assertIn("runs on one GPU: using", out)
++        self.assertIn("--gpus 0,1 shares it", out)
++        self.assertNotIn("layer_split", cfg)
++        self.assertIn("--resident-budget-gib", cfg["args"])
++
++
++class LayerSplit(unittest.TestCase):
++    """#498: UD-Q4_K_XL across GPUs - asked at setup (one GPU by default), and a start with --gpus no longer keeps
++    the RAM budget the engine refuses with a split (it exited with code 2)."""
++
++    def setUp(self):
++        sys.path.insert(0, str(ROOT / "tools"))
++        from test_setup_golden import card
++        self.found = [card(i, "NVIDIA GeForce RTX 3090", 24.0, "86") for i in range(2)]
++
++    def test_asked_one_gpu_by_default(self):
++        from test_setup_golden import install
++        argv = ["--family", "unsloth", "--model", M, "--context", "32768", "--no-start"]
++        code, out, cfg, asked = install(165.0, self.found, argv, answers={"which GPUs?": "1", "Which GPUs?": "1"})
++        self.assertEqual(code, 0, out)
++        self.assertTrue(any(f"{M}: which GPUs?" in q and "[1]" in q for q in asked), asked)
++        self.assertEqual(cfg["gpu"], 0)
++        self.assertIn("--resident-budget-gib", cfg["args"])
++        code, out, cfg, asked = install(165.0, self.found, argv, answers={f"{M}: which GPUs?": "2"})
++        self.assertEqual(code, 0, out)
++        self.assertEqual(cfg["gpu"], [0, 1])
++        self.assertEqual(cfg["layer_split"], "auto")
++        self.assertNotIn("--resident-budget-gib", cfg["args"])
++
++    def start(self, ram, gpu=(0, 1), offered=None):
++        from test_setup_risk import run
++        with tempfile.TemporaryDirectory() as d:
++            exe = Path(d) / "strata.exe"
++            exe.write_bytes(b"")
++            p = Path(d) / "strata-unsloth-ud-q4_k_xl.json"
++            before = {"exe": str(exe), "args": ["--pack", "p", "--resident-budget-gib", "40", "--kv", "int8"],
++                      "gpu": 0, "gpus_asked": offered is None}
++            p.write_text(json.dumps(before))
++            call = mock.Mock(return_value=0)
++            with mock.patch.object(setup, "gpus", lambda: self.found), \
++                    mock.patch.object(setup, "ram_gb", lambda: ram), \
++                    mock.patch.object(setup, "engine_runs_on", lambda g: True), \
++                    mock.patch.object(setup, "ensure_engine_for", lambda cards, path, cfg, yes: cfg), \
++                    mock.patch.object(setup, "is_wsl", lambda: False), \
++                    mock.patch.object(setup.subprocess, "call", call):
++                code, out, asked = run(setup.start, p, None, list(gpu) if gpu else None, False, offered is None,
++                                       stdin=offered)
++            return code, out, json.loads(p.read_text()), call.called
++
++    def test_start_with_gpus_drops_the_budget(self):
++        code, out, cfg, started = self.start(165.0)
++        self.assertIsNone(code, out)
++        self.assertTrue(started)
++        self.assertEqual(cfg["gpu"], [0, 1])
++        self.assertEqual(cfg["args"], ["--pack", "p", "--kv", "int8"])
++        self.assertIn("no RAM budget", out)
++
++    def test_start_with_gpus_refused_without_the_ram(self):
++        code, out, cfg, started = self.start(63.7)
++        self.assertEqual(code, 1)
++        self.assertFalse(started)
++        self.assertIn("cannot share its RAM budget across GPUs", out)
++        self.assertIn("--gpu N", out)
++        self.assertEqual(cfg["gpu"], 0)                                # nothing saved
++        self.assertIn("--resident-budget-gib", cfg["args"])
++
++    def test_offered_at_a_start(self):
++        code, out, cfg, _ = self.start(165.0, gpu=None, offered="")    # Enter: one GPU (the default here)
++        self.assertIsNone(code, out)
++        self.assertEqual(cfg["gpu"], 0)
++        self.assertIn("--resident-budget-gib", cfg["args"])
++        self.assertIn("about twice as fast in #498", out)
++        code, out, cfg, _ = self.start(165.0, gpu=None, offered="y")
++        self.assertEqual(cfg["gpu"], [0, 1])
++        self.assertNotIn("--resident-budget-gib", cfg["args"])
++        code, out, cfg, _ = self.start(63.7, gpu=None, offered="y")    # not offered: the RAM does not hold it
++        self.assertEqual(cfg["gpu"], 0)
++        self.assertNotIn("Use both", out)
++
+ 
+ if __name__ == "__main__":
+     unittest.main()

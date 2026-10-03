@@ -1,0 +1,570 @@
+{
+  "plan": {
+    "protocol": "prior completed installed036 A1/A2 teacher references / aligned037 PR547 dynamic OFF B; exact same fixed cache laboratory args and fixtures",
+    "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-memory547\\strata.exe",
+    "exe_sha256": "52bbda2a6c237773ccd2edc4d4e28a4e6adb583a8b01e98bf5dc7e3b9460e404",
+    "reference_exe": "D:\\ds4_work\\strata\\Strata\\build-0136-daily\\strata.exe",
+    "reference_sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a",
+    "args": [
+      "--pack",
+      "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+      "--native",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+      "--ple-gguf",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+      "--expert-profile",
+      "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+      "--spec-min-p",
+      "0.5",
+      "--mtp",
+      "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+      "--max-context",
+      "262144",
+      "--kv",
+      "int8",
+      "--kv-resident",
+      "32768",
+      "--vram-reserve-mib",
+      "1393",
+      "--expert-cache",
+      "4600",
+      "--prefill",
+      "2048",
+      "--prompt-cache",
+      "6",
+      "--conversation-cache-mib",
+      "0",
+      "--adapt-swaps",
+      "0",
+      "--suffix-draft",
+      "0",
+      "--mtp-max-t",
+      "4",
+      "--pcie-frac",
+      "0.28",
+      "--spec",
+      "4"
+    ],
+    "thinking": true,
+    "reasoning_effort": "low",
+    "temperature": 0,
+    "kv_capacity": 262144,
+    "kv_resident": 32768,
+    "kv": "int8",
+    "env_common": {
+      "STRATA_IQ_MT_MIN": "1",
+      "STRATA_PARALLEL_INTERMEDIATE_QUANT": "0",
+      "STRATA_DECODE_TIMING": "1",
+      "STRATA_WATCHDOG_S": "240"
+    },
+    "oracle_policy": "Complete stopped answer, JSON parsed exactly after optional single json code fence; strict unfenced result recorded separately.",
+    "teacher_rows_per_depth": 64,
+    "depths": [
+      20000,
+      32768,
+      65536,
+      131072
+    ],
+    "artificial_load": false,
+    "daily_changed": false,
+    "limits": "Fixed cache laboratory quality gate; teacher rows probe the target, not full draft-logit equality or general model quality."
+  },
+  "status": "completed",
+  "arms": {
+    "B": {
+      "ring": "0",
+      "records": [
+        {
+          "name": "binary_units",
+          "content": "{\"a_gib\":18,\"b_gib\":15.75}",
+          "reasoning": "We need answer user's request: Return only JSON with keys a_gib and b_gib. Compute 48 * 384 MiB in GiB, and 48 * 1.75 * 192 MiB in GiB. 1 GiB = 1024 MiB.\n\nNeed compute:\na = 48 * 384 MiB = 18432 MiB. /1024 = 18 GiB exactly? 1024*18=18432 yes.\nb = 48 * 1.75 * 192 MiB. 48*1.75=84. 84*192 = 16128 MiB. /1024 = 15.75 GiB? 1024*15=15360, remainder 768, 768/1024=0.75. yes 15.75.\nReturn only JSON: {\"a_gib\":18,\"b_gib\":15.75} maybe numbers. Ensure only JSON no markdown.\n",
+          "expected": {
+            "a_gib": 18,
+            "b_gib": 15.75
+          },
+          "pass": true,
+          "strict_unfenced_pass": true,
+          "generated": 287,
+          "prompt_tokens": 102,
+          "prompt_ms": 1296.4,
+          "decode_ms": 6197.2,
+          "finish": "stop",
+          "drafts_accepted": 210,
+          "drafts_offered": 222,
+          "reused": 0,
+          "hits": 61475,
+          "lookups": 127395,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 102
+        },
+        {
+          "name": "stable_unique",
+          "content": "{\"result\": [7, 2, 1, 9]}",
+          "reasoning": "The user wants me to apply a \"stable_unique\" operation to the list [7,2,7,1,2,9]. This means keeping the first occurrence of each value while maintaining the input order.\n\nLet me trace through:\n- 7: first occurrence → keep\n- 2: first occurrence → keep\n- 7: already seen → skip\n- 1: first occurrence → keep\n- 2: already seen → skip\n- 9: first occurrence → keep\n\nResult: [7, 2, 1, 9]\n",
+          "expected": {
+            "result": [
+              7,
+              2,
+              1,
+              9
+            ]
+          },
+          "pass": true,
+          "strict_unfenced_pass": true,
+          "generated": 137,
+          "prompt_tokens": 75,
+          "prompt_ms": 1030.7,
+          "decode_ms": 2855.5,
+          "finish": "stop",
+          "drafts_accepted": 98,
+          "drafts_offered": 112,
+          "reused": 0,
+          "hits": 37051,
+          "lookups": 65739,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 75
+        },
+        {
+          "name": "ledger",
+          "content": "{\"balance\": 1050}",
+          "reasoning": "Let me calculate the final balance:\n- Initial balance: 1250\n- Add 375: 1250 + 375 = 1625\n- Subtract 480: 1625 - 480 = 1145\n- Subtract 95: 1145 - 95 = 1050\n\nThe final balance is 1050.\n",
+          "expected": {
+            "balance": 1050
+          },
+          "pass": true,
+          "strict_unfenced_pass": true,
+          "generated": 111,
+          "prompt_tokens": 81,
+          "prompt_ms": 1024.5,
+          "decode_ms": 2628.6,
+          "finish": "stop",
+          "drafts_accepted": 81,
+          "drafts_offered": 90,
+          "reused": 0,
+          "hits": 24993,
+          "lookups": 51167,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 81
+        },
+        {
+          "name": "dependency_order",
+          "content": "{\"order\": [\"A\", \"B\", \"C\", \"D\"]}",
+          "reasoning": "The user wants me to return a JSON with a key \"order\" that contains the only valid order of tasks A, B, C, D given the dependencies:\n- B requires A (A must come before B)\n- C requires B (B must come before C)\n- D requires C (C must come before D)\n\nSo the only valid order is: A, B, C, D.\n",
+          "expected": {
+            "order": [
+              "A",
+              "B",
+              "C",
+              "D"
+            ]
+          },
+          "pass": true,
+          "strict_unfenced_pass": true,
+          "generated": 104,
+          "prompt_tokens": 74,
+          "prompt_ms": 995.4,
+          "decode_ms": 2363.0,
+          "finish": "stop",
+          "drafts_accepted": 74,
+          "drafts_offered": 94,
+          "reused": 0,
+          "hits": 30876,
+          "lookups": 55363,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 74
+        },
+        {
+          "name": "read_record",
+          "content": "{\"code\": \"S482\"}",
+          "reasoning": "The user is asking for the code of \"south\" from the given records. The records are: north=N731, south=S482, west=W916. The code of south is S482. They want the response as JSON with key \"code\".\n",
+          "expected": {
+            "code": "S482"
+          },
+          "pass": true,
+          "strict_unfenced_pass": true,
+          "generated": 72,
+          "prompt_tokens": 74,
+          "prompt_ms": 1071.3,
+          "decode_ms": 1621.5,
+          "finish": "stop",
+          "drafts_accepted": 49,
+          "drafts_offered": 60,
+          "reused": 0,
+          "hits": 23111,
+          "lookups": 36658,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 74
+        },
+        {
+          "name": "weighted_sum",
+          "content": "{\"total\": 105}",
+          "reasoning": "The user wants me to compute a total and return only JSON with the key \"total\".\n\nThree items at 17 each: 3 × 17 = 51\nTwo items at 23 each: 2 × 23 = 46\nShipping: 8\n\nTotal: 51 + 46 + 8 = 105\n",
+          "expected": {
+            "total": 105
+          },
+          "pass": true,
+          "strict_unfenced_pass": true,
+          "generated": 91,
+          "prompt_tokens": 73,
+          "prompt_ms": 1009.9,
+          "decode_ms": 2383.6,
+          "finish": "stop",
+          "drafts_accepted": 66,
+          "drafts_offered": 77,
+          "reused": 0,
+          "hits": 23724,
+          "lookups": 45072,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 73
+        },
+        {
+          "name": "records_20000",
+          "content": "```json\n{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}\n```",
+          "reasoning": "The user wants me to extract the AUTH_RECORD lines from the archive and return them as JSON.\n\nLooking through the archive, I can find three AUTH_RECORD lines:\n\n1. AUTH_RECORD north=ARCO-731\n2. AUTH_RECORD south=LUNA-482\n3. AUTH_RECORD west=PORTO-916\n\nThese are the authoritative codes for each direction.\n",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "pass": true,
+          "strict_unfenced_pass": false,
+          "generated": 132,
+          "prompt_tokens": 20000,
+          "prompt_ms": 32095.9,
+          "decode_ms": 3138.4,
+          "finish": "stop",
+          "drafts_accepted": 91,
+          "drafts_offered": 115,
+          "reused": 0,
+          "hits": 43406,
+          "lookups": 68971,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 20000
+        },
+        {
+          "name": "records_32768",
+          "content": "```json\n{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}\n```",
+          "reasoning": "The user wants me to extract the AUTH_RECORD lines from the archive and return them as JSON.\n\nLooking through the archive, I can find three AUTH_RECORD lines:\n\n1. AUTH_RECORD north=ARCO-731\n2. AUTH_RECORD south=LUNA-482\n3. AUTH_RECORD west=PORTO-916\n\nThese are the authoritative records as stated in the instructions.\n",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "pass": true,
+          "strict_unfenced_pass": false,
+          "generated": 134,
+          "prompt_tokens": 32768,
+          "prompt_ms": 52218.9,
+          "decode_ms": 2955.0,
+          "finish": "stop",
+          "drafts_accepted": 93,
+          "drafts_offered": 109,
+          "reused": 0,
+          "hits": 42258,
+          "lookups": 66524,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 32768
+        },
+        {
+          "name": "records_65536",
+          "content": "```json\n{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}\n```",
+          "reasoning": "The user wants me to extract the AUTH_RECORD lines from the archive and return them as JSON.\n\nLooking through the archive, I can find three AUTH_RECORD lines:\n\n1. AUTH_RECORD north=ARCO-731\n2. AUTH_RECORD south=LUNA-482\n3. AUTH_RECORD west=PORTO-916\n\nThese are the authoritative codes for each key.\n",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "pass": true,
+          "strict_unfenced_pass": false,
+          "generated": 132,
+          "prompt_tokens": 65536,
+          "prompt_ms": 107035.9,
+          "decode_ms": 3213.7,
+          "finish": "stop",
+          "drafts_accepted": 90,
+          "drafts_offered": 118,
+          "reused": 0,
+          "hits": 44803,
+          "lookups": 70722,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 65536
+        },
+        {
+          "name": "records_131072",
+          "content": "```json\n{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}\n```",
+          "reasoning": "The user wants me to extract the AUTH_RECORD lines from the archive and return them as JSON. Let me find the AUTH_RECORD lines:\n\n1. AUTH_RECORD north=ARCO-731\n2. AUTH_RECORD south=LUNA-482\n3. AUTH_RECORD west=PORTO-916\n\nThese are the authoritative records as stated in the instructions.\n",
+          "expected": {
+            "north": "ARCO-731",
+            "south": "LUNA-482",
+            "west": "PORTO-916"
+          },
+          "pass": true,
+          "strict_unfenced_pass": false,
+          "generated": 128,
+          "prompt_tokens": 131072,
+          "prompt_ms": 231441.8,
+          "decode_ms": 3140.5,
+          "finish": "stop",
+          "drafts_accepted": 89,
+          "drafts_offered": 113,
+          "reused": 0,
+          "hits": 42724,
+          "lookups": 67281,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 131072
+        }
+      ],
+      "teacher": {
+        "20000": {
+          "rows": 64,
+          "sha256": "6e6fc41af94127c04b99e01238fd1529872b25178840495b41714720cfcbe142",
+          "path": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\memory547_quality\\B\\teacher_20000.bin"
+        },
+        "32768": {
+          "rows": 64,
+          "sha256": "06cfa827aa0c923bf0ffb502b4bc62695d2026346ce474d84f8c65f5b7b222de",
+          "path": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\memory547_quality\\B\\teacher_32768.bin"
+        },
+        "65536": {
+          "rows": 64,
+          "sha256": "64e9cc89087fb421cae4d63d9eaf0a2f2d0fde38004bfff7c51dc50f4fefa47a",
+          "path": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\memory547_quality\\B\\teacher_65536.bin"
+        },
+        "131072": {
+          "rows": 64,
+          "sha256": "c677725e6c5fbe310a9e848f35888a71aacc9fc796b0371221d72f6cf1641391",
+          "path": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\memory547_quality\\B\\teacher_131072.bin"
+        }
+      },
+      "info": {
+        "version": "0.1.37",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6167,
+        "expert_cache_mib": 10218,
+        "expert_slots_primary": 6167,
+        "expert_cache_primary_mib": 10218,
+        "spec": 4,
+        "mtp_max": 4,
+        "lookup": 0,
+        "vram_free_mib": 903,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.37"
+      }
+    }
+  },
+  "report": {
+    "teacher": {
+      "20000": {
+        "candidate": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.343192742370793,
+          "ppl_candidate": 1.343192742370793,
+          "nll_delta_mean": 0.0
+        },
+        "reference_repeat": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.343192742370793,
+          "ppl_candidate": 1.343192742370793,
+          "nll_delta_mean": 0.0
+        },
+        "bitwise_candidate": true,
+        "bitwise_repeat": true,
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      },
+      "32768": {
+        "candidate": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.3567082909124724,
+          "ppl_candidate": 1.3567082909124724,
+          "nll_delta_mean": 0.0
+        },
+        "reference_repeat": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.3567082909124724,
+          "ppl_candidate": 1.3567082909124724,
+          "nll_delta_mean": 0.0
+        },
+        "bitwise_candidate": true,
+        "bitwise_repeat": true,
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      },
+      "65536": {
+        "candidate": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.4135502065770864,
+          "ppl_candidate": 1.4135502065770864,
+          "nll_delta_mean": 0.0
+        },
+        "reference_repeat": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.4135502065770864,
+          "ppl_candidate": 1.4135502065770864,
+          "nll_delta_mean": 0.0
+        },
+        "bitwise_candidate": true,
+        "bitwise_repeat": true,
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      },
+      "131072": {
+        "candidate": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.3592205329473357,
+          "ppl_candidate": 1.3592205329473357,
+          "nll_delta_mean": 0.0
+        },
+        "reference_repeat": {
+          "positions": 64,
+          "top1_agreement_pct": 100.0,
+          "kl_mean": 0.0,
+          "kl_median": 0.0,
+          "kl_p99": 0.0,
+          "kl_max": 0.0,
+          "ppl_reference": 1.3592205329473357,
+          "ppl_candidate": 1.3592205329473357,
+          "nll_delta_mean": 0.0
+        },
+        "bitwise_candidate": true,
+        "bitwise_repeat": true,
+        "gate": {
+          "pass": true,
+          "checks": {
+            "nll": true,
+            "median_kl": true,
+            "p99_kl": true,
+            "top1": true
+          },
+          "limits": {
+            "nll_upper_nats": 0.01,
+            "median_kl": 0.001,
+            "p99_kl": 0.01,
+            "top1_min_pct": 99.0
+          },
+          "candidate_delta_nats": 0.0,
+          "candidate_block_half_interval": 0.0,
+          "reference_repeat_noise_bound": 0.0,
+          "uncertainty_note": "Approximate paired 32-token block interval; a limited regression corpus"
+        }
+      }
+    },
+    "oracle_pass": true,
+    "pass": true
+  }
+}

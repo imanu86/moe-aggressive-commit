@@ -1,0 +1,385 @@
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -1,6 +1,6 @@
+ # Strata Engine - top-level build (P1.S1).
+ #
+-# Targets (phase-1 Ă‚Â§P1.S1): `strata_artifact` (no CUDA dependency), `tests`.  `strata_plan` and the C++
++# Targets (phase-1 Ã„â€šÃ¢â‚¬Å¡Ãƒâ€šÃ‚Â§P1.S1): `strata_artifact` (no CUDA dependency), `tests`.  `strata_plan` and the C++
+ # `strata-pack` are added when their sources exist - a target with no sources would make the build graph
+ # claim something the tree does not have, which is worse than an absent target.
+ #
+@@ -350,7 +350,7 @@
+     src/core/conversation_snapshot.cpp src/core/conversation_state.cpp src/core/conversation_memory.cpp)
+   target_include_directories(strata_engine PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/include)
+   target_link_libraries(strata_engine PUBLIC strata_core strata_kernels strata_kernels_cpu ${_strata_gpu_runtime_target})
+-  # fork «Strata adattivo»: the elastic expert cache maps its arena with the driver's virtual memory API (cuMem*)
++  # fork Ã‚Â«Strata adattivoÃ‚Â»: the elastic expert cache maps its arena with the driver's virtual memory API (cuMem*)
+   if(TARGET CUDA::cuda_driver)
+     target_link_libraries(strata_engine PUBLIC CUDA::cuda_driver)
+   endif()
+@@ -1013,7 +1013,7 @@
+       add_test(NAME native_expert_parity_refuses_q6_K COMMAND native_expert_parity --synthetic q6_K/q8_0)
+       set_tests_properties(native_expert_parity_refuses_q6_K PROPERTIES WILL_FAIL TRUE)
+     endif()
+-    # fork «Strata adattivo»: the grouped expert kernel's speed on real rows (microseconds per call, GB/s)
++    # fork Ã‚Â«Strata adattivoÃ‚Â»: the grouped expert kernel's speed on real rows (microseconds per call, GB/s)
+     add_executable(native_expert_bench src/kernels/native_expert_bench.cpp)
+     target_include_directories(native_expert_bench PRIVATE ${_strata_gpu_include_directories})
+     target_link_libraries(native_expert_bench PRIVATE strata_kernels strata_kernels_cpu strata_artifact ${_strata_gpu_runtime_target})
+@@ -1079,3 +1079,13 @@
+     add_subdirectory(tests)
+   endif()
+ endif()
++
++if(STRATA_ENABLE_CUDA AND (STRATA_BUILD_TESTS OR STRATA_PARITY_PROMPT_ATTN))
++  add_executable(qsa_dynamic_bench tests/sm75/qsa_dynamic.cpp)
++  target_include_directories(qsa_dynamic_bench PRIVATE ${CMAKE_CUDA_TOOLKIT_INCLUDE_DIRECTORIES})
++  target_link_libraries(qsa_dynamic_bench PRIVATE strata_kernels CUDA::cudart)
++  if(STRATA_BUILD_TESTS)
++    add_test(NAME qsa_dynamic_parity COMMAND qsa_dynamic_bench)
++    set_tests_properties(qsa_dynamic_parity PROPERTIES ENVIRONMENT "STRATA_TOPK_DYNAMIC=1" SKIP_RETURN_CODE 77)
++  endif()
++endif()
+--- a/include/strata/kernels/qsa_select.hpp
++++ b/include/strata/kernels/qsa_select.hpp
+@@ -49,6 +49,9 @@
+ /// build below sm_90, or a capacity whose keys do not fit one cluster's shared memory. Capturable.
+ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                             const QsaShapes& s, int32_t* ids, void* stream);
++/// Experimental per-device captured-mode control. Synchronizes before changing the device flag.
++/// Effective only with STRATA_TOPK_DYNAMIC=1 on sm75; other architectures are a no-op.
++bool qsa_topk_dynamic_set(bool enabled);
+ /// The original kernel (keys read from memory on every radix pass), for tests: the same ids.
+ void qsa_block_topk_ref(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                         const QsaShapes& s, int32_t* ids, void* stream);
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -484,7 +484,7 @@
+         # setup's calibration (tools/calibrate.py): engine settings for this request only, measured without a restart
+         tune = sampling.get("strata_tune")
+         if isinstance(tune, dict):
+-            for k in ("pcie_frac", "spec_min_p"):
++            for k in ("pcie_frac", "spec_min_p", "topk_dynamic"):
+                 v = tune.get(k)
+                 if isinstance(v, (int, float)) and not isinstance(v, bool) and 0.0 <= float(v) <= 1.0:
+                     keys += f" {k}={float(v)!r}"
+@@ -935,7 +935,7 @@
+             return self.inc.decode(self.tok.token_bytes(t))
+         self.ids.append(t)
+         text = self.tok.decode(self.ids)
+-        if text.endswith("�"):
++        if text.endswith("ï¿½"):
+             return ""
+         delta, self.sent = text[self.sent:], len(text)
+         return delta
+--- a/src/kernels/cuda/qsa_select.cu
++++ b/src/kernels/cuda/qsa_select.cu
+@@ -17,6 +17,20 @@
+ constexpr int IDX_DIM = 128, IDX_HEADS = 4, R = 4;
+ constexpr int SCORE_WARPS = 8;
+ constexpr int TOPK_T = 256;
++// Experimental decode interval. Both captured kernels test the current device-side steps,
++// so the same graph remains valid when a conversation enters or leaves this interval.
++constexpr int DYN_MIN_BLOCKS = 8192, DYN_MAX_BLOCKS = 33792;
++#if !defined(__HIPCC__)
++__constant__ int dynamic_topk_mode = 1;
++#endif
++__device__ __forceinline__ bool dynamic_topk_on() {
++#if !defined(__HIPCC__)
++    return dynamic_topk_mode != 0;
++#else
++    return false;
++#endif
++}
++
+ 
+ __device__ __forceinline__ uint32_t order_key(float s) {
+     const float v = s + 0.0f;
+@@ -54,6 +68,7 @@
+     }
+ }
+ 
++template<bool DYNAMIC = false>
+ __global__ void __launch_bounds__(TOPK_T) block_topk_kernel(const float* __restrict__ scores,
+                                                             const int32_t* __restrict__ steps, int64_t max_blocks,
+                                                             int64_t cap, int32_t* __restrict__ ids) {
+@@ -63,6 +78,10 @@
+     const int64_t qi = blockIdx.x;
+     const int32_t* st = steps + qi * kStepCount;
+     const int64_t n_kv = st[kStepNKv], n_bid = st[kStepNBid], width = st[kStepWidth];
++    if constexpr (DYNAMIC) {
++        const int64_t live = n_bid + 1;
++        if (dynamic_topk_on() && live > DYN_MIN_BLOCKS && live <= DYN_MAX_BLOCKS) return;
++    }
+     int32_t* out = ids + qi * cap;
+     const int t = threadIdx.x;
+     if (n_kv <= width) {                               // everything is selected: the identity, ascending
+@@ -503,7 +522,7 @@
+     return r;
+ }
+ 
+-template <int PER>
++template <int PER, bool DYNAMIC = false>
+ __global__ void __launch_bounds__(TK_T) block_topk_reg_kernel(const float* __restrict__ scores,
+                                                               const int32_t* __restrict__ steps, int64_t max_blocks,
+                                                               int64_t cap, int32_t* __restrict__ ids) {
+@@ -513,6 +532,11 @@
+     const int64_t qi = blockIdx.x;
+     const int32_t* st = steps + qi * kStepCount;
+     const int64_t n_kv = st[kStepNKv], n_bid = st[kStepNBid], width = st[kStepWidth];
++    if constexpr (DYNAMIC) {
++        static_assert(TK_T * PER == DYN_MAX_BLOCKS, "Keep the guarded register capacity exact");
++        const int64_t live = n_bid + 1;
++        if (!dynamic_topk_on() || live <= DYN_MIN_BLOCKS || live > DYN_MAX_BLOCKS) return;
++    }
+     int32_t* out = ids + qi * cap;
+     const int t = threadIdx.x, lane = t & 31, warp = t >> 5;
+     if (n_kv <= width) {
+@@ -963,7 +987,7 @@
+         std::fprintf(stderr, "qsa_block_topk: unsupported geometry or cap\n");
+         std::exit(1);
+     }
+-    block_topk_kernel<<<(unsigned) nq, TOPK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
++    block_topk_kernel<false><<<(unsigned) nq, TOPK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
+     const cudaError_t e = cudaGetLastError();
+     if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk: %s\n", cudaGetErrorString(e)); std::exit(1); }
+ }
+@@ -985,6 +1009,19 @@
+     return turing;
+ }
+ #endif
++
++bool qsa_topk_dynamic_set(bool enabled) {
++#if !defined(__HIPCC__)
++    if (!topk_active_turing_device()) return true;  // other architectures keep their existing dispatch
++    // A mode change must not occur between the two guarded nodes of a running graph.
++    if (cudaDeviceSynchronize() != cudaSuccess) return false;
++    const int value = enabled ? 1 : 0;
++    return cudaMemcpyToSymbol(dynamic_topk_mode, &value, sizeof(value)) == cudaSuccess;
++#else
++    (void) enabled;
++    return true;
++#endif
++}
+ 
+ bool qsa_block_topk_cluster(const float* scores, const int32_t* steps, int64_t nq, int64_t max_blocks, int64_t cap,
+                             const QsaShapes& s, int32_t* ids, void* stream) {
+@@ -1089,6 +1126,26 @@
+ #else
+     const bool too_small = false;
+ #endif
++#if !defined(__HIPCC__)
++    static const bool dynamic_decode = [] {
++        const char* v = std::getenv("STRATA_TOPK_DYNAMIC");
++        return v && std::atoi(v) == 1;
++    }();
++    if (dynamic_decode && !old && !capacity_guard && active_blocks <= 0 &&
++        max_blocks > DYN_MAX_BLOCKS && topk_active_turing_device()) {
++        if (s.idx_block != R || cap < qsa_selection_width(kTopkMaxCells, s)) {
++            std::fprintf(stderr, "qsa_block_topk dynamic: unsupported geometry or cap\n");
++            std::exit(1);
++        }
++        // Guards are block-uniform and precede every barrier. Exactly one kernel writes each query's IDs.
++        // Keep the allocated score-row stride. No host context estimate or graph invalidation is needed.
++        block_topk_kernel<true><<<(unsigned) nq, TOPK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
++        block_topk_reg_kernel<TK_PER, true><<<(unsigned) nq, TK_T, 0, (cudaStream_t) stream>>>(scores, steps, max_blocks, cap, ids);
++        const cudaError_t e = cudaGetLastError();
++        if (e != cudaSuccess) { std::fprintf(stderr, "qsa_block_topk dynamic: %s\n", cudaGetErrorString(e)); std::exit(1); }
++        return;
++    }
++#endif
+     if (old || too_small || reach > fit) {
+         qsa_block_topk_ref(scores, steps, nq, max_blocks, cap, s, ids, stream);
+         return;
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -46,6 +46,7 @@
+ #include "strata/kernels/mrope.hpp"
+ #include "strata/kernels/kv_q4.hpp"
+ #include "strata/kernels/qsa.hpp"
++#include "strata/kernels/qsa_select.hpp"
+ #include "strata/core/native_head.hpp"
+ #include "strata/core/verify.hpp"
+ #include "strata/core/mtp.hpp"
+@@ -352,7 +353,7 @@
+     /// Plan v0.3 P4: `--expert-cache auto` sizes the VRAM tier from what is free after the weights, the session
+     /// and the KV state, minus this reserve for the graphs, the hit scratch and the head.
+     int vram_reserve_mib = 700;
+-    /// Fork Â«Strata adattivoÂ»: an ELASTIC expert cache (`--serve`, one GPU).  The startup sizes the cache with
++    /// Fork Ã‚Â«Strata adattivoÃ‚Â»: an ELASTIC expert cache (`--serve`, one GPU).  The startup sizes the cache with
+     /// `--vram-reserve-mib` as before, then the cache follows the free VRAM while it runs: it keeps
+     /// `elastic_reserve_mib` free, grows with the most-used missing experts (then the profile's order) once the
+     /// VRAM has stayed free for `elastic_stable_ms`, and shrinks at once when it has not - the tail's hottest
+@@ -719,7 +720,7 @@
+             static const float one[64] = {};   // k <= 64 in a verify window; zeros read as unit weights
+             std::fwrite(one, sizeof(float), (size_t) k, t->routing);
+         }
+-        // fork Â«Strata adattivoÂ»: flushed per layer - a served engine usually ends by being killed
++        // fork Ã‚Â«Strata adattivoÃ‚Â»: flushed per layer - a served engine usually ends by being killed
+         std::fflush(t->routing);
+     }
+ }
+@@ -3882,7 +3883,7 @@
+                                     : ((tokens + 255) / 256) * 256;
+         return std::min(max_chunk, rounded);
+     };
+-    // fork Â«Strata adattivoÂ»: the TWO-ZONE cache.  Slots [0, el_core) are the core - filled from the profile at startup,
++    // fork Ã‚Â«Strata adattivoÃ‚Â»: the TWO-ZONE cache.  Slots [0, el_core) are the core - filled from the profile at startup,
+     // never picked by the adaptive swaps to leave, never shrunk, never lent; the tail after it is the elastic zone.
+     int64_t el_core = 0;
+     if (o.elastic && o.serve && xcache.elastic() && !multi_gpu && xcache.slot_offsets() != nullptr) {
+@@ -4754,7 +4755,7 @@
+             for (float& v : drive.d.usage) v *= 0.7f;
+             return true;
+         };
+-        // ---- fork Â«Strata adattivoÂ»: THE ELASTIC EXPERT CACHE.  The arena is a reserved address range backed by
++        // ---- fork Ã‚Â«Strata adattivoÃ‚Â»: THE ELASTIC EXPERT CACHE.  The arena is a reserved address range backed by
+         // chunks (ExpertCache::open_sized_elastic), so its slots can be added or dropped at the TAIL without any
+         // pointer moving.  `host_res` stays the one truth about which expert sits where (the adaptive tier writes it
+         // too); the prompt path borrows the tail, so after the tail moved its buffers are laid out again (and a cache
+@@ -5197,6 +5198,7 @@
+             // tuning keys (setup's calibration measures settings without restarting the engine): the PCIe share of
+             // the missed experts and the draft-probability floor, for this request only
+             double req_pcie_frac = o.pcie_frac, req_spec_min_p = o.spec_min_p;
++            bool req_topk_dynamic = true;
+             if (endp != nullptr) {   // GENI takes the same keys (#75: image requests were always greedy); its
+                                      // embedding file path is the first token without an =
+                 for (;;) {
+@@ -5221,6 +5223,7 @@
+                     else if (key == "seed") req_seed = std::strtoull(tok.c_str() + eq + 1, nullptr, 10);
+                     else if (key == "pcie_frac") req_pcie_frac = std::clamp((double) fv, 0.0, 1.0);
+                     else if (key == "spec_min_p") req_spec_min_p = std::clamp((double) fv, 0.0, 1.0);
++                    else if (key == "topk_dynamic") req_topk_dynamic = fv >= 0.5f;
+                     // unknown keys are skipped: the ids start at the first token without '='
+                 }
+             }
+@@ -5237,6 +5240,17 @@
+                 continue;
+             }
+             const int64_t n = (int64_t) ids.size();
++            // Calibration only: keep the existing graphs and alternate their guarded top-k path.
++            const char* dyn_env = std::getenv("STRATA_TOPK_DYNAMIC");
++            if (!multi_gpu && dyn_env && std::atoi(dyn_env) == 1) {
++                if (!strata::kernels::qsa_topk_dynamic_set(req_topk_dynamic)) {
++                    std::printf("ERR dynamic top-k mode change failed\n");
++                    continue;
++                }
++                if (std::getenv("STRATA_TOPK_DYNAMIC_TRACE"))
++                    std::fprintf(stderr, "strata topk dynamic request: %d\n", (int) req_topk_dynamic);
++            }
++
+             req_imgs.clear();
+             if (geni && !o.vision) { std::printf("ERR this engine was started without --vision\n"); continue; }
+             if (geni || !mrope_identity) {
+@@ -5504,7 +5518,7 @@
+                 part_at.clear();
+                 std::fill(part_next.begin(), part_next.end(), pp_next_check);
+             }
+-            // fork Â«Strata adattivoÂ»: chunks cut on the same grid, so every checkpoint lands exactly on
++            // fork Ã‚Â«Strata adattivoÃ‚Â»: chunks cut on the same grid, so every checkpoint lands exactly on
+             // resume + k * prompt_cache_every (a layer split keeps the plain chunking: its stages hand chunks on)
+             sp.align_every = (reread_to > 0 || multi_gpu || o.prompt_cache_every <= 0) ? 0 : o.prompt_cache_every;
+             sp.align_origin = resume;
+--- /dev/null
++++ b/tests/sm75/qsa_dynamic.cpp
+@@ -0,0 +1,100 @@
++// Replay unchanged graphs across the live-register boundary and compare every selected ID.
++#include "strata/kernels/qsa.hpp"
++#include "strata/kernels/qsa_select.hpp"
++#include <cuda_runtime.h>
++#include <algorithm>
++#include <cstdio>
++#include <cstdlib>
++#include <random>
++#include <vector>
++namespace k = strata::kernels;
++void ck(cudaError_t e) { if(e!=cudaSuccess){std::fprintf(stderr,"CUDA: %s\n",cudaGetErrorString(e));std::exit(2);} }
++struct Graph {
++    cudaGraph_t g{}; cudaGraphExec_t exec{};
++    ~Graph(){if(exec)cudaGraphExecDestroy(exec);if(g)cudaGraphDestroy(g);}
++};
++int main(){
++    int count=0; if(cudaGetDeviceCount(&count)!=cudaSuccess||!count){std::puts("SKIP no CUDA");return 77;}
++    cudaDeviceProp prop{};ck(cudaGetDeviceProperties(&prop,0));
++    if(prop.major!=7||prop.minor!=5){std::puts("SKIP requires real sm75");return 77;}
++    const char* enabled=std::getenv("STRATA_TOPK_DYNAMIC");
++    if(!enabled||std::atoi(enabled)!=1){std::fputs("Requires STRATA_TOPK_DYNAMIC=1\n",stderr);return 2;}
++    constexpr int64_t stride=262144/4+2,maxq=11;
++    const auto shape=k::qsa_real_shapes();const int64_t cap=k::qsa_selection_width(k::kTopkMaxCells,shape);
++    float* ds{};int32_t *dt{},*da{},*db{};cudaStream_t stream{};
++    ck(cudaStreamCreate(&stream));ck(cudaMalloc(&ds,maxq*stride*sizeof(float)));
++    ck(cudaMalloc(&dt,maxq*k::kStepCount*sizeof(int32_t)));
++    ck(cudaMalloc(&da,maxq*cap*sizeof(int32_t)));ck(cudaMalloc(&db,maxq*cap*sizeof(int32_t)));
++    std::vector<float> scores(maxq*stride);std::vector<int32_t> steps(maxq*k::kStepCount),a(maxq*cap),b(maxq*cap);
++    auto fill=[&](int64_t ctx,int64_t nq,int mode,bool mixed){
++        std::fill(scores.begin(),scores.end(),-999.f);std::fill(steps.begin(),steps.end(),0);
++        std::mt19937 rng(742913);std::uniform_real_distribution<float> random(0.f,200.f);
++        for(int64_t q=0;q<nq;++q){
++            int64_t pos=ctx-nq+q;if(mixed)pos=(q%2?250021:131071);
++            auto* st=steps.data()+q*k::kStepCount;st[k::kStepPos]=(int32_t)pos;
++            st[k::kStepNKv]=(int32_t)(pos+1);st[k::kStepNBid]=(int32_t)((pos+1)/shape.idx_block);
++            st[k::kStepWidth]=(int32_t)k::qsa_selection_width(pos+1,shape);
++            for(int64_t j=0;j<=st[k::kStepNBid];++j)scores[q*stride+j]=mode==1?0.f:mode==2?float(j%7):random(rng);
++            if((pos+1)%shape.idx_block)scores[q*stride+st[k::kStepNBid]]+=1e9f;
++        }
++        ck(cudaMemcpyAsync(ds,scores.data(),scores.size()*sizeof(float),cudaMemcpyHostToDevice,stream));
++        ck(cudaMemcpyAsync(dt,steps.data(),steps.size()*sizeof(int32_t),cudaMemcpyHostToDevice,stream));
++        ck(cudaStreamSynchronize(stream));
++    };
++    int cases=0;
++    for(int64_t nq:{1,2,3,4,6,8,11}){
++        fill(131072,nq,0,false);
++        // Prime the device-query caches before capture; each graph keeps the same pointers and dimensions.
++        k::qsa_block_topk(ds,dt,nq,stride,cap,shape,db,stream);ck(cudaStreamSynchronize(stream));
++        Graph ref,dyn;
++        ck(cudaStreamBeginCapture(stream,cudaStreamCaptureModeGlobal));
++        k::qsa_block_topk_ref(ds,dt,nq,stride,cap,shape,da,stream);
++        ck(cudaStreamEndCapture(stream,&ref.g));ck(cudaGraphInstantiate(&ref.exec,ref.g,nullptr,nullptr,0));
++        ck(cudaStreamBeginCapture(stream,cudaStreamCaptureModeGlobal));
++        k::qsa_block_topk(ds,dt,nq,stride,cap,shape,db,stream);
++        ck(cudaStreamEndCapture(stream,&dyn.g));ck(cudaGraphInstantiate(&dyn.exec,dyn.g,nullptr,nullptr,0));
++        size_t nodes=0;ck(cudaGraphGetNodes(dyn.g,nullptr,&nodes));
++        if(nodes!=2){std::fprintf(stderr,"FAIL dynamic graph has %zu nodes, expected two guarded kernels\n",nodes);return 1;}
++        std::printf("GRAPH nq=%lld dynamic_nodes=%zu\n",(long long)nq,nodes);
++        auto check=[&](int64_t ctx,int mode,bool mixed){
++            fill(ctx,nq,mode,mixed);
++            ck(cudaMemsetAsync(da,0xcc,a.size()*sizeof(int32_t),stream));ck(cudaMemsetAsync(db,0x55,b.size()*sizeof(int32_t),stream));
++            if(!k::qsa_topk_dynamic_set(true)){std::fputs("mode set failed\n",stderr);std::exit(2);}
++            ck(cudaGraphLaunch(ref.exec,stream));ck(cudaGraphLaunch(dyn.exec,stream));ck(cudaStreamSynchronize(stream));
++            ck(cudaMemcpy(a.data(),da,a.size()*sizeof(int32_t),cudaMemcpyDeviceToHost));
++            ck(cudaMemcpy(b.data(),db,b.size()*sizeof(int32_t),cudaMemcpyDeviceToHost));
++            for(int64_t q=0;q<nq;++q){
++                const int width=steps[q*k::kStepCount+k::kStepWidth],nkv=steps[q*k::kStepCount+k::kStepNKv];
++                for(int i=0;i<width;++i)if(a[q*cap+i]!=b[q*cap+i]||b[q*cap+i]<0||b[q*cap+i]>=nkv){
++                    std::fprintf(stderr,"FAIL ctx=%lld nq=%lld mode=%d mixed=%d q=%lld id=%d ref=%d dyn=%d\n",(long long)ctx,(long long)nq,mode,int(mixed),(long long)q,i,a[q*cap+i],b[q*cap+i]);std::exit(1);
++                }
++            }
++            if(!k::qsa_topk_dynamic_set(false)){std::fputs("mode set failed\n",stderr);std::exit(2);}
++            ck(cudaMemsetAsync(db,0x55,b.size()*sizeof(int32_t),stream));
++            ck(cudaGraphLaunch(dyn.exec,stream));ck(cudaStreamSynchronize(stream));
++            ck(cudaMemcpy(b.data(),db,b.size()*sizeof(int32_t),cudaMemcpyDeviceToHost));
++            for(int64_t q=0;q<nq;++q)for(int i=0;i<steps[q*k::kStepCount+k::kStepWidth];++i)
++                if(a[q*cap+i]!=b[q*cap+i]){std::fputs("FAIL mode OFF replay\n",stderr);std::exit(1);}
++            if(!k::qsa_topk_dynamic_set(true)){std::fputs("mode set failed\n",stderr);std::exit(2);}
++            ++cases;std::printf("PARITY ctx=%lld nq=%lld mode=%d mixed=%d bitwise\n",(long long)ctx,(long long)nq,mode,int(mixed));
++        };
++        for(int64_t ctx:{1111,8192,32768,65536,131072,135164,135168,135172,250022,262144})for(int mode=0;mode<3;++mode)check(ctx,mode,false);
++        if(nq>1)for(int mode=0;mode<3;++mode)check(250022,mode,true);
++        if(nq!=1 && nq!=8)continue;
++        cudaEvent_t e0{},e1{};ck(cudaEventCreate(&e0));ck(cudaEventCreate(&e1));
++        auto time=[&](Graph& g){
++            ck(cudaEventRecord(e0,stream));for(int i=0;i<50;++i)ck(cudaGraphLaunch(g.exec,stream));
++            ck(cudaEventRecord(e1,stream));ck(cudaEventSynchronize(e1));float ms{};ck(cudaEventElapsedTime(&ms,e0,e1));return double(ms)*1000/50;
++        };
++        for(int64_t ctx:{20000,65536,131072,250022}){
++            fill(ctx,nq,0,false);for(int i=0;i<10;++i){ck(cudaGraphLaunch(ref.exec,stream));ck(cudaGraphLaunch(dyn.exec,stream));}ck(cudaStreamSynchronize(stream));
++            for(int rep=0;rep<3;++rep){double a1=time(ref),d=time(dyn),a2=time(ref);
++                std::printf("TIMING ctx=%lld nq=%lld rep=%d ref1_us=%.3f dynamic_us=%.3f ref2_us=%.3f\n",(long long)ctx,(long long)nq,rep,a1,d,a2);
++            }
++        }
++        ck(cudaEventDestroy(e0));ck(cudaEventDestroy(e1));
++    }
++    ck(cudaFree(ds));ck(cudaFree(dt));ck(cudaFree(da));ck(cudaFree(db));ck(cudaStreamDestroy(stream));
++    std::printf("PASS %d captured-replay cases, selected IDs bitwise; capacity262144 including mixed boundaries\n",cases);
++    return 0;
++}

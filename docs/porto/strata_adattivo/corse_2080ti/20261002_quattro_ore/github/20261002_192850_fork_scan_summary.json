@@ -1,0 +1,806 @@
+{
+  "open_prs": [
+    {
+      "number": 529,
+      "title": "serve: an image in an Anthropic tool_result reaches the encoder (Claude Code's Read of a picture)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/529",
+      "updated_at": "2026-10-02T19:19:18Z",
+      "draft": false
+    },
+    {
+      "number": 418,
+      "title": "bench: community entry, 2x RTX PRO 4500, Swift IQ3_XXS, engine 0.1.30 and 0.1.36",
+      "html_url": "https://github.com/Niko1221/Strata/pull/418",
+      "updated_at": "2026-10-02T19:13:38Z",
+      "draft": false
+    },
+    {
+      "number": 413,
+      "title": "prefill: DeltaNet recurrence with the three value heads of a key head in one thread (bitwise; 1.4x on a 4080 SUPER, 1.3x on a 3090)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/413",
+      "updated_at": "2026-10-02T18:58:49Z",
+      "draft": false
+    },
+    {
+      "number": 500,
+      "title": "perf(cpu-pool): parallelize intermediate activation quantization across worker threads",
+      "html_url": "https://github.com/Niko1221/Strata/pull/500",
+      "updated_at": "2026-10-02T18:56:42Z",
+      "draft": false
+    },
+    {
+      "number": 525,
+      "title": "serve: a tool call that opens inside thinking is an implicit think end",
+      "html_url": "https://github.com/Niko1221/Strata/pull/525",
+      "updated_at": "2026-10-02T18:56:34Z",
+      "draft": false
+    },
+    {
+      "number": 526,
+      "title": "Allow conversation parking under --layer-split (owner-routed per-stage capture/restore)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/526",
+      "updated_at": "2026-10-02T18:56:21Z",
+      "draft": false
+    },
+    {
+      "number": 527,
+      "title": "Experimental P100: pinned RAM complement for fixed layer-split CPU/GPU inference",
+      "html_url": "https://github.com/Niko1221/Strata/pull/527",
+      "updated_at": "2026-10-02T18:56:19Z",
+      "draft": true
+    },
+    {
+      "number": 524,
+      "title": "Adding experimental support for gfx1031 - 6700 XT",
+      "html_url": "https://github.com/Niko1221/Strata/pull/524",
+      "updated_at": "2026-10-02T18:39:08Z",
+      "draft": false
+    },
+    {
+      "number": 521,
+      "title": "bench: add community RTX 4000 Ada 2-GPU vs 3-GPU layer-split results",
+      "html_url": "https://github.com/Niko1221/Strata/pull/521",
+      "updated_at": "2026-10-02T18:16:05Z",
+      "draft": false
+    },
+    {
+      "number": 423,
+      "title": "INTEL B70 32gb support",
+      "html_url": "https://github.com/Niko1221/Strata/pull/423",
+      "updated_at": "2026-10-02T18:13:07Z",
+      "draft": false
+    },
+    {
+      "number": 512,
+      "title": "prefill: use active QSA top-k bounds on Turing with large KV capacity",
+      "html_url": "https://github.com/Niko1221/Strata/pull/512",
+      "updated_at": "2026-10-02T17:02:28Z",
+      "draft": true
+    },
+    {
+      "number": 319,
+      "title": "Docs: AMD RX 7900 XTX (gfx1100) IQ3_S rates row (1K-128K)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/319",
+      "updated_at": "2026-10-02T16:42:47Z",
+      "draft": false
+    },
+    {
+      "number": 368,
+      "title": "QSA select: RDNA3 (gfx1100) WMMA block-scores arm on #337's arch dispatch (opt-in STRATA_SELECT_WMMA=1)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/368",
+      "updated_at": "2026-10-02T16:41:18Z",
+      "draft": false
+    },
+    {
+      "number": 510,
+      "title": "fix(serve): safely handle malformed or partial tool call arguments in history",
+      "html_url": "https://github.com/Niko1221/Strata/pull/510",
+      "updated_at": "2026-10-02T15:57:35Z",
+      "draft": false
+    },
+    {
+      "number": 508,
+      "title": "Community benchmark: 2x RTX 5060 Ti (16 GB), Xeon E5-2690 v4, IQ3_XXS, engine 0.1.35",
+      "html_url": "https://github.com/Niko1221/Strata/pull/508",
+      "updated_at": "2026-10-02T15:43:59Z",
+      "draft": false
+    },
+    {
+      "number": 390,
+      "title": "Multi-GPU: a --layer-split stage holds only its own layers' weights, and every card's leftover VRAM spills into a helper expert tier (4-way IQ3_S: 9,269 -> 14,172 expert slots, prefill chunk 2,048 -> 4,096)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/390",
+      "updated_at": "2026-10-02T15:00:59Z",
+      "draft": false
+    },
+    {
+      "number": 504,
+      "title": "web: saved chats in a sidebar, kept in localStorage (#361)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/504",
+      "updated_at": "2026-10-02T14:44:52Z",
+      "draft": false
+    },
+    {
+      "number": 499,
+      "title": "bench: community results, RX 9070 XT 16 GB on Windows 11, ready-made AMD engine 0.1.35, IQ3_S",
+      "html_url": "https://github.com/Niko1221/Strata/pull/499",
+      "updated_at": "2026-10-02T12:50:14Z",
+      "draft": false
+    },
+    {
+      "number": 434,
+      "title": "Add optional unified Strata Manager",
+      "html_url": "https://github.com/Niko1221/Strata/pull/434",
+      "updated_at": "2026-10-02T12:38:28Z",
+      "draft": false
+    },
+    {
+      "number": 407,
+      "title": "Adaptive tier: --adapt-decay, and --adapt-tuned (opt-in): 31% fewer misses, -19% CPU pool, -22% PCIe on UD-Q4_K_XL",
+      "html_url": "https://github.com/Niko1221/Strata/pull/407",
+      "updated_at": "2026-10-02T12:16:22Z",
+      "draft": false
+    },
+    {
+      "number": 385,
+      "title": "Prompt path: a stager buffer's first job of a generation waits for the previous DMA from it (a narrow race with unpinned blobs)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/385",
+      "updated_at": "2026-10-02T12:16:21Z",
+      "draft": false
+    },
+    {
+      "number": 378,
+      "title": "Elastic K/V (--kv-grow, opt-in): the K/V takes VRAM as the context grows, the expert cache holds the rest (+68% cache on a 16 GB card at 262K)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/378",
+      "updated_at": "2026-10-02T12:16:19Z",
+      "draft": false
+    },
+    {
+      "number": 374,
+      "title": "Prompt path: the first chunk's n-gram (PLE) rows read beside layer 0, 256 at a time (same output)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/374",
+      "updated_at": "2026-10-02T12:16:18Z",
+      "draft": false
+    },
+    {
+      "number": 362,
+      "title": "File tier: read the GGUF in place unbuffered when the file cache cannot keep it beside the RAM budget (Windows; #286 ported into the existing tier)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/362",
+      "updated_at": "2026-10-02T12:16:07Z",
+      "draft": false
+    },
+    {
+      "number": 353,
+      "title": "NVFP4 routed experts on 0.1.35 (experimental): 120a only for the W4A4 unit (rebase of #292)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/353",
+      "updated_at": "2026-10-02T12:16:05Z",
+      "draft": false
+    },
+    {
+      "number": 489,
+      "title": "bench/results: RTX A3000 12GB laptop + i7-12850HX (sm_86): hugepages, PCIe probe, calibration",
+      "html_url": "https://github.com/Niko1221/Strata/pull/489",
+      "updated_at": "2026-10-02T11:47:38Z",
+      "draft": false
+    },
+    {
+      "number": 492,
+      "title": "Heterogeneous multi-GPU roles: whole model on one GPU, the MTP draft head on the other",
+      "html_url": "https://github.com/Niko1221/Strata/pull/492",
+      "updated_at": "2026-10-02T11:29:07Z",
+      "draft": false
+    },
+    {
+      "number": 491,
+      "title": "docker: GGUF_DIR, RESIDENT_BUDGET_GIB and KV_STREAMING env vars; document the stop timeout",
+      "html_url": "https://github.com/Niko1221/Strata/pull/491",
+      "updated_at": "2026-10-02T11:20:08Z",
+      "draft": false
+    },
+    {
+      "number": 483,
+      "title": "bench: community results, 2x RTX 5060 Ti 16 GB (PCIe gen3), Strata 0.1.34",
+      "html_url": "https://github.com/Niko1221/Strata/pull/483",
+      "updated_at": "2026-10-02T10:28:08Z",
+      "draft": false
+    },
+    {
+      "number": 488,
+      "title": "pinned: honor STRATA_NO_LARGEPAGES on Linux; name the hugetlb pool shortfall",
+      "html_url": "https://github.com/Niko1221/Strata/pull/488",
+      "updated_at": "2026-10-02T10:22:43Z",
+      "draft": false
+    },
+    {
+      "number": 487,
+      "title": "PCIe probe: median of several primed bursts instead of one",
+      "html_url": "https://github.com/Niko1221/Strata/pull/487",
+      "updated_at": "2026-10-02T10:22:40Z",
+      "draft": false
+    },
+    {
+      "number": 484,
+      "title": "Monitor: show the conversation cache at work (reuse, hits on switches, slots, cache RAM)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/484",
+      "updated_at": "2026-10-02T10:10:44Z",
+      "draft": false
+    },
+    {
+      "number": 476,
+      "title": "native head: report the cudaHostAlloc error, not just \"cannot pin N MiB\"",
+      "html_url": "https://github.com/Niko1221/Strata/pull/476",
+      "updated_at": "2026-10-02T10:09:29Z",
+      "draft": false
+    },
+    {
+      "number": 480,
+      "title": "serve, web: a space-free vision temp dir, lazy vision, and a Chinese UI",
+      "html_url": "https://github.com/Niko1221/Strata/pull/480",
+      "updated_at": "2026-10-02T09:35:14Z",
+      "draft": false
+    },
+    {
+      "number": 482,
+      "title": "Networked Pool support",
+      "html_url": "https://github.com/Niko1221/Strata/pull/482",
+      "updated_at": "2026-10-02T09:32:52Z",
+      "draft": false
+    },
+    {
+      "number": 478,
+      "title": "prefill: MMQ prompt kernels for Q6_K experts (STRATA_MMQ_KQUANTS)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/478",
+      "updated_at": "2026-10-02T09:12:13Z",
+      "draft": true
+    },
+    {
+      "number": 473,
+      "title": "native experts: Q5_0 GPU kernel (#222)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/473",
+      "updated_at": "2026-10-02T09:08:47Z",
+      "draft": false
+    },
+    {
+      "number": 472,
+      "title": "tests: test_prebuilt_hip_zip passes on Linux (EXE as on Windows)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/472",
+      "updated_at": "2026-10-02T07:36:14Z",
+      "draft": false
+    },
+    {
+      "number": 470,
+      "title": "setup: a download stopped before its rename is finished without a request (no 5-minute 416 retry loop)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/470",
+      "updated_at": "2026-10-02T07:35:01Z",
+      "draft": false
+    },
+    {
+      "number": 469,
+      "title": "bench: community results, RTX 2080 Ti 11 GB + Threadripper 3960X, IQ3_S at 262K with KV streaming",
+      "html_url": "https://github.com/Niko1221/Strata/pull/469",
+      "updated_at": "2026-10-02T07:34:20Z",
+      "draft": false
+    },
+    {
+      "number": 466,
+      "title": "bench: community report \u2014 RTX 5090, IQ3_S at 1M context (YaRN), agent-style workload",
+      "html_url": "https://github.com/Niko1221/Strata/pull/466",
+      "updated_at": "2026-10-02T06:48:58Z",
+      "draft": false
+    },
+    {
+      "number": 416,
+      "title": "bench: IQ4_XS on a 64 GB PC - pinned arena vs experts.bin mmap vs the RAM budget",
+      "html_url": "https://github.com/Niko1221/Strata/pull/416",
+      "updated_at": "2026-10-02T06:34:31Z",
+      "draft": false
+    },
+    {
+      "number": 463,
+      "title": "decode: wait for an adaptive expert swap before reading the residency table",
+      "html_url": "https://github.com/Niko1221/Strata/pull/463",
+      "updated_at": "2026-10-02T05:52:53Z",
+      "draft": false
+    },
+    {
+      "number": 462,
+      "title": "diagnostics: dump every verify window's logits, so greedy decode can be bisected",
+      "html_url": "https://github.com/Niko1221/Strata/pull/462",
+      "updated_at": "2026-10-02T05:52:46Z",
+      "draft": false
+    },
+    {
+      "number": 464,
+      "title": "ple: read the n-gram table at full BF16 precision",
+      "html_url": "https://github.com/Niko1221/Strata/pull/464",
+      "updated_at": "2026-10-02T05:51:40Z",
+      "draft": false
+    },
+    {
+      "number": 456,
+      "title": "Monitor: the conversation cache card (parked conversations from the engine's CACHE lines)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/456",
+      "updated_at": "2026-10-02T04:52:44Z",
+      "draft": false
+    },
+    {
+      "number": 453,
+      "title": "prefill: the draft layer's batched K/V for a ring too (KV streaming) - prefill +4.6% with --kv-resident",
+      "html_url": "https://github.com/Niko1221/Strata/pull/453",
+      "updated_at": "2026-10-02T04:05:18Z",
+      "draft": false
+    },
+    {
+      "number": 455,
+      "title": "setup: the Unsloth UD-Q4_K_XL is NVIDIA only, stop on the AMD HIP backend before the download",
+      "html_url": "https://github.com/Niko1221/Strata/pull/455",
+      "updated_at": "2026-10-02T03:54:52Z",
+      "draft": false
+    },
+    {
+      "number": 454,
+      "title": "serve: honor stop and stop_sequences",
+      "html_url": "https://github.com/Niko1221/Strata/pull/454",
+      "updated_at": "2026-10-02T03:54:49Z",
+      "draft": false
+    },
+    {
+      "number": 452,
+      "title": "qsa_prompt_attn: Q4_0 KV on tensor cores (mode 4) - long prompts with --kv q4_0 ~19% faster",
+      "html_url": "https://github.com/Niko1221/Strata/pull/452",
+      "updated_at": "2026-10-02T03:37:12Z",
+      "draft": false
+    },
+    {
+      "number": 433,
+      "title": "bench: community report, RTX 5090 + Ryzen 9 5950X (AVX2), UD-Q4_K_XL on engines 0.1.31-0.1.34, prefill auto:32768 A/B",
+      "html_url": "https://github.com/Niko1221/Strata/pull/433",
+      "updated_at": "2026-10-02T03:19:42Z",
+      "draft": false
+    },
+    {
+      "number": 450,
+      "title": "calibrate: a gpu list is not a layer split (#447)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/450",
+      "updated_at": "2026-10-02T02:51:20Z",
+      "draft": false
+    },
+    {
+      "number": 449,
+      "title": "fix: fall back when ROCm development files are missing",
+      "html_url": "https://github.com/Niko1221/Strata/pull/449",
+      "updated_at": "2026-10-02T02:27:46Z",
+      "draft": false
+    },
+    {
+      "number": 443,
+      "title": "kernels: add opt-in small-window GR and one-warp MMVQ experiments",
+      "html_url": "https://github.com/Niko1221/Strata/pull/443",
+      "updated_at": "2026-10-02T02:20:03Z",
+      "draft": false
+    },
+    {
+      "number": 442,
+      "title": "hip: add community gfx1012 support with version-gated legacy compatibility",
+      "html_url": "https://github.com/Niko1221/Strata/pull/442",
+      "updated_at": "2026-10-02T02:18:37Z",
+      "draft": false
+    },
+    {
+      "number": 441,
+      "title": "Contrib/non mtp serving",
+      "html_url": "https://github.com/Niko1221/Strata/pull/441",
+      "updated_at": "2026-10-02T02:13:28Z",
+      "draft": true
+    },
+    {
+      "number": 440,
+      "title": "bench: community report, RTX 5090 + Ryzen 9 9950X3D, IQ3_S at the full 262K window; prefill auto:32768 A/B; conversation-cache 32 GiB demo",
+      "html_url": "https://github.com/Niko1221/Strata/pull/440",
+      "updated_at": "2026-10-02T01:10:18Z",
+      "draft": false
+    },
+    {
+      "number": 439,
+      "title": "prefill: a group's expert gathers in one launch (bit-identical, long prompts +4%)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/439",
+      "updated_at": "2026-10-02T01:06:39Z",
+      "draft": false
+    },
+    {
+      "number": 372,
+      "title": "Prompt path: an MMQ group's experts gathered in one launch, after one wait, released by one event (-9% on a 32K prompt, same output)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/372",
+      "updated_at": "2026-10-02T12:16:17Z",
+      "draft": false
+    },
+    {
+      "number": 363,
+      "title": "experts: smaller and fewer launches for the verify window's PCIe call",
+      "html_url": "https://github.com/Niko1221/Strata/pull/363",
+      "updated_at": "2026-10-02T00:21:02Z",
+      "draft": false
+    },
+    {
+      "number": 428,
+      "title": "tests: test_setup_golden passes on Linux (<EXE> only as a whole path part)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/428",
+      "updated_at": "2026-10-01T22:23:11Z",
+      "draft": false
+    },
+    {
+      "number": 427,
+      "title": "tools/vision: portable by default, setup.py/Dockerfile opt into native (#411 #412 #419 follow-up)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/427",
+      "updated_at": "2026-10-01T22:23:09Z",
+      "draft": false
+    },
+    {
+      "number": 424,
+      "title": "fix(setup): drop an engine archive that fails to unpack",
+      "html_url": "https://github.com/Niko1221/Strata/pull/424",
+      "updated_at": "2026-10-01T21:43:51Z",
+      "draft": false
+    },
+    {
+      "number": 381,
+      "title": "Add HIP image encoder support and Linux AMD GPU telemetry",
+      "html_url": "https://github.com/Niko1221/Strata/pull/381",
+      "updated_at": "2026-10-01T21:18:08Z",
+      "draft": false
+    },
+    {
+      "number": 366,
+      "title": "[RFC] EXPERIMENTAL Investigate DFlash2 support for Qwen3.8-Flash-Next",
+      "html_url": "https://github.com/Niko1221/Strata/pull/366",
+      "updated_at": "2026-10-01T20:29:14Z",
+      "draft": true
+    },
+    {
+      "number": 422,
+      "title": "hip: enable experimental Strix Halo gfx1151 source builds",
+      "html_url": "https://github.com/Niko1221/Strata/pull/422",
+      "updated_at": "2026-10-01T20:14:08Z",
+      "draft": false
+    },
+    {
+      "number": 417,
+      "title": "bench: community report, RTX PRO 4500 x1/x2 + RTX PRO 4000, Threadripper PRO 3975WX, engine 0.1.31",
+      "html_url": "https://github.com/Niko1221/Strata/pull/417",
+      "updated_at": "2026-10-01T20:07:44Z",
+      "draft": false
+    },
+    {
+      "number": 415,
+      "title": "IQ4_XS expert rows on the AVX-2 path: the multi-token kernel this format never had",
+      "html_url": "https://github.com/Niko1221/Strata/pull/415",
+      "updated_at": "2026-10-01T19:44:40Z",
+      "draft": false
+    },
+    {
+      "number": 409,
+      "title": "aarch64 / NVIDIA DGX Spark (GB10): build, run and set up with unified memory",
+      "html_url": "https://github.com/Niko1221/Strata/pull/409",
+      "updated_at": "2026-10-01T21:57:41Z",
+      "draft": false
+    },
+    {
+      "number": 357,
+      "title": "Start: read the expert arena unbuffered when the file cache cannot help (Windows; part 1 of #285)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/357",
+      "updated_at": "2026-10-01T18:16:30Z",
+      "draft": false
+    },
+    {
+      "number": 279,
+      "title": "Windows: leave 1500 MiB of VRAM unused by default (decode stalled with 700)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/279",
+      "updated_at": "2026-10-01T18:16:26Z",
+      "draft": false
+    },
+    {
+      "number": 358,
+      "title": "Start: register the expert arena per layer on a thread ahead of the readers (Windows; part 2 of #285)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/358",
+      "updated_at": "2026-10-01T18:16:32Z",
+      "draft": false
+    },
+    {
+      "number": 405,
+      "title": "docs: add performance documentation and update repository hygiene",
+      "html_url": "https://github.com/Niko1221/Strata/pull/405",
+      "updated_at": "2026-10-01T16:47:55Z",
+      "draft": false
+    },
+    {
+      "number": 404,
+      "title": "bench(gfx1100): 0.1.31 vs 0.1.30 prefill/decode, curated entry + raw trials",
+      "html_url": "https://github.com/Niko1221/Strata/pull/404",
+      "updated_at": "2026-10-01T16:46:31Z",
+      "draft": false
+    },
+    {
+      "number": 401,
+      "title": "Chore(github): Create a .github folder",
+      "html_url": "https://github.com/Niko1221/Strata/pull/401",
+      "updated_at": "2026-10-01T16:31:42Z",
+      "draft": false
+    },
+    {
+      "number": 394,
+      "title": "AVX1: run on a CPU with AVX but no AVX2, with an end-to-end run on Sandy Bridge-E",
+      "html_url": "https://github.com/Niko1221/Strata/pull/394",
+      "updated_at": "2026-10-01T16:13:55Z",
+      "draft": false
+    },
+    {
+      "number": 396,
+      "title": "chore(git): add standard IDEs to gitignore",
+      "html_url": "https://github.com/Niko1221/Strata/pull/396",
+      "updated_at": "2026-10-01T16:06:07Z",
+      "draft": false
+    },
+    {
+      "number": 395,
+      "title": "Feature/nvidia p40",
+      "html_url": "https://github.com/Niko1221/Strata/pull/395",
+      "updated_at": "2026-10-01T16:04:07Z",
+      "draft": false
+    },
+    {
+      "number": 391,
+      "title": "iq_avx2: build the IQ2 sign table without a variable shift (BMI2 \\shlx\\ traps on pre-Haswell CPUs)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/391",
+      "updated_at": "2026-10-01T15:47:56Z",
+      "draft": false
+    },
+    {
+      "number": 389,
+      "title": "bench: community report, 2x TITAN RTX (sm_75), IQ3_S at 262K",
+      "html_url": "https://github.com/Niko1221/Strata/pull/389",
+      "updated_at": "2026-10-01T15:29:58Z",
+      "draft": false
+    },
+    {
+      "number": 387,
+      "title": "AMD: ship the gfx1200 hipBLASLt table, with the with/without measurements",
+      "html_url": "https://github.com/Niko1221/Strata/pull/387",
+      "updated_at": "2026-10-01T15:19:18Z",
+      "draft": false
+    },
+    {
+      "number": 386,
+      "title": "tools/hip: gfx1201 hipBLASLt table for ROCm 7.2.4 (hipBLASLt 1.2.2), ~1.8x prompt speed on the R9700",
+      "html_url": "https://github.com/Niko1221/Strata/pull/386",
+      "updated_at": "2026-10-01T15:12:45Z",
+      "draft": false
+    },
+    {
+      "number": 382,
+      "title": "HIP: MTP prompt pass per group by default (fixes prompt hang on gfx1201 with KV streaming)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/382",
+      "updated_at": "2026-10-01T14:51:31Z",
+      "draft": false
+    },
+    {
+      "number": 373,
+      "title": "HIP: build with Visual Studio 2026's C++ library (MSVC 14.51+)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/373",
+      "updated_at": "2026-10-01T14:37:51Z",
+      "draft": false
+    },
+    {
+      "number": 380,
+      "title": "HIP: count the desktop's VRAM on Windows (WDDM budget, STRATA_WDDM_BUDGET)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/380",
+      "updated_at": "2026-10-01T14:35:14Z",
+      "draft": false
+    },
+    {
+      "number": 377,
+      "title": "HIP: time the PCIe probe on the host on Windows",
+      "html_url": "https://github.com/Niko1221/Strata/pull/377",
+      "updated_at": "2026-10-01T14:26:26Z",
+      "draft": false
+    },
+    {
+      "number": 376,
+      "title": "HIP: a failed first configure no longer leaves the kernels at -O0",
+      "html_url": "https://github.com/Niko1221/Strata/pull/376",
+      "updated_at": "2026-10-01T14:24:45Z",
+      "draft": false
+    },
+    {
+      "number": 360,
+      "title": "qsa_prompt_attn: Volta (sm_70) crashes in the prompt path - compare the full compute capability",
+      "html_url": "https://github.com/Niko1221/Strata/pull/360",
+      "updated_at": "2026-10-01T09:40:12Z",
+      "draft": false
+    },
+    {
+      "number": 355,
+      "title": "serve: send Cache-Control: no-cache for index.html",
+      "html_url": "https://github.com/Niko1221/Strata/pull/355",
+      "updated_at": "2026-10-01T09:05:54Z",
+      "draft": false
+    },
+    {
+      "number": 351,
+      "title": "serve: preserve context across engine restart",
+      "html_url": "https://github.com/Niko1221/Strata/pull/351",
+      "updated_at": "2026-10-01T07:38:01Z",
+      "draft": false
+    },
+    {
+      "number": 350,
+      "title": "Chat: a context gauge, per-request timings, and conversation compaction",
+      "html_url": "https://github.com/Niko1221/Strata/pull/350",
+      "updated_at": "2026-10-01T07:35:40Z",
+      "draft": false
+    },
+    {
+      "number": 313,
+      "title": "RDNA3 WMMA kernels for the gfx1100 prefill (opt-in, runtime-gated on gfx11; rebased on 0.1.30)",
+      "html_url": "https://github.com/Niko1221/Strata/pull/313",
+      "updated_at": "2026-10-01T07:00:57Z",
+      "draft": false
+    },
+    {
+      "number": 346,
+      "title": "setup: don't list the shared Chat settings file as a model config (KeyError: 'exe')",
+      "html_url": "https://github.com/Niko1221/Strata/pull/346",
+      "updated_at": "2026-10-01T06:28:44Z",
+      "draft": false
+    },
+    {
+      "number": 345,
+      "title": "Add native Responses API support for Codex CLI",
+      "html_url": "https://github.com/Niko1221/Strata/pull/345",
+      "updated_at": "2026-10-01T06:15:32Z",
+      "draft": false
+    }
+  ],
+  "chimpera": {
+    "status": "identical",
+    "ahead_by": 0,
+    "behind_by": 0,
+    "total_commits": 0,
+    "commits": [],
+    "files": []
+  },
+  "Karenax": {
+    "status": "identical",
+    "ahead_by": 0,
+    "behind_by": 0,
+    "total_commits": 0,
+    "commits": [],
+    "files": []
+  },
+  "dellathefella": {
+    "status": "identical",
+    "ahead_by": 0,
+    "behind_by": 0,
+    "total_commits": 0,
+    "commits": [],
+    "files": []
+  },
+  "matthewjt": {
+    "status": "ahead",
+    "ahead_by": 2,
+    "behind_by": 0,
+    "total_commits": 2,
+    "commits": [
+      {
+        "sha": "e8cdc42dc977c8be5ca604915b63050f76736e82",
+        "message": "Added gfx1031 experimental support"
+      },
+      {
+        "sha": "e05efc2d9c9a015d7e2f807976b33b507bd75e1a",
+        "message": "forgot one spot to add in setup.py"
+      }
+    ],
+    "files": [
+      "cmake/hip_backend.cmake",
+      "setup.py"
+    ]
+  },
+  "rubund": {
+    "status": "identical",
+    "ahead_by": 0,
+    "behind_by": 0,
+    "total_commits": 0,
+    "commits": [],
+    "files": []
+  },
+  "lijieming": {
+    "status": "identical",
+    "ahead_by": 0,
+    "behind_by": 0,
+    "total_commits": 0,
+    "commits": [],
+    "files": []
+  },
+  "jklnvlink": {
+    "status": "diverged",
+    "ahead_by": 15,
+    "behind_by": 156,
+    "total_commits": 15,
+    "commits": [
+      {
+        "sha": "56495c36cb749492300a07098775b45a8436be2a",
+        "message": "perf(sm75): \u8d85\u8fde\u63a5\u6295\u5f71\u6539\u8d70 fp16 \u5f20\u91cf\u6838\uff08Turing \u4e0a 4\u00d7\uff0cprefill +14%\uff09"
+      },
+      {
+        "sha": "95afc8d39aeff1d7f34a89c2444f737ffdb7c4a0",
+        "message": "perf(sm75): indexer block scores \u6bcf warp \u5904\u7406 8 \u4e2a block\uff08\u6570\u503c\u4e0d\u53d8\uff09"
+      },
+      {
+        "sha": "4984829100452f6a0af0cc44e7339d35e7758747",
+        "message": "perf(sm75): prompt attention \u5355\u7ea7\u7f13\u51b2 + \u5bc4\u5b58\u5668\u7ea7\u8f6f\u4ef6\u6d41\u6c34"
+      },
+      {
+        "sha": "500d12e0cad5a28ef2d14b5fa3a35066162d76c2",
+        "message": "perf(sm75): GDN \u7684 ssm_alpha/beta \u8d70 fp16 \u5f20\u91cf\u6838 + \u4fee\u6b63 prefill arena \u8ba1\u91cf"
+      },
+      {
+        "sha": "b4f8a4453cdebdfd478d48df5f6420298fc66c58",
+        "message": "fix(sm75): \u628a Turing \u8def\u5f84\u4e25\u683c\u9650\u5b9a\u5728 cc 7.5\uff0c\u5e76\u52a0\u95e8\u63a7\u5951\u7ea6\u6d4b\u8bd5"
+      },
+      {
+        "sha": "caf592c5daf59c95bf315ff487ceab08f4aadefb",
+        "message": "perf(sm75): moe_combine \u5411\u91cf\u5316\uff08float4/\u7ebf\u7a0b\uff0c\u9010\u5143\u7d20\u7b97\u672f\u4e0d\u53d8\uff09"
+      },
+      {
+        "sha": "ad75581084d3325bc8831d585918648c5b4fae51",
+        "message": "perf(sm75): \u5c42\u5207\u5206\u4e0b\u542f\u7528\u8349\u7a3f\u5c42\u7684\u6279\u5904\u7406 prefill\uff08\u6bcf chunk \u7701 ~90 ms\uff0c4K +3.4%\uff09"
+      },
+      {
+        "sha": "ea158a93ed30340092f1bf4a13522231062453f5",
+        "message": "perf(sm75): \u7a20\u5bc6\u6743\u91cd\u53cd\u91cf\u5316\u6539\u5411\u91cf\u5199\uff08prompt +5%\uff0c\u6570\u503c\u9010\u4f4d\u4e0d\u53d8\uff09"
+      },
+      {
+        "sha": "496a4f3a195b98a935c0ac1fd1f5dfbf46ab3f58",
+        "message": "perf(sm75): \u4e13\u5bb6 gather \u6309\u7ec4\u6279\u91cf\u62f7\u8d1d\uff08\u6bcf\u7ec4\u4e00\u6b21 launch\uff09"
+      },
+      {
+        "sha": "bdea4cb4b8d166e0d7390562a619782876a723f1",
+        "message": "fix(sm75): \u628a prompt \u671f\u65b0\u589e\u7f13\u51b2\u8ba1\u5165\u663e\u5b58\u9884\u7b97\uff08\u6d88\u9664\"\u9760\u516c\u5f0f\u4f59\u91cf\"\u7684\u9690\u60a3\uff09"
+      },
+      {
+        "sha": "80fae03ee1c78741f7e32b6fbb9d9378cfc259e1",
+        "message": "bench(sm75): \u65b0\u589e prompt attention \u5fae\u57fa\u51c6\uff0c\u5e76\u5b9a\u4f4d\u5176\u771f\u5b9e\u74f6\u9888\uff08KV \u91cd\u590d\u8bfb\uff09"
+      },
+      {
+        "sha": "c03755616141836f044c349f003b1a43b675e118",
+        "message": "diag(prefill): \u9009\u62e9\u91cd\u53e0\u63a2\u9488\u652f\u6301\u4efb\u610f tile \u5927\u5c0f\uff08STRATA_SEL_TILE\uff09"
+      },
+      {
+        "sha": "c8fd794e6bbde5be1f3dd9e98d40216e8d77683b",
+        "message": "bench(sm75): \u8ba9 native_mmvq \u7684\u591a\u5217\u5e03\u5c40\u53ef\u7531\u5f00\u5173\u9009\u62e9\uff0c\u5e76\u5b9e\u6d4b\u5176\u5728 sm_75 \u4e0a\u4e0d\u66f4\u5feb"
+      },
+      {
+        "sha": "e367ce4dabacdfb9446835b6ac818e181b948124",
+        "message": "note\u4fee\u6539"
+      },
+      {
+        "sha": "235350960d853674f0279e5838a16e68e71be2bd",
+        "message": "Update README to format Strata link correctly"
+      }
+    ],
+    "files": [
+      "CMakeLists.txt",
+      "README.md",
+      "bench/micro/qsa_prompt_attn_bench.cu",
+      "include/strata/core/tc_sm75.hpp",
+      "include/strata/prefill/kernels.hpp",
+      "include/strata/prefill/moe_mmq.hpp",
+      "src/core/tc_sm75_gate_test.cpp",
+      "src/kernels/cuda/dequant_bf16.cu",
+      "src/kernels/cuda/qsa_prompt_attn.cu",
+      "src/kernels/cuda/qsa_select.cu",
+      "src/prefill/kernels.cu",
+      "src/prefill/moe_mmq.cu",
+      "src/prefill/prefill.cpp",
+      "src/program/generate.cpp"
+    ]
+  }
+}

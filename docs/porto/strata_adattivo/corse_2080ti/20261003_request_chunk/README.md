@@ -108,3 +108,10 @@ disponibile minima22,9GiB. Non prova quale fosse la causa della corsa precedente
 Le anomalie originali restano conservate. Nessun altro A/B avviato, motore chiuso,
 Daily invariato in questa richiesta di sola ripetizione. Dati e hash:
 [single-B-repeat.json](single-B-repeat.json). Fork main: documentato in158f208.
+
+
+## Controlli completati e verifica HTTP
+
+Il controllo fisso ritardato A2 conferma parità bitwise su quattro righe complete e 66 output rispetto ad A1/B. Warm 130k: +3,85% rispetto alla media dei controlli; warm 249k invariato. Non è una A/B/A consecutiva. La coppia elastica differisce numericamente a 249k e nel testo dal token 28.
+
+Daily exact-small abilitato con backup e overlay separati. Le prove HTTP senza override numerici mostrano risposte progressivamente tronche con cap 128 sia on sia off; il run cap 512 produce nove risposte complete ma termina per un errore del runner nel dimensionare il prompt finale. Alcuni avvii sono molto lenti anche off: tempi esclusi dalle rivendicazioni. Nessuna nuova SOTA o qualità generale rivendicata. Tutti i limiti e gli hash sono in [final-validation.json](final-validation.json).

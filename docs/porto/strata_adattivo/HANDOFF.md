@@ -132,7 +132,7 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
 - **2/10, validazione qualità A/B/A conclusa:** metodo teacher-forced e
   oracoli versionati su main nel fork. A1/B/A2 hanno logits completi identici
   su 2.557 posizioni valutate: top-1 100%, KL 0, PPL identica. Stessi 6.167
-  slot nel laboratorio, KV262144/int8/resident32768, chunk2048; il daily
+  slot nel laboratorio, KV 262144/int8/resident 32768, chunk2048; il daily
   resta auto/elastico. Sei controlli su sette corretti in ogni braccio,
   incluso retrieval con tre codici a131072 token al10/50/90%, tutti stop.
   **Gate complessivo FAIL**: 3*17+2*23+8 riceve92 invece105 in tutti i bracci
@@ -668,3 +668,12 @@ non descrivere il decode misurato come profilo Daily senza override.
 Daily invariato in questa richiesta di sola ripetizione. Evidenze aggiunte a
 `corse_2080ti/20261003_request_chunk/README.md` e `single-B-repeat.json`;
 nota pubblicata anche sul fork in158f208. Conservare le prove interrotte.
+
+
+## 16. Sessione di quattro ore: controlli iniziali del 3 ottobre sera
+
+Finestra autorizzata 19:59–23:59UTC, agenti economici OpenAI, un solo carico GPU e nessuna build durante le misure. Check repo/fork ogni ora; disattivare il heartbeat `strata-controlli-nella-sessione-di-quattro-ore` al termine.
+
+Completata A elastica e A2 fissa ritardata; Daily aggiornato a exact-small (engine default off), SHA `d46a0752fd7b92726b34dd0332bf772cba22bba589aa22aed6e730becfb4b8fa`. KV 262144/int8/resident 32768 e cache elastica invariati. Backup `build-0138-daily/backup-request-chunk-4h-20261003`; manifest storico invariato. Le verifiche numeriche fisse passano, ma i controlli HTTP hanno limiti importanti: cap 128 genera risposte tronche anche con patch off; cap 512 produce 9 risposte complete, poi il runner fallisce sul sizing finale. Prefill lento in due avvii, anche off, causa irrisolta. Vedere `corse_2080ti/20261003_request_chunk/final-validation.json`; nessuna nuova SOTA.
+
+Ricognizione iniziale: upstream 99f3dbd0 già incluso. PR652 (anon761) e variante main-only di PR655 (rafatxf) preparate localmente, non ancora compilate o validate in questo checkpoint. La variante 655 riusa scratch esistente, preserva BF16X2 e draft MTP, default off. PR663 resta per la futura 3060. Piano/script in `.codex_runs/20261003_four_hours`.

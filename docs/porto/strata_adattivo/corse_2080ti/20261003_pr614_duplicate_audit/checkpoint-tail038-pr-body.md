@@ -1,0 +1,15 @@
+A branched request can share almost the whole previous prompt but diverge before its final cached state, leaving only an earlier periodic checkpoint usable. Optional `--prompt-cache-tail` saves at most one extra checkpoint near the prompt's end, on a chunk boundary the existing batched prefill already reaches. It defaults to off, uses the existing bounded cache, and does not split chunks or advance the periodic schedule early. Reread diagnostics and layer splits retain their existing behavior.
+
+For a 33823-token prompt, 6144-token chunks and a 16384-token periodic interval, a branch sharing 32769 tokens can reuse **30720** rather than **18432** tokens. The benefit depends on prompt/branch position and cache capacity.
+
+Validation against pristine upstream 0.1.38 (`99f3dbd`) on a modified RTX 2080 Ti **22 GB**, KV capacity 262144, int8, 32768 resident cells:
+
+- Pristine / tail-enabled / pristine-repeat, fixed placement and chunk geometry: **2560 teacher-forced rows, 2557 scored positions per arm**, complete code/doc/chat corpora. All logits bitwise identical, KL 0, top1 agreement 100%, identical NLL/PPL; fresh/follow first rows bitwise and six complete recall answers correct on repeated fixtures. This is a local regression gate, not a general model-quality score.
+- Three interleaved shipping-binary timing pairs, A1/B1, B2/A2, A3/B3: branch TTFT medians **17.047 → 4.470 seconds (−73.78%)**. Fresh-prompt medians **34.178 → 34.497 seconds (+0.93%)**. Reference spread 1.91% follow / 0.90% fresh; 12/12 complete answers correct. These numbers describe this 33.8k fixture, not a universal speedup or a prefill/decode record.
+- Combined automatic operation with the independent elastic-cache port: real grow/shrink and prefill relayout; correctly closed conversations at 131072 and 250000 each generate 1024 decode tokens and recognize distinct later user markers. That elastic port is not part of this PR.
+
+This is a conservative **new alternative**, not the original Daily checkpoint-grid patch: that patch changed chunk boundaries and failed its local paired numerical gate. Its failure remains documented. This proposal does not claim to repair or validate that implementation. The Daily and launcher have not been changed.
+
+[Pinned report, complete results/logs, reproducibility scripts, fixture IDs and SHA manifest](https://github.com/imanu86/moe-aggressive-commit/blob/43a20361cdb7be9a54af79a9e66303e1c1b7ec53/docs/porto/strata_adattivo/PORT_ELASTICA_CHECKPOINT_TAIL_3_OTTOBRE.md). Raw multi-GB logits remain local with hashes/sizes recorded in result metadata. The initial incomplete dialogue attempt is preserved separately from the corrected deep-conversation result. AMD/multi-GPU and stock 11 GB hardware are unvalidated.
+
+Related work checked before submission: #62/#65 retain a root/shared-prefix checkpoint, and #203 proposed asynchronous checkpoint copies (closed after no measured gain on current main). This option instead adds one existing near-tail chunk boundary for branches. The broader elastic-cache work in #37, #378 and #563 is outside this focused PR.

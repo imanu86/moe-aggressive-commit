@@ -2,8 +2,10 @@
 
 Le due contribuzioni sono preparate separatamente su upstream 0.1.38
 (`99f3dbd0b21d1401b3769e0c0d963913607f380b`). Il gate locale è passato.
-Le nuove PR saranno aperte dopo l'autorizzazione dei due branch prevista dalle
-regole personali; il Daily operativo resta invariato.
+Aperta [PR614 checkpoint tail](https://github.com/Niko1221/Strata/pull/614), pronta
+per review. Dopo il controllo dei duplicati, l'elastica resta una proposta
+da concordare con il maintainer per la sovrapposizione con37/378/563/533.
+[Audit e messaggio inviato](CONTROLLO_DUPLICATI_PR614_3_OTTOBRE.md). Daily invariato.
 
 ## Cosa proponiamo
 

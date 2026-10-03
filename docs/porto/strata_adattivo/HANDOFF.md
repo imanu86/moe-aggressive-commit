@@ -1,5 +1,14 @@
 # HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.36 + port sm75/top-k/PR463, elastica e KV 262k)
 
+- **3 ottobre, controllo duplicati e PR614 aperta ready:**632fork elencati,
+  630default esterni leggibili,1179branch pubblici e535commit distinti controllati.
+  Nessun checkpoint tail equivalente emerso; PR614su upstream038,
+  head8dad0ca, due file. Messaggio con @Niko1221 inviato sulla PR.
+  Elastica sovrapposta a37/378/563 e piano manuale533: nessuna nuova PR
+  della cache; proposta e dati segnalati al maintainer per un contributo mirato.
+  Fork operativo main pulito e Daily invariato; nessun test GPU in questo giro.
+  [PR, messaggio, audit e limiti](CONTROLLO_DUPLICATI_PR614_3_OTTOBRE.md).
+
 - **3 ottobre, port upstream038 elastica + nuovo checkpoint tail validati:**
   contributi separati; elastica A/off/VMM/A e tail A/B/A con2560teacher rows
   (2557posizioni) per braccio, tutti bitwise/KL0. Elastica35test CUDA/CTest3/3,
@@ -9,8 +18,8 @@
   Autoelastica+tail:9recall corretti, grow/shrink/relayout8192 reali.
   Conversazione chiusa correttamente a131k/250k:1024token entrambe,
   6oracoli inclusi4marcatori distinti; tentativo precedente48token conservato.
-  Daily invariato e motori chiusi. PR pronte tecnicamente; autorizzazione dei
-  due branch richiesta secondo AGENTS prima della creazione.
+  Daily invariato e motori chiusi. Stato pubblicazione aggiornato sopra:
+  PR614 tail aperta; elastica da concordare per sovrapposizione upstream.
   [Misure, provenienza e limiti](PORT_ELASTICA_CHECKPOINT_TAIL_3_OTTOBRE.md).
 
 - **3 ottobre, perimetro PR riconfermato dall'utente:** proporre il codice

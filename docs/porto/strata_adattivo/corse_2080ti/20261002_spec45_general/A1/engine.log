@@ -1,0 +1,2110 @@
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX-2 (multi-token for the i-quant gate/up rows)
+strata generate: native pack: D:\ds4_work\strata\Strata-data\packs\iq3_xxs experts (largest blob 2.33 MB), token embedding IQ3_S in mapped host memory (260 MiB)
+strata generate: 1466 MiB of weights loaded from D:\ds4_work\strata\Strata-data\packs\iq3_xxs (302 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1781.11 MiB of weights
+strata generate: the SSD is kept awake while rows are read: one page of the table after 100 ms without a read, until 60 s after the last request (STRATA_SSD_KEEPALIVE=0 turns it off)
+strata generate: profile D:\ds4_work\strata\Strata\data\expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: KV streaming: 32768 of 262144 cells per QSA layer in VRAM, the K/V in 3.09 GiB of pinned RAM
+strata generate: PLE on, table 320001536 rows of C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf
+strata mtp: draft layer loaded, 834 MiB of VRAM (experts 675, dense 111), files read in 1.78 s (440 MiB/s)
+strata generate: GPU 0: NVIDIA GeForce RTX 2080 Ti, compute capability 7.5
+strata generate: expert arena: cudaHostRegister PORTABLE ok; large pages refused for 42916118528 B (GetLargePageMinimum=2097152, VirtualAlloc error 1314); using 4 KB pages
+strata generate: loaded 39.97 GiB at 1.80 GiB/s
+strata trace: 16040 MiB free after the weights, the session and the drafter
+strata generate: experimental native Q5_K head, 437043200 bytes
+strata generate: expert cache 6167 slots, 9.98 GiB of VRAM; policy is
+strata trace: 5400 MiB free after opening the expert cache
+strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,
+                 so a reply can differ slightly from a run without the cache (same quality:
+                 bench/results/2026-09-27-cache-parity).
+                 PROFILE, ranked by routing frequency, no eviction.
+strata trace: 1188 MiB free after the profile fill
+strata generate: pre-filled 6167 of 6167 slots from the profile; slot 0 verified
+strata trace: 1188 MiB free after the R4 hit path
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 7 expert-pool workers + the host thread
+strata trace: 1188 MiB free after the expert cache and the graphs
+strata generate: session is up (engine 0.1.36)
+strata generate: token graph hit path: 6167 resident experts, decided on the device
+strata serve: the prompt path borrows 1325 CUDA0 cache slots (2.12 GiB)
+strata trace: 1032 MiB free after the head and the prompt path
+strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+strata verify: window up to 4 tokens, 58.8 MiB of device buffers
+strata mtp: draft head over 40525 tokens (68.0 MiB)
+strata trace: 898 MiB free after the verifier and the drafter's binding
+strata serve: 898 MiB of VRAM free with everything loaded
+strata trace: request 102 0
+strata trace: prompt start 101 -1
+strata trace: lent 380 slots for 256 tokens in 0.2 ms
+strata trace: prompt chunk 0 of 97
+strata trace: read 97 tokens (batched) in 1055.3 ms
+strata trace: refill start 380 -1
+strata trace: refilled 380 slots on 1 stage(s) in 50.6 ms
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata trace: read 4 tokens (windows) in 108.7 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 101 1
+strata verify: captured the 1-token window (upload no error, sync no error)
+strata trace: window 102 4
+strata trace: window 104 4
+strata trace: window 108 4
+strata trace: window 109 4
+strata trace: window 113 4
+strata trace: window 117 4
+strata trace: window 121 4
+strata trace: window 125 4
+strata trace: window 129 4
+strata trace: window 133 4
+strata trace: window 137 4
+strata trace: window 141 4
+strata trace: window 145 4
+strata trace: window 149 4
+strata trace: window 153 4
+strata trace: window 157 4
+strata trace: window 161 4
+strata trace: window 165 4
+strata trace: window 169 4
+strata trace: window 173 1
+strata trace: window 174 4
+strata trace: window 178 4
+strata trace: window 182 4
+strata trace: window 186 4
+strata trace: window 190 4
+strata trace: window 194 4
+strata trace: window 198 4
+strata trace: window 202 4
+strata trace: window 206 4
+strata trace: window 209 4
+strata trace: window 212 4
+strata trace: window 216 4
+strata trace: window 220 4
+strata trace: window 224 4
+strata trace: window 228 4
+strata trace: window 232 4
+strata trace: window 236 4
+strata trace: window 240 4
+strata trace: window 244 4
+strata trace: window 248 4
+strata trace: window 252 4
+strata trace: window 255 3
+strata verify: captured the 3-token window (upload no error, sync no error)
+strata trace: window 258 4
+strata trace: window 262 4
+strata trace: window 266 4
+strata trace: window 270 4
+strata trace: window 274 4
+strata trace: window 278 4
+strata trace: window 282 4
+strata trace: window 286 4
+strata trace: window 288 4
+strata trace: window 292 4
+strata trace: window 296 4
+strata trace: window 300 4
+strata trace: window 304 4
+strata trace: window 308 4
+strata trace: window 312 4
+strata trace: window 316 4
+strata trace: window 320 4
+strata trace: window 324 4
+strata trace: window 328 4
+strata trace: window 332 4
+strata trace: window 336 4
+strata trace: window 339 4
+strata trace: window 343 4
+strata trace: window 347 4
+strata trace: window 351 4
+strata trace: window 355 4
+strata trace: window 359 2
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata trace: window 361 4
+strata trace: window 364 4
+strata trace: window 368 4
+strata trace: window 372 4
+strata trace: window 376 4
+strata trace: window 380 4
+strata trace: window 384 4
+strata decode timing: 77 windows, avg T 3.88, 3.73 tokens/window, 93.96 ms/window = verify 90.73 (GPU-reach wait 21.92 + per-layer host 62.35 [plan 0.61 actq 1.92 jobs 0.36 CPU 59.44] + stage 1.55) + commit/emit 0.29 + draft 2.92; per layer-window: CPU experts 16.11 (22.19 entries), VRAM hits 16.64, PCIe 0.00
+strata serve: prompt 102 tokens = 0 reused + 102 read in 1259 ms (81.0 tok/s), 287 generated in 7235 ms (39.7 tok/s), drafts accepted 210 of 222, 1 checkpoints
+strata serve: decode expert cache hit rate: 42.9% (61511 hits / 143520 lookups)
+strata serve: KV streaming: 99.47% of 221028 block reads hit VRAM, 4.7 MiB read from RAM
+strata trace: request 75 0
+strata trace: prompt start 74 -1
+strata trace: lent 380 slots for 256 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 70
+strata trace: read 70 tokens (batched) in 864.9 ms
+strata trace: refill start 380 -1
+strata trace: refilled 380 slots on 1 stage(s) in 50.6 ms
+strata trace: read 4 tokens (windows) in 86.4 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 74 1
+strata trace: window 75 4
+strata trace: window 79 4
+strata trace: window 82 4
+strata trace: window 86 4
+strata trace: window 90 4
+strata trace: window 93 4
+strata trace: window 97 4
+strata trace: window 101 4
+strata trace: window 105 1
+strata trace: window 106 4
+strata trace: window 110 4
+strata trace: window 112 4
+strata trace: window 113 4
+strata trace: window 115 4
+strata trace: window 119 2
+strata trace: window 121 3
+strata trace: window 123 4
+strata trace: window 126 4
+strata trace: window 130 4
+strata trace: window 131 4
+strata trace: window 135 4
+strata trace: window 139 4
+strata trace: window 143 4
+strata trace: window 147 4
+strata trace: window 151 4
+strata trace: window 154 4
+strata trace: window 158 4
+strata trace: window 162 4
+strata trace: window 166 4
+strata trace: window 170 4
+strata trace: window 174 4
+strata trace: window 178 4
+strata trace: window 182 4
+strata trace: window 186 4
+strata trace: window 190 4
+strata trace: window 194 4
+strata trace: window 198 4
+strata trace: window 202 4
+strata trace: window 206 4
+strata trace: window 210 4
+strata decode timing: 41 windows, avg T 3.78, 3.34 tokens/window, 86.62 ms/window = verify 83.59 (GPU-reach wait 21.45 + per-layer host 57.55 [plan 0.53 actq 1.81 jobs 0.44 CPU 54.74] + stage 0.82) + commit/emit 0.28 + draft 2.72; per layer-window: CPU experts 13.90 (18.70 entries), VRAM hits 19.10, PCIe 0.00
+strata serve: prompt 75 tokens = 0 reused + 75 read in 1042 ms (71.9 tok/s), 137 generated in 3551 ms (38.6 tok/s), drafts accepted 99 of 114, 1 checkpoints
+strata serve: decode expert cache hit rate: 50.5% (37598 hits / 74400 lookups)
+strata serve: KV streaming: 99.04% of 67632 block reads hit VRAM, 2.6 MiB read from RAM
+strata trace: request 81 0
+strata trace: prompt start 80 -1
+strata trace: lent 380 slots for 256 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 76
+strata trace: read 76 tokens (batched) in 861.4 ms
+strata trace: refill start 380 -1
+strata trace: refilled 380 slots on 1 stage(s) in 50.6 ms
+strata trace: read 4 tokens (windows) in 81.3 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 80 1
+strata trace: window 81 4
+strata trace: window 83 4
+strata trace: window 85 4
+strata trace: window 89 4
+strata trace: window 93 4
+strata trace: window 97 4
+strata trace: window 101 4
+strata trace: window 105 4
+strata trace: window 109 4
+strata trace: window 113 4
+strata trace: window 117 4
+strata trace: window 121 4
+strata trace: window 124 4
+strata trace: window 128 4
+strata trace: window 132 4
+strata trace: window 136 4
+strata trace: window 140 4
+strata trace: window 144 4
+strata trace: window 148 4
+strata trace: window 152 4
+strata trace: window 156 4
+strata trace: window 160 4
+strata trace: window 164 4
+strata trace: window 168 4
+strata trace: window 172 4
+strata trace: window 176 4
+strata trace: window 180 4
+strata trace: window 184 4
+strata trace: window 188 4
+strata decode timing: 30 windows, avg T 3.90, 3.70 tokens/window, 93.77 ms/window = verify 90.72 (GPU-reach wait 21.95 + per-layer host 63.95 [plan 0.51 actq 1.82 jobs 0.42 CPU 61.16] + stage 0.71) + commit/emit 0.27 + draft 2.76; per layer-window: CPU experts 17.61 (22.18 entries), VRAM hits 16.82, PCIe 0.00
+strata serve: prompt 81 tokens = 0 reused + 81 read in 1033 ms (78.4 tok/s), 111 generated in 2813 ms (39.5 tok/s), drafts accepted 82 of 87, 1 checkpoints
+strata serve: decode expert cache hit rate: 43.1% (24220 hits / 56160 lookups)
+strata serve: KV streaming: 98.82% of 48756 block reads hit VRAM, 2.3 MiB read from RAM
+strata trace: request 74 0
+strata trace: prompt start 73 -1
+strata trace: lent 380 slots for 256 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 69
+strata trace: read 69 tokens (batched) in 833.4 ms
+strata trace: refill start 380 -1
+strata trace: refilled 380 slots on 1 stage(s) in 50.6 ms
+strata trace: read 4 tokens (windows) in 92.0 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 73 1
+strata trace: window 74 4
+strata trace: window 78 4
+strata trace: window 80 4
+strata trace: window 81 4
+strata trace: window 83 2
+strata trace: window 85 4
+strata trace: window 89 4
+strata trace: window 93 4
+strata trace: window 97 4
+strata trace: window 101 4
+strata trace: window 102 2
+strata trace: window 104 4
+strata trace: window 108 4
+strata trace: window 111 4
+strata trace: window 112 4
+strata trace: window 116 4
+strata trace: window 120 4
+strata trace: window 124 4
+strata trace: window 128 4
+strata trace: window 132 4
+strata trace: window 136 4
+strata trace: window 140 4
+strata trace: window 144 4
+strata trace: window 148 4
+strata trace: window 152 4
+strata trace: window 156 4
+strata trace: window 160 4
+strata trace: window 163 4
+strata trace: window 167 4
+strata trace: window 171 4
+strata decode timing: 31 windows, avg T 3.77, 3.19 tokens/window, 84.82 ms/window = verify 81.62 (GPU-reach wait 20.97 + per-layer host 55.89 [plan 0.56 actq 1.77 jobs 0.48 CPU 53.05] + stage 0.97) + commit/emit 0.31 + draft 2.86; per layer-window: CPU experts 13.12 (18.21 entries), VRAM hits 19.53, PCIe 0.00
+strata serve: prompt 74 tokens = 0 reused + 74 read in 1016 ms (72.8 tok/s), 99 generated in 2629 ms (37.7 tok/s), drafts accepted 71 of 86, 1 checkpoints
+strata serve: decode expert cache hit rate: 51.8% (29063 hits / 56160 lookups)
+strata serve: KV streaming: 98.80% of 44028 block reads hit VRAM, 2.1 MiB read from RAM
+strata trace: request 74 0
+strata trace: prompt start 73 -1
+strata trace: lent 380 slots for 256 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 69
+strata trace: read 69 tokens (batched) in 898.4 ms
+strata trace: refill start 380 -1
+strata trace: refilled 380 slots on 1 stage(s) in 50.7 ms
+strata trace: read 4 tokens (windows) in 88.5 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 73 1
+strata trace: window 74 4
+strata trace: window 78 4
+strata trace: window 82 3
+strata trace: window 83 4
+strata trace: window 85 4
+strata trace: window 89 4
+strata trace: window 93 4
+strata trace: window 94 4
+strata trace: window 98 4
+strata trace: window 101 4
+strata trace: window 105 4
+strata trace: window 109 4
+strata trace: window 112 4
+strata trace: window 114 4
+strata trace: window 118 4
+strata trace: window 122 2
+strata trace: window 124 4
+strata trace: window 125 4
+strata trace: window 129 4
+strata trace: window 133 4
+strata trace: window 137 4
+strata trace: window 141 4
+strata decode timing: 23 windows, avg T 3.74, 3.13 tokens/window, 72.99 ms/window = verify 69.92 (GPU-reach wait 21.70 + per-layer host 43.49 [plan 0.51 actq 1.70 jobs 0.51 CPU 40.76] + stage 0.83) + commit/emit 0.29 + draft 2.75; per layer-window: CPU experts 11.81 (15.66 entries), VRAM hits 21.73, PCIe 0.00
+strata serve: prompt 74 tokens = 0 reused + 74 read in 1080 ms (68.5 tok/s), 72 generated in 1679 ms (42.9 tok/s), drafts accepted 49 of 63, 1 checkpoints
+strata serve: decode expert cache hit rate: 58.1% (23987 hits / 41280 lookups)
+strata serve: KV streaming: 98.48% of 29280 block reads hit VRAM, 1.8 MiB read from RAM
+strata trace: request 73 0
+strata trace: prompt start 72 -1
+strata trace: lent 380 slots for 256 tokens in 0.1 ms
+strata trace: prompt chunk 0 of 68
+strata trace: read 68 tokens (batched) in 828.9 ms
+strata trace: refill start 380 -1
+strata trace: refilled 380 slots on 1 stage(s) in 50.6 ms
+strata trace: read 4 tokens (windows) in 80.2 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 72 1
+strata trace: window 73 4
+strata trace: window 77 4
+strata trace: window 79 3
+strata trace: window 82 4
+strata trace: window 83 4
+strata trace: window 86 4
+strata trace: window 90 4
+strata trace: window 92 4
+strata trace: window 94 4
+strata trace: window 98 4
+strata trace: window 99 4
+strata trace: window 103 4
+strata trace: window 107 4
+strata trace: window 111 4
+strata trace: window 115 4
+strata trace: window 119 4
+strata trace: window 123 4
+strata trace: window 127 4
+strata trace: window 130 4
+strata trace: window 134 4
+strata trace: window 138 4
+strata trace: window 142 4
+strata trace: window 146 4
+strata trace: window 150 4
+strata trace: window 154 4
+strata trace: window 158 4
+strata trace: window 162 4
+strata decode timing: 28 windows, avg T 3.86, 3.25 tokens/window, 86.62 ms/window = verify 83.39 (GPU-reach wait 21.72 + per-layer host 57.06 [plan 0.51 actq 1.72 jobs 0.51 CPU 54.28] + stage 0.80) + commit/emit 0.25 + draft 2.96; per layer-window: CPU experts 15.54 (20.24 entries), VRAM hits 18.34, PCIe 0.00
+strata serve: prompt 73 tokens = 0 reused + 73 read in 998 ms (73.2 tok/s), 91 generated in 2425 ms (37.5 tok/s), drafts accepted 66 of 80, 1 checkpoints
+strata serve: decode expert cache hit rate: 47.5% (24643 hits / 51840 lookups)
+strata serve: KV streaming: 98.71% of 39000 block reads hit VRAM, 2.0 MiB read from RAM
+strata trace: request 20000 0
+strata trace: prompt start 19999 -1
+strata trace: lent 1325 slots for 2048 tokens in 0.8 ms
+strata trace: prompt chunk 0 of 19995
+strata trace: prompt chunk 2048 of 19995
+strata trace: prompt chunk 4096 of 19995
+strata trace: prompt chunk 6144 of 19995
+strata trace: prompt chunk 8192 of 19995
+strata trace: prompt chunk 10240 of 19995
+strata trace: prompt chunk 12288 of 19995
+strata trace: prompt chunk 14336 of 19995
+strata trace: prompt chunk 16384 of 19995
+strata trace: prompt chunk 18432 of 19995
+strata trace: read 19995 tokens (batched) in 31889.9 ms
+strata trace: refill start 1325 -1
+strata trace: refilled 1325 slots on 1 stage(s) in 177.6 ms
+strata trace: read 4 tokens (windows) in 79.3 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 19999 1
+strata trace: window 20000 4
+strata trace: window 20002 4
+strata trace: window 20006 4
+strata trace: window 20008 4
+strata trace: window 20012 4
+strata trace: window 20015 4
+strata trace: window 20018 4
+strata trace: window 20019 4
+strata trace: window 20023 1
+strata trace: window 20024 4
+strata trace: window 20028 4
+strata trace: window 20031 4
+strata trace: window 20035 4
+strata trace: window 20039 4
+strata trace: window 20043 1
+strata trace: window 20044 4
+strata trace: window 20046 4
+strata trace: window 20050 4
+strata trace: window 20054 2
+strata trace: window 20056 4
+strata trace: window 20060 4
+strata trace: window 20064 2
+strata trace: window 20066 4
+strata trace: window 20070 4
+strata trace: window 20074 4
+strata trace: window 20076 4
+strata trace: window 20080 4
+strata trace: window 20083 4
+strata trace: window 20087 4
+strata trace: window 20091 4
+strata trace: window 20095 4
+strata trace: window 20099 4
+strata trace: window 20103 4
+strata trace: window 20107 4
+strata trace: window 20111 4
+strata trace: window 20112 4
+strata trace: window 20116 4
+strata trace: window 20120 4
+strata trace: window 20124 4
+strata trace: window 20128 4
+strata trace: window 20132 4
+strata trace: window 20136 4
+strata decode timing: 43 windows, avg T 3.70, 3.26 tokens/window, 80.31 ms/window = verify 76.27 (GPU-reach wait 22.79 + per-layer host 47.07 [plan 0.50 actq 1.66 jobs 0.50 CPU 44.39] + stage 2.46) + commit/emit 0.29 + draft 3.73; per layer-window: CPU experts 12.65 (16.18 entries), VRAM hits 20.79, PCIe 0.00
+strata serve: prompt 20000 tokens = 0 reused + 20000 read in 32197 ms (621.2 tok/s), 140 generated in 3453 ms (40.5 tok/s), drafts accepted 98 of 116, 2 checkpoints
+strata serve: decode expert cache hit rate: 56.2% (42915 hits / 76320 lookups)
+strata serve: KV streaming: 97.16% of 1004388 block reads hit VRAM, 114.8 MiB read from RAM
+strata trace: request 20046 0
+strata trace: prompt start 20045 -1
+strata trace: lent 1325 slots for 2048 tokens in 0.8 ms
+strata trace: prompt chunk 0 of 3657
+strata trace: prompt chunk 2048 of 3657
+strata trace: read 3657 tokens (batched) in 6446.3 ms
+strata trace: refill start 1325 -1
+strata trace: refilled 1325 slots on 1 stage(s) in 177.1 ms
+strata trace: read 4 tokens (windows) in 72.2 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 20045 1
+strata trace: window 20046 4
+strata trace: window 20050 4
+strata trace: window 20054 4
+strata trace: window 20058 3
+strata trace: window 20061 4
+strata trace: window 20063 3
+strata trace: window 20066 4
+strata trace: window 20067 4
+strata trace: window 20070 4
+strata trace: window 20071 3
+strata trace: window 20073 1
+strata trace: window 20074 2
+strata trace: window 20076 2
+strata trace: window 20078 2
+strata trace: window 20080 4
+strata trace: window 20082 3
+strata trace: window 20085 4
+strata trace: window 20087 4
+strata trace: window 20090 3
+strata trace: window 20091 4
+strata trace: window 20093 2
+strata trace: window 20095 4
+strata trace: window 20098 4
+strata trace: window 20101 4
+strata trace: window 20105 1
+strata trace: window 20106 1
+strata trace: window 20107 1
+strata trace: window 20108 4
+strata trace: window 20110 4
+strata trace: window 20111 4
+strata trace: window 20114 4
+strata trace: window 20118 4
+strata trace: window 20119 4
+strata trace: window 20120 4
+strata trace: window 20123 2
+strata trace: window 20125 1
+strata trace: window 20126 4
+strata trace: window 20130 4
+strata trace: window 20134 4
+strata trace: window 20138 4
+strata trace: window 20142 4
+strata trace: window 20143 4
+strata trace: window 20147 4
+strata trace: window 20151 4
+strata trace: window 20153 4
+strata trace: window 20156 4
+strata trace: window 20160 4
+strata trace: window 20164 4
+strata trace: window 20168 4
+strata trace: window 20172 4
+strata trace: window 20176 4
+strata trace: window 20180 4
+strata trace: window 20184 4
+strata trace: window 20188 4
+strata trace: window 20192 4
+strata trace: window 20196 4
+strata trace: window 20200 4
+strata trace: window 20204 4
+strata trace: window 20206 4
+strata trace: window 20210 4
+strata trace: window 20214 4
+strata trace: window 20218 4
+strata trace: window 20222 4
+strata trace: window 20226 2
+strata trace: window 20228 4
+strata trace: window 20232 4
+strata trace: window 20236 4
+strata trace: window 20239 4
+strata trace: window 20243 4
+strata trace: window 20245 4
+strata trace: window 20249 4
+strata trace: window 20253 4
+strata trace: window 20257 4
+strata trace: window 20261 4
+strata trace: window 20265 4
+strata trace: window 20268 4
+strata trace: window 20272 4
+strata trace: window 20276 2
+strata trace: window 20278 4
+strata trace: window 20280 4
+strata trace: window 20282 1
+strata trace: window 20283 4
+strata trace: window 20287 4
+strata trace: window 20291 4
+strata trace: window 20293 4
+strata trace: window 20297 4
+strata trace: window 20301 4
+strata trace: window 20305 4
+strata trace: window 20309 4
+strata trace: window 20313 4
+strata trace: window 20317 4
+strata trace: window 20319 4
+strata trace: window 20323 4
+strata trace: window 20327 3
+strata trace: window 20330 4
+strata trace: window 20334 4
+strata trace: window 20338 4
+strata trace: window 20342 4
+strata trace: window 20346 4
+strata trace: window 20347 4
+strata trace: window 20351 4
+strata trace: window 20355 4
+strata trace: window 20359 4
+strata trace: window 20363 1
+strata trace: window 20364 4
+strata trace: window 20368 4
+strata trace: window 20369 4
+strata trace: window 20372 4
+strata trace: window 20375 4
+strata trace: window 20379 2
+strata trace: window 20381 4
+strata trace: window 20385 4
+strata trace: window 20388 3
+strata trace: window 20391 2
+strata trace: window 20392 1
+strata trace: window 20393 2
+strata trace: window 20395 3
+strata trace: window 20397 4
+strata trace: window 20401 1
+strata trace: window 20402 4
+strata trace: window 20406 4
+strata trace: window 20410 2
+strata trace: window 20411 4
+strata trace: window 20413 2
+strata trace: window 20415 1
+strata trace: window 20416 2
+strata trace: window 20418 4
+strata trace: window 20422 1
+strata trace: window 20423 2
+strata trace: window 20425 4
+strata trace: window 20427 4
+strata trace: window 20431 4
+strata trace: window 20435 4
+strata trace: window 20439 3
+strata trace: window 20441 4
+strata trace: window 20445 4
+strata trace: window 20449 4
+strata trace: window 20451 4
+strata trace: window 20455 4
+strata trace: window 20459 4
+strata trace: window 20461 3
+strata trace: window 20464 4
+strata trace: window 20467 1
+strata trace: window 20468 4
+strata trace: window 20471 1
+strata trace: window 20472 4
+strata trace: window 20474 1
+strata trace: window 20475 1
+strata trace: window 20476 4
+strata trace: window 20480 2
+strata trace: window 20481 1
+strata trace: window 20482 1
+strata trace: window 20483 1
+strata trace: window 20484 4
+strata trace: window 20485 3
+strata trace: window 20488 3
+strata trace: window 20491 4
+strata trace: window 20492 1
+strata trace: window 20493 1
+strata trace: window 20494 4
+strata trace: window 20495 4
+strata trace: window 20499 2
+strata trace: window 20501 1
+strata trace: window 20502 3
+strata trace: window 20504 2
+strata trace: window 20506 4
+strata trace: window 20507 4
+strata trace: window 20509 4
+strata trace: window 20510 3
+strata trace: window 20512 2
+strata trace: window 20513 4
+strata trace: window 20517 4
+strata trace: window 20521 1
+strata trace: window 20522 2
+strata trace: window 20524 2
+strata trace: window 20525 4
+strata trace: window 20529 4
+strata trace: window 20531 4
+strata trace: window 20532 4
+strata trace: window 20535 4
+strata trace: window 20539 2
+strata trace: window 20540 4
+strata trace: window 20544 4
+strata trace: window 20545 4
+strata trace: window 20547 4
+strata trace: window 20551 2
+strata trace: window 20553 4
+strata trace: window 20554 3
+strata trace: window 20557 4
+strata trace: window 20558 4
+strata trace: window 20561 4
+strata trace: window 20563 4
+strata trace: window 20567 4
+strata trace: window 20571 3
+strata trace: window 20574 3
+strata trace: window 20576 4
+strata trace: window 20580 3
+strata trace: window 20582 1
+strata trace: window 20583 2
+strata trace: window 20585 4
+strata trace: window 20587 4
+strata trace: window 20590 4
+strata trace: window 20594 4
+strata trace: window 20597 3
+strata trace: window 20598 4
+strata trace: window 20600 1
+strata trace: window 20601 2
+strata trace: window 20603 1
+strata trace: window 20604 4
+strata trace: window 20608 4
+strata trace: window 20612 4
+strata trace: window 20616 4
+strata trace: window 20618 1
+strata trace: window 20619 4
+strata trace: window 20623 4
+strata trace: window 20627 4
+strata trace: window 20631 1
+strata trace: window 20632 1
+strata trace: window 20633 3
+strata trace: window 20636 2
+strata trace: window 20637 4
+strata trace: window 20639 4
+strata trace: window 20641 2
+strata trace: window 20643 4
+strata trace: window 20647 1
+strata trace: window 20648 4
+strata trace: window 20650 4
+strata trace: window 20654 2
+strata trace: window 20656 1
+strata trace: window 20657 4
+strata trace: window 20661 4
+strata trace: window 20665 2
+strata trace: window 20666 4
+strata trace: window 20670 2
+strata trace: window 20671 1
+strata trace: window 20672 2
+strata trace: window 20674 2
+strata trace: window 20676 4
+strata trace: window 20679 1
+strata trace: window 20680 4
+strata trace: window 20682 3
+strata trace: window 20684 2
+strata trace: window 20686 4
+strata trace: window 20690 4
+strata trace: window 20694 4
+strata trace: window 20698 4
+strata trace: window 20702 1
+strata trace: window 20703 2
+strata trace: window 20704 3
+strata trace: window 20705 2
+strata trace: window 20707 3
+strata trace: window 20710 4
+strata trace: window 20713 4
+strata trace: window 20717 4
+strata trace: window 20721 3
+strata trace: window 20722 4
+strata trace: window 20726 4
+strata trace: window 20730 4
+strata trace: window 20732 4
+strata trace: window 20736 4
+strata trace: window 20739 4
+strata trace: window 20743 4
+strata trace: window 20747 4
+strata trace: window 20751 4
+strata trace: window 20755 4
+strata trace: window 20756 4
+strata trace: window 20760 4
+strata trace: window 20761 4
+strata trace: window 20762 1
+strata trace: window 20763 2
+strata trace: window 20765 4
+strata trace: window 20768 3
+strata trace: window 20769 1
+strata trace: window 20770 4
+strata trace: window 20771 4
+strata trace: window 20775 4
+strata trace: window 20776 4
+strata trace: window 20780 3
+strata trace: window 20781 4
+strata trace: window 20782 4
+strata trace: window 20786 4
+strata trace: window 20790 1
+strata trace: window 20791 4
+strata trace: window 20795 3
+strata trace: window 20796 2
+strata trace: window 20798 1
+strata trace: window 20799 4
+strata trace: window 20801 4
+strata trace: window 20803 4
+strata trace: window 20807 4
+strata trace: window 20811 4
+strata trace: window 20814 3
+strata trace: window 20816 2
+strata trace: window 20818 4
+strata trace: window 20820 2
+strata trace: window 20821 2
+strata trace: window 20823 3
+strata trace: window 20826 4
+strata trace: window 20827 4
+strata trace: window 20829 1
+strata trace: window 20830 3
+strata trace: window 20833 4
+strata trace: window 20837 4
+strata trace: window 20841 4
+strata trace: window 20844 4
+strata trace: window 20848 4
+strata trace: window 20852 4
+strata trace: window 20856 4
+strata trace: window 20860 4
+strata trace: window 20864 4
+strata trace: window 20868 4
+strata trace: window 20872 4
+strata trace: window 20873 4
+strata trace: window 20877 4
+strata trace: window 20881 4
+strata trace: window 20885 4
+strata trace: window 20886 2
+strata trace: window 20887 1
+strata trace: window 20888 1
+strata trace: window 20889 3
+strata trace: window 20892 4
+strata trace: window 20896 4
+strata trace: window 20897 4
+strata trace: window 20901 4
+strata trace: window 20903 4
+strata trace: window 20907 2
+strata trace: window 20909 1
+strata trace: window 20910 4
+strata trace: window 20914 3
+strata trace: window 20916 4
+strata trace: window 20918 1
+strata trace: window 20919 4
+strata trace: window 20920 1
+strata trace: window 20921 1
+strata trace: window 20922 4
+strata trace: window 20926 4
+strata trace: window 20930 4
+strata trace: window 20933 1
+strata trace: window 20934 4
+strata trace: window 20938 4
+strata trace: window 20940 4
+strata trace: window 20944 4
+strata trace: window 20946 4
+strata trace: window 20948 4
+strata trace: window 20952 4
+strata trace: window 20956 4
+strata trace: window 20959 4
+strata trace: window 20963 4
+strata trace: window 20967 4
+strata trace: window 20971 4
+strata trace: window 20975 4
+strata trace: window 20977 2
+strata trace: window 20979 2
+strata trace: window 20981 4
+strata trace: window 20982 4
+strata trace: window 20985 4
+strata trace: window 20987 3
+strata trace: window 20988 4
+strata trace: window 20991 4
+strata trace: window 20993 4
+strata trace: window 20994 4
+strata trace: window 20997 1
+strata trace: window 20998 1
+strata trace: window 20999 1
+strata trace: window 21000 4
+strata trace: window 21004 4
+strata trace: window 21008 4
+strata trace: window 21011 2
+strata trace: window 21012 4
+strata trace: window 21016 4
+strata trace: window 21018 4
+strata trace: window 21022 3
+strata trace: window 21025 4
+strata trace: window 21029 4
+strata trace: window 21033 4
+strata trace: window 21034 4
+strata trace: window 21038 4
+strata trace: window 21042 4
+strata trace: window 21046 4
+strata trace: window 21050 4
+strata trace: window 21054 4
+strata trace: window 21058 4
+strata trace: window 21062 4
+strata trace: window 21066 4
+strata decode timing: 385 windows, avg T 3.30, 2.66 tokens/window, 69.50 ms/window = verify 65.43 (GPU-reach wait 21.64 + per-layer host 38.13 [plan 0.46 actq 1.56 jobs 0.52 CPU 35.56] + stage 2.01) + commit/emit 0.27 + draft 3.78; per layer-window: CPU experts 9.65 (12.80 entries), VRAM hits 20.21, PCIe 0.00
+strata serve: prompt 20046 tokens = 16384 reused + 3662 read in 6765 ms (541.3 tok/s), 1024 generated in 26759 ms (38.3 tok/s), drafts accepted 640 of 886, 2 checkpoints
+strata serve: decode expert cache hit rate: 61.2% (373499 hits / 610080 lookups)
+strata serve: KV streaming: 99.34% of 8860944 block reads hit VRAM, 234.5 MiB read from RAM
+strata trace: request 20046 0
+strata trace: prompt start 20045 -1
+strata trace: read 4 tokens (windows) in 73.4 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 20045 1
+strata trace: window 20046 4
+strata trace: window 20050 4
+strata trace: window 20054 4
+strata trace: window 20058 3
+strata trace: window 20061 4
+strata trace: window 20063 3
+strata trace: window 20066 4
+strata trace: window 20067 4
+strata trace: window 20070 4
+strata trace: window 20071 3
+strata trace: window 20073 1
+strata trace: window 20074 2
+strata trace: window 20076 2
+strata trace: window 20078 2
+strata trace: window 20080 4
+strata trace: window 20082 3
+strata trace: window 20085 4
+strata trace: window 20087 4
+strata trace: window 20090 3
+strata trace: window 20091 4
+strata trace: window 20093 2
+strata trace: window 20095 4
+strata trace: window 20098 4
+strata trace: window 20101 4
+strata trace: window 20105 1
+strata trace: window 20106 1
+strata trace: window 20107 1
+strata trace: window 20108 4
+strata trace: window 20110 4
+strata trace: window 20111 4
+strata trace: window 20114 4
+strata trace: window 20118 4
+strata trace: window 20119 4
+strata trace: window 20120 4
+strata trace: window 20123 2
+strata trace: window 20125 1
+strata trace: window 20126 4
+strata trace: window 20130 4
+strata trace: window 20134 4
+strata trace: window 20138 4
+strata trace: window 20142 4
+strata trace: window 20143 4
+strata trace: window 20147 4
+strata trace: window 20151 4
+strata trace: window 20153 4
+strata trace: window 20156 4
+strata trace: window 20160 4
+strata trace: window 20164 4
+strata trace: window 20168 4
+strata trace: window 20172 4
+strata trace: window 20176 4
+strata trace: window 20180 4
+strata trace: window 20184 4
+strata trace: window 20188 4
+strata trace: window 20192 4
+strata trace: window 20196 4
+strata trace: window 20200 4
+strata trace: window 20204 4
+strata trace: window 20206 4
+strata trace: window 20210 4
+strata trace: window 20214 4
+strata trace: window 20218 4
+strata trace: window 20222 4
+strata trace: window 20226 2
+strata trace: window 20228 4
+strata trace: window 20232 4
+strata trace: window 20236 4
+strata trace: window 20239 4
+strata trace: window 20243 4
+strata trace: window 20245 4
+strata trace: window 20249 4
+strata trace: window 20253 4
+strata trace: window 20257 4
+strata trace: window 20261 4
+strata trace: window 20265 4
+strata trace: window 20268 4
+strata trace: window 20272 4
+strata trace: window 20276 2
+strata trace: window 20278 4
+strata trace: window 20280 4
+strata trace: window 20282 1
+strata trace: window 20283 4
+strata trace: window 20287 4
+strata trace: window 20291 4
+strata trace: window 20293 4
+strata trace: window 20297 4
+strata trace: window 20301 4
+strata trace: window 20305 4
+strata trace: window 20309 4
+strata trace: window 20313 4
+strata trace: window 20317 4
+strata trace: window 20319 4
+strata trace: window 20323 4
+strata trace: window 20327 3
+strata trace: window 20330 4
+strata trace: window 20334 4
+strata trace: window 20338 4
+strata trace: window 20342 4
+strata trace: window 20346 4
+strata trace: window 20347 4
+strata trace: window 20351 4
+strata trace: window 20355 4
+strata trace: window 20359 4
+strata trace: window 20363 1
+strata trace: window 20364 4
+strata trace: window 20368 4
+strata trace: window 20369 4
+strata trace: window 20372 4
+strata trace: window 20375 4
+strata trace: window 20379 2
+strata trace: window 20381 4
+strata trace: window 20385 4
+strata trace: window 20388 3
+strata trace: window 20391 2
+strata trace: window 20392 1
+strata trace: window 20393 2
+strata trace: window 20395 3
+strata trace: window 20397 4
+strata trace: window 20401 1
+strata trace: window 20402 4
+strata trace: window 20406 4
+strata trace: window 20410 2
+strata trace: window 20411 4
+strata trace: window 20413 2
+strata trace: window 20415 1
+strata trace: window 20416 2
+strata trace: window 20418 4
+strata trace: window 20422 1
+strata trace: window 20423 2
+strata trace: window 20425 4
+strata trace: window 20427 4
+strata trace: window 20431 4
+strata trace: window 20435 4
+strata trace: window 20439 3
+strata trace: window 20441 4
+strata trace: window 20445 4
+strata trace: window 20449 4
+strata trace: window 20451 4
+strata trace: window 20455 4
+strata trace: window 20459 4
+strata trace: window 20461 3
+strata trace: window 20464 4
+strata trace: window 20467 1
+strata trace: window 20468 4
+strata trace: window 20471 1
+strata trace: window 20472 4
+strata trace: window 20474 1
+strata trace: window 20475 1
+strata trace: window 20476 4
+strata trace: window 20480 2
+strata trace: window 20481 1
+strata trace: window 20482 1
+strata trace: window 20483 1
+strata trace: window 20484 4
+strata trace: window 20485 3
+strata trace: window 20488 3
+strata trace: window 20491 4
+strata trace: window 20492 1
+strata trace: window 20493 1
+strata trace: window 20494 4
+strata trace: window 20495 4
+strata trace: window 20499 2
+strata trace: window 20501 1
+strata trace: window 20502 3
+strata trace: window 20504 2
+strata trace: window 20506 4
+strata trace: window 20507 4
+strata trace: window 20509 4
+strata trace: window 20510 3
+strata trace: window 20512 2
+strata trace: window 20513 4
+strata trace: window 20517 4
+strata trace: window 20521 1
+strata trace: window 20522 2
+strata trace: window 20524 2
+strata trace: window 20525 4
+strata trace: window 20529 4
+strata trace: window 20531 4
+strata trace: window 20532 4
+strata trace: window 20535 4
+strata trace: window 20539 2
+strata trace: window 20540 4
+strata trace: window 20544 4
+strata trace: window 20545 4
+strata trace: window 20547 4
+strata trace: window 20551 2
+strata trace: window 20553 4
+strata trace: window 20554 3
+strata trace: window 20557 4
+strata trace: window 20558 4
+strata trace: window 20561 4
+strata trace: window 20563 4
+strata trace: window 20567 4
+strata trace: window 20571 3
+strata trace: window 20574 3
+strata trace: window 20576 4
+strata trace: window 20580 3
+strata trace: window 20582 1
+strata trace: window 20583 2
+strata trace: window 20585 4
+strata trace: window 20587 4
+strata trace: window 20590 4
+strata trace: window 20594 4
+strata trace: window 20597 3
+strata trace: window 20598 4
+strata trace: window 20600 1
+strata trace: window 20601 2
+strata trace: window 20603 1
+strata trace: window 20604 4
+strata trace: window 20608 4
+strata trace: window 20612 4
+strata trace: window 20616 4
+strata trace: window 20618 1
+strata trace: window 20619 4
+strata trace: window 20623 4
+strata trace: window 20627 4
+strata trace: window 20631 1
+strata trace: window 20632 1
+strata trace: window 20633 3
+strata trace: window 20636 2
+strata trace: window 20637 4
+strata trace: window 20639 4
+strata trace: window 20641 2
+strata trace: window 20643 4
+strata trace: window 20647 1
+strata trace: window 20648 4
+strata trace: window 20650 4
+strata trace: window 20654 2
+strata trace: window 20656 1
+strata trace: window 20657 4
+strata trace: window 20661 4
+strata trace: window 20665 2
+strata trace: window 20666 4
+strata trace: window 20670 2
+strata trace: window 20671 1
+strata trace: window 20672 2
+strata trace: window 20674 2
+strata trace: window 20676 4
+strata trace: window 20679 1
+strata trace: window 20680 4
+strata trace: window 20682 3
+strata trace: window 20684 2
+strata trace: window 20686 4
+strata trace: window 20690 4
+strata trace: window 20694 4
+strata trace: window 20698 4
+strata trace: window 20702 1
+strata trace: window 20703 2
+strata trace: window 20704 3
+strata trace: window 20705 2
+strata trace: window 20707 3
+strata trace: window 20710 4
+strata trace: window 20713 4
+strata trace: window 20717 4
+strata trace: window 20721 3
+strata trace: window 20722 4
+strata trace: window 20726 4
+strata trace: window 20730 4
+strata trace: window 20732 4
+strata trace: window 20736 4
+strata trace: window 20739 4
+strata trace: window 20743 4
+strata trace: window 20747 4
+strata trace: window 20751 4
+strata trace: window 20755 4
+strata trace: window 20756 4
+strata trace: window 20760 4
+strata trace: window 20761 4
+strata trace: window 20762 1
+strata trace: window 20763 2
+strata trace: window 20765 4
+strata trace: window 20768 3
+strata trace: window 20769 1
+strata trace: window 20770 4
+strata trace: window 20771 4
+strata trace: window 20775 4
+strata trace: window 20776 4
+strata trace: window 20780 3
+strata trace: window 20781 4
+strata trace: window 20782 4
+strata trace: window 20786 4
+strata trace: window 20790 1
+strata trace: window 20791 4
+strata trace: window 20795 3
+strata trace: window 20796 2
+strata trace: window 20798 1
+strata trace: window 20799 4
+strata trace: window 20801 4
+strata trace: window 20803 4
+strata trace: window 20807 4
+strata trace: window 20811 4
+strata trace: window 20814 3
+strata trace: window 20816 2
+strata trace: window 20818 4
+strata trace: window 20820 2
+strata trace: window 20821 2
+strata trace: window 20823 3
+strata trace: window 20826 4
+strata trace: window 20827 4
+strata trace: window 20829 1
+strata trace: window 20830 3
+strata trace: window 20833 4
+strata trace: window 20837 4
+strata trace: window 20841 4
+strata trace: window 20844 4
+strata trace: window 20848 4
+strata trace: window 20852 4
+strata trace: window 20856 4
+strata trace: window 20860 4
+strata trace: window 20864 4
+strata trace: window 20868 4
+strata trace: window 20872 4
+strata trace: window 20873 4
+strata trace: window 20877 4
+strata trace: window 20881 4
+strata trace: window 20885 4
+strata trace: window 20886 2
+strata trace: window 20887 1
+strata trace: window 20888 1
+strata trace: window 20889 3
+strata trace: window 20892 4
+strata trace: window 20896 4
+strata trace: window 20897 4
+strata trace: window 20901 4
+strata trace: window 20903 4
+strata trace: window 20907 2
+strata trace: window 20909 1
+strata trace: window 20910 4
+strata trace: window 20914 3
+strata trace: window 20916 4
+strata trace: window 20918 1
+strata trace: window 20919 4
+strata trace: window 20920 1
+strata trace: window 20921 1
+strata trace: window 20922 4
+strata trace: window 20926 4
+strata trace: window 20930 4
+strata trace: window 20933 1
+strata trace: window 20934 4
+strata trace: window 20938 4
+strata trace: window 20940 4
+strata trace: window 20944 4
+strata trace: window 20946 4
+strata trace: window 20948 4
+strata trace: window 20952 4
+strata trace: window 20956 4
+strata trace: window 20959 4
+strata trace: window 20963 4
+strata trace: window 20967 4
+strata trace: window 20971 4
+strata trace: window 20975 4
+strata trace: window 20977 2
+strata trace: window 20979 2
+strata trace: window 20981 4
+strata trace: window 20982 4
+strata trace: window 20985 4
+strata trace: window 20987 3
+strata trace: window 20988 4
+strata trace: window 20991 4
+strata trace: window 20993 4
+strata trace: window 20994 4
+strata trace: window 20997 1
+strata trace: window 20998 1
+strata trace: window 20999 1
+strata trace: window 21000 4
+strata trace: window 21004 4
+strata trace: window 21008 4
+strata trace: window 21011 2
+strata trace: window 21012 4
+strata trace: window 21016 4
+strata trace: window 21018 4
+strata trace: window 21022 3
+strata trace: window 21025 4
+strata trace: window 21029 4
+strata trace: window 21033 4
+strata trace: window 21034 4
+strata trace: window 21038 4
+strata trace: window 21042 4
+strata trace: window 21046 4
+strata trace: window 21050 4
+strata trace: window 21054 4
+strata trace: window 21058 4
+strata trace: window 21062 4
+strata trace: window 21066 4
+strata decode timing: 385 windows, avg T 3.30, 2.66 tokens/window, 67.71 ms/window = verify 63.62 (GPU-reach wait 21.78 + per-layer host 38.22 [plan 0.46 actq 1.57 jobs 0.51 CPU 35.66] + stage 0.02) + commit/emit 0.27 + draft 3.73; per layer-window: CPU experts 9.65 (12.80 entries), VRAM hits 20.21, PCIe 0.00
+strata serve: prompt 20046 tokens = 20041 reused + 5 read in 91 ms (54.7 tok/s), 1024 generated in 26068 ms (39.3 tok/s), drafts accepted 640 of 886, 2 checkpoints
+strata serve: decode expert cache hit rate: 61.2% (373499 hits / 610080 lookups)
+strata serve: KV streaming: 99.65% of 16717500 block reads hit VRAM, 234.5 MiB read from RAM
+strata trace: request 131072 0
+strata trace: prompt start 131071 -1
+strata trace: lent 1325 slots for 2048 tokens in 0.8 ms
+strata trace: prompt chunk 0 of 131067
+strata trace: prompt chunk 2048 of 131067
+strata trace: prompt chunk 4096 of 131067
+strata trace: prompt chunk 6144 of 131067
+strata trace: prompt chunk 8192 of 131067
+strata trace: prompt chunk 10240 of 131067
+strata trace: prompt chunk 12288 of 131067
+strata trace: prompt chunk 14336 of 131067
+strata trace: prompt chunk 16384 of 131067
+strata trace: prompt chunk 18432 of 131067
+strata trace: prompt chunk 20480 of 131067
+strata trace: prompt chunk 22528 of 131067
+strata trace: prompt chunk 24576 of 131067
+strata trace: prompt chunk 26624 of 131067
+strata trace: prompt chunk 28672 of 131067
+strata trace: prompt chunk 30720 of 131067
+strata trace: prompt chunk 32768 of 131067
+strata trace: prompt chunk 34816 of 131067
+strata trace: prompt chunk 36864 of 131067
+strata trace: prompt chunk 38912 of 131067
+strata trace: prompt chunk 40960 of 131067
+strata trace: prompt chunk 43008 of 131067
+strata trace: prompt chunk 45056 of 131067
+strata trace: prompt chunk 47104 of 131067
+strata trace: prompt chunk 49152 of 131067
+strata trace: prompt chunk 51200 of 131067
+strata trace: prompt chunk 53248 of 131067
+strata trace: prompt chunk 55296 of 131067
+strata trace: prompt chunk 57344 of 131067
+strata trace: prompt chunk 59392 of 131067
+strata trace: prompt chunk 61440 of 131067
+strata trace: prompt chunk 63488 of 131067
+strata trace: prompt chunk 65536 of 131067
+strata trace: prompt chunk 67584 of 131067
+strata trace: prompt chunk 69632 of 131067
+strata trace: prompt chunk 71680 of 131067
+strata trace: prompt chunk 73728 of 131067
+strata trace: prompt chunk 75776 of 131067
+strata trace: prompt chunk 77824 of 131067
+strata trace: prompt chunk 79872 of 131067
+strata trace: prompt chunk 81920 of 131067
+strata trace: prompt chunk 83968 of 131067
+strata trace: prompt chunk 86016 of 131067
+strata trace: prompt chunk 88064 of 131067
+strata trace: prompt chunk 90112 of 131067
+strata trace: prompt chunk 92160 of 131067
+strata trace: prompt chunk 94208 of 131067
+strata trace: prompt chunk 96256 of 131067
+strata trace: prompt chunk 98304 of 131067
+strata trace: prompt chunk 100352 of 131067
+strata trace: prompt chunk 102400 of 131067
+strata trace: prompt chunk 104448 of 131067
+strata trace: prompt chunk 106496 of 131067
+strata trace: prompt chunk 108544 of 131067
+strata trace: prompt chunk 110592 of 131067
+strata trace: prompt chunk 112640 of 131067
+strata trace: prompt chunk 114688 of 131067
+strata trace: prompt chunk 116736 of 131067
+strata trace: prompt chunk 118784 of 131067
+strata trace: prompt chunk 120832 of 131067
+strata trace: prompt chunk 122880 of 131067
+strata trace: prompt chunk 124928 of 131067
+strata trace: prompt chunk 126976 of 131067
+strata trace: prompt chunk 129024 of 131067
+strata trace: read 131067 tokens (batched) in 231251.8 ms
+strata trace: refill start 1325 -1
+strata trace: refilled 1325 slots on 1 stage(s) in 177.0 ms
+strata trace: read 4 tokens (windows) in 83.1 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 131071 1
+strata trace: window 131072 4
+strata trace: window 131076 4
+strata trace: window 131080 4
+strata trace: window 131084 4
+strata trace: window 131087 4
+strata trace: window 131090 4
+strata trace: window 131091 4
+strata trace: window 131094 4
+strata trace: window 131096 4
+strata trace: window 131100 4
+strata trace: window 131103 4
+strata trace: window 131107 4
+strata trace: window 131109 4
+strata trace: window 131113 4
+strata trace: window 131116 4
+strata trace: window 131118 4
+strata trace: window 131121 4
+strata trace: window 131125 4
+strata trace: window 131128 4
+strata trace: window 131132 4
+strata trace: window 131136 2
+strata trace: window 131138 4
+strata trace: window 131142 4
+strata trace: window 131146 4
+strata trace: window 131148 4
+strata trace: window 131152 4
+strata trace: window 131156 4
+strata trace: window 131160 4
+strata trace: window 131164 4
+strata trace: window 131168 4
+strata trace: window 131172 4
+strata trace: window 131176 3
+strata trace: window 131179 4
+strata trace: window 131183 4
+strata trace: window 131187 4
+strata trace: window 131191 4
+strata trace: window 131195 4
+strata trace: window 131199 4
+strata decode timing: 39 windows, avg T 3.85, 3.36 tokens/window, 84.69 ms/window = verify 79.55 (GPU-reach wait 27.11 + per-layer host 47.99 [plan 0.54 actq 1.65 jobs 0.56 CPU 45.22] + stage 0.63) + commit/emit 0.27 + draft 4.85; per layer-window: CPU experts 12.49 (16.02 entries), VRAM hits 22.45, PCIe 0.00
+strata serve: prompt 131072 tokens = 0 reused + 131072 read in 231577 ms (566.0 tok/s), 131 generated in 3303 ms (39.7 tok/s), drafts accepted 93 of 111, 6 checkpoints
+strata serve: decode expert cache hit rate: 58.4% (42018 hits / 72000 lookups)
+strata serve: KV streaming: 94.96% of 948960 block reads hit VRAM, 192.7 MiB read from RAM
+strata trace: request 131118 0
+strata trace: prompt start 131117 -1
+strata trace: lent 1325 slots for 2048 tokens in 0.8 ms
+strata trace: prompt chunk 0 of 16425
+strata trace: prompt chunk 2048 of 16425
+strata trace: prompt chunk 4096 of 16425
+strata trace: prompt chunk 6144 of 16425
+strata trace: prompt chunk 8192 of 16425
+strata trace: prompt chunk 10240 of 16425
+strata trace: prompt chunk 12288 of 16425
+strata trace: prompt chunk 14336 of 16425
+strata trace: prompt chunk 16384 of 16425
+strata trace: read 16425 tokens (batched) in 34659.0 ms
+strata trace: refill start 1325 -1
+strata trace: refilled 1325 slots on 1 stage(s) in 177.1 ms
+strata trace: read 4 tokens (windows) in 78.4 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 131117 1
+strata trace: window 131118 4
+strata trace: window 131122 4
+strata trace: window 131126 4
+strata trace: window 131130 3
+strata trace: window 131133 4
+strata trace: window 131136 4
+strata trace: window 131140 2
+strata trace: window 131142 2
+strata trace: window 131143 4
+strata trace: window 131147 3
+strata trace: window 131148 2
+strata trace: window 131149 4
+strata trace: window 131153 4
+strata trace: window 131157 4
+strata trace: window 131161 4
+strata trace: window 131165 2
+strata trace: window 131166 4
+strata trace: window 131167 1
+strata trace: window 131168 2
+strata trace: window 131170 1
+strata trace: window 131171 4
+strata trace: window 131173 1
+strata trace: window 131174 4
+strata trace: window 131178 4
+strata trace: window 131180 4
+strata trace: window 131183 4
+strata trace: window 131187 4
+strata trace: window 131191 4
+strata trace: window 131192 4
+strata trace: window 131193 4
+strata trace: window 131195 1
+strata trace: window 131196 4
+strata trace: window 131199 4
+strata trace: window 131203 4
+strata trace: window 131204 4
+strata trace: window 131208 4
+strata trace: window 131209 2
+strata trace: window 131210 1
+strata trace: window 131211 4
+strata trace: window 131215 4
+strata trace: window 131219 4
+strata trace: window 131223 3
+strata trace: window 131226 4
+strata trace: window 131228 4
+strata trace: window 131232 4
+strata trace: window 131236 4
+strata trace: window 131240 4
+strata trace: window 131241 4
+strata trace: window 131245 4
+strata trace: window 131249 4
+strata trace: window 131253 4
+strata trace: window 131257 4
+strata trace: window 131261 4
+strata trace: window 131265 4
+strata trace: window 131269 4
+strata trace: window 131273 4
+strata trace: window 131277 4
+strata trace: window 131281 4
+strata trace: window 131285 4
+strata trace: window 131289 4
+strata trace: window 131291 4
+strata trace: window 131295 4
+strata trace: window 131299 4
+strata trace: window 131302 4
+strata trace: window 131306 4
+strata trace: window 131310 4
+strata trace: window 131314 2
+strata trace: window 131316 4
+strata trace: window 131320 4
+strata trace: window 131324 4
+strata trace: window 131328 4
+strata trace: window 131332 4
+strata trace: window 131336 4
+strata trace: window 131340 4
+strata trace: window 131344 4
+strata trace: window 131347 2
+strata trace: window 131349 1
+strata trace: window 131350 4
+strata trace: window 131354 3
+strata trace: window 131357 4
+strata trace: window 131361 4
+strata trace: window 131362 2
+strata trace: window 131363 4
+strata trace: window 131367 4
+strata trace: window 131369 4
+strata trace: window 131370 4
+strata trace: window 131371 4
+strata trace: window 131375 2
+strata trace: window 131377 4
+strata trace: window 131379 4
+strata trace: window 131383 3
+strata trace: window 131386 4
+strata trace: window 131390 4
+strata trace: window 131394 4
+strata trace: window 131396 4
+strata trace: window 131400 4
+strata trace: window 131403 4
+strata trace: window 131405 4
+strata trace: window 131409 4
+strata trace: window 131413 4
+strata trace: window 131417 2
+strata trace: window 131419 4
+strata trace: window 131422 4
+strata trace: window 131426 4
+strata trace: window 131430 4
+strata trace: window 131434 4
+strata trace: window 131438 4
+strata trace: window 131441 4
+strata trace: window 131445 4
+strata trace: window 131449 4
+strata trace: window 131453 4
+strata trace: window 131457 4
+strata trace: window 131460 4
+strata trace: window 131464 4
+strata trace: window 131465 3
+strata trace: window 131468 3
+strata trace: window 131471 4
+strata trace: window 131474 2
+strata trace: window 131476 4
+strata trace: window 131480 4
+strata trace: window 131482 4
+strata trace: window 131486 4
+strata trace: window 131490 3
+strata trace: window 131492 1
+strata trace: window 131493 4
+strata trace: window 131494 3
+strata trace: window 131497 2
+strata trace: window 131499 3
+strata trace: window 131501 1
+strata trace: window 131502 4
+strata trace: window 131503 1
+strata trace: window 131504 4
+strata trace: window 131505 4
+strata trace: window 131507 3
+strata trace: window 131509 4
+strata trace: window 131512 1
+strata trace: window 131513 4
+strata trace: window 131514 1
+strata trace: window 131515 1
+strata trace: window 131516 2
+strata trace: window 131517 1
+strata trace: window 131518 1
+strata trace: window 131519 4
+strata trace: window 131521 4
+strata trace: window 131525 1
+strata trace: window 131526 2
+strata trace: window 131527 4
+strata trace: window 131529 2
+strata trace: window 131531 3
+strata trace: window 131532 1
+strata trace: window 131533 4
+strata trace: window 131537 4
+strata trace: window 131541 3
+strata trace: window 131544 2
+strata trace: window 131546 4
+strata trace: window 131550 4
+strata trace: window 131554 4
+strata trace: window 131555 4
+strata trace: window 131559 4
+strata trace: window 131563 2
+strata trace: window 131565 3
+strata trace: window 131567 1
+strata trace: window 131568 2
+strata trace: window 131570 1
+strata trace: window 131571 1
+strata trace: window 131572 4
+strata trace: window 131573 2
+strata trace: window 131575 4
+strata trace: window 131576 1
+strata trace: window 131577 4
+strata trace: window 131579 4
+strata trace: window 131583 4
+strata trace: window 131587 4
+strata trace: window 131590 4
+strata trace: window 131594 4
+strata trace: window 131598 4
+strata trace: window 131601 4
+strata trace: window 131605 2
+strata trace: window 131607 4
+strata trace: window 131610 2
+strata trace: window 131612 3
+strata trace: window 131615 2
+strata trace: window 131617 3
+strata trace: window 131620 4
+strata trace: window 131624 4
+strata trace: window 131628 1
+strata trace: window 131629 4
+strata trace: window 131632 2
+strata trace: window 131633 1
+strata trace: window 131634 2
+strata trace: window 131636 1
+strata trace: window 131637 3
+strata trace: window 131640 4
+strata trace: window 131643 2
+strata trace: window 131645 2
+strata trace: window 131647 4
+strata trace: window 131651 4
+strata trace: window 131655 4
+strata trace: window 131659 2
+strata trace: window 131661 2
+strata trace: window 131663 2
+strata trace: window 131664 3
+strata trace: window 131666 4
+strata trace: window 131668 4
+strata trace: window 131670 4
+strata trace: window 131674 4
+strata trace: window 131678 3
+strata trace: window 131681 3
+strata trace: window 131684 2
+strata trace: window 131686 4
+strata trace: window 131687 1
+strata trace: window 131688 1
+strata trace: window 131689 4
+strata trace: window 131693 4
+strata trace: window 131697 4
+strata trace: window 131701 3
+strata trace: window 131704 3
+strata trace: window 131706 4
+strata trace: window 131710 4
+strata trace: window 131714 4
+strata trace: window 131718 4
+strata trace: window 131722 3
+strata trace: window 131724 4
+strata trace: window 131728 4
+strata trace: window 131732 1
+strata trace: window 131733 4
+strata trace: window 131737 4
+strata trace: window 131741 4
+strata trace: window 131745 4
+strata trace: window 131748 1
+strata trace: window 131749 4
+strata trace: window 131753 3
+strata trace: window 131755 3
+strata trace: window 131756 4
+strata trace: window 131757 4
+strata trace: window 131761 4
+strata trace: window 131762 4
+strata trace: window 131764 4
+strata trace: window 131765 4
+strata trace: window 131769 4
+strata trace: window 131770 1
+strata trace: window 131771 4
+strata trace: window 131774 4
+strata trace: window 131776 4
+strata trace: window 131780 2
+strata trace: window 131782 4
+strata trace: window 131786 4
+strata trace: window 131790 4
+strata trace: window 131794 4
+strata trace: window 131798 4
+strata trace: window 131802 4
+strata trace: window 131806 4
+strata trace: window 131809 4
+strata trace: window 131813 4
+strata trace: window 131817 4
+strata trace: window 131821 4
+strata trace: window 131825 4
+strata trace: window 131829 4
+strata trace: window 131833 4
+strata trace: window 131837 4
+strata trace: window 131839 4
+strata trace: window 131841 4
+strata trace: window 131845 4
+strata trace: window 131849 4
+strata trace: window 131853 4
+strata trace: window 131857 4
+strata trace: window 131861 4
+strata trace: window 131865 3
+strata trace: window 131868 1
+strata trace: window 131869 3
+strata trace: window 131872 4
+strata trace: window 131876 4
+strata trace: window 131880 2
+strata trace: window 131882 1
+strata trace: window 131883 4
+strata trace: window 131887 4
+strata trace: window 131891 4
+strata trace: window 131895 2
+strata trace: window 131896 4
+strata trace: window 131898 4
+strata trace: window 131899 4
+strata trace: window 131903 2
+strata trace: window 131905 4
+strata trace: window 131907 4
+strata trace: window 131909 4
+strata trace: window 131913 2
+strata trace: window 131915 2
+strata trace: window 131917 3
+strata trace: window 131920 1
+strata trace: window 131921 2
+strata trace: window 131923 4
+strata trace: window 131924 3
+strata trace: window 131925 4
+strata trace: window 131926 4
+strata trace: window 131928 4
+strata trace: window 131932 1
+strata trace: window 131933 2
+strata trace: window 131935 1
+strata trace: window 131936 2
+strata trace: window 131937 1
+strata trace: window 131938 4
+strata trace: window 131940 4
+strata trace: window 131944 3
+strata trace: window 131947 4
+strata trace: window 131949 4
+strata trace: window 131951 3
+strata trace: window 131952 1
+strata trace: window 131953 4
+strata trace: window 131955 4
+strata trace: window 131956 4
+strata trace: window 131960 4
+strata trace: window 131964 4
+strata trace: window 131965 4
+strata trace: window 131969 3
+strata trace: window 131970 4
+strata trace: window 131972 4
+strata trace: window 131976 4
+strata trace: window 131980 4
+strata trace: window 131984 4
+strata trace: window 131988 4
+strata trace: window 131992 3
+strata trace: window 131995 4
+strata trace: window 131999 1
+strata trace: window 132000 4
+strata trace: window 132004 4
+strata trace: window 132008 4
+strata trace: window 132012 4
+strata trace: window 132015 4
+strata trace: window 132019 4
+strata trace: window 132023 4
+strata trace: window 132026 4
+strata trace: window 132030 2
+strata trace: window 132032 1
+strata trace: window 132033 2
+strata trace: window 132034 4
+strata trace: window 132036 1
+strata trace: window 132037 4
+strata trace: window 132041 4
+strata trace: window 132045 4
+strata trace: window 132049 3
+strata trace: window 132050 1
+strata trace: window 132051 4
+strata trace: window 132055 4
+strata trace: window 132058 3
+strata trace: window 132060 4
+strata trace: window 132064 1
+strata trace: window 132065 4
+strata trace: window 132069 4
+strata trace: window 132072 4
+strata trace: window 132073 3
+strata trace: window 132074 4
+strata trace: window 132077 2
+strata trace: window 132079 4
+strata trace: window 132080 3
+strata trace: window 132081 1
+strata trace: window 132082 4
+strata trace: window 132083 2
+strata trace: window 132084 4
+strata trace: window 132086 1
+strata trace: window 132087 4
+strata trace: window 132091 4
+strata trace: window 132095 4
+strata trace: window 132099 2
+strata trace: window 132101 4
+strata trace: window 132105 3
+strata trace: window 132108 1
+strata trace: window 132109 2
+strata trace: window 132111 1
+strata trace: window 132112 4
+strata trace: window 132114 2
+strata trace: window 132116 1
+strata trace: window 132117 3
+strata trace: window 132118 4
+strata trace: window 132119 4
+strata trace: window 132123 4
+strata trace: window 132126 4
+strata trace: window 132128 4
+strata trace: window 132132 4
+strata trace: window 132136 4
+strata trace: window 132140 3
+strata decode timing: 381 windows, avg T 3.29, 2.69 tokens/window, 74.01 ms/window = verify 69.34 (GPU-reach wait 25.38 + per-layer host 39.41 [plan 0.45 actq 1.51 jobs 0.52 CPU 36.90] + stage 0.88) + commit/emit 0.27 + draft 4.37; per layer-window: CPU experts 10.11 (13.51 entries), VRAM hits 19.35, PCIe 0.00
+strata serve: prompt 131118 tokens = 114688 reused + 16430 read in 34990 ms (469.6 tok/s), 1024 generated in 28196 ms (36.3 tok/s), drafts accepted 645 of 871, 6 checkpoints
+strata serve: decode expert cache hit rate: 58.9% (353801 hits / 600960 lookups)
+strata serve: KV streaming: 96.78% of 8688468 block reads hit VRAM, 1126.4 MiB read from RAM
+strata trace: request 131118 0
+strata trace: prompt start 131117 -1
+strata trace: read 4 tokens (windows) in 78.6 ms
+strata trace: prompt done (slots refilled) -1 -1
+strata trace: window 131117 1
+strata trace: window 131118 4
+strata trace: window 131122 4
+strata trace: window 131126 4
+strata trace: window 131130 3
+strata trace: window 131133 4
+strata trace: window 131136 4
+strata trace: window 131140 2
+strata trace: window 131142 2
+strata trace: window 131143 4
+strata trace: window 131147 3
+strata trace: window 131148 2
+strata trace: window 131149 4
+strata trace: window 131153 4
+strata trace: window 131157 4
+strata trace: window 131161 4
+strata trace: window 131165 2
+strata trace: window 131166 4
+strata trace: window 131167 1
+strata trace: window 131168 2
+strata trace: window 131170 1
+strata trace: window 131171 4
+strata trace: window 131173 1
+strata trace: window 131174 4
+strata trace: window 131178 4
+strata trace: window 131180 4
+strata trace: window 131183 4
+strata trace: window 131187 4
+strata trace: window 131191 4
+strata trace: window 131192 4
+strata trace: window 131193 4
+strata trace: window 131195 1
+strata trace: window 131196 4
+strata trace: window 131199 4
+strata trace: window 131203 4
+strata trace: window 131204 4
+strata trace: window 131208 4
+strata trace: window 131209 2
+strata trace: window 131210 1
+strata trace: window 131211 4
+strata trace: window 131215 4
+strata trace: window 131219 4
+strata trace: window 131223 3
+strata trace: window 131226 4
+strata trace: window 131228 4
+strata trace: window 131232 4
+strata trace: window 131236 4
+strata trace: window 131240 4
+strata trace: window 131241 4
+strata trace: window 131245 4
+strata trace: window 131249 4
+strata trace: window 131253 4
+strata trace: window 131257 4
+strata trace: window 131261 4
+strata trace: window 131265 4
+strata trace: window 131269 4
+strata trace: window 131273 4
+strata trace: window 131277 4
+strata trace: window 131281 4
+strata trace: window 131285 4
+strata trace: window 131289 4
+strata trace: window 131291 4
+strata trace: window 131295 4
+strata trace: window 131299 4
+strata trace: window 131302 4
+strata trace: window 131306 4
+strata trace: window 131310 4
+strata trace: window 131314 2
+strata trace: window 131316 4
+strata trace: window 131320 4
+strata trace: window 131324 4
+strata trace: window 131328 4
+strata trace: window 131332 4
+strata trace: window 131336 4
+strata trace: window 131340 4
+strata trace: window 131344 4
+strata trace: window 131347 2
+strata trace: window 131349 1
+strata trace: window 131350 4
+strata trace: window 131354 3
+strata trace: window 131357 4
+strata trace: window 131361 4
+strata trace: window 131362 2
+strata trace: window 131363 4
+strata trace: window 131367 4
+strata trace: window 131369 4
+strata trace: window 131370 4
+strata trace: window 131371 4
+strata trace: window 131375 2
+strata trace: window 131377 4
+strata trace: window 131379 4
+strata trace: window 131383 3
+strata trace: window 131386 4
+strata trace: window 131390 4
+strata trace: window 131394 4
+strata trace: window 131396 4
+strata trace: window 131400 4
+strata trace: window 131403 4
+strata trace: window 131405 4
+strata trace: window 131409 4
+strata trace: window 131413 4
+strata trace: window 131417 2
+strata trace: window 131419 4
+strata trace: window 131422 4
+strata trace: window 131426 4
+strata trace: window 131430 4
+strata trace: window 131434 4
+strata trace: window 131438 4
+strata trace: window 131441 4
+strata trace: window 131445 4
+strata trace: window 131449 4
+strata trace: window 131453 4
+strata trace: window 131457 4
+strata trace: window 131460 4
+strata trace: window 131464 4
+strata trace: window 131465 3
+strata trace: window 131468 3
+strata trace: window 131471 4
+strata trace: window 131474 2
+strata trace: window 131476 4
+strata trace: window 131480 4
+strata trace: window 131482 4
+strata trace: window 131486 4
+strata trace: window 131490 3
+strata trace: window 131492 1
+strata trace: window 131493 4
+strata trace: window 131494 3
+strata trace: window 131497 2
+strata trace: window 131499 3
+strata trace: window 131501 1
+strata trace: window 131502 4
+strata trace: window 131503 1
+strata trace: window 131504 4
+strata trace: window 131505 4
+strata trace: window 131507 3
+strata trace: window 131509 4
+strata trace: window 131512 1
+strata trace: window 131513 4
+strata trace: window 131514 1
+strata trace: window 131515 1
+strata trace: window 131516 2
+strata trace: window 131517 1
+strata trace: window 131518 1
+strata trace: window 131519 4
+strata trace: window 131521 4
+strata trace: window 131525 1
+strata trace: window 131526 2
+strata trace: window 131527 4
+strata trace: window 131529 2
+strata trace: window 131531 3
+strata trace: window 131532 1
+strata trace: window 131533 4
+strata trace: window 131537 4
+strata trace: window 131541 3
+strata trace: window 131544 2
+strata trace: window 131546 4
+strata trace: window 131550 4
+strata trace: window 131554 4
+strata trace: window 131555 4
+strata trace: window 131559 4
+strata trace: window 131563 2
+strata trace: window 131565 3
+strata trace: window 131567 1
+strata trace: window 131568 2
+strata trace: window 131570 1
+strata trace: window 131571 1
+strata trace: window 131572 4
+strata trace: window 131573 2
+strata trace: window 131575 4
+strata trace: window 131576 1
+strata trace: window 131577 4
+strata trace: window 131579 4
+strata trace: window 131583 4
+strata trace: window 131587 4
+strata trace: window 131590 4
+strata trace: window 131594 4
+strata trace: window 131598 4
+strata trace: window 131601 4
+strata trace: window 131605 2
+strata trace: window 131607 4
+strata trace: window 131610 2
+strata trace: window 131612 3
+strata trace: window 131615 2
+strata trace: window 131617 3
+strata trace: window 131620 4
+strata trace: window 131624 4
+strata trace: window 131628 1
+strata trace: window 131629 4
+strata trace: window 131632 2
+strata trace: window 131633 1
+strata trace: window 131634 2
+strata trace: window 131636 1
+strata trace: window 131637 3
+strata trace: window 131640 4
+strata trace: window 131643 2
+strata trace: window 131645 2
+strata trace: window 131647 4
+strata trace: window 131651 4
+strata trace: window 131655 4
+strata trace: window 131659 2
+strata trace: window 131661 2
+strata trace: window 131663 2
+strata trace: window 131664 3
+strata trace: window 131666 4
+strata trace: window 131668 4
+strata trace: window 131670 4
+strata trace: window 131674 4
+strata trace: window 131678 3
+strata trace: window 131681 3
+strata trace: window 131684 2
+strata trace: window 131686 4
+strata trace: window 131687 1
+strata trace: window 131688 1
+strata trace: window 131689 4
+strata trace: window 131693 4
+strata trace: window 131697 4
+strata trace: window 131701 3
+strata trace: window 131704 3
+strata trace: window 131706 4
+strata trace: window 131710 4
+strata trace: window 131714 4
+strata trace: window 131718 4
+strata trace: window 131722 3
+strata trace: window 131724 4
+strata trace: window 131728 4
+strata trace: window 131732 1
+strata trace: window 131733 4
+strata trace: window 131737 4
+strata trace: window 131741 4
+strata trace: window 131745 4
+strata trace: window 131748 1
+strata trace: window 131749 4
+strata trace: window 131753 3
+strata trace: window 131755 3
+strata trace: window 131756 4
+strata trace: window 131757 4
+strata trace: window 131761 4
+strata trace: window 131762 4
+strata trace: window 131764 4
+strata trace: window 131765 4
+strata trace: window 131769 4
+strata trace: window 131770 1
+strata trace: window 131771 4
+strata trace: window 131774 4
+strata trace: window 131776 4
+strata trace: window 131780 2
+strata trace: window 131782 4
+strata trace: window 131786 4
+strata trace: window 131790 4
+strata trace: window 131794 4
+strata trace: window 131798 4
+strata trace: window 131802 4
+strata trace: window 131806 4
+strata trace: window 131809 4
+strata trace: window 131813 4
+strata trace: window 131817 4
+strata trace: window 131821 4
+strata trace: window 131825 4
+strata trace: window 131829 4
+strata trace: window 131833 4
+strata trace: window 131837 4
+strata trace: window 131839 4
+strata trace: window 131841 4
+strata trace: window 131845 4
+strata trace: window 131849 4
+strata trace: window 131853 4
+strata trace: window 131857 4
+strata trace: window 131861 4
+strata trace: window 131865 3
+strata trace: window 131868 1
+strata trace: window 131869 3
+strata trace: window 131872 4
+strata trace: window 131876 4
+strata trace: window 131880 2
+strata trace: window 131882 1
+strata trace: window 131883 4
+strata trace: window 131887 4
+strata trace: window 131891 4
+strata trace: window 131895 2
+strata trace: window 131896 4
+strata trace: window 131898 4
+strata trace: window 131899 4
+strata trace: window 131903 2
+strata trace: window 131905 4
+strata trace: window 131907 4
+strata trace: window 131909 4
+strata trace: window 131913 2
+strata trace: window 131915 2
+strata trace: window 131917 3
+strata trace: window 131920 1
+strata trace: window 131921 2
+strata trace: window 131923 4
+strata trace: window 131924 3
+strata trace: window 131925 4
+strata trace: window 131926 4
+strata trace: window 131928 4
+strata trace: window 131932 1
+strata trace: window 131933 2
+strata trace: window 131935 1
+strata trace: window 131936 2
+strata trace: window 131937 1
+strata trace: window 131938 4
+strata trace: window 131940 4
+strata trace: window 131944 3
+strata trace: window 131947 4
+strata trace: window 131949 4
+strata trace: window 131951 3
+strata trace: window 131952 1
+strata trace: window 131953 4
+strata trace: window 131955 4
+strata trace: window 131956 4
+strata trace: window 131960 4
+strata trace: window 131964 4
+strata trace: window 131965 4
+strata trace: window 131969 3
+strata trace: window 131970 4
+strata trace: window 131972 4
+strata trace: window 131976 4
+strata trace: window 131980 4
+strata trace: window 131984 4
+strata trace: window 131988 4
+strata trace: window 131992 3
+strata trace: window 131995 4
+strata trace: window 131999 1
+strata trace: window 132000 4
+strata trace: window 132004 4
+strata trace: window 132008 4
+strata trace: window 132012 4
+strata trace: window 132015 4
+strata trace: window 132019 4
+strata trace: window 132023 4
+strata trace: window 132026 4
+strata trace: window 132030 2
+strata trace: window 132032 1
+strata trace: window 132033 2
+strata trace: window 132034 4
+strata trace: window 132036 1
+strata trace: window 132037 4
+strata trace: window 132041 4
+strata trace: window 132045 4
+strata trace: window 132049 3
+strata trace: window 132050 1
+strata trace: window 132051 4
+strata trace: window 132055 4
+strata trace: window 132058 3
+strata trace: window 132060 4
+strata trace: window 132064 1
+strata trace: window 132065 4
+strata trace: window 132069 4
+strata trace: window 132072 4
+strata trace: window 132073 3
+strata trace: window 132074 4
+strata trace: window 132077 2
+strata trace: window 132079 4
+strata trace: window 132080 3
+strata trace: window 132081 1
+strata trace: window 132082 4
+strata trace: window 132083 2
+strata trace: window 132084 4
+strata trace: window 132086 1
+strata trace: window 132087 4
+strata trace: window 132091 4
+strata trace: window 132095 4
+strata trace: window 132099 2
+strata trace: window 132101 4
+strata trace: window 132105 3
+strata trace: window 132108 1
+strata trace: window 132109 2
+strata trace: window 132111 1
+strata trace: window 132112 4
+strata trace: window 132114 2
+strata trace: window 132116 1
+strata trace: window 132117 3
+strata trace: window 132118 4
+strata trace: window 132119 4
+strata trace: window 132123 4
+strata trace: window 132126 4
+strata trace: window 132128 4
+strata trace: window 132132 4
+strata trace: window 132136 4
+strata trace: window 132140 3
+strata decode timing: 381 windows, avg T 3.29, 2.69 tokens/window, 72.84 ms/window = verify 68.20 (GPU-reach wait 25.23 + per-layer host 39.33 [plan 0.46 actq 1.51 jobs 0.52 CPU 36.81] + stage 0.02) + commit/emit 0.26 + draft 4.36; per layer-window: CPU experts 10.11 (13.51 entries), VRAM hits 19.35, PCIe 0.00
+strata serve: prompt 131118 tokens = 131113 reused + 5 read in 98 ms (51.1 tok/s), 1024 generated in 27754 ms (36.9 tok/s), drafts accepted 645 of 871, 6 checkpoints
+strata serve: decode expert cache hit rate: 58.9% (353801 hits / 600960 lookups)
+strata serve: KV streaming: 97.01% of 16427976 block reads hit VRAM, 1978.1 MiB read from RAM

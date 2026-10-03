@@ -652,3 +652,19 @@ candidata con flag spento, profilo di fase e memoria/I/O; poi controllo lungo
 ripetibile e smoke elastico prima di abilitare l'opzione. Report, hash, limiti,
 prove escluse e percorsi in `corse_2080ti/20261003_request_chunk/README.md`.
 La decisione RTX3060 e le piste PR663/PR655 restano nella sezione14.
+
+
+### Ripetizione B dopo le anomalie: riuscita
+
+L'utente ha richiesto di rifare solo B: una sola corsa con cache auto/elastica,
+stessi input/argomenti/binario/profilo del tentativo candidato interrotto.
+Completata in372,2s: cold129366 a937,1t/s; warm130380 a279,6t/s e249322 a248,5t/s,
+1014 token nuovi per entrambe le continuazioni.32 output ciascuna, logits finiti.
+Cache iniziale6342 esperti; nessun compilatore in64 campioni, CPU mediana22%.
+Il rallentamento non si e' ripresentato; causa precedente non identificata.
+Niente altri test, motore chiuso. Non e' un nuovo A/B/A o una nuova SOTA.
+Il banco usa anche IQ_MT_MIN=1 (default motore2), gia' nel tentativo precedente:
+non descrivere il decode misurato come profilo Daily senza override.
+Daily invariato in questa richiesta di sola ripetizione. Evidenze aggiunte a
+`corse_2080ti/20261003_request_chunk/README.md` e `single-B-repeat.json`;
+nota pubblicata anche sul fork in158f208. Conservare le prove interrotte.

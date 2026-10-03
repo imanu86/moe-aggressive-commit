@@ -80,3 +80,31 @@ I dati compatti sono in [evidence.json](evidence.json). Dati grezzi, input, log,
 script, build e prove escluse sono in `.codex_runs/20261003_exact_small` del repo
 research. `short_exact_final` e' il breve valido; `long_exact_final` conserva A1/E
 completi e A2 interrotto; `long_control_repeat` e `operational_exact` sono interrotti.
+
+
+## Ripetizione singola B richiesta dall'utente: completata
+
+Ripetuta **solo B, una volta**, sugli stessi input, eseguibile, argomenti CLI e
+profilo esperti del tentativo operativo interrotto. Quattro richieste completate
+in372,2s incluso startup, senza il precedente rallentamento. Cache elastica:
+6342 esperti iniziali,10512MiB;1137MiB VRAM libera all'avvio. KV262144 invariato.
+
+| Contesto | Nuovi token | Prefill | Primo token, pipe nativa |
+|---|---:|---:|---:|
+|130380|1014|279,6t/s|3,702s|
+|249322|1014|248,5t/s|4,193s|
+
+Il primo prompt freddo da129366 token misura937,1t/s. La preparazione successiva
+riusa130373 token: i639,4t/s riguardano117935 token nuovi e non un prompt248k
+letto da zero. I32 token generati per continuazione misurano25,4/33,6t/s: campioni
+brevi, non SOTA decode. Quattro righe da248320 logits finite; qui non c'e' un
+nuovo confronto numerico accoppiato. Il banco mantiene `STRATA_IQ_MT_MIN=1`, come
+nel tentativo precedente, mentre il default del motore e'2; trace e dump logits
+accesi. Precisazione valida anche per la descrizione dello smoke precedente:
+argomenti/cache del Daily, con questi override del banco.
+
+Nessun compilatore rilevato in64 campioni CPU/processi/I/O; CPU mediana22%, RAM
+disponibile minima22,9GiB. Non prova quale fosse la causa della corsa precedente.
+Le anomalie originali restano conservate. Nessun altro A/B avviato, motore chiuso,
+Daily invariato in questa richiesta di sola ripetizione. Dati e hash:
+[single-B-repeat.json](single-B-repeat.json). Fork main: documentato in158f208.

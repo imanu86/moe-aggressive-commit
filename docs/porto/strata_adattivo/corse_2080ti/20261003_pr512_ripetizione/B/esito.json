@@ -1,0 +1,64 @@
+{
+  "name": "retest_pr512_B",
+  "kv_capacity": 262144,
+  "config_template": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\retest_pr512_20261003\\config.json",
+  "config_template_sha256": "b95df198548c3bcc915875af7f5b5a8f1f568b3aea2f690f2234fbe67140ec90",
+  "prompt_profile": "lungo_131k",
+  "out": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\retest_pr512_20261003\\B",
+  "duration_limit_s": 900,
+  "exe": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\build-pr512\\strata.exe",
+  "exe_sha256": "9933918a7f1e6dee2e55b41552df068e654169834c7d6e7679710330469b5207",
+  "server_source": "C:\\Users\\imanu\\Documents\\Codex\\2026-10-01\\https-github-com-imanu86-moe-aggressive\\strata-main-alignment\\fourhour_20261002\\pr512-source037",
+  "server_sha256": "80ca3220d450170cc5f2cac305b687694245a42bf2b27d0be419bbd664f8035d",
+  "requested_fixed_cache_slots": 4000,
+  "gather_mode": null,
+  "kernel_profiling": false,
+  "qsa_ch": null,
+  "topk_mode": "active",
+  "artificial_load": false,
+  "status": "completed",
+  "startup_s": 40.91,
+  "health": {
+    "status": "ok",
+    "max_context": 262144,
+    "model": "qwen3.8-flash-next-iq3_xxs",
+    "images": false,
+    "api_key": false,
+    "loaded": true,
+    "service": "strata"
+  },
+  "initial_cache": {
+    "expert_slots": 5357,
+    "expert_cache_mib": 8886,
+    "vram_free_mib": 2219
+  },
+  "summary": {
+    "corsa": "20261003_041016_retest_pr512_B_lungo_131k",
+    "nota": "KV 262144; prompt 131k; carico reale",
+    "decode_aggregato_tps": 39.133,
+    "blocchi": {
+      "131k": {
+        "casi": 2,
+        "decode_tps": 39.133
+      }
+    },
+    "per_caso": [
+      {
+        "etichetta": "L01@ctx131k",
+        "prefill_tps_motore": 832.24,
+        "decode_tps_motore": 40.259,
+        "ttft_s": 158.325,
+        "vram_prima_mib": 18948,
+        "fine": "length"
+      },
+      {
+        "etichetta": "L02@ctx131k",
+        "prefill_tps_motore": 71.75,
+        "decode_tps_motore": 38.069,
+        "ttft_s": 3.136,
+        "vram_prima_mib": 18984,
+        "fine": "length"
+      }
+    ]
+  }
+}

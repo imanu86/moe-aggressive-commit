@@ -1,5 +1,12 @@
 # HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.36 + port sm75/top-k/PR463, elastica e KV 262k)
 
+- **3 ottobre: PR512 integrata upstream0.1.38; ripetizione isolata +7,46% prefill, spread riferimenti0,54%, parità16/16.** [Dati e limiti](PR512_RIPETIZIONE_3_OTTOBRE.md). Daily invariato.
+- **3 ottobre, accesso completo ripristinato:** pubblicati i report spec4/spec5,
+  quattro ore e ripetizione PR512 sul branch research autorizzato, con manifest
+  verificati. I blocchi Git descritti nelle note precedenti sono storici.
+  Nuova proposta checkpoint-grid preparata su upstream0.1.38, tre soli file:
+  misure intercalate e QA numerica in corso, nessuna nuova PR/commento pubblico.
+
 Da leggere per primo se la sessione riparte da zero. Repo `moe-aggressive-commit`, branch
 `research/ds4-iq1-subbit-tier-planner` (autorizzato dall'utente per questa ripresa). Commit con pathspec espliciti,
 formato `MODELLO-SEZIONE-Descrizione` col modello autore effettivo, trailer
@@ -23,6 +30,17 @@ https://github.com/imanu86/moe-aggressive-commit/blob/research/ds4-iq1-subbit-ti
   in `D:\ds4_work\daily_sm75\runtime` (M2) e `runtime-m3` (M3). Il bat del daily non e' stato toccato.
 
 ## 2. Cosa usare oggi
+- **2/3 ottobre, sessione quattro ore:** candidato037 preparato e test kernel dinamico228casi; controllo stesso processo a131k +1,148%, sotto soglia3%, nessuna nuova SOTA da questo kernel. Nuove PR546/547 esaminate; esiti finali e stato pubblicazione nel [report quattro ore](QUATTRO_ORE_2_OTTOBRE.md). Daily fisico036/auto/elastico/KV262144 conservato; fork e GitHub non aggiornati per blocco scrittura403/profilo. Questo aggiornamento HANDOFF è locale finché non risulta pushato.
+- **2/10, confronto generale spec4/spec5/spec4 concluso:** ragionamento low
+  attivo, sei controlli brevi, retrieval20k/131k e due decode1024 per profondità.
+  Spec5:38,532t/s a20046 token e35,908t/s a131118; contro media spec4
+  39,325 e36,430. Nessun guadagno nei campioni; testi identici12/12.
+  Otto contenuti corretti/braccio, gate JSON6/8 per fence nei due retrieval.
+  Cache laboratorio6167 slot fissa, KV262144, daily elastico invariato.
+  Finestre effettive e formattazione JSON registrate separatamente dalla
+  correttezza dei codici. Nessuna promozione automatica a SOTA o modifica daily.
+  Dati e limiti: [SPEC45_GENERALE_2_OTTOBRE.md](SPEC45_GENERALE_2_OTTOBRE.md),
+  `corse_2080ti/20261002_spec45_general/`. Motori della prova conclusi.
 - **2/10, validazione qualità A/B/A conclusa:** metodo teacher-forced e
   oracoli versionati su main nel fork. A1/B/A2 hanno logits completi identici
   su 2.557 posizioni valutate: top-1 100%, KL 0, PPL identica. Stessi 6.167

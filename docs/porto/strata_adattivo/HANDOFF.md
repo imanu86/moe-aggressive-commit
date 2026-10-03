@@ -1,4 +1,38 @@
-# HANDOFF — Strata Daily0.1.38 SM75, grid rimossa, elastica/tail/top-k603, KV262k
+# HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
+
+## 4 ottobre: sessione di quattro ore
+
+Daily aggiornato con **exact-small, contratto prefisso PR652 e QSA a gruppi di
+otto query**. Diagnostica HtoD/PLE inclusa ma spenta. KV int8 **262144**, residenti
+**32768**, cache auto/elastica e checkpoint tail conservati; grid originale e
+adattamento BF16 respinti restano esclusi. Il launcher operativo è aggiornato
+nei commenti e conserva le stesse istruzioni di avvio.
+
+- QSA, confronto fisso off/on/off: warm **+5,38% a 130380** e **+6,26% a 249322**;
+  quattro righe complete di logits e 258 ID per braccio bitwise. Non è una nuova
+  SOTA cold/decode. Gate teacher esteso: 1456/1536 righe, tutte le posizioni
+  comuni bitwise; mancano 80 righe A2, quindi il gate esteso resta incompleto.
+- Conversazione HTTP completa: **190 turni, 20k→250130**, prefill aggregato warm
+  **286,5 t/s**, decode **38,0 t/s**. Curva per profondità pubblicata. Risposte
+  complete ma alcuni contenuti ripetitivi/imprecisi: nessuna qualità generale attestata.
+- Replay finale del Daily, thinking off/on, oltre 250k: cinque fatti e aritmetica
+  corretti in entrambe le risposte. L'oracle automatico rifiuta soltanto il
+  suffisso «modificata» nel nome GPU senza thinking; esito originale conservato.
+- Anomalie cold mantenute: circa 19 contro 212 secondi, con forte attesa nel
+  percorso PLE. La causa precisa è aperta. `--ple-sync-submit` non mostra un
+  vantaggio dimostrato; nessuna modifica a clock o politica I/O.
+- Daily exe `a17d0dd5…`, configurazione `f0237b6a…`, manifest storico conservato.
+  Backup QSA/exact-small/diagnostica e overlay disponibili; 286 sorgenti/frontend
+  confrontati con il fork. Nessun altro test GPU da avviare in questa finestra.
+
+**Leggere prima di riprendere:**
+[risultati, limiti, repository, prossima diagnosi e ripristino](SESSIONE_QUATTRO_ORE_4_OTTOBRE.md).
+Prossimo passo: scomporre le attese PLE; runner HTTP da 130k a 134k con soli
+contatori preparato ma non eseguito. PR693 per chunk lunghi da validare;
+PR663 da rivalutare con la futura seconda 3060. Nessuna misura inventata per
+le prove rinviate.
+
+## Stato precedente
 
 - **3ottobre, Daily e main aggiornati:** upstream99f3dbd/0.1.38, commit
   fc9a767b15c3. Grid originale rimossa; tail614abilitato,

@@ -587,3 +587,30 @@ Completata il 3/10 con OktoCGControl aperto e senza carico artificiale: una conv
 Il primo tentativo è stato fermato su richiesta a 40.110 token dopo 17 turni: il primo prefill (95 t/s) era anomalo. La prova valida è ripartita da zero in una nuova cartella; primo prefill freddo 913,8 t/s, poi media warm aggregata 291,4 t/s prefill e 42,9 t/s decode, TTFT medio 4,08 s. Nella curva dei turni utente completi da circa 1k il prefill incrementale è circa 362 t/s a 20k, 306 a 100k, 288 a 130k, 268 a 200k, 269 a 230k e 252 a 250k; TTFT medio cresce da 3,1 a 5,1 s. La risposta finale ha usato solo 451 nuovi token utente ed è esclusa da curva/tabella, ma resta in CSV e trascrizione.
 
 Questi valori descrivono il riuso cache in una singola conversazione e non sono confrontabili con un prompt freddo unico né con la SOTA prefill; non cambiano launcher, kernel o Daily. Dettagli, curve SVG/CSV, summary e campioni: `corse_2080ti/20261003_conversazione_daily0138/README.md`. La trascrizione completa resta nei dati locali `.codex_runs`; il primo tentativo interrotto è conservato separatamente.
+
+
+## 14. Prefill incrementale e tokenizzazione, sera del 3/10
+
+Ripresa dopo il via dell'utente, con OktoCGControl aperto (processo osservato) e senza carichi artificiali. Due corse sequenziali sul Daily nativo invariato: base e `STRATA_PREFILL_STREAM_MIN=1000`, entrambe con eventi `STRATA_PREFILL_TIMING` e `STRATA_SPLIT_TIMING`. Ricostruiti gli input reali dei turni 90 e 186 della curva: **130.380 e 249.322 token**, ciascuno con **1.014 nuovi token**, di cui 1.007 nel batch GPU. Il limite KV resta 262.144, KV int8 e 32.768 residenti. La cronologia viene preparata prima di ciascuna continuazione; non e' una ripetizione dell'intera curva.
+
+| Fase GPU del batch da 1.007 | 130k base | 130k streaming 1000 | 249k base | 249k streaming 1000 |
+|---|---:|---:|---:|---:|
+| Totale | 3.685 ms | 3.526 ms | 4.055 ms | 3.999 ms |
+| Attesa copie esperti | 1.001 ms | 398 ms | 925 ms | 417 ms |
+| Preparazione pesi (`dequant`, include gather MMQ) | 656 ms | 486 ms | 656 ms | 442 ms |
+| QSA selection | 528 ms | 529 ms | 883 ms | 929 ms |
+| Staging KV | 125 ms | 640 ms | 240 ms | 765 ms |
+
+Lo streaming anticipato riduce la fase di attesa esperti ma aumenta quella KV. La contesa delle copie RAM->GPU e' una spiegazione da verificare, non una misura diretta di utilizzo della banda. Il probe di avvio della base misura **13,2 GB/s PCIe**, distinto dalla banda interna VRAM. Il codice del prestito dimensiona gia' i buffer sulla richiesta reale arrotondata: non presta sempre un chunk da 8k a un turno da 1k.
+
+Il prefill completo della continuazione misura 251,1 -> 264,4 t/s a 130k e 231,3 -> 237,0 t/s a 249k. **Non sono una nuova SOTA ne' un confronto causale controllato**: profilatore attivo, due sole continuazioni, cache elastica iniziale 6.042 vs 6.361 esperti (6.657 vs 6.832 prima del secondo warm), e solo otto token greedy verificati per punto. Gli otto token coincidono in entrambi i punti, ma non costituiscono un gate numerico. **Soglia 1000 non promossa; Daily resta a 1024.** Non confondere questi campioni profilati con i t/s della curva completa o del prefill freddo.
+
+**Miglioramento validato e installato: tokenizzazione incrementale della PR567 di Guillaume PUTIER/gputier**, commit upstream `f29e527856b85e37bda90626ccc28e002b4989dd`. Non e' un algoritmo nuovo nostro. Sul tokenizer, template e trascrizione reali, tutti i **187 prompt / 25.306.163 token di input** coincidono esattamente con la codifica completa pre-patch. Una ripetizione cronologica CPU, base poi candidata su ogni prompt, Okto aperto, motore GPU spento. Mediane: a 125-135k (8 turni) **434,1 -> 7,77 ms**; a 240-250k (9 turni) **931,9 -> 10,57 ms**. Sono tempi della componente di tokenizzazione; non misurano TTFT HTTP completo e non cambiano il prefill/decode GPU.
+
+Suite upstream tokenizer + server col vocabolario reale: 132 test eseguiti, 131 passati, uno saltato per fixture llama.cpp mancante. Fork e clone operativo `main` aggiornati al commit **1838b00d95f167b6ee16cf1da145b4b748124689**, pubblicato. Aggiornata anche la sorgente realmente caricata dal lanciatore, `D:\ds4_work\strata\Strata\build-0138-daily\source`; verifica finale `Service.prepare` su due turni con vocabolario reale e MockEngine: token uguali e prefisso riusato. Binario nativo, configurazione e manifest storico invariati.
+
+Ripristino: `D:\ds4_work\strata\Strata\build-0138-daily\backup-frontend-567-20261003\recovery.json` elenca copie precedenti e hash; overlay corrente in `frontend-567-validation.json`. Ripristinare i file runtime elencati usando le copie sotto `backup-frontend-567-20261003/runtime`; il nuovo `tools/test_strata_tokenizer.py` non esisteva prima ed e' solo un test. Nessun server e' stato lasciato acceso.
+
+Evidenze compatte: `corse_2080ti/20261003_chat_bottleneck/profile-summary.json`, `tokenizer567.json` e le due tracce di fase `.txt`. Script, input e log completi sono in `.codex_runs/20261003_chat_bottleneck`, con hash negli artefatti. La prima corsa `baseline_profile` era stata interrotta prima di completare una misura quando l'utente aveva chiesto di riaprire Okto: esclusa.
+
+Prossimo lavoro GPU: misurare una coda di copie/ring adatta alle continuazioni da circa 1k e il gather MMQ dei piccoli batch; verificare il caso ring dimensionato sul T arrotondato. Evitare di anticipare piu' pesi se cio' fa attendere lo staging KV. La ricognizione ha trovato anche **PR655** (BF16->FP16 tensor core su SM75, head `671a387d3695d922db1399677608eb1aa6f5caf9`) e **PR583** (budget ring/chunk, head `817aa9c7a0f0538e3b514e787d5680fc02c865ca`): candidati da validare localmente, non integrati e nessun loro guadagno rivendicato. PR583 si sovrappone in parte all'accounting #547 gia' presente. Il main upstream letto durante la sessione e' ancora `99f3dbd0`.

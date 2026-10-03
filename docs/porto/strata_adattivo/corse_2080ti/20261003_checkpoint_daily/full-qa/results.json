@@ -1,0 +1,2083 @@
+{
+  "status": "completed",
+  "plan": {
+    "binary_sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a",
+    "args_original": [
+      "--pack",
+      "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+      "--native",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+      "--ple-gguf",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+      "--expert-profile",
+      "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+      "--expert-cache",
+      "auto",
+      "--prefill",
+      "auto",
+      "--spec",
+      "4",
+      "--spec-min-p",
+      "0.5",
+      "--mtp",
+      "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+      "--max-context",
+      "262144",
+      "--kv",
+      "int8",
+      "--kv-resident",
+      "32768",
+      "--vram-reserve-mib",
+      "1393",
+      "--elastic"
+    ],
+    "contexts": [
+      131072,
+      250000
+    ],
+    "order": [
+      "A1",
+      "B",
+      "A2"
+    ],
+    "baseline_every": 16384,
+    "candidate_every": 8192,
+    "texts": {
+      "code": {
+        "input_tokens": 512,
+        "scored_positions": 511,
+        "ids_sha256": "a34e908bf33e748a28fec9a3bf4c32d61ae1fd25838f0bc7ce11dce75a51651e"
+      },
+      "doc": {
+        "input_tokens": 1024,
+        "scored_positions": 1023,
+        "ids_sha256": "316bcab516f89379c5f3960daa103723026320a481f5e0b0322fa25ca25cc692"
+      },
+      "chat": {
+        "input_tokens": 1024,
+        "scored_positions": 1023,
+        "ids_sha256": "801ad0a74ff3def929217b49d89b474ee49a31a5633ef6bc9fe26a0e5e9f2eb0"
+      }
+    },
+    "scored_positions_per_arm": 2557,
+    "policy": {
+      "description": "Local paired regression gate; not an upstream universal threshold",
+      "block_tokens": 32,
+      "nll_allowance_nats": 0.01,
+      "median_kl_floor": 0.001,
+      "p99_kl_floor": 0.01,
+      "baseline_kl_multiplier": 3.0,
+      "top1_allowance_percentage_points": 1.0
+    },
+    "same_settings_as_daily": true,
+    "elastic": true,
+    "artificial_pressure": false,
+    "teacher_method": "branch + ids[:pos+1], max_new1, prediction discarded; last unknown target excluded",
+    "initial_requests": "same unrelated warmup, fresh recall, branch recall; no guide/extra conversation before teacher scoring",
+    "prior_short_gate": "retained independently; full QA does not overwrite its verdict",
+    "maximum_seconds": 7200,
+    "admission_vram_mib": 500
+  },
+  "arms": {
+    "131072_A1": {
+      "mode": "A",
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "16384"
+      ],
+      "requests": [
+        {
+          "name": "fresh",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              8192,
+              131072
+            ],
+            [
+              16384,
+              131072
+            ],
+            [
+              24576,
+              131072
+            ],
+            [
+              32768,
+              131072
+            ],
+            [
+              40960,
+              131072
+            ],
+            [
+              49152,
+              131072
+            ],
+            [
+              57344,
+              131072
+            ],
+            [
+              65536,
+              131072
+            ],
+            [
+              73728,
+              131072
+            ],
+            [
+              81920,
+              131072
+            ],
+            [
+              90112,
+              131072
+            ],
+            [
+              98304,
+              131072
+            ],
+            [
+              106496,
+              131072
+            ],
+            [
+              114688,
+              131072
+            ],
+            [
+              122880,
+              131072
+            ],
+            [
+              131065,
+              131072
+            ],
+            [
+              131071,
+              131072
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 127235.2,
+          "decode_ms": 1211.3,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 11517,
+          "lookups": 21147,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 131072,
+          "oracle_pass": true
+        },
+        {
+          "name": "branch",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              122880,
+              131072
+            ],
+            [
+              131065,
+              131072
+            ],
+            [
+              131071,
+              131072
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 20842.3,
+          "decode_ms": 934.5,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 114688,
+          "hits": 15301,
+          "lookups": 21814,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 16384,
+          "oracle_pass": true
+        }
+      ],
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "11d89d51575d5c61a77df1051d560843339f9f71ee979251fcecd5405d31d54a",
+          "reused_min": 131065,
+          "reused_max": 131583
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "8f32190c356c2edb8c97712d15ac5e7b79480228c30ff8f4305360365a53393f",
+          "reused_min": 131065,
+          "reused_max": 132095
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "862bf3eb6e13bdb33e1b3c4a5f395b1b0e983660aaaefcd9e452e1eefccfda56",
+          "reused_min": 131065,
+          "reused_max": 132095
+        }
+      },
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6226,
+        "expert_cache_mib": 10324,
+        "expert_slots_primary": 6226,
+        "expert_cache_primary_mib": 10324,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 1216,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      },
+      "chunk_events": [
+        "strata serve: prompt chunk auto: 8192 tokens",
+        "strata serve: the prompt path borrows 2951 CUDA0 cache slots (4.73 GiB)",
+        "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6226 slots now, 10.08 GiB, chunks of 64 MiB)",
+        "strata elastic: two zones - core 3089 slots (5.04 GiB, fixed), tail 3137 slots (5.04 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+        "strata elastic: +269 experts (446 MiB) -> 6495 slots, 10.52 GiB; 883 MiB free",
+        "strata elastic: +89 experts (147 MiB) -> 6584 slots, 10.66 GiB; 964 MiB free"
+      ],
+      "completed": true
+    },
+    "131072_B": {
+      "mode": "B",
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "8192"
+      ],
+      "requests": [
+        {
+          "name": "fresh",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              8192,
+              131072
+            ],
+            [
+              16384,
+              131072
+            ],
+            [
+              24576,
+              131072
+            ],
+            [
+              32768,
+              131072
+            ],
+            [
+              40960,
+              131072
+            ],
+            [
+              49152,
+              131072
+            ],
+            [
+              57344,
+              131072
+            ],
+            [
+              65536,
+              131072
+            ],
+            [
+              73728,
+              131072
+            ],
+            [
+              81920,
+              131072
+            ],
+            [
+              90112,
+              131072
+            ],
+            [
+              98304,
+              131072
+            ],
+            [
+              106496,
+              131072
+            ],
+            [
+              114688,
+              131072
+            ],
+            [
+              122880,
+              131072
+            ],
+            [
+              131065,
+              131072
+            ],
+            [
+              131071,
+              131072
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 127266.1,
+          "decode_ms": 1122.0,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 11912,
+          "lookups": 21185,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 131072,
+          "oracle_pass": true
+        },
+        {
+          "name": "branch",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              131065,
+              131072
+            ],
+            [
+              131071,
+              131072
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 10767.6,
+          "decode_ms": 986.1,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 122880,
+          "hits": 16362,
+          "lookups": 22036,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 8192,
+          "oracle_pass": true
+        }
+      ],
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "8904f309ba79c9dffeccc554274b6eb297b3ecd629c972e2826645dc57337460",
+          "reused_min": 131065,
+          "reused_max": 131583
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "fc56e2d3f471d41503ef0a88bb0f64ecb1a9a3092d693a6dcd79fcb4660d3798",
+          "reused_min": 131065,
+          "reused_max": 132095
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "8f220f8983408c9ff6de4117aa41bfbbefc711ddf8013b4acb7df1521f4f5c0d",
+          "reused_min": 131065,
+          "reused_max": 132095
+        }
+      },
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6417,
+        "expert_cache_mib": 10634,
+        "expert_slots_primary": 6417,
+        "expert_cache_primary_mib": 10634,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 1233,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      },
+      "chunk_events": [
+        "strata serve: prompt chunk auto: 8192 tokens",
+        "strata serve: the prompt path borrows 2955 CUDA0 cache slots (4.73 GiB)",
+        "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6417 slots now, 10.39 GiB, chunks of 64 MiB)",
+        "strata elastic: two zones - core 3181 slots (5.19 GiB, fixed), tail 3236 slots (5.19 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+        "strata elastic: +309 experts (511 MiB) -> 6726 slots, 10.88 GiB; 697 MiB free",
+        "strata elastic: +207 experts (348 MiB) -> 6933 slots, 11.22 GiB; 881 MiB free",
+        "strata elastic: -116 slots (43 moved in, 73 out) -> 6817 slots, 11.03 GiB; 1726 MiB free, prompt chunk 8192",
+        "strata elastic: -76 slots (13 moved in, 63 out) -> 6741 slots, 10.91 GiB; 960 MiB free, prompt chunk 8192",
+        "strata elastic: -94 slots (32 moved in, 62 out) -> 6647 slots, 10.76 GiB; 1123 MiB free, prompt chunk 8192",
+        "strata elastic: -50 slots (26 moved in, 24 out) -> 6597 slots, 10.68 GiB; 1505 MiB free, prompt chunk 8192"
+      ],
+      "completed": true
+    },
+    "131072_A2": {
+      "mode": "A",
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "16384"
+      ],
+      "requests": [
+        {
+          "name": "fresh",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              8192,
+              131072
+            ],
+            [
+              16384,
+              131072
+            ],
+            [
+              24576,
+              131072
+            ],
+            [
+              32768,
+              131072
+            ],
+            [
+              40960,
+              131072
+            ],
+            [
+              49152,
+              131072
+            ],
+            [
+              57344,
+              131072
+            ],
+            [
+              65536,
+              131072
+            ],
+            [
+              73728,
+              131072
+            ],
+            [
+              81920,
+              131072
+            ],
+            [
+              90112,
+              131072
+            ],
+            [
+              98304,
+              131072
+            ],
+            [
+              106496,
+              131072
+            ],
+            [
+              114688,
+              131072
+            ],
+            [
+              122880,
+              131072
+            ],
+            [
+              131065,
+              131072
+            ],
+            [
+              131071,
+              131072
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 127960.4,
+          "decode_ms": 1187.2,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 12249,
+          "lookups": 21288,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 131072,
+          "oracle_pass": true
+        },
+        {
+          "name": "branch",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              122880,
+              131072
+            ],
+            [
+              131065,
+              131072
+            ],
+            [
+              131071,
+              131072
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 131072,
+          "prompt_ms": 20992.9,
+          "decode_ms": 950.9,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 114688,
+          "hits": 15483,
+          "lookups": 21869,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 16384,
+          "oracle_pass": true
+        }
+      ],
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "fed5a129f49a844b5edc9e933de68c7e392346583868b90806e637ed651681ad",
+          "reused_min": 131065,
+          "reused_max": 131583
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "b91ae41c117bad5cba6225432b8c475b12fc2d4a7ed0feed2836aec7d83e16e0",
+          "reused_min": 131065,
+          "reused_max": 132095
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "4eb7efbfffcffbad7e2aaf5dcc3e702a5dbdd9a4c09c7e805924cc8377361f72",
+          "reused_min": 131065,
+          "reused_max": 132095
+        }
+      },
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6786,
+        "expert_cache_mib": 11231,
+        "expert_slots_primary": 6786,
+        "expert_cache_primary_mib": 11231,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 1269,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      },
+      "chunk_events": [
+        "strata serve: prompt chunk auto: 8192 tokens",
+        "strata serve: the prompt path borrows 2960 CUDA0 cache slots (4.73 GiB)",
+        "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6786 slots now, 10.97 GiB, chunks of 64 MiB)",
+        "strata elastic: two zones - core 3359 slots (5.49 GiB, fixed), tail 3427 slots (5.48 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+        "strata elastic: +293 experts (483 MiB) -> 7079 slots, 11.44 GiB; 664 MiB free",
+        "strata elastic: -117 slots (117 moved in, 0 out) -> 6962 slots, 11.26 GiB; 572 MiB free, prompt chunk 8192",
+        "strata elastic: -168 slots (128 moved in, 40 out) -> 6794 slots, 10.98 GiB; 605 MiB free, prompt chunk 8192",
+        "strata elastic: -74 slots (29 moved in, 45 out) -> 6720 slots, 10.87 GiB; 578 MiB free, prompt chunk 8192",
+        "strata elastic: -222 slots (82 moved in, 140 out) -> 6498 slots, 10.51 GiB; 517 MiB free, prompt chunk 8192"
+      ],
+      "completed": true
+    },
+    "250000_A1": {
+      "mode": "A",
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "16384"
+      ],
+      "requests": [
+        {
+          "name": "fresh",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              8192,
+              250000
+            ],
+            [
+              16384,
+              250000
+            ],
+            [
+              24576,
+              250000
+            ],
+            [
+              32768,
+              250000
+            ],
+            [
+              40960,
+              250000
+            ],
+            [
+              49152,
+              250000
+            ],
+            [
+              57344,
+              250000
+            ],
+            [
+              65536,
+              250000
+            ],
+            [
+              73728,
+              250000
+            ],
+            [
+              81920,
+              250000
+            ],
+            [
+              90112,
+              250000
+            ],
+            [
+              98304,
+              250000
+            ],
+            [
+              106496,
+              250000
+            ],
+            [
+              114688,
+              250000
+            ],
+            [
+              122880,
+              250000
+            ],
+            [
+              131072,
+              250000
+            ],
+            [
+              139264,
+              250000
+            ],
+            [
+              147456,
+              250000
+            ],
+            [
+              155648,
+              250000
+            ],
+            [
+              163840,
+              250000
+            ],
+            [
+              172032,
+              250000
+            ],
+            [
+              180224,
+              250000
+            ],
+            [
+              188416,
+              250000
+            ],
+            [
+              196608,
+              250000
+            ],
+            [
+              204800,
+              250000
+            ],
+            [
+              212992,
+              250000
+            ],
+            [
+              221184,
+              250000
+            ],
+            [
+              229376,
+              250000
+            ],
+            [
+              237568,
+              250000
+            ],
+            [
+              245760,
+              250000
+            ],
+            [
+              249993,
+              250000
+            ],
+            [
+              249999,
+              250000
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 250000,
+          "prompt_ms": 349321.6,
+          "decode_ms": 1170.8,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 12228,
+          "lookups": 21252,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 250000,
+          "oracle_pass": true
+        },
+        {
+          "name": "branch",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              249993,
+              250000
+            ],
+            [
+              249999,
+              250000
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 250000,
+          "prompt_ms": 11217.2,
+          "decode_ms": 1005.0,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 245760,
+          "hits": 16925,
+          "lookups": 22178,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 4240,
+          "oracle_pass": true
+        }
+      ],
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "63c00d11eebd5d2bf44a0d94a80103a0b94c8def4cea298fca2407f4118a733c",
+          "reused_min": 249993,
+          "reused_max": 250511
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "4a55cb7e1e39d74e45857f826a2381984cc664acca5eb6f8c74c73394495017c",
+          "reused_min": 249993,
+          "reused_max": 251023
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "137fb7a561ac59ef3c6cb41aa419a60173dd1d7b6600b711e4e84b88b71e7d69",
+          "reused_min": 249993,
+          "reused_max": 251023
+        }
+      },
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6383,
+        "expert_cache_mib": 10572,
+        "expert_slots_primary": 6383,
+        "expert_cache_primary_mib": 10572,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 952,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      },
+      "chunk_events": [
+        "strata serve: prompt chunk auto: 8192 tokens",
+        "strata serve: the prompt path borrows 2956 CUDA0 cache slots (4.73 GiB)",
+        "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6383 slots now, 10.32 GiB, chunks of 64 MiB)",
+        "strata elastic: two zones - core 3161 slots (5.16 GiB, fixed), tail 3222 slots (5.16 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+        "strata elastic: +308 experts (511 MiB) -> 6691 slots, 10.82 GiB; 770 MiB free",
+        "strata elastic: +309 experts (511 MiB) -> 7000 slots, 11.32 GiB; 781 MiB free",
+        "strata elastic: -97 slots (96 moved in, 1 out) -> 6903 slots, 11.17 GiB; 687 MiB free, prompt chunk 8192",
+        "strata elastic: -79 slots (77 moved in, 2 out) -> 6824 slots, 11.04 GiB; 1105 MiB free, prompt chunk 8192",
+        "strata elastic: -60 slots (17 moved in, 43 out) -> 6764 slots, 10.94 GiB; 823 MiB free, prompt chunk 8192",
+        "strata elastic: -125 slots (39 moved in, 86 out) -> 6639 slots, 10.74 GiB; 1443 MiB free, prompt chunk 8192",
+        "strata elastic: -88 slots (32 moved in, 56 out) -> 6551 slots, 10.60 GiB; 1250 MiB free, prompt chunk 8192"
+      ],
+      "completed": true
+    },
+    "250000_B": {
+      "mode": "B",
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "8192"
+      ],
+      "requests": [
+        {
+          "name": "fresh",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              8192,
+              250000
+            ],
+            [
+              16384,
+              250000
+            ],
+            [
+              24576,
+              250000
+            ],
+            [
+              32768,
+              250000
+            ],
+            [
+              40960,
+              250000
+            ],
+            [
+              49152,
+              250000
+            ],
+            [
+              57344,
+              250000
+            ],
+            [
+              65536,
+              250000
+            ],
+            [
+              73728,
+              250000
+            ],
+            [
+              81920,
+              250000
+            ],
+            [
+              90112,
+              250000
+            ],
+            [
+              98304,
+              250000
+            ],
+            [
+              106496,
+              250000
+            ],
+            [
+              114688,
+              250000
+            ],
+            [
+              122880,
+              250000
+            ],
+            [
+              131072,
+              250000
+            ],
+            [
+              139264,
+              250000
+            ],
+            [
+              147456,
+              250000
+            ],
+            [
+              155648,
+              250000
+            ],
+            [
+              163840,
+              250000
+            ],
+            [
+              172032,
+              250000
+            ],
+            [
+              180224,
+              250000
+            ],
+            [
+              188416,
+              250000
+            ],
+            [
+              196608,
+              250000
+            ],
+            [
+              204800,
+              250000
+            ],
+            [
+              212992,
+              250000
+            ],
+            [
+              221184,
+              250000
+            ],
+            [
+              229376,
+              250000
+            ],
+            [
+              237568,
+              250000
+            ],
+            [
+              245760,
+              250000
+            ],
+            [
+              249993,
+              250000
+            ],
+            [
+              249999,
+              250000
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 250000,
+          "prompt_ms": 356744.9,
+          "decode_ms": 1176.9,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 11497,
+          "lookups": 21152,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 250000,
+          "oracle_pass": true
+        },
+        {
+          "name": "branch",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              249993,
+              250000
+            ],
+            [
+              249999,
+              250000
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 250000,
+          "prompt_ms": 11423.9,
+          "decode_ms": 1049.6,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 245760,
+          "hits": 16092,
+          "lookups": 21982,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 4240,
+          "oracle_pass": true
+        }
+      ],
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "f20224f460bd6fd5d11e61c089283a60f0b78546a7ca8e34df2c2bec792c925d",
+          "reused_min": 249993,
+          "reused_max": 250511
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "fd32f7d321d8742b0a5824903f98e57c1894fd3cf4f46e84593b7ddb642f3e9c",
+          "reused_min": 249993,
+          "reused_max": 251023
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "3d4b6c5284282fe85435f6a7e9b18f83471c95afeda4c5fb964d8993b9433078",
+          "reused_min": 249993,
+          "reused_max": 251023
+        }
+      },
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6682,
+        "expert_cache_mib": 11064,
+        "expert_slots_primary": 6682,
+        "expert_cache_primary_mib": 11064,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 847,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      },
+      "chunk_events": [
+        "strata serve: prompt chunk auto: 8192 tokens",
+        "strata serve: the prompt path borrows 2956 CUDA0 cache slots (4.73 GiB)",
+        "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6682 slots now, 10.81 GiB, chunks of 64 MiB)",
+        "strata elastic: two zones - core 3309 slots (5.40 GiB, fixed), tail 3373 slots (5.40 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+        "strata elastic: +313 experts (511 MiB) -> 6995 slots, 11.30 GiB; 854 MiB free",
+        "strata elastic: -234 slots (233 moved in, 1 out) -> 6761 slots, 10.93 GiB; 974 MiB free, prompt chunk 8192",
+        "strata elastic: -131 slots (31 moved in, 100 out) -> 6630 slots, 10.73 GiB; 553 MiB free, prompt chunk 8192",
+        "strata elastic: -45 slots (18 moved in, 27 out) -> 6585 slots, 10.65 GiB; 2047 MiB free, prompt chunk 8192",
+        "strata elastic: -274 slots (75 moved in, 199 out) -> 6311 slots, 10.21 GiB; 185 MiB free, prompt chunk 8192",
+        "strata elastic: -288 slots (109 moved in, 179 out) -> 6023 slots, 9.76 GiB; 716 MiB free, prompt chunk 6144"
+      ],
+      "completed": true
+    },
+    "250000_A2": {
+      "mode": "A",
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "16384"
+      ],
+      "requests": [
+        {
+          "name": "fresh",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              8192,
+              250000
+            ],
+            [
+              16384,
+              250000
+            ],
+            [
+              24576,
+              250000
+            ],
+            [
+              32768,
+              250000
+            ],
+            [
+              40960,
+              250000
+            ],
+            [
+              49152,
+              250000
+            ],
+            [
+              57344,
+              250000
+            ],
+            [
+              65536,
+              250000
+            ],
+            [
+              73728,
+              250000
+            ],
+            [
+              81920,
+              250000
+            ],
+            [
+              90112,
+              250000
+            ],
+            [
+              98304,
+              250000
+            ],
+            [
+              106496,
+              250000
+            ],
+            [
+              114688,
+              250000
+            ],
+            [
+              122880,
+              250000
+            ],
+            [
+              131072,
+              250000
+            ],
+            [
+              139264,
+              250000
+            ],
+            [
+              147456,
+              250000
+            ],
+            [
+              155648,
+              250000
+            ],
+            [
+              163840,
+              250000
+            ],
+            [
+              172032,
+              250000
+            ],
+            [
+              180224,
+              250000
+            ],
+            [
+              188416,
+              250000
+            ],
+            [
+              196608,
+              250000
+            ],
+            [
+              204800,
+              250000
+            ],
+            [
+              212992,
+              250000
+            ],
+            [
+              221184,
+              250000
+            ],
+            [
+              229376,
+              250000
+            ],
+            [
+              237568,
+              250000
+            ],
+            [
+              245760,
+              250000
+            ],
+            [
+              249993,
+              250000
+            ],
+            [
+              249999,
+              250000
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 250000,
+          "prompt_ms": 351513.4,
+          "decode_ms": 1233.1,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 0,
+          "hits": 11974,
+          "lookups": 21246,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 250000,
+          "oracle_pass": true
+        },
+        {
+          "name": "branch",
+          "content": "{\n  \"north\": \"ARCO-731\",\n  \"south\": \"LUNA-482\",\n  \"west\": \"PORTO-916\"\n}",
+          "output_ids": [
+            90,
+            198,
+            220,
+            328,
+            59810,
+            763,
+            328,
+            905,
+            8023,
+            12,
+            22,
+            18,
+            16,
+            487,
+            198,
+            220,
+            328,
+            64240,
+            763,
+            328,
+            43,
+            200205,
+            12,
+            19,
+            23,
+            17,
+            487,
+            198,
+            220,
+            328,
+            10717,
+            763,
+            328,
+            4933,
+            46,
+            12,
+            24,
+            16,
+            21,
+            1,
+            198,
+            92,
+            248046
+          ],
+          "prefill_progress": [
+            [
+              249993,
+              250000
+            ],
+            [
+              249999,
+              250000
+            ]
+          ],
+          "generated": 43,
+          "prompt_tokens": 250000,
+          "prompt_ms": 11029.2,
+          "decode_ms": 1036.8,
+          "finish": "stop",
+          "drafts_accepted": 31,
+          "drafts_offered": 36,
+          "reused": 245760,
+          "hits": 15043,
+          "lookups": 21790,
+          "ram_blobs": 0,
+          "file_blobs": 0,
+          "file_mb": 0.0,
+          "prompt_read": 4240,
+          "oracle_pass": true
+        }
+      ],
+      "teacher": {
+        "code": {
+          "rows": 512,
+          "scored_positions": 511,
+          "sha256": "ef31b711f324646a2afb96182b2ba663f337da018347af5f76b9044bc6b459d0",
+          "reused_min": 249993,
+          "reused_max": 250511
+        },
+        "doc": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "40f781a2d2147fb7432a618e5d663e56c746ae7fa6e3ab9bb99378bfa69cc1e0",
+          "reused_min": 249993,
+          "reused_max": 251023
+        },
+        "chat": {
+          "rows": 1024,
+          "scored_positions": 1023,
+          "sha256": "7971181020384740fa608316c94088ab1f9a92c4b725910aea65d5d0aeb0f772",
+          "reused_min": 249993,
+          "reused_max": 251023
+        }
+      },
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 7059,
+        "expert_cache_mib": 11673,
+        "expert_slots_primary": 7059,
+        "expert_cache_primary_mib": 11673,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 1462,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      },
+      "chunk_events": [
+        "strata serve: prompt chunk auto: 8192 tokens",
+        "strata serve: the prompt path borrows 2966 CUDA0 cache slots (4.73 GiB)",
+        "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (7059 slots now, 11.40 GiB, chunks of 64 MiB)",
+        "strata elastic: two zones - core 3492 slots (5.70 GiB, fixed), tail 3567 slots (5.70 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+        "strata elastic: -216 slots (53 moved in, 163 out) -> 6843 slots, 11.06 GiB; 697 MiB free, prompt chunk 8192",
+        "strata elastic: -49 slots (14 moved in, 35 out) -> 6794 slots, 10.98 GiB; 554 MiB free, prompt chunk 8192",
+        "strata elastic: -135 slots (34 moved in, 101 out) -> 6659 slots, 10.77 GiB; 536 MiB free, prompt chunk 8192"
+      ],
+      "completed": true
+    }
+  },
+  "elapsed_s": 3393.422000000006
+}

@@ -1,0 +1,85 @@
+{
+  "exe_sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a",
+  "config_sha256": "ccffa537cdb264f99317948c1c6f41ffbc1e5ce370cafb1ca8c0ca717e77e112",
+  "binary_version": "0.1.36 shipping Daily",
+  "contexts": [
+    131072,
+    250000
+  ],
+  "pairs_per_context": 3,
+  "order": "A1/B1, B2/A2, A3/B3",
+  "baseline_every": 16384,
+  "candidate_every": 8192,
+  "args_original": [
+    "--pack",
+    "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+    "--native",
+    "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+    "--ple-gguf",
+    "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+    "--expert-profile",
+    "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+    "--expert-cache",
+    "auto",
+    "--prefill",
+    "auto",
+    "--spec",
+    "4",
+    "--spec-min-p",
+    "0.5",
+    "--mtp",
+    "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+    "--max-context",
+    "262144",
+    "--kv",
+    "int8",
+    "--kv-resident",
+    "32768",
+    "--vram-reserve-mib",
+    "1393",
+    "--elastic"
+  ],
+  "elastic": true,
+  "prefill": "auto unchanged; observed startup8192, changes logged",
+  "expected": {
+    "north": "ARCO-731",
+    "south": "LUNA-482",
+    "west": "PORTO-916"
+  },
+  "fixtures": {
+    "131072": {
+      "fresh_tokens": 131072,
+      "branch_tokens": 131072,
+      "common_tokens": 130018
+    },
+    "250000": {
+      "fresh_tokens": 250000,
+      "branch_tokens": 250000,
+      "common_tokens": 248946
+    }
+  },
+  "teacher_rows_per_corpus": 64,
+  "teacher_corpora": [
+    "code",
+    "doc",
+    "chat"
+  ],
+  "policy": {
+    "description": "Local paired regression gate; not an upstream universal threshold",
+    "block_tokens": 32,
+    "nll_allowance_nats": 0.01,
+    "median_kl_floor": 0.001,
+    "p99_kl_floor": 0.01,
+    "baseline_kl_multiplier": 3.0,
+    "top1_allowance_percentage_points": 1.0
+  },
+  "max_new_recall": 128,
+  "max_new_long_decode": 1024,
+  "long_decode_is_not_an_answer_oracle": true,
+  "artificial_pressure": false,
+  "readout": "identical optional first-window dump enabled in all arms; overhead included in TTFT",
+  "daily_changed": false,
+  "maximum_seconds": 10800,
+  "admission_vram_mib": 500,
+  "initial_attempt": "paired rejected before warmup/token generation at759MiB versus runner800MiB; retained; admission now follows actual Daily elastic500MiB contract, no quality threshold changed"
+}

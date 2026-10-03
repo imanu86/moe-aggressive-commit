@@ -1,5 +1,46 @@
 # HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.36 + port sm75/top-k/PR463, elastica e KV 262k)
 
+- **3 ottobre, perimetro PR riconfermato dall'utente:** proporre il codice
+  della cache elastica e dell'allineamento checkpoint usato nel Daily.
+  L'ultimo A/B sullo stesso Daily confronta solo frequenza16384/8192,
+  con elastica e checkpoint-grid presenti in entrambi: non è il gate delle PR
+  né una bocciatura del Daily operativo. Nessuna nuova patch prodotta da quel test.
+  Checkpoint-grid isolato su upstream038 ha ancora il FAIL già documentato;
+  ripristino cold/cached bitwise nel caso provato non risolve il confronto A/B.
+  Elastica: manca confronto isolato upstream/patch; non attribuire al suo codice
+  il FAIL dell'esperimento di frequenza. Mantenere le impostazioni operative.
+  Prossima validazione: stessa base upstream, contributi separati, geometria e
+  residenza controllate per parità; poi comportamento operativo auto/elastico,
+  senza carichi artificiali. Conservare attribuzione originale delle patch.
+  Accesso completo ripristinato; blocchi index.lock delle note sotto sono storici.
+
+- **3 ottobre, misure Daily elastico concluse:** stesso exe0136 c35505ca,
+  auto/elastic/KV262144, confronto checkpoint16384/8192,3coppie a131072 e250000.
+  **Gate breve FAIL, QA estesa A/B/A FAIL** (2557 posizioni/braccio).
+  A 250k, corpus doc: PPL A/B 1.173/1.383, top1 A/B 88.56% contro A/A 96.68%;
+  primo output fresh oltre il limite KL a entrambe le profondità.
+  Oracoli 36/36 e 12/12, fixture ripetute; niente qualità generale/SOTA.
+  A 131k branch TTFT mediano 20.695/10.770 s; a 250k nessun riuso aggiuntivo.
+  Daily invariato per SHA, motori chiusi. Conservare la frequenza operativa 16384.
+  Prossimo lavoro: isolare le differenze con cache automatica ed elastica,
+  senza attribuire ora una causa non verificata. Tutti i fallimenti conservati.
+  Blocco iniziale index.lock storico; evidenze nel commit di pubblicazione.
+  [Dati e limiti](CHECKPOINT_DAILY_ELASTICO_3_OTTOBRE.md).
+
+- **3 ottobre, diagnosi checkpoint conclusa:** A/B chunk1536 e6144, prompt33.8k
+  letto da zero contro precedente riuso: logits bitwise in4/4 confronti,
+  primo output+64posizioni/braccio. Differenza A/B già presente prima del riuso:
+  percorso prefill modificato, singolo kernel/arrotondamenti non ancora isolati.
+  Elastica disattivata,5357slot fissi. Configurazione alternativa senza tagli
+  `--prefill6144 --prompt-cache-every6144`: upstream e patch bitwise tra loro
+  e contro baseline6144 originale, fresh/follow+64posizioni,4risposte corrette;
+  riuso30720 invece18432. Un campione temporale/braccio: niente SOTA o
+  attestazione generale; ancora da provare131k/250k/elastica/Daily036.
+  Gate patch originale16384 restaFAIL; Daily invariato, motori chiusi.
+  [Dati e limiti](CHECKPOINT_DIAGNOSI_3_OTTOBRE.md).
+  Il primo staging fu negato su `.git/index.lock`; accesso completo ora ripristinato.
+  Evidenze complete salvate e verificate, identificate dal commit di pubblicazione.
+
 - **3 ottobre: PR512 integrata upstream0.1.38; ripetizione isolata +7,46% prefill, spread riferimenti0,54%, parità16/16.** [Dati e limiti](PR512_RIPETIZIONE_3_OTTOBRE.md). Daily invariato.
 - **3 ottobre, accesso completo ripristinato:** pubblicati i report spec4/spec5,
   quattro ore e ripetizione PR512 sul branch research autorizzato, con manifest

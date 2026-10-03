@@ -1,0 +1,151 @@
+{
+  "status": "failed",
+  "plan": {
+    "exe_sha256": "c35505ca79b790bd37ed7073fcadd399dd30d1b88e85bb99a6eb24a52d945d0a",
+    "config_sha256": "ccffa537cdb264f99317948c1c6f41ffbc1e5ce370cafb1ca8c0ca717e77e112",
+    "binary_version": "0.1.36 shipping Daily",
+    "contexts": [
+      131072,
+      250000
+    ],
+    "pairs_per_context": 3,
+    "order": "A1/B1, B2/A2, A3/B3",
+    "baseline_every": 16384,
+    "candidate_every": 8192,
+    "args_original": [
+      "--pack",
+      "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+      "--native",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+      "--ple-gguf",
+      "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+      "--expert-profile",
+      "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+      "--expert-cache",
+      "auto",
+      "--prefill",
+      "auto",
+      "--spec",
+      "4",
+      "--spec-min-p",
+      "0.5",
+      "--mtp",
+      "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+      "--max-context",
+      "262144",
+      "--kv",
+      "int8",
+      "--kv-resident",
+      "32768",
+      "--vram-reserve-mib",
+      "1393",
+      "--elastic"
+    ],
+    "elastic": true,
+    "prefill": "auto unchanged; observed startup8192, changes logged",
+    "expected": {
+      "north": "ARCO-731",
+      "south": "LUNA-482",
+      "west": "PORTO-916"
+    },
+    "fixtures": {
+      "131072": {
+        "fresh_tokens": 131072,
+        "branch_tokens": 131072,
+        "common_tokens": 130018
+      },
+      "250000": {
+        "fresh_tokens": 250000,
+        "branch_tokens": 250000,
+        "common_tokens": 248946
+      }
+    },
+    "teacher_rows_per_corpus": 64,
+    "teacher_corpora": [
+      "code",
+      "doc",
+      "chat"
+    ],
+    "policy": {
+      "description": "Local paired regression gate; not an upstream universal threshold",
+      "block_tokens": 32,
+      "nll_allowance_nats": 0.01,
+      "median_kl_floor": 0.001,
+      "p99_kl_floor": 0.01,
+      "baseline_kl_multiplier": 3.0,
+      "top1_allowance_percentage_points": 1.0
+    },
+    "max_new_recall": 128,
+    "max_new_long_decode": 1024,
+    "long_decode_is_not_an_answer_oracle": true,
+    "artificial_pressure": false,
+    "readout": "identical optional first-window dump enabled in all arms; overhead included in TTFT",
+    "daily_changed": false,
+    "maximum_seconds": 10800
+  },
+  "arms": {
+    "131072_A1": {
+      "mode": "A",
+      "pair": 1,
+      "depth": 131072,
+      "args": [
+        "--pack",
+        "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+        "--native",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+        "--ple-gguf",
+        "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+        "--expert-profile",
+        "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+        "--expert-cache",
+        "auto",
+        "--prefill",
+        "auto",
+        "--spec",
+        "4",
+        "--spec-min-p",
+        "0.5",
+        "--mtp",
+        "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt",
+        "--max-context",
+        "262144",
+        "--kv",
+        "int8",
+        "--kv-resident",
+        "32768",
+        "--vram-reserve-mib",
+        "1393",
+        "--elastic",
+        "--prompt-cache-every",
+        "16384"
+      ],
+      "requests": [],
+      "teacher": {},
+      "info": {
+        "version": "0.1.36",
+        "context": 262144,
+        "kv": "int8",
+        "kv_resident": 32768,
+        "expert_slots": 6535,
+        "expert_cache_mib": 10832,
+        "expert_slots_primary": 6535,
+        "expert_cache_primary_mib": 10832,
+        "spec": 6,
+        "mtp_max": 4,
+        "lookup": 3,
+        "vram_free_mib": 759,
+        "cvec": 0,
+        "arena_mib": 40925,
+        "pool_workers": 7,
+        "pcie_frac": "0.28",
+        "spec_min_p": "0.50",
+        "conversation_cache_mib": 0,
+        "conversation_cache_slots": 4,
+        "conversation_cache_min_free_mib": 2560,
+        "engine": "0.1.36"
+      }
+    }
+  },
+  "error": "AssertionError()",
+  "elapsed_s": 45.53100000000268
+}

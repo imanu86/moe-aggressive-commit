@@ -1,4 +1,20 @@
-# HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.36 + port sm75/top-k/PR463, elastica e KV 262k)
+# HANDOFF — Strata Daily0.1.38 SM75, grid rimossa, elastica/tail/top-k603, KV262k
+
+- **3ottobre, Daily e main aggiornati:** upstream99f3dbd/0.1.38, commit
+  fc9a767b15c3. Grid originale rimossa; tail614abilitato,
+  elastica e SM75conservati; top-k largo603validato/integrato, seriale.
+  Numerica A/B/A: 2560 righe/braccio, bitwise, KL 0, top-1 100%; sei recall.
+  Auto Daily131k/250k:1024token per profondità e6oracoli corretti.
+  Prefill1027.01/833.50t/s; decode lungo36.913/39.065t/s, singoli campioni.
+  Controllo603250k: 701.49/832.03/699.49t/s,
+  +18.78% rispetto alla media A, spread0.29%; logits bitwise.
+  Shipping/BAT/config/server coerenti; health e JSON su8100passano,
+  48untracked preservati, rollback0136disponibile. Release038pubblicata,
+  nessun workflow. Motori chiusi; test senza pressione artificiale.
+  [Dati, provenienza, limiti e ripristino](ALLINEAMENTO_0138_GRID_RIMOSSA_3_OTTOBRE.md).
+
+## Stato storico (le note Daily invariato sotto si riferiscono ai giri precedenti)
+
 
 - **3 ottobre, controllo duplicati e PR614 aperta ready:**632fork elencati,
   630default esterni leggibili,1179branch pubblici e535commit distinti controllati.

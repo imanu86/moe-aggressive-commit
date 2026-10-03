@@ -1,0 +1,18 @@
+from pathlib import Path
+B=Path(__file__).resolve().parent
+p=(B/'test_checkpoint_tail038_parity.py').read_text()
+p=p.replace("R=BASE/'checkpoint-tail038_20261003'","R=BASE/'daily038_alignment_20261003'")
+p=p.replace("args=V.set_arg(old['plan']['args'],'--prefill',6144)","args=V.set_arg(old['plan']['args'],'--prefill',2048)+['--elastic','--elastic-tail-mib','32768','--elastic-period-ms','2147483647','--elastic-stable-ms','2147483647','--elastic-reserve-mib','0']")
+p=p.replace("'prefill_chunk':6144","'prefill_chunk':2048")
+p=p.replace("qa=json.loads((R/'build.json').read_text());assert V.sha(OLD/'strata-qa-A.exe')=='cb6ba7618f71ed509322d2339c57eafdc1c57ea4a44549dc641cc2ee2b678bed'\nassert V.sha(R/'strata-qa-tail.exe')==qa['qa_sha256']","qa=json.loads((R/'build-wide.json').read_text());oldqa=json.loads((R/'old-qa-build.json').read_text());assert V.sha(R/'strata-qa-old-daily.exe')==oldqa['qa_sha256']\nassert V.sha(R/'strata-qa-wide.exe')==qa['qa_exe_sha256']")
+p=p.replace("exe=OLD/'strata-qa-A.exe' if label in ('A1','A2') else R/'strata-qa-tail.exe'","exe=R/'strata-qa-old-daily.exe' if label in ('A1','A2') else R/'strata-qa-wide.exe'")
+p=p.replace(",'tail-only arm unexpectedly contains elastic code'",",'fixed-placement arm unexpectedly resized'")
+p=p.replace("'original_grid_gate':'FAIL preserved; this is a separate replacement design'","'comparison':'old036 SM75 Daily with grid versus aligned038 SM75 elastic/tail/wide; same2048 chunk boundaries, fixed expert placement; all original failed grid gates preserved'")
+(B/'test_daily038_alignment_parity.py').write_text(p,encoding='utf-8',newline='\n')
+d=(B/'test_elastic_tail038_dialogue.py').read_text()
+d=d.replace("R=BASE/'elastic-tail038_final_20261003'","R=BASE/'daily038_alignment_20261003'")
+d=d.replace("prior=json.loads((R/'operational-r1/results.json').read_text());assert prior['status']=='completed' and prior['oracle_pass']","parity=json.loads((R/'parity-r1/results.json').read_text());assert parity['status']=='completed' and parity['gate_pass'] and parity['oracle_pass']")
+d=d.replace("args=prior['plan']['args']","args=list(cfg['args'])+['--prompt-cache-tail','--prompt-cache-every','16384']")
+d=d.replace('strata-qa-combined.exe','strata-qa-wide.exe')
+(B/'test_daily038_alignment_dialogue.py').write_text(d,encoding='utf-8',newline='\n')
+print('Paired and deep dialogue runners prepared')

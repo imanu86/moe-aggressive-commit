@@ -1,5 +1,18 @@
 # HANDOFF — Strata daily sulla RTX 2080 Ti (0.1.36 + port sm75/top-k/PR463, elastica e KV 262k)
 
+- **3 ottobre, port upstream038 elastica + nuovo checkpoint tail validati:**
+  contributi separati; elastica A/off/VMM/A e tail A/B/A con2560teacher rows
+  (2557posizioni) per braccio, tutti bitwise/KL0. Elastica35test CUDA/CTest3/3,
+  CLI42; ultima revisione64teacher+fresh/follow bitwise contro V1.
+  Tail:3coppie33.8k, TTFT branch17.047→4.470s(−73.78%), fresh+0.93%;
+  non nuovaSOTA e non fix della grid originale, che conservaFAIL.
+  Autoelastica+tail:9recall corretti, grow/shrink/relayout8192 reali.
+  Conversazione chiusa correttamente a131k/250k:1024token entrambe,
+  6oracoli inclusi4marcatori distinti; tentativo precedente48token conservato.
+  Daily invariato e motori chiusi. PR pronte tecnicamente; autorizzazione dei
+  due branch richiesta secondo AGENTS prima della creazione.
+  [Misure, provenienza e limiti](PORT_ELASTICA_CHECKPOINT_TAIL_3_OTTOBRE.md).
+
 - **3 ottobre, perimetro PR riconfermato dall'utente:** proporre il codice
   della cache elastica e dell'allineamento checkpoint usato nel Daily.
   L'ultimo A/B sullo stesso Daily confronta solo frequenza16384/8192,

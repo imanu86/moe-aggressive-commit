@@ -619,3 +619,36 @@ Prossimo lavoro GPU: misurare una coda di copie/ring adatta alle continuazioni d
 ### Decisione utente: riprovare con la RTX 3060 aggiunta
 
 Conservare l'esperimento di streaming anticipato (`STRATA_PREFILL_STREAM_MIN=1000`) tra le prove da ripetere quando sara' installata la vecchia RTX 3060 accanto alla 2080 Ti. L'esito modesto attuale vale per la singola scheda: con piu' esperti residenti in VRAM cambiano volume e distribuzione delle copie, quindi non scartare definitivamente l'idea. L'utente deve ancora scegliere tra lo slot PCI Express e un collegamento OCuLink tramite M.2; generazione, numero di linee, condivisioni e banda effettiva sono da verificare sulla configurazione montata, senza presumere equivalenza. Ripetere base/candidata a pari testi, contesto, residenza esperti e topologia, registrando separatamente copie RAM->GPU, trasferimenti tra schede, staging KV, prefill warm/freddo e correttezza. Il collegamento non e' ancora deciso. Questa e' una voce del piano, non una promozione nel Daily o un test gia' svolto su due GPU.
+
+
+Ricognizione successiva: [PR663](https://github.com/Niko1221/Strata/pull/663), head `46c4715f4d8701eae321c7752d23c27101fed528`, usa la scheda inattiva di un layer split per eseguire parte degli esperti dei prompt che stanno in un chunk, anche senza P2P attraverso memoria host mappata. E' una pista per 2080 Ti + 3060: aperta, non integrata e non testata qui. Le misure dell'autore sono su due 3090 con due collegamenti PCIe 4.0 x16; non trasferirne i guadagni alla nostra futura topologia. L'autore dichiara output ripetibile ma non bit-identico alla base per il diverso raggruppamento MMQ: prima di promuoverla servono parita'/qualita' e misure locali.
+
+Per PR655, la lettura del sorgente conferma una sovrapposizione parziale con i percorsi FP16 SM75 gia' nel fork. Il rimpiazzo generale di `Gemm::bf16` raggiunge anche il popolamento KV delle bozze, che il codice attuale mantiene deliberatamente BF16. Non applicarla alla cieca: separare i prodotti ancora BF16 del target dal drafter, verificare numerica e accettazione MTP, e misurare solo il beneficio residuo sulla nostra base. Nessun port o test PR655 eseguito in questa sessione.
+
+
+## 15. Buffer dei turni brevi: parita' passata, promozione sospesa
+
+Patch pubblicata su fork `main`: `15fd2eacd46c0057a91e876dca0a3e99990907ca`
+(documentazione corretta nel successivo `ef2a99b`).
+Nuova opzione **disattivata per default** `STRATA_PREFILL_EXACT_SMALL=1`:
+layout1007 anziche'1024 per il batch routed da1007, prestito517 anziche'1033 slot.
+Compilazione SM75 e519268 controlli C++ passati. A/B/A breve completo: a1007
+2336,1/2196,2/2324,9ms, +6,12% t/s sul campione breve. Non trasferire il dato alla
+chat profonda. Dodici casi completati (8 brevi +4 richieste lunghe) con tutti i
+248320 logits della prima riga target bit-identici e130 token greedy uguali.
+Il gather raggruppato esplorativo non mostra vantaggi e non e' nella patch finale.
+
+A130380 token, coppia A1/E:3873,1/3713,9ms per1014 nuovi; a249322:4357,9/4363,1ms.
+**Confronto prestazionale lungo inconclusivo:** entrambi i tentativi del controllo
+A2 sono diventati molto lenti nel prefill freddo e sono stati fermati, senza
+richieste completate. Anche lo smoke con la configurazione elastica del Daily
+(6426 slot,1001MiB liberi) e' stato fermato nel primo chunk lento. Causa ignota;
+non attribuirla a Okto o alla patch. Candidata non promossa, nessuna nuova SOTA.
+Daily nativo e configurazione verificati invariati, PR567 del frontend resta
+attiva. Tutti i nostri processi del motore chiusi. Nessun test programmato.
+
+Prossimo passo: diagnosi circoscritta del primo chunk8192, vecchio Daily vs
+candidata con flag spento, profilo di fase e memoria/I/O; poi controllo lungo
+ripetibile e smoke elastico prima di abilitare l'opzione. Report, hash, limiti,
+prove escluse e percorsi in `corse_2080ti/20261003_request_chunk/README.md`.
+La decisione RTX3060 e le piste PR663/PR655 restano nella sezione14.

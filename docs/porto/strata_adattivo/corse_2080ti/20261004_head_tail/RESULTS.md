@@ -57,3 +57,21 @@ ms, spiegazione 34,9+41,2). Testa al 70% e coda per top-2: +21–27%; testa al 5
 +40–52%. Modello grezzo: non include lavoro GPU, overhead e sincronizzazioni delle code.
 
 Daily, config e launcher non toccati. Calcolo solo CPU; nessun motore avviato.
+
+## Granularita' del salto in down (`granularity.py`)
+
+Gate-first, meta' dei neuroni tenuti, testo codice, layer 1/35/36. Un gruppo di G neuroni
+consecutivi e' saltabile in `down` solo se nessuno dei suoi neuroni e' stato scelto.
+
+| G | Lavoro down saltabile (scelta per neurone) | Errore L2 routed se si sceglie per gruppi interi |
+|---:|---:|---:|
+| 1 | 50% | 25% |
+| 4 | 6,2% | 40% |
+| 8 | 0,4% | 45% |
+| 16 | 0% | 50% |
+| 32/64 | 0% | 55–59% |
+
+I neuroni scelti sono sparsi: a gruppi di 8 non si salta quasi nulla, e scegliere per
+gruppi costa quasi quanto un taglio casuale. Il salto in `down` richiede granularita'
+1, cioe' `down` memorizzato per neurone (layout trasposto, da riquantizzare lungo
+l'altro asse); altrimenti il risparmio resta su `up` (un terzo dei pesi).

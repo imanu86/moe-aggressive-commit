@@ -72,3 +72,22 @@ uso e poche ripetizioni: serve una finestra quieta con >=4 coppie A/B alternate.
 Fedelta' locale misurata, non correttezza su un insieme ampio di compiti.
 Il conteggio `usage` della cache adattiva esclude gli scartati: la residenza puo'
 divergere da A nelle sessioni lunghe.
+
+## Gate-first sui neuroni: fedelta' (build-v4, `STRATA_GATE_KEEP`)
+
+Per ogni (token, esperto) si tengono i neuroni con |silu(gate)| piu' alto e si azzera h
+sugli altri, sia nel percorso GPU (kernel prima di SwiGLU) sia nel pool CPU nativo.
+Le righe sono ancora calcolate: e' una misura di qualita'. Coerenza CPU/GPU verificata
+sul banco esperti (L2 routed 1,1–4,1% con meta' dei neuroni, contro 0,9–1,3% senza).
+
+| Neuroni tenuti | Codice KL | Magazzino KL | Prosa KL (argmax nette) |
+|---:|---:|---:|---:|
+| 70% | (ripetizione in corso) | 0,0024 | 0,0141 (99,6%) |
+| 60% | 0,0087 | 0,0023 | 0,0254 (99,1%) |
+| 50% | 0,0116 | 0,0047 | 0,0471 (97,1%) |
+
+Il 70% sta nella fascia delle soglie sugli esperti (peso >= 0,06/0,07). Il risparmio
+possibile e' minore: con il 70% dei neuroni si salta circa il 10% dei pesi dell'esperto
+(solo righe `up`) o il 20% con `down` memorizzato per neurone; la soglia 0,07 sugli
+esperti ne salta circa il 31% con KL simile. Un primo run (G70 codice) e' fallito per
+memoria impegnata insufficiente (WinError 1455): il runner ora attende >=52 GiB di commit.

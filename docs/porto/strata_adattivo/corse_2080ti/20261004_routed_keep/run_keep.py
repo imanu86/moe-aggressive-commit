@@ -17,8 +17,30 @@ from run_capture import PREFIX, CONFIG, bounded, sha, PROMPTS
 from run_closed import fixture, oracle
 
 
+def commit_free_gib():
+    """Windows commit charge still available (GlobalMemoryStatusEx.ullAvailPageFile)."""
+    import ctypes
+
+    class MS(ctypes.Structure):
+        _fields_ = [('dwLength', ctypes.c_ulong), ('dwMemoryLoad', ctypes.c_ulong), ('ullTotalPhys', ctypes.c_ulonglong),
+                    ('ullAvailPhys', ctypes.c_ulonglong), ('ullTotalPageFile', ctypes.c_ulonglong),
+                    ('ullAvailPageFile', ctypes.c_ulonglong), ('ullTotalVirtual', ctypes.c_ulonglong),
+                    ('ullAvailVirtual', ctypes.c_ulonglong), ('ullAvailExtendedVirtual', ctypes.c_ulonglong)]
+    m = MS(); m.dwLength = ctypes.sizeof(MS)
+    ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(m))
+    return m.ullAvailPageFile / 2**30
+
+
+def wait_commit(need_gib=60.0, deadline_s=240):
+    t0 = time.monotonic()
+    while commit_free_gib() < need_gib and time.monotonic() - t0 < deadline_s:
+        time.sleep(5)
+    return round(commit_free_gib(), 1)
+
+
 def snapshot():
-    s = {'available_ram_gib': round(psutil.virtual_memory().available / 2**30, 1)}
+    s = {'available_ram_gib': round(psutil.virtual_memory().available / 2**30, 1),
+         'commit_free_gib': wait_commit()}
     try:
         used, util = subprocess.check_output(['nvidia-smi', '--query-gpu=memory.used,utilization.gpu',
                                               '--format=csv,noheader,nounits'], text=True, timeout=15).strip().split(', ')
@@ -58,8 +80,11 @@ def main():
     ap.add_argument('--min-keep', type=int, default=0, help='STRATA_ROUTED_MIN_KEEP (default 4 with --min-w)')
     ap.add_argument('--skip', action='store_true', help='STRATA_ROUTED_KEEP_SKIP=1: really skip zeroed experts')
     ap.add_argument('--miss-w', type=float, default=0.0, help='STRATA_ROUTED_MISS_W (needs build-v3)')
+    ap.add_argument('--gate-keep', type=float, default=0.0, help='STRATA_GATE_KEEP fraction (needs build-v4)')
+    ap.add_argument('--lookahead', action='store_true', help='STRATA_LOOKAHEAD_PROBE=1 (needs build-v5), any arm')
+    ap.add_argument('--mtp-dir', default=None, help='alternative MTP pack folder (e.g. a draft-vocab candidate), any arm')
     a = ap.parse_args()
-    assert (a.arm == 'B') == (1 <= a.keep <= 9 or a.min_w > 0 or a.miss_w > 0)
+    assert (a.arm == 'B') == (1 <= a.keep <= 9 or a.min_w > 0 or a.miss_w > 0 or a.gate_keep > 0)
     out = L / a.name
     assert not out.exists()
     cfg = json.loads(CONFIG.read_text())
@@ -88,11 +113,16 @@ def main():
     args = PREFIX.replace_option(list(server.engine_args(cfg)), '--prompt-cache-file', None)
     if not a.teacher:
         args = PREFIX.replace_option(args, '--prompt-cache', '0')
+    if a.mtp_dir:
+        assert Path(a.mtp_dir, 'draft_vocab.bin').is_file() and Path(a.mtp_dir, 'dense.bin').is_file()
+        args = PREFIX.replace_option(args, '--mtp', str(Path(a.mtp_dir).resolve()))
     if a.teacher:  # in-process prompt cache on: request 1 stores the prompt, request 2 reads only the answer fresh  # the answer is read through the verify windows (probe active), the prompt by the batched path
         args = PREFIX.replace_option(args, '--short-read', str(len(teacher_answer) + 8))
     env = PREFIX.environment(cfg, out / 'unused')
     env.pop('STRATA_DUMP_FIRST_LOGITS', None)
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')
+    if a.lookahead:
+        env['STRATA_LOOKAHEAD_PROBE'] = '1'
     if a.teacher:
         env.update(STRATA_LOGPOS=str((out / 'logpos.tsv').resolve()), STRATA_LOGPOS_TOPK='20')
     if a.arm == 'B':
@@ -106,6 +136,8 @@ def main():
             env['STRATA_ROUTED_KEEP_SKIP'] = '1'
         if a.miss_w > 0:
             env['STRATA_ROUTED_MISS_W'] = f'{a.miss_w:g}'
+        if a.gate_keep > 0:
+            env['STRATA_GATE_KEEP'] = f'{a.gate_keep:g}'
         if a.renorm:
             env['STRATA_ROUTED_KEEP_RENORM'] = '1'
     base_path = L / 'state-baseline.json'
@@ -116,9 +148,10 @@ def main():
     print(json.dumps({'run': a.name, 'state': now, 'state_diff': diff}, ensure_ascii=False), flush=True)
     assert not now['competing'], now['competing']
     assert psutil.virtual_memory().available > 16 * 2**30, 'Too little available RAM'
+    assert now['commit_free_gib'] >= 52, f"Too little commit charge: {now['commit_free_gib']} GiB"
     out.mkdir()
     plan = dict(teacher=a.teacher, teacher_answer_tokens=len(teacher_answer), arm=a.arm, keep=a.keep,
-                min_w=a.min_w, min_keep=a.min_keep, skip=a.skip, miss_w=a.miss_w, build=a.build, renorm=a.renorm, task=a.task, args=args, prompt_ids=ids,
+                min_w=a.min_w, min_keep=a.min_keep, skip=a.skip, miss_w=a.miss_w, gate_keep=a.gate_keep, lookahead=a.lookahead, mtp_dir=a.mtp_dir, build=a.build, renorm=a.renorm, task=a.task, args=args, prompt_ids=ids,
                 prompt_tokens=len(ids), max_tokens=a.tokens, expected=expected,
                 sampling=dict(temperature=0, seed=73), executable_sha256=pin['executable_sha256'],
                 daily_sha256=sha(Path(cfg['exe'])), config_sha256=sha(CONFIG), state=now, state_diff=diff,
@@ -175,7 +208,7 @@ def main():
                       daily_unchanged=sha(Path(cfg['exe'])) == plan['daily_sha256'],
                       config_unchanged=sha(CONFIG) == plan['config_sha256'],
                       native_metrics=[s for s in log.splitlines() if any(
-                          k in s for k in ('ROUTED_KEEP', 'decode timing', 'strata serve:', 'expert-cache', 'elastic'))])
+                          k in s for k in ('ROUTED_KEEP', 'ROUTED_MISS', 'GATE_KEEP', 'draft head', 'decode timing', 'strata serve:', 'expert-cache', 'elastic'))])
         (out / 'result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
     print(json.dumps({k: result.get(k) for k in ('status', 'last', 'ttft_s', 'oracle', 'native_metrics')},
                      ensure_ascii=False), flush=True)

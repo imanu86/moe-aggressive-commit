@@ -1,0 +1,30 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraverso l'hardware è fondamentale per la velocità e la fluidità della risposta. Ecco come funzionano **RAM**, **Cache della CPU**, **VRAM** e **SSD**, spiegati in modo semplice con esempi concreti.
+
+---
+
+### 1. Panoramica dei componenti
+
+| Componente | Ruolo principale | Analogia semplice |
+|------------|------------------|-------------------|
+| **SSD** | Archiviazione permanente del modello e dei dati | Libreria: contiene tutti i libri (il modello) |
+| **RAM** | Memoria di lavoro temporanea per il sistema operativo e i dati in uso | Scrivania: spazio dove tieni i libri che stai leggendo ora |
+| **VRAM** | Memoria dedicata alla GPU per elaborare il modello | Banco di lavoro specializzato: dove il "cervello" (GPU) fa i calcoli pesanti |
+| **Cache CPU** | Memoria ultra-veloce per istruzioni e dati frequenti | Taccuino in tasca: note rapide che usi continuamente |
+
+---
+
+### 2. Fase 1: Lettura del prompt (Input)
+
+Quando scrivi un messaggio (es. *"Spiega la fotosintesi"*), il sistema deve caricare e preparare i dati.
+
+#### Cosa succede:
+1. **SSD → RAM**:  
+   Il modello linguistico (che può essere di diversi GB) è archiviato sull’SSD. All’avvio della conversazione, una parte o tutto il modello viene caricato nella **RAM** per essere accessibile rapidamente.  
+   *Esempio*: Se il modello è di 7 GB, questi dati vengono copiati dall’SSD alla RAM. Questo è un’operazione lenta rispetto alla CPU, ma avviene una sola volta all’inizio.
+
+2. **RAM → VRAM**:  
+   La **VRAM** (memoria della scheda video) è dove il modello viene effettivamente "caricato" per l’elaborazione. La GPU ha bisogno di accedere ai pesi del modello (i parametri) in modo estremamente rapido.  
+   *Esempio*: I pesi del modello vengono trasferiti dalla RAM alla VRAM. Se la VRAM è insufficiente, il sistema potrebbe dover usare la RAM come memoria secondaria, rallentando tutto.
+
+3. **Cache CPU**:  
+   La

@@ -82,7 +82,7 @@ sul banco esperti (L2 routed 1,1–4,1% con meta' dei neuroni, contro 0,9–1,3%
 
 | Neuroni tenuti | Codice KL | Magazzino KL | Prosa KL (argmax nette) |
 |---:|---:|---:|---:|
-| 70% | (ripetizione in corso) | 0,0024 | 0,0141 (99,6%) |
+| 70% | 0,0037 | 0,0024 | 0,0141 (99,6%) |
 | 60% | 0,0087 | 0,0023 | 0,0254 (99,1%) |
 | 50% | 0,0116 | 0,0047 | 0,0471 (97,1%) |
 

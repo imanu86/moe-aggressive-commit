@@ -1,0 +1,28 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraverso l'hardware è fondamentale per la velocità e la fluidità della risposta. Ecco come funzionano **RAM**, **Cache della CPU**, **VRAM** e **SSD**, spiegati separatamente per la fase di **lettura del prompt** e la fase di **generazione**.
+
+---
+
+### 1. Fase di Lettura del Prompt (Input)
+
+In questa fase, il sistema riceve il testo dell’utente e lo prepara per essere elaborato dal modello.
+
+#### **SSD (Solid State Drive)**
+- **Ruolo**: Archiviazione persistente.
+- **Cosa succede**: 
+  - Se il modello è grande (es. 70GB), i pesi del modello (i "neuroni" artificiali) sono salvati sull’SSD.
+  - Quando si avvia la conversazione o si carica un nuovo modello, l’SSD legge questi dati e li trasferisce alla RAM o alla VRAM.
+  - **Esempio concreto**: Apri un chatbot locale. L’SSD legge il file `.gguf` o `.safetensors` del modello. Questo è l’unico momento in cui l’SSD è critico per la *caricamento* del modello, non per ogni singola parola.
+
+#### **RAM (Random Access Memory)**
+- **Ruolo**: Memoria di lavoro principale del sistema.
+- **Cosa succede**:
+  - Il prompt testuale dell’utente viene caricato in RAM.
+  - Se il modello non è interamente caricato in VRAM (es. per modelli grandi su hardware limitato), parte dei pesi del modello può risiedere in RAM.
+  - **Esempio concreto**: Scrivi "Spiega la fotosintesi". Questa stringa di testo viene temporaneamente memorizzata in RAM mentre viene tokenizzata (divisa in pezzi numerici).
+
+#### **Cache della CPU**
+- **Ruolo**: Accelerare l’accesso ai dati frequentemente usati.
+- **Cosa succede**:
+  - La cache L1/L2/L3 della CPU memorizza i token del prompt e le istruzioni di preprocessing.
+  - Poiché il prompt è breve, la cache può contenere l’intero prompt e i dati di contesto recente, riducendo i tempi di accesso alla RAM.
+  - **Esempio concreto**: Se ripeti

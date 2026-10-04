@@ -1,0 +1,160 @@
+{
+  "status": "completed",
+  "engine_info": {
+    "version": "0.1.38",
+    "context": 262144,
+    "kv": "int8",
+    "kv_resident": 32768,
+    "expert_slots": 6358,
+    "expert_cache_mib": 10535,
+    "expert_slots_primary": 6358,
+    "expert_cache_primary_mib": 10535,
+    "spec": 6,
+    "mtp_max": 4,
+    "lookup": 3,
+    "vram_free_mib": 1046,
+    "cvec": 0,
+    "arena_mib": 40925,
+    "pool_workers": 7,
+    "pcie_frac": "0.36",
+    "spec_min_p": "0.50",
+    "conversation_cache_mib": 0,
+    "conversation_cache_slots": 4,
+    "conversation_cache_min_free_mib": 2560,
+    "engine": "0.1.38"
+  },
+  "startup_s": 150.26500000001397,
+  "teacher_prefix_last": {
+    "generated": 1,
+    "prompt_tokens": 2470,
+    "prompt_ms": 4133.4,
+    "decode_ms": 63.8,
+    "finish": "length",
+    "drafts_accepted": 0,
+    "drafts_offered": 0,
+    "reused": 0,
+    "hits": 282,
+    "lookups": 472,
+    "ram_blobs": 0,
+    "file_blobs": 0,
+    "file_mb": 0.0,
+    "prompt_read": 2470
+  },
+  "generated_ids": [
+    198
+  ],
+  "text": "\n",
+  "last": {
+    "generated": 1,
+    "prompt_tokens": 2634,
+    "prompt_ms": 4745.3,
+    "decode_ms": 87.3,
+    "finish": "length",
+    "drafts_accepted": 0,
+    "drafts_offered": 0,
+    "reused": 2470,
+    "hits": 160,
+    "lookups": 462,
+    "ram_blobs": 0,
+    "file_blobs": 0,
+    "file_mb": 0.0,
+    "prompt_read": 164
+  },
+  "request_s": 4.844000000011874,
+  "ttft_s": 4.812000000005355,
+  "oracle": {
+    "passed": false,
+    "expected": {
+      "states": [
+        [
+          "A"
+        ],
+        [
+          "A",
+          "B"
+        ],
+        [
+          "A",
+          "B",
+          "C"
+        ],
+        [
+          "B",
+          "C",
+          "A"
+        ],
+        [
+          "C",
+          "A",
+          "D"
+        ],
+        [
+          "C",
+          "A",
+          "D"
+        ],
+        [
+          "A",
+          "D",
+          "C"
+        ],
+        [
+          "D",
+          "C",
+          "E"
+        ],
+        [
+          "C",
+          "E",
+          "D"
+        ],
+        [
+          "E",
+          "D",
+          "F"
+        ],
+        [
+          "E",
+          "D",
+          "F"
+        ],
+        [
+          "E",
+          "F",
+          "D"
+        ]
+      ],
+      "evicted": [
+        "B",
+        "A",
+        "C"
+      ],
+      "eviction_count": 3
+    },
+    "error": "Expecting value: line 1 column 1 (char 0)"
+  },
+  "cleanup_actions": [],
+  "remaining_owned": [],
+  "elapsed_s": 162.82800000000861,
+  "daily_unchanged": true,
+  "config_unchanged": true,
+  "native_metrics": [
+    "strata generate: expert cache auto: 15.25 GiB free, 1393 MiB reserved (+73 MiB for the draft head) -> 6369 slots",
+    "strata serve: prompt chunk auto: 8192 tokens",
+    "strata serve: the prompt path borrows 2375 CUDA0 cache slots (3.79 GiB)",
+    "strata mtp: draft head over 40525 tokens (68.0 MiB)",
+    "strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6358 slots now, 10.29 GiB, chunks of 64 MiB)",
+    "strata elastic: two zones - core 3151 slots (5.14 GiB, fixed), tail 3207 slots (5.14 GiB: rotates, shrinks in steps of 1024 MiB, is lent to the prompt path)",
+    "strata serve: 1046 MiB of VRAM free with everything loaded",
+    "GATE_KEEP fraction=0.7000 (lab probe: gate-first neuron selection)",
+    "strata decode timing: 1 windows, avg T 1.00, 1.00 tokens/window, 63.83 ms/window = verify 62.98 (GPU-reach wait 15.68 + per-layer host 20.39 [plan 0.53 actq 0.94 jobs 0.15 CPU 18.76] + stage 0.58) + commit/emit 0.48 + draft 0.00; per layer-window: CPU experts 3.96 (3.96 entries), VRAM hits 5.88, PCIe 0.17",
+    "strata serve: prompt 2470 tokens = 0 reused + 2470 read in 4133 ms (597.6 tok/s), 1 generated in 64 ms (15.7 tok/s), drafts accepted 0 of 0, 1 checkpoints",
+    "strata serve: decode expert cache hit rate: 59.7% (282 hits / 472 lookups)",
+    "strata serve: KV streaming: 83.79% of 43140 block reads hit VRAM, 28.2 MiB read from RAM",
+    "strata elastic: +156 experts (263 MiB) -> 6514 slots, 10.54 GiB; 939 MiB free",
+    "strata decode timing: 1 windows, avg T 1.00, 1.00 tokens/window, 87.27 ms/window = verify 46.78 (GPU-reach wait 14.88 + per-layer host 28.54 [plan 0.42 actq 0.89 jobs 0.16 CPU 27.02] + stage 0.43) + commit/emit 0.40 + draft 0.00; per layer-window: CPU experts 6.29 (6.29 entries), VRAM hits 3.33, PCIe 0.38",
+    "strata serve: prompt 2634 tokens = 2470 reused + 164 read in 4745 ms (34.6 tok/s), 1 generated in 87 ms (11.5 tok/s), drafts accepted 0 of 0, 1 checkpoints",
+    "strata serve: decode expert cache hit rate: 34.6% (160 hits / 462 lookups)",
+    "strata serve: KV streaming: 99.25% of 1053708 block reads hit VRAM, 31.9 MiB read from RAM"
+  ]
+}

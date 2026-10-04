@@ -1,0 +1,24 @@
+OK current (rt/draft_vocab.bin): 40,525 ids, 162,100 bytes, superset+prefix of current, no duplicates, max id 248319
+OK candidate it+code+json+en: 48,542 ids, 194,168 bytes, superset+prefix of current, no duplicates, max id 248319
+OK variant + French: 53,807 ids, 215,228 bytes, superset+prefix of current, no duplicates, max id 248319
+special ids kept: {'eos 248046': True, 'bos/pad 248044': True, 'im_start 248045': True}
+
+| test text | tokens | current (rt/draft_vocab.bin) | candidate it+code+json+en | variant + French |
+|---|---:|---:|---:|---:|
+| answer A-code | 164 | 100.0% | 100.0% | 100.0% |
+| answer A-ledger | 152 | 92.8% | 100.0% | 100.0% |
+| answer A-explain | 512 | 76.8% | 98.2% | 98.8% |
+| 23 other explain runs (same prompt) | 6,666 | 76.5% | 98.4% | 99.0% |
+| 26 other code runs (same prompt) | 2,428 | 100.0% | 100.0% | 100.0% |
+| 10 other ledger runs (same prompt) | 312 | 93.0% | 100.0% | 100.0% |
+| held-out Italian, other domain (course texts, KB) | 413,814 | 79.2% | 98.5% | 98.6% |
+| held-out Italian, same repos | 549,176 | 83.4% | 99.4% | 99.4% |
+| held-out English docs | 23,853 | 99.1% | 99.8% | 99.8% |
+| held-out C++/Python code | 94,352 | 98.2% | 99.5% | 99.5% |
+| held-out JSON (pretty+minified) | 26,380 | 99.6% | 100.0% | 100.0% |
+
+current (rt/draft_vocab.bin) {'ids': 40525, 'head_MiB': 68.0, 'extra_head_bytes_per_draft_step': 0, 'file_bytes': 162100}
+candidate it+code+json+en {'ids': 48542, 'head_MiB': 81.5, 'extra_head_bytes_per_draft_step': 14109920, 'file_bytes': 194168}
+variant + French {'ids': 53807, 'head_MiB': 90.3, 'extra_head_bytes_per_draft_step': 23376320, 'file_bytes': 215228}
+
+A-explain tokens still outside the candidate: 9 [' fondamentale', 'oram', ' Analog', ' libri', ' libri', ' tas', ' rapide', ' continuamente', '’av']

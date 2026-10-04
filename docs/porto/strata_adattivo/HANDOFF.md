@@ -1,5 +1,24 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre sera (Opus): scarto degli esperti a basso peso non residenti
+
+Sonda fork spenta per default (`2d47c09`, `a530246`, `8dd24f0`): `STRATA_ROUTED_MISS_W=t`
+scarta in decode le voci con peso < t oltre le prime 4 solo se non residenti in VRAM
+(niente job CPU/fetch PCIe). Fedelta' in teacher forcing (`STRATA_LOGPOS`, top-20):
+t=0,08 KL 0,0066/0,0031/0,0188 su codice/magazzino/prosa IT (rumore A/A 0,0001–0,0005).
+Velocita' reale, config elastica del Daily, macchina in uso: codice mediana 35,1 -> 49,3
+t/s (t=0,08) e 55,0 (t=0,10, KL prosa 0,049); prosa 34,6 -> 40,8 (un run). Attesa GPU
+invariata 22–28 ms/finestra: il guadagno e' solo CPU. Lo schermo L2 routed <=3% usato
+in mattinata non era tarato (top-8 = 21% su quella metrica ma 152/152 token identici).
+Da fare: finestra quieta >=4 coppie A/B, profondita' 131k/250k, piu' compiti IT reali.
+[Risultati](corse_2080ti/20261004_routed_keep/RESULTS.md). Daily invariato.
+
+## 4 ottobre sera (Opus): testa in VRAM / coda su CPU per neuroni, schermo offline
+
+Ordine statico dei neuroni ~ casuale (testa 70% + coda top-2: 30% L2 routed contro 2,6%
+dell'oracolo per token); selezione dinamica gate-first/up-first a meta' strada. Braccio A
+non eseguito. [Risultati](corse_2080ti/20261004_head_tail/RESULTS.md).
+
 ## 4 ottobre: provata cache chiusa dopo prefill e rinnovo MTP
 
 Probe disabilitato per default: frequenze prefill, soli esperti residenti durante

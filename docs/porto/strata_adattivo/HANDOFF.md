@@ -1,6 +1,64 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
-## 4 ottobre: decode chat, PCIe respinta, diagnostica non promossa
+## 4 ottobre: prefisso persistente su disco implementato e installato nel Daily
+
+Il Daily usa ora l'eseguibile `f2e371bf631d13b40890b8efc8b35395844b1dfd592f8c5baab0cef60729621a`.
+Implementazione nel fork main `f01c0843daa32238e6194b5e54a294f5956ab555`, documentazione
+e checkout operativo allineati a `bad634b21c4c0fa5804179c260a5a5d71de710ef`.
+**Server spento, porta 8100 libera, nessun test GPU residuo.**
+
+- Aggiunto `--prompt-cache-file D:\ds4_work\strata\sota\prompt-prefix-v1.bin` alla
+  configurazione operativa. Nuovo SHA config
+  `db77e8364bf9221cfc846b8133a3c40fc8936196aa9939fa583cee3d539fe172`.
+  Launcher invariato; KV INT8 262144/residenti 32768, cache auto/elastica,
+  checkpoint tail, spec/MTP, exact-small e QSA conservati.
+- Il primo prompt testuale idoneo calcola e salva il prefisso. Dopo un riavvio,
+  token del prefisso e token immediatamente successivo devono corrispondere.
+  Prompt modificato: miss, prefill e sostituzione atomica. Modello/config/runtime
+  incompatibili o file corrotto: fallback prima del ripristino GPU. I checkpoint
+  ordinari in RAM restano utilizzati durante la sessione. Il file operativo non
+  è stato prepopolato con il prompt sintetico dei test.
+- **Misura su 4003 token riusati + 49 nuovi**, tre coppie sul profilo Daily:
+  primo token senza riuso `5.328 / 5.000 / 4.594 s`, con riuso
+  `1.875 / 1.344 / 1.266 s`. Mediane **5.000 → 1.344 s**, riduzione del rapporto
+  **73.12%**. Risparmi appaiati **3.328–3.656 s**, mediana appaiata **3.453 s**.
+  Latenza nativa dopo READY, non TTFT HTTP/client; esclusi 37–40 s di avvio modello.
+  Nessun purge della cache filesystem: non è un test SSD a freddo.
+- File **170.91 MiB**; lettura/verifica **212.3–252.6 ms**, upload **24.2–29.8 ms**.
+  Prima creazione **9.625 s** al primo token, di cui **477.9 ms** nel contatore
+  capture/write; l'intero eccesso non è attribuito causalmente alla scrittura.
+  Nessuna nuova SOTA decode o misura di latenza p99.
+- Due suite CPU passano (SHA Windows e portabile, corruzione/limiti/identità).
+  A posizionamento fisso, cinque confronti hanno prima riga completa di 248320
+  logits finiti e tutti gli ID prodotti bitwise, inclusi cambio prompt e riavvio.
+  Il repeat LRU a 9283 token termina con **740 ID identici**, **2 hit / 12 miss**
+  corretti nel vecchio Daily e nel candidato. Il precedente fail con placement
+  automatico diverso resta documentato, senza dedurne qualità generale.
+- Sul profilo auto/elastico tutte le **7 risposte fattuali** sono corrette.
+  Slot iniziali 7284–7448 e logits variabili anche fra campioni cold; due risposte
+  hanno JSON multilinea invece che compatto. Non dichiarare parità bitwise
+  sul profilo auto né attribuire ogni differenza numerica al file della cache.
+- Persistenza opt-in per un solo prefisso testuale, singola GPU, massimo 32768
+  token e 512 MiB. Non salva radici con vecchie celle MTP omesse da una prima
+  richiesta troppo lunga. Identità dei grandi asset basata su path/size/mtime
+  e tre campioni: non è SHA completo dei pesi. Dettagli e limiti nel fork.
+
+Installazione verificata: **289 hash sorgenti**, eseguibile/config e **48 untracked**
+preservati. Manifest storico `build-0138-daily/source-manifest.json` invariato;
+nuovo overlay `build-0138-daily/prefix-cache-validation.json`.
+Backup in `D:\ds4_work\strata\Strata\build-0138-daily\backup-prefix-disk-20261004`:
+exe, config, sorgenti modificati, file non tracciati e `recovery.json`.
+Per disattivare la persistenza rimuovere flag e percorso dalla config a motore
+spento; per tornare al precedente deployment ripristinare exe/config/sorgenti
+dal backup secondo `recovery.json`. Nessuna nuova release binaria pubblicata.
+
+[Implementazione, misure e limiti pubblici](https://github.com/imanu86/Strata-2080Ti/blob/main/docs/sm75/BENCHMARKS.md#persistent-system-prefix-4-october-2026).
+Fixture ed evidenze pubbliche sono sintetiche, senza conversazioni dell'utente.
+Risultati locali completi: `.codex_runs/20261004_prefix_disk/`, gate `cpu-v2`,
+`controlled-v1`, `daily-v1`, provenienza build `engine-v1` e `deployment.json`.
+Le note seguenti descrivono gli esiti precedenti a questo aggiornamento.
+
+## 4 ottobre, esito iniziale: decode chat, PCIe respinta, diagnostica non promossa
 
 Server spento. Più quota PCIe rallenta i tre prompt; nessuna nuova SOTA.
 La diagnostica PLE passa la parità numerica su tre contesti, ma lo smoke

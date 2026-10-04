@@ -1,5 +1,68 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: MISURATI 100 candidati e rinnovo adattivo del pacchetto
+
+Completata la prova richiesta, non solo il piano: sette pacchetti da100 candidati
+su code/explain/reason, 700 posizioni candidate e28000 chiamate esperto sui layer
+0/1/35/36. Da ciascun prefisso accettato:10 root target top-logit distinti non-EOS,
+ciascuno seguito da9 bozze MTP greedy. Non e' beam search; le100 posizioni
+comprendono ripetizioni, con38–88 coppie distinte (profondita',token) per pacchetto.
+Controlli passati: ordine dei rami invertito e prima catena vs MTP normale,
+entrambi a livello token. Il banco forza i candidati nel modello completo per
+misurarne routing/input, poi esegue il replay GPU locale degli esperti.
+
+Unione top320/640 neuroni per candidato, chiave(layer,expert), congelata fino al
+trigger: errore relativo L2 medio sui4 contributi routed>5%, oppure uno>10%,
+oppure peso medio di routing verso esperti assenti>10%. Fallback pieno per
+esperti assenti e riga di trigger; ricostruzione dal prefisso successivo.
+Sono soglie di laboratorio, non garanzie sulla correttezza delle risposte.
+
+| Testo | Posizioni entro soglia nei cicli successivi | Risparmio byte del pacchetto | Risparmio ideale sui pesi delle chiamate usate prima del trigger |
+|---|---|---|---|
+| Codice | 5,4,11 | 14.60%,14.72%,16.36% | 3.46%,3.72%,8.81% |
+| Spiegazione | 4,2 | 13.94%,15.19% | 3.37%,5.86% |
+| Ragionamento | 6,1 | 13.92%,13.76% | 3.47%,1.80% |
+
+Predizione100:118–128ms; scansioni target sequenziali15.64–17.95s, di cui
+decode3.90–5.47s e il resto soprattutto prefill ripetuto; replay GPU per h dei
+candidati11.71–15.39s; costruzione maschere CPU0.328–0.390s; replay target di
+controllo5.33–6.80s. Costi diagnostici separati, non runtime ottimizzato.
+L'unione contiene alternative inutilizzate e conserva quasi tutti i neuroni
+degli esperti piu' ricorrenti: per questo il risparmio sul percorso e' minore
+del risparmio di storage. Quest'ultimo e' una stima dal layout con blocchi down
+originali; non e' stato costruito un nuovo formato fisico di pesi compatti.
+Nessun guadagno t/s dimostrato, nessuna promozione o nuova SOTA.
+
+Controlli GPU: maschere piene e fallback bitwise, maschera zero esatta;4 input
+malformati respinti. Analizzatore pubblico riproduce esattamente7 banche e curve.
+Conservati i confronti top160/top480 come curve di pacchetto congelato; solo
+top320 ha deciso i prefissi dei rinnovi reali. Target/input/routing restano quelli
+del modello completo: non misura accumulo dell'errore in una generazione online
+ridotta. Gli scarti escludono shared expert e residual, non contano risposte errate.
+
+RTX2080Ti22GB modificata,5800X,96GiB; prompt85–102 token, prefissi fino109.
+KV262144/int8/resident32768: capacita', non profondita'250k. Cache fissa5080 slot,
+8442MiB; spec4/MTP4,workers7,PCIe0.25,IQ_MT_MIN1,elastic/adapt/suffix spenti.
+Tre avvii anomali esclusi. Corse valide con STRATA_NO_LARGEPAGES=1 e
+STRATA_ARENA_PIN_GIB=8; il pin cap da solo non aveva risolto. Causa degli avvii
+non attestata. Codice conserva64 token precedenti; spiegazione/ragionamento
+differiscono dai vecchi campioni, ma controlli freschi nella stessa variante
+senza probe danno64 ID uguali e256/256 righe(layer,pos) identiche byte per byte
+per ciascun testo (input,ID,pesi routing,output esperti,tier). Nessuna evidenza
+di contaminazione del target dai rami del probe in questi controlli.
+
+Evidenza: [probe100-measurements.json](corse_2080ti/20261004_neuron_cache/probe100-measurements.json)
+e [analyze_probe100.py](corse_2080ti/20261004_neuron_cache/analyze_probe100.py).
+Lab `.codex_runs/20261004_neuron_cache/`: build-probe100-v2,probe100-*-normal-v1,
+probe100-*-reference-v1, controlli e avvii falliti separati. Il runner misurato
+e' conservato in run_probe100-measured.py; quello corrente aggiunge reference-only.
+Fork main: diagnostica default-off, formato maschere SNM10001 e replay SNRv0002,
+manifest neuron-probe100-20261004.json con provenienza precedente preservata.
+Daily/config/launcher/ZIP invariati; nessun motore residuo. Prossime ottimizzazioni
+da valutare: scelta di continuazioni piu' probabili anche alle profondita' successive
+e costruzione raggruppata del pacchetto. Non confondere il pilot con100 rami
+indipendenti o con un verificatore compatto gia' accelerato.
+
 ## 4 ottobre: chiarimento utente sul maxi esperto predittivo e variabile
 
 L'obiettivo richiesto e' costruire il maxi esperto da **100 token candidati

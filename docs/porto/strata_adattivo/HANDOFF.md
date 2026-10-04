@@ -1,5 +1,16 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: decode chat, PCIe respinta, diagnostica non promossa
+
+Server spento. Più quota PCIe rallenta i tre prompt; nessuna nuova SOTA.
+La diagnostica PLE passa la parità numerica su tre contesti, ma lo smoke
+operativo restituisce un conteggio LRU sbagliato. Non installata nel Daily,
+che resta `a17d0dd5…` con config `f0237b6a…`, KV 262144/residenti 32768.
+Errori, repeat e limiti sono separati dai risultati completi.
+
+Leggere [misure e prossime verifiche](DECODE_CHAT_4_OTTOBRE.md).
+PR #646 solo analizzata, nessun bundle importato. Motori chiusi a fine lavoro.
+
 ## 4 ottobre: sessione di quattro ore
 
 Daily aggiornato con **exact-small, contratto prefisso PR652 e QSA a gruppi di

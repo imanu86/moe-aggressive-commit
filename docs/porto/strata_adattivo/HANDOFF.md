@@ -1,5 +1,74 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: ZIP Daily pubblico aggiornato e prima indagine sui neuroni
+
+**Pubblicata e verificata** la release
+[v0.1.38-sm75-20261004-r1](https://github.com/imanu86/Strata-2080Ti/releases/tag/v0.1.38-sm75-20261004-r1),
+latest, non draft. Tag su main fork `e597d9353d499e1765066bc980747bd73bbc8155`.
+ZIP `strata-sm75-0.1.38-20261004-windows-x64.zip`, 17036262 byte, SHA256
+`7131a8f185cedbb187b8d91d7b97cd1f3bb65bd84db618c68c3a60e4b7d4c410`.
+Contiene l'esatto Daily `f2e371bf...`, senza ricompilazione, insieme a licenze,
+istruzioni, manifest e sole evidenze sintetiche. Download pubblico riscaricato:
+hash ZIP, 13 payload e hash dell'eseguibile verificati. Vecchie release conservate.
+
+- README e generatore profilo allineati: exact-small e QSA prefill attivi nel
+  profilo generato, disattivabili da CLI; `--prompt-cache-file PATH` opzionale.
+  Modelli e runtime CUDA/VC++ si installano separatamente. Capacità KV, residenti,
+  reserve e porta configurabili. Nessuna promessa per la 2080 Ti standard 11 GB.
+- `release-20261004.json` aggiunge provenienza attuale senza alterare i tre
+  manifest storici. Verificati 289 sorgenti engine/frontend + 3 helper pubblicazione.
+  Generazione profilo, disabilitazioni, parametri alternativi e conservazione di
+  config esistente provati con fixture CPU; nessun motore o modello avviato.
+- Checkout operativo, configurazione, launcher e binario Daily invariati.
+  Server spento, porta 8100 libera. Nessun workflow creato.
+- Materiale pubblicazione locale: fork `.publication/20261004-r1/`, inclusi
+  `package-result.json`, `download-verification.json`, ZIP e checksum.
+  Lo script di packaging è nel lab `.codex_runs/20261004_prefix_disk/`.
+
+L'utente ha autorizzato in parallelo l'indagine sul "maxi esperto" temporaneo
+per strato. Audit separato, solo CPU/read-only sul layout originale, senza
+pruning del modello o modifica del Daily. Codice riproducibile:
+[layout_audit.py](corse_2080ti/20261004_neuron_cache/layout_audit.py),
+[risultato](corse_2080ti/20261004_neuron_cache/layout-audit.json).
+Un agente ha analizzato in sola lettura codice/letteratura e verificato in modo
+indipendente la formula di storage. Nessuna interazione con altre chat.
+
+- Pack reale: 48 strati x 512 esperti, `2560 -> 640 -> 2560`; soli esperti
+  39.965820 GiB. Down Q2_0 in 30 strati (64 pesi/18 byte), IQ4_NL in 18
+  (32 pesi/18 byte); gate/up sono una miscela IQ2/IQ3, non tutti IQ3_XXS.
+- Un neurone richiede righe gate/up e una colonna down. Conservando blocchi
+  down originali interi, il 25% dei neuroni ipotetici trattiene **25.82%** dei
+  byte con selezione contigua, **52.21%** con selezione dispersa; al 50% dei
+  neuroni, **50.00% / 68.14%**. Totali normalizzati applicando la stessa maschera
+  a tutti gli esperti: **geometria ipotetica, non sparsità misurata**, VRAM
+  necessaria, traffico del kernel o guadagno t/s. Mapping/scratch esclusi.
+- Un formato nuovo con codici sparsi/trasposti potrebbe evitare il vincolo dei
+  blocchi interi, ma deve conservare scale/identità o introdurre riquantizzazione;
+  costi di conversione, aggiornamento e kernel restano da misurare.
+- Con `h` finiti e top-|h| esatto, mantenendo posizioni/gruppi originali Q8_1,
+  ogni gruppo non vuoto conserva il suo massimo: scala `d` e codici dei mantenuti
+  invariati. Check strutturale CPU su 4 vettori sintetici, 264 gruppi non vuoti.
+  Non è parità CUDA né qualità. Non generalizzare a maschere predette o ranking
+  pesati: lì il massimo può mancare. I down attuali usano `d`, non `sum`.
+- Non ci sono dump `h` preesistenti utili: logits/profili temporali non bastano.
+  `--dump-routing` multi-token usa pesi fittizi, quindi non è un oracle dei
+  contributi. Per il prossimo esperimento servono veri pesi router, `h` e output
+  degli esperti, coprendo CPU, VRAM e PCIe. Campione proposto: strati 0/1/35/36,
+  tre prompt e 64-128 token; nessun tempo strumentato da chiamare performance.
+  Poi replay offline 100/75/50/25%, errore expert/MoE e unioni 1/4/8/16 token;
+  solo dopo predizione anticipata e kernel di cache dei neuroni.
+
+Ricerca primaria pertinente: [MoNE](https://arxiv.org/abs/2510.05781) seleziona
+neuroni tramite gate, con pruning studiato e architettura addestrata; non
+dimostra qualità/equivalenza sul nostro pack. [PowerInfer](https://arxiv.org/abs/2312.12456)
+e [DejaVu](https://proceedings.mlr.press/v202/liu23am.html) studiano selezione
+contestuale e predittori. Il verificatore approssimato non certifica da solo
+equivalenza al target originale. Nessun risultato di accelerazione ancora.
+
+La PR upstream della cache persistente resta preparata, non inviata: la nuova
+richiesta autorizza pubblicazione ZIP e ricerca parallela, non risponde ancora
+alla domanda sul branch dedicato. Non interpretarla come conferma implicita.
+
 ## 4 ottobre: misure fino a 27k pubblicate, PR del prefisso preparata
 
 Fork main e origin/main aggiornati a `b514f19b4d0f5d9a5035cf1d0e9da67c21100daa`

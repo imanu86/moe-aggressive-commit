@@ -91,3 +91,19 @@ possibile e' minore: con il 70% dei neuroni si salta circa il 10% dei pesi dell'
 (solo righe `up`) o il 20% con `down` memorizzato per neurone; la soglia 0,07 sugli
 esperti ne salta circa il 31% con KL simile. Un primo run (G70 codice) e' fallito per
 memoria impegnata insufficiente (WinError 1455): il runner ora attende >=52 GiB di commit.
+
+## Perplessita' della risposta del modello completo (teacher forcing)
+
+`exp(-media lp(target))` sulle sole posizioni della risposta greedy di A; rumore A2 +-0,2%.
+
+| Variante | Codice | Magazzino | Prosa IT |
+|---|---:|---:|---:|
+| peso >= 0,06 | +0,8% | +0,5% | +1,8% |
+| non residenti < 0,08 | +0,7% | +1,0% | +3,6% |
+| non residenti < 0,10 | +1,3% | +1,0% | +6,5% |
+| gate-first 70% | — | +0,6% | +3,7% |
+| top-6 | +1,2% | +0,6% | +8,0% |
+| top-4 | +2,6% | — | +22,6% |
+
+Misura favorevole ad A (e' il suo testo). Da ripetere su testo umano e su compiti CGC con
+risposta verificabile prima di qualunque uso: l'utente intende provarlo sul lavoro reale.

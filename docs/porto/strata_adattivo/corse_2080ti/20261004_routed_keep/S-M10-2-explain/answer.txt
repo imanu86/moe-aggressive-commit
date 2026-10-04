@@ -1,0 +1,26 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraversa diverse gerarchie di memoria, ciascuna con caratteristiche diverse in termini di velocità, capacità e volatilità. È importante chiarire che **non esistono misure di velocità assolute** (come "X GB/s") che valgano universalmente, poiché dipendono fortemente dall'hardware specifico (tipo di CPU, tipo di SSD, architettura della GPU, ecc.). Tuttavia, possiamo descrivere il **ruolo funzionale** di ciascuna componente.
+
+Di seguito, una spiegazione dettagliata divisa in due fasi: **Lettura del Prompt** (input) e **Generazione della Risposta** (output), con esempi concreti.
+
+---
+
+### 1. Panoramica delle Componenti
+
+| Componente | Ruolo Principale | Caratteristica Chiave |
+|------------|------------------|------------------------|
+| **RAM (Random Access Memory)** | Memoria di lavoro del sistema operativo e del software client (es. browser, app di chat). | Volatile, veloce, accessibile dalla CPU. |
+| **Cache della CPU** | Memoria ultra-veloce integrata nel processore. | Estremamente veloce, piccola, usata per istruzioni e dati frequenti. |
+| **VRAM (Video RAM)** | Memoria dedicata alla GPU. | Contiene i pesi del modello e lo stato della conversazione (KV Cache). |
+| **SSD (Solid State Drive)** | Memoria di archiviazione persistente. | Lenta rispetto alla RAM/VRAM, ma non volatile. Usata per caricare il modello all’avvio. |
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando invii un messaggio (es. *"Spiega la fotosintesi"*), il sistema deve preparare il contesto e caricare il modello.
+
+#### A. Ruolo dell’SSD
+- **Funzione**: Caricamento iniziale del modello.
+- **Esempio concreto**:  
+  Se il modello ha 7 miliardi di parametri, i suoi "pesi" (i numeri che definiscono il comportamento del modello) sono salvati su disco (SSD). All’avvio dell’applicazione, questi pesi vengono letti dall’SSD e copiati nella VRAM.  
+  - *Nota*: Questo avviene **una sola volta** all’avvio del programma, non ad ogni messaggio. Se il modello è già caric

@@ -1,0 +1,25 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraversa diverse gerarchie di memoria, ciascuna con un ruolo specifico e tempi di accesso diversi. È importante distinguere tra la fase di **pre-elaborazione del prompt** (input) e la fase di **generazione della risposta** (output), poiché le risorse coinvolte cambiano radicalmente.
+
+Ecco come funzionano RAM, Cache CPU, VRAM e SSD, con esempi concreti.
+
+---
+
+### 1. Fase di Lettura del Prompt (Input)
+
+In questa fase, il sistema deve caricare il testo dell’utente e i dati necessari per iniziare l’elaborazione.
+
+#### **SSD (Solid State Drive)**
+*   **Ruolo:** Conservazione permanente dei dati.
+*   **Cosa succede:** Quando avvii l’interfaccia chat o il modello, i file del modello (pesi, configurazioni) e la cronologia della conversazione precedente sono archiviati su SSD.
+*   **Esempio concreto:** Se hai una conversazione lunga salvata in un file `.json` o `.db`, il sistema legge quel file dall’SSD per ricostruire il contesto storico.
+*   **Riutilizzato?** Sì, la cronologia della conversazione viene letta dall’SSD e caricata in RAM per essere riutilizzata come contesto.
+
+#### **RAM (Random Access Memory)**
+*   **Ruolo:** Area di lavoro attiva per il software e i dati temporanei.
+*   **Cosa succede:** Il prompt dell’utente (es. "Spiega la fotosintesi") viene caricato in RAM dal sistema operativo o dall’interfaccia utente. Inoltre, la cronologia della conversazione letta dall’SSD viene copiata in RAM.
+*   **Esempio concreto:** Il tuo browser o l’applicazione chat tiene in RAM il testo che hai digitato e la lista dei messaggi precedenti. Se la conversazione è lunga, la RAM deve contenere tutto il contesto per poterlo inviare al modello.
+*   **Riutilizzato?** Sì, il prompt e la cronologia in RAM vengono letti ripetutamente durante la preparazione del contesto per il modello.
+
+#### **Cache della CPU**
+*   **Ruolo:** Accelerare l’accesso ai dati usati frequentemente dal processore.
+*   **Cosa succede:** La CPU gestisce l’interfaccia utente

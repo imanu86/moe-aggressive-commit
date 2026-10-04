@@ -1,0 +1,33 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraverso l'hardware è fondamentale per la velocità e la fluidità della risposta. Ecco come funzionano **RAM**, **Cache della CPU**, **VRAM** e **SSD**, spiegati in modo semplice con esempi concreti.
+
+---
+
+### 1. Panoramica dei componenti
+
+| Componente | Ruolo principale | Analogia semplice |
+|------------|------------------|-------------------|
+| **SSD** | Archiviazione permanente del modello e dei dati | Libreria: contiene tutti i libri (il modello) |
+| **RAM** | Memoria di lavoro temporanea per il sistema operativo e i dati in uso | Scrivania: spazio dove metti i libri che stai usando ora |
+| **VRAM** | Memoria dedicata alla GPU per caricare il modello e gestire i calcoli paralleli | Banco di lavoro specializzato per calcoli pesanti |
+| **Cache CPU** | Memoria ultra-veloce per istruzioni e dati frequenti della CPU | Taccuino in tasca: note rapide per non cercare ogni volta nella scrivania |
+
+---
+
+### 2. Fase 1: Lettura del prompt (Input)
+
+Quando scrivi un messaggio, il sistema deve "leggere" e interpretare il tuo testo.
+
+#### Cosa succede:
+1. **Il prompt viene ricevuto** dal tuo dispositivo (es. browser o app).
+2. **Viene caricato in RAM**: il testo del prompt viene temporaneamente memorizzato nella RAM del sistema per essere elaborato.
+3. **La CPU usa la Cache**: la CPU legge il prompt e cerca di capire il contesto. La cache della CPU memorizza temporaneamente le istruzioni e i dati più recenti (es. token del prompt) per accelerare l’elaborazione.
+4. **Il prompt viene inviato alla GPU**: per essere elaborato dal modello, il prompt viene trasferito dalla RAM alla **VRAM** della scheda grafica.
+
+#### Esempio concreto:
+- Scrivi: *"Spiega la fotosintesi in 3 frasi."*
+- Il testo viene caricato in **RAM**.
+- La **CPU** usa la sua **cache** per analizzare rapidamente le parole e preparare i dati per la GPU.
+- Il prompt viene copiato nella **VRAM** per essere elaborato dal modello.
+
+#### Cosa viene riutilizzato:
+- **Il prompt stesso

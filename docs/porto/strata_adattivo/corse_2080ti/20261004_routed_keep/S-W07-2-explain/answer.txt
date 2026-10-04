@@ -1,0 +1,30 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati è un processo complesso che coinvolge diverse gerarchie di memoria. Per capire come funziona, è utile immaginare il sistema come una catena di montaggio dove i dati si spostano da memorie lente ma capienti a memorie velocissime ma piccole.
+
+Ecco una spiegazione dettagliata, separata per le due fasi principali: **Lettura del Prompt** (Input) e **Generazione della Risposta** (Output).
+
+---
+
+### 1. Le Componenti di Memoria
+
+Prima di entrare nel flusso, definiamo i ruoli:
+
+*   **SSD (Solid State Drive):** È il magazzino a lungo termine. Contiene i file del modello (pesi), i dati di addestramento e i log delle conversazioni. È lento rispetto alla RAM, ma enorme.
+*   **RAM (Random Access Memory):** È il banco di lavoro principale. Qui risiedono i dati attivi che il sistema operativo e il software stanno usando in questo momento. È molto più veloce dell'SSD.
+*   **VRAM (Video RAM):** È la memoria dedicata alla GPU (scheda video). È fondamentale per i LLM perché i calcoli matriciali (moltiplicazioni di pesi) avvengono qui. È più veloce della RAM di sistema, ma ha una capacità limitata.
+*   **Cache della CPU:** È una memoria piccolissima e velocissima integrata nel processore. Serve per memorizzare istruzioni e dati di controllo, non i pesi del modello (che sono troppo grandi).
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando invii una domanda, il sistema deve "leggere" il testo e convertirlo in numeri che il modello può elaborare.
+
+#### Cosa succede passo dopo passo:
+
+1.  **Caricamento del Modello (Se non è già in memoria):**
+    *   Se il modello è grande (es. 70GB) e non è caricato, il sistema legge i file dei pesi dall'**SSD**.
+    *   Questi dati vengono copiati nella **RAM** di sistema.
+    *   Da lì, i pesi vengono trasferiti nella **VRAM** della GPU.
+    *   *Nota:* Questo è un'operazione costosa. Se il modello è già caricato, questo passaggio viene saltato.
+
+2.  **Tokenizzazione

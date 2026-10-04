@@ -1,0 +1,28 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraversa diverse gerarchie di memoria, ognuna con caratteristiche diverse in termini di velocità, capacità e volatilità. È fondamentale distinguere tra la fase di **lettura del prompt** (input) e la fase di **generazione** (output), poiché il comportamento della memoria cambia radicalmente tra le due.
+
+Di seguito, una spiegazione dettagliata del ruolo di **RAM**, **Cache della CPU**, **VRAM** e **SSD**, con esempi concreti.
+
+---
+
+### 1. Panoramica delle Componenti
+
+| Componente | Ruolo Principale | Volatilità | Capacità Tipica |
+|------------|------------------|------------|-----------------|
+| **SSD** | Archiviazione permanente del modello e dei dati | Non volatile | Grande (GB/TB) |
+| **RAM** | Memoria di lavoro per il sistema operativo e i dati in transito | Volatile | Media (GB) |
+| **VRAM** | Memoria dedicata alla GPU per i pesi del modello e le attivazioni | Volatile | Limitata (GB) |
+| **Cache CPU** | Memoria ultra-veloce per istruzioni e dati frequenti | Volatile | Molto piccola (MB) |
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+In questa fase, il sistema deve caricare il modello e preparare il contesto della conversazione.
+
+#### **SSD (Solid State Drive)**
+- **Funzione**: Contiene il file del modello (pesi, architettura) e la cronologia della conversazione salvata su disco.
+- **Esempio concreto**: Quando apri l’applicazione, il sistema legge il file `model.gguf` o `model.safetensors` dall’SSD. Se la conversazione è lunga, il contesto precedente potrebbe essere stato salvato su SSD per liberare memoria.
+- **Riutilizzo**: L’SSD non viene "riutilizzato" attivamente durante la generazione, ma serve come fonte iniziale. Una volta caricato in RAM/VRAM, l’SSD è inattivo.
+
+#### **RAM (Random Access Memory)**
+- **Funzione**: Riceve i dati dall’SSD e li prepara per il trasferimento alla GPU. Gestisce anche il tokenizzatore (tokenizer) e la gestione del contesto testuale.

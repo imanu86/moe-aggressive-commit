@@ -1,0 +1,28 @@
+Ecco una spiegazione dettagliata di come le diverse componenti hardware (RAM, Cache CPU, VRAM e SSD) interagiscono durante una conversazione con un modello linguistico (LLM).
+
+È importante chiarire subito un punto fondamentale: **la maggior parte del lavoro computazionale pesante avviene sulla GPU (scheda video), non sulla CPU.** La CPU gestisce l'orchestrazione, la preparazione dei dati e la comunicazione, mentre la GPU esegue le operazioni matematiche per l'inferenza del modello.
+
+Di seguito, descriviamo il flusso separando le fasi di **Lettura del Prompt** e **Generazione della Risposta**, indicando cosa viene riutilizzato.
+
+---
+
+### 1. Componenti Hardware e loro Ruolo
+
+Prima di entrare nel flusso, definiamo brevemente il ruolo di ciascuna componente in questo contesto:
+
+*   **SSD (Solid State Drive):** È lo storage persistente. Contiene i file del modello (pesi), il software di inferenza e la cronologia della chat. È lento rispetto alla RAM ma non perde dati quando il PC si spegne.
+*   **RAM (Random Access Memory):** È la memoria di lavoro del sistema operativo e della CPU. Qui risiedono i dati grezzi del prompt, la cronologia della conversazione e, se il modello è caricato sulla CPU, i pesi del modello stesso.
+*   **VRAM (Video RAM):** È la memoria dedicata alla GPU. È cruciale per l'inferenza. Contiene i pesi del modello (se caricato sulla GPU) e lo stato intermedio dell'inferenza (le "attivazioni" o "stato KV").
+*   **Cache della CPU (L1/L2/L3):** È una memoria piccolissima e velocissima integrata nella CPU. Serve per accelerare l'accesso ai dati che la CPU sta elaborando in quel momento (es. tokenizzazione del testo, gestione dei buffer di comunicazione).
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando invii un messaggio, il sistema deve trasformare il testo in numeri e prepararlo per il modello.
+
+#### Cosa succede passo per passo:
+
+1.  **Input Utente (SSD/RAM):**
+    *   Il testo che scrivi viene ricevuto dall'interfaccia utente.
+    *   Se la conversazione è lunga, la cronologia precedente potrebbe essere stata salvata su **SSD

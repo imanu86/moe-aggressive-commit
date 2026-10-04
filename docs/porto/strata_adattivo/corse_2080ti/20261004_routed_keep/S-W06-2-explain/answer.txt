@@ -1,0 +1,27 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati è un processo complesso che coinvolge diverse gerarchie di memoria. Per capire come funziona, è utile immaginare il sistema come una biblioteca molto grande e un bibliotecario (la CPU/GPU) che deve recuperare libri (dati) per rispondere a una domanda.
+
+Ecco una spiegazione dettagliata, separata per le fasi di **Lettura del Prompt** e **Generazione della Risposta**, con esempi concreti.
+
+---
+
+### 1. Le Componenti di Memoria: Ruoli e Analogie
+
+Prima di entrare nel flusso, definiamo i ruoli:
+
+*   **SSD (Solid State Drive):** È l’archivio permanente. Contiene i "pesi" del modello (i parametri, cioè i numeri che definiscono il cervello del modello). È lento rispetto alla RAM, ma enorme.
+*   **RAM (Random Access Memory):** È il banco di lavoro principale. Qui vengono caricati i dati che devono essere elaborati attivamente. È veloce, ma volatile (si cancella quando si spegne il PC).
+*   **VRAM (Video RAM):** È la memoria dedicata alla GPU (scheda video). È cruciale per i LLM perché le operazioni matriciali (moltiplicazioni di matrici) sono fatte dalla GPU. È molto veloce e ha una larghezza di banda elevata.
+*   **Cache della CPU:** È una memoria piccolissima e velocissima integrata nel processore. Serve per memorizzare istruzioni o dati usati ripetutamente in sequenze brevi. Nel contesto LLM, è meno critica della VRAM, ma aiuta nella gestione del software e del prompt.
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando scrivi una domanda, il sistema deve "leggere" e comprendere il testo.
+
+#### Cosa succede passo per passo:
+
+1.  **Input Utente:** Tu scrivi: *"Spiega la fotosintesi in 3 righe."*
+2.  **Tokenizzazione:** Il testo viene convertito in numeri (token). Esempio: `"Spiega"` → `1045`, `"la"` → `201`, ecc.
+3.  **Caricamento in RAM:** Il prompt tokenizzato viene caricato nella **RAM** del sistema.
+4.  **Trasferimento in VRAM:** La GPU ha

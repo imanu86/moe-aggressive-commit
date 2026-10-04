@@ -1,0 +1,31 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati attraverso l'hardware è fondamentale per la velocità e la fluidità della risposta. Ecco come funzionano **RAM**, **Cache della CPU**, **VRAM** e **SSD**, spiegati in modo semplice con esempi concreti.
+
+---
+
+### 1. Panoramica dei componenti
+
+| Componente | Ruolo principale | Analogia semplice |
+|------------|------------------|-------------------|
+| **SSD** | Archiviazione permanente | Libreria: contiene tutti i libri (il modello). |
+| **RAM** | Memoria di lavoro temporanea | Scrivania: dove tieni i libri che stai leggendo ora. |
+| **VRAM** | Memoria dedicata alla GPU | Banco di lavoro specializzato: dove la GPU fa i calcoli pesanti. |
+| **Cache CPU** | Memoria ultra-veloce per la CPU | Taccuino in tasca: note rapide per operazioni semplici. |
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando scrivi un messaggio (es. *"Spiega la fotosintesi"*), il sistema deve caricare il modello e interpretare il testo.
+
+#### Cosa succede:
+1. **SSD → RAM**:  
+   Il modello linguistico (pesante, spesso diversi GB) è salvato sull’SSD. All’avvio della conversazione, viene caricato nella **RAM** (se il modello è piccolo) o direttamente nella **VRAM** (se usi una GPU).  
+   *Esempio*: Se il modello è 7 GB, l’SSD legge questi dati e li trasferisce in RAM/VRAM. Questo è l’unico momento in cui l’SSD è critico per la velocità iniziale.
+
+2. **RAM → CPU/GPU**:  
+   Il tuo prompt (*"Spiega la fotosintesi"*) viene convertito in token (numeri). La **CPU** usa la sua **Cache** per gestire rapidamente questa conversione e la preparazione dei dati.  
+   *Esempio*: La cache della CPU memorizza temporaneamente le regole di tokenizzazione o i dati di contesto recenti, evitando di accedere alla RAM più lenta.
+
+3. **RAM → VRAM**:  
+   I token del prompt vengono inviati alla **VRAM** della GPU, dove il modello li elabora.  
+  

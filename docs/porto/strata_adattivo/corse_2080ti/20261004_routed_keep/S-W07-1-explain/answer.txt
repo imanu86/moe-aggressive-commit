@@ -1,0 +1,27 @@
+Ecco una spiegazione dettagliata di come le diverse componenti hardware lavorano durante un'interazione con un modello linguistico (LLM), separando le fasi di **input (lettura del prompt)** e **output (generazione)**.
+
+### Premessa fondamentale
+Un modello linguistico è composto da miliardi di parametri (pesi). Per funzionare, questi pesi devono essere caricati nella memoria ad alta velocità (RAM o VRAM) e letti dalla CPU/GPU. La velocità di risposta dipende da quante di queste componenti sono coinvolte e da quanto sono vicine al processore.
+
+---
+
+### 1. Le Componenti Hardware e il loro Ruolo
+
+#### **VRAM (Video RAM)**
+*   **Cos'è:** La memoria dedicata alla scheda grafica (GPU).
+*   **Ruolo nell'LLM:** È la memoria più critica per i modelli moderni. Contiene i **pesi del modello** (i "neuroni" artificiali) e lo **stato della conversazione** (le chiavi e i valori dell'attenzione, detti KV Cache).
+*   **Perché è importante:** La GPU calcola le matrici di numeri usando la VRAM. Se i pesi non stanno nella VRAM, il modello non può girare o gira molto lentamente.
+
+#### **RAM (Random Access Memory)**
+*   **Cos'è:** La memoria di sistema del computer.
+*   **Ruolo nell'LLM:**
+    *   Se il modello è troppo grande per la VRAM, parte dei pesi viene caricata nella RAM di sistema.
+    *   Contiene il **prompt** (il testo che scrivi) e le risposte generate prima che vengano salvate su disco.
+    *   Gestisce il software (interfaccia, driver, sistema operativo).
+
+#### **Cache della CPU (L1, L2, L3)**
+*   **Cos'è:** Memoria piccolissima e velocissima integrata nel processore.
+*   **Ruolo nell'LLM:**
+    *   **Minimo:** La cache della CPU è poco coinvolta nel calcolo matriciale pesante (che fa la GPU).
+    *   **Importante:** È cruciale per la **pre-elaborazione del testo** (tokenizzazione) e per la gestione dei dati di controllo (es. decidere se un token è valido, gestire la coda di richieste).
+    *   Se

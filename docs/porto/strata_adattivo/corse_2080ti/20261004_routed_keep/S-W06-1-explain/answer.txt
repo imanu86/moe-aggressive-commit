@@ -1,0 +1,28 @@
+Durante una conversazione con un modello linguistico (LLM), il flusso dei dati è un processo complesso che coinvolge diverse gerarchie di memoria. Per capire come funziona, è utile immaginare il sistema come una biblioteca molto grande e un bibliotecario (la CPU/GPU) che deve recuperare libri (dati) per rispondere a una domanda.
+
+Ecco una spiegazione dettagliata, separata per le fasi di **Lettura del Prompt** e **Generazione della Risposta**, con esempi concreti.
+
+---
+
+### 1. Le Componenti di Memoria: Ruoli e Analogie
+
+Prima di entrare nel flusso, definiamo cosa fa ogni componente:
+
+*   **SSD (Solid State Drive):** È l’archivio permanente. Contiene i "pesi" del modello (i parametri, cioè i numeri che definiscono il cervello del modello). È lento rispetto alla RAM, ma enorme.
+*   **RAM (Random Access Memory):** È il banco di lavoro principale. Qui vengono caricati i dati che devono essere elaborati attivamente. È veloce, ma volatile (si cancella se spegni il PC).
+*   **VRAM (Video RAM):** È la memoria dedicata alla GPU (scheda video). È fondamentale per i LLM perché le operazioni matriciali (moltiplicazioni di matrici) sono enormi e la GPU le gestisce meglio della CPU. La VRAM è ancora più veloce della RAM di sistema.
+*   **Cache della CPU:** È una memoria piccolissima e velocissima integrata nel processore. Serve per memorizzare istruzioni o dati usati ripetutamente in un ciclo molto breve. Nel contesto LLM, la cache della CPU è meno critica rispetto alla VRAM, ma è cruciale per la gestione del prompt e del tokenizzatore.
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando scrivi una domanda, il sistema deve convertire il testo in numeri e caricare i dati necessari.
+
+#### Cosa succede passo dopo passo:
+
+1.  **Input Utente:** Scrivi: *"Spiega la fotosintesi in 3 frasi."*
+2.  **Tokenizzazione (CPU + Cache):**
+    *   La CPU riceve il testo.
+    *   Usa un **tokenizer** (un algoritmo) per spezzare il testo in "token" (pezzi di parole).
+    *   *Esempio concreto:* "fotos

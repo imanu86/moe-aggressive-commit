@@ -1,0 +1,27 @@
+Ecco una spiegazione dettagliata di come le diverse componenti hardware (RAM, Cache CPU, VRAM e SSD) interagiscono durante una conversazione con un modello linguistico (LLM).
+
+È importante chiarire subito un punto fondamentale: **la maggior parte dei moderni LLM di grandi dimensioni (come GPT-4, Llama 3, ecc.) viene eseguita su server con GPU potenti, non sulla CPU del tuo computer locale.** Tuttavia, per spiegare il flusso logico, descriveremo il processo come se avvenisse su un sistema tipico, distinguendo tra l'elaborazione sulla CPU (per la gestione del testo e dell'interfaccia) e quella sulla GPU (per il calcolo matematico del modello).
+
+---
+
+### 1. Panoramica delle Componenti
+
+*   **SSD (Solid State Drive):** Memoria di archiviazione persistente. Contiene i file del modello (pesi), il sistema operativo e i dati della conversazione salvati.
+*   **RAM (Random Access Memory):** Memoria volatile ad alta velocità. Contiene i dati attivi che il sistema operativo e le applicazioni stanno usando in questo momento.
+*   **Cache della CPU:** Memoria ultra-veloce integrata nel processore. Memorizza istruzioni e dati usati di frequente dalla CPU per evitare di accedere alla RAM.
+*   **VRAM (Video RAM):** Memoria dedicata alla GPU. Contiene i pesi del modello linguistico e le attivazioni temporanee durante il calcolo. È la memoria più critica per la velocità di generazione.
+
+---
+
+### 2. Fase 1: Lettura del Prompt (Input)
+
+Quando scrivi un messaggio e premi "Invio", il sistema deve leggere il tuo testo e prepararlo per il modello.
+
+#### Cosa succede:
+1.  **Interfaccia Utente (CPU + RAM):**
+    *   Il tuo browser o app (es. ChatGPT, Ollama) è un programma che gira sulla **CPU**.
+    *   Il testo che hai scritto è caricato nella **RAM** del tuo computer.
+    *   La **Cache della CPU** memorizza le istruzioni del browser/app per gestire l'interfaccia grafica, il cursore, la formattazione del testo, ecc. Questo è un riutilizzo costante di istruzioni di basso livello.
+
+2.  **Preparazione del Prompt (CPU + RAM):**
+    *   Il prompt viene tokenizzato (diviso in pezzi) e form

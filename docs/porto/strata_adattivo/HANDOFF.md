@@ -1,5 +1,25 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: MISURATI esperti fuori VRAM e maschere nel budget 3:10
+
+Seguito alla richiesta di un pacchetto dinamico da massimo tre esperti per
+almeno dieci identita' nonresidenti: analisi CPU dei 300 candidati iniziali e
+189 input effettivi su quattro layer, poi tre nuovi replay GPU conclusi.
+Gli stessi esperti condividono il 41–46% dei top160 neuroni dentro il medesimo
+testo, contro il 29–30% fra testi diversi; tre testi non provano un effetto del tema.
+Maschere scelte solo dai candidati, dieci esperti per layer, stima byte con
+blocchi originali e indici: 2.991–2.997 esperti integrali per pacchetto.
+Sui primi dieci input coprono il 30–36% delle chiamate nonresidenti, ma producono
+errore L2 medio della somma MoE del 34.84%/29.85%/17.43% (code/explain/reason).
+Controlli full/zero/fallback/residenti e confronto bitwise col replay precedente
+passati. Non e' percentuale di risposte errate, ne' prova di compressione online:
+il replay legge ancora pesi integrali. Nessun guadagno t/s, Daily e ZIP invariati.
+
+Dettagli, limiti, script, maschere e risultati:
+[NONRESIDENT_3_FOR_10.md](corse_2080ti/20261004_neuron_cache/NONRESIDENT_3_FOR_10.md).
+Prossimo criterio: ridurre l'errore sull'uscita entro lo stesso budget, non
+promuovere questa euristica basata soltanto su energia h^2 per byte.
+
 ## 4 ottobre: MISURATI 100 candidati e rinnovo adattivo del pacchetto
 
 Completata la prova richiesta, non solo il piano: sette pacchetti da100 candidati

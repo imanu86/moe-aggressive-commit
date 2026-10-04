@@ -1,5 +1,25 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: PROVATA divisione fisica GPU30/CPU70, tutti i contributi conservati
+
+Implementato il banco separato `hybrid_expert_probe`: tre blocchi da64 neuroni
+in GPU, sette blocchi in RAM per ciascun esperto, senza pruning o riquantizzazione
+dei pesi. Pool CPU esteso a n_ff192/448 entro i buffer esistenti; controlli
+bitwise del packing, parita' delle partizioni su singolo backend e192 scenari
+seriale/parallelo del pool passati, token1..8 e batch97.
+
+Tre testi,10 input reali ciascuno, quattro layer:120 casi distinti. La prima
+serie variabile e' stata ripetuta con9 round da60 iterazioni, alternando A/B
+per caso. A parita' di pesi attivi in VRAM (tre esperti equivalenti), l'ibrido
+ha latenza media844.55 ->859.35us (+1.75%); +2.36%/+1.27%/+1.52% nei tre testi.
+La variabilita' resta elevata: nessun vantaggio riproducibile, nessuna nuova SOTA.
+Partizioni CPU/GPU separatamente vs intero: L2 massimo2.11e-7/9.19e-8.
+Misto vs tuttoGPU:0.8495% medio, differenza fra backend; qualita' end-to-end
+non verificata. Pesi gia' pronti, packing/upload esclusi, niente prova a250k.
+Daily, config, launcher e ZIP invariati. Processi di test tutti terminati.
+
+[Misure, protocollo e limiti](corse_2080ti/20261004_hybrid_blocks/RESULTS.md).
+
 ## 4 ottobre: MISURATI esperti fuori VRAM e maschere nel budget 3:10
 
 Seguito alla richiesta di un pacchetto dinamico da massimo tre esperti per

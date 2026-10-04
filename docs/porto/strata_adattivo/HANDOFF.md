@@ -1,5 +1,23 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: pruning per turno 10/20/25% misurato, non promosso
+
+Selezione causale da32 input precedenti, congelata sui31 successivi, tre testi
+e quattro layer. Due criteri: media/massimo di w_router^2*h_i^2*norma_down_i^2;
+esperti con meno di4 osservazioni restano interi. Sono18 combinazioni su93 input
+distinti. Gia' al taglio10%: errore routed L2 medio5.03–8.52%, risparmio ideale
+dei pesi0.91–2.45%; tutte le varianti superano10% in un layer al primo input
+di verifica. Nessuna supera il filtro sperimentale: non si procede al kernel
+compatto basato su queste maschere, nessuna promozione al Daily.
+
+Il controllo full iniziale ha trovato un fondo numerico0.039% su1/2560 esperti
+nel replayer (quantizzatore standalone vs grouped). Corretto solo il diagnostico
+per usare lo stesso Q8 del riferimento; tutte le sei prove ripetute. Controlli
+full/zero e ripetizione10% bitwise passati su2560 chiamate/quattro formati.
+Daily, config, launcher e ZIP invariati; processi di test terminati.
+
+[Protocollo, risultati, limiti e correzione del banco](corse_2080ti/20261004_turn_pruning/RESULTS.md).
+
 ## 4 ottobre: PROVATA divisione fisica GPU30/CPU70, tutti i contributi conservati
 
 Implementato il banco separato `hybrid_expert_probe`: tre blocchi da64 neuroni

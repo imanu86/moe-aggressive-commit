@@ -1,0 +1,20 @@
+{
+  "status": "initial_bitwise_control_failed_and_corrected",
+  "initial_replayer_sha256": "ccb4bdc653912f5028dd87f3b15ceb1b8ffa725a6a146bf9388c86fa0a523375",
+  "initial_measurement_sha256": "8ec82c18b7283621c8cb07b9150c1de0c98db0dfd6ce124a7da77087879151cc",
+  "initial_verification_sha256": "9da4aed974d556d28a1d57bf44679819265026edc0dc87c24ab133af1f5cbc27",
+  "initial_control_replay_sha256": "08842fbe6b1e5576dac14bca317ff918eecbbf95e1469ad0863a76dd7a2cefbb",
+  "comparison": "all-one mask with standalone native Q8 quantizer vs original grouped Q8; same h, same GPU and weights",
+  "expert_calls": 2560,
+  "differing_calls": 1,
+  "position": 141,
+  "layer": 1,
+  "expert": 67,
+  "max_absolute_output_delta": 2.7377158403396606e-05,
+  "expert_relative_l2": 0.0003905405553175575,
+  "routed_layer_relative_l2": 1.6735994471972376e-05,
+  "correction": "Use quantize_q8_1_rows in down_project, matching native_expert_grouped. Diagnostic target only; no production kernel changed.",
+  "final_replayer_sha256": "64b55b1bef1b4ef4528ab8be9d7cc7f4465ed878e40ddf3b60bd00667d7a970c",
+  "final_full_control_bitwise": true,
+  "initial_results_used_for_final_numbers": false
+}

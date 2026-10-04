@@ -1,0 +1,31 @@
+We need answer in Italian. User asks: Explain difference between LFU with epoch decay and pure LRU for GPU expert cache. Indicate a workload where first clearly wins and one where it loses, explaining mechanism not just result. Conclude with cheapest way to measure which is better on a given workload.
+
+Need produce final answer. Need think thoroughly. Context likely llama.cpp MoE expert cache? They mention GPU cache slots per host-resident MoE expert layer, max expert uploads per decode step. Need explain eviction policies. LFU with decay per epoch vs LRU. Need workload examples. Need mechanism. Need cheapest measurement.
+
+Need be careful: LFU with decayed frequency: maintain counts per expert, periodically decay counts (epochs) to adapt. LRU: recency only. GPU expert cache: cache experts resident on GPU, evict when new expert needed. MoE routing: experts selected per token/layer. Access patterns: hot experts, temporal locality, phase changes, bursty, long-tail.
+
+LFU decay: frequency approximates popularity over recent epochs; decay prevents stale popularity. LRU: keeps recently used; good for temporal locality but vulnerable to scan/one-off bursts and misses hot experts if evicted by recent noise.
+
+Workload where LFU wins: stable hot experts with occasional cold experts/scan bursts. Example: MoE model with domain-specific routing: a few experts frequently activated for a prompt type, plus many experts touched once by rare tokens or long context. LRU evicts hot experts when cold experts are touched; LFU keeps hot because high counts, decayed but still above cold. Mechanism: hot experts accumulate counts over epochs; cold one-off counts decay; cache slots reserved for high frequency.
+
+Workload where LFU loses: phase-shifting or recency-dominant workload: expert popularity changes over time, e.g. conversation topic switches, or streaming different domains, or each token uses different experts with no stable hot set but strong locality (recently used experts likely reused soon). LRU adapts quickly; LFU with decay may keep old hot experts too long, causing misses. Mechanism: decay not fast enough; old frequencies remain high, new experts need many accesses to enter; cache polluted by stale hot experts. Also if access pattern is cyclic with long cycle > cache size but recent reuse within short window? LRU good.
+
+Need maybe mention LFU with epoch decay can be tuned: epoch length, decay factor. If decay too aggressive approximates LRU? If too slow approximates static LFU.
+
+Cheapest measurement: run a trace-driven simulation on actual expert access sequence, no full model? Capture expert IDs selected per layer/decode step (routing trace) from a representative run, then replay with both policies using same cache size and upload budget. Count cache hits/misses, uploads, maybe latency. Cheapest: instrument router to log expert IDs, then simulate in memory. If cannot log, use counters? Could use A/B with same seed and measure tokens/sec, but trace simulation cheaper. Need mention per-layer cache? GPU expert cache slots per layer. Need measure per layer or aggregate? For MoE, each layer has experts; cache slots per host-resident MoE expert layer. Eviction per layer. Need simulate per layer.
+
+Need answer in Italian. Need maybe include formulas: LFU count c_e(t+1)=alpha*c_e(t)+access; epoch decay alpha<1. LRU recency timestamp. GPU expert cache: capacity C, upload cost. LFU evicts min decayed frequency; LRU evicts least recently used.
+
+Need explain mechanism: LFU optimizes expected future hits under stationary popularity; LRU optimizes temporal locality. Decay makes LFU adaptive but introduces hysteresis.
+
+Need maybe mention "frequenza decaduta per epoche" vs "LFU con decadimento per epoche". Could define epoch: fixed number of tokens/decode steps or time; at epoch end multiply counts by lambda (e.g. 0.5) or reset partially. This avoids unbounded counts and stale popularity.
+
+Need maybe include examples with numbers:
+- Cache size 2, experts A,B hot each 100 accesses per epoch, C cold one-off. LRU sequence: A,B,C,A,B,C... if C inserted, evicts A or B; thrashing. LFU: A,B counts high, C low, evict C.
+- Phase shift: epoch1 A,B hot; epoch2 X,Y hot. LFU with slow decay keeps A,B for several epochs, misses X,Y; LRU evicts A,B immediately after X,Y used.
+
+Need maybe mention "scan" workload: long context with many unique experts (cold scan) can pollute LRU. But if scan is repeated? Hmm.
+
+Need maybe mention "bursty one-off experts" and "stable hot experts".
+
+Need maybe mention "GPU expert cache" specifics: experts

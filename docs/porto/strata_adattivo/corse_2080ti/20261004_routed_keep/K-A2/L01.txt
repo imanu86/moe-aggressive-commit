@@ -1,0 +1,19 @@
+We need answer in Italian. User asks: "Spiega in italiano, per un collega che conosce il C++ ma non i modelli MoE, perche' il decode di un Mixture-of-Experts con pochi esperti residenti in VRAM puo' essere limitato dalla banda del bus PCIe invece che dal calcolo. Usa esempi numerici inventati da te per mostrare il conto dei byte per token, e chiudi elencando tre misure che distinguono un collo di bottiglia di banda da uno di calcolo."
+
+Need produce final answer. Need explain MoE decode, few experts resident in VRAM, PCIe bandwidth bottleneck vs compute. Use invented numeric examples byte per token. Close with three measurements distinguishing bandwidth vs compute bottleneck.
+
+Need likely mention MoE: each token routed to top-k experts; if experts not in VRAM, weights streamed from host RAM/SSD over PCIe. Decode is autoregressive, batch size 1, small compute per token but large weight movement. Compare bytes moved vs FLOPs. Need C++ colleague: analogies maybe cache miss, memory-bound vs compute-bound. Need numeric examples: model size, expert weights, top-k, bytes per token, PCIe bandwidth, time.
+
+Let's craft detailed but concise. Need maybe include formulas:
+- MoE layer: E experts, each expert FFN weights size W_exp bytes. For each token, router selects k experts. If resident experts R < k? Actually "pochi esperti residenti in VRAM" means only some experts cached; others must be fetched. For each token, if selected expert not resident, load its weights.
+- Byte per token = sum over layers of bytes of non-resident selected experts weights (+ activations, router, KV cache). If all selected experts resident, no expert weight traffic. If not, traffic.
+- Example: 48 MoE layers, 64 experts/layer, top-k=8, each expert FFN 128 MB (e.g. hidden 4096, intermediate 16384, two matrices? 4096*16384*2*2 bytes? Let's compute: 4096*16384=67M params; two matrices up/down maybe 134M params; fp16 268MB. But invent 128MB maybe okay. Need plausible. If 48 layers * 8 experts * 128MB = 49GB per token if all experts streamed. Too high. But with caching maybe only some. Need show few resident: e.g. 8 experts resident per layer, top-k 8, but router distribution random, probability selected expert resident? If 8/64 resident, expected non-resident selected = 8*(1-8/64)=7 per layer. Bytes = 48*7*128MB=43GB/token. At PCIe 32GB/s -> 1.34s/token. Compute maybe 100 GFLOPs/token at 10 TFLOPS -> 10ms. So bandwidth dominates. But maybe too extreme. Need realistic: MoE decode with offloading often streams experts; maybe bytes per token tens of GB. Could use smaller expert 16MB, 32 layers, top-k 4, nonresident 3: 32*3*16MB=1.5GB/token; PCIe 20GB/s -> 75ms; compute 20ms. Good.
+
+Need explain "pochi esperti residenti in VRAM" maybe cache slots per layer. If cache can hold only few experts, many tokens miss. Need mention locality: expert activation distribution, hot experts cached, cold streamed. Decode sequential, cannot prefetch perfectly? Could prefetch next experts but still bandwidth.
+
+Need C++ analogy: like accessing large objects from main memory vs L1 cache; compute is ALU, bandwidth is memory bus. In decode, arithmetic intensity low: each expert weight used once per token (or few times) so bytes/FLOP high.
+
+Need numeric examples:
+Example 1: dense model: 7B fp16 weights 14GB; decode batch 1 reads all weights per token? Actually dense reads all weights per token: 14GB/token, PCIe? But GPU VRAM holds weights, compute-bound? If offloaded, similar. MoE total weights huge but active weights per token smaller. If active experts resident, compute only active weights. If not, PCIe traffic.
+
+Need maybe compare active weights: MoE 100B total, active 10B per token. If active resident, reads 10GB/token from VRAM (HBM bandwidth high) compute maybe. If only 2B resident, 8B streamed over PCIe. PCIe 32GB/s -> 250ms/token; H

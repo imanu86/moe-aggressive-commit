@@ -1,0 +1,23 @@
+We need answer in Italian. User asks: explain difference between LFU with decayed frequency by epochs and pure LRU for GPU expert cache. Indicate a workload where first clearly wins and one where it loses, explaining mechanism not just result. Conclude with cheapest way to measure which is better on a given workload.
+
+Need produce final answer. Need think thoroughly. Context likely llama.cpp MoE expert cache? They mention GPU cache slots per host-resident MoE expert layer, max expert uploads per decode step. Need explain eviction policies. LFU with decayed frequency per epochs vs LRU. Need workload examples. Need mechanism. Need cheapest measurement method.
+
+Need maybe define:
+- LRU: evict least recently used; recency only. Good for temporal locality, hot experts recently accessed. Bad for experts with high total frequency but not recently used? Actually LRU can evict frequently used expert if idle long, then reload.
+- LFU with decay: maintain frequency counters per expert, decay each epoch (e.g. multiply by alpha or reset periodically). Evict lowest decayed frequency. Captures long-term popularity while forgetting old spikes. Good for stable hot experts, bursty? Need compare.
+
+GPU expert cache: MoE layers have many experts, only subset cached on GPU; host-resident experts uploaded on demand. Eviction policy chooses which cached experts to replace when new expert needed. Cost: upload from host to GPU expensive; want minimize misses/uploads.
+
+LFU decayed: each epoch (e.g. token/step/window) counts hits; counters decayed so old hits lose weight. Evict lowest score. It can keep experts that are consistently popular across epochs, even if not used in last epoch. LRU keeps experts used most recently, regardless of overall popularity.
+
+Workload where LFU wins: stable hot experts with periodic reuse separated by long gaps, or many experts with skewed popularity but interleaved access. Example: MoE routing follows topic/role: certain experts activated every few tokens or every layer/epoch, but between activations many other experts used. LRU evicts hot expert after it hasn't been used for a while due to many cold experts; LFU retains because high cumulative frequency. Or workload with repeated bursts: expert A used 100 times in a burst, then cold experts cycle for long time, then A returns. LRU evicts A; LFU with slow decay retains A. Need mechanism: LRU recency queue; A falls to tail after many other accesses; LFU score high despite not recent.
+
+Workload where LFU loses: recency-sensitive, temporally local, or sudden shift in hot set. Example: phase transition: first phase experts A,B hot; second phase experts C,D hot. LFU with slow decay keeps old A,B because accumulated frequency, evicts new C,D causing thrashing; LRU quickly adapts and evicts A,B after they become unused. Or adversarial: one expert gets huge frequency early then never used; LFU keeps it due to high score, blocking current hot experts. Need explain decay can mitigate but if decay too slow loses. Also if access pattern is random with no long-term popularity, LRU better because recent locality.
+
+Cheapest measurement: run both policies on same trace with minimal instrumentation: log expert accesses per layer/epoch (or simulate cache with small fixed capacity) offline; or use counters/hits/misses/uploads. Cheapest: use a trace-driven simulator: record sequence of expert IDs (or layer, expert) during a representative run with a neutral policy (e.g. LRU) and replay with LRU and LFU-decay using hash maps; measure cache misses / host-to-GPU uploads / bytes uploaded / decode latency. If cannot offline, run two short A/B runs with same seed and measure number of expert uploads / cache misses / tokens/s. Cheapest maybe use existing counters: enable debug logging of expert cache hits/misses/uploads, run with policy flag? But question asks "modo più economico di misurare quale delle due conviene su un carico dato". Need propose: collect access trace once, simulate both policies offline; no need to run model twice. If no simulator, use counters: count uploads/misses for each policy on same prompt with fixed seed, but that's more expensive. Cheapest: instrument only expert selection sequence and replay. Need mention measure normalized metric: misses per token, bytes uploaded, GPU stalls, tokens/s. Use same capacity, same epoch length, same decay. Use warmup. Use deterministic seed.
+
+Need maybe include formulas:
+LRU score = last_access_time; evict min last_access.
+LFU decayed: score_i(t) = sum_{epoch e <= t} hits_i(e) * alpha^{t-e}; evict min score. Or counter = counter*decay + hits. Epoch can be token, batch, layer pass, time window.
+
+Need explain GPU expert cache specifics: experts

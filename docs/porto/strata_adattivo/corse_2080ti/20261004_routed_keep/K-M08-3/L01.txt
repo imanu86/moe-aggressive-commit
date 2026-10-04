@@ -1,0 +1,18 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE models, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only top-k experts and maybe dense layers. Bandwidth demand = bytes of expert weights loaded per token. If few experts resident, many expert weights fetched repeatedly. PCIe bandwidth limited. Need numeric examples.
+
+Need maybe tie to llama.cpp? User provided code but asks conceptual. Could mention tensor buffer overrides, CUDA mapped buffer? But likely not necessary. Need C++ colleague: analogies: cache miss, streaming weights, memory-bound. Need invented numbers: model 70B MoE, 128 experts, top-8, expert FFN size maybe 2048 hidden, intermediate 14336? Let's compute invented.
+
+Need show bytes per token. Let's design simple MoE: hidden d=4096, intermediate m=14336, each expert has up/down/gate? In llama.cpp MoE FFN often has gate/up/down: 3 matrices? For each expert: gate (m x d), up (m x d), down (d x m) = 3*m*d weights. If m=14336, d=4096, weights per expert = 3*14336*4096 = 176,160,768 weights. At Q4_0 ~0.5 bytes/weight? Actually Q4_0 4.5 bits/weight ~0.5625 bytes. At Q8_0 1 byte. At F16 2 bytes. Let's use Q4_0 ~0.56 bytes. Per expert ~98 MB. Top-8 experts => 784 MB per token if none resident. PCIe Gen4 x16 ~32 GB/s, Gen5 ~64 GB/s. At 32 GB/s, 784 MB => 24.5 ms/token, ~41 tok/s theoretical. But compute? If only top-8 experts, FLOPs per token: each expert 3*m*d*2? For matrix-vector: 2*3*m*d = 352 MFLOP? Wait 3*14336*4096*2 = 352,321,536 FLOPs per expert. Top-8 = 2.8 GFLOP/token. GPU compute 100 TFLOPS => 28 us, much less than 24 ms. So bandwidth bottleneck.
+
+But if few experts resident: suppose 8 experts resident out of 128, top-8 random: expected resident hits? If 8 resident and top-8 random among 128, expected resident experts = 8*(8/128)=0.5, so 7.5 streamed => 735 MB/token. If 16 resident => 1 expected? Actually 16*8/128=1, 7 streamed. If 32 resident => 2, 6 streamed. Need show.
+
+Could also include dense layers: attention weights maybe 100 MB resident? But decode attention KV cache bandwidth too. But focus MoE experts.
+
+Need explain why few experts resident: VRAM limited, offload experts to host RAM, only hot experts cached. During decode, each token chooses top-k experts; if not resident, must copy weights from host to GPU over PCIe. Unlike prefill/batch, decode processes one token at a time, so weight loading cannot be amortized over many tokens; each token may touch different experts. If expert weights are reused across tokens? If same expert selected repeatedly, cache helps; but random routing causes misses. Also if batch size small, arithmetic intensity low: bytes per FLOP high.
+
+Need C++ analogy: like accessing large lookup tables from main memory for each loop iteration; compute is tiny but memory latency/bandwidth dominates. Maybe mention zero-copy mapped memory? In code parse_tensor_buffer_overrides registers CUDA mapped buffer type; host memory read over PCIe by kernels. But user didn't ask code. Could mention if experts placed in host buffer or mapped buffer, kernels read weights over PCIe.
+
+Need three measures distinguishing bandwidth vs compute bottleneck:
+1. Throughput vs PCIe utilization: if GPU SM utilization low but PCIe RX/TX near link limit (nvidia-sm

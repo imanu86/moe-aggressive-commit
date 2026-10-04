@@ -1,0 +1,28 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE models, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only top-k experts, but memory traffic large: expert weights bytes. Need numeric examples.
+
+Need maybe tie to llama.cpp? User provided code but asks conceptual. Could mention tensor buffer overrides, CUDA mapped buffer? But likely not necessary. Need Italian. Need C++ colleague: analogies: cache miss, streaming weights, batch=1 decode. Need explain arithmetic intensity: bytes per FLOP. MoE sparse: total params huge but active params small. If active experts in VRAM, compute-bound; if offloaded, PCIe-bound. Need invented numbers.
+
+Let's craft detailed answer.
+
+Need maybe include formulas:
+- MoE layer: E experts, each expert FFN weights: up/down/gate maybe 3 matrices. For hidden d, intermediate m. Weight bytes per expert = 3*d*m*bytes_per_weight. For Q4_0 ~0.5 bytes/param? Actually Q4_0 4 bits plus scales ~0.5625 bytes/param? Could use 0.5 for simplicity. For FP16 2 bytes.
+- Decode token: top-k experts per layer. If L MoE layers, bytes streamed = L*k*expert_bytes (if not cached). Plus shared expert maybe.
+- PCIe bandwidth: PCIe 4.0 x16 ~32 GB/s theoretical, effective ~20-25 GB/s; PCIe 5.0 ~64 GB/s theoretical effective ~40-50. GPU HBM bandwidth hundreds GB/s.
+- Compute: FLOPs per token = 2*active_params (multiply-add) maybe. For expert: 2*3*d*m FLOPs. GPU TFLOPs. Arithmetic intensity = FLOPs/byte. If bytes per token / bandwidth > FLOPs / peak compute, memory-bound.
+
+Need invented examples:
+Example 1: 8x7B MoE? Let's invent:
+- Model: 128 experts per MoE layer, 40 MoE layers, hidden d=4096, intermediate m=14336, top-k=2, quantized Q4_0 ~0.5 bytes/param.
+Expert weights per layer: 3*d*m = 3*4096*14336 = 176,160,768 params ~176M. At 0.5 bytes = 88 MB per expert. Top-2 => 176 MB per MoE layer. 40 layers => 7.04 GB per token if no cache. At 25 GB/s => 282 ms/token => 3.5 tok/s. Compute: active params per token = 40*2*176M = 14.1B params? FLOPs ~2*14.1B = 28.2 GFLOP/token. At 100 TFLOP/s => 0.28 ms. So memory 1000x slower. But if experts resident? If few experts resident? Need "pochi esperti residenti in VRAM" means only a few experts cached, many streamed. Maybe cache slots per layer. If cache hit rate h, bytes = (1-h)*... If 10% hit, 6.3 GB/token. Need mention MoE expert cache: n_moe_cache_slots. If only few resident, top-k random may miss.
+
+But maybe "pochi esperti residenti in VRAM" could mean model offloaded: only some experts in VRAM, rest host. Decode limited by PCIe. Need explain.
+
+Need maybe compare dense model: active params all layers. MoE total params huge but active small. If active experts in VRAM, compute maybe okay. If not, each token may need different experts, causing PCIe transfers.
+
+Need include C++ analogy: like accessing a huge sparse table; each token selects random rows; if rows not in L2/HBM, fetch from RAM. PCIe is like slow bus between CPU and GPU.
+
+Need three measures distinguishing bandwidth vs compute bottleneck:
+1. GPU utilization / SM occupancy vs PCIe throughput: if GPU compute util low but PCIe link near saturation (nvidia-smi PCIe throughput, DCGM, profiler), bandwidth-bound.
+2

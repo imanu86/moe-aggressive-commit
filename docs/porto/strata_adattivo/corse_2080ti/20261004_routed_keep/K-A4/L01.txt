@@ -1,0 +1,19 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only few experts and small FFN; bandwidth cost large because expert weights loaded per token. Need numerical examples.
+
+Need maybe tie to llama.cpp arg.cpp? There are options --moe-expert-cache, --n-cpu-moe, --ot, CUDA mapped buffer? But user asks general. Could mention C++ analogy: cache miss / streaming weights. Need explain decode autoregressive: batch size 1, low arithmetic intensity. MoE FFN: router selects top-k experts; each expert has weights (gate/up/down) maybe 3 matrices. If expert resident in VRAM, compute on GPU. If not, need fetch weights from CPU RAM to GPU over PCIe. With few experts resident, many tokens require loading different experts. Bandwidth bottleneck if bytes moved per token > compute time.
+
+Need invented numeric examples. Let's design clear.
+
+Assumptions:
+- MoE model: hidden d=4096, intermediate n=14336? For each expert FFN: gate/up/down matrices. If using 3 matrices: gate d x n, up d x n, down n x d. Total weights per expert = 3*d*n. In FP16/BF16 2 bytes: 3*4096*14336*2 = 352,321,536 bytes ~336 MiB? Let's calculate: 4096*14336=58,720,256; *3=176,160,768 elements; *2=352,321,536 bytes = 336 MiB. If Q4 quantized 4 bits: 176M*0.5=88MB? Actually 4 bits = 0.5 bytes => 88,080,384 bytes ~84 MiB. If Q8 1 byte => 168 MiB.
+- Top-k=2 experts per token. If both experts not resident, load 2*336 MiB = 672 MiB per token in FP16. At PCIe Gen4 x16 ~32 GB/s theoretical, effective 20-25 GB/s. 672 MiB / 25 GB/s = 0.0269 s = 27 ms/token => 37 tok/s max. Compute: FLOPs per token for expert FFN: 2*3*d*n? For each matrix multiply vector-matrix: 2*d*n MACs? FLOPs 2*d*n per matrix? Actually multiply vector by matrix: 2*d*n FLOPs (multiply-add). For 3 matrices: 6*d*n = 352M FLOPs per expert? Wait 6*4096*14336 = 352,321,536 FLOPs per expert. For 2 experts = 704M FLOPs. GPU 10 TFLOPS FP16 => 0.07 ms. So bandwidth dominates. If only 1 expert resident and 1 streamed: 336 MiB => 13 ms/token. If expert cache has 8 experts resident, hit rate maybe 80%, average streamed experts 0.4? bytes 134 MiB => 5.4 ms.
+
+Need maybe include attention/shared layers too. But focus MoE experts.
+
+Could use smaller invented model: 128 experts, top-k=2, expert size 100 MB FP16. Then per token if all streamed 200 MB. PCIe 20 GB/s => 10 ms/token. Compute 0.1 ms. Good.
+
+Need explain few experts resident in VRAM: VRAM limited; model weights offloaded to CPU; expert cache stores only N experts. During decode, router changes selected experts token by token. If selected expert not in cache, must upload weights. If cache replacement thrashing, each token loads new experts. Bandwidth cost independent of compute? It is proportional to weights loaded.
+
+Need C++ colleague: analogy: decode is like calling a function whose code is paged from disk;

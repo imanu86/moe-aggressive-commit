@@ -107,3 +107,22 @@ memoria impegnata insufficiente (WinError 1455): il runner ora attende >=52 GiB 
 
 Misura favorevole ad A (e' il suo testo). Da ripetere su testo umano e su compiti CGC con
 risposta verificabile prima di qualunque uso: l'utente intende provarlo sul lavoro reale.
+
+## A 131k (casi L01/L02 del banco P0, `run_long.py`, config elastica del Daily)
+
+Un processo per braccio: L01 legge 131.248 token (prefill ~134 s), L02 riusa 131.072 token dal
+prompt cache; 1024 token generati, temperatura 0, ragionamento predefinito del server.
+Bracci alternati, macchina in uso. Medie (singoli in `K-*`):
+
+| Braccio | n | L01 t/s | L02 t/s | Finestra | Attesa GPU | CPU esperti | Token/finestra |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| A | 4 | 39,5 | 36,8 | 47,0 ms | 22,9 | 11,1 | 1,80 |
+| non residenti < 0,08 | 3 | 47,4 (+20%) | 41,0 (+11%) | 41,9 | 24,6 | 5,6 | 1,86 |
+| non residenti < 0,10 | 2 | 46,3 (+17%) | 42,5 (+15%) | 40,3 | 24,8 | 4,0 | 1,79 |
+| vocabolario allargato | 2 | 40,1 (+2%) | 36,2 (−2%) | 47,8 | 23,3 | 11,2 | 1,83 |
+| vocabolario + 0,08 | 2 | 47,8 (+21%) | 41,6 (+13%) | 41,7 | 24,6 | 5,7 | 1,87 |
+
+A 131k la CPU pesa meno (11 ms su 47 per finestra) e il guadagno dello scarto scende a +11–20%.
+Il vocabolario e' neutro qui: i casi L01/L02 ragionano e scrivono in inglese. Un primo K-A1 e'
+stato bloccato dal controllo di stato (motore precedente ancora in chiusura) e ripetuto come K-A1b.
+Fedelta' a 131k non misurata (il teacher forcing e' stato fatto a contesto corto).

@@ -1,0 +1,39 @@
+{
+  "status": "failed",
+  "tokens_requested_per_text": 512,
+  "hardware": {
+    "gpu": "modified RTX 2080 Ti 22 GB",
+    "cpu": "Ryzen 5800X",
+    "ram_gib": 96
+  },
+  "engine_sha256": "dd92a8980567c403be5f3ae31e24bbc97850c30b06f3f164e8afbb80d7e90a3a",
+  "engine_build_source_commit": "7aa91e1fffdbf87715a1ac4e68846c2f43942552",
+  "current_source_differences_from_engine_build": {
+    "CMakeLists.txt": "b160c3b44ee7f9b564d99695f1351ef37f342824ebbe4550c960ea244b35ff66",
+    "include/strata/kernels/cpu/pool.hpp": "2d5b69334ada4e689e1c970ff7329c3ffc76c9e7a4a9b15763d27675ed2e0dc1",
+    "src/kernels/cpu/pool.cpp": "052af246bec64ed7ccd5fdead6bf1658e37f5271ae6b0625b055fe37502430b1",
+    "src/kernels/cpu/pool_quant_parity.cpp": "925a6ed6ce4bdd1fb8d62f096c8dd6f61030f2952d4ff78956e812e6e7de6344",
+    "src/kernels/neuron_trace_replay.cpp": "5000548fa3c3c9ee5c4bf5faab5a940c29772a8e3ca6bd7ce7c4be148971d6d4"
+  },
+  "replayer_sha256": "64b55b1bef1b4ef4528ab8be9d7cc7f4465ed878e40ddf3b60bd00667d7a970c",
+  "protected_files_before": {
+    "D:\\ds4_work\\strata\\Strata\\build-0138-daily\\strata.exe": "f2e371bf631d13b40890b8efc8b35395844b1dfd592f8c5baab0cef60729621a",
+    "D:\\ds4_work\\strata\\Strata\\strata-2080ti-sota.json": "db77e8364bf9221cfc846b8133a3c40fc8936196aa9939fa583cee3d539fe172",
+    "C:\\Users\\imanu\\Desktop\\SERVER IA LOCALE\\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat": "9bbddc9b0ab63c6dbd3dde24b81b36635fafda7203a9b2c160a3ecfefca23686"
+  },
+  "runner_sha256": "54354e25b9386e3f8a1c19f3535d6adaba18c71d645383306ca7c0735116e305",
+  "reader_sha256": "4c034a40d4f79321f1eb318eca4a3d85b2e5369e401725a65ee4c0c37f07ab1d",
+  "helpers": {
+    "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\20261004_neuron_cache\\run_capture.py": "be4a43e66b2e5ed503e5789066c2d4eda96106a0881a0de101a6ccea77d36505",
+    "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\20261004_prefix_disk\\validate_prefix.py": "e23a9a617ba6d1dffc49fc34d80d7332ab1761340b1d2e3a0e77a8ec1dd23b08",
+    "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\.codex_runs\\20261004_decode_real\\profile_decode_v2.py": "ff574f30751b77b7c8fa6b4039ce3c2ba6ecc6149d14b48cdb0aa391e37faa47",
+    "D:\\ds4_work\\strata\\Strata\\build-0138-daily\\source\\serve\\server.py": "19b2b38d0614704039a35a85efcec73a929997cfcb16bee790e35cea46e2cab8"
+  },
+  "captures": [],
+  "replays": [],
+  "error": "RuntimeError(\"the engine exited before it was ready (see .codex_runs\\\\20261004_ngram_memory_v1\\\\code\\\\engine.log)\\nthe engine log's last lines:\\n  strata generate: GPU 0: NVIDIA GeForce RTX 2080 Ti, compute capability 7.5\\n  strata generate: STRATA_ARENA_PIN_GIB=8: the expert arena's pinning is capped\\n  strata generate: expert arena read unbuffered (1 of 16 probe reads from the file cache; 21.7 GiB available, 43.8 GiB of files)\\n  strata generate: expert arena: locked 33352 MiB via working-set minimum + VirtualLock; cudaHostRegister limited to 8 GiB by the engine (multi-GPU under WDDM, or remote experts); 10 slices pinned (7 GiB); large pages skipped (STRATA_NO_LARGEPAGES); using 4 KB pages\\n  strata generate: loaded 39.97 GiB at 1.52 GiB/s\\n  strata generate: experimental native Q5_K head, 437043200 bytes\\n  strata generate: expert cache 5080 slots, 8.24 GiB of VRAM; policy is\\n  strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,\\n                   so a reply can differ slightly from a run without the cache (same quality:\\n                   bench/results/2026-09-27-cache-parity).\\n                   PROFILE, ranked by routing frequency, no eviction.\\n  strata generate: pre-filled 5080 of 5080 slots from the profile; slot 0 verified\\n  strata generate: R4 hit path ON - resident experts are computed on the GPU\\n  strata generate: 7 expert-pool workers + the host thread\\n  strata generate: session is up (engine 0.1.38)\\n  strata generate: token graph hit path: 5080 resident experts, decided on the device\\n  strata serve: prompt chunk auto: 8192 tokens\\n  strata serve: the prompt path borrows 2368 CUDA0 cache slots (3.80 GiB)\\n  strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)\\n  strata serve: neuron trace: exclusive creation failed (existing files are never overwritten): No such file or directory\")",
+  "cleanup_actions": [],
+  "remaining_owned": [],
+  "protected_files_unchanged": true,
+  "elapsed_s": 52.264999999984866
+}

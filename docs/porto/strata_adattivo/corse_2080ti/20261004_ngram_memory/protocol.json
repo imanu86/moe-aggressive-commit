@@ -1,0 +1,16 @@
+{
+  "question": "Can token n-grams index a small, context-conditioned memory of expert responses, reducing weight reads even when weights are resident?",
+  "scope": "Offline local expert-response interpolation; no approximate model generation, no speed claim.",
+  "data": "Three distinct natural greedy continuations: code, explanation, reasoning; up to 512 generated tokens each. Existing short traces are exploratory only.",
+  "layers": [0, 1, 35, 36],
+  "reference": "Full grouped GPU expert replay on accepted full-model inputs. Discard speculative tails. Count repeated controls separately.",
+  "calibration": "First 128 accepted decode input positions, including the last prompt position; frozen memory for the remaining positions. This does not capture prefill expert activations.",
+  "keys": ["layer/expert only (context-independent control)", "layer/expert/token", "layer/expert/bigram", "layer/expert/trigram"],
+  "memory_cap": "16 most recent calibration exemplars per key; keep x and full GPU y. No held-out outputs used for lookup, prediction or updates.",
+  "methods": ["nearest input and its cached output", "affine response interpolation on up to 16 cached input/output pairs, ridge 0.001 of mean Gram diagonal, reject coefficient L1 > 4"],
+  "guards": "Relative input residual <= 1%, 3%, 5%, 10%; unguarded coverage/error also reported. Guard reads current x, not current expert output.",
+  "metrics": ["ngram recurrence", "covered expert calls", "routed local relative L2 mean/P99/max with full fallback", "error on covered calls alone", "per-layer breakdown", "ideal avoided routed-weight bytes", "compact-memory bytes and descriptor traffic estimates"],
+  "screen": "Exploratory engineering screen: mean routed relative L2 <=3%, P99<=10%, ideal all-tier routed weight saving >=3%, independently on all three texts. Not a guarantee of answer quality; any selected policy needs fresh holdout and online tests.",
+  "controls": ["accepted position and token identity against generated stream", "split trace reconstruction", "full GPU same-backend reference", "exact duplicate-input positive control", "context-change and future-output-leakage controls", "all protected Daily files unchanged; owned engines exited"],
+  "limitations": "Short contexts and four layers; finite sample. No inference that n-grams predict hidden states exactly. Nonlinear expert-output interpolation is approximate and differs from exact per-linear-layer Wb reuse. KV262144 is capacity, not tested depth. No trained Engram changes."
+}

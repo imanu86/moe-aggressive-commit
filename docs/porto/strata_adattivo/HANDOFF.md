@@ -1,5 +1,29 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: misurata memoria di risposte indicizzata da n-gram
+
+Tre continuazioni da 512 token, prompt 86/85/102, layer 0/1/35/36: 61440 chiamate
+esperto, di cui 46080 su input successivi ai 128 usati per calibrare ciascun testo.
+Riferimento completo ricalcolato sullo stesso backend GPU; nessuna prova a 250k.
+Cache congelata e cache aggiornata solo dopo fallback, massimo 16 esempi per
+(layer, esperto, ngram), nearest e combinazione affine, guardia sul solo input.
+Nessuna variante supera il filtro di errore/utilita' su tutti e tre i testi.
+
+Con bigrammi, affine e residuo input <=10%, la cache adattiva riusa 3.59/0.88/3.85%
+delle chiamate code/explain/reason; risparmio netto teorico letture 3.32/0.73/3.51%
+sui soli quattro layer, NON t/s. Tutti i riusi sono nei layer 0/1, zero in 35/36.
+Errore routed L2 medio 0.190/0.061/0.291%, P99 6.09/0.22/8.56%, massimi 10–13.3%.
+Sulle sole chiamate riusate errore esperto medio 8.53–10.41%; qualita' generativa
+non verificata. Storage diretto FP32 di input+risposte 389–397 MiB per quattro layer,
+prima di indici/Gram e senza deduplicazione: nessun maxi-esperto compatto validato.
+
+Replay identico di 4360 chiamate bitwise, confronti indipendenti e controlli di
+causalita' passati. Primo avvio fallito per percorso relativo del banco separato
+e conservato; tutte le misure provengono dal secondo avvio. Daily/config/launcher/
+ZIP invariati, tutti i motori di test terminati. Nessuna nuova SOTA o PR runtime.
+
+[Protocollo, risultati, script e limiti](corse_2080ti/20261004_ngram_memory/RESULTS.md).
+
 ## 4 ottobre: pruning per turno 10/20/25% misurato, non promosso
 
 Selezione causale da32 input precedenti, congelata sui31 successivi, tre testi

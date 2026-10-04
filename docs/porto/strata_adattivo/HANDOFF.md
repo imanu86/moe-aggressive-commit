@@ -1,5 +1,20 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: provata cache chiusa dopo prefill e rinnovo MTP
+
+Probe disabilitato per default: frequenze prefill, soli esperti residenti durante
+il decode, rinnovo sotto il 50% su almeno 64 bozze. Pool CPU esperti a zero.
+Testo discorsivo da85 token,512 generati:28.03 ->44.13 t/s (+57.46%) includendo
+due rinnovi da758 ms complessivi. Cache8.24 GiB; capacita'KV262k, non profondita'.
+Nei task strutturati1680/2470 token il throughput sale a73/76 t/s ma gli output
+diventano JSON malformati e ripetitivi anche conMTP97–100%: nessuna promozione.
+Anche azzerare gli assenti degenera; le poche bozze proposte possono bloccare
+il trigger. MTP da solo non e' controllo di qualita'.87 casiCUDA passati, parita'
+dei152 ID del controllo conDaily/observe,11 run conclusi e un avvio fallito
+conservato. Daily/config/launcher invariati, processi terminati.
+
+[Protocollo, risposte, costi e limiti](corse_2080ti/20261004_closed_cache/RESULTS.md).
+
 ## 4 ottobre: misurata memoria di risposte indicizzata da n-gram
 
 Tre continuazioni da 512 token, prompt 86/85/102, layer 0/1/35/36: 61440 chiamate

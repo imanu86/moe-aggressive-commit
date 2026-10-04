@@ -1,0 +1,37 @@
+{
+  "router_cuda_cases": 87,
+  "router_parity_sha256": "a5877f1e06d71be1397ac33d8beec0dd7e6e1b7396fb4ae3ebaabac2d39af46b",
+  "parity_note": "v4 passed 87 cases; v5 parity executable is byte-identical. v5 changes only the driver exchange-buffer guard.",
+  "baseline_output_ids_equal": {
+    "observe-ledger-v1": true,
+    "daily-ledger-v1": true,
+    "daily-ledger-v2": true
+  },
+  "protected_files": {
+    "D:\\ds4_work\\strata\\Strata\\build-0138-daily\\strata.exe": "f2e371bf631d13b40890b8efc8b35395844b1dfd592f8c5baab0cef60729621a",
+    "D:\\ds4_work\\strata\\Strata\\strata-2080ti-sota.json": "db77e8364bf9221cfc846b8133a3c40fc8936196aa9939fa583cee3d539fe172",
+    "C:\\Users\\imanu\\Desktop\\SERVER IA LOCALE\\Strata 2080 Ti - SOTA 30-9 - porta 8100.bat": "9bbddc9b0ab63c6dbd3dde24b81b36635fafda7203a9b2c160a3ecfefca23686"
+  },
+  "all_test_processes_exited": true,
+  "available_ram_gib": 66.21236419677734,
+  "gpu": "NVIDIA GeForce RTX 2080 Ti, 6311 MiB, 22528 MiB, 30 %",
+  "tests": [
+    "daily-ledger-v1",
+    "daily-ledger-v2",
+    "default-code-v1",
+    "default-explain-v1",
+    "default-ledger-v1",
+    "drop-explain-v1",
+    "observe-ledger-v1",
+    "resident-code-v1",
+    "resident-explain-v1",
+    "resident-ledger-v1",
+    "resident-smoke-v1",
+    "resident-smoke-v2"
+  ],
+  "daily_and_release_promoted": false,
+  "initial_faults": [
+    "First CUDA harness had an unordered pageable upload to a nonblocking stream. Fixed synchronization and reran 87 cases.",
+    "First engine smoke failed before READY because exchange buffers were requested from the unused file source. Guarded by complement_ready; all inference runs use v5."
+  ]
+}

@@ -1,0 +1,15 @@
+{
+  "status": "failed",
+  "idle_nodes": [],
+  "system_start": {
+    "available_ram": 72292356096
+  },
+  "gpu_before": "7119 MiB, 14 %, 38",
+  "error": "RuntimeError(\"the engine exited before it was ready (see C:\\\\Users\\\\imanu\\\\source\\\\repos\\\\moe-aggressive-commit\\\\.codex_runs\\\\20261004_closed_cache\\\\resident-smoke-v1\\\\engine.log)\\nthe engine log's last lines:\\n  strata generate: expert arena read unbuffered (3 of 16 probe reads from the file cache; 23.6 GiB available, 43.8 GiB of files)\\n  strata generate: expert arena: locked 33352 MiB via working-set minimum + VirtualLock; cudaHostRegister limited to 8 GiB by the engine (multi-GPU under WDDM, or remote experts); 10 slices pinned (7 GiB); large pages skipped (STRATA_NO_LARGEPAGES); using 4 KB pages\\n  strata generate: loaded 39.97 GiB at 1.51 GiB/s\\n  strata generate: experimental native Q5_K head, 437043200 bytes\\n  strata generate: expert cache 5080 slots, 8.24 GiB of VRAM; policy is\\n  strata generate: the GPU computes the experts in the cache; it rounds differently from the CPU,\\n                   so a reply can differ slightly from a run without the cache (same quality:\\n                   bench/results/2026-09-27-cache-parity).\\n                   PROFILE, ranked by routing frequency, no eviction.\\n  strata generate: pre-filled 5080 of 5080 slots from the profile; slot 0 verified\\n  strata generate: R4 hit path ON - resident experts are computed on the GPU\\n  strata generate: 7 expert-pool workers + the host thread\\n  strata generate: session is up (engine 0.1.38)\\n  strata generate: token graph hit path: 5080 resident experts, decided on the device\\n  strata serve: prompt chunk auto: 8192 tokens\\n  strata serve: the prompt path borrows 2368 CUDA0 cache slots (3.80 GiB)\\n  strata hc: CUDA0: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)\\n  strata verify: window up to 4 tokens, 58.9 MiB of device buffers\\n  strata mtp: draft head over 40525 tokens (68.0 MiB)\\n  closed routing: exchange reservation: FileExpertSource: no expert geometry for the exchange buffers\")",
+  "cleanup_actions": [],
+  "remaining_owned": [],
+  "elapsed_s": 47.796999999991385,
+  "daily_unchanged": true,
+  "config_unchanged": true,
+  "native_metrics": []
+}

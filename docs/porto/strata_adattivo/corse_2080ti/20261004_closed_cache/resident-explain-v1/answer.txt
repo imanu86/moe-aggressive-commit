@@ -1,0 +1,20 @@
+Durante una conversazione con un modello linguistico (LLM), i dati e i calcoli si muovono attraverso una gerarchia di memoria che va dalla memoria persistente (lento) alla memoria di lavoro ad alta velocità. Ecco come funziona, separando le due fasi principali.
+
+### 1. Fase di **Lettura del Prompt (Input)
+
+Quando invii un prompt, il sistema deve prima tutto caricare il testo e i pesi del modello nella memoria di lavoro.
+
+#### **1. SSD (Memoria di Archiviazione)**
+*   **Ruolo:** È il punto di partenza. Il modello (i suoi pesi, cioè i parametri numerici) e il tuo prompt sono archiviati qui.
+*   **Cosa succede:** Il sistema legge i pesi del modello dall'SSD e li carica nella RAM. Il prompt viene letto dall'SSD o dalla memoria volatile se già presente.
+*   **Riutilizzo:** L'SSD non viene riutilizzato in questa fase se non non è più caricato il modello. È fondamentale per l'avvio del sistema.
+
+#### **2. RAM (Memoria ad Accesso Casuale)**
+*   **Ruolo:** È la memoria di lavoro principale. Qui vengono caricati i pesi del modello e il prompt.
+*   **Cosa succede:** I pesi del modello (che possono essere di diversi GB) vengono copiati dall'SSD alla RAM. Il prompt viene caricato in RAM per essere elaborato.
+*   **Riutilizzo:** La RAM viene riutilizzata continuamente durante tutta la conversazione. I pesi del modello rimangono in RAM per tutta la durata della sessione, non vengono ricoperti dall'SSD ad ogni richiesta.
+
+#### **3. Cache della CPU (Cache L1, L2, L3)**
+*   **Ruolo:** È la memoria più veloce e vicina al processore. Serve per accelerare l'accesso ai dati che vengono usati ripetutamente.
+*   **Cosa succede:** Quando il sistema legge il prompt o accede ai pesi del modello, i dati più frequentemente usati (ad esempio, i token del prompt o i pesi di uno strato specifico) vengono copiati nella cache della CPU.
+*   **Riutilizzo:** La cache viene riutilizzata ad ogni ciclo di calcolo. Se un dato è già nella cache, il processore lo usa direttamente senza doverlo riprendere dalla RAM, risparmiando

@@ -1,5 +1,55 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: chiarimento utente sul maxi esperto predittivo e variabile
+
+L'obiettivo richiesto e' costruire il maxi esperto da **100 token candidati
+futuri**, inizialmente 10 continuazioni alternative da 10 token, e aggiornarlo
+in modo adattivo quando la verifica indica che la selezione non copre piu'
+il percorso reale. Non e' una maschera fissa o il riuso dell'ultima attivazione.
+Le misure precedenti sono controlli preliminari e **non provano ne' confutano
+questa proposta**, che non e' ancora stata eseguita.
+
+Contratto della prossima prova:
+
+1. Da un solo prefisso accettato, generare un budget totale di 100 candidati
+   con 10 percorsi coerenti da 10 token, senza consultare la continuazione
+   target futura. Registrare duplicati e candidati distinti. Non espandere
+   10 alternative per ciascun nodo a ogni profondita': sarebbe un altro budget.
+2. Valutare gli esperti/neuroni richiesti dai percorsi candidati, preservando
+   le dipendenze causali e isolando KV, residuali e stato delle alternative.
+   Il drafter MTP attuale produce una catena e usa un proprio layer MoE:
+   i suoi ID esperto/neurone non sono quelli dei 48 layer target. Servono una
+   scansione target dei candidati al refresh oppure un predittore separato.
+   Il costo della scansione fa parte del costo di costruzione, anche quando
+   non si verificano i candidati come token da emettere.
+3. Costruire un pacchetto temporaneo per layer dall'unione delle porzioni
+   selezionate, mantenendo identita' degli esperti, routing e trasformazioni.
+   Confrontare unione completa e selezioni pesate dai candidati; misurare
+   byte reali inclusi blocchi, scale, indici, padding e scratch. La fusione
+   dello storage non autorizza a sommare pesi di esperti con non linearita'.
+4. Congelare il pacchetto e usarlo sui token successivi fino al refresh.
+   Nella prima prova offline, confrontare originale e ridotto sullo stesso
+   input e usare solo errori gia' osservati per decidere il refresh successivo.
+   Separare mancata copertura esperti/neuroni, errore numerico del pacchetto,
+   divergenza del token e semplice rifiuto della bozza. Misurare distribuzione
+   della durata del pacchetto e frequenza di fallback/ricostruzione, non solo
+   l'errore della selezione corrente. Il replay locale non certifica la qualita'
+   end-to-end: serve poi una continuazione con stato proprio del percorso ridotto.
+5. Sweep di soglie di ricostruzione e dimensione del pacchetto su prompt
+   sintetici, poi verifica su prompt separati. La verifica numerica indipendente
+   richiede il target originale: l'accordo fra bozza e modello ridotto non ne
+   certifica l'esattezza. Controlli periodici consentono una modalita' approssimata;
+   una garanzia esatta richiede verifica completa o un limite d'errore dimostrato.
+6. Valutare il beneficio includendo predizione, scansione target, pack/copie,
+   decode ridotto, verifiche e fallback. Confrontare il costo medio totale
+   per token accettato con la base a pari input/configurazione; nessun guadagno
+   t/s dedotto dal solo risparmio di storage.
+
+Verificato in lettura `include/strata/core/mtp.hpp`, `src/core/mtp.cpp` e
+`include/strata/core/coupled_draft.hpp` del fork `7aa91e1`: il percorso multi-ramo
+richiede lavoro dedicato, non il solo aumento di `--spec`. In questa correzione
+del piano non sono stati avviati motori, build o test GPU; Daily invariato.
+
 ## 4 ottobre: misure reali per il cache di neuroni, nessun pruning nel Daily
 
 Completati hook diagnostico default-off e replay GPU offline nel fork main.

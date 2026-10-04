@@ -1,5 +1,56 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: misure fino a 27k pubblicate, PR del prefisso preparata
+
+Fork main e origin/main aggiornati a `b514f19b4d0f5d9a5035cf1d0e9da67c21100daa`
+con sole evidenze/documentazione. Daily binario e configurazione invariati
+(`f2e371bf...` / `db77e836...`); il checkout operativo resta al precedente commit.
+Nessun motore residuo, porta 8100 libera; file prefisso dell'utente non creato.
+
+- **Due prove esatte a 27000 token + 48 nuovi**: cold/restore al primo token
+  **22.688/2.281 s** e **25.218/1.704 s**, con riuso effettivo di tutti i 27000
+  token e oracoli fattuali corretti. File 530414864 byte (505.84 MiB).
+  Latenza nativa dopo READY; avvio escluso, cache OS non svuotata, placement
+  auto/elastico variabile: nessuna parità bitwise o misura p99 dichiarata.
+- 10k: una coppia **10.656/1.375 s**. 20k: due coppie
+  **18.765/1.907 s** e **16.781/1.547 s**. Tutti i fatti verificati.
+- Il limite byte di 512 MiB arriva prima del limite token 32768 per questa
+  geometria: 28k stimati ~520.4 MiB, non eseguiti. A 30k e 40k normale fallback
+  senza file/riuso; a 50k solo cold/create completati, restore interrotto quando
+  l'utente ha ristretto il perimetro. Non dichiarare completate dieci prove.
+- Esclusioni conservate: due stop del runner prima della generazione per soglia
+  READY 1024 MiB; soglia successivamente 512 MiB, coerente con target elastico
+  esistente ~500 MiB. Un avvio 20k terminato per timeout 180 s, causa aperta;
+  repeat completato. Nessuna pressione artificiale o chiusura di app dell'utente.
+- Prima della pubblicazione rieseguite entrambe le suite CPU esistenti:
+  **84/84 controlli ciascuna**, SHA Windows e portabile. Nessuna nuova build/GPU.
+
+[Misure, limiti ed esclusioni](https://github.com/imanu86/Strata-2080Ti/blob/b514f19b4d0f5d9a5035cf1d0e9da67c21100daa/docs/sm75/BENCHMARKS.md#larger-persistent-prefixes-and-the-byte-limit-4-october-2026).
+JSON sanitizzati e fixture sintetiche pubblicati nello stesso commit; 23 risposte
+complete controllate nel lotto esteso, incluse le normali fallback.
+
+**Pubblicazione upstream richiesta dall'utente**, incluso commento a @Niko1221.
+PR e commento non ancora inviati: attesa risposta alla domanda asincrona che
+autorizza `codex/prompt-prefix-file-038` nel fork, mantenendo il checkout su main,
+come richiesto dalle regole personali sui branch. Non creare branch senza risposta.
+Patch isolata preparata in memoria su upstream `99f3dbd` (sei file, nessuna
+dipendenza da PR614). Il codice feature coincide con quello testato; il nuovo
+albero isolato non è stato ricompilato o testato sulla GPU, limite esplicito nella PR.
+Sovrapposizioni dichiarate: PR668 SAVE/RESTORE esplicito e PR718 parking per client;
+la proposta distingue il riuso automatico della radice, valutabile anche sopra
+uno dei loro formati. Nessun nuovo workflow o release binaria.
+
+Materiale pronto in `.codex_runs/20261004_prefix_disk/publication/`:
+`pr-files.json` (base, contenuti sei file, messaggio commit),
+`upstream-prefix-cache.patch`, `pr-title.txt`, `pr-body.txt`,
+`maintainer-comment.txt`. Dopo autorizzazione: creare/pushare solo il branch
+dedicato senza cambiare checkout, aprire PR verso upstream main, allegarla alla
+chat, inviare il commento autorizzato e registrare URL/stato verificati.
+
+L'idea successiva del "maxi esperto" compatto da micro-parti neurali è solo una
+proposta di ricerca: nessun kernel o risultato di compressione implementato,
+non confonderla con la PR della cache persistente appena misurata.
+
 ## 4 ottobre: prefisso persistente su disco implementato e installato nel Daily
 
 Il Daily usa ora l'eseguibile `f2e371bf631d13b40890b8efc8b35395844b1dfd592f8c5baab0cef60729621a`.

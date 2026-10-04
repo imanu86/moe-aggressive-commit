@@ -1,5 +1,53 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 4 ottobre: misure reali per il cache di neuroni, nessun pruning nel Daily
+
+Completati hook diagnostico default-off e replay GPU offline nel fork main.
+`STRATA_NEURON_TRACE_FILE` scrive al massimo64 finestre committed sui layer
+0,1,35,36; registra input, routing reale, output esperti e tier CPU/VRAM/PCIe.
+Il replayer separato seleziona soltanto posizioni accettate. Nessuna modifica
+dei kernel online per omettere neuroni; il replay legge sempre blob completi.
+
+- Tre prompt sintetici da86/85/102 token,64 token generati ciascuno:192 posizioni,
+  768 somme routed e7680 chiamate esperto. Capacità KV262144/resident32768,
+  ma questa prova è a contesto corto. Spec4/MTP4,workers7,PCIe0.25,
+  IQ_MT_MIN1; elastic/adapt/suffix spenti. Budget richiesto3800 blob massimi
+  equivale a5080 slot reali/8442MiB, con profilo fissato per tutti i controlli.
+- Daily exe vs candidato off e off vs on:64 ID e248320 logit iniziali finiti
+  identici bitwise sul prompt code. Le chiamate originali VRAM/PCIe coincidono
+  numericamente col replay; CPU/GPU sono confrontati separatamente.
+- Conservando75%/50%/25% dei neuroni con maggiore |h| corrente, risparmio di
+  storage ipotetico15.22%/30.43%/45.65%, ma errore L2 medio sul contributo
+  routed rispettivamente2.06–2.20%/7.69–8.38%/19.51–21.44%.
+  Shared expert e residual esclusi: non è un tasso di risposte sbagliate.
+- Riutilizzare la maschera precedente al75% produce21.76–22.78% di errore medio
+  (p9954.94–61.11%), malgrado fallback pieno nel27–28% delle invocazioni.
+  Usa h precedente COMPLETA: questo feedback ha un costo non simulato da una
+  vera esecuzione ridotta. Le scale Q8_1 della maschera precedente possono cambiare.
+- Union oracle top480 su8/16 posizioni accettate conserva circa89%/90% dei byte
+  degli esperti distinti. Il report distingue finestre di posizioni da finestre
+  di8/16 chiamate allo stesso esperto; non mescola le tre soglie.
+- Top-|h| massimizza energia h, non minimizza necessariamente errore dopo Wdown.
+  Non abbiamo ancora testato le100 alternative previste dall'utente né un
+  predictor sulle bozze. Nessun risultato di velocità o qualità end-to-end.
+
+Evidenza pubblica: [measurements.json](corse_2080ti/20261004_neuron_cache/measurements.json),
+[fixtures.json](corse_2080ti/20261004_neuron_cache/fixtures.json),
+[analyze_trace.py](corse_2080ti/20261004_neuron_cache/analyze_trace.py).
+Lab locale `.codex_runs/20261004_neuron_cache/`: build-v2,5 run controllati,
+3 tracce/replay e analysis-v2, parity.json,6 casi I/O passati; build-v1 fallita per
+include Windows mancante e corretta in v2. Le vecchie analysis.json aggregavano
+erroneamente le soglie delle sole union: conservate come storiche, usare v2.
+Nel fork `docs/sm75/neuron-trace-20261004.json` pinna sorgenti e test del nuovo
+overlay; tutti i manifest release precedenti sono conservati per hash.
+
+**Decisione:** nessun taglio promosso al Daily. Per proseguire servono selezione
+più informata, previsione condizionata dalle bozze e fallback esatto; non basta
+la maschera dell'ultima chiamata. Daily/config/launcher e ZIP pubblico invariati,
+motori chiusi e porta8100 libera. Nessuna comunicazione con altre chat o nuovo
+workflow. La PR prefix-cache preparata rimane in attesa dell'autorizzazione
+esplicita al branch già richiesta; non è stata aperta da questo lavoro.
+
 ## 4 ottobre: ZIP Daily pubblico aggiornato e prima indagine sui neuroni
 
 **Pubblicata e verificata** la release

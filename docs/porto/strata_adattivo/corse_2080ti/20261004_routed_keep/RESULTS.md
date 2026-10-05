@@ -257,3 +257,21 @@ VRAM per strato crescono quasi in proporzione): la finestra costa quanto si guad
 Profilo GPU a 131k (`GP-ship139`, `STRATA_VERIFY_PROFILE=1`): finestra 47,7 ms = attesa GPU 25,2 + CPU 10,5 + resto;
 dentro la GPU ~11 ms sono attese (waitB ~6 dati PCIe, waitA ~3 piano dell'host, waitCPU ~2), il calcolo e' sparso
 (VRAM hits 6,4, hc-read+router 4,0, scores+topk QSA 2,0, gemv qkv 2,2, shared 1,9, out-proj 1,9, head 1,5, attenzione 1,3).
+
+## Candidati GPU: PR 904 di upstream e kernel di attenzione di Encapsulate — 2026-10-05
+
+Identita' verificata con teacher forcing a posizionamento fisso (`TFX-*`: cache fissa 5000, `--adapt-every 0`,
+`--pcie-frac 0.36`): due corse del Daily 0.1.39 sono identiche bit per bit, e lo sono anche la PR 904 (fork `0f3ffb3`)
+e la PR 904 + Encapsulate 6784a365 (`f0071e7`) su code ed explain (KL 0, argmax 100%). Test `verify_batch_parity` e
+`pdl_parity` della PR superati sul 2080 Ti.
+
+Velocita' a 131k (`LG-*`, prima B poi A):
+
+| | L01 t/s | L02 t/s | ms/finestra L01 · L02 | bozza ms/finestra |
+|---|---:|---:|---:|---:|
+| PR 904 + Encapsulate | 46,9 | 44,1 | 41,6 · 36,7 | 2,96 |
+| PR 904 | 47,0 | 43,3 | 43,0 · 37,9 | 3,60 |
+| Daily 0.1.39 | 45,9 | 41,9 | 42,9 · 38,7 | 3,68 |
+
+Guadagno piccolo (+2–5%), stesso ordine del rumore fra corse, ma senza alcun cambio dell'output: entrambe su `main`,
+da includere nel prossimo Daily. Il kernel di Encapsulate accelera anche la testa MTP (bozza -20%).

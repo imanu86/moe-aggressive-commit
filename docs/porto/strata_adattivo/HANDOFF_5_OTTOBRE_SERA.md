@@ -137,6 +137,10 @@ Prima: `Get-PSDrive C,D` (C: almeno 15–20% libero e nessuna copia/scrittura in
 
 ### 6.2 Benchmark finale a turni — solo quando l'utente va a dormire
 
+**Fatto la notte del 5/10** (RESULTS.md «Benchmark finale a turni r2 contro Daily»): nessun blocco del DMA; r2 -10% di
+costo per finestra, +3,4% di t/s sui turni a testo normale; il Daily e' caduto in cicli di ripetizione in 4 turni su 8
+(t/s gonfiate). Verdetto B >= A: release 0.1.39-r2 da preparare, installazione solo col consenso dell'utente.
+
 `run_turns.py` (cartella `20261004_routed_keep`): turno 1 ~12k token di codice, poi un turno per richiesta lunga
 (`--gen 14000`) fino a `--max-context 130000`, 10 turni. Ore di macchina: lanciare in background, B poi A:
 

@@ -537,6 +537,45 @@ ripristino `D:\ds4_work\strata\ripristini\20261005_184619_ple_rowcache`), contro
 beneficio nella sessione calda si leggera' nelle righe `ple io` dei turni (benchmark notturno: entrambi i bracci
 leggono il config del Daily, quindi entrambi con 16M).
 
+## Benchmark finale a turni r2 contro Daily — notte 5/10
+
+`run_turns.py` (turno 1 ~12k token di codice, poi richieste lunghe da 14.000 token, fino a 130k: 8 turni),
+`20261005_pr949/turni_notte.sh`, processo staccato. B = `TURNI-r2` (`build-pr949`: r2 + #930 + #949, nucleo
+adattivo, DMA, `--pool-tasks 96`) 21:48–22:24; A = `TURNI-daily` (exe del Daily r1) 22:24–23:00. Entrambi col
+config del Daily (tabella PLE su D:, cache di righe 16M). Nessun blocco del DMA, pool del kernel fermi (4,9 / 2,8 GB).
+
+| turno | t/s r2 | t/s Daily | prefill r2 · Daily (s) | bozze accettate r2 · Daily | compressione testo r2 · Daily |
+|---|---:|---:|---|---|---|
+| 1 | 52,0 | 50,3 | 13,6 · 15,4 | 70% · 74% | 0,31 · 0,27 |
+| 2 | 62,6 | 70,5 | 12,4 · 12,4 | 85% · 99% | 0,19 · **0,03** |
+| 3 | 51,9 | 64,3 | 12,9 · 12,5 | 70% · 95% | 0,30 · **0,06** |
+| 4 | 56,2 | 63,2 | 13,5 · 13,0 | 75% · 87% | 0,30 · **0,06** |
+| 5 | 51,6 | 70,2 | 14,1 · 13,5 | 70% · 99% | 0,32 · **0,03** |
+| 6 | 52,3 | 50,8 | 14,8 · 14,1 | 69% · 74% | 0,30 · 0,27 |
+| 7 | 62,9 | 49,8 | 15,3 · 14,6 | 81% · 73% | 0,16 · 0,28 |
+| 8 | 51,4 | 49,7 | 15,9 · 15,4 | 70% · 74% | 0,29 · 0,28 |
+
+I testi divergono dopo ~350 caratteri del turno 1 (piazzamento diverso, arrotondamento diverso). Nei turni 2–5 il
+Daily e' entrato in cicli di ripetizione («Need maybe include <cstdint>.» all'infinito; zlib 0,03–0,06, righe
+uniche 3% al turno 5): bozze al 95–99% e t/s gonfiate. Aggregato grezzo: Daily 57,3, r2 54,8 t/s, non confrontabile.
+Sui turni a testo normale per entrambi (1, 6, 8): r2 +3,4% (51,9 contro 50,3 di media).
+
+Costo del motore per finestra (pesato sulle finestre di tutti i turni, indipendente dal testo):
+
+| | ms/finestra | attesa GPU | CPU | bozza | ms CPU per voce |
+|---|---:|---:|---:|---:|---:|
+| r2 | 45,44 | 24,02 | 11,74 | 3,26 | 3,07 |
+| Daily | 50,50 | 28,19 | 12,91 | 4,30 | 3,51 |
+
+r2 -10% per finestra: attesa GPU -15% (merge v2, Encapsulate, DMA), CPU per voce -12,5% (Q2_0 esatto, #930,
+#949), bozza -24%. Prefill uguale (112,5 contro 110,9 s su 8 turni). PLE con la cache da 16M: r2 1.004.607 letture
+SSD su 4,31M righe (74,8% dalla cache), Daily 670.924 su 4,08M (81,6%; i testi ripetitivi riusano le righe); lettura
+p50 0,46 ms, nessuna sopra 100 ms.
+
+Verdetto: B >= A (piu' veloce a parita' di testo, nessun blocco): la r2 e' pronta per la release, da installare
+solo col consenso dell'utente. Da notare: a temperatura 0 entrambi possono cadere in ripetizione su richieste
+lunghissime; il Daily qui 4 turni su 8, la r2 nessuno pieno.
+
 ## PR 949, 965, 960, 969 — 2026-10-05 notte
 
 **#949** (Unmaple, `--pool-tasks N`): portata nel fork `f4a2590` (pool.cpp a mano: il fork ha la fase di

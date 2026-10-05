@@ -26,3 +26,39 @@ Le leve sono:
 
 Verificato anche che IQ3_XXS/IQ2_XXS/IQ2_XS hanno al massimo 8/3/6 ampiezze per blocco
 da 32: una ricodifica esatta a 4 bit e' possibile, ma per quanto sopra non serve.
+
+## Percorso CPU per formato (2026-10-05)
+
+Banco `cpu_format_bench` (Strata-2080Ti `main`, `src/kernels/cpu/cpu_format_bench.cpp`): gli stessi kernel
+del pool (`native_gu_rows`, `native_down_rows`, `q2_rows_any` per il down Q2_0), 48 esperti distinti per
+passata (piu' della L3), Ryzen 5800X con la macchina in uso. Esperti reali degli strati 0/1/35 e gate/up
+dello strato 35 riquantizzati dalla ggml in IQ3_S, IQ4_XS, Q4_K, Q8_0: valgono per la velocita', non per
+la qualita' (niente imatrix). Uscite complete: `cpu_format_bench.txt`, `cpu_format_bench_smt.txt`.
+
+Tetto di lettura RAM: 24 GB/s con 1 thread, 33–34 GB/s con 8, 32 GB/s con 16.
+
+| gate+up, 8 thread | bpw | us/esperto 1 token | GB/s | us/esperto 4 token |
+|---|---:|---:|---:|---:|
+| IQ2_XXS | 2,06 | 51–54 | 16–17 | 65–83 |
+| IQ2_XS | 2,31 | 52–62 | 15–18 | 89–103 |
+| IQ3_XXS | 3,06 | 56–58 | 21–22 | 81–90 |
+| IQ3_S (riq.) | 3,44 | 83 | 17 | 127 |
+| IQ4_XS (riq.) | 4,25 | 52 | 33 | 69–74 |
+| Q4_K (riq.) | 4,5 | 51–56 | 33–36 | 77–82 |
+| Q8_0 (riq.) | 8,5 | 102–109 | 32–34 | 114–128 |
+
+Down, 8 thread, 1 token: Q2_0 19–22 us, IQ4_NL 26–34 us (un giro rumoroso a 46).
+
+- IQ2 e IQ3 sono **limitati dal calcolo** (decodifica a codebook): leggono 15–22 GB/s su 34. Su un core
+  IQ2_XS costa 235 us contro 111 di Q4_K.
+- IQ4_XS e Q4_K sono **limitati dalla banda**: stanno al tetto di 33–34 GB/s e costano lo stesso tempo di
+  IQ3_XXS a 1 token, meno a 4 token (69 contro 81–90).
+- Scendere a IQ2 per gli esperti calcolati su CPU **non accelera**: stesso tempo per esperto.
+- IQ3_S e' il **piu' lento** su CPU (+45% a 1 token): la sua griglia a 512 voci costa piu' istruzioni.
+- Q8_0 raddoppia i byte e il tempo.
+- SMT (16 thread) non aiuta (solo IQ2_XXS gate/up +17%, al limite del rumore): un worker per core fisico,
+  come fa il pool, e' corretto.
+
+Conclusione: il formato in RAM non e' una leva di velocita' per il percorso CPU. IQ4_XS sarebbe una leva di
+qualita' a costo di tempo nullo (+39% di byte gate/up rispetto a IQ3_XXS), ma cambia l'output e richiede
+pesi veri con imatrix compatibili con GSQ-RCO.

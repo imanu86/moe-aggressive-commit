@@ -1,0 +1,23 @@
+We need answer in Italian. User asks: explain difference between evicted policy decayed frequency (LFU with epoch decay) and pure LRU for GPU expert cache. Indicate workload where first clearly wins and one where loses, explaining mechanism not just result. Conclude with cheapest way to measure which is better on a given workload.
+
+Need produce thorough answer. Need think. Context likely llama.cpp MoE expert cache? They mention GPU cache slots per host-resident MoE expert layer, max expert uploads per decode step. Need explain LFU with decay vs LRU. Need maybe discuss expert cache: experts loaded to GPU slots, eviction when new expert needed. LRU evicts least recently used. LFU with epoch decay counts frequency over epochs, decays old counts, evicts lowest decayed frequency. Need compare.
+
+Need workload where LFU wins: stable hot experts, bursty access, long-lived hot experts with occasional cold misses. Example: MoE routing with skewed distribution, some experts consistently selected across many tokens/epochs; LRU may evict hot expert due to temporary burst of cold experts or recency noise; LFU retains hot experts because high frequency. Mechanism: frequency accumulates, decay prevents stale experts from occupying slots forever; epoch decay adapts to drift.
+
+Workload where LFU loses: phase-shifting / locality / recency dominated, e.g. sequential blocks, context switch, user changes topic, experts hot in current phase but low cumulative frequency; or short bursts of recently used experts needed for next tokens. LRU wins because recently used likely reused soon; LFU may keep old hot experts from previous phase despite decay not fast enough, evicting current phase experts. Mechanism: LFU counts past popularity, not temporal locality; decay may be too slow; new hot experts need many hits to surpass old ones. Also if access pattern is Markov/sequential with strong temporal locality, LRU optimal-ish.
+
+Need maybe mention GPU expert cache specifics: experts are large weights, upload cost PCIe, decode step limited uploads. Cache slots per layer. Eviction policy affects which host-resident experts are uploaded. Frequency can be per expert per layer, epoch maybe decode step or batch/turn. Decay factor alpha: count = alpha*count + hit. LRU: timestamp.
+
+Need conclude cheapest way to measure: run small trace-driven simulation or instrument server with metrics: expert hit rate, upload bytes/latency, tokens/sec, cache misses, eviction churn. Use existing logs? Maybe use --moe-expert-cache and --moe-expert-cache-inserts? Need propose minimal: collect per-expert access sequence from routing decisions (or use synthetic trace) and simulate both policies offline with same capacity; no need full model. If must online: A/B run with same seed, measure decode throughput and PCIe upload counters; use hit rate as proxy. Cheapest: log expert IDs selected per layer per token, replay trace in simulator, compute miss rate/upload cost. If no trace, use server metrics: cache hit/miss, bytes uploaded, tokens/s. Need mention measure not just hit rate but weighted by expert size/upload cost and decode step constraints. Maybe use EWMA hit rate? But question asks cheapest way to measure which of two is convenient on a given load. Answer: capture a short trace of expert selections and run a tiny cache simulator; compare misses/bytes uploaded. If cannot trace, run two configurations with identical prompt/seed and measure tokens/s and PCIe upload counters; use hit rate as first-order.
+
+Need ensure no hidden chain-of-thought. Final in Italian. Need maybe include formulas. Need be careful: "politica di sfratto a frequenza decaduta (LFU con decadimento per epoche)" vs "LRU pura". Need explain mechanism.
+
+Let's craft structured answer:
+- Setup: GPU cache of experts: slots, host experts, on miss upload expert to GPU, evict one.
+- LRU: key = last access time; evict oldest. Good for temporal locality.
+- LFU decayed: key = score = sum hits with exponential decay per epoch; evict lowest score. Good for persistent popularity.
+- Difference: LRU reacts instantly to recent changes; LFU has inertia, filters noise but can be slow to adapt.
+
+Workload LFU wins:
+- Stable skewed MoE routing: e.g. code/math prompt where a small set of experts is hot for long time; occasional cold experts appear due to rare tokens or batch noise. LRU: cold burst pushes hot experts out; next hot token misses and uploads expensive expert. LFU: hot experts have high scores, cold burst low scores, hot retained. Mechanism: frequency integrates over epochs; decay only reduces old scores, not one-hit wonders.
+- Maybe example: 8 slots, hot experts A,B,C used 90% tokens; cold D,E,F,G,H appear in short burst. LRU evicts A/B/C;

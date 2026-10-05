@@ -1,0 +1,23 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only few experts and small FFN; bandwidth cost large because expert weights loaded per token. Need C++ analogy maybe cache miss / streaming. Need numerical examples invented. Need maybe include formulas: bytes per token = sum over activated experts of weight bytes (maybe per layer) + activations. For MoE with L layers, top-k experts, expert FFN size. Example: 48 layers, top-2 experts, each expert FFN has 3 matrices? In transformer FFN: up, gate, down. Hidden 4096, intermediate 14336? For MoE expert maybe smaller. Let's invent: model 70B MoE, 64 experts per layer, top-8? But few experts resident in VRAM. Need show if only 2 experts resident, others streamed. For each token, for each layer, top-k experts. If expert weights 128 MB? Let's compute.
+
+Need be careful: MoE expert weights per layer: if hidden d=4096, intermediate m=14336, three matrices (gate, up, down) each 4096*14336*2 bytes = 117 MB, total 352 MB per expert. That's large. But many MoE experts smaller: d=2048, m=7680, 3*2048*7680*2=94 MB. Or quantized Q4: 0.5 bytes/param: 2048*7680*3*0.5=23.6 MB. Need invented numbers.
+
+Maybe use simple: 32 MoE layers, top-4 experts, each expert FFN 16 MB (quantized). If 1 expert resident, 3 streamed per layer: 32*3*16 MB = 1536 MB per token. PCIe Gen4 x16 ~32 GB/s theoretical, effective 20-25 GB/s. Time = 1.5 GB / 20 GB/s = 75 ms/token -> 13 tok/s. Compute: FLOPs per token: 2*params_active? Active params: resident + streamed? If 32 layers * 4 experts * 16 MB weights? FLOPs maybe 2*active params? 32*4*16M params? Wait 16 MB at Q4? Need FLOPs. If expert weight bytes 16 MB Q4, params ~32M? Actually 16 MB /0.5 =32M params. FLOPs per token per expert ~2*params? 64 MFLOPs. 32*4*64=8.2 GFLOPs. GPU 100 TFLOPs -> 0.08 ms. So bandwidth dominates.
+
+But if experts resident in VRAM, no PCIe streaming; compute bound maybe. If few resident, cache misses. Need explain decode autoregressive: batch size 1, each token needs weights for selected experts. Unlike prompt processing where batch many tokens amortizes weight loads. For decode, each token may select different experts; if expert not resident, must fetch weights from host. PCIe bandwidth limited; GPU compute idle waiting.
+
+Need maybe mention MoE router: top-k gating. If only few experts resident, LRU cache? If expert cache slots per host-resident MoE expert layer? In arg.cpp there are --moe-expert-cache, --moe-expert-cache-inserts. Could mention but not necessary. User asks general.
+
+Need Italian. Need C++ colleague: analogy: each token is like a function call that dispatches to one of many plugins; if plugin code not in cache, load from disk; CPU fast but disk slow. Or vectorized compute vs memory bandwidth.
+
+Need numerical examples: maybe two scenarios: dense vs MoE? Show bytes per token.
+
+Let's design clear example:
+
+Modello MoE inventato:
+- 32 layer MoE
+- top-k = 4 experts per layer
+- each expert FFN quantizzato Q4: 16 MB weights (gate/up/down combined)
+- VRAM can hold only 1 expert per layer (or 

@@ -126,3 +126,26 @@ A 131k la CPU pesa meno (11 ms su 47 per finestra) e il guadagno dello scarto sc
 Il vocabolario e' neutro qui: i casi L01/L02 ragionano e scrivono in inglese. Un primo K-A1 e'
 stato bloccato dal controllo di stato (motore precedente ancora in chiusura) e ripetuto come K-A1b.
 Fedelta' a 131k non misurata (il teacher forcing e' stato fatto a contesto corto).
+
+## Tier adattivo e nucleo elastico adattivo (5 ottobre)
+
+**Scambi adattivi** (default `--adapt-every 4 --adapt-swaps 96`) contro `--adapt-swaps 0`, exe del Daily,
+vocabolario rt_it48k (`AD-*`, `KD-*`; esclusi AD-off1-explain e KD-on2 per contesa GPU, stage 47/25 ms):
+
+| | Hit rate on -> off | t/s on -> off |
+|---|---|---|
+| codice 2470 | 61-68% (vedi CA) -> n/d | 39,0 -> 33,4 (+17% con gli scambi) |
+| prosa | 80% -> 55% | 37,8 -> 30,1 (+26%) |
+| 131k L01 / L02 | 85% -> 65% | 39,5 / 35,0 -> 32,2 / 29,2 (+23% / +20%) |
+
+Il profilo statico da solo copre il 55-67% delle chiamate; gli scambi portano all'80-87%. E' la
+causa del decode che "migliora con la profondita'": la cache si adatta mentre si genera.
+
+**Nucleo adattivo** (`STRATA_ELASTIC_CORE_ADAPT=1`, fork main 8b9c342, port/0139 fd7f51f; build-core1):
+- 131k (`KC-*`): L01 38,7 -> 41,5 t/s (+7%), L02 invariato, hit +0,5 punti;
+- contesto corto (`CA-*`): prosa +4%, codice nel rumore (hit 61-68% in entrambi i bracci);
+- sessioni lunghe (`SS-*`, 9 richieste alternate nello stesso processo): hit +1-3 punti al terzo
+  giro; alternando compiti l'hit rate non cresce. SS-ada2 fallita all'avvio (timeout 300 s), da ripetere.
+
+Esatto per costruzione (cambia solo dove si calcolano gli esperti). Guadagno piccolo: decisione
+sull'attivazione di default dopo la ripetizione di SS-ada2.

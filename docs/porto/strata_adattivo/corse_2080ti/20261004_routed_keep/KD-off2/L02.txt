@@ -1,0 +1,26 @@
+We need answer in Italian. User asks: explain difference between decayed-frequency eviction policy (LFU with epoch decay) and pure LRU for GPU expert cache. Indicate workload where first clearly wins and one where it loses, explaining mechanism not just result. Conclude with cheapest way to measure which is better on a given workload.
+
+Need produce final answer. Need think thoroughly. Context likely llama.cpp MoE expert cache? They mention GPU cache slots per host-resident MoE expert layer, max expert uploads per decode step. Need explain LFU with decay vs LRU. Need maybe relate to expert cache: experts loaded to GPU slots, eviction when new expert needed. LRU evicts least recently used. LFU with epoch decay counts frequency, decays old counts to avoid stale popularity. Need compare.
+
+Need workload where LFU wins: stable hot experts, bursty access, long-lived popularity, repeated experts across many tokens, maybe MoE routing with skewed distribution, experts hot over time but not necessarily recent. LRU may thrash if a cold expert is touched once and then evicts hot expert? Actually LRU evicts least recent; if hot expert not used in a long interval due to phase, LRU may evict it. LFU with decay retains high cumulative frequency. Example: expert A used 1000 times in first epoch, then not used for 1000 steps while B used once recently; LRU evicts A, LFU keeps A if decay not too aggressive. Or MoE with periodic hot experts: expert E used in many queries but idle between queries; LRU evicts due to recency, LFU keeps.
+
+Workload where LFU loses: shifting popularity / recency matters, e.g. expert hot only in current context then cold, or adversarial one-time burst, or phase changes. LRU adapts quickly. Example: expert X used 1000 times in old epoch, then new expert Y used 100 times recently; with slow decay LFU keeps X and evicts Y, causing misses. Or MoE routing changes with prompt: first prompt uses experts A, second prompt uses B; LRU evicts A quickly, LFU with decay may keep A too long. Also if cache slots limited and many experts with similar frequency but recency matters for locality.
+
+Need mechanism: LFU with epoch decay: maintain count per expert, at epoch boundary multiply counts by alpha or subtract, evict lowest decayed count. It approximates popularity with aging. LRU: recency only, evict oldest last access. For GPU expert cache: loading experts expensive (PCIe upload), cache slots per layer. Need consider MoE decode: each token routes to top-k experts; if expert not resident, upload. Cache policy affects upload count and latency.
+
+Need conclude cheapest way to measure: simulate cache policy offline on routing trace. Collect expert access sequence (layer, expert id) from a representative workload, maybe using llama.cpp logging or instrumentation. Then run tiny cache simulator for LRU and LFU-decay with same capacity and upload cost, count misses/uploads or bytes uploaded. Cheapest: use a trace-driven simulator, no model inference, just sequence of expert IDs; sweep decay epoch/alpha. Or use counters: for each candidate policy, count cache misses and uploads; compare. If need online: shadow cache? But cheapest is offline trace replay. Could mention use a Bloom? No.
+
+Need maybe include formulas. Need answer in Italian. Need be detailed.
+
+Potential nuance: LFU with decay vs LRU: LFU can suffer cache pollution from old popular experts; decay mitigates but not eliminate. LRU can suffer cache thrashing from scan/one-shot accesses. For MoE experts, access patterns may be skewed and stable across tokens? In MoE, top-k routing often has hot experts for domain; but can vary by token/context. GPU expert cache: if experts host-resident, upload on demand. Need maybe mention "frequenza decaduta per epoche" means counts decayed every epoch to avoid unbounded age.
+
+Need maybe include examples with numbers.
+
+Let's craft final:
+
+- Define cache: slots per layer, expert resident on GPU. On access: hit if resident; miss load expert and evict one if full.
+- LRU: key = last access time; evict min last access. Good when locality/recency strong.
+- LFU with epoch decay: key = score = sum over epochs count * alpha^(age) or counts *= alpha at epoch; evict min score. Good when popularity stable and old frequency still predictive.
+
+Workload LFU wins:
+"hot expert with intermittent use". Example: expert E used 500 times in first 1000 tokens, then idle 2000 tokens while many cold experts used once. LRU: E becomes oldest and evicted; when E returns, miss. LF

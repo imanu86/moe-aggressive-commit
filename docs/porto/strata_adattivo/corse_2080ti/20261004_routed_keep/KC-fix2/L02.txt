@@ -1,0 +1,29 @@
+We need answer in Italian. User asks: explain difference between LFU with decay per epochs and pure LRU for GPU expert cache. Indicate workload where first clearly wins and one where loses, explaining mechanism not just result. Conclude with cheapest way to measure which is better on a given workload.
+
+Need produce final answer. Need think deeply. Context likely llama.cpp MoE expert cache? They mention GPU cache slots per host-resident MoE expert layer, max expert uploads per decode step. Need explain eviction policies. LFU with decay per epochs vs LRU. Need workload examples. Need mechanism. Need cheapest measurement.
+
+We need craft detailed answer. Let's analyze concepts.
+
+GPU expert cache: MoE models have many experts, only subset activated per token. Host-resident experts can be uploaded to GPU cache slots. Eviction policy decides which experts remain in GPU cache. LRU evicts least recently used. LFU with decay per epochs: frequency counters decay over epochs/time, evict lowest decayed frequency. It favors experts with high historical usage but forgets old spikes. LRU favors recency.
+
+Difference: LRU is locality of reference, good for temporal locality, bursty sequential patterns, recently used experts likely reused soon. LFU with decay is approximate frequency with aging, good for stable hot experts, avoids cache pollution by one-off bursts, but can be slow to adapt to phase changes. Decay per epoch: each epoch multiply/add? Need define. Frequency counters decay so old hits count less. Evict min score. Epoch could be token batch/decode step/layer pass? Need generic.
+
+Workload where LFU wins: steady-state MoE routing with stable hot experts across many tokens, e.g. domain-specific queries repeatedly activating same experts, or long generation with consistent expert distribution; experts have high frequency but may have gaps between uses. LRU may evict hot expert if a burst of cold experts recently used, causing thrashing. LFU decay retains hot experts because accumulated frequency high despite recent cold burst. Mechanism: hot experts have high decayed frequency; cold burst has low frequency; eviction chooses cold. If hot expert not used for a while, decay reduces but still above cold if stable.
+
+Workload where LFU loses: phase-shifting workload, e.g. conversation topic changes, model switches expert distribution, or streaming with recently active experts needed soon but old hot experts no longer relevant. LRU wins because it quickly discards stale hot experts and keeps current phase. LFU with decay may keep old hot experts too long due to accumulated frequency, causing misses for new phase. If decay too slow, cache polluted by obsolete experts. Mechanism: old experts have high frequency score; new experts have low score; eviction evicts new experts, causing thrash.
+
+Need maybe mention pure LRU loses when cache capacity small and hot experts have long reuse distance due to interleaved cold experts. LFU wins. LFU loses when reuse distance short but phase changes.
+
+Cheapest measurement: run both policies on same trace with same capacity, count cache hits/misses or expert uploads/bytes, maybe using counters. Cheapest: instrument cache with two shadow caches? Or offline replay of expert activation trace. Need propose minimal: log expert IDs per layer per token/step; replay with LRU and LFU-decay using small data structures; measure hit rate, number of uploads, latency. If online, use two counters? But GPU cache can't run both simultaneously. Cheapest: collect activation trace once, then simulate both policies offline; no model re-run. Or use a single run with policy switch? Need answer: most economical is trace-driven simulation: record expert activations (layer, expert id) for a representative batch, then replay with both policies using same capacity and epoch definition; compare hits/misses/uploads. If cannot record full trace, use counters: maintain both LRU and LFU metadata? But memory overhead. Cheapest maybe use hit-rate counters with a small Bloom? Hmm.
+
+Need likely mention MoE expert cache: experts per layer, capacity slots. For each layer, cache slots. Eviction per layer. Need explain epoch: maybe decode step or batch. Decay per epoch: score = score * alpha + hits. LRU: recency list.
+
+Need answer in Italian. Need be precise.
+
+Let's structure:
+- Premessa: cache di esperti su GPU: slot limitati, host->GPU upload cost. Eviction policy chooses which experts keep.
+- LRU pura: ordered by last access; evict least recent. Assumes temporal locality.
+- LFU con decadimento per epoche: each expert has frequency score; at epoch boundary decay (multiply by lambda or subtract); on hit increment; evict min score. Approximates long-term popularity with aging.
+- Key difference: LRU optimizes next-use distance; LFU optimizes expected future hit probability based on historical frequency, but with decay to avoid permanent stale.
+
+Work

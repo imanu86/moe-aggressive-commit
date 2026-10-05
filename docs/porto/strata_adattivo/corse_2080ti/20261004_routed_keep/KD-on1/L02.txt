@@ -1,0 +1,25 @@
+We need answer in Italian. User asks: explain difference between LFU with epoch decay and pure LRU for GPU expert cache. Indicate workload where first clearly wins and one where loses, explaining mechanism not just result. Conclude with cheapest way to measure which is better on a given workload.
+
+Need produce final. Need think deeply. Context likely llama.cpp MoE expert cache? They mention GPU cache slots per host-resident MoE expert layer, max expert uploads per decode step. Need explain eviction policies. LFU with decay per epochs vs LRU. Need workload examples. Need mechanism. Need cheapest measurement method.
+
+We need craft answer. Let's analyze concepts.
+
+GPU expert cache: MoE models have many experts, only subset activated per token. Host-resident experts can be uploaded to GPU cache slots. Eviction policy decides which cached experts to keep. LRU: evict least recently used. LFU with epoch decay: frequency counters decay over epochs/time, evict lowest decayed frequency. It balances popularity and recency.
+
+Difference: LRU locality of reference: recently used experts likely reused soon. LFU: frequently used experts likely reused often; decay prevents stale hot experts from occupying cache forever, adapts to phase changes. Epoch decay: counters multiplied or reset per epoch; old hits lose weight. It approximates sliding-window frequency.
+
+Workload where LFU wins: stable hot experts with repeated activations across many tokens, but interleaved with cold experts causing recency noise. Example: MoE routing has persistent hot experts for a domain/topic, and many one-off experts due to random tokens or long context. LRU may evict hot expert after a burst of cold experts because hot not used in last N steps; LFU keeps it due high frequency. Or phase: expert A used 100 times in epoch 1, then epoch 2 expert B used 100 times; pure LRU after epoch 2 keeps B, evicts A; if A returns in epoch 3, thrashing. LFU with decay can keep A if decay not too aggressive? Wait if epoch decay, A decays, B high. If A returns after long gap, maybe loses. Need workload where LFU wins clearly: stable hot experts with intermittent cold misses. Example: long document with recurring domain-specific experts; many unique tokens activate cold experts. LRU's recency window too short; hot expert evicted by cold burst. LFU frequency protects hot experts. Mechanism: LFU counts activations; cold experts have low counts; hot experts high counts; decay only reduces old counts but hot remains above cold. LRU only sees last use; cold burst changes recency order.
+
+Workload where LFU loses: phase-shifting or locality where recently used experts are the ones needed, and old frequent experts become obsolete. Example: sequential topic switch: first half uses experts A heavily, second half uses experts B heavily. Pure LRU adapts quickly: after switch, A ages out, B fills cache. LFU with decay may keep A too long if decay too slow or counters high, causing misses for B; if decay too fast, degenerates to LRU? Need clear loss: streaming/phase workload with strong temporal locality and no long-term popularity. Or adversarial: expert X used many times early, then never used; expert Y used recently and repeatedly. LRU evicts X, LFU may keep X due high frequency unless decay enough. Mechanism: LFU's frequency bias creates cache pollution by stale hot experts; LRU's recency matches current working set.
+
+Need maybe mention LFU with epoch decay can be tuned: decay rate. If decay aggressive, approximates LRU; if weak, approximates LFU. Need explain.
+
+Cheapest way to measure: run a trace-driven simulation on activation logs? For a given workload, collect expert activation sequence (which expert IDs per layer per token) and simulate cache with fixed capacity and policies, count hits/misses/uploads. Cheapest: instrument MoE router to log expert IDs, then replay offline with small simulator; no need full GPU runs. Or use counters/hits/misses from server? Need answer: most economical: log expert activations and compute hit rates for both policies offline. If cannot log, use two runs with same seed and measure tokens/sec or expert upload count? But cheapest is trace simulation. Need mention if already have cache stats: enable debug counters, run same prompt twice? Hmm.
+
+Need likely include formula: LRU key = last_use_time; LFU key = frequency with decay: f_i(t+1)=alpha f_i(t)+hit_i(t), evict min f. Epoch: at epoch boundary f_i *= gamma or reset. alpha/gamma controls recency.
+
+Need answer in Italian. Need be thorough.
+
+Let's structure:
+- Premessa: cache di esperti GPU: slots limited; eviction policy chooses victim.
+- LRU pura: recency only.

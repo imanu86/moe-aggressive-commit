@@ -1,0 +1,26 @@
+We need answer in Italian. User asks: Explain in Italian, for colleague who knows C++ but not MoE, why decode of MoE with few experts resident in VRAM can be limited by PCIe bus bandwidth instead of compute. Use invented numerical examples to show byte count per token, close listing three measures that distinguish bandwidth bottleneck from compute bottleneck.
+
+Need produce final only. Need think thoroughly. Need likely explain MoE decode: each token activates top-k experts; if experts not in VRAM, weights streamed from host RAM over PCIe. Compute per token small because only few experts and small FFN; bandwidth cost large because expert weights loaded per token. Need numerical examples.
+
+Need maybe tie to llama.cpp arg.cpp? There are options --moe-expert-cache, --n-cpu-moe, --ot, CUDA mapped buffer? But user asks general. Could mention C++ analogy: cache misses, streaming weights. Need invented numbers.
+
+Let's craft detailed but concise. Need include byte count per token. Example: MoE model 70B total, 64 experts per layer, 48 layers, top-k=8, expert FFN size? Let's invent.
+
+Option 1: Dense equivalent? Let's make simple:
+- Model: 40B total params, 32 layers, 16 experts per layer, top-k=4.
+- Each expert FFN has 3 matrices: up, gate, down. Hidden 4096, intermediate 14336? For llama-like: FFN params per expert = 3 * hidden * intermediate = 3*4096*14336 ≈ 176M params. Q4_K_M ~ 0.5 bytes/param? Actually Q4_K_M ~ 4.5 bits/param ~0.5625 bytes. Use 0.5 bytes for simplicity. Expert bytes ≈ 88 MB. Top-k 4 => 352 MB per layer. 32 layers => 11.3 GB per token if all experts streamed. That's huge. But if few experts resident? Need "pochi esperti residenti in VRAM". Maybe only 1 expert resident per layer? Then 3 experts streamed per layer: 3*88MB*32=8.4 GB/token. At PCIe Gen4 x16 ~ 32 GB/s theoretical, practical 20-25 GB/s => 0.34-0.42 s/token. Compute maybe much less.
+
+But maybe MoE active params per token: total active params = shared + top-k experts. If active params 3B, compute FLOPs ~ 2*active params per token? For 3B active, ~6 GFLOP/token. GPU 100 TFLOPS => 0.06 ms? Actually 6e9/1e14=60 microsec. Bandwidth 8GB/token at 20GB/s=400ms. So bandwidth dominates.
+
+Need explain few experts resident: if cache holds only some experts, each token may need different experts; cache miss causes host->device transfer. If expert weights are quantized, bytes per param. Need maybe include KV cache? Decode also reads KV cache, but MoE weights dominate if experts offloaded.
+
+Need maybe mention batch size: decode batch 1; with batch B, same expert weights can be reused across tokens in batch, amortizing bandwidth. But user likely single token. Could mention.
+
+Need three measures distinguishing bandwidth vs compute:
+1. GPU utilization / SM occupancy vs PCIe utilization / memory bandwidth counters (nvidia-smi, nvtop, ncu). If PCIe RX bytes high and GPU compute low => bandwidth.
+2. Scaling with batch size / tokens per batch: bandwidth-bound improves nearly linearly with batch until cache reuse; compute-bound less? Actually if batch B uses same experts, bandwidth per token decreases, throughput increases; compute-bound scales with batch. Need careful. Measure throughput vs batch size: if tokens/s increases strongly with batch because weight transfer amortized, bandwidth-bound. If compute-bound, batch increases compute utilization and throughput maybe linearly until compute saturated.
+3. Change quantization / expert residency / PCIe path: reducing bytes per expert (quantization) or increasing resident experts/cache improves speed; changing GPU compute clock or FLOPs doesn't. Or measure time vs expert size: if time proportional to bytes moved and not FLOPs. Also measure with --moe-expert-cache, --n-cpu-moe, -ot, --fit? Could mention.
+
+Need maybe include C++ analogy: like accessing large objects from main memory vs L1 cache; decode is random access to expert weights; top-k routing changes per token causing cache thrashing.
+
+Need ensure Italian. Need maybe mention "banda del bus PCIe" not "

@@ -408,3 +408,37 @@ Causa probabile: C: (Lexar EQ790 NVMe senza DRAM, disco di sistema, contiene la 
 verificabile senza permessi di amministratore. Il prefill a 131k richiede in media ~4.500 letture/s (567k in
 ~125 s), quindi anche D: (EMTEC X160 SATA, 369 GB liberi) basterebbe. Liberazione di spazio delegata dall'utente a
 un'altra chat; poi A/B con la tabella su D: (vedi `HANDOFF_5_OTTOBRE_SERA.md`).
+
+## Tabella PLE su D: — 2026-10-05 sera
+
+Copia dello shard 2 in `D:\ds4_work\strata\Strata-data\gguf\` (robocopy, 61 s), sha256 di origine e copia uguali
+(`316B46F3…61E113`). L'originale in `Downloads` resta.
+
+Avvio: `--ple-gguf` da solo fallisce con `native dense: duplicate split shard number` (`LPD-d*-failed-dupshard`). Il
+motore elenca ogni shard accanto a `--native` (anche lo shard 2 in `Downloads`) e poi accoda `--ple-gguf`. Con
+`--native-dense-gguf` esplicito (shard 1 da `Downloads` + copia su D: dello shard 2) quell'elenco non si costruisce e
+lo shard 2 letto e' solo quello su D: (`PLE on, table 320001536 rows of D:\…`). Anche il sorgente del Daily r1
+(`46aa04b`) ha `--native-dense-gguf`. `run_long.py --add-opt` accoda opzioni ripetibili; script
+`20261005_handoff/script/ple_d.sh`.
+
+A/B a 131k, configurazione candidata r2 (nucleo adattivo, DMA), `build-r2cand`. C: con 96–103 GB liberi (10,4%)
+dopo la pulizia. GPU gia' occupata da altri programmi (20–40%, 3,7–4,9 GB: browser con video): le t/s di decode non
+si confrontano con le corse precedenti.
+
+| corsa | tabella | prefill L01 | lettura media / max | letture >100 ms | attesa prefill | L01 / L02 t/s |
+|---|---|---:|---:|---:|---:|---|
+| `LPD-c` (A prima di B, C: in scrittura) | C: | 294,4 s | 81,4 / 533 ms | 176.271 | 185,7 s | 41,3 / 44,3 |
+| `LPD-d1b` | D: | 134,7 s | 10,1 / 16,1 ms | 0 | 23,2 s | 41,5 / 33,2 |
+| `LPD-d2b` | D: | 135,6 s | 10,1 / 16,1 ms | 0 | 23,1 s | 42,2 / 39,7 |
+| `LPD-cb` (A) | C: | 491,6 s | 195,4 / 401 ms | 434.704 | 445,2 s | 47,0 / 40,4 |
+| `LR-r2a` (4/10, C: sano) | C: | 129,1 s | 3,3 / 57 ms | 0 | 7,7 s | 50,6 / 43,3 |
+
+Attesa PLE durante il decode (delta `blocked`, 1024 token): D: 4,6–48 ms, C: 4,4–63 ms, trascurabile ovunque: la
+posizione della tabella non tocca il decode. Su D: ogni lettura costa ~10 ms (SATA) ma senza code lunghe: unica attesa
+il primo chunk (~2 s), prefill +4% sul C: sano. Su C: lo stallo questa volta copre 12 chunk su 17 (0–90112) e il p50
+resta 1,4 ms: la maggior parte delle letture va, una parte resta ferma ~200–400 ms. Liberare 55 GB non l'ha tolto;
+probabile manutenzione del controller dopo la cancellazione in massa (TRIM e garbage collection), non verificabile
+senza SMART (servono i permessi di amministratore).
+
+Verdetto: la tabella su D: passa i criteri del §6.1 (prefill stabile, nessuna attesa lunga, decode invariato). Per il
+Daily servono tre righe nel config: `--ple-gguf <D:>` e `--native-dense-gguf` due volte (shard 1, shard 2 su D:).

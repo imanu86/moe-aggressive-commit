@@ -26,6 +26,7 @@ def main():
     ap.add_argument('--mtp-dir', default=None)
     ap.add_argument('--tokens', type=int, default=1024)
     ap.add_argument('--set-opt', action='append', default=[], help='--option=value override of the Daily args')
+    ap.add_argument('--add-opt', action='append', default=[], help='--option=value appended (repeatable options)')
     ap.add_argument('--daily-exe', action='store_true', help="use the Daily config's own exe")
     a = ap.parse_args()
     out = L / a.name
@@ -55,6 +56,8 @@ def main():
         args = PREFIX.replace_option(args, '--mtp', str(Path(a.mtp_dir).resolve()))
     for ov in a.set_opt:
         k, v = ov.split('=', 1); assert k.startswith('--'); args = PREFIX.replace_option(args, k, v)
+    for ov in a.add_opt:
+        k, v = ov.split('=', 1); assert k.startswith('--'); args += [k, v]
     env = PREFIX.environment(cfg, out / 'unused')
     env.pop('STRATA_DUMP_FIRST_LOGITS', None)
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')
@@ -69,7 +72,7 @@ def main():
     assert not now['competing'], now['competing']
     assert now['commit_free_gib'] >= 52, f"Too little commit charge: {now['commit_free_gib']} GiB"
     out.mkdir()
-    plan = dict(build=a.build, daily_exe=a.daily_exe, set_opt=a.set_opt, env_probe=a.env, mtp_dir=a.mtp_dir, args=args, tokens=a.tokens, state=now,
+    plan = dict(build=a.build, daily_exe=a.daily_exe, set_opt=a.set_opt, add_opt=a.add_opt, env_probe=a.env, mtp_dir=a.mtp_dir, args=args, tokens=a.tokens, state=now,
                 state_diff=diff, prompt_tokens={c: len(i) for c, i in requests},
                 executable_sha256=pin['executable_sha256'], daily_sha256=sha(Path(cfg['exe'])),
                 config_sha256=sha(CONFIG), env={k: v for k, v in env.items() if k.startswith(('STRATA_', 'CUDA_'))})

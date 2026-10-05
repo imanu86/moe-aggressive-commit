@@ -19,7 +19,7 @@ Tipi degli esperti (gate/up + down) sui 48 strati:
 
 | Modello | Composizione |
 |---|---|
-| nostro GSQ-RCO IQ3_XXS (70,6 GiB) | gate/up IQ2_XXS/IQ2_XS/IQ3_XXS; down Q2_0 in 30 strati, IQ4_NL in 18 |
+| nostro GSQ-RCO IQ3_XXS (70,6 GiB) | IQ3_S 13, IQ2_XS 10, IQ2_S 10, IQ2_XXS 9, IQ3_XXS 6; down Q2_0 in 30, IQ4_NL in 18 |
 | ISTA GSQ-RCO IQ3_S (77,9 GiB) | IQ3_XXS 17, IQ2_S 20, IQ3_S 10, IQ4_XS 1; down Q2_0 in 9, IQ4_NL in 39 |
 | unsloth UD-IQ4_XS | IQ3_S 47, IQ4_XS 1; down IQ4_NL 43, Q8_0 5 |
 

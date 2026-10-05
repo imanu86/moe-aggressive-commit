@@ -72,6 +72,8 @@ La GPU era condivisa con altri programmi (circa 29% di utilizzo): rumore del 5�
 - IQ3_S non e' piu' veloce ne' su CPU (+15–50%) ne' su GPU (+7–15%), e pesa il 7% in piu' per esperto:
   in VRAM ne entrerebbero meno. Come leva di velocita' e' esclusa.
 - IQ2_S costa su GPU l'8–10% piu' di IQ2_XXS.
-- Come leva di qualita': l'IQ3_S di ISTA e' lo stesso laboratorio e lo stesso procedimento, un gradino
-  sopra per strato (77,9 contro 70,6 GiB). Usarlo solo per gli esperti calcolati su CPU costerebbe tempo
-  CPU in piu' sugli strati IQ3_S; cambia l'output, quindi solo opzione da provare sul campo.
+- Come leva di qualita': l'IQ3_S di ISTA e' lo stesso laboratorio e lo stesso procedimento (77,9 contro
+  70,6 GiB), ma non e' uniformemente "un gradino sopra": i bit in piu' vanno soprattutto al down (IQ4_NL in
+  39 strati contro 18) e ad altri tensori; sul gate/up la miscela e' diversa (IQ3_S in 10 strati contro 13
+  del nostro, IQ2_S in 20 contro 10). Sugli strati 0/1/35 scaricati il gate/up e' piu' alto del nostro.
+  Cambia l'output, quindi solo opzione da provare sul campo.

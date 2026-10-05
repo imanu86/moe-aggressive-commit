@@ -62,3 +62,37 @@ Down, 8 thread, 1 token: Q2_0 19–22 us, IQ4_NL 26–34 us (un giro rumoroso a 
 Conclusione: il formato in RAM non e' una leva di velocita' per il percorso CPU. IQ4_XS sarebbe una leva di
 qualita' a costo di tempo nullo (+39% di byte gate/up rispetto a IQ3_XXS), ma cambia l'output e richiede
 pesi veri con imatrix compatibili con GSQ-RCO.
+
+## Finestra reale del pool: esperti freddi in IQ2 o Q2_0 (2026-10-05)
+
+`cpu_format_bench <gguf> pool 400`: `ExpertPool(7 worker + host)`, `run_split_multi_native`, una finestra di
+verifica tipica dei log del 2080 Ti (10 esperti CPU per strato, 13 voci), esperti ruotati su 48 per leggerli
+dalla RAM. Combinazioni ottenute ricombinando gate/up e down reali degli strati 0/1/35; il gate/up Q2_0 usa
+blocchi Q2_0 reali del down dello strato 1 (stessi byte). Due giri, `cpu_pool_window.txt`.
+
+| gate/up + down | us per strato | rispetto a IQ3_XXS + IQ4_NL |
+|---|---:|---:|
+| IQ3_XXS + IQ4_NL | 807–812 | — |
+| IQ3_XXS + Q2_0 | 675–678 | −17% |
+| IQ2_XS + IQ4_NL | 734–760 | −8% |
+| IQ2_XXS + IQ4_NL | 716–763 | −8% |
+| IQ2_XXS + Q2_0 | 573–600 | −28% |
+| Q2_0 + IQ4_NL | 540–549 | −33% |
+| Q2_0 + Q2_0 | 443–444 | −45% |
+
+Controllo: 48 strati x 810 us = 39 ms per finestra, i log del motore dicono 41,9 ms (A-code: 86,8 ms per
+finestra, di cui CPU 41,9, attesa GPU 25,7). Il percorso CPU e' circa meta' del decode.
+
+- IQ2 sul gate/up da solo vale poco (−8%): la decodifica a codebook costa quasi come IQ3.
+- Il down pesa: IQ4_NL -> Q2_0 vale −17%.
+- Q2_0 (2 bit uniformi, senza codebook) e' il formato veloce su CPU: −45% con gate/up e down.
+
+Stima sul nostro modello (miscela per strato: IQ2_XXS/IQ2_XS/IQ2_S/IQ3_XXS/IQ3_S gate/up, Q2_0 in 30 down),
+tutti gli esperti calcolati su CPU convertiti:
+
+| Esperti freddi in | CPU | decode A-code | sessione | 131k |
+|---|---:|---:|---:|---:|
+| IQ2_XXS + Q2_0 | −16/−19% | +8/+10% | +10/+12% | +5% |
+| Q2_0 + Q2_0 | −37/−38% | +21/+23% | +26/+28% | +11/+12% |
+
+Stima, non misura end-to-end; cambia l'output degli esperti calcolati su CPU (qualita' da misurare in KL).

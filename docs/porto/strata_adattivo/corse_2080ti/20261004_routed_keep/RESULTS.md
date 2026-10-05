@@ -149,3 +149,17 @@ causa del decode che "migliora con la profondita'": la cache si adatta mentre si
 
 Esatto per costruzione (cambia solo dove si calcolano gli esperti). Guadagno piccolo: decisione
 sull'attivazione di default dopo la ripetizione di SS-ada2.
+
+## Arena limitata a 8 GiB (laboratorio) contro arena intera (Daily) — 2026-10-05
+
+Compito code, exe del Daily, una corsa per lato. I run di laboratorio usano `STRATA_ARENA_PIN_GIB=8`: solo 10
+fette dell'arena sono registrate per la GPU e la quota PCIe dei mancanti (0,36 sul nostro link da 13 GB/s)
+vale su pochi strati. Il Daily registra tutta l'arena (43 GB).
+
+| Run | t/s | ms/finestra | CPU ms | attesa GPU ms | per strato-finestra: CPU / VRAM / PCIe |
+|---|---:|---:|---:|---:|---|
+| P-cap8-code | 41,9 | 88,2 | 42,5 | 25,8 | 9,89 / 26,46 / 0,93 |
+| P-full-code | 43,7 | 83,4 | 38,2 | 27,1 | 8,25 / 23,88 / 3,86 |
+
+Con l'arena intera la GPU prende ~4 esperti per strato via PCIe (+4% di decode, una corsa), ma la CPU resta il
+46% della finestra: circa 96 us per esperto nel motore contro 81 nel banco del pool (finestra da 10).

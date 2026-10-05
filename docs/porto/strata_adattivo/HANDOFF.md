@@ -1,5 +1,17 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 5 ottobre (Opus): PORTATO nel Daily il vocabolario bozze MTP allargato
+
+Config `D:\ds4_work\strata\Strata\strata-2080ti-sota.json`: unica modifica `--mtp` da
+`Strata-data\mtpt` a `Strata-data\mtpt_it48k` (copia di `rt` con il solo `draft_vocab.bin`
+nuovo: 48.542 id, superset dei 40.525, sha256 4903e972...). Backup della config precedente:
+`D:\ds4_work\strataipristini61005_033044_vocab_it48k\`. Rollback = rimettere `rt`.
+Smoke con l'exe del Daily (13ee1a89...): carica la testa da 48.542 token (+87 MiB riservati),
+bozze accettate prosa 64%, codice 88%. A/B: prosa italiana +9% t/s, codice e ragionamento
+inglese a 131k neutri. Copia `lanciatori/strata-2080ti-sota.json` riallineata al Daily
+(era ferma a prima della cache prompt su file). Server non riavviato: vale dal prossimo avvio.
+[Dettagli](corse_2080ti/20261004_draft_vocab/REPORT.md).
+
 ## 4 ottobre sera (Opus): scarto degli esperti a basso peso non residenti
 
 Sonda fork spenta per default (`2d47c09`, `a530246`, `8dd24f0`): `STRATA_ROUTED_MISS_W=t`

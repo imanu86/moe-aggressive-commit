@@ -83,14 +83,20 @@ def main():
     ap.add_argument('--gate-keep', type=float, default=0.0, help='STRATA_GATE_KEEP fraction (needs build-v4)')
     ap.add_argument('--lookahead', action='store_true', help='STRATA_LOOKAHEAD_PROBE=1 (needs build-v5), any arm')
     ap.add_argument('--mtp-dir', default=None, help='alternative MTP pack folder (e.g. a draft-vocab candidate), any arm')
+    ap.add_argument('--daily-exe', action='store_true', help="use the Daily config's own exe (arm A only)")
     a = ap.parse_args()
     assert (a.arm == 'B') == (1 <= a.keep <= 9 or a.min_w > 0 or a.miss_w > 0 or a.gate_keep > 0)
     out = L / a.name
     assert not out.exists()
     cfg = json.loads(CONFIG.read_text())
-    exe = L / a.build / 'strata.exe'
-    pin = json.loads((exe.parent / 'build.json').read_text())
-    assert pin['status'] == 'completed' and sha(exe) == pin['executable_sha256']
+    if a.daily_exe:
+        assert a.arm == 'A'
+        exe = Path(cfg['exe'])
+        pin = {'status': 'completed', 'executable_sha256': sha(exe)}
+    else:
+        exe = L / a.build / 'strata.exe'
+        pin = json.loads((exe.parent / 'build.json').read_text())
+        assert pin['status'] == 'completed' and sha(exe) == pin['executable_sha256']
     helper = PREFIX.load_helper()
     tok, template, convert, _ = helper.tokenizer_and_template(cfg)
     from serve import server

@@ -473,6 +473,19 @@ IQ3_S e ~15–25 per IQ2_S, con ~2,8 voci CPU per strato-finestra ~1–1,7 ms su
 decode se la parte CPU resta sul percorso critico. Da misurare a macchina libera; candidato a entrare nella r2 (B del
 benchmark notturno = `build-pr930`).
 
+A 131k (`L930-*`, configurazione candidata, tabella PLE su D:, prima B due volte poi A; GPU ancora occupata al
+13–24% da altri programmi, 3,3–4,7 GB):
+
+| corsa | L01 t/s | L02 t/s | ms/finestra L01 · L02 | voci CPU per strato-finestra L01 · L02 |
+|---|---:|---:|---|---|
+| r2 + #930, corsa 1 | 45,2 | 44,2 | 42,50 · 37,27 | 2,81 · 2,17 |
+| r2 + #930, corsa 2 | 46,8 | 44,1 | 43,29 · 36,55 | 2,90 · 1,90 |
+| r2 (`build-r2cand`) | 44,4 | 44,1 | 44,43 · 36,70 | 3,13 · 1,85 |
+
+L01 +2–5%, L02 uguale: nel rumore, nel verso atteso (prefill 134,6–135,5 s in tutte e tre). Le t/s assolute sono
+sotto quelle del 4/10 (L01 ~50) per il carico della GPU, non per la tabella su D: (attesa PLE nel decode ~0).
+Verdetto: identica bit per bit e non peggiora: entra nella r2; B del benchmark notturno = `build-pr930`.
+
 ## PR 934 e 931 (valutazione sul codice) — 2026-10-05 sera
 
 - **#934** (Chromadera, aperta): con `--expert-cache-per-layer` gli slot prendono la dimensione reale del blob di ogni

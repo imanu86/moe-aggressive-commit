@@ -95,7 +95,8 @@ dma`): identico bit per bit, L02 +3–7%, rischio blocco del driver (issue upstr
 
 ## 5. Candidato 0.1.39-r2
 
-- Sorgente: fork `main` `d5c049c` (codice = `c3fc8f3`).
+- Sorgente: fork `main` `d5c049c` (codice = `c3fc8f3`). **Aggiornato il 5/10 sera**: `main` `52a39e5` (codice =
+  `862c18a`, + PR #930 e `iq256_dump`), eseguibile `build-pr930` (sha `c69ed166…`); misure in `RESULTS.md` «PR 930».
 - Eseguibile di laboratorio: `corse_2080ti/20261004_routed_keep/build-r2cand/strata.exe` (sha `404cb28c486380ba…`,
   `build.json`).
 - Configurazione candidata = Daily + `STRATA_ELASTIC_CORE_ADAPT=1` (env) + `--pcie-mode dma` (argomento).
@@ -137,7 +138,8 @@ Prima: `Get-PSDrive C,D` (C: almeno 15–20% libero e nessuna copia/scrittura in
 `run_turns.py` (cartella `20261004_routed_keep`): turno 1 ~12k token di codice, poi un turno per richiesta lunga
 (`--gen 14000`) fino a `--max-context 130000`, 10 turni. Ore di macchina: lanciare in background, B poi A:
 
-- B (r2): `python -u run_turns.py --name TURNI-r2 --build build-r2cand --env STRATA_ARENA_PIN_GIB=64 --env STRATA_ELASTIC_CORE_ADAPT=1 --set-opt=--pcie-mode=dma`
+- B (r2): `python -u run_turns.py --name TURNI-r2 --build build-pr930 --env STRATA_ARENA_PIN_GIB=64 --env STRATA_ELASTIC_CORE_ADAPT=1 --set-opt=--pcie-mode=dma`
+  (aggiornato il 5/10 sera: `build-pr930` = r2 + PR #930, identica bit per bit; fork `862c18a`)
 - A (Daily): `python -u run_turns.py --name TURNI-daily --daily-exe --env STRATA_ARENA_PIN_GIB=64`
 
 Vale anche come **prova di resistenza DMA** (#31): se il motore si blocca (nessun avanzamento per minuti, driver

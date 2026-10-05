@@ -3,9 +3,9 @@
 ## 5 ottobre (Opus): PORTATO nel Daily il vocabolario bozze MTP allargato
 
 Config `D:\ds4_work\strata\Strata\strata-2080ti-sota.json`: unica modifica `--mtp` da
-`Strata-data\mtpt` a `Strata-data\mtpt_it48k` (copia di `rt` con il solo `draft_vocab.bin`
+`Strata-data\mtp\rt` a `Strata-data\mtp\rt_it48k` (copia di `rt` con il solo `draft_vocab.bin`
 nuovo: 48.542 id, superset dei 40.525, sha256 4903e972...). Backup della config precedente:
-`D:\ds4_work\strataipristini61005_033044_vocab_it48k\`. Rollback = rimettere `rt`.
+`D:\ds4_work\strata\ripristini\20261005_033044_vocab_it48k\`. Rollback = rimettere `rt`.
 Smoke con l'exe del Daily (13ee1a89...): carica la testa da 48.542 token (+87 MiB riservati),
 bozze accettate prosa 64%, codice 88%. A/B: prosa italiana +9% t/s, codice e ragionamento
 inglese a 131k neutri. Copia `lanciatori/strata-2080ti-sota.json` riallineata al Daily

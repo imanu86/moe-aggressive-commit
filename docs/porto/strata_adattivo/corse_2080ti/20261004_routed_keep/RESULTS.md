@@ -194,3 +194,25 @@ scatta, ma la previsione costa comunque 3–6 ms per finestra di attesa GPU.
   3–6 ms che costa; potrebbe rendere P=3–5 appena positivo. Su PCIe 4/5 il conto cambia (bus 2–4x).
 - Il modo DMA senza prefetch (47,4 t/s di media) batte il copy kernel automatico (~45–46): +3–4%, ma upstream
   l'ha tolto per un blocco del driver (issue #31); in 16 corse DMA non si e' visto.
+
+## VRAM sul 2080 Ti: dove va, budget WDDM, cache piu' grande — 2026-10-05
+
+Strumento: `STRATA_TRACE=1` con la build di laboratorio (fork `main` d868840) stampa per ogni fase la VRAM libera per
+CUDA, il budget DXGI del processo, il suo uso e la VRAM usata dalla scheda (NVML). Corse `TR-*`, `OB-*`, `LB-*`.
+
+Base del motore (uso del processo prima della cache, MiB): contesto CUDA 174, pesi densi del pack 1.468, proiezioni
+dense native dal GGUF 1.781, sessione ~970 (QSA a 262k 849: KV in VRAM e tabella RoPE; stati GDN 112), bozza MTP 840:
+**~5,3 GiB, tutto giustificato**. Gli esperti hanno ~10,2–10,9 GiB.
+
+- Il budget WDDM del processo scende mentre il processo cresce (21,5 -> 17,7 GB): Windows trattiene ~2 GB e comprime
+  gli altri programmi. `cudaMemGetInfo` = budget - uso: a regime il motore vede ~0,8 GiB liberi, la scheda ne ha ~2,7.
+- Il primo tentativo di cache automatica prova ~13,9 GiB (spazio letto prima che il budget scenda), satura la scheda
+  a 22,2 GB e poi si riduce: risultato finale corretto, percorso goffo.
+- Contesto massimo (262k -> 131k -> 64k: +124 / +210 slot) e blocco di prefill (8.192 -> 2.048: stessi slot, prefill
+  830 -> 483 t/s) non liberano VRAM utile.
+- Cache fissa oltre l'automatico (`OB-*`, codice corto): fino a 11,6 GiB il budget sale (19,0 GB) e tutto sta in
+  VRAM, 12,6 GiB sfora il budget (scheda piena) e rallenta un po'; nessun crollo da paging.
+- **A 131k (`LB-*`, B, B, poi A)**: inizio a 11,6 GiB -> L01 38,3 / 42,2 t/s, L02 37,1 / 37,2; automatica -> L01
+  42,0, L02 38,6. L'elastico porta comunque la cache a ~10,9–11,1 GiB: **nessun guadagno, l'automatico resta**.
+  A 131k la CPU pesa poco (~2 esperti per strato, 9–15 ms su 43–52 ms per finestra): dominano l'attesa GPU
+  (~22–25 ms) e le bozze accettate (1,6–2,0 token per finestra).

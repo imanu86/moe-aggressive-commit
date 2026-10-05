@@ -1,0 +1,372 @@
+{
+  "status": "completed",
+  "engine_info": {
+    "version": "0.1.38",
+    "context": 262144,
+    "kv": "int8",
+    "kv_resident": 32768,
+    "expert_slots": 6296,
+    "expert_cache_mib": 10427,
+    "expert_slots_primary": 6296,
+    "expert_cache_primary_mib": 10427,
+    "spec": 6,
+    "mtp_max": 4,
+    "lookup": 3,
+    "vram_free_mib": 1196,
+    "cvec": 0,
+    "arena_mib": 40925,
+    "pool_workers": 7,
+    "pcie_frac": "0.36",
+    "spec_min_p": "0.50",
+    "conversation_cache_mib": 0,
+    "conversation_cache_slots": 4,
+    "conversation_cache_min_free_mib": 2560,
+    "engine": "0.1.38"
+  },
+  "startup_s": 42.578999999997905,
+  "generated_ids": [
+    90,
+    198,
+    220,
+    328,
+    31012,
+    763,
+    498,
+    198,
+    262,
+    4241,
+    32,
+    7664,
+    198,
+    262,
+    4241,
+    32,
+    487,
+    328,
+    33,
+    7664,
+    198,
+    262,
+    4241,
+    32,
+    487,
+    328,
+    33,
+    487,
+    328,
+    34,
+    7664,
+    198,
+    262,
+    4241,
+    33,
+    487,
+    328,
+    34,
+    487,
+    328,
+    32,
+    7664,
+    198,
+    262,
+    4241,
+    34,
+    487,
+    328,
+    32,
+    487,
+    328,
+    35,
+    7664,
+    198,
+    262,
+    4241,
+    34,
+    487,
+    328,
+    35,
+    487,
+    328,
+    33,
+    7664,
+    198,
+    262,
+    4241,
+    35,
+    487,
+    328,
+    33,
+    487,
+    328,
+    34,
+    7664,
+    198,
+    262,
+    4241,
+    33,
+    487,
+    328,
+    34,
+    487,
+    328,
+    36,
+    7664,
+    198,
+    262,
+    4241,
+    33,
+    487,
+    328,
+    36,
+    487,
+    328,
+    35,
+    7664,
+    198,
+    262,
+    4241,
+    36,
+    487,
+    328,
+    35,
+    487,
+    328,
+    37,
+    7664,
+    198,
+    262,
+    4241,
+    36,
+    487,
+    328,
+    35,
+    487,
+    328,
+    37,
+    7664,
+    198,
+    262,
+    4241,
+    36,
+    487,
+    328,
+    37,
+    487,
+    328,
+    35,
+    1293,
+    198,
+    220,
+    10339,
+    198,
+    220,
+    328,
+    4958,
+    12404,
+    763,
+    498,
+    198,
+    262,
+    328,
+    32,
+    487,
+    198,
+    262,
+    328,
+    34,
+    487,
+    198,
+    262,
+    328,
+    33,
+    1,
+    198,
+    220,
+    10339,
+    198,
+    220,
+    328,
+    4958,
+    2399,
+    3079,
+    763,
+    220,
+    18,
+    198,
+    92,
+    248046
+  ],
+  "text": "{\n  \"states\": [\n    [\"A\"],\n    [\"A\", \"B\"],\n    [\"A\", \"B\", \"C\"],\n    [\"B\", \"C\", \"A\"],\n    [\"C\", \"A\", \"D\"],\n    [\"C\", \"D\", \"B\"],\n    [\"D\", \"B\", \"C\"],\n    [\"B\", \"C\", \"E\"],\n    [\"B\", \"E\", \"D\"],\n    [\"E\", \"D\", \"F\"],\n    [\"E\", \"D\", \"F\"],\n    [\"E\", \"F\", \"D\"]\n  ],\n  \"evicted\": [\n    \"A\",\n    \"C\",\n    \"B\"\n  ],\n  \"eviction_count\": 3\n}<|im_end|>",
+  "last": {
+    "generated": 170,
+    "prompt_tokens": 2470,
+    "prompt_ms": 3054.9,
+    "decode_ms": 3782.6,
+    "finish": "stop",
+    "drafts_accepted": 124,
+    "drafts_offered": 141,
+    "reused": 0,
+    "hits": 53478,
+    "lookups": 80133,
+    "ram_blobs": 0,
+    "file_blobs": 0,
+    "file_mb": 0.0,
+    "prompt_read": 2470
+  },
+  "request_s": 6.98399999999674,
+  "ttft_s": 3.26500000001397,
+  "oracle": {
+    "passed": false,
+    "expected": {
+      "states": [
+        [
+          "A"
+        ],
+        [
+          "A",
+          "B"
+        ],
+        [
+          "A",
+          "B",
+          "C"
+        ],
+        [
+          "B",
+          "C",
+          "A"
+        ],
+        [
+          "C",
+          "A",
+          "D"
+        ],
+        [
+          "C",
+          "A",
+          "D"
+        ],
+        [
+          "A",
+          "D",
+          "C"
+        ],
+        [
+          "D",
+          "C",
+          "E"
+        ],
+        [
+          "C",
+          "E",
+          "D"
+        ],
+        [
+          "E",
+          "D",
+          "F"
+        ],
+        [
+          "E",
+          "D",
+          "F"
+        ],
+        [
+          "E",
+          "F",
+          "D"
+        ]
+      ],
+      "evicted": [
+        "B",
+        "A",
+        "C"
+      ],
+      "eviction_count": 3
+    },
+    "actual": {
+      "states": [
+        [
+          "A"
+        ],
+        [
+          "A",
+          "B"
+        ],
+        [
+          "A",
+          "B",
+          "C"
+        ],
+        [
+          "B",
+          "C",
+          "A"
+        ],
+        [
+          "C",
+          "A",
+          "D"
+        ],
+        [
+          "C",
+          "D",
+          "B"
+        ],
+        [
+          "D",
+          "B",
+          "C"
+        ],
+        [
+          "B",
+          "C",
+          "E"
+        ],
+        [
+          "B",
+          "E",
+          "D"
+        ],
+        [
+          "E",
+          "D",
+          "F"
+        ],
+        [
+          "E",
+          "D",
+          "F"
+        ],
+        [
+          "E",
+          "F",
+          "D"
+        ]
+      ],
+      "evicted": [
+        "A",
+        "C",
+        "B"
+      ],
+      "eviction_count": 3
+    }
+  },
+  "cleanup_actions": [],
+  "remaining_owned": [],
+  "elapsed_s": 52.844000000011874,
+  "daily_unchanged": true,
+  "config_unchanged": true,
+  "native_metrics": [
+    "strata generate: expert cache auto: 15.25 GiB free, 1393 MiB reserved (+87 MiB for the draft head) -> 6363 slots",
+    "strata serve: prompt chunk auto: 8192 tokens",
+    "strata serve: the prompt path borrows 2762 CUDA0 cache slots (4.42 GiB)",
+    "strata mtp: draft head over 48542 tokens (81.5 MiB)",
+    "strata serve: 1196 MiB of VRAM free with everything loaded",
+    "strata decode timing: 46 windows, avg T 4.07, 3.70 tokens/window, 82.23 ms/window = verify 76.21 (GPU-reach wait 27.24 + per-layer host 42.56 [plan 0.87 actq 2.34 jobs 0.43 CPU 38.89] + stage 0.58) + commit/emit 0.39 + draft 3.32; per layer-window: CPU experts 8.68 (12.07 entries), VRAM hits 24.22, PCIe 4.11",
+    "strata serve: prompt 2470 tokens = 0 reused + 2470 read in 3055 ms (808.5 tok/s), 170 generated in 3783 ms (44.9 tok/s), drafts accepted 124 of 141, 0 checkpoints",
+    "strata serve: decode expert cache hit rate: 66.7% (53478 hits / 80133 lookups)",
+    "strata serve: KV streaming: 99.31% of 1152300 block reads hit VRAM, 31.9 MiB read from RAM",
+    "strata serve: suffix drafts: 3 windows, 12 of 15 drafts accepted"
+  ]
+}

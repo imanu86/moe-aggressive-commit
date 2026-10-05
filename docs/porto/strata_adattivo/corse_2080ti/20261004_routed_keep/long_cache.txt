@@ -1,0 +1,24 @@
+{"available_ram_gib": 68.1, "commit_free_gib": 67.9, "gpu_used_mib": 3285, "gpu_util": 41, "cgcontrol": true, "competing": []}
+LB-c116a rc=0
+strata elastic: -92 slots (37 moved in, 55 out) -> 6771 slots, 10.96 GiB; 543 MiB free, prompt chunk 8192
+strata elastic: -39 slots (19 moved in, 20 out) -> 6732 slots, 10.90 GiB; 562 MiB free, prompt chunk 8192
+strata trace: 990 MiB free after a request [WDDM budget 18472 MiB, process usage 17482 MiB, card used 21273 MiB]
+strata decode timing: 514 windows, avg T 2.31, 1.99 tokens/window, 52.03 ms/window = verify 45.96 (GPU-reach wait 23.90 + per-layer host 17.31 [plan 0.64 actq 1.47 jobs 0.47 CPU 14.67] + stage 0.65) + commit/emit 0.50 + draft 3.67; per layer-window: CPU experts 2.39 (2.80 entries), VRAM hits 19.52, PCIe 0.77
+strata decode timing: 642 windows, avg T 1.86, 1.60 tokens/window, 42.99 ms/window = verify 37.83 (GPU-reach wait 21.61 + per-layer host 12.07 [plan 0.50 actq 1.22 jobs 0.41 CPU 9.92] + stage 0.61) + commit/emit 0.47 + draft 3.07; per layer-window: CPU experts 1.89 (2.20 entries), VRAM hits 15.89, PCIe 0.54
+  => completed L01 38.3 t/s ttft 132 s | L02 37.1 t/s ttft 2 s
+{"available_ram_gib": 68.9, "commit_free_gib": 68.3, "gpu_used_mib": 3493, "gpu_util": 8, "cgcontrol": true, "competing": []}
+LB-c116b rc=0
+strata elastic: +218 experts (370 MiB) -> 6911 slots, 11.19 GiB; 685 MiB free
+strata elastic: -78 slots (39 moved in, 39 out) -> 6833 slots, 11.06 GiB; 620 MiB free, prompt chunk 8192
+strata trace: 889 MiB free after a request [WDDM budget 18481 MiB, process usage 17592 MiB, card used 21400 MiB]
+strata decode timing: 477 windows, avg T 2.56, 2.15 tokens/window, 50.89 ms/window = verify 44.48 (GPU-reach wait 24.97 + per-layer host 14.75 [plan 0.58 actq 1.46 jobs 0.45 CPU 12.22] + stage 0.82) + commit/emit 0.43 + draft 3.86; per layer-window: CPU experts 2.55 (2.98 entries), VRAM hits 21.73, PCIe 0.83
+strata decode timing: 637 windows, avg T 1.95, 1.61 tokens/window, 43.21 ms/window = verify 38.00 (GPU-reach wait 23.00 + per-layer host 10.61 [plan 0.17 actq 0.63 jobs 0.20 CPU 9.58] + stage 0.72) + commit/emit 0.32 + draft 3.22; per layer-window: CPU experts 1.97 (2.31 entries), VRAM hits 16.57, PCIe 0.60
+  => completed L01 42.2 t/s ttft 128 s | L02 37.2 t/s ttft 2 s
+{"available_ram_gib": 69.0, "commit_free_gib": 68.1, "gpu_used_mib": 3510, "gpu_util": 18, "cgcontrol": true, "competing": []}
+LB-auto rc=0
+strata elastic: -47 slots (19 moved in, 28 out) -> 6847 slots, 11.10 GiB; 550 MiB free, prompt chunk 8192
+strata elastic: -152 slots (93 moved in, 59 out) -> 6695 slots, 10.85 GiB; 914 MiB free, prompt chunk 8192
+strata trace: 825 MiB free after a request [WDDM budget 18225 MiB, process usage 17400 MiB, card used 21027 MiB]
+strata decode timing: 521 windows, avg T 2.28, 1.97 tokens/window, 46.77 ms/window = verify 40.87 (GPU-reach wait 23.62 + per-layer host 12.67 [plan 0.49 actq 1.26 jobs 0.44 CPU 10.45] + stage 0.88) + commit/emit 0.40 + draft 3.52; per layer-window: CPU experts 2.22 (2.61 entries), VRAM hits 19.43, PCIe 0.69
+strata decode timing: 627 windows, avg T 1.89, 1.63 tokens/window, 42.36 ms/window = verify 37.17 (GPU-reach wait 22.26 + per-layer host 10.79 [plan 0.43 actq 1.17 jobs 0.39 CPU 8.76] + stage 0.66) + commit/emit 0.41 + draft 3.19; per layer-window: CPU experts 1.90 (2.24 entries), VRAM hits 16.08, PCIe 0.55
+  => completed L01 42.0 t/s ttft 122 s | L02 38.6 t/s ttft 2 s

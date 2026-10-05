@@ -86,6 +86,7 @@ def main():
     ap.add_argument('--daily-exe', action='store_true', help="use the Daily config's own exe (arm A only)")
     ap.add_argument('--env', action='append', default=[], help='KEY=VALUE extra STRATA_ env (diagnostics), any arm')
     ap.add_argument('--set-opt', action='append', default=[], help='--option=value override of the Daily args')
+    ap.add_argument('--drop-opt', action='append', default=[], help='--option removed from the Daily args (e.g. --elastic)')
     a = ap.parse_args()
     assert (a.arm == 'B') == (1 <= a.keep <= 9 or a.min_w > 0 or a.miss_w > 0 or a.gate_keep > 0)
     out = L / a.name
@@ -135,6 +136,8 @@ def main():
         k, v = kv.split('=', 1); assert k.startswith('STRATA_'); env[k] = v
     for ov in a.set_opt:
         k, v = ov.split('=', 1); assert k.startswith('--'); args = PREFIX.replace_option(args, k, v)
+    for ov in a.drop_opt:
+        assert ov.startswith('--') and ov in args; args = PREFIX.replace_option(args, ov, None)
     if a.teacher:
         env.update(STRATA_LOGPOS=str((out / 'logpos.tsv').resolve()), STRATA_LOGPOS_TOPK='20')
     if a.arm == 'B':

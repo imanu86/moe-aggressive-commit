@@ -22,6 +22,8 @@ def main():
     ap.add_argument('--env', action='append', default=[])
     ap.add_argument('--rounds', type=int, default=3)
     ap.add_argument('--tokens', type=int, default=384)
+    ap.add_argument('--set-opt', action='append', default=[], help='--option=value override of the Daily args')
+    ap.add_argument('--drop-opt', action='append', default=[], help='--option removed from the Daily args')
     a = ap.parse_args()
     out = L / a.name
     assert not out.exists()
@@ -45,6 +47,10 @@ def main():
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')
     for kv in a.env:
         k, v = kv.split('=', 1); assert k.startswith('STRATA_'); env[k] = v
+    for ov in a.set_opt:
+        k, v = ov.split('=', 1); assert k.startswith('--'); args = PREFIX.replace_option(args, k, v)
+    for ov in a.drop_opt:
+        assert ov.startswith('--') and ov in args; args = PREFIX.replace_option(args, ov, None)
     now = RK.snapshot()
     assert not now['competing'] and now['commit_free_gib'] >= 52, now
     out.mkdir()

@@ -486,6 +486,42 @@ L01 +2–5%, L02 uguale: nel rumore, nel verso atteso (prefill 134,6–135,5 s i
 sotto quelle del 4/10 (L01 ~50) per il carico della GPU, non per la tabella su D: (attesa PLE nel decode ~0).
 Verdetto: identica bit per bit e non peggiora: entra nella r2; B del benchmark notturno = `build-pr930`.
 
+## Righe PLE in RAM (handoff §6.5) — simulazione, 2026-10-05 sera
+
+Cartella `20261005_ple_hot/`. Simulatore fuori dal motore con l'hash delle righe del motore (`ngram_rows`, 16 teste)
+e una copia esatta della sua cache di righe (8 vie, round-robin per set), semantica di `gather_batch` a chunk di
+8192 token. Controllo: sul prefisso ctx131k stima 566.606 letture contro le 567.472 misurate dal motore (0,15%).
+Corpus del profilo: sorgenti Strata, CGC e documenti di ricerca (10,5M token, 36,2M righe distinte, 21,5M viste una
+volta); test: ctx131k (codice llama.cpp, estraneo) e 131k di file esclusi di ciascun progetto.
+
+Letture da disco rimaste rispetto a oggi (cache dinamica 1M, avvio a freddo):
+
+| righe fisse in RAM | RAM in piu' | ctx131k | file esclusi dei progetti | S01–S10 |
+|---|---:|---:|---:|---:|
+| 1M | 95 MB | 91% | 81–86% | 62% |
+| 2M | 190 MB | 88% | 74–81% | |
+| 4M | 360 MB | 84% | 66–73% | |
+| 8M | 720 MB | 80% | 58–64% | |
+| tutte le 34M del corpus | 3,1 GB | 65% | 37–39% | |
+
+Ricavate dentro la cache di oggi (stessa RAM) peggiorano i prompt lunghi (fino a 114%): vanno in aggiunta. Delle
+righe nuove dei file esclusi erano nel corpus il 72–75% delle bigramma e il 54% delle trigramma: conta il materiale
+del progetto. Il valore dell'82% citato nell'handoff non si ritrova (qui 1M righe tolgono 9–19% sui prompt lunghi).
+
+Cache dinamica piu' grande (`--ple-row-cache`, opzione gia' esistente, anche nel Daily r1) in una sessione calda:
+prima ~2M token di altri file dello stesso progetto, poi il test da 131k (`ple_session_sim.txt`):
+
+| cache dinamica | RAM | strata | cgc | ricerca |
+|---|---:|---:|---:|---:|
+| 1M (oggi) | 95 MB | 95% | 96% | 94% |
+| 4M | 360 MB | 70% | 82% | 76% |
+| 16M | 1,4 GB | 53% | 55% | 50% |
+
+(percentuali rispetto alla stessa cache 1M a freddo). Col Daily acceso restano ~25 GiB di RAM disponibile (arena
+43,8 GiB, KV 3,1 GiB). Verdetto: la cache dinamica da 16M batte il profilo fisso da 8M senza codice nuovo e segue
+il progetto della sessione; il guadagno dipende da quanto materiale ha gia' visto il server. Output identico (stessi
+byte). Da verificare nel motore: nessun peggioramento a freddo (L01/L02) e il beneficio nei turni.
+
 ## PR 934 e 931 (valutazione sul codice) — 2026-10-05 sera
 
 - **#934** (Chromadera, aperta): con `--expert-cache-per-layer` gli slot prendono la dimensione reale del blob di ogni

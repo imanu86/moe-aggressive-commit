@@ -1,0 +1,86 @@
+{
+  "build": "build-pr949",
+  "daily_exe": false,
+  "set_opt": [
+    "--pcie-mode=dma",
+    "--pool-tasks=192"
+  ],
+  "add_opt": [],
+  "env_probe": [
+    "STRATA_ARENA_PIN_GIB=64",
+    "STRATA_ELASTIC_CORE_ADAPT=1"
+  ],
+  "mtp_dir": null,
+  "args": [
+    "--pack",
+    "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+    "--native",
+    "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+    "--ple-gguf",
+    "D:\\ds4_work\\strata\\Strata-data\\gguf\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+    "--native-dense-gguf",
+    "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+    "--native-dense-gguf",
+    "D:\\ds4_work\\strata\\Strata-data\\gguf\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+    "--ple-row-cache",
+    "16777216",
+    "--expert-profile",
+    "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+    "--expert-cache",
+    "auto",
+    "--prefill",
+    "auto",
+    "--spec",
+    "4",
+    "--spec-min-p",
+    "0.5",
+    "--mtp",
+    "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt_it48k",
+    "--max-context",
+    "262144",
+    "--kv",
+    "int8",
+    "--kv-resident",
+    "32768",
+    "--vram-reserve-mib",
+    "1393",
+    "--elastic",
+    "--prompt-cache-tail",
+    "--prompt-cache-every",
+    "16384",
+    "--pcie-mode",
+    "dma",
+    "--pool-tasks",
+    "192"
+  ],
+  "tokens": 1024,
+  "state": {
+    "available_ram_gib": 67.4,
+    "commit_free_gib": 66.9,
+    "gpu_used_mib": 3715,
+    "gpu_util": 38,
+    "cgcontrol": true,
+    "competing": []
+  },
+  "state_diff": [
+    "VRAM occupata 3715 MiB (base 8365)"
+  ],
+  "prompt_tokens": {
+    "L01": 131248,
+    "L02": 131239
+  },
+  "executable_sha256": "c2f0dda7b9eb8fa3643a0de8e15c1cc7d98c8736fa5845e1160fb19f33ee821b",
+  "daily_sha256": "dd82377ab682108bb6a8e2480727a27e211400df8dd01a4801144a0843270791",
+  "config_sha256": "ab43c0b5fac951477078d52232130368424b40db57e46fd63dbb89f774f60c42",
+  "env": {
+    "STRATA_WATCHDOG_S": "240",
+    "STRATA_PARALLEL_INTERMEDIATE_QUANT": "0",
+    "STRATA_PREFILL_EXACT_SMALL": "1",
+    "STRATA_QSA_PREFILL_MULTI": "1",
+    "STRATA_IQ_MT_MIN": "1",
+    "STRATA_NO_LARGEPAGES": "1",
+    "STRATA_ARENA_PIN_GIB": "64",
+    "STRATA_DECODE_TIMING": "1",
+    "STRATA_ELASTIC_CORE_ADAPT": "1"
+  }
+}

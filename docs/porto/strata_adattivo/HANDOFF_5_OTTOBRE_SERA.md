@@ -142,6 +142,9 @@ Prima: `Get-PSDrive C,D` (C: almeno 15–20% libero e nessuna copia/scrittura in
 
 - B (r2): `python -u run_turns.py --name TURNI-r2 --build build-pr930 --env STRATA_ARENA_PIN_GIB=64 --env STRATA_ELASTIC_CORE_ADAPT=1 --set-opt=--pcie-mode=dma`
   (aggiornato il 5/10 sera: `build-pr930` = r2 + PR #930, identica bit per bit; fork `862c18a`)
+  **Aggiornato il 5/10 notte**: B = `--build build-pr949` (r2 + #930 + #949) con in piu' `--set-opt=--pool-tasks=96`;
+  fork `14433b0` (anche #965, solo server). Entrambi i bracci leggono il config del Daily: tabella PLE su D: e
+  `--ple-row-cache 16777216`.
 - A (Daily): `python -u run_turns.py --name TURNI-daily --daily-exe --env STRATA_ARENA_PIN_GIB=64`
 
 Vale anche come **prova di resistenza DMA** (#31): se il motore si blocca (nessun avanzamento per minuti, driver

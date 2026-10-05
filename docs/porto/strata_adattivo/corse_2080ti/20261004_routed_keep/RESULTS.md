@@ -537,6 +537,48 @@ ripristino `D:\ds4_work\strata\ripristini\20261005_184619_ple_rowcache`), contro
 beneficio nella sessione calda si leggera' nelle righe `ple io` dei turni (benchmark notturno: entrambi i bracci
 leggono il config del Daily, quindi entrambi con 16M).
 
+## PR 949, 965, 960, 969 — 2026-10-05 notte
+
+**#949** (Unmaple, `--pool-tasks N`): portata nel fork `f4a2590` (pool.cpp a mano: il fork ha la fase di
+quantizzazione parallela e gli esperti parziali), manifest `r2cand949-20261005.json` SOURCE_OK. Identita':
+`pool_tasks_test` 168/168; `TFX-pt0-*` e `TFX-pt96-*` identici bit per bit a `TFX-enc-*` (`tf_fixed_pr949.txt`).
+A 131k (`LPT*`, r2 + #930, configurazione candidata; default 24 compiti = 3 x (7 worker + host)):
+
+| compiti | ms CPU per voce L01 · L02 | voci CPU per strato-finestra L01 · L02 | L01 / L02 t/s |
+|---|---|---|---|
+| 96, corsa 1 | 3,10 · 3,22 | 2,78 · 1,66 | 46,1 / 44,7 |
+| 96, corsa 2 | 3,10 · 3,17 | 2,68 · 2,33 | 46,3 / 44,7 |
+| 192 | 3,15 · 3,19 | 3,29 · 2,35 | 50,1 / 43,0 |
+| 48 | 3,24 · 3,25 | 3,22 · 2,49 | 51,1 / 41,9 |
+| 24 (default) | 3,36 · 3,30 | 2,84 · 2,37 | 47,7 / 43,2 |
+
+(ms CPU = `per-layer host … CPU` della riga `decode timing` diviso le voci.) Con 96 compiti il lavoro CPU per voce
+scende del 4–8%; sulla finestra (~9 ms di CPU su ~41) vale ~1%, invisibile nelle t/s che seguono il piazzamento.
+Candidato r2: `--pool-tasks 96`. Pool del kernel stabili per tutta la serie (4,9 / 2,8 GB).
+
+**#965** (signalnine, timbro di Claude Code): portata nel fork `65a1a13`, `ClaudeCodeBillingStamp` 7/7. Sul percorso
+dell'utente il gateway (`qwen_gateway/rotta_locale.py`) toglie gia' l'intero blocco di fatturazione dal 21/9, anche
+`cc_prev_req`/`cc_prompt_id` che la PR non tocca; il log del Daily mostra turni con 33.008 su 33.049 token riusati.
+Serve per chi collega Claude Code direttamente alla 8100.
+
+**#960** (prefissi su disco) contro il nostro `--prompt-cache-file`: scenario sul Daily con copia del config
+(`20261005_pr960/prefix_scenario.py`, file operativo non toccato), system prompt da 24.726 token:
+
+| passo | riusati | prefill |
+|---|---:|---:|
+| A1 chat nuova | 0 | 26,6 s |
+| A2 turno 2 | 24.732 | 0,35 s |
+| T inizio diverso (titolo) | 0 | 0,65 s |
+| B1 chat nuova, stesso system (il caso della PR) | 24.704 | 1,0 s |
+| C1 dopo riavvio del server | 24.704 | 1,2 s |
+
+Il caso della PR e' gia' coperto: non portata. Resterebbe il caso di piu' system prompt diversi alternati (la PR ne
+tiene molti su disco, noi uno nel file piu' i checkpoint in RAM).
+
+**#969** (MTP con richieste concorrenti): vale per richieste parallele qualsiasi (anche sub-agenti dello stesso
+client), ma e' una bozza misurata su Blackwell 96 GB tutta residente, con differenze di token non classificate a
+residenza parziale e +715 righe nel motore: da riguardare quando esce dalla bozza o con la 3060.
+
 ## PR 934 e 931 (valutazione sul codice) — 2026-10-05 sera
 
 - **#934** (Chromadera, aperta): con `--expert-cache-per-layer` gli slot prendono la dimensione reale del blob di ogni

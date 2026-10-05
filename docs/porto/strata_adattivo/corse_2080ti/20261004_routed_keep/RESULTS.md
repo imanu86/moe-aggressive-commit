@@ -342,3 +342,69 @@ PR 903 (upstream, chunk del prompt di uguale lunghezza): a 131k non cambia nulla
 sotto 1.024 token la PR tiene i chunk pieni con la coda corta; L02 legge 167 token in un chunk come prima. Nei turni
 (segmenti nuovi di ~14k) varrebbe forse mezzo secondo su ~15 s di prefill a fronte di minuti di generazione, e sposta i
 confini dei chunk (identita' non garantita). Non portata: arrivera' col prossimo allineamento se upstream la unisce.
+
+## Merge dell'attenzione limitato alla larghezza (#910, Hardin22 `b1f03d33`) — 2026-10-05
+
+`STRATA_ATTN_MERGE_V2` (attivo di default su NVIDIA): il merge del decode si ferma a ceil(larghezza/64) chunk e
+carica i parziali a blocchi di 16, stesse `fmaf` nello stesso ordine. `STRATA_MTP_KV` (formato K/V del drafter) e'
+opt-in e spento. Fork: `3effa9d`.
+
+Identita': `attn_merge_parity` sul 2080 Ti 768/768 casi identici (fp16, int8, q4_0, k8v4); teacher forcing a
+posizionamento fisso `TFX-mv2-*` identico bit per bit a `TFX-enc-*` su code ed explain (`tf_fixed_mv2.txt`).
+Bench del merge (cap 32768 del drafter, 1 query): larghezza 32768 da 224 a 50 us; 5 query a larghezza ~2051 da
+45–88 a 9–17 us.
+
+Velocita' a 131k (`LV-*`, configurazione candidata: nucleo adattivo, DMA; prima B due volte, poi A):
+
+| | L01 t/s | L02 t/s | bozza ms/finestra (L01 · L02) |
+|---|---:|---:|---|
+| merge v2, corsa 1 | 48,5 | 45,6 | 3,11 · 2,55 |
+| merge v2, corsa 2 | 46,7 | 45,2 | 2,78 · 2,59 |
+| candidato senza (`build-plediag`) | 49,9 | 46,2 | 3,33 · 2,83 |
+
+Bozza ~0,3 ms piu' veloce per finestra; totale nel rumore. Portato perche' identico.
+
+## Kernel Q2_0 AVX2 esatto — 2026-10-05
+
+Richiesta dell'utente: una versione della #706 che non cambi l'output. Fork `c3fc8f3`: stesso calcolo in virgola
+mobile del kernel precedente (stesse FMA nello stesso ordine, stessa riduzione, stessa correzione dell'offset -1);
+cambiano lo spacchettamento dei codici (8 operazioni invece di ~17, vettori lo/hi uguali byte per byte), d x scala
+in vettore, 4 righe insieme sui down corti (<= 16 blocchi; sulle righe lunghe l'interleave rompeva il prefetcher:
+0,89x da RAM, tolto). `STRATA_Q2_LEGACY=1` tiene il vecchio.
+
+Identita': `q2_exact_parity` 504 casi, 570.634 uscite identiche bit per bit; `pool_quant_parity` 64 casi sul GGUF
+reale; `TFX-r2-*` identico bit per bit a `TFX-enc-*` (`tf_fixed_r2.txt`).
+
+Velocita': un thread 1,11–1,45x (cache e RAM, nt 1–4). Pool reale (`cpu_format_bench <gguf> pool 400`, 7 worker,
+us per strato, due giri alternati): IQ2_XXS + Q2_0 down 526–532 contro 551 (-4%); Q2_0 + IQ4_NL 480–485 contro
+517–527 (-8%); Q2_0 + Q2_0 347–351 contro 423 (-17%). Nel nostro GGUF il Q2_0 e' solo il down di parte degli strati
+(es. strato 20: gate/up IQ3_S, down Q2_0): a 131k atteso ~0,5%, non misurabile.
+
+## Candidato 0.1.39-r2 (merge v2 + Q2 esatta + diagnostica PLE) — 2026-10-05
+
+Fork `main` `d5c049c` (manifest di laboratorio `r2cand-20261005.json`, `check_source.py` SOURCE_OK). Eseguibile
+`build-r2cand` (sha in `build.json`). Configurazione candidata: `STRATA_ELASTIC_CORE_ADAPT=1`, `--pcie-mode dma`
+(piu' `STRATA_ARENA_PIN_GIB=64` dei banchi).
+
+| `LR-*`, prima B due volte poi A | L01 t/s | L02 t/s | esperti CPU per strato-finestra (L02) |
+|---|---:|---:|---:|
+| r2, corsa 1 | 50,6 | 43,3 | 1,96 |
+| r2, corsa 2 | 48,1 | 44,7 | 1,64 |
+| `build-plediag` (main senza merge v2 e Q2 esatta) | 49,5 | 47,6 | 1,35 |
+
+Nel rumore: le L02 di B hanno avuto piu' esperti calcolati sulla CPU (piazzamento elastico/adattivo diverso), non
+un effetto del codice, che a posizionamento fisso e' identico bit per bit. Il verdetto spetta al benchmark finale a
+turni.
+
+## Stallo PLE colto con la diagnostica (`LV-mv2b`) — 2026-10-05
+
+Prefill 336,5 s contro ~130. `ple io`: lettura media 113.654 us (normale 1.700–2.500), massimo 273 ms, 248.019
+letture su 567.472 oltre 100 ms, attesa 252,7 s. Attese per chunk: 57,1 / 41,3 / 28,0 / 28,7 / 24,0 / 17,7 / 10,2 s
+sui chunk 0–49152, poi normali: tutto il disco rallentato ~50x per ~4 minuti, poi ripreso da solo. Non poche
+letture bloccate: leggere piu' chunk in anticipo non servirebbe.
+
+Causa probabile: C: (Lexar EQ790 NVMe senza DRAM, disco di sistema, contiene la tabella in
+`C:\Users\imanu\Downloads`) con 40,7 GB liberi su 930 (96% pieno): manutenzione interna del controller; calore non
+verificabile senza permessi di amministratore. Il prefill a 131k richiede in media ~4.500 letture/s (567k in
+~125 s), quindi anche D: (EMTEC X160 SATA, 369 GB liberi) basterebbe. Liberazione di spazio delegata dall'utente a
+un'altra chat; poi A/B con la tabella su D: (vedi `HANDOFF_5_OTTOBRE_SERA.md`).

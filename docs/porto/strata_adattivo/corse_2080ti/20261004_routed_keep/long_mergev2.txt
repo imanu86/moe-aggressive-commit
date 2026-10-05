@@ -1,0 +1,37 @@
+TFX-mv2-code rc=0
+TFX-mv2-explain rc=0
+code: TFX-mv2 identico bit per bit a TFX-enc
+{"TFX-enc-code": {"positions": 169, "argmax_vs_ref": 1.0, "argmax_vs_teacher": 0.9881656804733728, "kl_mean": 1.8395352968057752e-17, "kl_p99": 3.3306692156958714e-16, "top5_overlap": 1.0, "firm_positions": 165, "firm_argmax_vs_ref": 1.0}}
+explain: TFX-mv2 identico bit per bit a TFX-enc
+{"TFX-enc-explain": {"positions": 595, "argmax_vs_ref": 1.0, "argmax_vs_teacher": 0.8823529411764706, "kl_mean": 2.5583294783280314e-18, "kl_p99": 3.330671249823217e-16, "top5_overlap": 1.0, "firm_positions": 525, "firm_argmax_vs_ref": 1.0}}
+{"available_ram_gib": 69.5, "commit_free_gib": 69.5, "gpu_used_mib": 3667, "gpu_util": 21, "cgcontro
+LV-mv2a rc=0
+strata decode timing: 478 windows, avg T 2.63, 2.14 tokens/window, 44.21 ms/window ... draft 3.11; per layer-window: CPU experts 2.50 (2.95 entries), VRAM hits 22.48, PCIe 0.83
+strata decode timing: 617 windows, avg T 1.94, 1.66 tokens/window, 36.39 ms/window ... draft 2.55; per layer-window: CPU experts 1.55 (1.82 entries), VRAM hits 17.12, PCIe 0.43
+strata serve: prompt chunk auto: 8192 tokens, a 384-slot ring
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 130341 ms (1007.0 tok/s), 1024 generated in 21130 ms (48.5 tok/s), drafts accepted 546 of 779, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1925 ms (86.7 tok/s), 1024 generated in 22454 ms (45.6 tok/s), drafts accepted 409 of 579, 6 checkpoints
+  => completed L01 48.5 t/s | L02 45.6 t/s
+{"available_ram_gib": 68.3, "commit_free_gib": 68.8, "gpu_used_mib": 3448, "gpu_util": 12, "cgcontro
+LV-mv2b rc=0
+strata decode timing: 527 windows, avg T 2.31, 1.94 tokens/window, 41.59 ms/window ... draft 2.78; per layer-window: CPU experts 2.34 (2.79 entries), VRAM hits 19.49, PCIe 0.76
+strata decode timing: 622 windows, avg T 1.97, 1.65 tokens/window, 36.45 ms/window ... draft 2.59; per layer-window: CPU experts 1.48 (1.76 entries), VRAM hits 17.50, PCIe 0.40
+strata serve: prompt chunk auto: 8192 tokens, a 384-slot ring
+strata prefill: the chunk at token 0 waited 57075 ms for its PLE rows
+strata prefill: the chunk at token 8192 waited 41281 ms for its PLE rows
+strata prefill: the chunk at token 16384 waited 28038 ms for its PLE rows
+strata prefill: the chunk at token 24576 waited 28710 ms for its PLE rows
+strata prefill: the chunk at token 32768 waited 23964 ms for its PLE rows
+strata prefill: the chunk at token 40960 waited 17703 ms for its PLE rows
+strata prefill: the chunk at token 49152 waited 10155 ms for its PLE rows
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 336548 ms (390.0 tok/s), 1024 generated in 21919 ms (46.7 tok/s), drafts accepted 497 of 689, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1828 ms (91.4 tok/s), 1024 generated in 22672 ms (45.2 tok/s), drafts accepted 404 of 602, 6 checkpoints
+  => completed L01 46.7 t/s | L02 45.2 t/s
+{"available_ram_gib": 68.8, "commit_free_gib": 69.0, "gpu_used_mib": 3472, "gpu_util": 9, "cgcontrol
+LV-cand rc=0
+strata decode timing: 482 windows, avg T 2.44, 2.12 tokens/window, 42.54 ms/window ... draft 3.33; per layer-window: CPU experts 2.28 (2.69 entries), VRAM hits 20.97, PCIe 0.75
+strata decode timing: 611 windows, avg T 1.93, 1.68 tokens/window, 36.24 ms/window ... draft 2.83; per layer-window: CPU experts 1.51 (1.74 entries), VRAM hits 17.12, PCIe 0.40
+strata serve: prompt chunk auto: 8192 tokens, a 384-slot ring
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 130054 ms (1009.2 tok/s), 1024 generated in 20506 ms (49.9 tok/s), drafts accepted 542 of 696, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1924 ms (86.8 tok/s), 1024 generated in 22144 ms (46.2 tok/s), drafts accepted 414 of 567, 6 checkpoints
+  => completed L01 49.9 t/s | L02 46.2 t/s

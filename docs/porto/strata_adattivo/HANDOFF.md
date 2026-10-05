@@ -1,5 +1,13 @@
 # HANDOFF — Strata Daily 0.1.38 SM75, QSA/exact-small, elastica/tail, KV262k
 
+## 5 ottobre sera (Opus): candidato 0.1.39-r2 nel fork, stallo PLE spiegato — LEGGERE `HANDOFF_5_OTTOBRE_SERA.md`
+
+Fork `main` `d5c049c`: PR 904, Encapsulate, diagnostica PLE, merge v2 (#910) e kernel Q2_0 esatto, tutto identico
+bit per bit a posizionamento fisso; a 131k nel rumore. I prefill lenti (fino a 336 s) vengono dal disco C:, pieno al
+96%, che ospita la tabella PLE: pulizia delegata a un'altra chat, poi A/B con la tabella su D:. Restano: benchmark a
+turni la notte (B = r2 con nucleo adattivo e DMA, A = Daily), release r2, PR #930 e #934. Tutto, con comandi e
+criteri: [HANDOFF_5_OTTOBRE_SERA.md](HANDOFF_5_OTTOBRE_SERA.md). Daily invariato (0.1.39 r1).
+
 ## 5 ottobre (Opus): PORTATO nel Daily il vocabolario bozze MTP allargato
 
 Config `D:\ds4_work\strata\Strata\strata-2080ti-sota.json`: unica modifica `--mtp` da
@@ -1203,3 +1211,8 @@ l'elastico porta la cache a ~11 GiB qualunque sia l'inizio); `--pcie-frac` autom
 dello strato successivo non paga su PCIe 3; esperti freddi in Q2_0 stimati +21–28% (altera l'output, da provare sul
 campo); kernel IQ2_XXS a token singolo identico bit per bit a ggml (gather piu' lento su Zen 3). Banco a turni fino a
 130k: `run_turns.py` (benchmark finale da lanciare la sera).
+
+## 18. Candidato 0.1.39-r2 e stallo PLE (5/10 sera)
+
+Vedi `HANDOFF_5_OTTOBRE_SERA.md` (stato dei repo, cosa resta, comandi di test, trappole) e le sezioni del 5/10 in
+`corse_2080ti/20261004_routed_keep/RESULTS.md`. Script della giornata: `corse_2080ti/20261005_handoff/script/`.

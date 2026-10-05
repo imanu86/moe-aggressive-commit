@@ -1,0 +1,778 @@
+diff --git a/bench/results/2026-10-03-prompt-chunks/README.md b/bench/results/2026-10-03-prompt-chunks/README.md
+new file mode 100644
+index 000000000..e4d7ae20f
+--- /dev/null
++++ b/bench/results/2026-10-03-prompt-chunks/README.md
+@@ -0,0 +1,65 @@
++# Chunks by prompt size
++
++**Hardware:** RTX 5070 Ti 16 GB on PCIe 3.0 x16 (the board's limit), Ryzen 9 5900XT, 64 GB DDR4-2133, Windows 11.
++
++**Engines:** v0.1.38 (99f3dbd), and v0.1.38 with this change. Both were built from source for sm_120 and run behind
++the v0.1.38 server.
++
++**Model and settings:**
++- IQ3_XXS with a 400K context (YaRN 1.5625).
++- int8 KV with 32,768 cells in VRAM, and the MTP draft.
++- `STRATA_PF_FUSED=1`, images off.
++- `--expert-cache auto --vram-reserve-mib 1600 --pcie-frac 0.35 --spec-min-p 0.70`, giving 4,170 expert slots.
++
++**Method:**
++- Every request goes through `serve/server.py`, with a fresh server for each run.
++- The runs went in this order: v0.1.38, the change with `--prefill auto`, the change with `--prefill auto:16384`. Then
++  all three ran again.
++- Each run sends a 2K warm-up, then prompts of this repository's code from 9K to 100K tokens. Each prompt has its own
++  first line, so nothing is reused. Each asks for 16 tokens out, greedy, with thinking off.
++- The speed is the engine's own figure for the prompt, from its log line. It is the mean of the two rounds, which
++  differed by less than 0.5%.
++
++Every request is in [`ab.json`](ab.json).
++
++## Prompt reading (tokens/s)
++
++| Prompt (tokens) | v0.1.38 | this change, `--prefill auto` | this change, `--prefill auto:16384` |
++| --- | ---: | ---: | ---: |
++| 9,010 | 1,511 | 1,517 (+0.3%) | **2,410 (+59%)** |
++| 16,402 | 2,289 | 2,303 (+0.6%) | 2,449 (+7%) |
++| 20,036 | 2,101 | 2,148 (+2.2%) | **2,898 (+38%)** |
++| 26,700 | 2,143 | 2,172 (+1.4%) | 2,783 (+30%) |
++| 32,716 | 2,570 | 2,583 (+0.5%) | 3,120 (+21%) |
++| 40,013 | 2,546 | 2,547 (0.0%) | 3,088 (+21%) |
++| 65,426 | 2,597 | 2,602 (+0.2%) | **3,392 (+31%)** |
++| 100,117 | 2,428 | 2,451 (+1.0%) | **3,275 (+35%)** |
++
++- **`--prefill auto:16384`:**
++  - v0.1.38 tries 16,384, which does not fit in this cache, and falls back to 8,192.
++  - With the change, auto finds 13,312.
++  - The 9K prompt then reads in one chunk instead of two.
++  - From 20K on, the change is 21-38% faster.
++- **`--prefill auto` (what setup writes):**
++  - The limit is 8,192, as before.
++  - Equal chunks change only the prompts whose last chunk would be 1,024 tokens or more and smaller than the others:
++    - 20,036 tokens read as 3 × 6,912: +2.2%.
++    - 26,700 tokens read as 4 × 6,912: +1.4%.
++    - 100,117 tokens read as 13 × 7,936: +1.0%.
++  - The other sizes are within 0.6%.
++- **A short last chunk stays:**
++  - A chunk under 1,024 tokens moves only the experts its own tokens route to; a larger one streams every expert the
++    GPU does not hold. So 16,402 tokens still read as 2 × 8,192 + 18.
++  - A first version of this change split them into 3 equal chunks. It read 22% slower: 1,791 tok/s.
++  - 26,700 tokens with 13,312-token chunks read as 2 × 13,312 + 76 for the same reason.
++
++## Answers
++
++- **Each run is repeatable:** each build gave the same 16 answer tokens in both rounds.
++- **One exception, in v0.1.38 itself:**
++  - Its two runs answered the 100K prompt differently.
++  - Those runs started with 4,171 and 4,163 expert slots, because a few MiB more VRAM were in use the second time.
++  - The answer tokens can change with which experts the cache holds.
++- **Read alone,** right after the warm-up, the 65K prompt gives the same 16 tokens on both builds.
++- **Needles:** 9 of 9 found with the change and `--prefill auto:16384`. The test is `tools/needle_bench.py` at 32K,
++  128K and 262K, depths 10, 50 and 90. Every result is in [`needles.json`](needles.json).
+diff --git a/bench/results/2026-10-03-prompt-chunks/ab.json b/bench/results/2026-10-03-prompt-chunks/ab.json
+new file mode 100644
+index 000000000..75c483b74
+--- /dev/null
++++ b/bench/results/2026-10-03-prompt-chunks/ab.json
+@@ -0,0 +1,552 @@
++[
++ {
++  "round": 1,
++  "size": 9000,
++  "tokens": 9010,
++  "ms": 5959,
++  "tps": 1511.9,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This is a highly sophisticated, production-grade C++ implementation for managing MoE (",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 16384,
++  "tokens": 16402,
++  "ms": 7172,
++  "tps": 2287.0,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This is a high-performance, low-level C++ implementation for loading and executing M",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 20000,
++  "tokens": 20036,
++  "ms": 9556,
++  "tps": 2096.6,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a Large Language Model",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 32768,
++  "tokens": 32716,
++  "ms": 12723,
++  "tps": 2571.3,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a complex Mixture",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 40000,
++  "tokens": 40013,
++  "ms": 15716,
++  "tps": 2545.9,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code review covers a complex, high-performance inference engine (`strata`) involving",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 25175,
++  "tps": 2598.9,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (`strata`) focusing on CUDA",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 100000,
++  "tokens": 100117,
++  "ms": 41216,
++  "tps": 2429.1,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance, hybrid CPU/GPU inference engine (likely",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 26700,
++  "tokens": 26762,
++  "ms": 12493,
++  "tps": 2142.2,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code represents a high-performance, low-level inference engine (likely for a Large",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 1,
++  "size": 9000,
++  "tokens": 9010,
++  "ms": 5955,
++  "tps": 1512.9,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This is a highly sophisticated, production-grade C++ implementation for managing MoE (",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 16384,
++  "tokens": 16402,
++  "ms": 7149,
++  "tps": 2294.3,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This is a high-performance, low-level C++ implementation for loading and executing M",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 20000,
++  "tokens": 20036,
++  "ms": 9335,
++  "tps": 2146.3,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a Large Language Model",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 32768,
++  "tokens": 32716,
++  "ms": 12653,
++  "tps": 2585.6,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a complex Mixture",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 40000,
++  "tokens": 40013,
++  "ms": 15706,
++  "tps": 2547.6,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code review covers a complex, high-performance inference engine (`strata`) involving",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 25101,
++  "tps": 2606.5,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (likely for a Mixture-of",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 100000,
++  "tokens": 100117,
++  "ms": 40823,
++  "tps": 2452.4,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance, hybrid CPU/GPU inference engine (likely",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 26700,
++  "tokens": 26762,
++  "ms": 12326,
++  "tps": 2171.1,
++  "slots": 4171,
++  "chunk": 8192,
++  "answer": "This code represents a high-performance, low-level inference engine (likely for a Large",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 1,
++  "size": 9000,
++  "tokens": 9010,
++  "ms": 3735,
++  "tps": 2412.5,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code implements a sophisticated memory management strategy for a Mixture-of-Experts (",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 16384,
++  "tokens": 16402,
++  "ms": 6700,
++  "tps": 2448.1,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This is a high-performance, low-level C++ implementation for loading and executing M",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 20000,
++  "tokens": 20036,
++  "ms": 6943,
++  "tps": 2885.8,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code represents a highly optimized, low-level inference engine for a Large Language Model",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 32768,
++  "tokens": 32716,
++  "ms": 10498,
++  "tps": 3116.4,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code represents a highly optimized, low-level inference engine for a complex Mixture",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 40000,
++  "tokens": 40013,
++  "ms": 12968,
++  "tps": 3085.4,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code review covers a complex, high-performance inference engine (`strata`) focused",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 19316,
++  "tps": 3387.2,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code review covers a high-performance, heterogeneous inference engine (likely for a Mo",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 100000,
++  "tokens": 100117,
++  "ms": 30573,
++  "tps": 3274.7,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code review covers a high-performance inference engine (`strata`) focused on M",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 1,
++  "size": 26700,
++  "tokens": 26762,
++  "ms": 9630,
++  "tps": 2779.1,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code represents a high-performance, low-level inference engine (likely for a Large",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 9000,
++  "tokens": 9010,
++  "ms": 5964,
++  "tps": 1510.8,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This is a highly sophisticated, production-grade C++ implementation for managing MoE (",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 16384,
++  "tokens": 16402,
++  "ms": 7158,
++  "tps": 2291.3,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This is a high-performance, low-level C++ implementation for loading and executing M",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 20000,
++  "tokens": 20036,
++  "ms": 9520,
++  "tps": 2104.6,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a Large Language Model",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 32768,
++  "tokens": 32716,
++  "ms": 12738,
++  "tps": 2568.3,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a complex Mixture",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 40000,
++  "tokens": 40013,
++  "ms": 15711,
++  "tps": 2546.7,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code review covers a complex, high-performance inference engine (`strata`) involving",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 25221,
++  "tps": 2594.1,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (`strata`) focusing on CUDA",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 100000,
++  "tokens": 100117,
++  "ms": 41268,
++  "tps": 2426.0,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (`strata`) focused on M",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 26700,
++  "tokens": 26762,
++  "ms": 12485,
++  "tps": 2143.5,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code represents a high-performance, low-level inference engine (likely for a Large",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": 2,
++  "size": 9000,
++  "tokens": 9010,
++  "ms": 5928,
++  "tps": 1520.0,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This is a highly sophisticated, production-grade C++ implementation for managing MoE (",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 16384,
++  "tokens": 16402,
++  "ms": 7096,
++  "tps": 2311.3,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This is a high-performance, low-level C++ implementation for loading and executing M",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 20000,
++  "tokens": 20036,
++  "ms": 9323,
++  "tps": 2149.0,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a Large Language Model",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 32768,
++  "tokens": 32716,
++  "ms": 12677,
++  "tps": 2580.7,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code represents a highly optimized, low-level inference engine for a complex Mixture",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 40000,
++  "tokens": 40013,
++  "ms": 15714,
++  "tps": 2546.3,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code review covers a complex, high-performance inference engine (`strata`) involving",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 25186,
++  "tps": 2597.7,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (likely for a Mixture-of",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 100000,
++  "tokens": 100117,
++  "ms": 40883,
++  "tps": 2448.9,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance, hybrid CPU/GPU inference engine (likely",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 26700,
++  "tokens": 26762,
++  "ms": 12313,
++  "tps": 2173.4,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code represents a high-performance, low-level inference engine (likely for a Large",
++  "arm": "change, --prefill auto"
++ },
++ {
++  "round": 2,
++  "size": 9000,
++  "tokens": 9010,
++  "ms": 3742,
++  "tps": 2407.6,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code implements a sophisticated memory management strategy for a Mixture-of-Experts (",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 16384,
++  "tokens": 16402,
++  "ms": 6697,
++  "tps": 2449.3,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This is a high-performance, low-level C++ implementation for loading and executing M",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 20000,
++  "tokens": 20036,
++  "ms": 6885,
++  "tps": 2909.9,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code represents a highly optimized, low-level inference engine for a Large Language Model",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 32768,
++  "tokens": 32716,
++  "ms": 10474,
++  "tps": 3123.5,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code represents a highly optimized, low-level inference engine for a complex Mixture",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 40000,
++  "tokens": 40013,
++  "ms": 12949,
++  "tps": 3090.1,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code review covers a complex, high-performance inference engine (`strata`) focused",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 19266,
++  "tps": 3395.9,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code review covers a high-performance, heterogeneous inference engine (likely for a Mo",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 100000,
++  "tokens": 100117,
++  "ms": 30563,
++  "tps": 3275.7,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code review covers a high-performance inference engine (`strata`) focused on M",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": 2,
++  "size": 26700,
++  "tokens": 26762,
++  "ms": 9600,
++  "tps": 2787.6,
++  "slots": 4170,
++  "chunk": 13312,
++  "answer": "This code represents a high-performance, low-level inference engine (likely for a Large",
++  "arm": "change, --prefill auto:16384"
++ },
++ {
++  "round": "solo",
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 25332,
++  "tps": 2582.7,
++  "slots": 4163,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (likely for a Mixture-of",
++  "arm": "v0.1.38"
++ },
++ {
++  "round": "solo",
++  "size": 65536,
++  "tokens": 65426,
++  "ms": 25353,
++  "tps": 2580.6,
++  "slots": 4170,
++  "chunk": 8192,
++  "answer": "This code review covers a high-performance inference engine (likely for a Mixture-of",
++  "arm": "change, --prefill auto"
++ }
++]
+\ No newline at end of file
+diff --git a/bench/results/2026-10-03-prompt-chunks/needles.json b/bench/results/2026-10-03-prompt-chunks/needles.json
+new file mode 100644
+index 000000000..2a87bcdf4
+--- /dev/null
++++ b/bench/results/2026-10-03-prompt-chunks/needles.json
+@@ -0,0 +1,83 @@
++[
++ {
++  "length": "32k",
++  "depth": 10,
++  "prompt_tokens": 32198,
++  "seconds": 11.1,
++  "found": true,
++  "word": "meadow-copper-504",
++  "answer": "meadow-copper-504"
++ },
++ {
++  "length": "32k",
++  "depth": 50,
++  "prompt_tokens": 32198,
++  "seconds": 10.6,
++  "found": true,
++  "word": "falcon-quartz-940",
++  "answer": "falcon-quartz-940"
++ },
++ {
++  "length": "32k",
++  "depth": 90,
++  "prompt_tokens": 32199,
++  "seconds": 10.7,
++  "found": true,
++  "word": "willow-cobalt-696",
++  "answer": "willow-cobalt-696"
++ },
++ {
++  "length": "128k",
++  "depth": 10,
++  "prompt_tokens": 122883,
++  "seconds": 39.3,
++  "found": true,
++  "word": "falcon-saffron-138",
++  "answer": "falcon-saffron-138"
++ },
++ {
++  "length": "128k",
++  "depth": 50,
++  "prompt_tokens": 122881,
++  "seconds": 39.3,
++  "found": true,
++  "word": "quartz-tundra-528",
++  "answer": "quartz-tundra-528"
++ },
++ {
++  "length": "128k",
++  "depth": 90,
++  "prompt_tokens": 122881,
++  "seconds": 25.2,
++  "found": true,
++  "word": "quartz-glacier-192",
++  "answer": "quartz-glacier-192"
++ },
++ {
++  "length": "262k",
++  "depth": 10,
++  "prompt_tokens": 255570,
++  "seconds": 83.9,
++  "found": true,
++  "word": "tundra-falcon-946",
++  "answer": "tundra-falcon-946"
++ },
++ {
++  "length": "262k",
++  "depth": 50,
++  "prompt_tokens": 255570,
++  "seconds": 84.2,
++  "found": true,
++  "word": "willow-glacier-745",
++  "answer": "willow-glacier-745"
++ },
++ {
++  "length": "262k",
++  "depth": 90,
++  "prompt_tokens": 255571,
++  "seconds": 84.2,
++  "found": true,
++  "word": "falcon-juniper-150",
++  "answer": "falcon-juniper-150"
++ }
++]
+\ No newline at end of file
+diff --git a/include/strata/prefill/prefill.hpp b/include/strata/prefill/prefill.hpp
+index 15df6e4e4..f9df1bfd7 100644
+--- a/include/strata/prefill/prefill.hpp
++++ b/include/strata/prefill/prefill.hpp
+@@ -76,6 +76,9 @@ class Prefill {
+     /// ring (a big one only pays when the copy engine, not the host copies, is the limit); set before bytes_needed.
+     static void set_pinned_share(double share);
+     static double pinned_share();
++    /// The chunk size from which a chunk streams every expert the GPU does not hold (1024; STRATA_PREFILL_STREAM_MIN).
++    /// A smaller chunk moves only the experts its own tokens route to, so a short last chunk costs little.
++    static int64_t stream_all_min_tokens();
+     /// #340: the streamed ring's slot count for chunks that stream every expert, instead of the pinned-share rule
+     /// (0 = that rule). Set before any `bytes_needed`/`init` (both count the ring); STRATA_PREFILL_RING still wins.
+     static void set_ring_override(int slots);
+diff --git a/src/prefill/prefill.cpp b/src/prefill/prefill.cpp
+index e76fb6ddc..31a9e0b10 100644
+--- a/src/prefill/prefill.cpp
++++ b/src/prefill/prefill.cpp
+@@ -1354,6 +1354,7 @@ void Prefill::set_ring_budget(int slots, int64_t small_max) {
+     g_ring_small_max = small_max > 0 ? small_max : 0;
+ }
+ double Prefill::pinned_share() { return g_pinned_share; }
++int64_t Prefill::stream_all_min_tokens() { return stream_all_min(); }
+ 
+ uint64_t Prefill::bytes_needed(const core::ModelGeometry& g, const core::SessionState& ss, int64_t chunk) {
+     // the same allocation sequence as `init`, counted
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 085c3d8ce..7de9c8e24 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -4413,11 +4413,24 @@ int main(int argc, char** argv) {
+     };
+     // `lend_bytes` went with the single-cache serve loan: a participant's loan is priced by `part_bytes` from its
+     // OWN cache, and the only other user of the old helper was the serve path's own relayout.
++    // A segment of `tokens` reads in as few chunks as `max_chunk` allows, of equal size: n = ceil(tokens / max_chunk)
++    // chunks of ceil(tokens / n), rounded up to 256.  A chunk of stream_all_min_tokens() or more streams every expert
++    // the GPU does not hold (~1.7 s each on PCIe 3.0, whatever its length), so a long prompt's cost is its number of
++    // such chunks: a bigger chunk pays only where it saves one, and equal chunks borrow no more slots than that count
++    // needs (RTX 5070 Ti, IQ3_XXS: 20,036 tokens in 3 x 6,912 read 2.2% faster than in 2 x 8,192 + 3,652).  Full
++    // chunks and a short last one stay when that last one is below stream_all_min_tokens(): it moves only the experts
++    // its own tokens route to, where equal chunks would all stream every expert (16,402 tokens in 3 equal chunks read
++    // 22% slower than in 2 x 8,192 + 18).
+     auto request_chunk = [](int64_t tokens, int64_t max_chunk) -> int64_t {
+         if (tokens <= 0 || max_chunk <= 0) return 0;
+-        const int64_t rounded = tokens > std::numeric_limits<int64_t>::max() - 255
+-                                    ? tokens
+-                                    : ((tokens + 255) / 256) * 256;
++        const int64_t n = tokens / max_chunk + (tokens % max_chunk != 0);
++        const int64_t last = tokens - (n - 1) * max_chunk;
++        const int64_t per = n > 1 && last < strata::prefill::Prefill::stream_all_min_tokens()
++                                ? max_chunk
++                                : tokens / n + (tokens % n != 0);
++        const int64_t rounded = per > std::numeric_limits<int64_t>::max() - 255
++                                    ? per
++                                    : ((per + 255) / 256) * 256;
+         return std::min(max_chunk, rounded);
+     };
+     // The prompt path's chunk and the slots it borrows for its buffers: the requested chunk halved until it fits,

@@ -289,3 +289,15 @@ da includere nel prossimo Daily. Il kernel di Encapsulate accelera anche la test
 Piccolo ma coerente: circa +1 punto di hit e meno esperti calcolati dalla CPU, L01 +1–6%. Cambia solo il
 posizionamento degli esperti (classe di arrotondamento gia' presente con il tier adattivo): proposto acceso nel
 prossimo Daily.
+
+## Modo DMA (`--pcie-mode dma`) sul codice 0.1.39 + PR 904 + Encapsulate, nucleo adattivo acceso — 2026-10-05
+
+Identita': teacher forcing a posizionamento fisso (`TFX-dma-*`) identico bit per bit al Daily su code ed explain
+(KL 0). Una prima corsa explain si e' fermata all'avvio (oltre 300 s alla registrazione dell'arena, prima del decode:
+non e' il blocco #31) ed e' conservata come `TFX-dma-explain-failed-startup`; ripetuta, avvio in 60 s e risultato
+identico. Unico stallo d'avvio su decine di avvii della giornata, da tenere d'occhio.
+
+Velocita' a 131k (`LD-*`, prima B due volte, poi A): DMA L01 46,9 / 47,8, L02 47,2 / 45,2 t/s; automatico (copy
+kernel) L01 48,8, L02 34,8 (corsa anomala: 45 ms per finestra in L02) - contro le corse automatiche `LCA-on*`
+L01 46,7 / 48,9, L02 44,2 / 42,7. DMA: L01 alla pari, L02 +3–7%. Resta il rischio del blocco del driver (#31): prova
+di resistenza nel benchmark finale a turni della sera.

@@ -1,0 +1,21 @@
+code: DMA identico bit per bit a TFX-A1
+TFX-dma-code             vs TFX-A1-code      pos  169 argmax 100.0% (teacher  98.8%) firm 100.0% of 165 top5 100.0% KL 0.0000 p99 0.000
+explain: DMA DIVERSO da TFX-A1
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\analyze_tf.py", line 57, in <module>
+    out[r] = compare(ref, r)
+             ^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\analyze_tf.py", line 39, in compare
+    A, X = read(ref), read(run)
+                      ^^^^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\analyze_tf.py", line 16, in read
+    for line in (L / run / 'logpos.tsv').read_text().splitlines():
+                ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\pathlib.py", line 1027, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261004_routed_keep\\TFX-dma-explain\\logpos.tsv'
+TFX-dma-explain          vs TFX-A1-explain   pos  595 argmax 100.0% (teacher  88.2%) firm 100.0% of 525 top5 100.0% KL 0.0000 p99 0.000

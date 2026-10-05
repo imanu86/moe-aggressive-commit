@@ -84,6 +84,8 @@ def main():
     ap.add_argument('--lookahead', action='store_true', help='STRATA_LOOKAHEAD_PROBE=1 (needs build-v5), any arm')
     ap.add_argument('--mtp-dir', default=None, help='alternative MTP pack folder (e.g. a draft-vocab candidate), any arm')
     ap.add_argument('--daily-exe', action='store_true', help="use the Daily config's own exe (arm A only)")
+    ap.add_argument('--env', action='append', default=[], help='KEY=VALUE extra STRATA_ env (diagnostics), any arm')
+    ap.add_argument('--set-opt', action='append', default=[], help='--option=value override of the Daily args')
     a = ap.parse_args()
     assert (a.arm == 'B') == (1 <= a.keep <= 9 or a.min_w > 0 or a.miss_w > 0 or a.gate_keep > 0)
     out = L / a.name
@@ -129,6 +131,10 @@ def main():
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')
     if a.lookahead:
         env['STRATA_LOOKAHEAD_PROBE'] = '1'
+    for kv in a.env:
+        k, v = kv.split('=', 1); assert k.startswith('STRATA_'); env[k] = v
+    for ov in a.set_opt:
+        k, v = ov.split('=', 1); assert k.startswith('--'); args = PREFIX.replace_option(args, k, v)
     if a.teacher:
         env.update(STRATA_LOGPOS=str((out / 'logpos.tsv').resolve()), STRATA_LOGPOS_TOPK='20')
     if a.arm == 'B':
@@ -157,7 +163,7 @@ def main():
     assert now['commit_free_gib'] >= 52, f"Too little commit charge: {now['commit_free_gib']} GiB"
     out.mkdir()
     plan = dict(teacher=a.teacher, teacher_answer_tokens=len(teacher_answer), arm=a.arm, keep=a.keep,
-                min_w=a.min_w, min_keep=a.min_keep, skip=a.skip, miss_w=a.miss_w, gate_keep=a.gate_keep, lookahead=a.lookahead, mtp_dir=a.mtp_dir, build=a.build, renorm=a.renorm, task=a.task, args=args, prompt_ids=ids,
+                min_w=a.min_w, min_keep=a.min_keep, skip=a.skip, miss_w=a.miss_w, gate_keep=a.gate_keep, lookahead=a.lookahead, mtp_dir=a.mtp_dir, extra_env=a.env, set_opt=a.set_opt, build=a.build, renorm=a.renorm, task=a.task, args=args, prompt_ids=ids,
                 prompt_tokens=len(ids), max_tokens=a.tokens, expected=expected,
                 sampling=dict(temperature=0, seed=73), executable_sha256=pin['executable_sha256'],
                 daily_sha256=sha(Path(cfg['exe'])), config_sha256=sha(CONFIG), state=now, state_diff=diff,

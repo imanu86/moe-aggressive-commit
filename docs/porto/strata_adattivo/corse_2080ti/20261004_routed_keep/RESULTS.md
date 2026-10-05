@@ -301,3 +301,23 @@ Velocita' a 131k (`LD-*`, prima B due volte, poi A): DMA L01 46,9 / 47,8, L02 47
 kernel) L01 48,8, L02 34,8 (corsa anomala: 45 ms per finestra in L02) - contro le corse automatiche `LCA-on*`
 L01 46,7 / 48,9, L02 44,2 / 42,7. DMA: L01 alla pari, L02 +3–7%. Resta il rischio del blocco del driver (#31): prova
 di resistenza nel benchmark finale a turni della sera.
+
+## PR 706 (Q2_0 AVX2 bit-plane), PR 764 (`STRATA_ADAPT_LAG`) e tier piu' vivace (#907) — 2026-10-05
+
+Dal report #913 (4060 Ti, PCIe 3 x8, AVX2, DDR3: +15–16%). Patch applicate su `main` 2d1e452 (conflitti della 764 risolti
+tenendo `pin_live` e `pending_age`): `pr706_pr764_su_main_2d1e452.patch`.
+
+Identita' a posizionamento fisso (`TFX-q2lag-*`, tier spento: conta solo la 706): **non bit-identica**. KL 0,0008 / 0,0015,
+argmax 100% / 99%, token sicuri 100%, PPL -0,60% / +0,36% (code / explain). Il kernel unisce le scale di due blocchi in
+una FMA: stessa matematica, arrotondamento diverso.
+
+Velocita' a 131k (`LQ-*`, prima B, poi A; tutte con nucleo adattivo e DMA):
+
+| | L01 t/s | L02 t/s | ms/finestra | hit |
+|---|---:|---:|---|---|
+| 706 + 764 | 49,7 | 46,4 | 39,1 · 34,0 | 0,882 · 0,900 |
+| 706 + 764 + `--adapt-every 1 --adapt-swaps 160 --adapt-decay 0,97` | 47,3 | 46,8 | 39,8 · 34,9 | 0,895 · 0,909 |
+| candidato (904 + Encapsulate) | 49,9 | 46,2 | 39,2 · 34,7 | 0,897 · 0,896 |
+
+Nessun guadagno misurabile a 131k (la CPU calcola ~2 esperti per strato): 706 e 764 non entrano; la 706 non e' neppure
+identica. Da rivedere a contesto corto o con hardware diverso.

@@ -239,3 +239,21 @@ Fedelta' in teacher forcing (`TF-P0139-*` contro `TF-A1-*`; `TF-A2-*` = rumore A
 | ledger | 0,0001 | 0,0002 | +0,13% | +0,72% |
 
 Token sicuri (scarto >= 0,5 nat) concordanti al 100% ovunque; nessuno spostamento sistematico della perplessita'.
+
+## Bozze MTP a 131k sul Daily 0.1.39 — 2026-10-05
+
+`LM-*` (prima B, poi A), eseguibile installato, arena intera. Greedy: l'output non cambia, conta il costo per token.
+
+| Variante | L01 t/s | L02 t/s | token/finestra L01 | ms/finestra L01 | esperti CPU / VRAM per strato L01 |
+|---|---:|---:|---:|---:|---|
+| `--spec-min-p 0.3` | 47,3 | 40,9 | 2,53 | 53,6 | 3,19 / 30,2 |
+| `--spec 6 --spec-min-p 0.3` | 39,2 | 37,3 | 2,42 | 61,7 | 3,76 / 35,3 |
+| `--spec-min-p 0.2` | 41,5 | 36,6 | 2,32 | 55,9 | 3,48 / 30,4 |
+| **Daily `--spec 4 --spec-min-p 0.5`** | **46,8** | **42,9** | 2,05 | 43,8 | 2,60 / 21,0 |
+
+Bozze piu' aggressive fanno accettare piu' token per finestra, ma ogni token in piu' porta i suoi esperti (CPU e
+VRAM per strato crescono quasi in proporzione): la finestra costa quanto si guadagna. Il Daily resta com'e'.
+
+Profilo GPU a 131k (`GP-ship139`, `STRATA_VERIFY_PROFILE=1`): finestra 47,7 ms = attesa GPU 25,2 + CPU 10,5 + resto;
+dentro la GPU ~11 ms sono attese (waitB ~6 dati PCIe, waitA ~3 piano dell'host, waitCPU ~2), il calcolo e' sparso
+(VRAM hits 6,4, hc-read+router 4,0, scores+topk QSA 2,0, gemv qkv 2,2, shared 1,9, out-proj 1,9, head 1,5, attenzione 1,3).

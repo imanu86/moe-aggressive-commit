@@ -472,3 +472,13 @@ I formati non toccati nello stesso banco oscillano di ±10–15% (rumore). Attes
 IQ3_S e ~15–25 per IQ2_S, con ~2,8 voci CPU per strato-finestra ~1–1,7 ms su ~45 ms di finestra, cioe' +1–3% di
 decode se la parte CPU resta sul percorso critico. Da misurare a macchina libera; candidato a entrare nella r2 (B del
 benchmark notturno = `build-pr930`).
+
+## PR 934 e 931 (valutazione sul codice) — 2026-10-05 sera
+
+- **#934** (Chromadera, aperta): con `--expert-cache-per-layer` gli slot prendono la dimensione reale del blob di ogni
+  strato (146 -> 194 slot per strato a parita' di VRAM). Il Daily usa la cache condivisa senza `--expert-cache-per-layer`,
+  che lo fa gia': `generate.cpp:3476–3491` riempie `sized_slots` nell'ordine del profilo con `blob_bytes` del proprio
+  strato, entro il budget `expert_cache * max_blob`, poi `open_sized_elastic`. Nessun effetto sul Daily: non portata.
+- **#931** (asp345, aperta): i testi dei token di controllo (`<|im_end|>`, `<|im_start|>`, …) dentro un messaggio
+  restano testo. Correzione del server, ma cambia la tokenizzazione dei prompt che li contengono: col prossimo
+  allineamento, come da piano.

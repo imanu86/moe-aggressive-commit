@@ -1,0 +1,23 @@
+{
+  "fork_head": "73cb2d46df1fd76a7bdb9bde396c90594899e648",
+  "shipping_exe_sha256": "dd82377ab682108bb6a8e2480727a27e211400df8dd01a4801144a0843270791",
+  "targets": [
+    "strata",
+    "qsa_topk_active_parity",
+    "gr_parity",
+    "gdn_parity",
+    "pool_quant_parity",
+    "router_dot_parity",
+    "expert_cache_elastic_test",
+    "expert_cache_per_layer_test",
+    "expert_profile_save_test"
+  ],
+  "steps": {
+    "configure": "rc 0",
+    "build": "rc 0",
+    "ctest": "rc 0 (7 tests)",
+    "pool_quant_parity": "rc 0 (real GGUF)",
+    "server_tests": "Ran 271 tests in 124.180s / FAILED (errors=2, skipped=7): 262 passed, 7 skipped, 2 errors; test_winjob reads tasklist as UTF-8 on an Italian (cp850) Windows; test_responses json_schema 502 fails identically on stock upstream 0.1.39 serve/ (not a fork change)"
+  },
+  "configure": "Release sm_75, CUDA 12.6 shared runtime, native experts, tests on, llama.cpp 3cf03257"
+}

@@ -1189,3 +1189,17 @@ Finestra autorizzata 19:59–23:59UTC, agenti economici OpenAI, un solo carico G
 Completata A elastica e A2 fissa ritardata; Daily aggiornato a exact-small (engine default off), SHA `d46a0752fd7b92726b34dd0332bf772cba22bba589aa22aed6e730becfb4b8fa`. KV 262144/int8/resident 32768 e cache elastica invariati. Backup `build-0138-daily/backup-request-chunk-4h-20261003`; manifest storico invariato. Le verifiche numeriche fisse passano, ma i controlli HTTP hanno limiti importanti: cap 128 genera risposte tronche anche con patch off; cap 512 produce 9 risposte complete, poi il runner fallisce sul sizing finale. Prefill lento in due avvii, anche off, causa irrisolta. Vedere `corse_2080ti/20261003_request_chunk/final-validation.json`; nessuna nuova SOTA.
 
 Ricognizione iniziale: upstream 99f3dbd0 già incluso. PR652 (anon761) e variante main-only di PR655 (rafatxf) preparate localmente, non ancora compilate o validate in questo checkpoint. La variante 655 riusa scratch esistente, preserva BF16X2 e draft MTP, default off. PR663 resta per la futura 3060. Piano/script in `.codex_runs/20261003_four_hours`.
+
+## 17. Daily 0.1.39 installato e pubblicato (5/10)
+
+Upstream v0.1.39 unito nel fork `main` (`73cb2d4`), validato a 131k (L01 51,4 / L02 44,2 t/s contro 38,7 / 38,0
+della 0.1.38) e in teacher forcing (nessuno spostamento sistematico di KL/PPL), installato in
+`D:\ds4_work\strata\Strata\build-0139-daily` e pubblicato come `v0.1.39-sm75-20261005-r1`. Dettagli, misure e
+ripristino: `ALLINEAMENTO_0139_5_OTTOBRE.md`; script in `corse_2080ti/20261005_daily0139/`.
+
+Stessa giornata, tutto in `corse_2080ti/20261004_routed_keep/RESULTS.md` e `20261004_kernel_profile/RESULTS.md`:
+la VRAM e' tutta giustificata (base del motore 5,3 GiB; budget WDDM che scende mentre il processo cresce; a 131k
+l'elastico porta la cache a ~11 GiB qualunque sia l'inizio); `--pcie-frac` automatico gia' ottimo; prefetch PCIe
+dello strato successivo non paga su PCIe 3; esperti freddi in Q2_0 stimati +21–28% (altera l'output, da provare sul
+campo); kernel IQ2_XXS a token singolo identico bit per bit a ggml (gather piu' lento su Zen 3). Banco a turni fino a
+130k: `run_turns.py` (benchmark finale da lanciare la sera).

@@ -1,0 +1,100 @@
+targets ['strata', 'qsa_topk_active_parity', 'gr_parity', 'gdn_parity', 'pool_quant_parity', 'router_dot_parity', 'expert_cache_elastic_test', 'expert_cache_per_layer_test', 'expert_profile_save_test']
+09:37:34 configure
+09:37:54 build
+09:40:41 ctest
+09:40:43 pool-quant-parity
+09:40:44 server-tests
+hinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+.[strata] done: 13 tokens in 0 s (13000000.0 tok/s) (stop, cancel=False), expert cache 90.0% hit
+.[strata] done: 13 tokens in 0 s (13000000.0 tok/s) (stop, cancel=False), expert cache 90.0% hit
+..[strata] done: 13 tokens in 0 s (13000000.0 tok/s) (stop, cancel=False), expert cache 90.0% hit
+.[strata] done: 13 tokens in 0 s (13000000.0 tok/s) (stop, cancel=False), expert cache 90.0% hit
+....[strata] done: 5 tokens in 0 s (5000000.0 tok/s) (length, cancel=False)
+[strata] the reply reached max tokens while still thinking, so it has no answer: a thinking budget (reasoning_budget_tokens, in the request or in strata-<model>.json for every request) leaves room to answer
+.....[strata] done: 255 tokens in 0 s (50790.6 tok/s) (stop, cancel=False)
+[strata] done: 282 tokens in 0 s (56398.7 tok/s) (stop, cancel=False)
+.ss.[strata] done: 13 tokens in 0 s (13000000.0 tok/s) (stop, cancel=False)
+[strata] done: 3 tokens in 0 s (3000000.0 tok/s) (stop, cancel=False)
+[strata] done: 10 tokens in 0 s (10000000.0 tok/s) (stop, cancel=False)
+[strata] done: 14 tokens in 0 s (14000000.0 tok/s) (stop, cancel=False)
+[strata] done: 12 tokens in 0 s (12000000.0 tok/s) (stop, cancel=False)
+[strata] done: 15 tokens in 0 s (15000000.0 tok/s) (stop, cancel=False)
+[strata] done: 5 tokens in 0 s (5000000.0 tok/s) (length, cancel=False)
+[strata] done: 7 tokens in 0 s (7000000.0 tok/s) (stop, cancel=False)
+.[strata] done: 21 tokens in 0 s (21000000.0 tok/s) (stop, cancel=False)
+..[strata] done: 255 tokens in 0 s (51003.7 tok/s) (stop, cancel=False)
+[strata] done: 26 tokens in 0 s (26001.9 tok/s) (stop, cancel=False)
+[strata] done: 7 tokens in 0 s (7000000.0 tok/s) (stop, cancel=False)
+[strata] done: 13 tokens in 0 s (13000000.0 tok/s) (stop, cancel=False)
+.....[strata] refused an API request from the web page 'https://other.example' (no API key; add its host to "allowed_hosts" or its origin to "cors_origins" in the config)
+.[strata] VRAM: 4000 MiB free, expert cache 2000 of 6000 MiB (100 experts)
+[strata] VRAM: 700 MiB free, expert cache 5300 of 6000 MiB (3300 experts)
+.[strata] loading the model again (it was unloaded) ...
+[strata] the engine is running again
+.Exception in thread Thread-1027 (_readerthread):
+Traceback (most recent call last):
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\subprocess.py", line 1599, in _readerthread
+    buffer.append(fh.read())
+                  ^^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x85 in position 29: invalid start byte
+Exception in thread Thread-1029 (_readerthread):
+Traceback (most recent call last):
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1075, in _bootstrap_inner
+    self.run()
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\threading.py", line 1012, in run
+    self._target(*self._args, **self._kwargs)
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\subprocess.py", line 1599, in _readerthread
+    buffer.append(fh.read())
+                  ^^^^^^^^^
+  File "<frozen codecs>", line 322, in decode
+UnicodeDecodeError: 'utf-8' codec can't decode byte 0x85 in position 29: invalid start byte
+E.
+======================================================================
+ERROR: test_json_schema_text_format (serve.test_responses.OverHttp.test_json_schema_text_format)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\daily0139_20261005\source\serve\test_responses.py", line 281, in test_json_schema_text_format
+    self.assertEqual((code, r["error"]["code"]), (502, "structured_output_failed"))
+                            ~~~~~~~~~~^^^^^^^^
+TypeError: 'NoneType' object is not subscriptable
+
+======================================================================
+ERROR: test_children_end_with_a_killed_server (serve.test_winjob.TestWinJob.test_children_end_with_a_killed_server)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\daily0139_20261005\source\serve\test_winjob.py", line 50, in test_children_end_with_a_killed_server
+    while (running(child) or running(grandchild)) and time.monotonic() < deadline:
+           ^^^^^^^^^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\daily0139_20261005\source\serve\test_winjob.py", line 32, in running
+    return str(pid) in out
+           ^^^^^^^^^^^^^^^
+TypeError: argument of type 'NoneType' is not iterable
+
+During handling of the above exception, another exception occurred:
+
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\daily0139_20261005\source\serve\test_winjob.py", line 58, in test_children_end_with_a_killed_server
+    if pid and running(pid):
+               ^^^^^^^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\daily0139_20261005\source\serve\test_winjob.py", line 32, in running
+    return str(pid) in out
+           ^^^^^^^^^^^^^^^
+TypeError: argument of type 'NoneType' is not iterable
+
+----------------------------------------------------------------------
+Ran 271 tests in 124.180s
+
+FAILED (errors=2, skipped=7)
+
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\build0139.py", line 64, in <module>
+    run([sys.executable, '-B', '-u', '-X', 'utf8', '-c', code], 'server-tests', cwd=S, timeout=900)
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261005_daily0139\build0139.py", line 42, in run
+    assert q.returncode == 0, name
+           ^^^^^^^^^^^^^^^^^
+AssertionError: server-tests

@@ -1,0 +1,47 @@
+{
+  "fork_head": "14433b09dc57775abf112f131aeb501d88de020a",
+  "shipping_exe_sha256": "b0edf8455031832e08e8e419792d49f6ba1dc1d610c56f360d316690c6089261",
+  "targets": [
+    "strata",
+    "qsa_topk_active_parity",
+    "gr_parity",
+    "gdn_parity",
+    "pool_quant_parity",
+    "router_dot_parity",
+    "expert_cache_elastic_test",
+    "expert_cache_per_layer_test",
+    "expert_profile_save_test",
+    "attn_merge_parity",
+    "q2_exact_parity",
+    "pool_tasks_test"
+  ],
+  "steps": {
+    "configure": {
+      "rc": 0,
+      "seconds": 21.4
+    },
+    "build": {
+      "rc": 0,
+      "seconds": 120.4
+    },
+    "ctest": {
+      "rc": 0,
+      "seconds": 6.5
+    },
+    "pool-quant-parity": {
+      "rc": 0,
+      "seconds": 1.0
+    },
+    "server-tests": {
+      "rc": 1,
+      "seconds": 123.5,
+      "summary": [
+        "ERROR: test_json_schema_text_format (serve.test_responses.OverHttp.test_json_schema_text_format)",
+        "ERROR: test_children_end_with_a_killed_server (serve.test_winjob.TestWinJob.test_children_end_with_a_killed_server)",
+        "Ran 278 tests in 123.017s",
+        "FAILED (errors=2, skipped=7)"
+      ]
+    }
+  },
+  "configure": "Release sm_75, CUDA 12.6 shared runtime, native experts, tests on, llama.cpp 3cf03257"
+}

@@ -157,6 +157,15 @@ prefill per turno, righe `decode timing`, `ple io`, eventuali `waited`.
 
 ### 6.3 Release Daily 0.1.39-r2
 
+**Preparata la notte del 5/10, NON installata** (decide l'utente). Cartella `corse_2080ti/20261006_daily0139r2/`:
+prepare (ripristino `D:\ds4_work\strata\ripristini\20261005_233141_daily0139r2`, sorgente `git archive` di `14433b0`),
+build shipping `b0edf845…` (CTest 11/11, pool_quant_parity ok, server 276/278 con i 2 errori noti), verifica
+dell'eseguibile shipping (`TFX-r2ship` identico bit per bit a `TFX-enc`; `L-r2ship` L01 53,1 / L02 45,8 t/s, prefill
+129,7 s), manifest e validazione nel fork `0485ca2` (`SOURCE_OK`, current 0.1.39-r2). Restano: install (cartella
+`build-0139r2-daily`, config con `STRATA_ELASTIC_CORE_ADAPT=1` in env, `--pcie-mode dma` e `--pool-tasks 96` negli
+argomenti, riga del BAT, cambio atomico con ripristino), check sulla 8100, publish della release GitHub. Gli script
+`install`/`check`/`publish` della 0.1.39 vanno adattati come prepare/build/manifest.
+
 Procedura gia' collaudata: `corse_2080ti/20261005_daily0139/` (prepare → build → manifest → install → check →
 publish). Copiarla in una cartella nuova (es. `20261006_daily0139r2/`) e adattare nomi e versioni:
 

@@ -520,7 +520,22 @@ prima ~2M token di altri file dello stesso progetto, poi il test da 131k (`ple_s
 (percentuali rispetto alla stessa cache 1M a freddo). Col Daily acceso restano ~25 GiB di RAM disponibile (arena
 43,8 GiB, KV 3,1 GiB). Verdetto: la cache dinamica da 16M batte il profilo fisso da 8M senza codice nuovo e segue
 il progetto della sessione; il guadagno dipende da quanto materiale ha gia' visto il server. Output identico (stessi
-byte). Da verificare nel motore: nessun peggioramento a freddo (L01/L02) e il beneficio nei turni.
+byte). L'utente: un sistema adattivo ha senso, una porzione fissa invecchia.
+
+Controllo a freddo nel motore (`LRC*`, r2 + #930, configurazione candidata, tabella su D:; prima B due volte poi A):
+
+| corsa | cache | prefill L01 | letture SSD L01 | avvio | L01 / L02 t/s |
+|---|---|---:|---:|---:|---|
+| `LRC16-a` | 16M | 134,7 s | 581.131 | 46 s | 44,2 / 33,5 |
+| `LRC16-b` | 16M | 135,6 s | 582.456 | 44 s | 48,2 / 43,6 |
+| `LRC1M` | 1M | 136,8 s | 584.702 | 43 s | 37,7 / 45,1 |
+
+Nessun peggioramento: prefill e letture uguali a freddo (le righe di un prompt da 131k stanno quasi tutte gia' in
+1M), attesa PLE nel decode ~0; le t/s di decode saltano nei due versi col carico della GPU (12–29%, altri
+programmi). Daily: `--ple-row-cache 16777216` nel config col consenso dell'utente (`20261005_ple_hot/switch_rowcache.py`,
+ripristino `D:\ds4_work\strata\ripristini\20261005_184619_ple_rowcache`), controllo sulla 8100 superato. Il
+beneficio nella sessione calda si leggera' nelle righe `ple io` dei turni (benchmark notturno: entrambi i bracci
+leggono il config del Daily, quindi entrambi con 16M).
 
 ## PR 934 e 931 (valutazione sul codice) — 2026-10-05 sera
 

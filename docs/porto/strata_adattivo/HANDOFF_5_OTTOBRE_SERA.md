@@ -184,6 +184,13 @@ Condizioni: notte B >= A e nessun blocco; altrimenti r2 senza DMA (o senza la pa
 
 ### 6.5 Righe calde della tabella PLE in RAM (idea, non iniziata)
 
+**Chiuso il 5/10 sera, diversamente dall'idea.** Simulazione (`corse_2080ti/20261005_ple_hot/`, RESULTS.md «Righe PLE in
+RAM»): un profilo fisso di righe calde rende poco e invecchia (8M righe = 720 MB lasciano il 58–64% delle letture sui
+file dei progetti); la cache dinamica gia' esistente portata a 16M righe (1,4 GB) in sessione calda ne lascia il
+50–55% senza codice nuovo. Controllo a freddo nel motore senza peggioramenti (`LRC*`), poi col consenso dell'utente
+`--ple-row-cache 16777216` nel config del Daily (ripristino `D:\ds4_work\strata\ripristini\20261005_184619_ple_rowcache`).
+Testo originale dell'idea sotto.
+
 L'utente vorrebbe parte della tabella in RAM. Mezza tabella (13 GB) non ci sta con l'arena da 64 GiB fissata. Idea
 migliore: precaricare all'avvio le righe piu' frequenti nella cache di righe (oggi parte vuota a ogni avvio; 1M righe
 ~95 MB servirebbero fino all'82% delle letture secondo le misure upstream; dentro un prompt da 131k le ripetizioni

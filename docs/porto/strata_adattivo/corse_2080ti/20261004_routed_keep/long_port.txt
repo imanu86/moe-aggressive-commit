@@ -1,0 +1,18 @@
+{"available_ram_gib": 68.5, "commit_free_gib": 67.8, "gpu_used_mib": 3553, "gpu_util": 33, "cgcontrol": true, "competing": []}
+LP-port1 rc=0
+strata elastic: -134 slots (77 moved in, 57 out) -> 6746 slots, 10.93 GiB; 595 MiB free, prompt chunk 8192
+strata decode timing: 488 windows, avg T 2.45, 2.10 tokens/window, 45.23 ms/window = verify 38.99 (GPU-reach wait 25.35 + per-layer host 11.52 [plan 0.13 actq 0.38 jobs 0.01 CPU 10.93] + stage 0.05) + commit/emit 0.48 + draft 3.77; per layer-window: CPU expert
+strata decode timing: 648 windows, avg T 1.86, 1.58 tokens/window, 38.28 ms/window = verify 33.19 (GPU-reach wait 22.50 + per-layer host 8.88 [plan 0.10 actq 0.25 jobs 0.01 CPU 8.45] + stage 0.05) + commit/emit 0.51 + draft 3.19; per layer-window: CPU experts 
+  => completed L01 46.4 t/s ttft 128 s | L02 41.3 t/s ttft 2 s
+{"available_ram_gib": 68.1, "commit_free_gib": 67.5, "gpu_used_mib": 3300, "gpu_util": 10, "cgcontrol": true, "competing": []}
+LP-port2 rc=0
+strata elastic: +52 experts (86 MiB) -> 6603 slots, 10.70 GiB; 1746 MiB free
+strata decode timing: 535 windows, avg T 2.29, 1.91 tokens/window, 44.06 ms/window = verify 37.98 (GPU-reach wait 24.15 + per-layer host 11.75 [plan 0.15 actq 0.34 jobs 0.01 CPU 11.14] + stage 0.09) + commit/emit 0.47 + draft 3.65; per layer-window: CPU expert
+strata decode timing: 609 windows, avg T 1.98, 1.68 tokens/window, 40.27 ms/window = verify 34.81 (GPU-reach wait 23.12 + per-layer host 9.84 [plan 0.11 actq 0.28 jobs 0.01 CPU 9.37] + stage 0.04) + commit/emit 0.48 + draft 3.38; per layer-window: CPU experts 
+  => completed L01 43.4 t/s ttft 294 s | L02 41.8 t/s ttft 2 s
+{"available_ram_gib": 66.6, "commit_free_gib": 66.9, "gpu_used_mib": 3314, "gpu_util": 9, "cgcontrol": true, "competing": []}
+LP-daily rc=0
+strata elastic: +122 experts (200 MiB) -> 6424 slots, 10.39 GiB; 1471 MiB free
+strata decode timing: 552 windows, avg T 2.21, 1.86 tokens/window, 47.95 ms/window = verify 42.02 (GPU-reach wait 23.89 + per-layer host 13.69 [plan 0.41 actq 1.16 jobs 0.47 CPU 11.63] + stage 0.77) + commit/emit 0.38 + draft 3.59; per layer-window: CPU expert
+strata decode timing: 615 windows, avg T 1.98, 1.67 tokens/window, 43.82 ms/window = verify 38.56 (GPU-reach wait 23.24 + per-layer host 11.13 [plan 0.36 actq 1.13 jobs 0.43 CPU 9.19] + stage 0.79) + commit/emit 0.38 + draft 3.33; per layer-window: CPU experts
+  => completed L01 38.7 t/s ttft 129 s | L02 38.0 t/s ttft 2 s

@@ -216,3 +216,26 @@ dense native dal GGUF 1.781, sessione ~970 (QSA a 262k 849: KV in VRAM e tabella
   42,0, L02 38,6. L'elastico porta comunque la cache a ~10,9–11,1 GiB: **nessun guadagno, l'automatico resta**.
   A 131k la CPU pesa poco (~2 esperti per strato, 9–15 ms su 43–52 ms per finestra): dominano l'attesa GPU
   (~22–25 ms) e le bozze accettate (1,6–2,0 token per finestra).
+
+## Port upstream v0.1.39 (`port/0139`, fd7f51f) contro il Daily — 2026-10-05
+
+Velocita' a 131k (`LP-*`, prima B due volte, poi A; arena intera):
+
+| Corsa | L01 t/s | L02 t/s | prefill L01 |
+|---|---:|---:|---:|
+| port 0.1.39 | 46,4 · 43,4 | 41,3 · 41,8 | 128 s · 294 s |
+| Daily 0.1.38 | 38,7 | 38,0 | 129 s |
+
+Decode +9–20%: lavoro dell'host per strato da ~2,8 a ~0,5 ms per finestra (plan/actq/jobs/stage). Il prefill da
+294 s della seconda corsa e' la tabella PLE letta dall'SSD (195 s bloccati in letture contro 6 s: pagine non piu' nella
+cache file di Windows), non il port.
+
+Fedelta' in teacher forcing (`TF-P0139-*` contro `TF-A1-*`; `TF-A2-*` = rumore A/A del Daily), `tf_port0139.txt`:
+
+| Compito | KL A/A | KL port | PPL A/A | PPL port |
+|---|---:|---:|---:|---:|
+| code | 0,0004 | 0,0006 | +0,32% | +0,23% |
+| explain | 0,0005 | 0,0018 | -0,19% | -1,77% |
+| ledger | 0,0001 | 0,0002 | +0,13% | +0,72% |
+
+Token sicuri (scarto >= 0,5 nat) concordanti al 100% ovunque; nessuno spostamento sistematico della perplessita'.

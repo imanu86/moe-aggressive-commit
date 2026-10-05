@@ -442,3 +442,33 @@ senza SMART (servono i permessi di amministratore).
 
 Verdetto: la tabella su D: passa i criteri del §6.1 (prefill stabile, nessuna attesa lunga, decode invariato). Per il
 Daily servono tre righe nel config: `--ple-gguf <D:>` e `--native-dense-gguf` due volte (shard 1, shard 2 su D:).
+Fatto col consenso dell'utente (`20261005_ple_d/`, controllo sulla 8100 superato); il suo sospetto sulle scritture
+continue su C: (video YouTube in un browser) e' compatibile con un NVMe senza DRAM. Pagefile escluso: picco 144 MB
+dal boot.
+
+## PR 930: decodifica IQ3_S / IQ2_S AVX2 senza shift per indice (sanastasiou) — 2026-10-05 sera
+
+Upstream #930 (`9233f998`, aperta): solo `iq_avx2.cpp`; indici della griglia da tabella costante, segni con un
+`pshufb`, scale da tabella, gather di IQ3_S scelto una volta per chiamata. Nel nostro GGUF i gate/up degli esperti
+sono IQ3_S in 13 strati e IQ2_S in 10 su 48 (gli altri IQ2_XS 10, IQ2_XXS 9, IQ3_XXS 6). Fork: `087212e` (strumenti),
+`862c18a` (port), `52a39e5` (manifest `r2cand930-20261005.json`, SOURCE_OK). Cartella `20261005_pr930/`.
+
+Identita':
+- `iq256_dump` (nuovo, laboratorio): 972 casi (sei formati, 1–9 token, righe con resti, `iq256_rows` e
+  `iq256_gu_rows`), 739.238 uscite: file uguali byte per byte prima/dopo e con `STRATA_IQ256_GATHER=1`
+  (sha256 `9731e590…`). Mutazione di un bit IQ3_S (`qh = 0x02`) rilevata; quella piu' grossolana la ferma gia' la
+  `static_assert` della PR.
+- Teacher forcing a posizionamento fisso `TFX-pr930-*` identico bit per bit a `TFX-enc-*` (code ed explain, 3,5–6
+  esperti per strato-finestra sulla CPU), col config del Daily gia' su D: (`tf_fixed_pr930.txt`).
+
+Velocita' (macchina con video nel browser: rumore alto, base e PR alternati):
+
+| banco | IQ3_S | IQ2_S |
+|---|---|---|
+| gate/up a un thread, 640 x 10 blocchi (`bench_iq256.txt`) | 1,25–1,40x | 1,00–1,31x |
+| pool reale 7 worker, us per strato-finestra (`pool_iq256.txt`) | 1248/1493 -> 957/874 (strato 20) | 1008/783 -> 678/633 (strato 21) |
+
+I formati non toccati nello stesso banco oscillano di ±10–15% (rumore). Atteso a 131k: ~26 us risparmiati per voce
+IQ3_S e ~15–25 per IQ2_S, con ~2,8 voci CPU per strato-finestra ~1–1,7 ms su ~45 ms di finestra, cioe' +1–3% di
+decode se la parte CPU resta sul percorso critico. Da misurare a macchina libera; candidato a entrare nella r2 (B del
+benchmark notturno = `build-pr930`).

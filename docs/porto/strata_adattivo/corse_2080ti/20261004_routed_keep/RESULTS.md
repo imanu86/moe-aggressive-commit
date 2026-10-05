@@ -275,3 +275,17 @@ Velocita' a 131k (`LG-*`, prima B poi A):
 
 Guadagno piccolo (+2–5%), stesso ordine del rumore fra corse, ma senza alcun cambio dell'output: entrambe su `main`,
 da includere nel prossimo Daily. Il kernel di Encapsulate accelera anche la testa MTP (bozza -20%).
+
+## Nucleo elastico adattivo a 131k sul codice 0.1.39 + PR 904 + Encapsulate — 2026-10-05
+
+`LCA-*` (prima B due volte, poi A), stesso eseguibile (`build-pr904enc`), arena intera.
+
+| `STRATA_ELASTIC_CORE_ADAPT` | L01 t/s | L02 t/s | hit L01 · L02 | esperti CPU/strato L01 · L02 |
+|---|---:|---:|---:|---|
+| 1 | 46,7 | 44,2 | 0,88 · 0,90 | 2,30 · 1,60 |
+| 1 | 48,9 | 42,7 | 0,885 · 0,883 | 2,37 · 1,82 |
+| spento | 46,0 | 43,3 | 0,87 · 0,88 | 2,43 · 1,92 |
+
+Piccolo ma coerente: circa +1 punto di hit e meno esperti calcolati dalla CPU, L01 +1–6%. Cambia solo il
+posizionamento degli esperti (classe di arrotondamento gia' presente con il tier adattivo): proposto acceso nel
+prossimo Daily.

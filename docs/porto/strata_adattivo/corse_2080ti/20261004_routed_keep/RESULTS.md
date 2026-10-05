@@ -163,3 +163,34 @@ vale su pochi strati. Il Daily registra tutta l'arena (43 GB).
 
 Con l'arena intera la GPU prende ~4 esperti per strato via PCIe (+4% di decode, una corsa), ma la CPU resta il
 46% della finestra: circa 96 us per esperto nel motore contro 81 nel banco del pool (finestra da 10).
+
+## Taratura di `--pcie-frac` e prefetch PCIe dello strato successivo — 2026-10-05
+
+Compito code, arena intera registrata (come il Daily), una riga per corsa. File: `pcie_sweep.txt`,
+`prefetch_ab.txt`, `prefetch_dma_ab.txt`.
+
+`--pcie-frac` (copy kernel, il modo automatico): 0,20 -> 44,6 / 39,6 t/s; 0,28 -> 38,0 / 40,8; **0,36 (auto)
+-> 46,1 / 45,7 / 44,3**; 0,45 -> 41,5; 0,55 -> 37,2 / 38,5; 0,70 -> 34,3; 0,85 -> 31,3. Piu' esperti via PCIe
+tolgono lavoro alla CPU ma ogni esperto costa ~120 us sul percorso critico: il valore automatico e' il migliore.
+
+Prefetch `STRATA_PREFETCH_NEXT=P` (prototipo di laboratorio, build-pf1): la previsione top-20 dello strato l+1
+(router l+1 sull'ingresso MoE dello strato l) va in memoria mappata col doorbell; l'host accoda sul motore di
+copia, dietro le copie dello strato, i primi P esperti previsti non residenti; allo strato l+1 i mancanti
+prefetchati diventano gruppi GPU. Solo in modo DMA (`--pcie-mode dma`); nel modo automatico (copy kernel) non
+scatta, ma la previsione costa comunque 3–6 ms per finestra di attesa GPU.
+
+| Modo DMA | t/s | attesa GPU ms | CPU ms | esperti CPU / strato | prefetch usati |
+|---|---:|---:|---:|---:|---|
+| P=0 | 47,6 · 48,2 · 46,3 | 23–25 | 33–37 | 8,3–8,5 | — |
+| P=3 | 44,1 · 47,3 | 30–31 | 30–31 | 7,1 | 2,0 su 2,9 (68%) |
+| P=5 | 42,9 · 47,8 | 32 | 27–29 | 6,1–6,4 | 3,0 su 4,9 (61–63%) |
+| P=8 | 43,5 · 41,4 | 39–41 | 25 | 5,3–5,6 | 4,4 su 7,8 (55–57%) |
+| P=16 | 29,6 · 27,9 | 84–86 | 16–17 | 3,6–3,8 | 6,5 su 15,4 (41–43%) |
+
+- Il prefetch toglie davvero lavoro alla CPU, ma su PCIe 3 (13 GB/s) un esperto costa ~140 us di bus contro
+  ~90 us per calcolarlo sulla CPU dove sta; con precisione 55–68% e le copie in coda davanti a quelle dello
+  strato successivo l'attesa GPU cresce quanto o piu' del risparmio CPU. Nessun P migliora il riferimento.
+- Margine residuo: togliere la previsione dal percorso critico (calcolarla dopo il doorbell) vale al piu' i
+  3–6 ms che costa; potrebbe rendere P=3–5 appena positivo. Su PCIe 4/5 il conto cambia (bus 2–4x).
+- Il modo DMA senza prefetch (47,4 t/s di media) batte il copy kernel automatico (~45–46): +3–4%, ma upstream
+  l'ha tolto per un blocco del driver (issue #31); in 16 corse DMA non si e' visto.

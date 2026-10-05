@@ -1,5 +1,6 @@
 @echo off
 rem Strata Daily 5/10/2026: upstream 0.1.39 + SM75/elastica (nucleo fisso, coda VMM)/top-k603/tail614 + exact-small + QSA grouped-query + prefisso652; opzioni di laboratorio spente.
+rem Tabella PLE (shard 2) letta da D:\ds4_work\strata\Strata-data\gguf\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf (5/10 sera: su C: il prefill a 131k andava in stallo); ripristino in D:\ds4_work\strata\ripristini\20261005_162333_ple_d.
 rem Cache esperti auto/elastica a due zone, riserva 1393 MiB, KV int8 262144 con residenti 32768, MTP.
 rem Sorgenti completi e server della build: D:\ds4_work\strata\Strata\build-0139-daily\source.
 rem Misure e ripristino: docs/porto/strata_adattivo/ALLINEAMENTO_0139_5_OTTOBRE.md. Diagnostica (STRATA_TRACE, STRATA_DECODE_TIMING) disponibile ma spenta.

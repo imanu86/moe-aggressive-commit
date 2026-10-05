@@ -107,6 +107,13 @@ dma`): identico bit per bit, L02 +3–7%, rischio blocco del driver (issue upstr
 
 ### 6.1 Dopo la pulizia di C: — tabella PLE su D: (A/B)
 
+**Fatto il 5/10 sera.** Copia verificata, A/B passato (D: prefill 135 s stabile; C: dopo la pulizia ancora in stallo,
+294–492 s), Daily r1 spostato su D: con l'ok dell'utente e controllato sulla 8100 (salute, oracolo JSON, riga
+`PLE on … D:\…`). Il config ha anche due `--native-dense-gguf` (shard 1 in Downloads, shard 2 su D:): col solo
+`--ple-gguf` il motore non parte. Dettagli in `corse_2080ti/20261004_routed_keep/RESULTS.md` «Tabella PLE su D:» e
+`corse_2080ti/20261005_ple_d/`; ripristino `D:\ds4_work\strata\ripristini\20261005_162333_ple_d`. Da qui in poi i
+banchi che leggono il config del Daily (anche `run_turns.py`) usano la tabella su D:. Piano originale sotto.
+
 Prima: `Get-PSDrive C,D` (C: almeno 15–20% libero e nessuna copia/scrittura in corso). L'utente ha gia' approvato la
 **copia** (non lo spostamento) dello shard 2 su D:.
 

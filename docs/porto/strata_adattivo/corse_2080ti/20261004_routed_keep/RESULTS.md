@@ -321,3 +321,24 @@ Velocita' a 131k (`LQ-*`, prima B, poi A; tutte con nucleo adattivo e DMA):
 
 Nessun guadagno misurabile a 131k (la CPU calcola ~2 esperti per strato): 706 e 764 non entrano; la 706 non e' neppure
 identica. Da rivedere a contesto corto o con hardware diverso.
+
+## Stallo della tabella PLE nel prefill e PR 903 (chunk uguali) — 2026-10-05
+
+Due prefill a 131k su 26 si sono bloccati: `LP-port2` 293 s (195 s di attesa delle letture PLE) e `LQ-q2lag` 175 s (54 s),
+contro 122–133 s e 3,6–7 s di attesa di tutte le altre. Stesse 567.472 letture dall'SSD (2,37 GB, 53,5% dalla cache di
+righe): cambia solo quanto risponde il disco. Il p50/p99 stampato copriva solo le ultime 65.536 letture e per questo
+sembrava normale. Nessuna attivita' di questa sessione sui dischi durante le due corse, nessun evento disco o scansione
+Defender nei registri di sistema, pagefile mai oltre 144 MB. La tabella e' letta da `C:\Users\imanu\Downloads`: Lexar
+EQ790 NVMe senza DRAM, lo stesso disco del sistema (D: e' un EMTEC X160 SATA, peggiore). Causa del disco o del sistema,
+non del motore.
+
+Diagnostica nel fork (`3d702c7`, solo stampe): `ple io` aggiunge media, massimo e letture oltre 100 ms su tutte le
+letture; il prefill stampa i chunk che aspettano piu' di 1 s le loro righe. Prova `LX-diag1` (configurazione candidata:
+nucleo adattivo, DMA): prefill 127,7 s, attesa 3,8 s, media 1,7 ms, massimo 8,7 ms, 0 letture oltre 100 ms; L01 49,5 /
+L02 44,6 t/s. Al prossimo stallo si vedra' se sono poche letture ferme per secondi (aiuterebbe leggere piu' chunk in
+anticipo) o un disco lento uniforme (no).
+
+PR 903 (upstream, chunk del prompt di uguale lunghezza): a 131k non cambia nulla. 131.248 token = 16 x 8.192 + 176, e
+sotto 1.024 token la PR tiene i chunk pieni con la coda corta; L02 legge 167 token in un chunk come prima. Nei turni
+(segmenti nuovi di ~14k) varrebbe forse mezzo secondo su ~15 s di prefill a fronte di minuti di generazione, e sposta i
+confini dei chunk (identita' non garantita). Non portata: arrivera' col prossimo allineamento se upstream la unisce.

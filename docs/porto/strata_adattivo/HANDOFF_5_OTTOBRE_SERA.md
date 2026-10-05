@@ -31,6 +31,8 @@ Dal `CLAUDE.md` globale e dalla memoria (`feedback_strata_*`):
 - **Protocollo A/B**: sempre **prima B** (anche due volte), **poi A**; se B non promette, A si salta. Test rapidi a
   contesto realistico: L01/L02 a 131k. Il test piu' vero e' la conversazione a turni fino a ~130k: solo come
   benchmark finale, **la sera quando l'utente dice che va a dormire**. Prompt corti: misure senza senso.
+- **Benchmark sotto i 20 minuti per corsa: si lanciano da soli, senza chiedere** (utente, 5/10 sera); avvisare con
+  una riga. Il benchmark a turni completo resta per la notte; le modifiche al Daily restano da concordare.
 - I ~2,7 GB di VRAM usati dagli altri programmi non si toccano (l'elastica esiste per questo).
 - **Pubblicare sempre** i Daily validati (release GitHub del fork autorizzata in modo permanente).
 - Niente impostazioni di sistema (pagefile, BIOS, driver, ibernazione): le fa l'utente. Download: chiedere con nome,

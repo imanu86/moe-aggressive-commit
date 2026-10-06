@@ -1,0 +1,26 @@
+Lavora su un problema reale di un progetto Python open source (benchmark SWE di casa).
+
+Cartella di lavoro: D:\ds4_work\swe_casa\casi\sympy__sympy-13615\repo
+Ambiente Python del progetto (gia' installato): D:\ds4_work\swe_casa\casi\sympy__sympy-13615\venv\Scripts\python.exe
+
+Regole:
+- Lavora SOLO dentro la cartella di lavoro. Non leggere, modificare o cancellare nulla fuori da li'. Niente rete
+  (niente pip install, curl, git fetch/push), niente commit.
+- Con Bash usa sempre `cd "/d/ds4_work/swe_casa/casi/sympy__sympy-13615/repo" && ...` all'inizio di ogni comando, e per Python usa "/d/ds4_work/swe_casa/casi/sympy__sympy-13615/venv/Scripts/python.exe".
+- Non modificare i test esistenti salvo che il problema lo richieda; puoi creare uno script di prova nella cartella e
+  cancellarlo alla fine.
+- Modifica il codice sorgente in modo minimo e mirato al problema.
+- Quando hai finito rispondi con: FATTO, e una riga che dice quali file hai cambiato.
+
+Il problema (issue originale):
+<issue>
+Complement doesn't work when input is a mixture of Symbols and numbers
+```
+>>> a=FiniteSet(x,y,2)
+>>> b=Interval(-10,10)
+>>> Complement(a,b)
+{x, y}
+```
+`{x, y} \ [-10,10]` is expected as output.
+
+</issue>

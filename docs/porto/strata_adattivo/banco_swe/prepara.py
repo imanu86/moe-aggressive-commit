@@ -137,8 +137,39 @@ def apply(case_dir, patch_text, name):
         raise RuntimeError(f'{name}.patch does not apply: {out[-1500:]}')
 
 
-def reset(case_dir, commit):
-    git('reset', '-q', '--hard', commit, cwd=case_dir / 'repo')
+BASE_TAG = 'swe-base'
+
+
+def standalone_repo(case_dir, mirror_dir, commit):
+    """6/10: the case repo is a NEW repository holding only the base_commit snapshot (one commit, tag swe-base).  A
+    worktree of the full clone let the model read the future fix with `git log --all` (it did, on sympy-13615)."""
+    repo = case_dir / 'repo'
+    if (repo / '.git').is_file():   # an old worktree of the mirror
+        git('--git-dir', str(mirror_dir), 'worktree', 'remove', '--force', str(repo), check=False)
+        shutil.rmtree(repo, ignore_errors=True)
+        git('--git-dir', str(mirror_dir), 'worktree', 'prune', check=False)
+    if (repo / '.git').is_dir():
+        return
+    repo.mkdir(parents=True, exist_ok=True)
+    tar = case_dir / 'base.tar'
+    # core.autocrlf=false: Git for Windows would hand out CRLF files and SWE-bench's LF patches would not apply
+    rc, out, _ = run(['git', '-c', 'core.autocrlf=false', '--git-dir', str(mirror_dir), 'archive', '--format=tar', '-o',
+                      str(tar), commit], timeout=3600)
+    if rc:
+        raise RuntimeError('git archive: ' + out[-1000:])
+    import tarfile
+    with tarfile.open(tar) as t:
+        t.extractall(repo, filter='tar')
+    tar.unlink()
+    git('init', '-q', cwd=repo)
+    git('config', 'core.autocrlf', 'false', cwd=repo)
+    git('add', '-A', cwd=repo)
+    git('-c', 'user.email=banco@locale', '-c', 'user.name=banco', 'commit', '-q', '-m', 'base', cwd=repo)
+    git('tag', BASE_TAG, cwd=repo)
+
+
+def reset(case_dir, commit=None):
+    git('reset', '-q', '--hard', BASE_TAG, cwd=case_dir / 'repo')
     git('clean', '-q', '-fd', cwd=case_dir / 'repo')
 
 
@@ -147,9 +178,8 @@ def prepare(c, inst):
     case_dir.mkdir(parents=True, exist_ok=True)
     log, t0 = [], time.monotonic()
     m = mirror(c['repo'])
-    if not (case_dir / 'repo').exists():
-        git('--git-dir', str(m), 'worktree', 'add', '--detach', '--force', str(case_dir / 'repo'), c['base_commit'])
-    reset(case_dir, c['base_commit'])
+    standalone_repo(case_dir, m, c['base_commit'])
+    reset(case_dir)
     spec = c['spec']
     venv = case_dir / 'venv'
     py = venv / 'Scripts' / 'python.exe'

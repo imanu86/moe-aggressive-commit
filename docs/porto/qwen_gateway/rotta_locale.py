@@ -28,7 +28,8 @@ LOCALE = Path(os.environ.get("USERPROFILE", ".")) / ".claude" / "qwen-gateway" /
 # (riga `set "API_KEY=…"`), resta in memoria e non viene mai scritta ne' registrata.
 PRODUZIONE = "http://127.0.0.1:8100"
 _DESKTOP = Path(os.environ.get("USERPROFILE", ".")) / "Desktop"
-LANCIATORI = (_DESKTOP / "Qwen - ADATTIVO M2 VRAM+RAM - senza MTP.bat", _DESKTOP / "Qwen - CGControl - senza MTP - 40 slot.bat")
+LANCIATORI = tuple(d / n for d in (_DESKTOP, _DESKTOP / "SERVER IA LOCALE")
+                   for n in ("Qwen - ADATTIVO M2 VRAM+RAM - senza MTP.bat", "Qwen - CGControl - senza MTP - 40 slot.bat"))
 _chiave: dict = {}
 TENUTI = ("model", "messages", "system", "tools", "tool_choice", "max_tokens", "stream", "temperature", "top_p",
           "top_k", "stop_sequences", "thinking")
@@ -85,8 +86,23 @@ def pulisci(j: dict) -> dict:
     return out
 
 
-def _chiave_produzione() -> str | None:
+def _chiave_produzione() -> str:
+    """La chiave del server della 8100.  6/10: sulla 8100 c'e' Strata, che legge la chiave da STRATA_API_KEY (variabile
+    del processo o dell'utente) e senza chiave non la chiede.  Dal 26/9 la ricerca nei soli lanciatori Qwen sul Desktop
+    (spostati in SERVER IA LOCALE) non trovava nulla e ogni richiesta tornava al vero Haiku.  Ora: STRATA_API_KEY, poi i
+    lanciatori (Desktop e SERVER IA LOCALE), poi "" - un server che volesse una chiave risponderebbe 401 e la richiesta
+    ricadrebbe su Anthropic intatta, come per ogni errore prima della risposta."""
     import re
+    k = os.environ.get("STRATA_API_KEY")
+    if not k:
+        try:
+            import winreg
+            with winreg.OpenKey(winreg.HKEY_CURRENT_USER, "Environment") as h:
+                k = winreg.QueryValueEx(h, "STRATA_API_KEY")[0]
+        except (OSError, ImportError):
+            k = None
+    if k:
+        return k
     for bat in LANCIATORI:
         try:
             mtime = bat.stat().st_mtime
@@ -98,7 +114,7 @@ def _chiave_produzione() -> str | None:
         if m:
             _chiave.update(file=str(bat), mtime=mtime, valore=m.group(1))
             return m.group(1)
-    return None
+    return ""
 
 
 async def destinazione(metodo: str, percorso: str, info: dict) -> dict | None:
@@ -108,10 +124,7 @@ async def destinazione(metodo: str, percorso: str, info: dict) -> dict | None:
         d = json.loads(LOCALE.read_text(encoding="utf-8"))
         u = urllib.parse.urlsplit(d["base"])
     except (OSError, ValueError, KeyError):
-        chiave = _chiave_produzione()
-        if chiave is None:
-            return None
-        d = {"base": PRODUZIONE, "chiave": chiave, "instrada": "stream"}
+        d = {"base": PRODUZIONE, "chiave": _chiave_produzione(), "instrada": "stream"}
         u = urllib.parse.urlsplit(PRODUZIONE)
     regola = d.get("instrada", "stream")
     if regola == "subagent" and not info.get("agente"):

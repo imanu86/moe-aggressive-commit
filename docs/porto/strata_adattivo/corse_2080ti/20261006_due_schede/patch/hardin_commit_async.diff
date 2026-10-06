@@ -1,0 +1,65 @@
+diff --git a/include/strata/core/verify.hpp b/include/strata/core/verify.hpp
+index 064dfdf..b164cb5 100644
+--- a/include/strata/core/verify.hpp
++++ b/include/strata/core/verify.hpp
+@@ -182,6 +182,12 @@ public:
+     /// the session from another stream or the host afterwards (a new request, a checkpoint, a snapshot, the prompt
+     /// path, the end of a run) calls wait_commit() first.  STRATA_COMMIT_SYNC=1 keeps the wait.
+     static void set_commit_async(bool on);
++    /// STRATA_COMMIT_ASYNC=1 (fork, opt-in; from Hardin22/Strata-DualGPU bce7fbb3): on a layer split too, every stage's
++    /// commit graph is queued on its stream without a wait (each stage's next window follows its own commit there, and
++    /// the drafter on the last card reads only that window's final rows and its own K/V, as on one card); wait_commit
++    /// waits for every stage's.  Unset or 0: a split waits for each commit, as before.  The caller still decides with
++    /// set_commit_async(); this only lifts the split's exclusion.
++    static bool split_commit_async();
+     /// Waits for the last commit graph when commit() did not (an event recorded after it, not the whole device);
+     /// false with `err` when it failed.  Free when nothing is pending.
+     bool wait_commit(std::string& err);
+diff --git a/src/core/verify.cpp b/src/core/verify.cpp
+index e192b19..7afcd48 100644
+--- a/src/core/verify.cpp
++++ b/src/core/verify.cpp
+@@ -2409,8 +2409,16 @@ bool Verifier::window_logprobs(const int32_t* targets, int T, int64_t pos0, int3
+     return true;
+ }
+ 
+-namespace { bool g_commit_async = false; }
++namespace {
++bool g_commit_async = false;
++// STRATA_COMMIT_ASYNC=1 (fork, opt-in): a layer split's commits are asynchronous too (Verifier::split_commit_async)
++const bool g_split_commit_async = [] {
++    const char* v = std::getenv("STRATA_COMMIT_ASYNC");
++    return v != nullptr && std::atoi(v) != 0 && std::getenv("STRATA_COMMIT_SYNC") == nullptr;
++}();
++}  // namespace
+ void Verifier::set_commit_async(bool on) { g_commit_async = on && std::getenv("STRATA_COMMIT_SYNC") == nullptr; }
++bool Verifier::split_commit_async() { return g_split_commit_async; }
+ 
+ bool Verifier::commit(int n_keep, std::string& err) {
+     const OnDevice on_device(device_);
+@@ -2428,7 +2436,7 @@ bool Verifier::commit(int n_keep, std::string& err) {
+         // set_commit_async: no wait here - the next window runs on the same stream after it, and the drafter (its own
+         // stream) reads only this window's final rows and its own K/V. h_commit_ is next written after the next window's
+         // results are read, i.e. after this graph has run.  Everything else waits on commit_done_ (wait_commit).
+-        if (!g_commit_async || next_ != nullptr) {
++        if (!g_commit_async || (next_ != nullptr && !g_split_commit_async)) {
+             const cudaError_t se = cudaStreamSynchronize(cs_);
+             if (se != cudaSuccess) { err = std::string("verify: commit: ") + cudaGetErrorString(se); return false; }
+         } else {
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 6313993..ab5c884 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -3080,7 +3080,11 @@ int main(int argc, char** argv) {
+             }
+         }
+     }
+-    strata::core::Verifier::set_commit_async(!multi_gpu);   // see Verifier::set_commit_async
++    // STRATA_COMMIT_ASYNC=1 (fork, opt-in): a layer split's commits too (see Verifier::split_commit_async)
++    strata::core::Verifier::set_commit_async(!multi_gpu || strata::core::Verifier::split_commit_async());
++    if (multi_gpu && strata::core::Verifier::split_commit_async())
++        std::fprintf(stderr, "strata generate: layer split: STRATA_COMMIT_ASYNC=1, every stage's commit is queued on its "
++                             "stream (one wait per request)\n");
+     // --pipeline-windows (opt-in): one conversation's windows with the two stages of a layer split overlapped.  Decided
+     // here, before any stage sizes its expert cache (the second verifier per stage and the snapshots are allocated
+     // after the caches, so their room is kept out of them).  What it does not support turns it off, said once.

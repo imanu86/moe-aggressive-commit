@@ -1,0 +1,45 @@
+G-inv rc=0
+strata decode timing: 513 windows, avg T 2.38, 2.00 tokens/window, 36.65 ms/window = verify 33.04 (GPU-reach wait 9.93 + per-layer host 4.49 [plan 0.14 actq 0.20 jobs 0.01 CPU 2.76] + stage 3.56) + co
+strata decode timing: 622 windows, avg T 1.97, 1.65 tokens/window, 32.73 ms/window = verify 29.98 (GPU-reach wait 9.37 + per-layer host 3.70 [plan 0.12 actq 0.12 jobs 0.01 CPU 1.44] + stage 3.15) + co
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 88270 ms (1486.9 tok/s), 1024 generated in 18800 ms (54.5 tok/s), drafts accepted 511 of 707, 6 checkpoints
+strata serve: prompt 131239 tokens = 124416 reused + 6823 read in 9805 ms (695.8 tok/s), 1024 generated in 20357 ms (50.3 tok/s), drafts accepted 404 of 603, 6 checkpoints
+  => completed L01 54.5 t/s | L02 50.3 t/s
+G-spin rc=0
+strata decode timing: 496 windows, avg T 2.45, 2.06 tokens/window, 33.90 ms/window = verify 30.14 (GPU-reach wait 9.99 + per-layer host 1.25 [plan 0.13 actq 0.20 jobs 0.01 CPU 3.33] + stage 0.12) + co
+strata decode timing: 617 windows, avg T 2.00, 1.66 tokens/window, 29.97 ms/window = verify 27.12 (GPU-reach wait 9.41 + per-layer host 0.78 [plan 0.11 actq 0.11 jobs 0.01 CPU 1.73] + stage 0.15) + co
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 88638 ms (1480.7 tok/s), 1024 generated in 16814 ms (60.9 tok/s), drafts accepted 531 of 720, 6 checkpoints
+strata serve: prompt 131239 tokens = 124416 reused + 6823 read in 9753 ms (699.6 tok/s), 1024 generated in 18495 ms (55.4 tok/s), drafts accepted 407 of 617, 6 checkpoints
+  => completed L01 60.9 t/s | L02 55.4 t/s
+G-async rc=0
+strata decode timing: 469 windows, avg T 2.64, 2.18 tokens/window, 35.00 ms/window = verify 30.97 (GPU-reach wait 10.04 + per-layer host 1.28 [plan 0.14 actq 0.22 jobs 0.01 CPU 3.46] + stage 0.12) + c
+strata decode timing: 644 windows, avg T 1.88, 1.59 tokens/window, 29.11 ms/window = verify 26.47 (GPU-reach wait 9.22 + per-layer host 0.79 [plan 0.10 actq 0.10 jobs 0.01 CPU 1.68] + stage 0.20) + co
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 88292 ms (1486.5 tok/s), 1024 generated in 16414 ms (62.4 tok/s), drafts accepted 555 of 770, 6 checkpoints
+strata serve: prompt 131239 tokens = 124416 reused + 6823 read in 9689 ms (704.2 tok/s), 1024 generated in 18748 ms (54.6 tok/s), drafts accepted 380 of 565, 6 checkpoints
+  => completed L01 62.4 t/s | L02 54.6 t/s
+G-pw2 rc=0
+strata decode timing: 528 windows, avg T 2.36, 1.94 tokens/window, 30.46 ms/window = verify 30.46 (GPU-reach wait 14.81 + per-layer host 1.75 [plan 0.16 actq 0.22 jobs 0.01 CPU 3.40] + stage 0.40) + c
+strata decode timing: 614 windows, avg T 1.99, 1.67 tokens/window, 28.54 ms/window = verify 28.54 (GPU-reach wait 13.19 + per-layer host 1.45 [plan 0.15 actq 0.15 jobs 0.01 CPU 2.13] + stage 0.50) + c
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 87092 ms (1507.0 tok/s), 1024 generated in 16082 ms (63.7 tok/s), drafts accepted 499 of 720, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1808 ms (92.4 tok/s), 1024 generated in 17523 ms (58.4 tok/s), drafts accepted 411 of 610, 6 checkpoints
+  => completed L01 63.7 t/s | L02 58.4 t/s
+== G-inv
+strata generate: expert cache 4520 slots, 6.34 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 16-47, expert cache 8668 slots (15.13 GiB), 8668 of its 16384 profiled pairs; slot 0 verified
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (4520 slots now, 6.34 GiB, chunks of 64 MiB)
+strata decode timing: 513 windows, avg T 2.38, 2.00 tokens/window, 36.65 ms/window = verify 33.04 (GPU-reach wait 9.93 + per-layer host 4.49 [plan 0.14 actq 0.20 jobs 0.01 CPU 2.76] + stage 3.56) + commit/emit 0.75 + draft 2.14; p
+== G-spin
+strata generate: expert cache 4538 slots, 6.36 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 16-47, expert cache 8668 slots (15.13 GiB), 8668 of its 16384 profiled pairs; slot 0 verified
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (4538 slots now, 6.36 GiB, chunks of 64 MiB)
+strata decode timing: 496 windows, avg T 2.45, 2.06 tokens/window, 33.90 ms/window = verify 30.14 (GPU-reach wait 9.99 + per-layer host 1.25 [plan 0.13 actq 0.20 jobs 0.01 CPU 3.33] + stage 0.12) + commit/emit 0.77 + draft 2.20; p
+== G-async
+strata generate: expert cache 4597 slots, 6.44 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 16-47, expert cache 8668 slots (15.13 GiB), 8668 of its 16384 profiled pairs; slot 0 verified
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (4597 slots now, 6.44 GiB, chunks of 64 MiB)
+strata decode timing: 469 windows, avg T 2.64, 2.18 tokens/window, 35.00 ms/window = verify 30.97 (GPU-reach wait 10.04 + per-layer host 1.28 [plan 0.14 actq 0.22 jobs 0.01 CPU 3.46] + stage 0.12) + commit/emit 0.80 + draft 2.32; 
+== G-pw2
+strata generate: expert cache 4459 slots, 6.25 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 16-47, expert cache 8584 slots (14.97 GiB), 8584 of its 16384 profiled pairs; slot 0 verified
+strata pipeline: 528 windows in 16082 ms (30.46 ms/window): 374 speculative, 167 on the path, 207 rolled back, 153 below the gate (theta 0.20)
+strata pipeline: 614 windows in 17523 ms (28.54 ms/window): 396 speculative, 149 on the path, 247 rolled back, 217 below the gate (theta 0.20)
+strata decode timing: 528 windows, avg T 2.36, 1.94 tokens/window, 30.46 ms/window = verify 30.46 (GPU-reach wait 14.81 + per-layer host 1.75 [plan 0.16 actq 0.22 jobs 0.01 CPU 3.40] + stage 0.40) + commit/emit 0.00 + draft 0.00; 

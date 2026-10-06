@@ -1,0 +1,278 @@
+diff --git a/include/strata/core/mtp.hpp b/include/strata/core/mtp.hpp
+index 535476c..ead456a 100644
+--- a/include/strata/core/mtp.hpp
++++ b/include/strata/core/mtp.hpp
+@@ -173,6 +173,17 @@ private:
+     bool capture_round(int T, bool coupled, std::string& err);
+     bool capture_step(int j, bool coupled, std::string& err);
+     cudaGraphExec_t step_exec_[9] = {};
++    // STRATA_MTP_CHAIN=1 (fork, opt-in; from Hardin22/Strata-DualGPU bce7fbb3): with a min_p, the round and every chain
++    // step in ONE graph, step j behind a conditional node that runs it only while drafts 0..j-1 all reached min_p (a
++    // mapped float staged per round) - the host's own stopping rule on the GPU, so a round costs one launch instead
++    // of one per step.  The nodes are capture_round's and capture_step's, in the same order.  Argmax drafts only (not
++    // coupled, not the pipelined forcing).  A capture that fails turns it off for the process (the per-step graphs).
++    bool capture_chain(int T, int jmax);
++    cudaGraphExec_t cg_exec_[9] = {};
++    int cg_jmax_[9] = {};
++    bool cg_failed_ = false;
++    cudaStream_t cg_stream_ = nullptr;      ///< the conditional bodies are captured on it
++    float *h_cg_minp_ = nullptr, *m_cg_minp_ = nullptr;
+     // coupled draft sampling: its own round/step graphs (the argmax ones stay as they were), the request's
+     // parameters and the penalty ring (mapped staging + device copies), the split scratch, token id -> subset index
+     bool setup_coupled(std::string& err);
+diff --git a/include/strata/kernels/verify_kernels.hpp b/include/strata/kernels/verify_kernels.hpp
+index 9755f47..073156d 100644
+--- a/include/strata/kernels/verify_kernels.hpp
++++ b/include/strata/kernels/verify_kernels.hpp
+@@ -97,6 +97,11 @@ void ident_hits(const int32_t* ids, int n, int32_t* slot, int32_t* dst, int32_t*
+ void mtp_select(const float* R_src, int64_t R_stride, const int32_t* ids, const int32_t* row_dev, float* R_dst,
+                 int32_t* tok_dst, int32_t* out, int j, void* stream, const float* probs = nullptr,
+                 float* out_p = nullptr);
++/// STRATA_MTP_CHAIN=1 (fork, from Hardin22/Strata-DualGPU bce7fbb3): the draft chain in one graph.  Sets the
++/// conditional `handle` to 1 when probs[0, j) are all >= *min_p (both read from mapped memory: the probabilities
++/// mtp_select wrote, the min_p the host staged), else 0 - the host loop's own stopping rule, the same float compare.
++/// CUDA 12.3+ only (conditional graph nodes); not defined on HIP.
++void mtp_chain_gate(unsigned long long handle, const float* probs, int j, const float* min_p, void* stream);
+ /// --pipeline-windows, the drafter's chain teacher forced: `*tok = force[j]` when force[j] >= 0 (`force` is mapped
+ /// host memory, read when the kernel runs), else `*tok` is left as it is.
+ void force_token(int32_t* tok, const int32_t* force, int j, void* stream);
+diff --git a/src/core/mtp.cpp b/src/core/mtp.cpp
+index 2bcb945..deaf95c 100644
+--- a/src/core/mtp.cpp
++++ b/src/core/mtp.cpp
+@@ -135,6 +135,9 @@ MtpDrafter::~MtpDrafter() {
+     for (auto& e : step_exec_) if (e) cudaGraphExecDestroy(e);
+     for (auto& e : round_exec_c_) if (e) cudaGraphExecDestroy(e);
+     for (auto& e : step_exec_c_) if (e) cudaGraphExecDestroy(e);
++    for (auto& e : cg_exec_) if (e) cudaGraphExecDestroy(e);
++    if (cg_stream_) cudaStreamDestroy(cg_stream_);
++    if (h_cg_minp_) cudaFreeHost(h_cg_minp_);
+     if (cparams_) cudaFree(cparams_);
+     if (cring_) cudaFree(cring_);
+     if (dinv_) cudaFree(dinv_);
+@@ -1250,6 +1253,142 @@ bool MtpDrafter::prefill(const float* R_rows, const int32_t* next_tokens, int64_
+     return true;
+ }
+ 
++// STRATA_MTP_CHAIN (fork, from Hardin22 bce7fbb3): the round (exactly as capture_round records it for argmax drafts
++// without forcing) and the chain steps 1 .. jmax-1 (exactly as capture_step records them), step j inside an IF node
++// whose condition a one-thread kernel sets from the mapped probabilities of drafts 0 .. j-1 and the mapped min_p.
++// The arithmetic of every node is the per-step graphs'; only who decides whether a step runs moves to the GPU.
++bool MtpDrafter::capture_chain(int T, int jmax) {
++#if defined(STRATA_USE_HIP) || CUDART_VERSION < 12030
++    (void) T; (void) jmax;
++    return false;
++#else
++    if (cg_exec_[T] != nullptr && cg_jmax_[T] == jmax) return true;
++    if (cg_failed_) return false;
++    if (cg_exec_[T] != nullptr) { cudaGraphExecDestroy(cg_exec_[T]); cg_exec_[T] = nullptr; }
++    using namespace strata::kernels;
++    std::string why;
++    if (h_cg_minp_ == nullptr &&
++        (cudaHostAlloc((void**) &h_cg_minp_, 64, cudaHostAllocMapped) != cudaSuccess ||
++         cudaHostGetDevicePointer((void**) &m_cg_minp_, h_cg_minp_, 0) != cudaSuccess))
++        why = "mapped min_p";
++    if (why.empty() && cg_stream_ == nullptr && cudaStreamCreateWithFlags(&cg_stream_, cudaStreamNonBlocking) != cudaSuccess)
++        why = "body stream";
++    if (!why.empty()) {
++        cudaGetLastError();
++        std::fprintf(stderr, "strata mtp: STRATA_MTP_CHAIN is not available (%s): one graph per step\n", why.c_str());
++        cg_failed_ = true;
++        return false;
++    }
++    const int64_t HCN = g_->hc * g_->n_embd;
++    const int64_t N = g_->n_embd, NH = g_->n_head;
++    const int ra = 2 * max_t_ - 1;
++    bool ok = cudaStreamBeginCapture(cs_, cudaStreamCaptureModeThreadLocal) == cudaSuccess;
++    if (!ok) why = "begin capture";
++    if (ok) {   // capture_round's nodes (argmax, no forcing)
++        const MappedCopy in[7] = {{tok_, m_tok_, T}, {step_, m_step_, (int64_t) 2 * T * 4}, {pos_, m_pos_, 2 * T * NH},
++                                  {row_, m_row_, 2}, {Rin_, window_R_, T * HCN}, {step_ + ra * 4, m_step_ + ra * 4, 4},
++                                  {pos_ + ra * NH, m_pos_ + ra * NH, NH}};
++        copy_from_mapped_multi(in, 7, cs_);
++        std::string rerr;
++        ok = record_front(T, 0, cs_, rerr);
++        if (ok) {
++            if (T > 1) {
++                copy_row_to_first(row_, R_, HCN, inj_, g_->hc, mixed_, N, cs_);
++                native_quantize_q8_1(mixed_, xq_, (int) N, 1, cs_);
++            }
++            coupled_rec_ = false;
++            coupled_j_ = 0;
++            ok = record_rest(ra, cs_, rerr);
++        }
++        if (ok) mtp_select(R_, HCN, out_ids_, row_ + 1, Rin_, tok_, m_out_, 0, cs_, probs_, m_prob_);
++        else why = rerr;
++    }
++    for (int j = 1; ok && j < jmax; ++j) {
++        cudaStreamCaptureStatus cst;
++        cudaGraph_t cg = nullptr;
++        const cudaGraphNode_t* deps = nullptr;
++        const cudaGraphEdgeData* edges = nullptr;
++        size_t nd = 0;
++        cudaGraphConditionalHandle h = 0;
++#if CUDART_VERSION >= 13000
++        auto cap_info = [&] { return cudaStreamGetCaptureInfo(cs_, &cst, nullptr, &cg, &deps, &edges, &nd); };
++#else
++        auto cap_info = [&] { return cudaStreamGetCaptureInfo_v3(cs_, &cst, nullptr, &cg, &deps, &edges, &nd); };
++#endif
++        if (cap_info() != cudaSuccess || cudaGraphConditionalHandleCreate(&h, cg, 0, cudaGraphCondAssignDefault) != cudaSuccess) {
++            why = "conditional handle";
++            ok = false;
++            break;
++        }
++        mtp_chain_gate((unsigned long long) h, m_prob_, j, m_cg_minp_, cs_);
++        if (cap_info() != cudaSuccess) {
++            why = "capture info";
++            ok = false;
++            break;
++        }
++        cudaGraphNodeParams np{};
++        np.type = cudaGraphNodeTypeConditional;
++        np.conditional.handle = h;
++        np.conditional.type = cudaGraphCondTypeIf;
++        np.conditional.size = 1;
++        cudaGraphNode_t cn = nullptr;
++#if CUDART_VERSION >= 13000
++        const bool added = cudaGraphAddNode(&cn, cg, deps, edges, nd, &np) == cudaSuccess &&
++                           cudaStreamUpdateCaptureDependencies(cs_, &cn, nullptr, 1, cudaStreamSetCaptureDependencies) == cudaSuccess;
++#else
++        const bool added = cudaGraphAddNode_v2(&cn, cg, deps, edges, nd, &np) == cudaSuccess &&
++                           cudaStreamUpdateCaptureDependencies_v2(cs_, &cn, nullptr, 1, cudaStreamSetCaptureDependencies) == cudaSuccess;
++#endif
++        if (!added) {
++            why = "conditional node";
++            ok = false;
++            break;
++        }
++        cudaGraph_t body = np.conditional.phGraph_out[0];
++        if (cudaStreamBeginCaptureToGraph(cg_stream_, body, nullptr, nullptr, 0, cudaStreamCaptureModeThreadLocal) != cudaSuccess) {
++            why = "body capture";
++            ok = false;
++            break;
++        }
++        const int row = max_t_ + j - 1;   // capture_step's nodes
++        const MappedCopy sin[2] = {{step_ + row * 4, m_step_ + row * 4, 4},
++                                   {pos_ + row * NH, m_pos_ + row * NH, NH}};
++        copy_from_mapped_multi(sin, 2, cg_stream_);
++        coupled_rec_ = false;
++        coupled_j_ = j;
++        std::string berr;
++        const bool bok = record_forward(1, row, cg_stream_, berr);
++        if (bok) mtp_select(R_, HCN, out_ids_, row_ + 1, Rin_, tok_, m_out_, j, cg_stream_, probs_, m_prob_);
++        cudaGraph_t bg = nullptr;
++        const cudaError_t be = cudaStreamEndCapture(cg_stream_, &bg);   // bg is `body`, owned by the node
++        if (!bok || be != cudaSuccess) {
++            why = !bok ? berr : std::string("body end capture: ") + cudaGetErrorString(be);
++            ok = false;
++            break;
++        }
++    }
++    cudaGraph_t graph = nullptr;
++    const cudaError_t ce = cudaStreamEndCapture(cs_, &graph);
++    cudaGraphExec_t exec = nullptr;
++    if (ok && ce == cudaSuccess && graph != nullptr && cudaGraphInstantiate(&exec, graph, 0) == cudaSuccess) {
++        cudaGraphDestroy(graph);
++        cudaGraphUpload(exec, cs_);
++        cudaStreamSynchronize(cs_);
++        cg_exec_[T] = exec;
++        cg_jmax_[T] = jmax;
++        std::fprintf(stderr, "strata mtp: STRATA_MTP_CHAIN: the %d-row round and its %d-step chain captured as one graph\n",
++                     T, jmax - 1);
++        return true;
++    }
++    if (graph) cudaGraphDestroy(graph);
++    const cudaError_t le = cudaGetLastError();   // clear it: the per-step graphs carry on
++    std::fprintf(stderr, "strata mtp: STRATA_MTP_CHAIN is not available (%s%s%s): one graph per step\n",
++                 why.c_str(), why.empty() ? "" : "; ", cudaGetErrorString(ce != cudaSuccess ? ce : le));
++    cg_failed_ = true;
++    return false;
++#endif
++}
++
+ bool MtpDrafter::draft(int T, const int32_t* tokens, int64_t p, int a, int32_t* drafts, std::string& err,
+                        float* probs, float min_p, int* n_drafts) {
+     const OnDevice on_device(device_);
+@@ -1263,6 +1402,9 @@ bool MtpDrafter::draft(int T, const int32_t* tokens, int64_t p, int a, int32_t*
+     const int max_steps = std::min(max_t_ - 1, max_drafts_);
+     for (int j = 1; j < max_steps; ++j)
+         if (!capture_step(j, cp, err)) return false;
++    // STRATA_MTP_CHAIN=1 (opt-in): a round with a min_p as one graph (capture_chain); unset, the per-step launches below
++    static const bool chain_env = [] { const char* v = std::getenv("STRATA_MTP_CHAIN"); return v != nullptr && std::atoi(v) != 0; }();
++    const bool use_chain = chain_env && min_p > 0.0f && !cp && !force_on_ && max_steps > 1 && capture_chain(T, max_steps);
+     const Clock::time_point t0 = Clock::now();
+     const int64_t NH = g_->n_head;
+     auto put = [&](int row, int64_t cell) {
+@@ -1333,6 +1475,44 @@ bool MtpDrafter::draft(int T, const int32_t* tokens, int64_t p, int a, int32_t*
+         if (probs) probs[last] = ((volatile float*) h_prob_)[last];
+         prefetch_ple(drafts[last]);
+         n = max_steps;
++    } else if (max_steps > 0 && use_chain) {   // STRATA_MTP_CHAIN: one launch; the GPU stops where the host would
++        *(volatile float*) h_cg_minp_ = min_p;
++        std::atomic_thread_fence(std::memory_order_seq_cst);
++        if (cudaGraphLaunch(cg_exec_[T], cs_) != cudaSuccess) {
++            err = std::string("mtp draft (chain): ") + cudaGetErrorString(cudaGetLastError());
++            return false;
++        }
++        (void) cudaStreamQuery(cs_);   // to the GPU now (WDDM batches submissions)
++        prefetch_ple(tokens[a]);
++        auto wait_step = [&](int j) {
++            uint32_t spins = 0;
++            while (((volatile int32_t*) h_out_)[j] < 0) {
++#if defined(_WIN32) || defined(__x86_64__)
++                _mm_pause();
++#endif
++                if ((++spins & 1023u) == 0 && cudaStreamQuery(cs_) != cudaErrorNotReady) break;
++            }
++        };
++        wait_step(0);
++        drafts[0] = ((volatile int32_t*) h_out_)[0];
++        float pj = ((volatile float*) h_prob_)[0];
++        if (probs) probs[0] = pj;
++        n = 1;
++        for (int j = 1; j < max_steps && pj >= min_p; ++j) {   // the steps the GPU ran: the host loop's own rule
++            prefetch_ple(drafts[j - 1]);
++            wait_step(j);
++            const int32_t dj = ((volatile int32_t*) h_out_)[j];
++            if (dj < 0) break;   // the GPU did not run it (cannot happen with the same compare; never a -1 draft)
++            drafts[j] = dj;
++            pj = ((volatile float*) h_prob_)[j];
++            if (probs) probs[j] = pj;
++            ++n;
++        }
++        prefetch_ple(drafts[n - 1]);
++        if (cudaStreamSynchronize(cs_) != cudaSuccess) {
++            err = std::string("mtp draft (chain): ") + cudaGetErrorString(cudaGetLastError());
++            return false;
++        }
+     } else if (max_steps > 0) {
+         if (cudaGraphLaunch(cp ? round_exec_c_[T] : round_exec_[T], cs_) != cudaSuccess) {
+             err = std::string("mtp draft: ") + cudaGetErrorString(cudaGetLastError());
+diff --git a/src/kernels/cuda/verify_kernels.cu b/src/kernels/cuda/verify_kernels.cu
+index 3ee2b50..8217a7b 100644
+--- a/src/kernels/cuda/verify_kernels.cu
++++ b/src/kernels/cuda/verify_kernels.cu
+@@ -636,6 +636,23 @@ void mtp_select(const float* R_src, int64_t R_stride, const int32_t* ids, const
+     check("mtp_select");
+ }
+ 
++#if !defined(__HIPCC__) && !defined(STRATA_USE_HIP) && CUDART_VERSION >= 12030
++// STRATA_MTP_CHAIN (fork, from Hardin22 bce7fbb3): draft j runs only while every earlier draft's probability is at
++// least the request's min_p - the host loop's rule, evaluated on the GPU between two steps of one graph
++namespace {
++__global__ void mtp_chain_gate_kernel(cudaGraphConditionalHandle h, const float* probs, int j, const float* min_p) {
++    const float mp = *(const volatile float*) min_p;
++    unsigned int go = 1;
++    for (int i = 0; i < j; ++i) go &= ((const volatile float*) probs)[i] >= mp ? 1u : 0u;
++    cudaGraphSetConditional(h, go);
++}
++}  // namespace
++void mtp_chain_gate(unsigned long long handle, const float* probs, int j, const float* min_p, void* stream) {
++    mtp_chain_gate_kernel<<<1, 1, 0, (cudaStream_t) stream>>>((cudaGraphConditionalHandle) handle, probs, j, min_p);
++    check("mtp_chain_gate");
++}
++#endif
++
+ void force_token(int32_t* tok, const int32_t* force, int j, void* stream) {
+     force_token_kernel<<<1, 1, 0, (cudaStream_t) stream>>>(tok, force, j);
+     check("force_token");

@@ -1,0 +1,100 @@
+diff --git a/include/strata/core/expert_source.hpp b/include/strata/core/expert_source.hpp
+index 1f1a494..4567c7c 100644
+--- a/include/strata/core/expert_source.hpp
++++ b/include/strata/core/expert_source.hpp
+@@ -641,7 +641,10 @@ public:
+     /// every staged evicted blob into its `in`'s place in the copy (on another thread: safe once nothing computes `in`
+     /// from RAM - it is resident on the GPU - while `out` is still read from its exchange buffer), then `commit_flip`
+     /// (the caller's thread, between windows) points `out` there and drops the staging.  Returns how many were applied.
+-    void commit_copies();
++    /// `gate` (STRATA_ADAPT_GATE=1, fork opt-in from Hardin22 bce7fbb3; null: as before): the copy pauses while it
++    /// reads true - the CPU expert pool is running and this copy would take RAM bandwidth from it - and goes on in
++    /// 256 KiB pieces otherwise.  The same bytes end up in the same places either way.
++    void commit_copies(const std::atomic<bool>* gate = nullptr);
+     int64_t commit_flip();
+     /// The compact copy's blob of `(layer, expert)`, or null; not counted as a read (any thread).
+     const uint8_t* resident_blob(int64_t layer, int64_t expert) const;
+diff --git a/src/core/expert_source.cpp b/src/core/expert_source.cpp
+index 8b1eb23..98be917 100644
+--- a/src/core/expert_source.cpp
++++ b/src/core/expert_source.cpp
+@@ -2226,14 +2226,24 @@ int64_t FileExpertSource::commit_exchanges() {
+     return n;
+ }
+ 
+-void FileExpertSource::commit_copies() {
++void FileExpertSource::commit_copies(const std::atomic<bool>* gate) {
+     if (exchange_storage_.active()) return;   // STRATA_EXCHANGE_ROTATE: ownership moves in commit_flip, nothing to copy
++    constexpr size_t kPiece = 256 * 1024;
+     for (const Exchange& x : staged_) {
+         const uint8_t* src = override_.empty() ? nullptr : override_[x.out];
+         const uint64_t at = complement_offsets_[x.in];
+         if (src != nullptr && at != kNoComplement && at <= complement_bytes_ && x.bytes <= complement_bytes_ - at &&
+-            complement_host_ != nullptr)
+-            std::memcpy((uint8_t*) complement_host_ + (size_t) at, src, (size_t) x.bytes);
++            complement_host_ != nullptr) {
++            if (gate == nullptr) {
++                std::memcpy((uint8_t*) complement_host_ + (size_t) at, src, (size_t) x.bytes);
++                continue;
++            }
++            uint8_t* dst = (uint8_t*) complement_host_ + (size_t) at;   // STRATA_ADAPT_GATE: in pieces, beside the pool
++            for (size_t o = 0; o < (size_t) x.bytes; o += kPiece) {
++                while (gate->load(std::memory_order_relaxed)) std::this_thread::yield();
++                std::memcpy(dst + o, src + o, std::min(kPiece, (size_t) x.bytes - o));
++            }
++        }
+     }
+ }
+ 
+diff --git a/src/program/generate.cpp b/src/program/generate.cpp
+index 6313993..f661f2b 100644
+--- a/src/program/generate.cpp
++++ b/src/program/generate.cpp
+@@ -1008,13 +1008,30 @@ void drive_pool(void* user, const float* x_f, const int32_t* ids, const float* w
+     }
+ }
+ 
++// STRATA_ADAPT_GATE=1 (fork, opt-in; from Hardin22/Strata-DualGPU bce7fbb3): true while a verify window's CPU expert
++// pool runs (drive_pool_multi).  The asynchronous adaptive tier's host copies (the bounce reads of pageable experts,
++// the RAM side of the exchanges) wait while it is set, so they take RAM bandwidth while the host waits for the GPU -
++// most of a window - and not from the pool, which is bound by it.  Unset: never set, nothing waits.
++bool adapt_gate_on() {
++    static const bool on = [] { const char* v = std::getenv("STRATA_ADAPT_GATE"); return v != nullptr && std::atoi(v) != 0; }();
++    return on;
++}
++std::atomic<bool> g_pool_active{false};
++void adapt_gate_wait() {
++    if (adapt_gate_on())
++        while (g_pool_active.load(std::memory_order_relaxed)) std::this_thread::yield();
++}
++
+ /// Plan v0.3 P6: the pool for a verify window.
+ void drive_pool_multi(void* user, const float* x_f, const int32_t* ids, int64_t n_tok, int64_t k, float* out,
+                       int64_t layer) {
+     Drive* t = (Drive*) user;
+     t->d.layers = layer;
+     const Clock::time_point a = Clock::now();
++    const bool gate = adapt_gate_on();
++    if (gate) g_pool_active.store(true, std::memory_order_relaxed);
+     strata::core::expert_pool_dispatch_multi(t->d, x_f, ids, n_tok, k, out);
++    if (gate) g_pool_active.store(false, std::memory_order_relaxed);
+     t->cpu_ms += std::chrono::duration<double, std::milli>(Clock::now() - a).count();
+     ++t->calls;
+     // the routing trace for the serve path: the same record format drive_pool writes (layer, k, ids, weights),
+@@ -7599,6 +7616,7 @@ int main(int argc, char** argv) {
+                 AHome& h = ahomes[(size_t) w.home];
+                 const size_t nb = (size_t) strata::kernels::cpu::expert_layout().blob_bytes(w.layer);
+                 const uint8_t* b = src.pinned(w.layer, w.in) ? src.resident_blob(w.layer, w.in) : nullptr;
++                adapt_gate_wait();   // STRATA_ADAPT_GATE: the bounce read (or the driver's staging) not beside the pool
+                 if (b == nullptr) {   // pageable, or not in the RAM copy: through a bounce buffer (an async copy)
+                     uint8_t* bb = src.exchange_buffer(a_cap + w.j);
+                     if (bb == nullptr || !src.copy_blob(w.layer, w.in, bb)) {
+@@ -7685,7 +7703,7 @@ int main(int argc, char** argv) {
+                     }
+                     res_upload();
+                     a_swapped += (int64_t) aswaps.size();
+-                    ajob->post([&] { src.commit_copies(); });
++                    ajob->post([&] { src.commit_copies(adapt_gate_on() ? &g_pool_active : nullptr); });
+                     astate = AState::Commit;
+                     if (!drain) return true;
+                     continue;

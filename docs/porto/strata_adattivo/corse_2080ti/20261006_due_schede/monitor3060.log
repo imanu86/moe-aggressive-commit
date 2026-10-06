@@ -1,0 +1,30 @@
+M-same rc=0
+strata decode timing: 492 windows, avg T 2.54, 2.08 tokens/window, 53.99 ms/window = verify 48.66 (GPU-reach wait 17.47 + per-layer host 2.10 [plan 0.20 actq 0.27 jobs 0.01 CPU 4.01] + stage 0.12) + c
+strata decode timing: 645 windows, avg T 1.89, 1.59 tokens/window, 40.51 ms/window = verify 36.27 (GPU-reach wait 14.84 + per-layer host 1.12 [plan 0.20 actq 0.13 jobs 0.01 CPU 1.87] + stage 0.17) + c
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 101672 ms (1290.9 tok/s), 1024 generated in 26563 ms (38.5 tok/s), drafts accepted 532 of 758, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1832 ms (91.1 tok/s), 1024 generated in 26132 ms (39.2 tok/s), drafts accepted 379 of 573, 6 checkpoints
+  => completed L01 38.5 t/s | L02 39.2 t/s
+M-inv16 rc=1
+grep: M-inv16/engine.log: No such file or directory
+grep: M-inv16/engine.log: No such file or directory
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: 'M-inv16/result.json'
+M-inv12 rc=1
+grep: M-inv12/engine.log: No such file or directory
+grep: M-inv12/engine.log: No such file or directory
+Traceback (most recent call last):
+  File "<string>", line 2, in <module>
+FileNotFoundError: [Errno 2] No such file or directory: 'M-inv12/result.json'
+== M-same
+strata: elastic cache requires single-GPU serve without resident CPU complement; using fixed cache
+strata generate: expert cache 10942 slots, 16.53 GiB of VRAM; policy is
+strata generate: layer split: CUDA1 runs layers 32-47, expert cache 3579 slots (6.70 GiB), 3579 of its 8192 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-31
+strata decode timing: 492 windows, avg T 2.54, 2.08 tokens/window, 53.99 ms/window = verify 48.66 (GPU-reach wait 17.47 + per-layer host 2.10 [plan 0.20 actq 0.27 jobs 0.01 CPU 4.01] + stage 0.12) + commit/emit 0.89 + draft 3.55; per layer-window: CPU experts 
+== M-inv16
+grep: /c/Users/imanu/source/repos/moe-aggressive-commit/docs/porto/strata_adattivo/corse_2080ti/20261004_routed_keep/M-inv16/engine.log: No such file or directory
+grep: /c/Users/imanu/source/repos/moe-aggressive-commit/docs/porto/strata_adattivo/corse_2080ti/20261004_routed_keep/M-inv16/engine.log: No such file or directory
+== M-inv12
+grep: /c/Users/imanu/source/repos/moe-aggressive-commit/docs/porto/strata_adattivo/corse_2080ti/20261004_routed_keep/M-inv12/engine.log: No such file or directory
+grep: /c/Users/imanu/source/repos/moe-aggressive-commit/docs/porto/strata_adattivo/corse_2080ti/20261004_routed_keep/M-inv12/engine.log: No such file or directory

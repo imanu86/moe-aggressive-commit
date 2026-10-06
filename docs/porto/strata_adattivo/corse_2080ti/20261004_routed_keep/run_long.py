@@ -66,7 +66,7 @@ def main():
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')
     for kv in a.env:
         k, v = kv.split('=', 1)
-        assert k.startswith('STRATA_')
+        assert k.startswith('STRATA_') or k in ('CUDA_VISIBLE_DEVICES', 'CUDA_DEVICE_ORDER')   # card order for a split
         env[k] = v
     base_path = L / 'state-baseline.json'
     now = RK.snapshot()

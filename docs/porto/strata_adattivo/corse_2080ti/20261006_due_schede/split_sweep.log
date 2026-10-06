@@ -1,0 +1,68 @@
+S32 rc=0
+strata decode timing: 467 windows, avg T 2.55, 2.19 tokens/window, 38.74 ms/window = verify 34.16 (GPU-reach wait 17.64 + per-layer host 2.89 [plan 0.17 actq 0.37 jobs 0.01 CPU 4.27] + stage 0.06) + c
+strata decode timing: 621 windows, avg T 1.95, 1.65 tokens/window, 32.76 ms/window = verify 29.35 (GPU-reach wait 16.12 + per-layer host 1.68 [plan 0.13 actq 0.20 jobs 0.01 CPU 2.20] + stage 0.11) + c
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 102300 ms (1283.0 tok/s), 1024 generated in 18094 ms (56.6 tok/s), drafts accepted 557 of 726, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1998 ms (83.6 tok/s), 1024 generated in 20341 ms (50.3 tok/s), drafts accepted 404 of 588, 6 checkpoints
+  => completed L01 56.6 t/s | L02 50.3 t/s
+S28 rc=0
+strata decode timing: 522 windows, avg T 2.30, 1.96 tokens/window, 36.62 ms/window = verify 31.93 (GPU-reach wait 15.20 + per-layer host 1.16 [plan 0.11 actq 0.21 jobs 0.01 CPU 3.41] + stage 0.11) + c
+strata decode timing: 640 windows, avg T 1.89, 1.60 tokens/window, 32.70 ms/window = verify 28.99 (GPU-reach wait 14.39 + per-layer host 0.70 [plan 0.09 actq 0.12 jobs 0.01 CPU 2.19] + stage 0.13) + c
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 92695 ms (1415.9 tok/s), 1024 generated in 19116 ms (53.6 tok/s), drafts accepted 502 of 679, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2229 ms (74.9 tok/s), 1024 generated in 20931 ms (48.9 tok/s), drafts accepted 385 of 572, 6 checkpoints
+  => completed L01 53.6 t/s | L02 48.9 t/s
+S36 rc=0
+strata decode timing: 497 windows, avg T 2.42, 2.06 tokens/window, 39.17 ms/window = verify 34.73 (GPU-reach wait 19.40 + per-layer host 3.58 [plan 0.12 actq 0.23 jobs 0.01 CPU 3.64] + stage 0.07) + c
+strata decode timing: 622 windows, avg T 1.90, 1.65 tokens/window, 37.56 ms/window = verify 33.79 (GPU-reach wait 18.89 + per-layer host 3.62 [plan 0.21 actq 0.22 jobs 0.02 CPU 3.39] + stage 0.10) + c
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 113232 ms (1159.1 tok/s), 1024 generated in 19467 ms (52.6 tok/s), drafts accepted 527 of 707, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1804 ms (92.6 tok/s), 1024 generated in 23363 ms (43.8 tok/s), drafts accepted 403 of 560, 6 checkpoints
+  => completed L01 52.6 t/s | L02 43.8 t/s
+S0-base rc=0
+strata decode timing: 546 windows, avg T 2.23, 1.88 tokens/window, 43.32 ms/window = verify 37.69 (GPU-reach wait 22.63 + per-layer host 12.92 [plan 0.11 actq 0.32 jobs 0.01 CPU 9.96] + stage 2.50) + 
+strata decode timing: 629 windows, avg T 1.93, 1.63 tokens/window, 37.38 ms/window = verify 32.48 (GPU-reach wait 21.72 + per-layer host 8.72 [plan 0.11 actq 0.29 jobs 0.01 CPU 8.24] + stage 0.05) + c
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 149838 ms (875.9 tok/s), 1024 generated in 23653 ms (43.3 tok/s), drafts accepted 478 of 669, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2013 ms (83.0 tok/s), 1024 generated in 23512 ms (43.6 tok/s), drafts accepted 396 of 585, 6 checkpoints
+  => completed L01 43.3 t/s | L02 43.6 t/s
+== S32
+strata generate: layer split across 2 GPUs: CUDA0, then CUDA1 (split 32)
+strata generate: layer split: CUDA0 loads the dense weights of layers 0-31 only
+strata generate: layer split: CUDA1 loads the dense weights of layers 32-47 only
+strata generate: layer split: CUDA1 PCIe probe 6.7 GB/s (best of 6.7 6.7 6.7 6.7) -> pcie_frac 0.18
+strata generate: layer split: CUDA1 holds its weights; 9.75 GiB free (its session follows the split search)
+strata generate: layer split: CUDA1 holds its weights, session [32, 48) and the head; 8.98 GiB free
+strata: elastic cache requires single-GPU serve without resident CPU complement; using fixed cache
+strata generate: expert cache 8750 slots, 13.22 GiB of VRAM; policy is
+strata generate: layer split, CUDA1: 8.16 GiB free of 12.00, room for experts 6.70 GiB
+strata generate: layer split: CUDA1 runs layers 32-47, expert cache 3579 slots (6.70 GiB), 3579 of its 8192 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-31
+strata serve: layer split: layers 0-31 (CUDA0), 32-47 (CUDA1), one hand-off per window
+== S28
+strata generate: layer split across 2 GPUs: CUDA0, then CUDA1 (split 28)
+strata generate: layer split: CUDA0 loads the dense weights of layers 0-27 only
+strata generate: layer split: CUDA1 loads the dense weights of layers 28-47 only
+strata generate: layer split: CUDA1 PCIe probe 6.7 GB/s (best of 6.7 6.7 6.7 6.7) -> pcie_frac 0.18
+strata generate: layer split: CUDA1 holds its weights; 9.46 GiB free (its session follows the split search)
+strata generate: layer split: CUDA1 holds its weights, session [28, 48) and the head; 8.61 GiB free
+strata: elastic cache requires single-GPU serve without resident CPU complement; using fixed cache
+strata generate: expert cache 9464 slots, 13.66 GiB of VRAM; policy is
+strata generate: layer split, CUDA1: 7.79 GiB free of 12.00, room for experts 6.34 GiB
+strata generate: layer split: CUDA1 runs layers 28-47, expert cache 3335 slots (6.34 GiB), 3335 of its 10240 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-27
+strata serve: layer split: layers 0-27 (CUDA0), 28-47 (CUDA1), one hand-off per window
+== S36
+strata generate: layer split across 2 GPUs: CUDA0, then CUDA1 (split 36)
+strata generate: layer split: CUDA0 loads the dense weights of layers 0-35 only
+strata generate: layer split: CUDA1 loads the dense weights of layers 36-47 only
+strata generate: layer split: CUDA1 PCIe probe 6.7 GB/s (best of 6.7 6.7 6.7 6.7) -> pcie_frac 0.18
+strata generate: layer split: CUDA1 holds its weights; 10.03 GiB free (its session follows the split search)
+strata generate: layer split: CUDA1 holds its weights, session [36, 48) and the head; 9.33 GiB free
+strata: elastic cache requires single-GPU serve without resident CPU complement; using fixed cache
+strata generate: expert cache 8273 slots, 12.94 GiB of VRAM; policy is
+strata generate: layer split, CUDA1: 8.51 GiB free of 12.00, room for experts 7.05 GiB
+strata generate: layer split: CUDA1 runs layers 36-47, expert cache 3889 slots (7.05 GiB), 3889 of its 6144 profiled pairs; slot 0 verified
+strata generate: layer split: CUDA0 runs layers 0-35
+strata serve: layer split: layers 0-35 (CUDA0), 36-47 (CUDA1), one hand-off per window
+== S0-base
+strata generate: expert cache 6549 slots, 10.60 GiB of VRAM; policy is
+strata elastic: on - keeps 500 MiB of VRAM free, grows after 5000 ms of room, checks every 1000 ms (6549 slots now, 10.60 GiB, chunks of 64 MiB)
+strata decode timing: 546 windows, avg T 2.23, 1.88 tokens/window, 43.32 ms/window = verify 37.69 (GPU-reach wait 22.63 + per-layer host 12.92 [plan 0.11 actq 0.32 jobs 0.01 CPU 9.96] + stage 2.50) + commit/emit 0.15 + d
+strata decode timing: 629 windows, avg T 1.93, 1.63 tokens/window, 37.38 ms/window = verify 32.48 (GPU-reach wait 21.72 + per-layer host 8.72 [plan 0.11 actq 0.29 jobs 0.01 CPU 8.24] + stage 0.05) + commit/emit 0.14 + dr

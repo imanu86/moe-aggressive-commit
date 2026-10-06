@@ -57,8 +57,8 @@ def main():
         args = PREFIX.replace_option(args, '--mtp', str(Path(a.mtp_dir).resolve()))
     for ov in a.set_opt:
         k, v = ov.split('=', 1); assert k.startswith('--'); args = PREFIX.replace_option(args, k, v)
-    for ov in a.add_opt:
-        k, v = ov.split('=', 1); assert k.startswith('--'); args += [k, v]
+    for ov in a.add_opt:   # --option=value, or a bare --flag
+        k, _, v = ov.partition('='); assert k.startswith('--'); args += [k, v] if _ else [k]
     for ov in a.drop_opt:
         assert ov.startswith('--') and ov in args; args = PREFIX.replace_option(args, ov, None)
     env = PREFIX.environment(cfg, out / 'unused')

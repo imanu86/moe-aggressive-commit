@@ -45,7 +45,7 @@ def cmd_server(a):
     out = RUNS / a.name
     out.mkdir(parents=True, exist_ok=True)
     flag = out / 'server.on'
-    with A.Server(out) as srv:
+    with A.Server(out, exe=a.exe, source=a.source, extra=a.opt) as srv:
         flag.write_text(datetime.now().isoformat(), encoding='utf-8')
         print('server acceso; cancella', flag, 'per fermarlo', flush=True)
         t0 = time.monotonic()
@@ -142,6 +142,8 @@ def main():
     ap = argparse.ArgumentParser()
     sub = ap.add_subparsers(dest='cmd', required=True)
     s = sub.add_parser('server'); s.add_argument('--name', required=True); s.add_argument('--hours', type=float, default=2)
+    s.add_argument('--exe', help='lab engine instead of the Daily exe'); s.add_argument('--source', help='its serve/ folder')
+    s.add_argument('--opt', action='append', default=[], help='engine arg appended to the Daily args (repeatable)')
     for n in ('prepara', 'vota'):
         p = sub.add_parser(n); p.add_argument('--name', required=True); p.add_argument('id')
     a = ap.parse_args()

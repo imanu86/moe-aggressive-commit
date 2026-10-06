@@ -1,0 +1,18 @@
+{"available_ram_gib": 69.3, "commit_free_gib": 65.6, "gpu_used_mib": 3650, "gpu_util": 35, "cgcontrol": true, 
+  pool kernel: 5,44 GB paginato, 3,45 GB non paginato
+L040-B rc=0
+strata generate: session is up (engine 0.1.40)
+strata decode timing: 518 windows, avg T 2.30, 1.98 tokens/window, 41.01 ms/window = verify 35.16 (GPU-reach wait 20.67 + per-layer host 12.45 [plan 0.15 actq 0.33 jobs 0.01 CPU 11.90] + stage 0.03) + commit/emit 0.17 + draft 2.47; per layer-window: CPU experts 3.33 (3.85 entries), VRAM hits 18.91, PCIe 0.25
+strata decode timing: 626 windows, avg T 1.91, 1.64 tokens/window, 36.85 ms/window = verify 31.59 (GPU-reach wait 19.86 + per-layer host 9.84 [plan 0.10 actq 0.27 jobs 0.01 CPU 9.39] + stage 0.04) + commit/emit 0.15 + draft 2.21; per layer-window: CPU experts 2.67 (3.07 entries), VRAM hits 15.87, PCIe 0.18
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 133528 ms (982.9 tok/s), 1024 generated in 21245 ms (48.2 tok/s), drafts accepted 506 of 674, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1982 ms (84.3 tok/s), 1024 generated in 23068 ms (44.4 tok/s), drafts accepted 399 of 571, 6 checkpoints
+  => completed L01 48.2 t/s | L02 44.4 t/s
+{"available_ram_gib": 68.8, "commit_free_gib": 65.7, "gpu_used_mib": 2956, "gpu_util": 11, "cgcontrol": true, 
+  pool kernel: 5,44 GB paginato, 3,44 GB non paginato
+L040-A rc=0
+strata generate: session is up (engine 0.1.39)
+strata decode timing: 488 windows, avg T 2.50, 2.10 tokens/window, 49.35 ms/window = verify 42.19 (GPU-reach wait 23.44 + per-layer host 16.64 [plan 0.12 actq 0.43 jobs 0.02 CPU 16.02] + stage 0.04) + commit/emit 0.50 + draft 3.76; per layer-window: CPU experts 3.85 (4.58 entries), VRAM hits 20.14, PCIe 0.30
+strata decode timing: 633 windows, avg T 1.97, 1.62 tokens/window, 41.34 ms/window = verify 35.00 (GPU-reach wait 21.60 + per-layer host 11.60 [plan 0.10 actq 0.29 jobs 0.01 CPU 11.11] + stage 0.07) + commit/emit 0.50 + draft 3.24; per layer-window: CPU experts 2.84 (3.25 entries), VRAM hits 16.27, PCIe 0.19
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 134060 ms (979.0 tok/s), 1024 generated in 24082 ms (42.5 tok/s), drafts accepted 537 of 734, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2022 ms (82.6 tok/s), 1024 generated in 26169 ms (39.1 tok/s), drafts accepted 393 of 615, 6 checkpoints
+  => completed L01 42.5 t/s | L02 39.1 t/s

@@ -80,11 +80,16 @@ def get(path, payload=None, timeout=10):
 
 
 class Server:
-    def __init__(self, out):
+    def __init__(self, out, exe=None, source=None, extra=()):
+        """exe/source: a lab engine and the serve/ folder that matches it (default: the Daily's); extra: engine args
+        appended to the Daily's (e.g. --batch 2 --batch-mtp)."""
         cfg = json.loads((D / 'strata-2080ti-sota.json').read_text(encoding='utf-8-sig'))
         args = list(cfg['args'])
         args[args.index('--prompt-cache-file') + 1] = str(DATA / 'prefix-swe.bin')
-        cfg['args'], cfg['log'] = args, str(out / 'engine.log')
+        cfg['args'], cfg['log'] = args + list(extra), str(out / 'engine.log')
+        if exe:
+            cfg['exe'] = str(exe)
+        self.server_py = Path(source) / 'server.py' if source else D / 'build-0139-daily/source/serve/server.py'
         self.cfg_path = out / 'config.json'
         self.cfg_path.write_text(json.dumps(cfg, indent=2), encoding='utf-8')
         self.model, self.out, self.p = cfg['model_name'], out, None
@@ -95,7 +100,7 @@ class Server:
         with socket.socket() as s:
             s.bind(('127.0.0.1', 8100))
         env = {k: v for k, v in os.environ.items() if k != 'STRATA_API_KEY'}
-        self.p = subprocess.Popen([str(D / '.venv/Scripts/python.exe'), '-B', str(D / 'build-0139-daily/source/serve/server.py'),
+        self.p = subprocess.Popen([str(D / '.venv/Scripts/python.exe'), '-B', str(self.server_py),
                                    '--engine', 'strata', '--config', str(self.cfg_path), '--host', '127.0.0.1', '--port', '8100'],
                                   cwd=D, env=env, stdout=(self.out / 'server.log').open('w', encoding='utf-8'),
                                   stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)

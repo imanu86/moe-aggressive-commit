@@ -1,0 +1,41 @@
+{
+  "date": "2026-10-06",
+  "upstream_commit": "1735d6471df29b42c26170efaac1f1446a58640f",
+  "version": "0.1.40-r1",
+  "fork_commit": "96e2cdc9c996f54fe4bdf5e4e2710f5d2442bf3b",
+  "executable_sha256": "f6d50d33dc2267a29d12221e8449b88d94fe7f6b0a6ae3333df2a2a86f95292f",
+  "build": {
+    "configure": {
+      "rc": 0,
+      "seconds": 25.9
+    },
+    "ctest-list": {
+      "rc": 0,
+      "seconds": 0.1
+    },
+    "build": {
+      "rc": 0,
+      "seconds": 209.8
+    }
+  },
+  "scope": "preparazione: compilato si, CTest si, installato no, provato sul server no; nessun benchmark di velocita' in questa procedura",
+  "checks": {
+    "ctest": "91 su 95 passati; 2 non riusciti per cause ambientali note di questa macchina (expert_multi_test, ple_parity: modello a percorso relativo, CPU senza AVX512); 2 saltati (prefill_fused_moe_test, prefill_fused_iq_test: servono GPU sm_80 o piu' recenti)",
+    "pool_quant_parity": "GGUF reale: PASS: 64 native pool cases, outputs finite and bitwise serial; tokens 1..8, batch boundary 96/97",
+    "server_tests": "413 ok su 423 (8 saltati); non riusciti: test_winjob (tasklist letto come UTF-8 su Windows italiano, noto) e test_turns (test del fork, non aggiornato a upstream #931: il testo <|im_end|> in un messaggio utente ora e' testo, il test lo confronta con parse_special=True)",
+    "build": "Release sm_75, CUDA 12.6 shared runtime, native experts, tests on, all targets, llama.cpp 3cf03257"
+  },
+  "limitations": [
+    "eseguibile non installato e non avviato dal server in questa procedura: nessun controllo di salute, nessun oracolo JSON",
+    "nessuna misura di velocita' a 131k su questo eseguibile; i valori di 0.1.39-r2 non si applicano senza nuova misura",
+    "--batch 2 --batch-mtp e il prefisso su disco da 64K sono provati nei commit 0cc421e e 96e2cdc con i banchi del laboratorio (due chat Claude Code in parallelo, prova_prefisso.py, prova_elastica_batch.py), non con la configurazione completa del Daily",
+    "la configurazione proposta non include --pcie-mode dma, --pool-tasks 96 e STRATA_ELASTIC_CORE_ADAPT=1 della r2 mai installata"
+  ],
+  "release_bullets": [
+    "upstream v0.1.40 (1735d64) unito nel fork con il port SM75",
+    "0cc421e: --batch-mtp copia il tipo della testa del draft condivisa (il motore usciva alla prima ammissione)",
+    "96e2cdc: prefisso su disco fino a 64K token e 1,5 GB; cache elastica mantenuta con --batch",
+    "configurazione proposta: Daily 0.1.39 + --batch 2 --batch-mtp, con --elastic, --prompt-cache-file e --ple-row-cache 16777216"
+  ],
+  "markdown": "## Daily 0.1.40-r1 - 6 ottobre 2026 (preparato, non installato)\n\nSorgente del fork `96e2cdc` (upstream v0.1.40 `1735d64` + port SM75 + `--batch-mtp` `0cc421e` + prefisso su disco da 64K e cache elastica col batch `96e2cdc`). Compilato `Release` sm_75, eseguibile `f6d50d33dc22`. CTest: 91 su 95 passati; 2 non riusciti per cause ambientali note di questa macchina (expert_multi_test, ple_parity: modello a percorso relativo, CPU senza AVX512); 2 saltati (prefill_fused_moe_test, prefill_fused_iq_test: servono GPU sm_80 o piu' recenti). `pool_quant_parity` sul GGUF reale: passa. Test server: 413 ok su 423 (8 saltati); non riusciti: test_winjob (tasklist letto come UTF-8 su Windows italiano, noto) e test_turns (test del fork, non aggiornato a upstream #931: il testo <|im_end|> in un messaggio utente ora e' testo, il test lo confronta con parse_special=True). Configurazione proposta: quella del Daily 0.1.39 con `--batch 2 --batch-mtp`. Non installato, non avviato, nessuna misura di velocita'. Dettagli: `validation.json`."
+}

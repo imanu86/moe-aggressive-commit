@@ -1,0 +1,100 @@
+{
+  "fork_head": "df973585030b358e742002f0083062fa2d42242e",
+  "version": "0.1.40-r1",
+  "steps": {
+    "ctest": {
+      "rc": 8,
+      "seconds": 90.6
+    },
+    "pool-quant-parity": {
+      "rc": 0,
+      "seconds": 0.9
+    },
+    "server-tests": {
+      "rc": 1,
+      "seconds": 158.5
+    }
+  },
+  "ctest": {
+    "summary": "98% tests passed, 2 tests failed out of 95",
+    "total": 95,
+    "failed": 2,
+    "failed_tests": [
+      "ple_parity (Failed)",
+      "expert_multi_test (Failed)"
+    ],
+    "skipped_tests": [
+      "prefill_fused_moe_test (Skipped)",
+      "prefill_fused_iq_test (Skipped)"
+    ],
+    "passed": 91,
+    "known_failures": [
+      "expert_multi_test",
+      "ple_parity"
+    ],
+    "known_skips": [
+      "prefill_fused_iq_test",
+      "prefill_fused_moe_test"
+    ],
+    "registered": 95,
+    "unexpected_failures": [],
+    "known_failures_seen": [
+      "expert_multi_test",
+      "ple_parity"
+    ]
+  },
+  "pool_quant_parity": {
+    "rc": 0,
+    "last": [
+      "PASS: 64 native pool cases, outputs finite and bitwise serial; tokens 1..8, batch boundary 96/97"
+    ]
+  },
+  "server_tests": {
+    "rc": 1,
+    "summary": [
+      "Ran 423 tests in 157.887s",
+      "FAILED (errors=1, skipped=8)"
+    ],
+    "failed": [
+      "test_children_end_with_a_killed_server"
+    ],
+    "known": [
+      "test_children_end_with_a_killed_server",
+      "test_json_schema_text_format"
+    ],
+    "unexpected": [],
+    "accepted_by_operator": {}
+  },
+  "preinstall": {
+    "strata_exe_running": false,
+    "port_8100_listening": false,
+    "flags_checked": [
+      "--elastic",
+      "--expert-cache",
+      "--expert-profile",
+      "--kv",
+      "--kv-resident",
+      "--max-context",
+      "--mtp",
+      "--native",
+      "--native-dense-gguf",
+      "--pack",
+      "--ple-gguf",
+      "--ple-row-cache",
+      "--prefill",
+      "--prompt-cache-every",
+      "--prompt-cache-file",
+      "--prompt-cache-tail",
+      "--spec",
+      "--spec-min-p",
+      "--vram-reserve-mib"
+    ],
+    "flags_missing_in_source": [],
+    "paths_checked": 7,
+    "paths_missing": [],
+    "prompt_cache_dir_exists": true,
+    "proposed_config_sha256": "959fc0f4efacff3451faef5ee472d7f08db8ed59778e0c4f7e5297c0222bce2e",
+    "exe_sha256": "aeb89cf60e939983489eb359362b972a25ac625fb218ff583582523b256a7160"
+  },
+  "status": "ok"
+}

@@ -1,0 +1,24 @@
+{
+  "scope": "preparazione: compilato si, CTest si, installato no, provato sul server no; nessun benchmark di velocita' in questa procedura",
+  "checks": {
+    "ctest": "91 su 95 passati; 2 non riusciti per cause ambientali note di questa macchina (expert_multi_test, ple_parity: modello a percorso relativo, CPU senza AVX512); 2 saltati (prefill_fused_moe_test, prefill_fused_iq_test: servono GPU sm_80 o piu' recenti)",
+    "pool_quant_parity": "GGUF reale: PASS: 64 native pool cases, outputs finite and bitwise serial; tokens 1..8, batch boundary 96/97",
+    "server_tests": "414 ok su 423 (8 saltati); non riusciti: test_children_end_with_a_killed_server (test_winjob: tasklist letto come UTF-8 su Windows italiano, noto)",
+    "build": "Release sm_75, CUDA 12.6 shared runtime, native experts, tests on, all targets, llama.cpp 3cf03257"
+  },
+  "limitations": [
+    "eseguibile non installato e non avviato dal server in questa procedura: nessun controllo di salute, nessun oracolo JSON",
+    "nessuna misura di velocita' a 131k su questo eseguibile; i valori di 0.1.39-r2 non si applicano senza nuova misura",
+    "il prefisso su disco da 64K (96e2cdc), il riprovare un arena piu piccola (df97358) e la correzione --batch-mtp (0cc421e, il Daily non usa --batch) sono provati nei commit con i banchi del laboratorio, non con la configurazione completa del Daily",
+    "la configurazione proposta non include --pcie-mode dma, --pool-tasks 96 e STRATA_ELASTIC_CORE_ADAPT=1 della r2 mai installata"
+  ],
+  "release_bullets": [
+    "upstream v0.1.40 (1735d64) unito nel fork con il port SM75",
+    "0cc421e: --batch-mtp copia il tipo della testa del draft condivisa (il motore usciva alla prima ammissione; il Daily non usa --batch)",
+    "96e2cdc: prefisso su disco fino a 64K token e 1,5 GB; cache elastica mantenuta con --batch",
+    "a32b5e1: test_turns allineato alla semantica dei tag letterali di upstream #931",
+    "df97358: la cache elastica riprova un arena piu piccola se cuMemCreate finisce la memoria, invece di ripiegare sulla cache fissa",
+    "configurazione proposta: quella del Daily 0.1.39 (--elastic, --prompt-cache-file, --ple-row-cache 16777216) con il nuovo eseguibile, senza --batch"
+  ],
+  "markdown": "## Daily 0.1.40-r1 - 6 ottobre 2026 (preparato, non installato)\n\nSorgente del fork `df97358` (upstream v0.1.40 `1735d64` + port SM75 + correzione `--batch-mtp` `0cc421e` + prefisso su disco da 64K e cache elastica col batch `96e2cdc` + `test_turns` `a32b5e1` + arena elastica piu' piccola su memoria esaurita `df97358`). Compilato `Release` sm_75, eseguibile `aeb89cf60e93`. CTest: 91 su 95 passati; 2 non riusciti per cause ambientali note di questa macchina (expert_multi_test, ple_parity: modello a percorso relativo, CPU senza AVX512); 2 saltati (prefill_fused_moe_test, prefill_fused_iq_test: servono GPU sm_80 o piu' recenti). `pool_quant_parity` sul GGUF reale: passa. Test server: 414 ok su 423 (8 saltati); non riusciti: test_children_end_with_a_killed_server (test_winjob: tasklist letto come UTF-8 su Windows italiano, noto). Configurazione proposta: quella del Daily 0.1.39 con il nuovo eseguibile, senza `--batch`. Non installato, non avviato, nessuna misura di velocita'. Dettagli: `validation.json`."
+}

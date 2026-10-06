@@ -1,0 +1,105 @@
+{
+  "fork_head": "96e2cdc9c996f54fe4bdf5e4e2710f5d2442bf3b",
+  "version": "0.1.40-r1",
+  "steps": {
+    "ctest": {
+      "rc": 8,
+      "seconds": 92.3
+    },
+    "pool-quant-parity": {
+      "rc": 0,
+      "seconds": 0.9
+    },
+    "server-tests": {
+      "rc": 1,
+      "seconds": 160.8
+    }
+  },
+  "ctest": {
+    "summary": "98% tests passed, 2 tests failed out of 95",
+    "total": 95,
+    "failed": 2,
+    "failed_tests": [
+      "ple_parity (Failed)",
+      "expert_multi_test (Failed)"
+    ],
+    "skipped_tests": [
+      "prefill_fused_moe_test (Skipped)",
+      "prefill_fused_iq_test (Skipped)"
+    ],
+    "passed": 91,
+    "known_failures": [
+      "expert_multi_test",
+      "ple_parity"
+    ],
+    "known_skips": [
+      "prefill_fused_iq_test",
+      "prefill_fused_moe_test"
+    ],
+    "registered": 95,
+    "unexpected_failures": [],
+    "known_failures_seen": [
+      "expert_multi_test",
+      "ple_parity"
+    ]
+  },
+  "pool_quant_parity": {
+    "rc": 0,
+    "last": [
+      "PASS: 64 native pool cases, outputs finite and bitwise serial; tokens 1..8, batch boundary 96/97"
+    ]
+  },
+  "server_tests": {
+    "rc": 1,
+    "summary": [
+      "Ran 423 tests in 160.135s",
+      "FAILED (failures=1, errors=1, skipped=8)"
+    ],
+    "failed": [
+      "test_children_end_with_a_killed_server",
+      "test_turns"
+    ],
+    "known": [
+      "test_children_end_with_a_killed_server",
+      "test_json_schema_text_format"
+    ],
+    "unexpected": [],
+    "accepted_by_operator": {
+      "test_turns": "test del fork (IncrementalPrompts, GPT6-SERVE) non aggiornato a upstream #931: il testo <|im_end|> nel messaggio utente ora e' testo, il test confronta con parse_special=True; il server si comporta come upstream"
+    }
+  },
+  "preinstall": {
+    "strata_exe_running": false,
+    "port_8100_listening": false,
+    "flags_checked": [
+      "--batch",
+      "--batch-mtp",
+      "--elastic",
+      "--expert-cache",
+      "--expert-profile",
+      "--kv",
+      "--kv-resident",
+      "--max-context",
+      "--mtp",
+      "--native",
+      "--native-dense-gguf",
+      "--pack",
+      "--ple-gguf",
+      "--ple-row-cache",
+      "--prefill",
+      "--prompt-cache-every",
+      "--prompt-cache-file",
+      "--prompt-cache-tail",
+      "--spec",
+      "--spec-min-p",
+      "--vram-reserve-mib"
+    ],
+    "flags_missing_in_source": [],
+    "paths_checked": 7,
+    "paths_missing": [],
+    "prompt_cache_dir_exists": true,
+    "proposed_config_sha256": "fd6c5670241d07fc9456e2b2bd23fe3b657a85f019ba30a7df98a9e2dbbace30",
+    "exe_sha256": "f6d50d33dc2267a29d12221e8449b88d94fe7f6b0a6ae3333df2a2a86f95292f"
+  },
+  "status": "ok-with-accepted-server-failures"
+}

@@ -576,6 +576,25 @@ Verdetto: B >= A (piu' veloce a parita' di testo, nessun blocco): la r2 e' pront
 solo col consenso dell'utente. Da notare: a temperatura 0 entrambi possono cadere in ripetizione su richieste
 lunghissime; il Daily qui 4 turni su 8, la r2 nessuno pieno.
 
+## I cicli di ripetizione: ragionamento e campionamento — 6/10 mattina
+
+I cicli della notte erano nel **ragionamento** (il testo non chiude mai il pensiero: tutti i 16 turni a 14.000 token
+con `finish: length`), con decodifica greedy (temperatura 0, voluta dal banco per la ripetibilita'). Stesso banco a
+turni sulla r2 (`build-pr949`, configurazione r2), una corsa ciascuna (`turni_campionamento.sh`):
+
+| corsa | turni | fine | t/s | bozze | zlib |
+|---|---|---|---|---|---|
+| `TURNI-r2-nothink` (ragionamento spento, greedy) | 10 | 9 stop, 1 al tetto (codice di test lungo) | 52–71 | 72–91% | 0,16–0,40 |
+| `TURNI-r2-temp` (ragionamento acceso, temp 1,0 top_p 0,95 top_k 20 = `general.sampling` del GGUF) | 8 | tutti al tetto | 47–53 | 59–70% | 0,30–0,35 |
+
+Senza ragionamento: risposte complete che si chiudono da sole, nessun ciclo, prefill ~1 s dal turno 3 (risposte piu'
+corte, prefisso riusato). Con il campionamento del modello: nessun ciclo, ma il ragionamento consuma comunque tutti i
+14.000 token su richieste cosi' grandi. Nell'uso reale: Claude Code manda la temperatura in 2 richieste su 11.867
+(log del gateway) e senza indicazioni il template usa `reasoning_effort` xhigh: le chat Haiku locali girano oggi in
+greedy al ragionamento massimo. Livelli disponibili: spento, low, medium, xhigh; tetto `reasoning_budget_tokens`
+(#123). La scelta va fatta sulla qualita': banco SWE di casa (`banco_swe/`), configurazioni spento / low / medium /
+xhigh / xhigh con tetto, tutte campionate.
+
 ## PR 949, 965, 960, 969 — 2026-10-05 notte
 
 **#949** (Unmaple, `--pool-tasks N`): portata nel fork `f4a2590` (pool.cpp a mano: il fork ha la fase di

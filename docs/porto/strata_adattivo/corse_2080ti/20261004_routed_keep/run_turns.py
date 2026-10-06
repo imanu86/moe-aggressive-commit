@@ -69,6 +69,11 @@ def main():
     ap.add_argument('--max-context', type=int, default=130000, help='stop once the next prompt would pass this')
     ap.add_argument('--gen', type=int, default=14000, help='max tokens per answer')
     ap.add_argument('--first', type=int, default=12000, help='tokens of code in the first prompt')
+    ap.add_argument('--no-think', action='store_true', help='chat_template_kwargs enable_thinking=false')
+    ap.add_argument('--temp', type=float, default=0.0, help='sampling temperature (0 = greedy, the default)')
+    ap.add_argument('--top-p', type=float, default=None)
+    ap.add_argument('--top-k', type=int, default=None)
+    ap.add_argument('--min-p', type=float, default=None)
     a = ap.parse_args()
     out = L / a.name
     assert not out.exists()
@@ -99,6 +104,11 @@ def main():
                 env_extra=a.env, args=args, turns=a.turns, gen=a.gen, first_tokens=len(tok.encode(code)), state=now,
                 executable_sha256=pin['executable_sha256'], source=str(SOURCE), source_sha256=sha(SOURCE))
     (out / 'plan.json').write_text(json.dumps(plan, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
+    sampling = dict(temperature=a.temp, seed=73)
+    for k, v in (('top_p', a.top_p), ('top_k', a.top_k), ('min_p', a.min_p)):
+        if v is not None:
+            sampling[k] = v
+    (out / 'sampling.json').write_text(json.dumps(dict(sampling=sampling, no_think=a.no_think)) + '\n', encoding='utf-8')
     messages = [{'role': 'system', 'content': 'Sei un ingegnere software senior. Rispondi in italiano.'}]
     result = dict(status='starting', turns=[])
     engine = server.StrataEngine(str(exe), args, cwd=cfg['cwd'], log=str(out / 'engine.log'), env=env, lazy=True)
@@ -110,7 +120,10 @@ def main():
         for i in range(a.turns):
             ask = TURNS[i % len(TURNS)]
             messages.append({'role': 'user', 'content': (code + '\n\n' + ask) if i == 0 else ask})
-            m, tools, kw = convert({'messages': messages, 'temperature': 0})
+            req = {'messages': messages, 'temperature': a.temp}
+            if a.no_think:
+                req['chat_template_kwargs'] = {'enable_thinking': False}
+            m, tools, kw = convert(req)
             ids = tok.encode(template.render(m, tools, **kw), parse_special=True)
             if len(ids) + a.gen > a.max_context:
                 result['stopped'] = f'turn {i + 1}: {len(ids)} prompt tokens + {a.gen} would pass {a.max_context}'
@@ -119,7 +132,7 @@ def main():
             ts = time.monotonic()
 
             def gen():
-                for token in engine.generate(ids, a.gen, dict(temperature=0, seed=73), threading.Event()):
+                for token in engine.generate(ids, a.gen, sampling, threading.Event()):
                     if token is not None:
                         if not emitted:
                             first.append(time.monotonic())

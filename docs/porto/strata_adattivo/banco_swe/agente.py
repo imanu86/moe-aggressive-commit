@@ -80,12 +80,16 @@ def get(path, payload=None, timeout=10):
 
 
 class Server:
-    def __init__(self, out, exe=None, source=None, extra=()):
+    def __init__(self, out, exe=None, source=None, extra=(), drop=()):
         """exe/source: a lab engine and the serve/ folder that matches it (default: the Daily's); extra: engine args
-        appended to the Daily's (e.g. --batch 2 --batch-mtp)."""
+        appended to the Daily's (e.g. --batch 2 --batch-mtp); drop: Daily options removed with their value (e.g.
+        --prompt-cache-file, which a layer split does not take)."""
         cfg = json.loads((D / 'strata-2080ti-sota.json').read_text(encoding='utf-8-sig'))
         args = list(cfg['args'])
         args[args.index('--prompt-cache-file') + 1] = str(DATA / 'prefix-swe.bin')
+        for opt in drop:
+            k = args.index(opt)
+            del args[k:k + (2 if k + 1 < len(args) and not args[k + 1].startswith('--') else 1)]
         cfg['args'], cfg['log'] = args + list(extra), str(out / 'engine.log')
         if exe:
             cfg['exe'] = str(exe)

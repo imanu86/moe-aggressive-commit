@@ -36,13 +36,15 @@ def main():
     ap.add_argument('--source', required=True)
     ap.add_argument('--hog-gib', type=float, default=3)
     ap.add_argument('--name', default='elastica_batch')
+    ap.add_argument('--extra', default='--batch 2 --batch-mtp', help='engine args appended (space separated)')
+    ap.add_argument('--drop', default='', help='Daily options removed (space separated)')
     a = ap.parse_args()
     out = A.P.DATA / 'runs_cc' / a.name
     out.mkdir(parents=True, exist_ok=True)
     import os
     os.environ['STRATA_ELASTIC_TRACE'] = '1'
     res, events = {}, []
-    with A.Server(out, exe=a.exe, source=a.source, extra=('--batch', '2', '--batch-mtp')) as srv:
+    with A.Server(out, exe=a.exe, source=a.source, extra=tuple(a.extra.split()), drop=tuple(a.drop.split())) as srv:
         t0 = time.monotonic()
 
         def one(i):

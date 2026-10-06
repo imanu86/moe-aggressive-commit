@@ -1,0 +1,37 @@
+C-pw2 rc=0
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 100674 ms (1303.7 tok/s), 1024 generated in 17188 ms (59.6 tok/s), drafts accepted 511 of 714, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2009 ms (83.1 tok/s), 1024 generated in 20192 ms (50.7 tok/s), drafts accepted 391 of 607, 6 checkpoints
+  => completed L01 59.6 t/s | L02 50.7 t/s
+C-pw1 rc=0
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 100933 ms (1300.3 tok/s), 1024 generated in 18674 ms (54.8 tok/s), drafts accepted 493 of 672, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1970 ms (84.8 tok/s), 1024 generated in 20392 ms (50.2 tok/s), drafts accepted 364 of 539, 6 checkpoints
+  => completed L01 54.8 t/s | L02 50.2 t/s
+C-prof rc=0
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 100434 ms (1306.8 tok/s), 1024 generated in 19788 ms (51.7 tok/s), drafts accepted 525 of 707, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1922 ms (86.9 tok/s), 1024 generated in 21583 ms (47.4 tok/s), drafts accepted 425 of 605, 6 checkpoints
+  => completed L01 51.7 t/s | L02 47.4 t/s
+C-spec6 rc=0
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 100580 ms (1304.9 tok/s), 1024 generated in 17931 ms (57.1 tok/s), drafts accepted 573 of 834, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1927 ms (86.7 tok/s), 1024 generated in 20405 ms (50.2 tok/s), drafts accepted 388 of 595, 6 checkpoints
+  => completed L01 57.1 t/s | L02 50.2 t/s
+C-ref rc=0
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 100363 ms (1307.7 tok/s), 1024 generated in 17933 ms (57.1 tok/s), drafts accepted 551 of 730, 6 checkpoints
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1989 ms (84.0 tok/s), 1024 generated in 20025 ms (51.1 tok/s), drafts accepted 409 of 597, 6 checkpoints
+  => completed L01 57.1 t/s | L02 51.1 t/s
+== C-pw2
+strata generate: --pipeline-windows 2: 309 MiB of CUDA0 kept out of the expert cache (the second verifier, the GDN snapshots)
+strata serve: --pipeline-windows 2: two verifiers per stage, the stages overlap across windows (decode too; the GDN snapshots beside the window)
+strata pipeline: 513 windows in 17187 ms (33.50 ms/window): 384 speculative, 179 on the path, 205 rolled back, 128 below the gate (theta 0.20)
+strata pipeline classes: fresh 334 windows 38.87 ms 2.04 tok | speculative 179 windows 23.46 ms 1.91 tok | forced-chain disagreements 38, chain late 38
+strata pipeline calibration (p_on decile: on/scored): 0.0:6/61 0.1:12/67 0.2:31/112 0.3:40/90 0.4:40/82 0.5:16/26 0.6:7/12 0.7:16/25 0.8:7/12 0.9:23/25
+strata pipeline: 633 windows in 20191 ms (31.90 ms/window): 410 speculative, 130 on the path, 280 rolled back, 222 below the gate (theta 0.20)
+== C-pw1
+strata generate: --pipeline-windows 1: 160 MiB of CUDA0 kept out of the expert cache (the second verifier)
+strata serve: --pipeline-windows 1: two verifiers per stage, the stages overlap across windows
+== C-prof
+strata decode GPU stages (ms/window): GDN layers: q8+qkv/q-idx gemv 1.55 conv 0.13 ab 0.20 z 1.06 rec 0.41 out-proj 1.12 hc-read1+router 2.02 shared+quant 1.01 waitA 1.39 VRAM hits 3.42 waitB 0.43 PCIe grp 0.21 waitCPU 0.39 copy+combine 0.33 (gap) 0.05   hc0 n
+strata decode GPU stages, stage 1 (ms/window): GDN layers: q8+qkv/q-idx gemv 1.03 conv 0.05 ab 0.07 z 0.57 rec 0.22 out-proj 0.63 hc-read1+router 1.07 shared+quant 0.41 waitA 0.11 VRAM hits 1.81 waitB 0.08 PCIe grp 0.07 waitCPU 0.37 copy+combine 0.12 (gap) 0.0
+strata decode GPU stages (ms/window): GDN layers: q8+qkv/q-idx gemv 1.46 conv 0.13 ab 0.19 z 0.97 rec 0.40 out-proj 1.06 hc-read1+router 1.91 shared+quant 0.94 waitA 1.56 VRAM hits 3.05 waitB 0.31 PCIe grp 0.20 waitCPU 0.31 copy+combine 0.30 (gap) 0.05   hc0 n
+strata decode GPU stages, stage 1 (ms/window): GDN layers: q8+qkv/q-idx gemv 0.94 conv 0.05 ab 0.06 z 0.52 rec 0.21 out-proj 0.59 hc-read1+router 1.00 shared+quant 0.38 waitA 0.11 VRAM hits 1.64 waitB 0.08 PCIe grp 0.07 waitCPU 0.13 copy+combine 0.10 (gap) 0.0
+== C-spec6
+== C-ref

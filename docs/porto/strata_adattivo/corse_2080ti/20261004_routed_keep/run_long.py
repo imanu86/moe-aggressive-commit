@@ -27,6 +27,7 @@ def main():
     ap.add_argument('--tokens', type=int, default=1024)
     ap.add_argument('--set-opt', action='append', default=[], help='--option=value override of the Daily args')
     ap.add_argument('--add-opt', action='append', default=[], help='--option=value appended (repeatable options)')
+    ap.add_argument('--drop-opt', action='append', default=[], help='--option removed from the Daily args')
     ap.add_argument('--daily-exe', action='store_true', help="use the Daily config's own exe")
     a = ap.parse_args()
     out = L / a.name
@@ -58,6 +59,8 @@ def main():
         k, v = ov.split('=', 1); assert k.startswith('--'); args = PREFIX.replace_option(args, k, v)
     for ov in a.add_opt:
         k, v = ov.split('=', 1); assert k.startswith('--'); args += [k, v]
+    for ov in a.drop_opt:
+        assert ov.startswith('--') and ov in args; args = PREFIX.replace_option(args, ov, None)
     env = PREFIX.environment(cfg, out / 'unused')
     env.pop('STRATA_DUMP_FIRST_LOGITS', None)
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')

@@ -132,3 +132,15 @@ hanno il titolo sbagliato (collisione file messaggi): non riscritti (niente forc
 Linux escluso; 8K e Oculink restano; niente due copie del modello (data parallel scartato); le release dell'app le fa
 l'owner; mai alzare la priorità di strata.exe; niente agenti Haiku per lavoro (il gateway li manda a Strata: solo per
 test voluti); impostazioni di sistema le cambia l'owner; segreti mai in git né in chat.
+
+## 8. Aggiornamento sera 7/10: multi-chat provato (build-mc-be4f623)
+
+Funziona (nessun blocco, testi sani, la pipeline a due gruppi si accende), ma **non scala**:
+- 1 chat: 64-71 t/s. 2 chat, 1 bozza per chat: 36 + 40 t/s per chat, 59 t/s aggregati dai client (motore 86 righe/s);
+  stadio 1 (2080 Ti) occupato **96%**, 18,9 ms per finestra di gruppo con 2 righe; bozze accettate 68%.
+- `STRATA_BATCH_MTP_DRAFTS=3`: peggio (2 chat 44,5, 3 chat 52,5 t/s aggregati): ogni riga in più costa ~6-10 ms sullo
+  stadio 1, perché righe di conversazioni diverse chiamano esperti diversi (traffico esperti ~lineare nelle righe):
+  su MoE 512×top-10 il batch non ammortizza i pesi come su un modello denso.
+- Conclusione provvisoria: a 131k il collo è la banda della 2080 Ti per gli esperti; 120 t/s aggregati non arrivano dal
+  batch così com'è. Da capire: quota di esperti condivisi fra slot, batch a 1 bozza con 3 chat, raggruppare slot con
+  routing simile. Log: `20261006_due_schede\mc_pb2-1`, `mc_pb2-2`.

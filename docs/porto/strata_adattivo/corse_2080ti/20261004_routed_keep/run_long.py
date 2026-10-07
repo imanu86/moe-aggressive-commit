@@ -29,6 +29,10 @@ def main():
     ap.add_argument('--add-opt', action='append', default=[], help='--option=value appended (repeatable options)')
     ap.add_argument('--drop-opt', action='append', default=[], help='--option removed from the Daily args')
     ap.add_argument('--daily-exe', action='store_true', help="use the Daily config's own exe")
+    ap.add_argument('--prefix-as-system', action='store_true',
+                    help='instruction + 131k prefix as the SYSTEM message, then the case: the prefix ends at the first '
+                         'turn boundary, the root checkpoint the prefix disk cache saves (not comparable with the '
+                         'default user-turn layout)')
     a = ap.parse_args()
     out = L / a.name
     assert not out.exists()
@@ -47,8 +51,12 @@ def main():
     for cid in ('L01', 'L02'):
         c = casi[cid]
         pre = c['prefisso_per_contesto']['ctx131k']
-        msgs = [{'role': 'user', 'content': man['istruzione_contesto'] + prefissi[pre]},
-                {'role': 'assistant', 'content': 'pronto'}, {'role': 'user', 'content': prompts[cid]}]
+        if a.prefix_as_system:
+            msgs = [{'role': 'system', 'content': man['istruzione_contesto'] + prefissi[pre]},
+                    {'role': 'user', 'content': prompts[cid]}]
+        else:
+            msgs = [{'role': 'user', 'content': man['istruzione_contesto'] + prefissi[pre]},
+                    {'role': 'assistant', 'content': 'pronto'}, {'role': 'user', 'content': prompts[cid]}]
         m, tools, kw = convert({'messages': msgs, 'temperature': 0})
         requests.append((cid, tok.encode(template.render(m, tools, **kw), parse_special=True)))
     args = PREFIX.replace_option(list(server.engine_args(cfg)), '--prompt-cache-file', None)
@@ -66,7 +74,7 @@ def main():
     env.update(STRATA_NO_LARGEPAGES='1', STRATA_ARENA_PIN_GIB='8', STRATA_DECODE_TIMING='1')
     for kv in a.env:
         k, v = kv.split('=', 1)
-        assert k.startswith('STRATA_') or k in ('CUDA_VISIBLE_DEVICES', 'CUDA_DEVICE_ORDER')   # card order for a split
+        assert k.startswith('STRATA_') or k in ('CUDA_VISIBLE_DEVICES', 'CUDA_DEVICE_ORDER', 'CUDA_DEVICE_MAX_CONNECTIONS')   # card order for a split
         env[k] = v
     base_path = L / 'state-baseline.json'
     now = RK.snapshot()
@@ -121,5 +129,90 @@ def main():
         (out / 'result.json').write_text(json.dumps(result, indent=2, ensure_ascii=False) + '\n', encoding='utf-8')
 
 
+LOCKS = Path(r'D:\ds4_work\strata\lab_locks')
+
+
 if __name__ == '__main__':
-    main()
+    # 6/10: lab builds (build_lock.py) and benchmark arms take turns.  An arm waits while a build holds build.lock,
+    # then holds bench.lock for its whole run; a build waits while bench.lock exists.
+    # bench.lock is exclusive (O_EXCL): arms from different queues or agents never overlap either.
+    import os
+    LOCKS.mkdir(parents=True, exist_ok=True)
+    arm_name = sys.argv[sys.argv.index('--name') + 1] if '--name' in sys.argv else 'arm'
+    # 6/10 sera: while lab_locks\closed exists only the coordinator's deterministic bench (DET-*) may run
+    if (LOCKS / 'closed').exists() and not arm_name.startswith('DET-'):
+        sys.exit(f'lab closed by the coordinator ({(LOCKS / "closed").read_text().strip()}): arm {arm_name} not run')
+    while True:
+        if not (LOCKS / 'build.lock').exists() and not (LOCKS / 'pause').exists():
+            try:
+                fd = os.open(LOCKS / 'bench.lock', os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+                os.write(fd, (sys.argv[sys.argv.index('--name') + 1] if '--name' in sys.argv else 'arm').encode())
+                os.close(fd)
+                break
+            except FileExistsError:
+                pass
+        time.sleep(10)
+    # 6/10: what else the machine did during the arm (other agents write to disk, use CPU): every 5 s the CPU used
+    # outside strata.exe (in cores) and the read/write MB/s per physical disk, kept in <arm>/ambiente.json
+    amb, stop = [], threading.Event()
+
+    def sampler():
+        last = psutil.disk_io_counters(perdisk=True)
+        lt = time.time()
+        while not stop.wait(5):
+            try:
+                now_io, t = psutil.disk_io_counters(perdisk=True), time.time()
+                dt = max(t - lt, 1e-3)
+                tot = psutil.cpu_percent(interval=None) * psutil.cpu_count() / 100
+                engines = [p for p in psutil.process_iter(['name']) if (p.info['name'] or '').lower() == 'strata.exe']
+                for p in engines:   # 6/10: other agents take ~6 of 16 threads; HIGH priority while lab_locks\prio_high exists
+                    try:
+                        if not (LOCKS / 'prio_high').exists():
+                            break
+                        if p.nice() != psutil.HIGH_PRIORITY_CLASS:
+                            p.nice(psutil.HIGH_PRIORITY_CLASS)
+                    except Exception:
+                        pass
+                eng = sum(p.cpu_percent(interval=None) for p in engines) / 100
+                disks = {d: [round((now_io[d].read_bytes - last[d].read_bytes) / dt / 1e6, 1),
+                             round((now_io[d].write_bytes - last[d].write_bytes) / dt / 1e6, 1)]
+                         for d in now_io if d in last}
+                row = dict(t=round(t), cpu_altri=round(max(tot - eng, 0), 2), cpu_strata=round(eng, 2),
+                           disk_mbs_rw=disks)
+                # 6/10 notte: every 15 s, who holds dedicated VRAM (MB per process and adapter, > 100 MB): the
+                # elastic 3060 cache shrinks when the desktop grows, and this says which process grew
+                if len(amb) % 3 == 0:
+                    import subprocess
+                    ps = ("$c=Get-Counter '\\GPU Process Memory(*)\\Dedicated Usage' -EA SilentlyContinue;"
+                          "$c.CounterSamples|?{$_.CookedValue -gt 100MB}|%{$n=$_.InstanceName;"
+                          "$i=if($n -match 'pid_(\\d+)'){[int]$matches[1]}else{0};"
+                          "$l=if($n -match 'luid_0x[0-9a-f]+_(0x[0-9a-f]+)'){$matches[1]}else{''};"
+                          "$p=(Get-Process -Id $i -EA SilentlyContinue).ProcessName;"
+                          "'{0}|{1}|{2}' -f $p,$l,[math]::Round($_.CookedValue/1MB)}")
+                    out = subprocess.run(['powershell', '-NoProfile', '-Command', ps], capture_output=True,
+                                         text=True, timeout=20, creationflags=0x08000000).stdout
+                    row['vram_mb'] = [ln.strip() for ln in out.splitlines() if ln.strip()]
+                    # 7/10: temperature, clocks, power and throttle reasons per card (owner: watch the heat)
+                    smi = subprocess.run(['nvidia-smi', '--query-gpu=index,temperature.gpu,clocks.sm,clocks.mem,'
+                                          'power.draw,pstate,clocks_throttle_reasons.active',
+                                          '--format=csv,noheader,nounits'], capture_output=True, text=True,
+                                         timeout=10, creationflags=0x08000000).stdout
+                    row['gpu'] = [ln.strip() for ln in smi.splitlines() if ln.strip()]
+                amb.append(row)
+                last, lt = now_io, t
+            except Exception as e:   # sampling never fails the arm
+                amb.append(dict(t=round(time.time()), err=str(e)[:80]))
+
+    th = threading.Thread(target=sampler, daemon=True)
+    th.start()
+    try:
+        main()
+    finally:
+        stop.set()
+        (LOCKS / 'bench.lock').unlink(missing_ok=True)
+        try:
+            n = sys.argv[sys.argv.index('--name') + 1]
+            if (L / n).is_dir():
+                (L / n / 'ambiente.json').write_text(json.dumps(amb) + '\n', encoding='utf-8')
+        except Exception:
+            pass

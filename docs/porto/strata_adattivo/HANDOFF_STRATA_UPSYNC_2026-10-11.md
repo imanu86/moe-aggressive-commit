@@ -77,3 +77,37 @@ correttamente, 9,8 s per 300 token generati. Ora `min_tokens`/`max_tokens` 1024 
 4. IQ2_XS su tutto il modello (shard 1 in `D:\ds4_work\strata\Strata-data\gguf\`): velocità e qualità.
 5. Gateway: richieste laterali (vedi §2).
 6. Multi-chat: base 0.1.42 ha `--batch-groups auto` e cache adattiva in batch; rifare le prove con nucleo RAM e NVML.
+
+## 8. Notte 11-12/10 (OktoCGControl acceso, B-A-B sul banco forzato 131k)
+
+| Leva | Esito |
+|---|---|
+| fusioni catena MTP (`STRATA_CHAIN_FUSE2`, mask 62) da sole | +0,4% (rumore); attenzione fusa rifatta da Fable: pari all'originale, non serve |
+| `STRATA_MTP_SHARED_BRANCH=0` | **+1,3%** (tenuto) |
+| `STRATA_SIDE_MIXER=2` (port #1889) | **+0,9%** (tenuto) |
+| MMVQ_IL upstream / tabella sm_75 (#1437) | −3,0% / 0,0%: resta B6 |
+| PLE su NVMe `C:` (sulla base upsync) | +3,9% decode, prefill 260→100 s, MA era la regressione sotto (sul Daily: −0,1%) |
+| cache righe PLE 64M | +0,5% (rumore) |
+| `STRATA_ROUTE_RESIDENT=1` | −1,6% |
+| `STRATA_LOOKAHEAD=0` / `STRATA_LFUSE=1` | −0,3 / +0,3 |
+| taglia finestre di Fable (`STRATA_DW=1`, lab/draftwin) | −1,5% |
+| attenzione QSA multi-riga (ipotesi) | **falsa**: l'attenzione è ~8% del costo per riga (lab/qsarows, `qsa_rows_bench`) |
+
+**Regressione trovata e corretta:** v0.1.42 misura il PLE all'avvio e sotto 15.000 righe/s (SATA a freddo: 1.259) passa da sola
+a mmap → prefill 131k 260 s e decode più lento. `lab/ports1` `aaf2e069`: PLE sempre diretto (`STRATA_PLE_AUTO_MMAP=1` per il
+vecchio comportamento), più le patch di prefill del Daily (SELECT_SIMT, dequant 16 B, hc16 sm_75) e la diagnostica PLE.
+Risultato: **base pari al Daily: decode +0,6%, prefill 75,4 contro 74,9 s, PLE sul SATA come il Daily.**
+
+Costo vero di una riga in più nella finestra (Fable): 5,7 ms nelle fresche, 3,7 nelle speculative (~2,5-3 ms per stadio).
+Attenzione QSA 0,2-0,35 ms; il resto: esperti (+~9 per riga e layer, più quelli su CPU), GDN ricorrente, hc, host.
+Nsys per T in corso (Fable, `lab/qsarows`).
+
+Multi-chat su v0.1.42 (`--batch 3`, gruppi automatici; con/senza `--batch-mtp`; un gruppo): 38-53 t/s aggregati; con `--batch`
+anche la chat singola scende a 47-49 (niente pipeline). Stesso nodo: costo degli esperti per riga.
+
+## 9. Candidato Daily
+
+`lab/candidate` 5dea5258 = ports1 + nucleo RAM. Build `build-candidate-5dea5258` (con `strata-vision.exe`, `source\serve`,
+`source\tools`). Config `D:\ds4_work\strata\Strata\strata-candidate.json`, bat `Desktop\SERVER IA LOCALE\Strata CANDIDATE - porta 8100.bat`.
+Provato all'avvio con immagini (OpenAI e Anthropic) e testo: ok. Nucleo: working set 48,7 → 33,6 GB, privata 77,5 → 67,3 GiB,
+riletti 0, fuori posto 0. Velocità pari al Daily (misura sulla base ports1 + leve, OktoCGControl acceso). Il Daily non è toccato.

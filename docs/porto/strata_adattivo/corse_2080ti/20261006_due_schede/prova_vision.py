@@ -11,6 +11,7 @@ ap = argparse.ArgumentParser()
 ap.add_argument('--image', required=True)
 ap.add_argument('--config', default=r'D:\ds4_work\strata\Strata\strata-upsync-vision.json')
 ap.add_argument('--port', type=int, default=8100)
+ap.add_argument('--server', default=None, help='server.py to use (default: the upsync build one)')
 a = ap.parse_args()
 LOCKS = Path(r'D:\ds4_work\strata\lab_locks')
 S = Path(r'D:\ds4_work\strata\Strata')
@@ -35,7 +36,7 @@ while True:
 p = None
 try:
     env = {k: v for k, v in os.environ.items() if k != 'STRATA_API_KEY'}
-    p = subprocess.Popen([str(S / '.venv/Scripts/python.exe'), '-B', str(SERVER), '--engine', 'strata', '--config',
+    p = subprocess.Popen([str(S / '.venv/Scripts/python.exe'), '-B', str(a.server or SERVER), '--engine', 'strata', '--config',
                           a.config, '--host', '127.0.0.1', '--port', str(a.port)], cwd=S, env=env,
                          stdout=open(Path(__file__).with_name('prova_vision_server.log'), 'w', encoding='utf-8'),
                          stderr=subprocess.STDOUT, creationflags=subprocess.CREATE_NO_WINDOW)

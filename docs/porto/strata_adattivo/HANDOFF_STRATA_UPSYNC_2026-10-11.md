@@ -111,3 +111,21 @@ anche la chat singola scende a 47-49 (niente pipeline). Stesso nodo: costo degli
 `source\tools`). Config `D:\ds4_work\strata\Strata\strata-candidate.json`, bat `Desktop\SERVER IA LOCALE\Strata CANDIDATE - porta 8100.bat`.
 Provato all'avvio con immagini (OpenAI e Anthropic) e testo: ok. Nucleo: working set 48,7 → 33,6 GB, privata 77,5 → 67,3 GiB,
 riletti 0, fuori posto 0. Velocità pari al Daily (misura sulla base ports1 + leve, OktoCGControl acceso). Il Daily non è toccato.
+
+## 10. Fine notte 12/10: mappa del costo per riga e punteggi QSA multi-riga
+
+Nsys per T (Fable, `lab/qsarows` `docs/QSAROWS.md` §3, L02 131k, ms per riga in più):
+
+| Famiglia | 3060 (stadio 0) | 2080 Ti (stadio 1) |
+|---|---|---|
+| esperti VRAM | +1,04 | +1,31 |
+| MMVQ densi (B6) | +0,59 | +0,63 |
+| hyper-connection | +0,41 | +0,48 |
+| attese host | ~0 (2 ms fissi) | +0,36 |
+| QSA | +0,24 | +0,30 |
+| GDN | +0,05 | +0,09 |
+| totale | +2,45 | +3,26 (più 3,5 ms fissi di buchi fra 1397 nodi) |
+
+`STRATA_QSA_ROWS=1` (punteggi QSA multi-riga, bit per bit, `build-qsarows-4d8ba8bb`): B-A-B +3,2% poi +0,1% → circa +1-1,5%,
+sicuro: da portare nel candidato. In corso: Fable su `lab/expertdec` (esperti a più righe, `STRATA_EXPDEC=1`, bit per bit,
+obiettivo pendenza per riga dimezzata) — è la leva principale per 80 t/s e per il multi-chat.

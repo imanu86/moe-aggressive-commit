@@ -15,7 +15,7 @@ locale, in una notte, a 0 $** (`RUNBOOK_LOCALE.md`); il pod resta l'alternativa 
 | 4. Parità PyTorch ↔ motore | `parity.py` + dump `STRATA_MTP_DUMP` | PC | **verde**: argmax 100 % / 100 % / 95,5 % ai passi 0/1/2, KL 0,012 / 0,008 / 0,043 (34 richieste heldout) |
 | 5. Training (KL top-20 srotolata, 4 passi) | `mtp_model.py`, `train_mtp.py` | 2080 Ti (fp16) | **fatto** sul pilota: 268 seq / 750 k token, 1 epoca, 25 min + eval |
 | 6. Export nel formato del motore | `export_mtp.py` | PC | **provato**: il blocco originale riprodotto **byte per byte** uguale a `rt_it48k` |
-| 7. Misura sul motore vero | `bench_pack.py` | PC | in coda sul banco (`bench_pilot.json`) |
+| 7. Misura sul motore vero | `bench_pack.py` | PC | **preliminare** (corsa interrotta dal coordinatore subito dopo la scrittura del json; da rifare): 24 prompt heldout x 256 token greedy, `rt_it48k` accettazione 0,724, 2,24 token/finestra, 66,7 t/s; `rt_pilot` 0,795, 2,33 token/finestra, 70,1 t/s (+5 %); letture del prompt 2,8 s medi, nessuna attesa PLE |
 
 Orchestrazione: `pilot_local.py` (cattura → eval → train → export, tabella del cancello) sotto `lab_run.py` (bench.lock).
 

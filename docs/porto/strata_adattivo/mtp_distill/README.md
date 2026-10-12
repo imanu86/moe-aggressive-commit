@@ -1,95 +1,96 @@
 # mtp_distill — affinamento del layer MTP (testa di bozza) di Qwen3.8-Flash-Next per Strata
 
 Obiettivo: accettazione delle bozze MTP da ~65-70 % a ≥ 75 % (oggi 1,7-2,0 token per finestra con `--spec 4
---spec-min-p 0.5` e draft vocab `rt_it48k`), quindi +4-10 % di t/s, con una distillazione sulle conversazioni
-dell'owner (riferimento: ursuciprian/qwen3.8-flash-next-dgx-spark-tp-2 #97, stesso modello).  Il lavoro pesante
-va su un pod RunPod per un giorno: `RUNBOOK_POD.md`.
+--spec-min-p 0.5` e draft vocab `rt_it48k`), quindi +4-8 % di t/s, con una distillazione sulle conversazioni
+dell'owner (riferimento: ursuciprian/qwen3.8-flash-next-dgx-spark-tp-2 #97, stesso modello).  Il lavoro gira **in
+locale, in una notte, a 0 $** (`RUNBOOK_LOCALE.md`); il pod resta l'alternativa (`RUNBOOK_POD.md`, A100 80 GB).
 
 ## La catena
 
-| Passo | File | Dove gira | Stato |
+| Passo | File | Dove gira | Stato (12/10) |
 |---|---|---|---|
-| 1. Corpus dalle conversazioni (Claude Code, Codex, DSH), bonificato | `build_corpus.py`, `scrub.py` | PC | **fatto e provato** sui dati veri (§ numeri) |
-| 2. Sequenze di token col template del server | `render_sequences.py` | PC | **fatto e provato**: 3,5M token in `D:\ds4_work\mtp_distill\seqs` |
-| 3. Cattura del target (residui finali + top-20) | hook C++ `STRATA_MTP_CAPTURE` nel fork, branch `lab/mtp-capture` (6e5b24f6); `capture_driver.py` | pod | hook **compilato in locale** (build-mtpcap, sm_75/86), **non eseguito** (bench.lock, VRAM piena); driver non provato contro un motore |
-| 4. Training (KL top-20 srotolata, 4 passi) | `mtp_model.py`, `train_mtp.py` | pod (GPU) | forward trascritto da `src/core/mtp.cpp`; **selftest su CPU verde** (12/10, cattura finta, 2 passi, catena di 3, 2 thread, 1,3 min): carica i pesi veri, allena, valuta, salva |
-| 5. Export nel formato del motore | `export_mtp.py` | pod/PC | **provato**: il blocco originale riprodotto **byte per byte** uguale a `rt_it48k` (dense.bin, dense.txt, experts.bin) |
-| 6. Misura sul motore vero | `bench_pack.py` | pod | non provato (serve il motore) |
+| 1. Corpus dalle conversazioni (Claude Code, Codex, DSH), bonificato | `build_corpus.py`, `scrub.py` | PC | **fatto** sui dati veri (§ numeri) |
+| 2. Sequenze di token col template del server | `render_sequences.py` | PC | **fatto**: 3,5M token in `D:\ds4_work\mtp_distill\seqs` |
+| 3. Cattura del target (residui finali + top-20) | hook C++ `STRATA_MTP_CAPTURE` nel fork, branch `lab/mtp-capture` (`91dbf2ed`, `c3148e62`); `capture_driver.py` | PC, due schede | **fatto e provato**: 1,03 M token a **427 tok/s** dal prefill (pilota); dati coerenti |
+| 4. Parità PyTorch ↔ motore | `parity.py` + dump `STRATA_MTP_DUMP` | PC | **verde**: argmax 100 % / 100 % / 95,5 % ai passi 0/1/2, KL 0,012 / 0,008 / 0,043 (34 richieste heldout) |
+| 5. Training (KL top-20 srotolata, 4 passi) | `mtp_model.py`, `train_mtp.py` | 2080 Ti (fp16) | **fatto** sul pilota: 268 seq / 750 k token, 1 epoca, 25 min + eval |
+| 6. Export nel formato del motore | `export_mtp.py` | PC | **provato**: il blocco originale riprodotto **byte per byte** uguale a `rt_it48k` |
+| 7. Misura sul motore vero | `bench_pack.py` | PC | in coda sul banco (`bench_pilot.json`) |
 
-### Scelta della cattura: (a) Strata sul pod, non HF transformers
+Orchestrazione: `pilot_local.py` (cattura → eval → train → export, tabella del cancello) sotto `lab_run.py` (bench.lock).
 
-Il GGUF del target usa il tipo ggml 42 (`Q2_0`, proprio di Strata): né llama.cpp né gguf-py lo caricano, e il
-checkpoint BF16 originale (~240 GB) non entra in una scheda e darebbe residui di un tronco diverso da quello di
-produzione.  Strata già legge il prompt a finestre di verifica teacher-forced (`read_windows`, le stesse del
-decode) e vi tiene `final_R_all()` (il residuo a 4 flussi che il drafter consuma) e `head_logits_`: l'hook copia
-quelli, un thread di lavoro fa top-20, log-sum-exp e scrittura.  Con `--short-read 1000000000 --prompt-cache 0` tutto
-il prompt passa dalle finestre (nessun prefill batched), così ogni posizione è coperta tranne l'ultima, che il render
-riempie con un `\n` di coda.
+### La cattura: dal prefill, testa e top-k su GPU
+
+Il GGUF del target usa il tipo ggml 42 (`Q2_0`, proprio di Strata): né llama.cpp né gguf-py lo caricano, e il checkpoint
+BF16 originale (~240 GB) darebbe residui di un tronco diverso da quello di produzione.  La cattura vive quindi nel motore.
+Due vie: la prima versione leggeva tutto il prompt a finestre teacher-forced di 8 token (~160 tok/s in locale) e faceva
+top-20 e log-sum-exp su 248k logit per token su un thread CPU (tetto ~500 tok/s).  Ora il percorso batched del prompt
+(`Prefill::on_chunk`, lo stesso che passa le righe al drafter) consegna i residui finali di ogni chunk a
+`MtpCapture::chunk`, che applica la testa otto righe per volta con i kernel della finestra (`Verifier::head_rows`) e fa
+top-k e LSE sul device (`kernels/topk_lse.cu`); la coda del prompt (`--short-read`) passa dalle finestre come prima.
+Misurato: 500-600 tok/s con una scheda, **427 tok/s** con la config del Daily a due schede (prefill + testa + copia).
 
 ### Il forward (da `src/core/mtp.cpp`, in `mtp_model.py`)
 
 Cella i = (R_i, tok_{i+1}) a rope i → predice tok_{i+2}.  Embedding IQ3_S e testa Q5_K del GGUF; `fc_embedding`,
 `fc_hidden` per flusso dopo una RMS su tutti i 10240 valori (default del motore); hyper-connection `gr_read`
 (norma per flusso, `silu((w_down·xn)/hc)`, media pesata da `sigmoid(w_up·lo)`, inject) e `gr_write`
-(`R += y · 2 sigmoid(inj/hc)`); attenzione densa causale GQA 24/2, head 256, rope neox parziale 64 con theta 1e7,
-q/k norm (1+w), gate `attn·sigmoid`; router softmax top-10 rinormalizzato (clamp 2^-14); 512 esperti SwiGLU 640
-**Q2_0 dal pacco del motore** (congelati, quelli che il motore esegue); esperto condiviso con gate scalare; mixer
-finale; testa sul sottoinsieme `draft_vocab.bin` (48 542 token, come il motore).  Le norme sono memorizzate grezze
-nel checkpoint e `1+w` nel pacco: export e modello lo rispettano.
+(`R += y · 2 sigmoid(inj/hc)`); attenzione densa causale GQA 24/2, head 256, rope neox parziale 64 con theta 1e7 (nessun
+rope scaling: la config non ha `--rope-scaling`), q/k norm (1+w), gate `attn·sigmoid`; router softmax top-10
+rinormalizzato (clamp 2^-14); 512 esperti SwiGLU 640 **Q2_0 dal pacco del motore** (congelati; righe gate/up
+interleaved, come il blob del motore); esperto condiviso con gate scalare; mixer finale; testa sul sottoinsieme
+`draft_vocab.bin` (48 542 token).  Le norme sono grezze nel checkpoint e `1+w` nel pacco (tutte).
 
-Allenabili 88,9M (attenzione, router, esperto condiviso, le tre hyper-connection, fc, norme); congelati esperti,
-testa, embedding, indexer.  `--no-train-fc` riporta al perimetro di #97.
+Precisione: parametri f32; matmul in bf16 (Ampere+) o **fp16 su Turing** (la 2080 Ti non ha bf16) con GradScaler;
+R, norme, softmax, router e accumuli degli esperti in f32.  La catena gira solo sulle **celle attive** (quelle che
+predicono un token generato: ~1/4), a blocchi di 768 con backward per blocco (15,7 GiB sulla 2080 Ti).  Allenabili
+88,9M (attenzione, router, esperto condiviso, le tre hyper-connection, fc, norme); congelati esperti, testa, embedding.
+
+La parità con il motore (stessi ingressi: R catturata, token e bozze del motore dal dump) spiega il residuo con K/V
+INT8 del drafter nel motore, attivazioni Q8 e R in bf16 nella cattura.
+
+## Numeri del pilota (12/10, heldout per conversazione: 95 pezzi, 277 k token, 87 k celle generate)
+
+Drafter attuale (`rt_it48k`), per passo 0/1/2/3:
+
+| | acc greedy | offerte (p ≥ 0,5) | acc & offerte | campionata «think» (T 1, top_p .95, top_k 20) | catena greedy |
+|---|---|---|---|---|---|
+| esperti Q2_0 (il pacco) | 0,783 / 0,726 / 0,685 / 0,652 | 0,787 / 0,774 / 0,760 / 0,750 | 0,710 / 0,666 / 0,630 / 0,600 | 0,795 / 0,736 / 0,695 / 0,663 | 2,03 |
+| esperti BF16 (diagnosi D) | 0,796 / 0,748 / 0,718 / 0,692 | 0,799 / 0,793 / 0,788 / 0,781 | 0,722 / 0,689 / 0,664 / 0,641 | 0,810 / 0,763 / 0,732 / 0,706 | 2,12 |
+| **affinato, 1 epoca** (268 seq, 750 k token, lr 3e-5, accum 4) | **0,813 / 0,760 / 0,727 / 0,702** | 0,776 / 0,729 / 0,700 / 0,678 | 0,724 / 0,668 / 0,633 / 0,606 | **0,823 / 0,764 / 0,728 / 0,701** | 2,10 |
+
+- Q2_0 costa 1,3 / 2,2 / 3,3 / 4,0 punti di accuratezza per posizione rispetto a BF16: non è il collo principale.
+- Il training alza l'accuratezza di +3,0 / +3,4 / +4,2 / +5,0 punti (KL passo 0: 0,675 → 0,492) ma **abbassa le bozze
+  offerte** (il drafter, allenato sulla distribuzione intera del target, è meglio calibrato e meno spesso sicuro oltre
+  0,5): con il gate `--spec-min-p 0.5` il guadagno netto è +1,4 / +0,2 / +0,3 / +0,6 punti, catena +3,6 %.  Il cancello
+  «+2 al passo 0» passa sull'accuratezza (greedy e campionata), non sulla metrica con gate.  Da provare: `--spec-min-p`
+  più basso con il drafter affinato (bench sul motore), 2 epoche e il corpus intero (3,5 M), `--nll-weight`.
+- Andamento in epoca (eval ogni 20 passi, acc passo 0): 0,783 → 0,808 → 0,811 → 0,813: la curva si appiattisce con il
+  coseno del lr; più dati pesano più di più epoche (#97: la seconda epoca +0,9 punti).
 
 ## Numeri del corpus (solo conteggi; `D:\ds4_work\mtp_distill\corpus\corpus_stats.json`)
 
 - 2 435 file letti (Claude Code 1 254 conversazioni, Codex 947, DSH 153) in 200 s; 20 duplicati scartati; 0 errori.
 - 252 260 messaggi dell'assistente, 252 514 chiamate a tool, 253 791 risultati; 842M caratteri (527M di risultati).
-- Quota di codice (argomenti tool + risultati + blocchi ```) 0,915; italiano sul testo dell'assistente 0,85.
-- Bonifiche: **81 744** sostituzioni — chiave=valore 38 186, alta entropia 23 064, email 14 272, telefoni 3 724,
-  righe .env 1 226, carte (Luhn) 1 061, Bearer 83, URL con password 37, JWT 34, OpenAI 19, GitHub 5, RunPod 4,
-  IBAN 4, Netlify 4, AWS 3, HF 2, Telegram 2, PEM 1, codici fiscali 13.  Nessun valore stampato.
-- On-policy (generato da Qwen3.8 via gateway/strata-local): 9 conversazioni soltanto; il resto è testo di
-  Claude/GPT, ma il segnale di distillazione sono i top-20 **del target** su quel contesto (limite noto, § sotto).
-- Nessun pensiero: Claude Code e DSH li salvano vuoti, Codex li cifra → turni resi con `<think>\n\n</think>`.
+- Quota di codice 0,915; italiano sul testo dell'assistente 0,85.  Bonifiche: 81 744 sostituzioni (nessun valore stampato).
+- On-policy (generato da Qwen3.8): 9 conversazioni soltanto; il resto è testo di Claude/GPT (il target vi concorda al
+  top-1 nel 40-44 % delle posizioni).  Nessun pensiero: resi con `<think>\n\n</think>`.
 
-Render (`seqs/render_stats.json`): 1 197 pezzi ≤ 4 096 token, **3 503 405 token**, 851 551 generati (0,243);
-heldout 36 pezzi (116 602 token); on-policy 195 597 token; claude 1,47M / codex 1,23M / dsh 0,80M; italiano 0,60
-sul testo generato; round-trip della tokenizzazione esatto salvo il `\n` di coda.
+Render (`seqs/render_stats.json`): 1 197 pezzi ≤ 4 096 token, **3 503 405 token**, 851 551 generati (0,243).  Lo split
+dell'indice (un pezzo ogni 33) mescola conversazioni fra train e heldout: usare `--split-by-conv 10` (heldout = 14
+conversazioni, 95 pezzi).
 
-## Prova in locale (CPU, `selftest.py`) — verde il 12/10
+## Limiti e scelte
 
-Cattura finta nello stesso formato dell'hook (R casuale, top-1 = token vero) → `train_mtp.py` 2 passi, catena di 3,
-pesi veri → `export_mtp.py`.  Verifica che lettura, catena srotolata, perdita, metriche, salvataggio ed export
-girino; non dice nulla sulla qualità (serve la cattura vera).  Corsa del 12/10 (2 sequenze × 48 token, 2 thread,
-sotto `bench.lock`): modello pronto in 2 s (cache embedding/testa), eval iniziale + 2 passi + eval finale in 0,7 min
-(11,5 s per passo, 47 token per sequenza, 44 celle valide × 3 passi), export in 20 s, 24 tensori toccati, `experts.bin`
-copiato: **1,3 min in tutto**.  Profilo (`profile_step.py`, 16 token × 3 passi, 2 thread): forward 3,9 s.
-
-Due giri rossi prima: non era compute ma un **ciclo infinito** — con finestre prese dall'inizio della sequenza nessuna
-cella aveva `gen = 1`, la KL era zero senza gradiente e il ciclo di training faceva `continue` per sempre.  Corretto:
-guardia `useful == 0` → stop con messaggio; le finestre di prova (`--max-len`, cattura finta) contengono token
-generati; `--threads`; pesi f32 fuori da CUDA (i GEMM bf16 su CPU di PyTorch sono lentissimi).  L'identità
-dell'export resta la prova forte: `export_mtp.py --check-against rt_it48k` → `IDENTICO` ×3.
-
-Regola locale: niente lavoro pesante su CPU/GPU senza `D:\ds4_work\strata\lab_locks\bench.lock` (O_EXCL), rilasciato
-subito dopo; i B-A-B dell'owner girano sulla stessa macchina.
-
-## Limiti e scelte da decidere
-
-1. **Off-policy**: i prefissi vengono da risposte di altri modelli; l'inferenza vede risposte di Qwen.  Il drafter
-   impara comunque "da R del target alla sua prossima distribuzione", che è locale; #97 usava risposte del target.
-   Se la cattura fosse veloce, un giro di generazione on-policy sul pod (prompt dell'owner, 1-2M token) è la mossa
-   successiva (non nel runbook di oggi: 60-100 t/s single-stream = 5-9 h).
-2. **Pensieri assenti**: i token di ragionamento non sono nel corpus; il drafter non vi si allena.
-3. Precisione: il training usa pesi f32 e bf16 nelle matmul; il motore esegue le proiezioni affinate in Q8_0
-   (errore ~0,4 % rel.; `export_report.json` lo stampa per tensore) e gli esperti Q2_0 identici a quelli del training.
-4. KL sul sottoinsieme del draft head (i top-20 fuori dal sottoinsieme sono scartati e il resto rinormalizzato):
-   coerente col motore; `--full-head` per l'altra scelta.
-5. La velocità della cattura sul pod è una stima (300-600 tok/s); il runbook prevede la misura con `--count 30`.
+1. **Off-policy**: i prefissi vengono da risposte di altri modelli.  La cattura passiva nel decode del serve (righe
+   accettate: R e top-20 sui token generati davvero) darebbe dati on-policy a costo zero durante l'uso; training locale.
+2. **Pensieri assenti** nel corpus.
+3. Il motore esegue le proiezioni affinate in Q8_0 (errore 0,4-1,2 %) e gli esperti Q2_0 identici a quelli del training.
+4. KL sul sottoinsieme del draft head (top-20 fuori dal sottoinsieme scartati e rinormalizzati).  `--full-head` per l'altra.
+5. La cattura e il dump non sono nel Daily (build `be4cf1c`): servono il fork `lab/mtp-capture` e `build-mtpcap`.
 
 ## Dati e cartelle sul PC
 
-`D:\ds4_work\mtp_distill\corpus\` (18 shard jsonl, 843 MB, bonificati), `seqs\` (3,5M token), `seqs_smoke\`,
-`work\` (log, cache embedding/testa .npy, selftest, rt_identity).  **Niente di questo va in git.**
-Fork Strata: worktree `C:\Users\imanu\source\repos\Strata-wt\mtp-capture`, branch `lab/mtp-capture` (da
-`lab/candidate` 443ce1c9), build `build-mtpcap\strata.exe`.
+`D:\ds4_work\mtp_distill\corpus\` (843 MB, bonificati), `seqs\` (3,5M token), `capture_pilot\` (1,03 M posizioni, 21 GB),
+`capture_parity\`, `runs\pilot_ft1\` (pesi, eval, `rt_pilot` = il pacco), `work\` (log, cache, bench).  **Niente in git.**
+Fork Strata: worktree `C:\Users\imanu\source\repos\Strata-wt\mtp-capture`, branch `lab/mtp-capture`, build `build-mtpcap\strata.exe`.

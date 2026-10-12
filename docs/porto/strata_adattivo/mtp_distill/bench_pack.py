@@ -20,6 +20,7 @@ import time
 from pathlib import Path
 
 import numpy as np
+import zlib
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -38,12 +39,19 @@ def main() -> int:
     ap.add_argument("--spec", default="4")
     ap.add_argument("--spec-min-p", default="0.5")
     ap.add_argument("--extra", default="")
+    ap.add_argument("--by-conv", type=int, default=0, help="heldout = conversazioni con crc32 %% N == 0 (come train_mtp --split-by-conv)")
+    ap.add_argument("--env", action="append", default=[], help="KEY=VAL per il motore (ripetibile)")
+    ap.add_argument("--out", default="bench_pack.json")
     a = ap.parse_args()
     cfg = json.loads(Path(a.config).read_text(encoding="utf-8"))
     seqs = Path(a.seqs)
     index = json.loads((seqs / "seqs_index.json").read_text())
     ids_all = np.fromfile(seqs / "seqs_ids.i32", dtype=np.int32)
-    held = [e for e in index if e["split"] == "heldout"][: a.n]
+    def split_of(e):
+        if a.by_conv <= 0:
+            return e["split"]
+        return "heldout" if zlib.crc32(e["conv"].encode()) % a.by_conv == 0 else "train"
+    held = [e for e in index if split_of(e) == "heldout" and e["n"] >= a.prompt_tokens][: a.n]
     prompts = [ids_all[e["off"]: e["off"] + min(e["n"], a.prompt_tokens)].tolist() for e in held]
     base = []
     args = list(cfg["args"])
@@ -56,6 +64,9 @@ def main() -> int:
         i += 1
     env = dict(os.environ)
     env.update(cfg.get("env") or {})
+    for kv in a.env:
+        k, _, v = kv.partition("=")
+        env[k] = v
     libs = cfg.get("lib_dirs") or []
     if libs:
         key = "PATH" if os.name == "nt" else "LD_LIBRARY_PATH"
@@ -94,7 +105,7 @@ def main() -> int:
     if len(names) == 2:
         same = sum(1 for x, y in zip(results[names[0]]["outputs"], results[names[1]]["outputs"]) if x == y)
         print(f"uscite identiche fra i due pacchi: {same}/{len(prompts)} (greedy: dovrebbero esserlo tutte)")
-    Path("bench_pack.json").write_text(json.dumps({k: v["stats"] for k, v in results.items()}, indent=1))
+    Path(a.out).write_text(json.dumps({k: v["stats"] for k, v in results.items()}, indent=1))
     return 0
 
 

@@ -51,8 +51,9 @@ def main() -> int:
         if a.by_conv <= 0:
             return e["split"]
         return "heldout" if zlib.crc32(e["conv"].encode()) % a.by_conv == 0 else "train"
-    held = [e for e in index if split_of(e) == "heldout" and e["n"] >= a.prompt_tokens][: a.n]
-    prompts = [ids_all[e["off"]: e["off"] + min(e["n"], a.prompt_tokens)].tolist() for e in held]
+    pt = a.prompt_tokens   # 0: prompt interi, di ogni lunghezza (set fuori dominio di ood_prompts.py)
+    held = [e for e in index if split_of(e) == "heldout" and e["n"] >= pt][: a.n]
+    prompts = [ids_all[e["off"]: e["off"] + (min(e["n"], pt) if pt else e["n"])].tolist() for e in held]
     base = []
     args = list(cfg["args"])
     i = 0
@@ -102,9 +103,10 @@ def main() -> int:
         results[mtp] = {"stats": r, "outputs": outs}
         print(json.dumps(r), flush=True)
     names = list(results)
-    if len(names) == 2:
-        same = sum(1 for x, y in zip(results[names[0]]["outputs"], results[names[1]]["outputs"]) if x == y)
-        print(f"uscite identiche fra i due pacchi: {same}/{len(prompts)} (greedy: dovrebbero esserlo tutte)")
+    for other in names[1:]:   # ogni pacco contro il primo
+        same = sum(1 for x, y in zip(results[names[0]]["outputs"], results[other]["outputs"]) if x == y)
+        results[other]["stats"]["identical_to_first"] = f"{same}/{len(prompts)}"
+        print(f"uscite identiche {Path(other).name} vs {Path(names[0]).name}: {same}/{len(prompts)} (greedy: dovrebbero esserlo tutte)")
     Path(a.out).write_text(json.dumps({k: v["stats"] for k, v in results.items()}, indent=1))
     return 0
 

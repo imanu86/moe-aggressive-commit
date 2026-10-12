@@ -129,3 +129,42 @@ Nsys per T (Fable, `lab/qsarows` `docs/QSAROWS.md` §3, L02 131k, ms per riga in
 `STRATA_QSA_ROWS=1` (punteggi QSA multi-riga, bit per bit, `build-qsarows-4d8ba8bb`): B-A-B +3,2% poi +0,1% → circa +1-1,5%,
 sicuro: da portare nel candidato. In corso: Fable su `lab/expertdec` (esperti a più righe, `STRATA_EXPDEC=1`, bit per bit,
 obiettivo pendenza per riga dimezzata) — è la leva principale per 80 t/s e per il multi-chat.
+
+## 11. Mattina 12/10: Strata 0.1.42 Daily, esperti, tempi morti, TTFT, multi-chat, MTP
+
+**Strata 0.1.42 Daily** (nome dato dall'owner al candidato): `D:\ds4_work\strata\Strata\build-0142-daily\` (copia di
+`build-candidate-5dea5258` + `VERSIONE.txt`), config `strata-0142-daily.json`, bat `Desktop\SERVER IA LOCALE\Strata 0.1.42 Daily -
+porta 8100.bat`. Env in più rispetto al candidato: `STRATA_MTP_SHARED_BRANCH=0`, `STRATA_SIDE_MIXER=2`; PLE da `C:` (NVMe);
+visione su CPU a 1024 token. Il Daily vecchio (`build-be4cf1c-daily`) resta intatto. I launcher di prova sono in
+`D:\ds4_work\strata\ripristini\20261012_launcher_prova\`.
+
+**Esperti a più righe** (Fable, `lab/expertdec`, `docs/EXPERTDEC.md`): `STRATA_EXPDEC=1`, bit per bit, gate/up −11/−23% per T 1-4
+nel motore (nsys); down Q2_0 più lento nel motore → dietro `STRATA_EXPDEC_DOWN=1`. B-A-B `DET-x3-expdec` (build
+`build-expertdec-52a74f6a`): **+1,1%** (B +0,0/+2,1) → da portare nel prossimo Daily. Vale poco perché gli esperti VRAM sono
+il 15-20% del muro dello stadio 1. Un primo B-A-B (`DET-x1`) è stato falsato da un training CPU in parallelo: tutto ciò che
+pesa su CPU passa da `bench.lock`.
+
+**Tempi morti della finestra** (Fable, `lab/hostgap`, `docs/HOSTGAP.md`): ~6 ms di host fra finestre = lancio del grafo dei
+1397 nodi dello stadio 1 (la GPU resta ferma finché l'API non ritorna) + polling di fine stadio 0. `STRATA_HG_PRELAUNCH=2`
+(grafo dello stadio 1 lanciato su `std::async` e in attesa di una parola mappata): nsys −3,2%, B-A-B `DET-x5-hostgap`
+−6,4/+0,1 (B1 outlier PLE dall'SSD) → **neutro, chiuso**. Lezione: nsys gonfia 2-3× i costi host; per l'host fa fede
+`strata decode timing`. I buchi veri fra i nodi sono 1,3-1,8 ms/finestra (solo fusioni).
+
+**Crash all'avvio** (~1 su 8): `nvcuda64.dll` 32.0.15.9621 +0x46c025, `0xC0000409` (stack cookie) durante `Prefill::init`,
+dopo «prompt path borrows»; visto su 5 build compreso il Daily be4cf1c. Non è EXPDEC. Harness: `run_long.py`/`run_nsys.py`
+ritentano l'avvio una volta e registrano `start_failures` (commit `9707e10`). Dump in `%LOCALAPPDATA%\CrashDumps`.
+
+**TTFT** (agente, `lab/ttft`, `docs/TTFT.md`, build `build-ttft-48ce5f27`, non provato): salvataggio del prefisso su thread
+(default), un file per prefisso `STRATA_PREFIX_DISK_MULTI=<GiB>` (Claude Code da ~42 s a 16-20 s quando DSH ha sovrascritto il
+file unico), righe PLE in anticipo (default). Da misurare con un B-A-B di TTFT.
+
+**Multi-chat 4-6** (`build-candidate-5dea5258`, `--batch 6`): massimo 45,6 t/s aggregati (4 chat stesso prompt, batch-mtp,
+un gruppo); con prompt diversi 5-15 t/s (il prefill blocca il decode). Servono: pipeline anche in batch, prefill a pezzi
+alternato al decode, esperti caldi in VRAM per finestre larghe.
+
+**MTP** (`docs/porto/strata_adattivo/mtp_distill/`, fork `lab/mtp-capture`): corpus bonificato pronto (2 354 conversazioni,
+3,5M token, 81 744 bonifiche, solo conteggi), export identico byte per byte, selftest CPU verde (`53994f4`). Analisi
+indipendente di Fable: cattura dal prefill (non a finestre da 8), top-k su GPU, test di parità PyTorch↔motore, diagnosi
+del costo degli esperti Q2_0, pod **A100 80 GB** (~1,6 $/h, 4-6 $ in tutto) invece di H100; pilota con cancello
+(+2 punti di accettazione al passo 0). In attesa dell'owner: via al passo 0 locale, ricarica RunPod (saldo 0), temperatura
+delle richieste di Claude Code/DSH.

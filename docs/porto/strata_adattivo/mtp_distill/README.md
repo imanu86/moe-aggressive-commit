@@ -94,3 +94,24 @@ conversazioni, 95 pezzi).
 `D:\ds4_work\mtp_distill\corpus\` (843 MB, bonificati), `seqs\` (3,5M token), `capture_pilot\` (1,03 M posizioni, 21 GB),
 `capture_parity\`, `runs\pilot_ft1\` (pesi, eval, `rt_pilot` = il pacco), `work\` (log, cache, bench).  **Niente in git.**
 Fork Strata: worktree `C:\Users\imanu\source\repos\Strata-wt\mtp-capture`, branch `lab/mtp-capture`, build `build-mtpcap\strata.exe`.
+
+## Giro on-policy sul pod (12/10, H100)
+
+`onpolicy_gen.py`: prompt dai punti in cui l'assistente inizia (contesto ≤ 2 000 token, tagliato a un `<|im_start|>`),
+risposte di Qwen con `--batch 8` (BGEN), T 1.0 / top_p 0.95 / top_k 20, seed = numero della richiesta, max 512.
+1 407 risposte, **479 093 token** generati in 58 min (115-178 tok/s aggregati; `--batch-mtp` non aiuta: 149 contro 162).
+Cattura di prompt + risposta: 2,2 M token in 28 min.  Training: ripresa da `ft2_lr1e4`, lr 1e-4, 1 epoca su misto
+(1 407 on-policy + 402 off-policy, quota 0,25), 416 passi, 20 min.
+
+| acc passo 0 / catena | rt_it48k | ft1 | ft1b (= ft2_lr1e4) | ft2 (on-policy) |
+|---|---|---|---|---|
+| heldout off-policy (95 pezzi) | 0,781 / 2,014 | 0,821 / 2,137 | **0,829 / 2,155** | 0,824 / 2,134 |
+| heldout on-policy (48 risposte di Qwen) | 0,791 / 1,986 | 0,819 / **2,046** | 0,814 / 1,993 | **0,821** / 2,020 |
+| motore, 24 heldout greedy: accettate/offerte, token/finestra | 0,652 / 2,165 | 0,760 / **2,233** | 0,758 / 2,224 | 0,728 / 2,194 |
+| motore, 16 fuori dominio (`ood_prompts.py`) | 0,699 / **2,377** | 0,769 / 2,279 | 0,782 / 2,223 | 0,791 / 2,251 |
+
+Uscite identiche in tutti i bench.  Fuori dominio tutti i pacchi affinati offrono meno bozze e perdono 4-6 % di token
+per finestra rispetto al blocco originale; il PC a 131k (B-A-B) non vede guadagno da `ft1`.  Ipotesi: contesti di
+training ≤ 4 096 token.  Per un giro a contesto lungo servono render a 32-64k, cattura a quella lunghezza (≈ 20 KB/token
+di residui: 64k = 1,3 GB a pezzo, conviene catturare solo le finestre generate più un campione) e un training con
+attenzione a blocchi (flash/SDPA a chunk, K/V del drafter lunghi) e rope alle posizioni vere.

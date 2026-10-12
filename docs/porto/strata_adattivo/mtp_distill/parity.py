@@ -27,7 +27,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 import mtp_model as M  # noqa: E402
 
-MAGIC = 0x4D545044
+MAGIC = 0x4D545045
 
 
 def read_dump(path: Path):
@@ -40,7 +40,7 @@ def read_dump(path: Path):
         if magic != MAGIC:
             raise ValueError(f"dump corrotto a {o - 16}")
         (p,) = struct.unpack_from("<q", data, o); o += 8
-        a, n_steps = struct.unpack_from("<ii", data, o); o += 8
+        a, n_steps, req = struct.unpack_from("<iii", data, o); o += 12
         tokens = np.frombuffer(data[o:o + 4 * T], dtype=np.int32).copy(); o += 4 * T
         R = np.frombuffer(data[o:o + 4 * hcn], dtype=np.float32).copy(); o += 4 * hcn
         steps = []
@@ -48,7 +48,7 @@ def read_dump(path: Path):
             draft, prob = struct.unpack_from("<if", data, o); o += 8
             logits = np.frombuffer(data[o:o + 4 * nvd], dtype=np.float32).copy(); o += 4 * nvd
             steps.append((draft, prob, logits))
-        yield {"nvd": nvd, "hcn": hcn, "T": T, "p": p, "a": a, "tokens": tokens, "R": R, "steps": steps}
+        yield {"nvd": nvd, "hcn": hcn, "T": T, "p": p, "a": a, "req": req, "tokens": tokens, "R": R, "steps": steps}
 
 
 def main() -> int:
@@ -83,12 +83,12 @@ def main() -> int:
     run = runs[-1]
     by_k = {m["k"]: (int(i), m) for i, m in cmap.items() if m["run"] == run}
     stats = [dict(n=0, match=0, kl=0.0, dp=0.0, kl_max=0.0) for _ in range(a.steps)]
-    k_req = -1
-    last_p = None
+    n_rec = 0
+    seen = set()
     for rec in read_dump(Path(a.dump)):
-        if rec["T"] == 1 and rec["a"] == 0 and (last_p is None or rec["p"] <= last_p):
-            k_req += 1                      # un nuovo prompt: il primo draft parte da p = n - 1 dopo una lettura da zero
-        last_p = rec["p"] + rec["a"]
+        n_rec += 1
+        k_req = rec["req"]          # la richiesta della cattura (seq_<k> dello stesso run)
+        seen.add(k_req)
         if k_req not in by_k:
             continue
         i, m = by_k[k_req]
@@ -123,6 +123,7 @@ def main() -> int:
                 if s["n"] <= 3 or int(pe.argmax()) != int(pt.argmax()):
                     print(f"  seq {i} passo {j}: motore {int(dvocab[pe.argmax()])} p={float(pe.max()):.3f} (dump {rec['steps'][j][0]} {rec['steps'][j][1]:.3f}) "
                           f"torch {int(dvocab[pt.argmax()])} p={float(pt.max()):.3f} KL {kl:.4f}")
+    print(f"{n_rec} record nel dump, {len(seen)} richieste, {len(by_k)} sequenze catturate")
     res = {}
     ok = True
     for j, s in enumerate(stats):

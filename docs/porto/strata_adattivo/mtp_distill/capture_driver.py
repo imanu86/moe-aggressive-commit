@@ -122,6 +122,7 @@ def main() -> int:
     ap.add_argument("--topk", type=int, default=20)
     ap.add_argument("--hcn", type=int, default=10240)
     ap.add_argument("--extra", default="", help="altri argomenti del motore")
+    ap.add_argument("--env", action="append", default=[], help="KEY=VAL per il motore (ripetibile), es. CUDA_VISIBLE_DEVICES=1,0")
     ap.add_argument("--max-seq", type=int, default=0, help="prova: ferma dopo N sequenze buone in questo run")
     ap.add_argument("--windows", action="store_true", help="tutto il prompt dalle finestre teacher-forced (lento)")
     ap.add_argument("--keep-mtp", action="store_true", help="tiene il drafter della config (parita')")
@@ -152,6 +153,9 @@ def main() -> int:
     run_dir.mkdir()
     env = dict(os.environ)
     env.update(cfg.get("env") or {})
+    for kv in a.env:
+        k, _, v = kv.partition("=")
+        env[k] = v
     env["STRATA_MTP_CAPTURE"] = str(run_dir)
     env["STRATA_MTP_CAPTURE_TOPK"] = str(a.topk)
     if a.dump:

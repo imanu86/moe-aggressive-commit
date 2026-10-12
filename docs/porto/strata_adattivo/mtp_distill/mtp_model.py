@@ -22,6 +22,13 @@ Pesi: il blocco BF16 originale (mtp-manifest.json + tensors/*.bin), gli esperti 
 
 Allenabili (~90M): attenzione (q/k/v/o), router, esperto condiviso (+ gate), le tre hyper-connection, fc_embedding,
 fc_hidden, tutte le norme.  Congelati: esperti instradati, testa, embedding, indexer (inutilizzato: attenzione densa).
+
+Precisione: i parametri sono f32; le matmul lavorano nel `dtype` del modello (bf16 su Ampere+, fp16 su Turing - la 2080 Ti
+non ha bf16 -, f32 su CPU); il residuo R, le norme, le softmax, il router e gli accumuli degli esperti restano in f32.
+
+Catena (`chain`): il passo 0 calcola K/V per tutte le L celle (le chiavi dell'attenzione) ma q, attenzione, esperti e
+testa solo per le celle `active` (quelle che hanno un token generato da predire in qualche passo: ~1/4 del corpus): da
+li' in avanti la catena vive solo su quelle celle, ciascuna con le proprie chiavi aggiunte ai passi successivi.
 """
 from __future__ import annotations
 
@@ -76,30 +83,37 @@ def load_bf16_block(src: Path) -> dict[str, torch.Tensor]:
     return out
 
 
+def pick_dtype(device: torch.device) -> torch.dtype:
+    """bf16 dove c'e' (sm_80+), fp16 su Turing (sm_75: niente bf16 nei tensor core), f32 su CPU."""
+    if device.type != "cuda":
+        return torch.float32
+    major, _ = torch.cuda.get_device_capability(device)
+    return torch.bfloat16 if major >= 8 else torch.float16
+
+
 def rms_norm(x: torch.Tensor, w1: torch.Tensor, eps: float = EPS) -> torch.Tensor:
-    """x * rsqrt(mean(x^2)+eps) * w1 sull'ultimo asse (w1 = 1 + w, come il motore memorizza le norme)."""
+    """x * rsqrt(mean(x^2)+eps) * w1 sull'ultimo asse (w1 = 1 + w, come il motore memorizza le norme).  In f32."""
     xf = x.float()
-    return (xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps) * w1.float()).to(x.dtype)
+    return xf * torch.rsqrt(xf.pow(2).mean(-1, keepdim=True) + eps) * w1.float()
 
 
 def rope_neox_partial(x: torch.Tensor, pos: torch.Tensor) -> torch.Tensor:
-    """x [..., L, heads, HD], pos [..., L] int: ruota le prime N_ROT dimensioni a coppie (i, i + N_ROT/2), theta 1e7."""
+    """x [L, heads, HD] f32, pos [L] int: ruota le prime N_ROT dimensioni a coppie (i, i + N_ROT/2), theta 1e7."""
     half = N_ROT // 2
     inv = THETA ** (-torch.arange(0, half, device=x.device, dtype=torch.float32) / half)   # [half]
-    ang = pos.float().unsqueeze(-1) * inv                                                 # [..., L, half]
-    cos, sin = ang.cos().unsqueeze(-2), ang.sin().unsqueeze(-2)                           # [..., L, 1, half]
-    x1, x2, rest = x[..., :half].float(), x[..., half:N_ROT].float(), x[..., N_ROT:]
-    o1 = x1 * cos - x2 * sin
-    o2 = x1 * sin + x2 * cos
-    return torch.cat([o1.to(x.dtype), o2.to(x.dtype), rest], dim=-1)
+    ang = pos.float().unsqueeze(-1) * inv                                                 # [L, half]
+    cos, sin = ang.cos().unsqueeze(-2), ang.sin().unsqueeze(-2)                           # [L, 1, half]
+    x1, x2, rest = x[..., :half], x[..., half:N_ROT], x[..., N_ROT:]
+    return torch.cat([x1 * cos - x2 * sin, x1 * sin + x2 * cos, rest], dim=-1)
 
 
 class ExpertBank:
     """I 512 esperti instradati, congelati.  `q2`: dal pacco del motore (experts.bin, Q2_0, cio' che il motore usa);
-    `bf16`: dal checkpoint BF16 (per confronto).  Dequantizzati tutti in bf16 sul device (5 GB) o per-esperto a richiesta."""
+    `bf16`: dal checkpoint BF16 (per confronto).  Dequantizzati tutti nel dtype del modello sul device (5 GB in 16 bit) o
+    per-esperto a richiesta."""
 
-    def __init__(self, mode: str, path: Path, device: torch.device, resident: bool):
-        self.mode, self.device, self.resident = mode, device, resident
+    def __init__(self, mode: str, path: Path, device: torch.device, resident: bool, dtype: torch.dtype):
+        self.mode, self.device, self.resident, self.dtype = mode, device, resident, dtype
         if mode == "q2":
             self.blob = np.memmap(path / "experts.bin", dtype=np.uint8, mode="r", shape=(NE, BLOB))
         else:
@@ -113,9 +127,9 @@ class ExpertBank:
     @staticmethod
     def _dequant_q2(codes: np.ndarray, scales: np.ndarray, rows: int, cols: int) -> torch.Tensor:
         """codes [rows, cols/64, 16] uint8, scales [rows, cols/64] fp16 -> [rows, cols] f32 ((c - 1) * d)."""
-        c = torch.from_numpy(np.ascontiguousarray(codes)).reshape(rows, cols // 64, 16)
+        c = torch.from_numpy(np.ascontiguousarray(codes).copy()).reshape(rows, cols // 64, 16)
         q = torch.stack([(c >> s) & 3 for s in (0, 2, 4, 6)], dim=-1).reshape(rows, cols // 64, 64).float() - 1.0
-        d = torch.from_numpy(np.ascontiguousarray(scales).view(np.float16).astype(np.float32)).reshape(rows, cols // 64, 1)
+        d = torch.from_numpy(np.ascontiguousarray(scales).copy().view(np.float16).astype(np.float32)).reshape(rows, cols // 64, 1)
         return (q * d).reshape(rows, cols)
 
     def _load(self, e: int) -> tuple[torch.Tensor, torch.Tensor]:
@@ -132,9 +146,8 @@ class ExpertBank:
         else:
             gu = torch.from_numpy(bf16_bits_to_f32(np.asarray(self.gu[e])).copy())
             dn = torch.from_numpy(bf16_bits_to_f32(np.asarray(self.dn[e])).copy())
-        # su CPU i GEMM bf16 di PyTorch sono 50-100x piu' lenti di quelli f32: pesi in f32 fuori da CUDA
-        wdt = torch.bfloat16 if self.device.type == 'cuda' else torch.float32
-        return gu.to(self.device, wdt), dn.to(self.device, wdt)
+        # Q2_0 = scala fp16 x {-1, 0, 1, 2}: esatto anche in fp16.  Su CPU i GEMM a 16 bit sono lentissimi: f32.
+        return gu.to(self.device, self.dtype), dn.to(self.device, self.dtype)
 
     def get(self, e: int) -> tuple[torch.Tensor, torch.Tensor]:
         w = self.cache.get(e)
@@ -175,12 +188,13 @@ def gguf_rows(gguf_path: Path, name: str, cache_dir: Path, tools_dir: Path) -> t
 
 class MtpLayer(nn.Module):
     def __init__(self, dense: dict[str, torch.Tensor], experts: ExpertBank, embed: torch.Tensor, head_rows: torch.Tensor,
-                 hnorm_per_stream: bool = False, train_fc: bool = True):
+                 dtype: torch.dtype, hnorm_per_stream: bool = False, train_fc: bool = True):
         super().__init__()
         self.experts = experts
+        self.dt = dtype
         self.hnorm_per_stream = hnorm_per_stream
-        self.register_buffer("embed", embed, persistent=False)            # [V, H] bf16, congelato
-        self.register_buffer("head_rows", head_rows, persistent=False)    # [Vd, H] bf16, congelato (righe del sottoinsieme)
+        self.register_buffer("embed", embed, persistent=False)            # [V, H] dt, congelato
+        self.register_buffer("head_rows", head_rows, persistent=False)    # [Vd, H] dt, congelato (righe del sottoinsieme)
         self.params = nn.ParameterDict()
         self.frozen: dict[str, torch.Tensor] = {}
         for name, w in dense.items():
@@ -198,157 +212,169 @@ class MtpLayer(nn.Module):
             return self.params[key]
         return self.frozen[name].to(self.embed.device)
 
+    def w16(self, name: str) -> torch.Tensor:   # un peso di matmul nel dtype del modello
+        return self.p(name).to(self.dt)
+
     def norm1(self, name: str) -> torch.Tensor:   # norme memorizzate grezze nel checkpoint: il motore usa 1 + w
         return 1.0 + self.p(name)
 
     def trainable_tensors(self) -> dict[str, torch.Tensor]:
         return {k.replace("__", "."): v.detach() for k, v in self.params.items()}
 
-    # ---- hyper-connection
+    # ---- hyper-connection (R in f32)
     def gr_read(self, R: torch.Tensor, prefix: str, inject: bool):
-        """R [..., HC, H] -> mixed [..., H], inj [..., HC] (gr.hpp: lo = silu((w_down . xn)/hc), mixed = mean_c xn*sigmoid(w_up . lo))."""
+        """R [L, HC, H] f32 -> mixed [L, H] f32, inj [L, HC] f32 (gr.hpp: lo = silu((w_down . xn)/hc), mixed = mean_c xn*sigmoid(w_up . lo))."""
         w_norm = self.norm1(prefix + ".hc_norm.weight").view(HC, H)
-        xn = rms_norm(R, w_norm)                                                        # per flusso
-        xf = xn.reshape(*R.shape[:-2], HCN)
-        lo = F.silu(F.linear(xf, self.p(prefix + ".input_mix_weight_down.weight").to(xf.dtype)) / HC)   # [..., 320]
-        gate = F.linear(lo, self.p(prefix + ".input_mix_weight_up.weight").to(lo.dtype))              # [..., 10240]
+        xn = rms_norm(R, w_norm)                                                        # per flusso, f32
+        xf = xn.reshape(*R.shape[:-2], HCN).to(self.dt)
+        lo = F.silu(F.linear(xf, self.w16(prefix + ".input_mix_weight_down.weight")).float() / HC)   # [L, 320]
+        gate = F.linear(lo.to(self.dt), self.w16(prefix + ".input_mix_weight_up.weight")).float()   # [L, 10240]
         mixed = (xn * torch.sigmoid(gate.view(*R.shape[:-2], HC, H))).mean(-2)
-        inj = F.linear(xf, self.p(prefix + ".block_inject_weight.weight").to(xf.dtype)) if inject else None
+        inj = F.linear(xf, self.w16(prefix + ".block_inject_weight.weight")).float() if inject else None
         return mixed, inj
 
     @staticmethod
     def gr_write(R: torch.Tensor, block_out: torch.Tensor, inj: torch.Tensor) -> torch.Tensor:
-        w = 2.0 * torch.sigmoid(inj.float() / HC)                        # [..., HC]
-        return R + block_out.unsqueeze(-2).to(R.dtype) * w.unsqueeze(-1).to(R.dtype)
+        w = 2.0 * torch.sigmoid(inj.float() / HC)                        # [L, HC]
+        return R + block_out.float().unsqueeze(-2) * w.unsqueeze(-1)
 
-    # ---- il davanti del layer: embedding, fc, hyper-connection dell'attenzione, K/V
+    # ---- il davanti del layer: embedding, fc, hyper-connection dell'attenzione, q/gate, K/V
     def front(self, R_in: torch.Tensor, tok: torch.Tensor, pos: torch.Tensor):
-        B, L = tok.shape
-        dt = torch.bfloat16 if R_in.is_cuda else torch.float32
-        emb = F.embedding(tok, self.embed).to(dt)                                               # [B, L, H]
-        e2 = F.linear(rms_norm(emb, self.norm1("pre_fc_norm_embedding.weight")), self.p("fc_embedding.weight").to(dt))
-        Rf = R_in.to(dt)
+        """R_in [L, HCN] f32, tok [L], pos [L] -> R [L, HC, H] f32, inj [L, HC], q [L, NH, HD] f32, gate [L, NH, HD], k/v [L, NKV, HD]."""
+        L = tok.shape[0]
+        dt = self.dt
+        emb = F.embedding(tok, self.embed)                                                        # [L, H] dt
+        e2 = F.linear(rms_norm(emb, self.norm1("pre_fc_norm_embedding.weight")).to(dt), self.w16("fc_embedding.weight")).float()
         if self.hnorm_per_stream:
-            hn = rms_norm(Rf.view(B, L, HC, H), self.norm1("pre_fc_norm_hidden.weight").view(HC, H))
+            hn = rms_norm(R_in.view(L, HC, H), self.norm1("pre_fc_norm_hidden.weight").view(HC, H))
         else:
-            hn = rms_norm(Rf.view(B, L, HCN), self.norm1("pre_fc_norm_hidden.weight")).view(B, L, HC, H)
-        h2 = F.linear(hn, self.p("fc_hidden.weight").to(dt))                                    # [B, L, HC, H]
+            hn = rms_norm(R_in.view(L, HCN), self.norm1("pre_fc_norm_hidden.weight")).view(L, HC, H)
+        h2 = F.linear(hn.to(dt), self.w16("fc_hidden.weight")).float()                           # [L, HC, H]
         R = h2 + e2.unsqueeze(-2)
         mixed, inj = self.gr_read(R, "attn_hyper_connection", inject=True)
-        k = F.linear(mixed, self.p("self_attn.k_proj.weight").to(dt)).view(B, L, NKV, HD)
-        v = F.linear(mixed, self.p("self_attn.v_proj.weight").to(dt)).view(B, L, NKV, HD)
+        m16 = mixed.to(dt)
+        k = F.linear(m16, self.w16("self_attn.k_proj.weight")).float().view(L, NKV, HD)
+        v = F.linear(m16, self.w16("self_attn.v_proj.weight")).float().view(L, NKV, HD)
         k = rope_neox_partial(rms_norm(k, self.norm1("self_attn.k_norm.weight")), pos)
-        qfull = F.linear(mixed, self.p("self_attn.q_proj.weight").to(dt)).view(B, L, NH, 2 * HD)
+        qfull = F.linear(m16, self.w16("self_attn.q_proj.weight")).float().view(L, NH, 2 * HD)
         q = rope_neox_partial(rms_norm(qfull[..., :HD], self.norm1("self_attn.q_norm.weight")), pos)
         gate = qfull[..., HD:]
         return R, inj, q, gate, k, v
 
-    def attend(self, q, k0, v0, extra_k, extra_v):
-        """q [B,L,NH,HD] alla cella c+j; k0/v0 [B,L,NKV,HD] del passo 0 (chiavi alle celle <= c: maschera causale sulla
-        cella di partenza); extra_k/v [B,L,J,NKV,HD]: le chiavi della catena stessa alle celle c+1..c+j (J = j)."""
-        B, L = q.shape[:2]
+    def attend(self, q, qcells, k0, v0, extra_k, extra_v):
+        """q [A, NH, HD] alle celle qcells + j; k0/v0 [L, NKV, HD] del passo 0 (chiavi alle celle <= qcells[a]: maschera causale
+        sulla cella di partenza); extra_k/v [A, J, NKV, HD]: le chiavi della catena stessa alle celle c+1..c+j."""
+        A = q.shape[0]
+        L = k0.shape[0]
         rep = NH // NKV
-        qh = q.permute(0, 2, 1, 3).float()                                     # [B, NH, L, HD]
-        kh = k0.permute(0, 2, 1, 3).float().repeat_interleave(rep, dim=1)      # [B, NH, L, HD]  (teste q h -> kv h // 12)
-        vh = v0.permute(0, 2, 1, 3).float().repeat_interleave(rep, dim=1)
+        dt = self.dt
+        qh = q.permute(1, 0, 2).to(dt)                                                  # [NH, A, HD]
+        kh = k0.permute(1, 0, 2).to(dt).repeat_interleave(rep, dim=0)                   # [NH, L, HD]  (testa q h -> kv h // 12)
+        vh = v0.permute(1, 0, 2).to(dt).repeat_interleave(rep, dim=0)
         scale = 1.0 / math.sqrt(HD)
-        s = torch.matmul(qh, kh.transpose(-1, -2)) * scale                     # [B, NH, L(q), L(k)]
-        causal = torch.ones(L, L, dtype=torch.bool, device=q.device).tril()
-        s = s.masked_fill(~causal, float("-inf"))
-        if extra_k is not None and extra_k.shape[2] > 0:
-            J = extra_k.shape[2]
-            ek = extra_k.permute(0, 3, 1, 2, 4).float().repeat_interleave(rep, dim=1)   # [B, NH, L, J, HD]
-            ev = extra_v.permute(0, 3, 1, 2, 4).float().repeat_interleave(rep, dim=1)
-            se = (qh.unsqueeze(-2) * ek).sum(-1) * scale                        # [B, NH, L, J]
-            s = torch.cat([s, se], dim=-1)
-            w = torch.softmax(s, dim=-1)
-            out = torch.matmul(w[..., :L], vh) + (w[..., L:].unsqueeze(-1) * ev).sum(-2)
+        s = torch.matmul(qh, kh.transpose(-1, -2)).float() * scale                     # [NH, A, L]
+        causal = torch.arange(L, device=q.device).unsqueeze(0) <= qcells.unsqueeze(1)    # [A, L]
+        s = s.masked_fill(~causal.unsqueeze(0), float("-inf"))
+        if extra_k is not None and extra_k.shape[1] > 0:
+            ek = extra_k.permute(2, 0, 1, 3).to(dt).repeat_interleave(rep, dim=0)       # [NH, A, J, HD]
+            ev = extra_v.permute(2, 0, 1, 3).to(dt).repeat_interleave(rep, dim=0)
+            se = (qh.unsqueeze(-2) * ek).float().sum(-1) * scale                         # [NH, A, J]
+            w = torch.softmax(torch.cat([s, se], dim=-1), dim=-1)
+            out = torch.matmul(w[..., :L].to(dt), vh).float() + (w[..., L:].unsqueeze(-1) * ev.float()).sum(-2)
         else:
             w = torch.softmax(s, dim=-1)
-            out = torch.matmul(w, vh)
-        return out.permute(0, 2, 1, 3).to(q.dtype)                              # [B, L, NH, HD]
+            out = torch.matmul(w.to(dt), vh).float()
+        return out.permute(1, 0, 2)                                                      # [A, NH, HD] f32
 
-    def rest(self, R, inj, attn, gate, pos_dtype):
-        B, L = attn.shape[:2]
-        dt = attn.dtype
-        out = (attn.float() * torch.sigmoid(gate.float())).to(dt).reshape(B, L, NH * HD)
-        bo = F.linear(out, self.p("self_attn.o_proj.weight").to(dt))
+    def rest(self, R, inj, attn, gate):
+        """R [A, HC, H] f32, inj [A, HC], attn/gate [A, NH, HD] -> R_out [A, HC, H] f32, sample [A, H] f32."""
+        A = attn.shape[0]
+        dt = self.dt
+        out = (attn * torch.sigmoid(gate)).reshape(A, NH * HD).to(dt)
+        bo = F.linear(out, self.w16("self_attn.o_proj.weight")).float()
         R = self.gr_write(R, bo, inj)
         mixed, inj2 = self.gr_read(R, "mlp_hyper_connection", inject=True)
-        x = mixed.reshape(B * L, H)
+        x = mixed                                                                         # [A, H] f32
         # router: softmax su 512, top-10, rinormalizzato (router_top10.hpp)
-        logits = F.linear(x.float(), self.p("mlp.gate.weight").float())
+        logits = F.linear(x, self.p("mlp.gate.weight").float())
         probs = torch.softmax(logits, dim=-1)
         w, ids = torch.topk(probs, K, dim=-1)
         w = w / w.sum(-1, keepdim=True).clamp_min(2.0 ** -14)
-        y = torch.zeros(B * L, H, dtype=torch.float32, device=x.device)
+        # esperti raggruppati: un solo ordinamento per esperto, poi un GEMM per esperto distinto sulle sue righe
         flat_ids = ids.reshape(-1)
-        flat_w = w.reshape(-1)
-        rows = torch.arange(B * L, device=x.device).repeat_interleave(K)
-        for e in torch.unique(flat_ids).tolist():
-            sel = (flat_ids == e).nonzero(as_tuple=True)[0]
+        order = torch.argsort(flat_ids)
+        rows_s = torch.arange(A, device=x.device).repeat_interleave(K)[order]
+        w_s = w.reshape(-1)[order]
+        uniq, counts = torch.unique_consecutive(flat_ids[order], return_counts=True)
+        xs = x[rows_s].to(dt)                                                             # [A*K, H]
+        ys = []
+        start = 0
+        for e, cnt in zip(uniq.tolist(), counts.tolist()):
             gu, dn = self.experts.get(e)
-            xe = x[rows[sel]].to(gu.dtype)
-            hgu = F.linear(xe, gu)
-            act = F.silu(hgu[:, :FF].float()) * hgu[:, FF:].float()
-            ye = F.linear(act.to(dn.dtype), dn).float() * flat_w[sel].unsqueeze(-1)
-            y.index_add_(0, rows[sel], ye)
+            hgu = F.linear(xs[start:start + cnt], gu).float()
+            act = F.silu(hgu[:, :FF]) * hgu[:, FF:]
+            ys.append(F.linear(act.to(dt), dn).float() * w_s[start:start + cnt].unsqueeze(-1))
+            start += cnt
+        y = torch.zeros(A, H, dtype=torch.float32, device=x.device).index_add_(0, rows_s, torch.cat(ys))
         # esperto condiviso: down(silu(gate x) * up x) * sigmoid(gate_s . x)
-        sg = F.silu(F.linear(x, self.p("mlp.shared_expert.gate_proj.weight").to(dt)).float())
-        su = F.linear(x, self.p("mlp.shared_expert.up_proj.weight").to(dt)).float()
-        sh = F.linear((sg * su).to(dt), self.p("mlp.shared_expert.down_proj.weight").to(dt)).float()
-        g = torch.sigmoid(F.linear(x.float(), self.p("mlp.shared_expert_gate.weight").float()))   # [BL, 1]
-        y = (y + sh * g).view(B, L, H).to(dt)
+        x16 = x.to(dt)
+        sg = F.silu(F.linear(x16, self.w16("mlp.shared_expert.gate_proj.weight")).float())
+        su = F.linear(x16, self.w16("mlp.shared_expert.up_proj.weight")).float()
+        sh = F.linear((sg * su).to(dt), self.w16("mlp.shared_expert.down_proj.weight")).float()
+        g = torch.sigmoid(F.linear(x, self.p("mlp.shared_expert_gate.weight").float()))   # [A, 1]
+        y = y + sh * g
         R = self.gr_write(R, y, inj2)
         sample, _ = self.gr_read(R, "hyper_connection_mixer", inject=False)
         return R, sample
 
     def head(self, sample: torch.Tensor) -> torch.Tensor:
         """Logits sul sottoinsieme del draft head (le righe della testa principale per draft_vocab.bin), f32."""
-        return F.linear(sample.to(self.head_rows.dtype), self.head_rows).float()   # testa bf16 su CUDA, f32 su CPU
+        return F.linear(sample.to(self.dt), self.head_rows).float()
 
-    def chain(self, R_in: torch.Tensor, ids: torch.Tensor, steps: int):
-        """Catena srotolata.  R_in [B, L, HCN] = residui del target alle posizioni 0..L-1; ids [B, L+steps] token alle
-        posizioni 0..L+steps-1.  Passo j (0-based), cella c: ingresso (R^(j)_c, ids[c+j+1]) alla posizione c+j; predice
-        ids[c+j+2].  Restituisce la lista dei `sample` [B, L, H] per passo (la testa va applicata a parte, a pezzi)."""
-        B, L = R_in.shape[:2]
+    def chain(self, R_in: torch.Tensor, ids: torch.Tensor, steps: int, active: torch.Tensor | None = None):
+        """Catena srotolata su una sequenza.  R_in [L, HCN] f32 = residui del target alle posizioni 0..L-1; ids [>= L+steps]
+        token alle posizioni 0..; active [A] = le celle da seguire (default: tutte).  Passo j (0-based), cella c:
+        ingresso (R^(j)_c, ids[c+j+1]) alla posizione c+j; predice ids[c+j+2].  Restituisce (active, [sample_j [A, H]])."""
+        L = R_in.shape[0]
         dev = R_in.device
-        cells = torch.arange(L, device=dev).unsqueeze(0).expand(B, L)
+        cells = torch.arange(L, device=dev)
+        if active is None:
+            active = cells
         samples = []
-        R_cur = R_in.view(B, L, HC, H)
-        k0 = v0 = None
         ek, ev = [], []
-        for j in range(steps):
-            tok = ids[:, j + 1:j + 1 + L]
-            pos = cells + j
-            R, inj, q, gate, k, v = self.front(R_cur.reshape(B, L, HCN), tok, pos)
-            if j == 0:
-                k0, v0 = k, v
-                attn = self.attend(q, k0, v0, None, None)
-            else:
-                ek.append(k)
-                ev.append(v)
-                attn = self.attend(q, k0, v0, torch.stack(ek, dim=2), torch.stack(ev, dim=2))
-            R_out, sample = self.rest(R, inj, attn, gate, None)
+        # passo 0: il davanti su tutte le celle (le chiavi), il resto sulle attive
+        R, inj, q, gate, k0, v0 = self.front(R_in.float(), ids[1:1 + L], cells)
+        attn = self.attend(q[active], active, k0, v0, None, None)
+        R_cur, sample = self.rest(R[active], inj[active], attn, gate[active])
+        samples.append(sample)
+        for j in range(1, steps):
+            tok = ids[active + j + 1]
+            pos = active + j
+            R, inj, q, gate, k, v = self.front(R_cur.reshape(-1, HCN), tok, pos)
+            ek.append(k)
+            ev.append(v)
+            attn = self.attend(q, active, k0, v0, torch.stack(ek, dim=1), torch.stack(ev, dim=1))
+            R_cur, sample = self.rest(R, inj, attn, gate)
             samples.append(sample)
-            R_cur = R_out
-        return samples
+        return active, samples
 
 
 def build_model(bf16_dir: Path, rt_dir: Path, gguf_path: Path, tools_dir: Path, cache_dir: Path, device: torch.device,
                 experts_mode: str = "q2", experts_resident: bool | None = None, hnorm_per_stream: bool = False,
-                train_fc: bool = True, full_head: bool = False) -> tuple[MtpLayer, torch.Tensor]:
+                train_fc: bool = True, full_head: bool = False, dtype: torch.dtype | None = None) -> tuple[MtpLayer, torch.Tensor]:
     dense = load_bf16_block(bf16_dir)
+    if dtype is None:
+        dtype = pick_dtype(device)
     if experts_resident is None:
         experts_resident = device.type == "cuda"
-    bank = ExpertBank(experts_mode, rt_dir if experts_mode == "q2" else bf16_dir, device, experts_resident)
-    embed = gguf_rows(gguf_path, "token_embd.weight", cache_dir, tools_dir).to(device)
+    bank = ExpertBank(experts_mode, rt_dir if experts_mode == "q2" else bf16_dir, device, experts_resident, dtype)
+    embed = gguf_rows(gguf_path, "token_embd.weight", cache_dir, tools_dir).to(device, dtype)
     head = gguf_rows(gguf_path, "output.weight", cache_dir, tools_dir)
     dvocab = torch.from_numpy(np.fromfile(rt_dir / "draft_vocab.bin", dtype="<i4").astype(np.int64))
     if full_head:
         dvocab = torch.arange(head.shape[0])
-    head_rows = head[dvocab].to(device, torch.bfloat16 if device.type == 'cuda' else torch.float32)
-    model = MtpLayer(dense, bank, embed, head_rows, hnorm_per_stream=hnorm_per_stream, train_fc=train_fc).to(device)
+    head_rows = head[dvocab].to(device, dtype)
+    model = MtpLayer(dense, bank, embed, head_rows, dtype, hnorm_per_stream=hnorm_per_stream, train_fc=train_fc).to(device)
     return model, dvocab.to(device)
 
 

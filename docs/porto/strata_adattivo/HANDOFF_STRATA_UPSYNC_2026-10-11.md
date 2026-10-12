@@ -168,3 +168,34 @@ indipendente di Fable: cattura dal prefill (non a finestre da 8), top-k su GPU, 
 del costo degli esperti Q2_0, pod **A100 80 GB** (~1,6 $/h, 4-6 $ in tutto) invece di H100; pilota con cancello
 (+2 punti di accettazione al passo 0). In attesa dell'owner: via al passo 0 locale, ricarica RunPod (saldo 0), temperatura
 delle richieste di Claude Code/DSH.
+
+## 12. Pomeriggio 12/10: Daily r2, PR upstream, 0.1.43, MTP chiuso, leve speed
+
+**Strata 0.1.42 Daily r2** (installato): `build-0142-daily` = `lab/candidate2` ac6065dc (EXPDEC + QSA_ROWS), B-A-B
+DET-x7-cand2 +2,9% su r1; config `strata-0142-daily.json` con `STRATA_EXPDEC=1 STRATA_QSA_ROWS=1`; r1 salvata in
+`D:\ds4_work\strata\ripristini\20261012_0142daily_r1\`.
+
+**v0.1.43**: `lab/upsync43-pulito` (v0.1.43 + 17 leve; critpath e chain-fuse ritirati) = Daily r2 sul banco
+(DET-x9 +0,1%, DET-x10 testo identico). Registro pubblico `stack/` (INDEX.md, BLOCKS.md, patch, `check_anchors.py`)
+anche su `main` del fork. Diario `docs/UPSYNC43.md` nel fork.
+
+**PR upstream aperte** (Niko1221/Strata, commento a @Niko1221): #2058 EXPDEC, #2059 QSA_ROWS (blange48: neutre su
+4×5080 con esperti fuori VRAM; nota di scopo aggiunta), #2073 PLE direct, #2075 ATTN_DAILY, #2077 prompt-cache-file,
+#2080 SELECT_SIMT default <sm_80, #2081 dequant sm_75. Non aperte: hc16 (dopo #2081), ram-core (dipende da #1117).
+
+**MTP affinato: abbandonato (owner)**. Pilota locale e pod H100 (17,6 $): off-policy 3,5M token → heldout passo 0
+0,78→0,82; sul motore +5,5% token/finestra a contesti ≤4k, **nessun guadagno a 131k** (DET-x14-mtp: +0,7%, offre meno
+bozze; a min-p 0,4 L02 −12%) e −4/−6% fuori dominio; on-policy (479k token di Qwen) non meglio. Il Daily resta su
+`rt_it48k`. Pipeline e numeri in `mtp_distill/README.md`.
+
+**Roofline** (`ROOFLINE_2026-10-12.md`): finestra al 45-48% del limite in serie; le due schede lavorano insieme solo il
+24% del tempo. **Determinismo**: il testo cambia fra corse per la cache elastica della 3060 (monitor 8K): verifiche
+bitwise con `--expert-cache 1500` senza `--elastic`.
+
+**Leve speed (Opus, `lab/speed1..4`)**: speed2 (DENSE_WR) e speed3 (EXPDEC_WT) bitwise ma marginali/più lente →
+archiviate; `QFUSE_HC` non bitwise. `build-speed4-311b6fda` con `STRATA_NODECUT=1 STRATA_QFUSE_HC=0 STRATA_TOPK_GRID=1
+STRATA_B6_HEAD_MINB=6`: B-A-B DET-x14-s4 B2 +2,4%, B1 da buttare (gather PLE 13,5 ms/finestra): **da ripetere**.
+
+**Rumore di giorno**: la gather delle righe PLE da C: sale a 13,5 ms/finestra o attese di 15-57 s nel prefill quando il
+PC lavora (compilazioni, riavvii): falsa un braccio quasi a ogni B-A-B. Da capire (cache RAM delle righe PLE).
+Telefono 09 (ZY32JJMBH2) staccava dal bus USB 150-280 volte l'ora: risolto dall'owner col cavo.

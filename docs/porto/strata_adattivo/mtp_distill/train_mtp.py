@@ -131,8 +131,11 @@ def truncate(p: torch.Tensor, temperature: float, top_p: float, top_k: int) -> t
 
 
 def step_losses(model: M.MtpLayer, inv_map: torch.Tensor, batch: dict, steps: int, device, spec_min_p: float,
-                sampling: list, head_chunk: int = 1024, nll_weight: bool = False, with_metrics: bool = True):
-    """La catena srotolata su una sequenza: per passo j la KL media sulle celle valide e le metriche di accettazione."""
+                sampling: list, head_chunk: int = 1024, nll_weight: bool = False, with_metrics: bool = True,
+                active_chunk: int = 768, backward=None, step_weights=None):
+    """La catena srotolata su una sequenza: per passo j la KL media sulle celle valide e le metriche di accettazione.
+    Le celle attive sono percorse a blocchi di `active_chunk` (memoria deterministica); con `backward` (training) la perdita
+    di ogni blocco, gia' normalizzata sul totale delle celle valide, fa il backward subito."""
     R = batch["R"].to(device).float()                           # [m, HCN]
     ids = batch["ids"].to(device)                               # [n]
     gen = batch["gen"].to(device)
@@ -145,78 +148,92 @@ def step_losses(model: M.MtpLayer, inv_map: torch.Tensor, batch: dict, steps: in
     cells = torch.arange(L, device=device)
     ids_in = ids[: L + steps + 1]
     ids_in = torch.cat([ids_in, ids_in.new_full((max(0, L + steps + 1 - ids_in.numel()),), 0)])
-    # le celle attive: in qualche passo predicono un token generato con il target disponibile
-    valid_j = []
+    # il bersaglio per passo e cella: valido se predice un token generato con il target disponibile nel sottoinsieme
+    valid_j, q_j, sub_j, cw_j = [], [], [], []
     for j in range(steps):
         pos = cells + j + 1
         v = (pos <= m - 1) & (pos + 1 < ids.numel()) & (gen[torch.clamp(pos + 1, max=ids.numel() - 1)] == 1)
-        valid_j.append(v)
-    active = torch.stack(valid_j).any(0).nonzero(as_tuple=True)[0]
-    if active.numel() == 0:
-        return None
-    active, samples = model.chain(R[:L], ids_in, steps, active)
-    out = {"loss": 0.0, "steps": [], "kl_terms": [], "active": int(active.numel()), "sampled": {}}
-    alive = torch.ones(active.numel(), dtype=torch.bool, device=device)
-    chain_len = torch.zeros(active.numel(), dtype=torch.float32, device=device)
-    base_valid = valid_j[0][active]
-    for j, sample in enumerate(samples):
-        pos = active + j + 1
-        valid = valid_j[j][active]
-        tid = top_ids[pos.clamp(max=m - 1)]                     # [A, K]
+        tid = top_ids[pos.clamp(max=m - 1)]                     # [L, K]
         tlp = top_lp[pos.clamp(max=m - 1)]
         sub = inv_map[tid.clamp(min=0)]                         # indice nel sottoinsieme o -1
         keep = (sub >= 0) & (tid >= 0)
         q = torch.where(keep, tlp.float().exp(), torch.zeros_like(tlp))
         qs = q.sum(-1)
-        valid = valid & (qs > 1e-6)
+        v = v & (qs > 1e-6)
         q = q / qs.clamp_min(1e-9).unsqueeze(-1)
         cw = nll[pos.clamp(max=m - 1)].float().exp().clamp(0.0, 1.0) if nll_weight else torch.ones_like(qs)
-        idx = valid.nonzero(as_tuple=True)[0]
-        n_valid = int(idx.numel())
-        if n_valid == 0:
-            out["steps"].append({"n": 0})
-            out["kl_terms"].append(torch.zeros((), device=device))
-            continue
-        kl_sum = torch.zeros((), device=device, dtype=torch.float32)
-        wsum = 0.0
-        acc = off = both = 0
-        samp_acc = {name: 0.0 for name, *_ in sampling}
-        ok_step = torch.zeros(active.numel(), dtype=torch.bool, device=device)
-        for c0 in range(0, n_valid, head_chunk):
-            sel = idx[c0: c0 + head_chunk]
-            logits = model.head(sample[sel])                    # [b, Vd] f32
-            logp = torch.log_softmax(logits, dim=-1)
-            lp_t = torch.gather(logp, 1, sub[sel].clamp(min=0))  # [b, K]
-            qq = q[sel]
-            kl = (qq * (torch.log(qq.clamp_min(1e-12)) - lp_t)).sum(-1)   # KL(q || p) sui top-k tenuti
-            kl_sum = kl_sum + (kl * cw[sel]).sum()
-            wsum += float(cw[sel].sum())
+        valid_j.append(v); q_j.append(q); sub_j.append(sub); cw_j.append(cw)
+    active_all = torch.stack(valid_j).any(0).nonzero(as_tuple=True)[0]
+    if active_all.numel() == 0:
+        return None
+    n_valid = [int(valid_j[j][active_all].sum()) for j in range(steps)]
+    w_total = [float((cw_j[j] * valid_j[j].float())[active_all].sum()) for j in range(steps)]
+    weights = list(step_weights) if step_weights is not None else [1.0] * steps
+    agg = [dict(kl=0.0, acc=0, off=0, both=0, samp={name: 0.0 for name, *_ in sampling}) for _ in range(steps)]
+    chain_sum, chain_cells = 0.0, 0
+    loss_total = 0.0
+    for c0 in range(0, active_all.numel(), active_chunk):
+        active = active_all[c0: c0 + active_chunk]
+        _, samples = model.chain(R[:L], ids_in, steps, active)
+        alive = torch.ones(active.numel(), dtype=torch.bool, device=device)
+        chain_len = torch.zeros(active.numel(), dtype=torch.float32, device=device)
+        base_valid = valid_j[0][active]
+        loss_chunk = 0.0
+        for j, sample in enumerate(samples):
+            valid = valid_j[j][active]
+            idx = valid.nonzero(as_tuple=True)[0]
+            if idx.numel() == 0 or w_total[j] <= 0:
+                continue
+            sub, q, cw = sub_j[j][active], q_j[j][active], cw_j[j][active]
+            kl_sum = torch.zeros((), device=device, dtype=torch.float32)
+            ok_step = torch.zeros(active.numel(), dtype=torch.bool, device=device)
+            for h0 in range(0, idx.numel(), head_chunk):
+                sel = idx[h0: h0 + head_chunk]
+                logits = model.head(sample[sel])                    # [b, Vd] f32
+                logp = torch.log_softmax(logits, dim=-1)
+                lp_t = torch.gather(logp, 1, sub[sel].clamp(min=0))  # [b, K]
+                qq = q[sel]
+                kl = (qq * (torch.log(qq.clamp_min(1e-12)) - lp_t)).sum(-1)   # KL(q || p) sui top-k tenuti
+                kl_sum = kl_sum + (kl * cw[sel]).sum()
+                if with_metrics:
+                    with torch.no_grad():
+                        pmax, amax = logp.max(-1)
+                        match = amax == sub[sel][:, 0]               # top-1 del target (il primo id e' il piu' probabile)
+                        offered = pmax.exp() >= spec_min_p
+                        agg[j]["acc"] += int(match.sum()); agg[j]["off"] += int(offered.sum()); agg[j]["both"] += int((match & offered).sum())
+                        ok_step[sel] = match & offered
+                        if sampling:
+                            pdraft = logp.exp()                      # [b, Vd]
+                            qt = torch.zeros_like(pdraft).scatter(1, sub[sel].clamp(min=0), qq)   # il target sul sottoinsieme
+                            for name, temp, top_p, top_k in sampling:
+                                pt = truncate(qt, temp, top_p, top_k)
+                                pd = truncate(pdraft, temp, top_p, top_k)
+                                agg[j]["samp"][name] += float(torch.minimum(pt, pd).sum(-1).sum())
+            kl_mean_part = kl_sum / w_total[j]                     # la quota di questo blocco della KL media del passo
+            agg[j]["kl"] += float(kl_mean_part.detach())
+            loss_chunk = loss_chunk + weights[j] * kl_mean_part
             if with_metrics:
-                with torch.no_grad():
-                    pmax, amax = logp.max(-1)
-                    match = amax == sub[sel][:, 0]               # top-1 del target (il primo id e' il piu' probabile)
-                    offered = pmax.exp() >= spec_min_p
-                    acc += int(match.sum()); off += int(offered.sum()); both += int((match & offered).sum())
-                    ok_step[sel] = match & offered
-                    if sampling:
-                        pdraft = logp.exp()                      # [b, Vd]
-                        qt = torch.zeros_like(pdraft).scatter(1, sub[sel].clamp(min=0), qq)   # il target sul sottoinsieme
-                        for name, temp, top_p, top_k in sampling:
-                            pt = truncate(qt, temp, top_p, top_k)
-                            pd = truncate(pdraft, temp, top_p, top_k)
-                            samp_acc[name] += float(torch.minimum(pt, pd).sum(-1).sum())
-        kl_mean = kl_sum / max(wsum, 1e-9)
-        rec = {"n": n_valid, "kl": float(kl_mean.detach())}
-        if with_metrics:
-            rec.update({"acc": acc / n_valid, "offered": off / n_valid, "acc_offered": both / n_valid,
-                        "sampled": {k: v / n_valid for k, v in samp_acc.items()}})
-            alive = alive & ok_step & valid
-            chain_len += alive.float()
+                alive = alive & ok_step & valid
+                chain_len += alive.float()
+        if isinstance(loss_chunk, torch.Tensor):
+            loss_total += float(loss_chunk.detach())
+            if backward is not None and loss_chunk.requires_grad:
+                backward(loss_chunk)
+        if with_metrics and bool(base_valid.any()):
+            chain_sum += float(chain_len[base_valid].sum())
+            chain_cells += int(base_valid.sum())
+        del samples
+    out = {"loss": loss_total, "steps": [], "active": int(active_all.numel()), "sampled": {}}
+    for j in range(steps):
+        n = n_valid[j]
+        rec = {"n": n, "kl": agg[j]["kl"]}
+        if with_metrics and n:
+            rec.update({"acc": agg[j]["acc"] / n, "offered": agg[j]["off"] / n, "acc_offered": agg[j]["both"] / n,
+                        "sampled": {k: v / n for k, v in agg[j]["samp"].items()}})
         out["steps"].append(rec)
-        out["kl_terms"].append(kl_mean)
     if with_metrics:
-        out["chain_len"] = float(chain_len[base_valid].mean()) if bool(base_valid.any()) else 0.0
-        out["chain_cells"] = int(base_valid.sum())
+        out["chain_len"] = chain_sum / chain_cells if chain_cells else 0.0
+        out["chain_cells"] = chain_cells
     return out
 
 
@@ -233,7 +250,7 @@ def evaluate(model, inv_map, data: CaptureData, steps, device, spec_min_p, sampl
             continue
         tokens += b["m"]
         for j, s in enumerate(r["steps"]):
-            if s["n"]:
+            if s["n"] and "acc" in s:
                 agg[j]["n"] += s["n"]
                 for k in ("kl", "acc", "offered", "acc_offered"):
                     agg[j][k] += s[k] * s["n"]
@@ -277,6 +294,7 @@ def main() -> int:
     ap.add_argument("--spec-min-p", type=float, default=0.5)
     ap.add_argument("--nll-weight", action="store_true", help="pesa le celle per p_target(token vero)")
     ap.add_argument("--eval-every", type=int, default=50)
+    ap.add_argument("--active-chunk", type=int, default=768, help="celle attive per passata della catena (memoria)")
     ap.add_argument("--eval-items", type=int, default=64)
     ap.add_argument("--eval-only", action="store_true", help="solo l'eval iniziale (diagnosi, es. --experts bf16)")
     ap.add_argument("--eval-sampling", default="think:1.0,0.95,20;nothink:0.7,0.8,0",
@@ -353,14 +371,13 @@ def main() -> int:
         useful = 0   # sequenze con almeno una cella valida in questo giro: zero = niente da imparare, non un ciclo infinito
         for i in order:
             b = train.get(i)
-            r = step_losses(model, inv_map, b, a.steps, device, a.spec_min_p, [], nll_weight=a.nll_weight, with_metrics=(k % a.accum == 0))
-            if r is None:
-                continue
-            loss = sum(w * t for w, t in zip(weights, r["kl_terms"]))   # KL media per passo, pesata
-            if not isinstance(loss, torch.Tensor) or not loss.requires_grad:
+            r = step_losses(model, inv_map, b, a.steps, device, a.spec_min_p, [], nll_weight=a.nll_weight,
+                            with_metrics=(k % a.accum == 0), active_chunk=a.active_chunk,
+                            backward=lambda loss: scaler.scale(loss / a.accum).backward(), step_weights=weights)
+            if r is None or r["loss"] == 0.0:
                 continue
             useful += 1
-            scaler.scale(loss / a.accum).backward()
+            loss = r["loss"]
             seen_tokens += b["m"]
             k += 1
             if k % a.accum == 0:

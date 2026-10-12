@@ -199,3 +199,26 @@ STRATA_B6_HEAD_MINB=6`: B-A-B DET-x14-s4 B2 +2,4%, B1 da buttare (gather PLE 13,
 **Rumore di giorno**: la gather delle righe PLE da C: sale a 13,5 ms/finestra o attese di 15-57 s nel prefill quando il
 PC lavora (compilazioni, riavvii): falsa un braccio quasi a ogni B-A-B. Da capire (cache RAM delle righe PLE).
 Telefono 09 (ZY32JJMBH2) staccava dal bus USB 150-280 volte l'ora: risolto dall'owner col cavo.
+
+## 13. Notte 12-13/10: leve strutturali e Strata 0.1.43 Daily
+
+Tre agenti Opus (Fable a corto di crediti), uno per leva, da `lab/speed4`; B-A-B notturni solo FORCE_IDS, OktoCGControl
+chiuso, PLE da D:, riscaldamento prima di ogni B-A-B:
+- **struct-a** (`STRATA_SA_BET=1 STRATA_SA_CHAIN=1`: testa dello stadio 0 in scommessa durante la catena MTP, catena a
+  passi; `docs/STRUCT_A.md`): DET-x21-sa +4,7% (A con PLE lenta), **sa2 +2,5%** (pulito), sa3 +4,4% (rumore PLE) →
+  promossa, stima onesta ~+2,5%.
+- **struct-b** (`STRATA_SB_FRESH=2`): −0,3%, neutra. La seconda B sulla 3060 non entra (5,8 ms di margine, una finestra
+  costa 7-9). `docs/STRUCT_B.md`.
+- **struct-c** (`STRATA_SC_SNAP_INLINE=1`): +0,4%, neutra. La «GPU-reach wait» è calcolo GPU, non attesa; al banco del
+  Daily (hit 97%) il pool CPU separato varrebbe ≤0,2 ms → non fatto. `docs/STRUCT_C.md`.
+- Determinismo: oltre alla cache elastica anche il tier adattivo cambia i bit fra corse; verifiche bitwise con
+  `--expert-cache 1500` senza `--elastic` e `--adapt-every 0`.
+
+**Strata 0.1.43 Daily** (nuova, la 0.1.42 Daily r2 resta intatta): `D:\ds4_work\strata\Strata\build-0143-daily\`
+(= `build-structa-075ce875`, sha256 9ef62e54…), config `strata-0143-daily.json` (r2 + `STRATA_SA_BET/SA_CHAIN`,
+`NODECUT=1 QFUSE_HC=0 TOPK_GRID=1 B6_HEAD_MINB=6`, PLE da D:, prefisso `prompt-prefix-0143-daily.bin`), bat
+`Desktop\SERVER IA LOCALE\Strata 0.1.43 Daily - porta 8100.bat`. Prova di avvio su porta 8102: pronta in ~2 min, testo
+76,5 t/s a contesto corto, immagini lette correttamente.
+
+Banco a 131k: ~75/68 t/s (OktoCGControl chiuso) → con struct-a ~77/70. Mancano ~3-5 t/s agli 80. Leve rimaste:
+ridisegno della pipeline (due schede davvero in parallelo) o scheda al posto della 3060.

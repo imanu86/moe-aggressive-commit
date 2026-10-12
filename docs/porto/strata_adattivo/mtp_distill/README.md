@@ -12,7 +12,7 @@ va su un pod RunPod per un giorno: `RUNBOOK_POD.md`.
 | 1. Corpus dalle conversazioni (Claude Code, Codex, DSH), bonificato | `build_corpus.py`, `scrub.py` | PC | **fatto e provato** sui dati veri (§ numeri) |
 | 2. Sequenze di token col template del server | `render_sequences.py` | PC | **fatto e provato**: 3,5M token in `D:\ds4_work\mtp_distill\seqs` |
 | 3. Cattura del target (residui finali + top-20) | hook C++ `STRATA_MTP_CAPTURE` nel fork, branch `lab/mtp-capture` (6e5b24f6); `capture_driver.py` | pod | hook **compilato in locale** (build-mtpcap, sm_75/86), **non eseguito** (bench.lock, VRAM piena); driver non provato contro un motore |
-| 4. Training (KL top-20 srotolata, 4 passi) | `mtp_model.py`, `train_mtp.py` | pod (GPU) | forward trascritto da `src/core/mtp.cpp`; carica i pesi veri (29 tensori, embedding/testa dequantizzati); **il selftest su CPU NON è ancora verde**: il primo giro (bf16 su CPU) era lentissimo e ha disturbato il B-A-B dell'owner, è stato fermato; corretto a f32 su CPU + `--threads`, da rilanciare con `bench.lock` preso |
+| 4. Training (KL top-20 srotolata, 4 passi) | `mtp_model.py`, `train_mtp.py` | pod (GPU) | forward trascritto da `src/core/mtp.cpp`; **selftest su CPU verde** (12/10, cattura finta, 2 passi, catena di 3, 2 thread, 1,3 min): carica i pesi veri, allena, valuta, salva |
 | 5. Export nel formato del motore | `export_mtp.py` | pod/PC | **provato**: il blocco originale riprodotto **byte per byte** uguale a `rt_it48k` (dense.bin, dense.txt, experts.bin) |
 | 6. Misura sul motore vero | `bench_pack.py` | pod | non provato (serve il motore) |
 
@@ -56,17 +56,23 @@ Render (`seqs/render_stats.json`): 1 197 pezzi ≤ 4 096 token, **3 503 405 toke
 heldout 36 pezzi (116 602 token); on-policy 195 597 token; claude 1,47M / codex 1,23M / dsh 0,80M; italiano 0,60
 sul testo generato; round-trip della tokenizzazione esatto salvo il `\n` di coda.
 
-## Prova in locale (CPU, `selftest.py`) — da completare
+## Prova in locale (CPU, `selftest.py`) — verde il 12/10
 
 Cattura finta nello stesso formato dell'hook (R casuale, top-1 = token vero) → `train_mtp.py` 2 passi, catena di 3,
 pesi veri → `export_mtp.py`.  Verifica che lettura, catena srotolata, perdita, metriche, salvataggio ed export
-girino; non dice nulla sulla qualità (serve la cattura vera).  **Stato 12/10**: il primo giro (esperti e testa in
-bf16 su CPU: GEMM 50-100× più lenti) non ha completato un passo in 15 min ed è stato fermato perché falsava il
-B-A-B dell'owner (regola: niente CPU pesante senza `D:\ds4_work\strata\lab_locks\bench.lock`).  Correzione fatta
-(pesi f32 fuori da CUDA, `--threads`); rilanciare, col lock preso, con:
-`python selftest.py --seqs D:\ds4_work\mtp_distill\seqs_smoke --work D:\ds4_work\mtp_distill\work\selftest --bf16 ... --rt ... --gguf ... --strata ... --n-seqs 2 --max-len 48 --threads 2`.
-Quel che È provato: `mtp_model.py` carica il blocco (88,9M allenabili), dequantizza embedding IQ3_S e testa Q5_K
-(20 s ciascuno, in cache); l'identità dell'export: `export_mtp.py --check-against rt_it48k` → `IDENTICO` ×3.
+girino; non dice nulla sulla qualità (serve la cattura vera).  Corsa del 12/10 (2 sequenze × 48 token, 2 thread,
+sotto `bench.lock`): modello pronto in 2 s (cache embedding/testa), eval iniziale + 2 passi + eval finale in 0,7 min
+(11,5 s per passo, 47 token per sequenza, 44 celle valide × 3 passi), export in 20 s, 24 tensori toccati, `experts.bin`
+copiato: **1,3 min in tutto**.  Profilo (`profile_step.py`, 16 token × 3 passi, 2 thread): forward 3,9 s.
+
+Due giri rossi prima: non era compute ma un **ciclo infinito** — con finestre prese dall'inizio della sequenza nessuna
+cella aveva `gen = 1`, la KL era zero senza gradiente e il ciclo di training faceva `continue` per sempre.  Corretto:
+guardia `useful == 0` → stop con messaggio; le finestre di prova (`--max-len`, cattura finta) contengono token
+generati; `--threads`; pesi f32 fuori da CUDA (i GEMM bf16 su CPU di PyTorch sono lentissimi).  L'identità
+dell'export resta la prova forte: `export_mtp.py --check-against rt_it48k` → `IDENTICO` ×3.
+
+Regola locale: niente lavoro pesante su CPU/GPU senza `D:\ds4_work\strata\lab_locks\bench.lock` (O_EXCL), rilasciato
+subito dopo; i B-A-B dell'owner girano sulla stessa macchina.
 
 ## Limiti e scelte da decidere
 

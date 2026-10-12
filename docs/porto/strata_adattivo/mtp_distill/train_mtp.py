@@ -75,8 +75,9 @@ class CaptureData:
         top = np.fromfile(str(base) + ".top.bin", dtype=np.uint8).reshape(m, self.topk * 8)
         top_ids = top[:, : self.topk * 4].copy().view(np.int32).astype(np.int64)
         top_lp = top[:, self.topk * 4:].copy().view(np.float32)
-        if self.max_len and m > self.max_len:   # prova: una finestra casuale corta
-            s = random.randint(0, m - self.max_len)
+        if self.max_len and m > self.max_len:   # prova: una finestra corta che contenga token generati
+            cand = [p for p in range(0, m - self.max_len + 1) if gen[p: p + self.max_len + 1].sum() >= 4]
+            s = random.choice(cand) if cand else random.randint(0, m - self.max_len)
             R, top_ids, top_lp = R[s: s + self.max_len], top_ids[s: s + self.max_len], top_lp[s: s + self.max_len]
             ids, gen = ids[s: s + self.max_len + 1], gen[s: s + self.max_len + 1]
             m = self.max_len
@@ -287,6 +288,7 @@ def main() -> int:
     t_run = time.time()
     while step < total_steps:
         random.shuffle(order)
+        useful = 0   # sequenze con almeno una cella valida in questo giro: zero = niente da imparare, non un ciclo infinito
         for i in order:
             b = train.get(i)
             with torch.autocast(device_type=device.type, dtype=torch.bfloat16, enabled=device.type == "cuda"):
@@ -296,6 +298,7 @@ def main() -> int:
             loss = sum(w * t for w, t in zip(weights, r["kl_terms"]))   # KL media per passo, pesata
             if not isinstance(loss, torch.Tensor) or not loss.requires_grad:
                 continue
+            useful += 1
             (loss / a.accum).backward()
             seen_tokens += b["m"]
             k += 1
@@ -322,6 +325,9 @@ def main() -> int:
                     save(model, out)
                 if step >= total_steps:
                     break
+        if useful == 0:
+            print("nessuna sequenza con celle valide (token generati con top-k nel sottoinsieme): mi fermo", flush=True)
+            break
     save(model, out)
     if len(held):
         ev = evaluate(model, inv_map, dvocab, held, a.steps, device, a.spec_min_p, a.eval_items)

@@ -37,8 +37,12 @@ def fake_capture(seqs: Path, out: Path, n_seqs: int, topk: int = 20, hcn: int = 
     off = 0
     for k, e in enumerate(picked):
         n = min(e["n"], max_len)
-        ids = ids_all[e["off"]: e["off"] + n]
-        gen = gen_all[e["off"]: e["off"] + n]
+        # la finestra accorciata deve contenere token generati (gen = 1), altrimenti nessuna cella ha una perdita
+        g_full = gen_all[e["off"]: e["off"] + e["n"]]
+        starts = [p for p in range(0, e["n"] - n + 1) if g_full[p: p + n].sum() >= n // 3] or [0]
+        s0 = starts[len(starts) // 2]
+        ids = ids_all[e["off"] + s0: e["off"] + s0 + n]
+        gen = gen_all[e["off"] + s0: e["off"] + s0 + n]
         m = n - 1
         base = run / f"seq_{k}"
         ids[:m].astype("<i4").tofile(str(base) + ".tok.i32")

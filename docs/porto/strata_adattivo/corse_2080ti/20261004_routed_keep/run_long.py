@@ -92,7 +92,20 @@ def main():
     engine = server.StrataEngine(str(exe), args, cwd=cfg['cwd'], log=str(out / 'engine.log'), env=env, lazy=True)
     started, owned = time.monotonic(), {}
     try:
-        bounded(engine.restart, 300, engine, owned, 'Startup deadline')
+        # 12/10: about one start in eight dies in the prompt path's init, before any work (the log stops after
+        # "CUDA1 prompt path borrows", nvcuda64.dll 0xc0000409 at the same offset since 7/10 on every build; see
+        # lab/hostgap docs/HOSTGAP.md).  Record the engine's exit code and start it once more on the same arm: nothing
+        # has been measured yet, so the arm stays valid; the engine's log is appended, not replaced.
+        for attempt in (1, 2):
+            try:
+                bounded(engine.restart, 300, engine, owned, 'Startup deadline')
+                break
+            except Exception as e:
+                rc = getattr(getattr(engine, 'proc', None), 'returncode', None)
+                result.setdefault('start_failures', []).append(dict(attempt=attempt, returncode=rc, error=repr(e)[:500]))
+                if attempt == 2 or 'exited before it was ready' not in str(e):
+                    raise
+                print(f'retry avvio: the engine exited before it was ready (returncode {rc}), starting it again ({a.name})', flush=True)
         result['startup_s'] = time.monotonic() - started
         for cid, ids in requests:
             emitted, first = [], []

@@ -1,0 +1,22 @@
+bench lock taken after 0 s
+engine up in 140 s
+warm S0: 10.8 s prompt 8195 cached 0 
+warm S1: 10.1 s prompt 8351 cached 0 
+  00_soloS_0_S0L01: {"ok": true, "out": 384, "ttft": 1.16, "dec_tps": 62.9, "wall": 7.2, "prompt": 8273, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha dimestichezza con il C++ e l'archi", "err": null}
+  00_soloS_1_S1L02: {"ok": true, "out": 384, "ttft": 1.05, "dec_tps": 70.0, "wall": 6.5, "prompt": 8420, "cached": 8324, "distinct4": 1.0, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+   | strata serve: prompt 8273 tokens = 8168 reused + 105 read in 1116 ms (94.1 tok/s), 384 generated in 6105 ms (62.9 tok/s), drafts accepted 192 of 320, 2 checkpoints
+   | strata serve: prompt 8420 tokens = 8324 reused + 96 read in 1011 ms (95.0 tok/s), 384 generated in 5480 ms (70.1 tok/s), drafts accepted 213 of 307, 2 checkpoints
+solo:S: 2 chat, 768 token in 13.8 s = 55.8 t/s aggregati (decode 60.8 t/s, dec medio 66.5)
+  01_same4S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.2, "dec_tps": 18.4, "wall": 21.0, "prompt": 8273, "cached": 8266, "distinct4": 0.987, "bad": 0.0, "head": "Ciao. Ecco una spiegazione pensata per chi ha dimestichezza con il C++ e l'ottim", "err": null}
+  01_same4S_1_S0L02: {"ok": true, "out": 384, "ttft": 1.34, "dec_tps": 19.4, "wall": 21.1, "prompt": 8264, "cached": 8168, "distinct4": 0.995, "bad": 0.0, "head": "La gestione della cache degli esperti (MoE - Mixture of Experts) su GPU è un pro", "err": null}
+  01_same4S_2_S0L03: {"ok": true, "out": 384, "ttft": 2.47, "dec_tps": 20.7, "wall": 21.0, "prompt": 8264, "cached": 8168, "distinct4": 0.985, "bad": 0.0, "head": "La tesi del collega è una semplificazione eccessiva che confonde il **costo di c", "err": null}
+  01_same4S_3_S0L04: {"ok": true, "out": 384, "ttft": 3.99, "dec_tps": 23.9, "wall": 20.0, "prompt": 8358, "cached": 8168, "distinct4": 0.945, "bad": 0.0, "head": "Per risolvere il problema, calcoliamo prima la quantità totale di dati necessari", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 161 ms (43.5 tok/s), 1 generated in 24 ms (41.0 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1128.8 tok/s), 1 generated in 39 ms (25.8 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8264 tokens = 8168 reused + 96 read in 949 ms (101.1 tok/s), 1 generated in 21 ms (47.8 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8264 tokens = 8168 reused + 96 read in 975 ms (98.4 tok/s), 1 generated in 21 ms (47.9 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8358 tokens = 8168 reused + 190 read in 1355 ms (140.2 tok/s), 1 generated in 21 ms (47.7 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 221 windows, avg 6.93 rows, 77.13 ms/window = run 68.96 (CUDA0 GPU-reach wait 18.94 + CPU experts 6.71) + commit 3.25 + emit 3.41 + adapt wait 1.51; per stage (ms/window): CUDA0 wait 18.94 + pool 6.71, CUDA1 wait 26.06 + pool 9.83; per layer-window: CPU experts 4.84, VRAM hits 73.23, P
+   | strata batch: MTP proposals accepted 670 of 861 (77.8%)
+same:4:S: 4 chat, 1536 token in 21.1 s = 72.8 t/s aggregati (decode 73.3 t/s)
+fine b4mtp-prof

@@ -1,0 +1,13 @@
+bench lock taken after 834 s
+engine up in 67 s
+warm S0: 12.6 s prompt 8195 cached 0 
+  00_pfS_0_S0_pf128: {"ok": true, "out": 2, "ttft": 1.41, "dec_tps": 32.3, "wall": 1.4, "prompt": 8314, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+  00_pfS_1_S0_pf512: {"ok": true, "out": 2, "ttft": 2.31, "dec_tps": 21.3, "wall": 2.4, "prompt": 8704, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+  00_pfS_2_S0_pf2048: {"ok": true, "out": 2, "ttft": 5.38, "dec_tps": 32.3, "wall": 5.4, "prompt": 10201, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+  00_pfS_3_S0_pf8192: {"ok": true, "out": 2, "ttft": 13.19, "dec_tps": 21.7, "wall": 13.2, "prompt": 16766, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+   | strata serve: prompt 8314 tokens = 8168 reused + 146 read in 1359 ms (107.4 tok/s), 2 generated in 62 ms (32.1 tok/s), drafts accepted 2 of 2, 2 checkpoints
+   | strata serve: prompt 8704 tokens = 8168 reused + 536 read in 2272 ms (235.9 tok/s), 2 generated in 63 ms (31.7 tok/s), drafts accepted 3 of 3, 2 checkpoints
+   | strata serve: prompt 10201 tokens = 8168 reused + 2033 read in 5305 ms (383.2 tok/s), 2 generated in 84 ms (23.8 tok/s), drafts accepted 2 of 2, 2 checkpoints
+   | strata serve: prompt 16766 tokens = 8168 reused + 8598 read in 13130 ms (654.8 tok/s), 2 generated in 89 ms (22.4 tok/s), drafts accepted 3 of 3, 2 checkpoints
+pf:S: 4 chat, 8 token in 22.4 s = 0.4 t/s aggregati (decode 0.2 t/s)
+fine pftime

@@ -1,0 +1,209 @@
+bench lock taken after 0 s
+engine up in 69 s
+warm S0: 12.2 s prompt 8195 cached 0 
+warm S1: 11.7 s prompt 8351 cached 0 
+warm S2: 11.3 s prompt 8417 cached 0 
+warm S3: 11.3 s prompt 8764 cached 0 
+warm S4: 10.6 s prompt 7849 cached 0 
+warm S5: 10.8 s prompt 8062 cached 0 
+warm S6: 10.9 s prompt 7821 cached 0 
+warm S7: 10.8 s prompt 7844 cached 0 
+warm P0: 31.4 s prompt 33407 cached 0 
+  00_soloS_0_S0L01: {"ok": true, "out": 384, "ttft": 1.38, "dec_tps": 62.7, "wall": 7.5, "prompt": 8273, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha dimestichezza con il C++ e l'archi", "err": null}
+  00_soloS_1_S1L02: {"ok": true, "out": 384, "ttft": 1.11, "dec_tps": 62.5, "wall": 7.2, "prompt": 8420, "cached": 8324, "distinct4": 1.0, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+   | strata serve: prompt 8273 tokens = 8168 reused + 105 read in 1332 ms (78.8 tok/s), 384 generated in 6144 ms (62.5 tok/s), drafts accepted 195 of 334, 2 checkpoints
+   | strata serve: prompt 8420 tokens = 8324 reused + 96 read in 1056 ms (90.9 tok/s), 384 generated in 6156 ms (62.4 tok/s), drafts accepted 192 of 319, 2 checkpoints
+solo:S: 2 chat, 768 token in 14.7 s = 52.2 t/s aggregati (decode 57.4 t/s, dec medio 62.6)
+  01_pfS_0_S0_pf128: {"ok": true, "out": 2, "ttft": 1.38, "dec_tps": 12.8, "wall": 1.5, "prompt": 8282, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+  01_pfS_1_S0_pf512: {"ok": true, "out": 2, "ttft": 2.2, "dec_tps": 21.7, "wall": 2.2, "prompt": 8683, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+  01_pfS_2_S0_pf2048: {"ok": true, "out": 2, "ttft": 4.86, "dec_tps": 12.8, "wall": 4.9, "prompt": 10187, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok.", "err": null}
+  01_pfS_3_S0_pf8192: {"ok": true, "out": 2, "ttft": 10.59, "dec_tps": 21.3, "wall": 10.6, "prompt": 16656, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "ok", "err": null}
+   | strata serve: prompt 8282 tokens = 8168 reused + 114 read in 1335 ms (85.4 tok/s), 2 generated in 101 ms (19.8 tok/s), drafts accepted 3 of 3, 2 checkpoints
+   | strata serve: prompt 8683 tokens = 8168 reused + 515 read in 2155 ms (239.0 tok/s), 2 generated in 70 ms (28.4 tok/s), drafts accepted 2 of 2, 2 checkpoints
+   | strata serve: prompt 10187 tokens = 8168 reused + 2019 read in 4836 ms (417.5 tok/s), 2 generated in 88 ms (22.8 tok/s), drafts accepted 0 of 3, 2 checkpoints
+   | strata serve: prompt 16656 tokens = 8168 reused + 8488 read in 10547 ms (804.8 tok/s), 2 generated in 74 ms (27.0 tok/s), drafts accepted 3 of 3, 2 checkpoints
+pf:S: 4 chat, 8 token in 19.3 s = 0.4 t/s aggregati (decode 0.2 t/s)
+  02_same2S_0_S0L01: {"ok": true, "out": 384, "ttft": 1.16, "dec_tps": 33.2, "wall": 12.7, "prompt": 8273, "cached": 8168, "distinct4": 0.996, "bad": 0.0, "head": "Ciao. Ecco una spiegazione pensata per chi ha familiarità con il C++ e l'archite", "err": null}
+  02_same2S_1_S0L02: {"ok": true, "out": 384, "ttft": 2.34, "dec_tps": 37.4, "wall": 12.6, "prompt": 8264, "cached": 8168, "distinct4": 0.995, "bad": 0.0, "head": "La gestione della cache degli esperti (MoE - Mixture of Experts) su GPU è un pro", "err": null}
+   | strata serve: prompt 8273 tokens = 8168 reused + 105 read in 1109 ms (94.7 tok/s), 1 generated in 34 ms (29.4 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1010.7 tok/s), 1 generated in 22 ms (45.4 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8264 tokens = 8168 reused + 96 read in 1029 ms (93.3 tok/s), 1 generated in 19 ms (53.2 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 232 windows, avg 3.30 rows, 44.13 ms/window = run 38.45 (CUDA0 GPU-reach wait 10.83 + CPU experts 3.34) + commit 1.76 + emit 1.72 + adapt wait 2.20; per stage (ms/window): CUDA0 wait 10.83 + pool 3.34, CUDA1 wait 15.37 + pool 5.59; per layer-window: CPU experts 2.56, VRAM hits 37.02, P
+   | strata batch: MTP proposals accepted 305 of 460 (66.3%)
+same:2:S: 2 chat, 768 token in 12.7 s = 60.5 t/s aggregati (decode 66.3 t/s)
+  03_same4S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.28, "dec_tps": 17.8, "wall": 21.8, "prompt": 8273, "cached": 8266, "distinct4": 1.0, "bad": 0.0, "head": "Ciao. Ecco una spiegazione pensata per chi ha familiarità con il C++ e l'archite", "err": null}
+  03_same4S_1_S0L02: {"ok": true, "out": 384, "ttft": 0.69, "dec_tps": 18.0, "wall": 22.0, "prompt": 8264, "cached": 8257, "distinct4": 0.995, "bad": 0.0, "head": "La gestione della cache degli esperti (Expert Cache) su GPU è un problema critic", "err": null}
+  03_same4S_2_S0L03: {"ok": true, "out": 384, "ttft": 1.91, "dec_tps": 19.7, "wall": 21.3, "prompt": 8264, "cached": 8168, "distinct4": 0.945, "bad": 0.0, "head": "La tesi del collega è una semplificazione eccessiva che confonde il **costo di c", "err": null}
+  03_same4S_3_S0L04: {"ok": true, "out": 384, "ttft": 3.5, "dec_tps": 22.2, "wall": 20.7, "prompt": 8358, "cached": 8168, "distinct4": 0.946, "bad": 0.0, "head": "Per risolvere il problema, calcoliamo prima la quantità totale di dati necessari", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 245 ms (28.6 tok/s), 1 generated in 25 ms (40.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1071.7 tok/s), 1 generated in 41 ms (24.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8264 tokens = 8257 reused + 7 read in 217 ms (32.3 tok/s), 1 generated in 20 ms (50.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8264 tokens = 8168 reused + 96 read in 1065 ms (90.1 tok/s), 1 generated in 21 ms (47.1 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8358 tokens = 8168 reused + 190 read in 1444 ms (131.6 tok/s), 1 generated in 21 ms (46.8 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 229 windows, avg 6.69 rows, 80.54 ms/window = run 72.38 (CUDA0 GPU-reach wait 19.34 + CPU experts 8.41) + commit 3.22 + emit 3.30 + adapt wait 1.63; per stage (ms/window): CUDA0 wait 19.34 + pool 8.41, CUDA1 wait 24.62 + pool 15.21; per layer-window: CPU experts 7.17, VRAM hits 67.95, 
+   | strata batch: MTP proposals accepted 666 of 865 (77.0%)
+same:4:S: 4 chat, 1536 token in 22.0 s = 69.7 t/s aggregati (decode 70.4 t/s)
+  04_same8S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.28, "dec_tps": 7.6, "wall": 50.4, "prompt": 8273, "cached": 8266, "distinct4": 1.0, "bad": 0.0, "head": "Ciao. Ecco una spiegazione pensata per chi ha familiarità con il C++ e l'archite", "err": null}
+  04_same8S_1_S0L02: {"ok": true, "out": 384, "ttft": 0.69, "dec_tps": 7.7, "wall": 50.5, "prompt": 8264, "cached": 8257, "distinct4": 0.991, "bad": 0.0, "head": "La gestione della cache degli esperti (MoE - Mixture of Experts) su GPU è un pro", "err": null}
+  04_same8S_2_S0L03: {"ok": true, "out": 384, "ttft": 3.08, "dec_tps": 8.1, "wall": 50.3, "prompt": 8264, "cached": 8257, "distinct4": 0.981, "bad": 0.0, "head": "La preoccupazione del tuo collega è fondata su un'osservazione parziale: la deco", "err": null}
+  04_same8S_3_S0L04: {"ok": true, "out": 384, "ttft": 6.44, "dec_tps": 9.0, "wall": 48.8, "prompt": 8358, "cached": 8168, "distinct4": 0.939, "bad": 0.0, "head": "Per risolvere il problema, calcoliamo prima la quantità totale di dati necessari", "err": null}
+  04_same8S_4_S0L05: {"ok": true, "out": 384, "ttft": 8.14, "dec_tps": 9.5, "wall": 48.3, "prompt": 8401, "cached": 8168, "distinct4": 0.984, "bad": 0.0, "head": "Ecco la tabella dei passaggi per calcolare i token accettati attesi e i millisec", "err": null}
+  04_same8S_5_S0L06: {"ok": true, "out": 384, "ttft": 10.05, "dec_tps": 9.9, "wall": 48.6, "prompt": 8457, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "```cpp #include <iostream> #include <vector> #include <map> #include <algorithm>", "err": null}
+  04_same8S_6_S0L07: {"ok": true, "out": 384, "ttft": 4.69, "dec_tps": 8.7, "wall": 48.9, "prompt": 8406, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "```python \"\"\" Modulo per il calcolo della throughput aggregata (insieme) di casi", "err": null}
+  04_same8S_7_S0L08: {"ok": true, "out": 384, "ttft": 2.42, "dec_tps": 8.5, "wall": 47.4, "prompt": 8451, "cached": 8168, "distinct4": 0.992, "bad": 0.0, "head": "```cpp #include <vector> #include <set> #include <cassert> #include <iostream> #", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 247 ms (28.3 tok/s), 1 generated in 37 ms (26.7 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (998.0 tok/s), 1 generated in 22 ms (44.5 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8264 tokens = 8257 reused + 7 read in 235 ms (29.8 tok/s), 1 generated in 21 ms (47.5 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8451 tokens = 8168 reused + 283 read in 1819 ms (155.6 tok/s), 1 generated in 21 ms (48.0 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8264 tokens = 8257 reused + 7 read in 185 ms (37.9 tok/s), 1 generated in 34 ms (29.5 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8406 tokens = 8168 reused + 238 read in 1566 ms (152.0 tok/s), 1 generated in 19 ms (51.9 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8358 tokens = 8168 reused + 190 read in 1347 ms (141.0 tok/s), 1 generated in 19 ms (52.3 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8401 tokens = 8168 reused + 233 read in 1533 ms (152.0 tok/s), 1 generated in 20 ms (51.3 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8457 tokens = 8168 reused + 289 read in 1711 ms (168.9 tok/s), 1 generated in 34 ms (29.4 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 427 windows, avg 7.17 rows, 95.48 ms/window = run 87.09 (CUDA0 GPU-reach wait 19.59 + CPU experts 12.73) + commit 3.35 + emit 3.42 + adapt wait 1.62; per stage (ms/window): CUDA0 wait 19.59 + pool 12.73, CUDA1 wait 24.68 + pool 25.59; per layer-window: CPU experts 11.95, VRAM hits 65.1
+   | strata batch: MTP proposals accepted 1390 of 1673 (83.1%)
+same:8:S: 8 chat, 3072 token in 50.5 s = 60.8 t/s aggregati (decode 61.0 t/s)
+  05_diff2S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.28, "dec_tps": 15.6, "wall": 24.9, "prompt": 8273, "cached": 8266, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha familiarità con il C++ e l'archite", "err": null}
+  05_diff2S_1_S1L02: {"ok": true, "out": 384, "ttft": 20.17, "dec_tps": 48.2, "wall": 28.1, "prompt": 8420, "cached": 0, "distinct4": 0.963, "bad": 0.0, "head": "La gestione della cache degli esperti (MoE - Mixture of Experts) su GPU è un pro", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 247 ms (28.3 tok/s), 1 generated in 27 ms (37.4 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1043.2 tok/s), 1 generated in 24 ms (42.5 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 4996 ms between them
+   | strata serve: prompt 8420 tokens = 0 reused + 8420 read in 19726 ms (426.9 tok/s), 1 generated in 24 ms (41.9 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 226 windows, avg 2.45 rows, 42.78 ms/window = run 39.05 (CUDA0 GPU-reach wait 10.37 + CPU experts 5.77) + commit 1.37 + emit 1.20 + adapt wait 1.16; per stage (ms/window): CUDA0 wait 10.37 + pool 5.77, CUDA1 wait 12.31 + pool 8.60; per layer-window: CPU experts 4.37, VRAM hits 23.85, P
+   | strata batch: MTP proposals accepted 224 of 329 (68.1%)
+   | strata serve: prompt 8592 tokens = 8591 reused + 1 read in 203 ms (4.9 tok/s), 212 generated in 3008 ms (70.5 tok/s), drafts accepted 121 of 161, 0 checkpoints
+diff:2:S: 2 chat, 768 token in 28.2 s = 27.3 t/s aggregati (decode 27.5 t/s)
+  06_diff4S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.25, "dec_tps": 7.8, "wall": 49.1, "prompt": 8273, "cached": 8266, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha familiarità con il C++ e l'archite", "err": null}
+  06_diff4S_1_S1L02: {"ok": true, "out": 384, "ttft": 0.61, "dec_tps": 7.8, "wall": 49.7, "prompt": 8420, "cached": 8413, "distinct4": 1.0, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+  06_diff4S_2_S2L03: {"ok": true, "out": 384, "ttft": 20.38, "dec_tps": 11.8, "wall": 52.8, "prompt": 8486, "cached": 0, "distinct4": 1.0, "bad": 0.0, "head": "La tesi del tuo collega è una semplificazione eccessiva che confonde il **costo ", "err": null}
+  06_diff4S_3_S3L04: {"ok": true, "out": 384, "ttft": 41.08, "dec_tps": 29.9, "wall": 53.9, "prompt": 8927, "cached": 0, "distinct4": 0.982, "bad": 0.0, "head": "Per risolvere il problema, calcoliamo prima la quantità totale di dati necessari", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 206 ms (34.0 tok/s), 1 generated in 26 ms (38.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1065.5 tok/s), 1 generated in 23 ms (44.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8420 tokens = 8413 reused + 7 read in 233 ms (30.0 tok/s), 1 generated in 26 ms (38.6 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 5058 ms between them
+   | strata serve: prompt 8486 tokens = 0 reused + 8486 read in 19605 ms (432.9 tok/s), 1 generated in 35 ms (28.8 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 5050 ms between them
+   | strata serve: prompt 8927 tokens = 0 reused + 8927 read in 20537 ms (434.7 tok/s), 1 generated in 21 ms (48.5 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 303 windows, avg 4.86 rows, 72.25 ms/window = run 66.27 (CUDA0 GPU-reach wait 16.79 + CPU experts 11.00) + commit 2.51 + emit 2.39 + adapt wait 1.08; per stage (ms/window): CUDA0 wait 16.79 + pool 11.00, CUDA1 wait 18.85 + pool 16.62; per layer-window: CPU experts 8.48, VRAM hits 45.41
+   | strata batch: MTP proposals accepted 616 of 857 (71.9%)
+   | strata serve: prompt 9253 tokens = 9252 reused + 1 read in 221 ms (4.5 tok/s), 58 generated in 850 ms (68.3 tok/s), drafts accepted 44 of 48, 0 checkpoints
+diff:4:S: 4 chat, 1536 token in 54.0 s = 28.4 t/s aggregati (decode 28.5 t/s)
+  07_diff8S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.25, "dec_tps": 4.4, "wall": 86.7, "prompt": 8273, "cached": 8266, "distinct4": 0.991, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per te che conosci bene il C++ e l'architettu", "err": null}
+  07_diff8S_1_S1L02: {"ok": true, "out": 384, "ttft": 0.62, "dec_tps": 4.5, "wall": 86.6, "prompt": 8420, "cached": 8413, "distinct4": 0.972, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+  07_diff8S_2_S2L03: {"ok": true, "out": 384, "ttft": 59.39, "dec_tps": 8.2, "wall": 106.2, "prompt": 8486, "cached": 8479, "distinct4": 1.0, "bad": 0.0, "head": "La tesi del tuo collega è una semplificazione eccessiva che confonde il **costo ", "err": null}
+  07_diff8S_3_S3L04: {"ok": true, "out": 384, "ttft": 58.86, "dec_tps": 8.4, "wall": 104.7, "prompt": 8927, "cached": 8920, "distinct4": 0.953, "bad": 0.0, "head": "Per risolvere il problema, calcoliamo prima la quantità totale di dati necessari", "err": null}
+  07_diff8S_4_S4L05: {"ok": true, "out": 384, "ttft": 58.33, "dec_tps": 8.3, "wall": 104.4, "prompt": 8055, "cached": 0, "distinct4": 1.0, "bad": 0.0, "head": "Ecco la tabella dei passaggi per calcolare i token accettati attesi e i millisec", "err": null}
+  07_diff8S_5_S5L06: {"ok": true, "out": 384, "ttft": 79.2, "dec_tps": 14.4, "wall": 105.8, "prompt": 8324, "cached": 0, "distinct4": 1.0, "bad": 0.0, "head": "```cpp #include <iostream> #include <vector> #include <map> #include <algorithm>", "err": null}
+  07_diff8S_6_S6L07: {"ok": true, "out": 384, "ttft": 19.47, "dec_tps": 5.1, "wall": 94.2, "prompt": 8032, "cached": 0, "distinct4": 1.0, "bad": 0.0, "head": "```python \"\"\" Modulo per il calcolo della throughput aggregata.  La throughput a", "err": null}
+  07_diff8S_7_S7L08: {"ok": true, "out": 384, "ttft": 38.91, "dec_tps": 6.2, "wall": 101.1, "prompt": 8100, "cached": 0, "distinct4": 0.988, "bad": 0.0, "head": "```cpp #include <vector> #include <string> #include <cassert> #include <iostream", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 212 ms (33.0 tok/s), 1 generated in 26 ms (38.4 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1070.5 tok/s), 1 generated in 24 ms (42.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8420 tokens = 8413 reused + 7 read in 222 ms (31.6 tok/s), 1 generated in 39 ms (25.7 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 5053 ms between them
+   | strata serve: prompt 8032 tokens = 0 reused + 8032 read in 18927 ms (424.4 tok/s), 1 generated in 20 ms (51.2 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 5103 ms between them
+   | strata serve: prompt 8100 tokens = 0 reused + 8100 read in 19280 ms (420.1 tok/s), 1 generated in 19 ms (52.1 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 5143 ms between them
+   | strata serve: prompt 8055 tokens = 0 reused + 8055 read in 19035 ms (423.2 tok/s), 1 generated in 19 ms (53.0 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 8927 tokens = 8920 reused + 7 read in 224 ms (31.2 tok/s), 1 generated in 37 ms (27.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8486 tokens = 8479 reused + 7 read in 216 ms (32.4 tok/s), 1 generated in 20 ms (49.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: the prompt was read in 3 parts, the slots decoding 5171 ms between them
+   | strata serve: prompt 8324 tokens = 0 reused + 8324 read in 19735 ms (421.8 tok/s), 1 generated in 20 ms (50.1 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 488 windows, avg 6.28 rows, 98.02 ms/window = run 91.12 (CUDA0 GPU-reach wait 19.67 + CPU experts 17.03) + commit 3.02 + emit 2.87 + adapt wait 1.00; per stage (ms/window): CUDA0 wait 19.67 + pool 17.03, CUDA1 wait 21.99 + pool 29.32; per layer-window: CPU experts 14.47, VRAM hits 50.2
+   | strata batch: MTP proposals accepted 1380 of 1683 (82.0%)
+diff:8:S: 8 chat, 3072 token in 106.3 s = 28.9 t/s aggregati (decode 28.9 t/s)
+  08_cold4S_0_S0L01: {"ok": true, "out": 384, "ttft": 0.3, "dec_tps": 8.1, "wall": 47.4, "prompt": 8273, "cached": 8266, "distinct4": 0.995, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha dimestichezza con il C++ e l'archi", "err": null}
+  08_cold4S_1_S1L02: {"ok": true, "out": 384, "ttft": 0.64, "dec_tps": 8.1, "wall": 47.7, "prompt": 8420, "cached": 8413, "distinct4": 1.0, "bad": 0.0, "head": "La gestione della cache degli esperti (MoE - Mixture of Experts) su GPU è un pro", "err": null}
+  08_cold4S_2_S2L03: {"ok": true, "out": 384, "ttft": 1.0, "dec_tps": 8.3, "wall": 47.1, "prompt": 8486, "cached": 8479, "distinct4": 0.995, "bad": 0.0, "head": "La tesi del tuo collega è una semplificazione eccessiva che confonde il **costo ", "err": null}
+  08_cold4S_3_cold0L04: {"ok": true, "out": 384, "ttft": 36.28, "dec_tps": 33.8, "wall": 47.6, "prompt": 16669, "cached": 0, "distinct4": 0.982, "bad": 0.0, "head": "Per risolvere il problema, calcoliamo prima la quantità totale di dati necessari", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 247 ms (28.3 tok/s), 1 generated in 27 ms (36.4 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8274 tokens = 8273 reused + 1 read in 1 ms (1070.7 tok/s), 1 generated in 42 ms (23.9 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8420 tokens = 8413 reused + 7 read in 192 ms (36.5 tok/s), 1 generated in 22 ms (45.5 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 8486 tokens = 8479 reused + 7 read in 187 ms (37.5 tok/s), 1 generated in 22 ms (44.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: the prompt was read in 5 parts, the slots decoding 10313 ms between them
+   | strata serve: prompt 16669 tokens = 0 reused + 16669 read in 36219 ms (460.2 tok/s), 1 generated in 19 ms (51.8 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata batch: 236 windows, avg 5.64 rows, 87.49 ms/window = run 80.79 (CUDA0 GPU-reach wait 18.96 + CPU experts 15.11) + commit 3.11 + emit 2.72 + adapt wait 0.87; per stage (ms/window): CUDA0 wait 18.96 + pool 15.11, CUDA1 wait 23.25 + pool 20.38; per layer-window: CPU experts 11.02, VRAM hits 51.0
+   | strata batch: MTP proposals accepted 548 of 782 (70.1%)
+   | strata serve: prompt 16852 tokens = 16851 reused + 1 read in 267 ms (3.7 tok/s), 201 generated in 2671 ms (75.2 tok/s), drafts accepted 140 of 167, 0 checkpoints
+cold:4:S: 4 chat, 1536 token in 50.8 s = 30.2 t/s aggregati (decode 30.4 t/s)
+  09_agents4P_a0_t0: {"ok": true, "out": 200, "ttft": 35.06, "dec_tps": 8.4, "wall": 58.7, "prompt": 35060, "cached": 0, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la logica d", "err": null}
+  09_agents4P_a0_t1: {"ok": true, "out": 200, "ttft": 4.64, "dec_tps": 8.3, "wall": 28.7, "prompt": 36835, "cached": 35259, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione degli argomenti CLI relativi ai modelli multimoda", "err": null}
+  09_agents4P_a0_t2: {"ok": true, "out": 125, "ttft": 4.8, "dec_tps": 6.2, "wall": 24.9, "prompt": 38943, "cached": 37034, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione di **preset** (argomenti shortcut) per modelli sp", "err": null}
+  09_agents4P_a1_t0: {"ok": true, "out": 200, "ttft": 38.91, "dec_tps": 8.1, "wall": 63.4, "prompt": 34843, "cached": 33380, "distinct4": 0.991, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la logica d", "err": null}
+  09_agents4P_a1_t1: {"ok": true, "out": 200, "ttft": 14.19, "dec_tps": 8.2, "wall": 38.6, "prompt": 36709, "cached": 35042, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione degli argomenti per la modalità di caricamento de", "err": null}
+  09_agents4P_a1_t2: {"ok": true, "out": 200, "ttft": 4.81, "dec_tps": 27.3, "wall": 12.1, "prompt": 38520, "cached": 36908, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la fine della funzione `common_params_parser_init` (con preset d", "err": null}
+  09_agents4P_a2_t0: {"ok": true, "out": 200, "ttft": 42.81, "dec_tps": 10.1, "wall": 62.6, "prompt": 34871, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "**Analisi dell'output**  Il codice mostrato implementa la logica di **risoluzion", "err": null}
+  09_agents4P_a2_t1: {"ok": true, "out": 200, "ttft": 9.42, "dec_tps": 10.3, "wall": 28.7, "prompt": 36663, "cached": 35070, "distinct4": 1.0, "bad": 0.0, "head": "**Analisi dell'output**  Il codice mostrato definisce le opzioni di riga di coma", "err": null}
+  09_agents4P_a2_t2: {"ok": true, "out": 200, "ttft": 4.44, "dec_tps": 11.2, "wall": 22.1, "prompt": 38197, "cached": 36663, "distinct4": 1.0, "bad": 0.0, "head": "**Analisi dell'output**  Il codice mostrato riguarda la **generazione automatica", "err": null}
+  09_agents4P_a3_t0: {"ok": true, "out": 200, "ttft": 46.75, "dec_tps": 13.1, "wall": 61.9, "prompt": 34857, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la logica d", "err": null}
+  09_agents4P_a3_t1: {"ok": true, "out": 200, "ttft": 4.62, "dec_tps": 6.9, "wall": 33.5, "prompt": 36654, "cached": 35056, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione di vari argomenti CLI, in particolare quelli rela", "err": null}
+  09_agents4P_a3_t2: {"ok": true, "out": 61, "ttft": 4.56, "dec_tps": 7.3, "wall": 12.7, "prompt": 38293, "cached": 36853, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la logica di costruzione dei parser PEG (Parsing Expression Gram", "err": null}
+   | strata serve: prompt 35060 tokens = 0 reused + 35060 read in 34976 ms (1002.4 tok/s), 1 generated in 26 ms (38.6 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 35061 tokens = 35060 reused + 1 read in 3 ms (337.5 tok/s), 1 generated in 20 ms (50.6 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34843 tokens = 33380 reused + 1463 read in 4159 ms (351.7 tok/s), 1 generated in 25 ms (40.1 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34871 tokens = 33380 reused + 1491 read in 4251 ms (350.7 tok/s), 1 generated in 41 ms (24.2 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34857 tokens = 33380 reused + 1477 read in 4200 ms (351.7 tok/s), 1 generated in 24 ms (42.0 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 36835 tokens = 35259 reused + 1576 read in 4552 ms (346.2 tok/s), 1 generated in 23 ms (43.9 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36654 tokens = 35056 reused + 1598 read in 4481 ms (356.7 tok/s), 1 generated in 26 ms (38.7 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36663 tokens = 35070 reused + 1593 read in 4453 ms (357.7 tok/s), 1 generated in 39 ms (25.6 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36709 tokens = 35042 reused + 1667 read in 4531 ms (367.9 tok/s), 1 generated in 19 ms (51.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38943 tokens = 37034 reused + 1909 read in 4722 ms (404.3 tok/s), 1 generated in 21 ms (47.1 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38197 tokens = 36663 reused + 1534 read in 4347 ms (352.9 tok/s), 1 generated in 20 ms (50.7 tok/s), drafts accepted 0 of 0, 2 checkpoints
+   | strata serve: prompt 38293 tokens = 36853 reused + 1440 read in 4454 ms (323.3 tok/s), 1 generated in 33 ms (30.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38520 tokens = 36908 reused + 1612 read in 4713 ms (342.0 tok/s), 1 generated in 19 ms (51.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: 349 windows, avg 6.23 rows, 78.67 ms/window = run 70.01 (CUDA0 GPU-reach wait 19.62 + CPU experts 9.15) + commit 3.20 + emit 3.86 + adapt wait 1.60; per stage (ms/window): CUDA0 wait 19.62 + pool 9.15, CUDA1 wait 27.10 + pool 10.77; per layer-window: CPU experts 5.85, VRAM hits 66.42, 
+   | strata batch: MTP proposals accepted 928 of 1245 (74.5%)
+agents:4:P: 4 chat, 2186 token in 114.8 s = 19.0 t/s aggregati (decode 27.3 t/s)
+  10_agents8P_a0_t0: {"ok": true, "out": 200, "ttft": 4.52, "dec_tps": 4.0, "wall": 54.5, "prompt": 35060, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la logica d", "err": null}
+  10_agents8P_a0_t1: {"ok": true, "out": 200, "ttft": 4.74, "dec_tps": 3.7, "wall": 58.0, "prompt": 36835, "cached": 35259, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione degli argomenti CLI relativi ai modelli multimoda", "err": null}
+  10_agents8P_a0_t2: {"ok": true, "out": 192, "ttft": 4.81, "dec_tps": 3.8, "wall": 54.5, "prompt": 38944, "cached": 37034, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione di **preset** (argomenti shortcut) per modelli sp", "err": null}
+  10_agents8P_a1_t0: {"ok": true, "out": 200, "ttft": 36.31, "dec_tps": 3.7, "wall": 90.1, "prompt": 34843, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la logica d", "err": null}
+  10_agents8P_a1_t1: {"ok": true, "out": 200, "ttft": 4.62, "dec_tps": 3.8, "wall": 57.6, "prompt": 36709, "cached": 35042, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione degli argomenti per la **gestione della memoria e", "err": null}
+  10_agents8P_a1_t2: {"ok": true, "out": 200, "ttft": 4.67, "dec_tps": 13.3, "wall": 19.7, "prompt": 38520, "cached": 36908, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la fine della funzione `common_params_parser_init` e l'inizio di", "err": null}
+  10_agents8P_a2_t0: {"ok": true, "out": 200, "ttft": 21.86, "dec_tps": 4.7, "wall": 64.1, "prompt": 34871, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "**Analisi dell'output**  Il codice mostrato implementa la logica di **risoluzion", "err": null}
+  10_agents8P_a2_t1: {"ok": true, "out": 200, "ttft": 9.48, "dec_tps": 4.7, "wall": 52.2, "prompt": 36663, "cached": 35070, "distinct4": 1.0, "bad": 0.0, "head": "**Analisi dell'output**  Il codice mostrato definisce le opzioni di riga di coma", "err": null}
+  10_agents8P_a2_t2: {"ok": true, "out": 200, "ttft": 4.48, "dec_tps": 4.4, "wall": 50.0, "prompt": 38199, "cached": 36862, "distinct4": 1.0, "bad": 0.0, "head": "**Analisi dell'output**  Il codice mostrato riguarda la **generazione automatica", "err": null}
+  10_agents8P_a3_t0: {"ok": true, "out": 200, "ttft": 25.75, "dec_tps": 4.7, "wall": 68.4, "prompt": 34857, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la logica d", "err": null}
+  10_agents8P_a3_t1: {"ok": true, "out": 200, "ttft": 9.34, "dec_tps": 3.5, "wall": 66.7, "prompt": 36654, "cached": 35056, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la definizi", "err": null}
+  10_agents8P_a3_t2: {"ok": true, "out": 71, "ttft": 4.58, "dec_tps": 4.2, "wall": 21.3, "prompt": 38293, "cached": 36853, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito mostra la logica di costruzione dei parser PEG (Parsing Express", "err": null}
+  10_agents8P_a4_t0: {"ok": true, "out": 200, "ttft": 6.31, "dec_tps": 3.9, "wall": 57.4, "prompt": 34990, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento di codice C++ (`common/arg.cpp`) che gestisce la", "err": null}
+  10_agents8P_a4_t1: {"ok": true, "out": 200, "ttft": 4.69, "dec_tps": 3.5, "wall": 62.3, "prompt": 36850, "cached": 35189, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento di codice C++ (`common/arg.cpp`) che definisce e", "err": null}
+  10_agents8P_a4_t2: {"ok": true, "out": 108, "ttft": 4.52, "dec_tps": 3.1, "wall": 38.8, "prompt": 38442, "cached": 37049, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento di codice C++ che implementa la logica di parsin", "err": null}
+  10_agents8P_a5_t0: {"ok": true, "out": 200, "ttft": 15.05, "dec_tps": 4.2, "wall": 62.0, "prompt": 35094, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito mostra la logica di gestione dei dispositivi (`parse_device_lis", "err": null}
+  10_agents8P_a5_t1: {"ok": true, "out": 200, "ttft": 4.69, "dec_tps": 2.8, "wall": 76.8, "prompt": 36876, "cached": 35293, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione degli argomenti specifici per il server (`LLAMA_E", "err": null}
+  10_agents8P_a5_t2: {"ok": true, "out": 200, "ttft": 4.66, "dec_tps": 9.3, "wall": 26.0, "prompt": 38659, "cached": 37075, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra il codice relativo al parsing automatico dei tool call (`chat-au", "err": null}
+  10_agents8P_a6_t0: {"ok": true, "out": 200, "ttft": 28.3, "dec_tps": 4.2, "wall": 76.0, "prompt": 34968, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la funzione", "err": null}
+  10_agents8P_a6_t1: {"ok": true, "out": 200, "ttft": 9.5, "dec_tps": 5.3, "wall": 47.1, "prompt": 36704, "cached": 35167, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un altro frammento del file `common/arg.cpp`, specificamente ", "err": null}
+  10_agents8P_a6_t2: {"ok": true, "out": 200, "ttft": 9.45, "dec_tps": 6.4, "wall": 40.5, "prompt": 38452, "cached": 36903, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito mostra una sezione del codice relativa alla **gestione dei temp", "err": null}
+  10_agents8P_a7_t0: {"ok": true, "out": 200, "ttft": 8.89, "dec_tps": 3.0, "wall": 75.2, "prompt": 35019, "cached": 33380, "distinct4": 1.0, "bad": 0.0, "head": "L'output fornito è un frammento del file `common/arg.cpp` che mostra la definizi", "err": null}
+  10_agents8P_a7_t1: {"ok": true, "out": 200, "ttft": 4.72, "dec_tps": 5.3, "wall": 42.5, "prompt": 36768, "cached": 35218, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la continuazione della definizione degli argomenti da riga di co", "err": null}
+  10_agents8P_a7_t2: {"ok": true, "out": 200, "ttft": 9.27, "dec_tps": 5.5, "wall": 45.3, "prompt": 38450, "cached": 36967, "distinct4": 1.0, "bad": 0.0, "head": "L'output mostra la definizione di funzioni di utilità per l'analisi dei template", "err": null}
+   | strata serve: prompt 35060 tokens = 33380 reused + 1680 read in 4438 ms (378.6 tok/s), 1 generated in 28 ms (36.3 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 35061 tokens = 35060 reused + 1 read in 3 ms (333.0 tok/s), 1 generated in 21 ms (47.2 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34990 tokens = 33380 reused + 1610 read in 4243 ms (379.5 tok/s), 1 generated in 39 ms (25.8 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 35019 tokens = 33380 reused + 1639 read in 4314 ms (380.0 tok/s), 1 generated in 23 ms (42.6 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 35094 tokens = 33380 reused + 1714 read in 4406 ms (389.0 tok/s), 1 generated in 26 ms (38.0 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34871 tokens = 33380 reused + 1491 read in 4270 ms (349.2 tok/s), 1 generated in 19 ms (51.7 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34857 tokens = 33380 reused + 1477 read in 4250 ms (347.6 tok/s), 1 generated in 34 ms (29.4 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34968 tokens = 33380 reused + 1588 read in 4260 ms (372.8 tok/s), 1 generated in 20 ms (50.3 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 34843 tokens = 33380 reused + 1463 read in 4184 ms (349.7 tok/s), 1 generated in 21 ms (48.4 tok/s), drafts accepted 0 of 0, 3 checkpoints
+   | strata serve: prompt 36835 tokens = 35259 reused + 1576 read in 4568 ms (345.0 tok/s), 1 generated in 22 ms (44.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36850 tokens = 35189 reused + 1661 read in 4571 ms (363.4 tok/s), 1 generated in 36 ms (28.0 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36876 tokens = 35293 reused + 1583 read in 4573 ms (346.1 tok/s), 1 generated in 26 ms (39.0 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36663 tokens = 35070 reused + 1593 read in 4517 ms (352.7 tok/s), 1 generated in 19 ms (51.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36654 tokens = 35056 reused + 1598 read in 4479 ms (356.8 tok/s), 1 generated in 20 ms (49.9 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36768 tokens = 35218 reused + 1550 read in 4616 ms (335.8 tok/s), 1 generated in 34 ms (29.5 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36704 tokens = 35167 reused + 1537 read in 4480 ms (343.1 tok/s), 1 generated in 25 ms (40.6 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 36709 tokens = 35042 reused + 1667 read in 4521 ms (368.7 tok/s), 1 generated in 19 ms (51.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38944 tokens = 37034 reused + 1910 read in 4701 ms (406.3 tok/s), 1 generated in 28 ms (35.4 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38199 tokens = 36862 reused + 1337 read in 4362 ms (306.5 tok/s), 1 generated in 35 ms (28.8 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38442 tokens = 37049 reused + 1393 read in 4406 ms (316.2 tok/s), 1 generated in 20 ms (51.1 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38450 tokens = 36967 reused + 1483 read in 4502 ms (329.4 tok/s), 1 generated in 26 ms (39.0 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38452 tokens = 36903 reused + 1549 read in 4550 ms (340.4 tok/s), 1 generated in 19 ms (51.6 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38293 tokens = 36853 reused + 1440 read in 4482 ms (321.3 tok/s), 1 generated in 33 ms (30.3 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38659 tokens = 37075 reused + 1584 read in 4547 ms (348.3 tok/s), 1 generated in 27 ms (37.2 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata serve: prompt 38520 tokens = 36908 reused + 1612 read in 4558 ms (353.7 tok/s), 1 generated in 24 ms (41.7 tok/s), drafts accepted 0 of 0, 1 checkpoints
+   | strata batch: 663 windows, avg 6.86 rows, 82.87 ms/window = run 73.89 (CUDA0 GPU-reach wait 22.35 + CPU experts 8.70) + commit 3.44 + emit 4.27 + adapt wait 1.26; per stage (ms/window): CUDA0 wait 22.35 + pool 8.70, CUDA1 wait 29.38 + pool 10.30; per layer-window: CPU experts 5.78, VRAM hits 74.60, 
+   | strata batch: MTP proposals accepted 1925 of 2621 (73.4%)
+agents:8:P: 8 chat, 4571 token in 168.3 s = 27.2 t/s aggregati (decode 27.8 t/s)
+fine b8mtp

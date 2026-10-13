@@ -56,3 +56,16 @@ pausa con `lab_locks\pause`, build con `build_lock.py`, non toccare Daily/config
 `OPUS-STRATA-...` con Co-Authored-By e push, stato sempre nel doc del worktree, misurato vs stimato.
 Ordine consigliato: (1) pipeline2 tappe 0a-2, (2) multi-chat con 0.1.43.1, (3) TTFT43 misure, (4) prototipo TP se il
 verdetto lo giustifica.
+
+## 6. Aggiornamento 13/10 mattina
+
+- **Strata 0.1.43 Daily r2** installata (r1 in `D:\ds4_work\strataipristini61013_0143daily_r1`): build
+  `lab/ttft43` a2111f8b + `STRATA_PREFIX_DISK_MULTI=24` (JSON) + `STRATA_PROMPT_ENCODER=1` (bat, ambiente del server).
+  Banco TTFT: client alternati 38,2/32,5 → 16,2/4,9 s; dopo riavvio 20,2/10,3 → 6,4/5,1 s (quest'ultimo con
+  `STRATA_CONV_DISK`, lasciato spento: avvio misurato 277 s, forse disco lento - in verifica). Non provata dall'owner.
+- **Agenti sui crediti API** (`sdk_agent.py`, ripresa automatica fino a «FINE LAVORO»), brief e log jsonl nella scratchpad
+  della sessione: pipeline2 (tetto 25 $), multichat43 (35 $), conversazioni su disco pigre su `lab/ttft43` (15 $).
+  Stato di ciascuno nel doc del suo worktree (PIPELINE2.md, MULTICHAT.md, TTFT43.md).
+- TP bivalente (PIPELINE2.md §9): **no**, con MTP pari a oggi (~76/66 t/s). Multi-chat: migliore configurazione misurata
+  `--batch 4 --batch-groups 2` senza `--batch-mtp` (86 t/s a 4 chat) ma chat singola −10%: non nel Daily.
+- Crediti API: PROMO5 fino a ~47 $; agenti Strata ~22 $ + tetti 75 $. Ci si ferma vicino all'esaurimento.

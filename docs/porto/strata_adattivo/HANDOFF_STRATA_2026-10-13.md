@@ -59,7 +59,7 @@ verdetto lo giustifica.
 
 ## 6. Aggiornamento 13/10 mattina
 
-- **Strata 0.1.43 Daily r2** installata (r1 in `D:\ds4_work\strataipristini61013_0143daily_r1`): build
+- **Strata 0.1.43 Daily r2** installata (r1 in `D:\ds4_work\strata\ripristini\20261013_0143daily_r1`): build
   `lab/ttft43` a2111f8b + `STRATA_PREFIX_DISK_MULTI=24` (JSON) + `STRATA_PROMPT_ENCODER=1` (bat, ambiente del server).
   Banco TTFT: client alternati 38,2/32,5 → 16,2/4,9 s; dopo riavvio 20,2/10,3 → 6,4/5,1 s (quest'ultimo con
   `STRATA_CONV_DISK`, lasciato spento: avvio misurato 277 s, forse disco lento - in verifica). Non provata dall'owner.

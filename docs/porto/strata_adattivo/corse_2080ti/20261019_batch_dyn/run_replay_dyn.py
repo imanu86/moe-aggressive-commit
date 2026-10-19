@@ -26,19 +26,10 @@ def jump_cpu():
     return r.stdout.strip() or '0'
 
 
-while True:
-    if (LOCKS / 'pause').exists():
-        sys.exit('pause presente: niente GPU')
-    busy = (LOCKS / 'build.lock').exists() or any((q.info['name'] or '').lower() == 'strata.exe'
-                                                  for q in psutil.process_iter(['name']))
-    if not busy:
-        try:
-            fd = os.open(LOCKS / 'bench.lock', os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-            os.write(fd, f'BATCHDYN-{tag}'.encode()); os.close(fd)
-            break
-        except FileExistsError:
-            pass
-    time.sleep(0.5)
+sys.path.insert(0, str(H))
+import turno_lock  # noqa: E402
+if not turno_lock.take(f'BATCHDYN-{tag}'):
+    sys.exit('pause: niente GPU')
 print('lock preso', time.strftime('%H:%M:%S'), flush=True)
 amb = OUT / 'ambiente.txt'
 amb.write_text(f'inizio {time.strftime("%H:%M:%S")} jump_cpu_s {jump_cpu()}\n', encoding='utf-8')

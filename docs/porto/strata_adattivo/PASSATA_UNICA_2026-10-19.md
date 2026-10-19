@@ -64,6 +64,40 @@ letture e sull'intera risposta, righe `strata pack:` / `read ... on a thread`. B
 `STRATA_PIPED_CONCURRENT=1`; A = B + `STRATA_PACK_PREFILL=3 STRATA_PACK_CONCURRENT=1`; alternanza B-A-B. Poi il replay
 3 e 6-8 agenti (`replay_trace.py`) per il totale e i TTFT p50/p90.
 
+## Stato esatto al STOP (19/10 ~19:50, token dell'owner finiti) e ripresa
+
+**Fatto, committato, pushato**: codice su `imanu86/Strata-2080Ti` branch `lab/passata-unica` (worktree
+`C:\Users\imanu\source\repos\Strata-wt\passata-unica`, da `lab/multichat45b` faa52840): 4ee62d09 (la leva, solo
+`src/program/generate.cpp`, +124/-65), 9c57a4ac (registro `stack/21-pack-concurrent.patch`, INDEX/BLOCKS/manifest,
+`--verify-docs` ok), 5c97ab45 (sezione in `docs/MULTICHAT.md`). Qui: banco `corse_2080ti/20261019_passata_unica/`
+(`letture_concorrenti.py`, `coda_lc.sh`, `coda_replay_pu.sh`). **Compilato no, provato no, misurato no**: la build non e'
+mai partita (lock GPU tenuto dall'agente batch-dyn per tutta la sessione); nessun lock, processo o `strata.exe` mio lasciato.
+La pila 0.2.0 (`lab/upsync-020`) non e' toccata: la patch 21 dipende dai commit del pacco di `lab/multichat45`.
+
+**Ripresa, in ordine** (tutto da `corse_2080ti\`; rispettare `D:\ds4_work\strata\lab_locks\pause` e `bench.lock`):
+1. Build (prima volta: configure completo, sm_75+86):
+   `python 20261006_due_schede\build_lock.py C:\Users\imanu\source\repos\Strata-wt\passata-unica --jobs 6`
+   poi `python 20261006_due_schede\copia_build.py C:\Users\imanu\source\repos\Strata-wt\passata-unica passata "patch 21 pack-concurrent, 4ee62d09"`
+   -> `20261004_routed_keep\build-passata-5c97ab45\` (il nome prende l'HEAD del worktree). Se il compilatore si lamenta:
+   il blocco nuovo e' `pk_prepare`/`pk_finish`/`pk_read` (r.14290-14590) e il blocco `STRATA_PACK_CONCURRENT` dentro
+   `read_part` (r.~14740-14960); `git diff faa52840 4ee62d09` lo mostra intero.
+2. Banco corto B-A-B (3 avvii, ~10-12 min l'uno: 6 contesti da 32-100k da scaldare):
+   `bash 20261019_passata_unica/coda_lc.sh build-passata-5c97ab45` -> `lc_b1/`, `lc_a1/`, `lc_b2/` (res.json, engine.log,
+   `lc_*.run.log`). Numeri da riportare: `readers_wall`, `ttft`, `read_tps_wall`, `writers_tps_during_reads` /
+   `_before` / `_after`, righe `strata pack:` (devono comparire SOLO in a1: «N tokens of this prompt read with K prompts
+   sent ahead»), `jumpconnect_cpu_s.connected`, `load_other` (scartare se mean > 15 o p90 > 40), VRAM libera della 3060
+   nel log (i 3 pack slot costano 1,1 GiB li': se va a 0, ripetere A con `STRATA_PACK_PREFILL=2`).
+   Parita': `lc_a1/par_r*_R*.txt` contro `lc_b1/par_r*_R*.txt` (primo carattere diverso; sul 13/10 la divergenza era a
+   meta' testo e c'era anche fra due corse base: non e' bitwise, va solo riportata).
+3. Replay (stesso exe, stesso B-A-B): `bash 20261019_passata_unica/coda_replay_pu.sh build-passata-5c97ab45 1` (3 agenti +
+   orchestratore, ~5 min a braccio) e poi `... 2` (8 agenti; VRAM a rischio sulla 3060: guardare il log). Esiti in
+   `20261019_replay\replay_pu-*\res.json`: tempo totale, TTFT p50/p90, token riletti, decode aggregato; confronto con
+   config 2 del 19/10 (298-302 s, TTFT 20/76 s).
+4. Scrivere i numeri in `docs/MULTICHAT.md` (sezione «Passata unica») e in `stack/manifest.json` (`measured` della 21),
+   rigenerare INDEX/BLOCKS con `20261019_passata_unica/stack_add.py <worktree> <sha> <entry.json>` (riusa
+   `check_anchors.py`: format-patch, ancore, render; `entry21.json` accanto e' la voce usata), poi `--verify-docs`.
+5. Solo con guadagno misurato: i «Passi dopo» qui sotto, nell'ordine.
+
 ## Passi dopo (solo se il passo 1 misura un guadagno)
 
 - Server: `BHINT` anche per le richieste che arrivano **durante** una lettura (oggi il motore le impacchetta solo con

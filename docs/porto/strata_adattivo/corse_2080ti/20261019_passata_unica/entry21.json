@@ -1,0 +1,13 @@
+{
+  "id": "21",
+  "name": "pack-concurrent",
+  "summary": "The packed prefill (STRATA_PACK_PREFILL: the prompts sent ahead by waiting requests read with this one in the same chunks, the experts streamed once for all of them) also beside STRATA_PIPED_CONCURRENT: the prefixes go into the pack slots on the host thread with nothing in flight, Prefill::run_packed runs on the read's thread while the slot groups keep decoding, the pack slots' checkpoints are taken after the drain. Without it the concurrent read returned before pk_read and never packed.",
+  "switch": "`STRATA_PACK_CONCURRENT=1` (off), with `STRATA_PACK_PREFILL=N` and `STRATA_PIPED_CONCURRENT=1`; a packed read takes no BYIELD",
+  "origin": "fork (lab/passata-unica, docs/porto/strata_adattivo/PASSATA_UNICA_2026-10-19.md in moe-aggressive-commit)",
+  "upstream_status": "never proposed; 0.2.0-beta (upstream/main f57c0adc) still reads admissions one at a time and has no multi-sequence prefill",
+  "measured": "Compiled and run 19 Oct: see docs/MULTICHAT.md (passata unica) - to be filled from the letture_concorrenti bench (4 readers of 2-4k on 40-100k cached + 2 writers, B-A-B) and the replay.",
+  "depends_on": "STRATA_PACK_PREFILL / Prefill::run_packed (lab/multichat43 -> lab/multichat45, not an entry of this stack: it is carried on the multi-chat branch) and STRATA_PIPED_CONCURRENT (#2326, in 0.1.45)",
+  "notes": "pk_read is now pk_prepare + Prefill::run_packed + pk_finish; the path without the switch is the three in a row (behaviour unchanged).",
+  "docs": "docs/MULTICHAT.md",
+  "intro_extra": "Patch 21 (19 Oct 2026, branch `lab/passata-unica` from `lab/multichat45b`) makes the packed prefill of the multi-chat branch run beside the concurrent read (`STRATA_PACK_CONCURRENT`); it depends on the pack commits of that branch, which are not entries of this stack."
+}

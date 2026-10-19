@@ -1,0 +1,14 @@
+engine up in 79 s
+warm S0: 12.5 s prompt 8195 cached 0 
+warm S1: 11.7 s prompt 8351 cached 0 
+  00_soloS_0_S0L01: {"ok": true, "out": 384, "ttft": 1.36, "dec_tps": 58.2, "wall": 7.9, "prompt": 8273, "cached": 8168, "distinct4": 0.991, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha dimestichezza con C++ (quindi capi", "err": null}
+  00_soloS_1_S1L02: {"ok": true, "out": 384, "ttft": 1.22, "dec_tps": 51.4, "wall": 8.7, "prompt": 8420, "cached": 8324, "distinct4": 1.0, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+   | strata serve: prompt 8273 tokens = 8168 reused + 105 read in 1310 ms (80.2 tok/s), 384 generated in 6607 ms (58.1 tok/s), drafts accepted 198 of 310, 2 checkpoints
+   | strata serve: prompt 8420 tokens = 8324 reused + 96 read in 1179 ms (81.4 tok/s), 384 generated in 7478 ms (51.4 tok/s), drafts accepted 212 of 339, 2 checkpoints
+solo:S: 2 chat, 768 token in 16.6 s = 46.2 t/s aggregati (decode 50.2 t/s, dec medio 54.8)
+  01_soloS_0_S0L01: {"ok": true, "out": 384, "ttft": 0.22, "dec_tps": 56.5, "wall": 7.0, "prompt": 8273, "cached": 8266, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha dimestichezza con C++ (quindi capi", "err": null}
+  01_soloS_1_S1L02: {"ok": true, "out": 384, "ttft": 0.22, "dec_tps": 52.6, "wall": 7.5, "prompt": 8420, "cached": 8413, "distinct4": 1.0, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 181 ms (38.7 tok/s), 384 generated in 6812 ms (56.4 tok/s), drafts accepted 195 of 324, 2 checkpoints
+   | strata serve: prompt 8420 tokens = 8413 reused + 7 read in 179 ms (39.1 tok/s), 384 generated in 7307 ms (52.6 tok/s), drafts accepted 186 of 329, 2 checkpoints
+solo:S: 2 chat, 768 token in 14.5 s = 53.0 t/s aggregati (decode 53.6 t/s, dec medio 54.5)
+fine pw-ctrl-r23-2

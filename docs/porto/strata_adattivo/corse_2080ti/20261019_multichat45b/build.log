@@ -1,0 +1,30 @@
+lock taken after 0 s
+
+            instantiation of "void strata::kernels::<unnamed>::native_mmvq_multi_kernel<F,NCOLS,NW,ROWS,TS,PAIR>(const F::Block *, const strata::kernels::<unnamed>::Q81Block *, float *, int, int, const F::Block *, float *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8, NW=4, ROWS=1, TS=true, PAIR=false]" at line 1495
+            instantiation of "void strata::kernels::<unnamed>::launch_multi_n<F,NCOLS>(const void *, const void *, float *, int, int, cudaStream_t) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8]" at line 1516
+            instantiation of "void strata::kernels::<unnamed>::launch_multi<F>(const void *, const void *, float *, int, int, int, void *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>]" at line 1892
+            instantiation of "void strata::kernels::<unnamed>::small_mmvq<Weight,Qi>(const void *, const void *, float *, int, int, int, void *) [with Weight=strata::kernels::<unnamed>::IQ4NLBlock, Qi=4]" at line 2782
+
+C:\Users\imanu\source\repos\Strata-wt\multichat45\src\kernels\cuda\native_mmvq.cu(1255): warning #128-D: loop is not reachable
+      for (int j = 0; j < NCOLS; ++j) {
+      ^
+          detected during:
+            instantiation of "void strata::kernels::<unnamed>::native_mmvq_multi_kernel<F,NCOLS,NW,ROWS,TS,PAIR>(const F::Block *, const strata::kernels::<unnamed>::Q81Block *, float *, int, int, const F::Block *, float *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8, NW=4, ROWS=2, TS=true, PAIR=false]" at line 1501
+            instantiation of "void strata::kernels::<unnamed>::launch_multi_n<F,NCOLS>(const void *, const void *, float *, int, int, cudaStream_t) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8]" at line 1516
+            instantiation of "void strata::kernels::<unnamed>::launch_multi<F>(const void *, const void *, float *, int, int, int, void *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>]" at line 1892
+
+            instantiation of "void strata::kernels::<unnamed>::small_mmvq<Weight,Qi>(const void *, const void *, float *, int, int, int, void *) [with Weight=strata::kernels::<unnamed>::IQ4NLBlock, Qi=4]" at line 2782
+
+
+
+native_mmvq.cu
+
+tmpxft_00003b0c_00000000-10_native_mmvq.compute_86.cudafe1.cpp
+
+[16/20] Linking CXX static library strata_kernels.lib
+[17/20] Linking CXX static library strata_engine.lib
+[18/20] Linking CXX static library strata_prefill.lib
+[19/20] Linking CXX executable strata.exe 
+rc 0
+sha256 8a1fc2da9b35569d76c368b28be1ffe4c5cbf3860746d9736eef20a1a22ecdce
+lock released, 165 s total

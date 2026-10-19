@@ -71,6 +71,7 @@ cfg['log'], cfg['exe'], cfg['port'] = str(OUT / 'engine.log'), a.exe, a.port
 env = cfg.setdefault('env', {})
 for k in ('STRATA_PREFIX_DISK_MULTI', 'STRATA_CONV_DISK'):
     env.pop(k, None)
+env['STRATA_DUMP_FIRST_LOGITS'] = str(OUT / 'fl')   # logits of each request's first window -> fl.<n> (n = request order)
 for kv in shlex.split(a.env):
     k2, v2 = kv.split('=', 1)
     env[k2] = v2
@@ -120,7 +121,15 @@ p = subprocess.Popen([str(D / '.venv/Scripts/python.exe'), '-B', str(SERVE / 'se
                       '--config', str(cfg_path), '--host', '127.0.0.1', '--port', str(a.port)],
                      cwd=D, env=penv, stdout=(OUT / 'server.log').open('w', encoding='utf-8'), stderr=subprocess.STDOUT,
                      creationflags=subprocess.CREATE_NO_WINDOW)
-res = dict(tag=a.tag, exe=a.exe, env=a.env, extra=a.extra, reqs=[])
+def jump_cpu():
+    try:
+        import psutil
+        return [round(p.cpu_times().user + p.cpu_times().system, 1) for p in psutil.process_iter(['name']) if (p.info['name'] or '').lower().startswith('jumpconnect')]
+    except Exception:   # noqa: BLE001
+        return None
+
+
+res = dict(tag=a.tag, exe=a.exe, env=a.env, extra=a.extra, reqs=[], jump_cpu_start=jump_cpu())
 try:
     t0 = time.monotonic()
     while time.monotonic() - t0 < 1500:
@@ -141,6 +150,8 @@ try:
         print(json.dumps(r, ensure_ascii=False), flush=True)
         (OUT / 'res.json').write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding='utf-8')
 finally:
+    res['jump_cpu_end'] = jump_cpu()
+    (OUT / 'res.json').write_text(json.dumps(res, indent=1, ensure_ascii=False), encoding='utf-8')
     import psutil
     try:
         kids = psutil.Process(p.pid).children(recursive=True)

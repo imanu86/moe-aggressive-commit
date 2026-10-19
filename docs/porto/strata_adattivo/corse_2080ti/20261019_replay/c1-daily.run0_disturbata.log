@@ -1,0 +1,37 @@
+bench lock taken after 0 s
+FINESTRA 3600-4800 s del lavoro: {'requests': 24, 'makespan': 1582.7, 'ttft_p50': 216.1, 'ttft_p90': 427.5, 'ttft_max': 485.3, 'ttft_mean': 227.2, 'prompt': 2713178, 'reused': 920652, 'new': 1792526, 'out': 6851, 'server_read_s': 1505.8, 'server_gen_s': 117.5, 'server_busy_s': 1623.4}
+  P: 7 richieste, warm P=140211, primo invio 0 s, P 140396..147993, reset 0
+  A: 4 richieste, warm P=63990, primo invio 0 s, P 68904..82515, reset 0
+  B: 7 richieste, warm P=92568, primo invio 0 s, P 94999..122549, reset 0
+  C: 6 richieste, warm -, primo invio 0 s, P 85206..138524, reset 0
+engine up in 76 s
+warm P: target 140211 prompt 135209 cached 0 in 95 s 
+warm A: target 63990 prompt 64983 cached 8409 in 40 s 
+warm B: target 92568 prompt 87889 cached 8409 in 54 s 
+  B#19: send      0 ttft    5.2 end      5 prompt 90511/94999 cached 87889 out 9/432
+  A#20: send      0 ttft   13.4 end     13 prompt 69999/68904 cached 64983 out 4/440
+  B#20: send      7 ttft   14.5 end     22 prompt 96330/96053 cached 90519 out 5/463
+  A#21: send     14 ttft   17.2 end     31 prompt 75697/75949 cached 70002 out 3/190
+  B#21: send     24 ttft   14.0 end     38 prompt 100488/100149 cached 96334 out 5/657
+  C#22: send      0 ttft   90.2 end     94 prompt 86209/85206 cached 8409 out 265/265
+  B#22: send     39 ttft   58.0 end     97 prompt 100920/100834 cached 100492 out 2/118
+  P#19: send      0 ttft  180.6 end    182 prompt 135464/140396 cached 8409 out 108/108
+  C#23: send     94 ttft  102.1 end    200 prompt 97894/97901 cached 86473 out 254/254
+  A#22: send     31 ttft  217.9 end    249 prompt 79193/79249 cached 8409 out 3/259
+  B#23: send     99 ttft  212.2 end    311 prompt 101033/100970 cached 8409 out 2/158
+  P#20: send    182 ttft  215.9 end    399 prompt 140389/140554 cached 8409 out 55/216
+  A#23: send    249 ttft  156.1 end    405 prompt 82129/82515 cached 79195 out 1/132
+  P#21: send    400 ttft    7.4 end    408 prompt 140832/140788 cached 140443 out 47/215
+  C#24: send    201 ttft  273.8 end    478 prompt 107490/107720 cached 8409 out 243/243
+  P#22: send    408 ttft   71.5 end    480 prompt 141098/141054 cached 140878 out 36/185
+  B#24: send    311 ttft  240.5 end    552 prompt 116101/115549 cached 8409 out 2/86
+  P#23: send    482 ttft   72.2 end    554 prompt 141319/141259 cached 141133 out 27/249
+  C#25: send    478 ttft  149.5 end    628 prompt 119565/120120 cached 8409 out 80/232
+  B#25: send    552 ttft  151.9 end    704 prompt 122945/122549 cached 8409 out 2/775
+  P#24: send    554 ttft  238.3 end    793 prompt 144158/143976 cached 8409 out 35/196
+  C#26: send    628 ttft  178.5 end    807 prompt 129645/129967 cached 119644 out 35/232
+  P#25: send    793 ttft   19.9 end    814 prompt 147504/147993 cached 144192 out 28/525
+  C#27: send    807 ttft   90.5 end    898 prompt 138195/138524 cached 8409 out 32/221
+RIASSUNTO {"requests_planned": 24, "requests_ok": 24, "failed": 0, "unfinished_agents": 0, "makespan": 898.22, "ttft_p50": 102.14, "ttft_p90": 238.31, "ttft_max": 273.83, "ttft_mean": 116.31, "queue_wait_mean": 79.71, "queue_wait_sum": 1913.11, "prompt": 2705108, "reused": 1454676, "new": 1250432, "out": 1283, "out_target": 6851, "server_read_s": 878.22, "server_gen_s": 19.13, "server_read_tok": 1250432, "server_gen_tok": 1283, "server_log_requests": 24, "cpu_other_mean": 41.16, "cpu_other_p90": 68.91, "cpu_okto_mean": 0.0, "disturbed": true, "server_busy_frac": 1.0, "reuse_frac": 0.54, "orig_reuse_frac": 0.34}
+ORIGINALE {"requests": 24, "makespan": 1582.73, "ttft_p50": 216.12, "ttft_p90": 427.53, "ttft_max": 485.28, "ttft_mean": 227.19, "prompt": 2713178, "reused": 920652, "new": 1792526, "out": 6851, "server_read_s": 1505.85, "server_gen_s": 117.54, "server_busy_s": 1623.38}
+fine c1-daily

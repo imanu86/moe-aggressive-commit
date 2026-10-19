@@ -121,6 +121,71 @@ nucleo sono fra i più usati. Se la differenza fra nucleo attuale e ideale resta
 3-4 agenti, la rotazione non vale (costo: lettura in background da SSD/GGUF degli esperti uscenti, copia RAM, isteresi). Esito in
 sezione 6.
 
-## 6. Misure
+## 6. Misure (M, 19/10; JumpConnect fermo in tutte le corse; installato no)
 
-(da completare con le corse del 19/10)
+Dati in `corse_2080ti/20261019_batch_dyn/`. Config = `strata-0145-daily.json` (`--batch 4 --batch-groups 2`) con
+`--vram-reserve-mib 1393` e `STRATA_BATCH_DYNAMIC=1 STRATA_BATCH_IDLE_S=30`.
+
+**(a) chat singola, banco della comunità (mediane di 3, 4K / 32K / 128K):**
+
+| braccio | build | decode t/s | prefill t/s |
+|---|---|---|---|
+| batch fisso (Daily 0.1.45 con --batch, `daily0145-a`) | build-0145-daily | 24,1 / 27,0 / 27,9 | 340 / 461 / 464 |
+| senza batch (`nobatch0145-a`) | build-0145-daily | 67,0 / 66,4 / 69,2 | 663 / 1282 / 1519 |
+| v1: solo CUDA0 pigra (`a-dyn-v1`) | batchdyn-4ff964f6 | 64,0 / 64,0 / 66,1 | 662 / 1196 / 1414 |
+| **v2: anche la 2080 Ti pigra (`a-dyn`)** | batchdyn-f7b04652 | **68,0 / 65,8 / 68,2** | **677 / 1298 / 1487** |
+
+v2 è pari alla config senza batch entro il rumore (decode -1..+1,5%, prefill -2% a 128K). Dopo ogni rientro la chat
+singola torna a 70-73 t/s.
+
+**(c) passaggi** (`a-dyn`, `c-dyn`, replay): entrata 3,6-5,3 s (copia K/V pinned delle sessioni e shrink delle due cache),
+uscita 0,9-2,2 s. 3060 nel modo agenti mai sotto 1108 MiB liberi (nvidia-smi); nella chat singola minimo 824 MiB durante il
+prefill da 128K (come senza batch: politica elastica a 500 MiB). Soglia RAM: all'entrata con 2,5 GiB disponibili ha tolto
+8 conversazioni parcheggiate (-> 8,8 GiB).
+
+**Decode aggregato con N conversazioni insieme** (prompt ~600 token diversi, 384 token, somma dei decode delle
+conversazioni, 2 ripetizioni):
+
+| N | lab/batch-dyn (4 slot, 2 gruppi senza bozze, `c-dyn`) | `--batch 2 --batch-mtp` + `STRATA_PIPED_MTP=1` (`c-pmtp`, e42d8af8) |
+|---|---|---|
+| 2 | 44,6 / 57,1 | 53,6 / 61,5 |
+| 3 | 70,8 / 78,3 | 2 slot ~32 l'uno + 1 in coda ~65 da sola |
+| 4 | 87,6 / 87,5 | 2 slot alla volta (~31-40 l'uno) |
+
+Aggregato «a muro» (token / durata, letture comprese): dyn 30-41 / 47-51 / 55; pmtp 37-43 / 48 / 48-50.
+
+**(b) replay 3 agenti**: la corsa v2 (`b-dyn-v2-perdita`) è stata interrotta: ogni passaggio perdeva ~10-15 GiB di RAM
+pinned (la copia K/V delle sessioni di slot non veniva mai restituita: privata 67 -> 119 GiB, 63 MiB disponibili, paging).
+Corretto in c4af6851 (`session_free_host`), **non ancora rimisurato** (STOP dell'owner prima della corsa `b-dyn2`).
+
+**Nucleo della 2080 Ti** (`strata core stat`): nucleo 5500 = 54-76% del routing recente nella chat singola, 62-77% con 3
+agenti; il miglior nucleo della stessa misura 98-99% e 94-98%; CPU 2-8% in entrambi i modi. L'insieme caldo non cambia in
+modo apprezzabile con gli agenti: **rotazione a caldo non fatta** (non rende).
+
+## 7. Stato e prossimi passi (19/10 19:35, STOP dell'owner)
+
+Codice: `lab/batch-dyn` c4af6851 (worktree `C:\Users\imanu\source\repos\Strata-wt\batch-dyn`), build
+`corse_2080ti/20261004_routed_keep/build-batchdyn-c4af6851` (sha256 db3edba0; compilato sì, installato no; provati c-dyn e
+c-pmtp, replay no). Fatto: passaggio a caldo su entrambe le schede, cache conversazioni su disco accesa nei due modi
+(89e79d2d, salvataggio nel modo agenti non verificato), soglia RAM, statistica del nucleo. `stack/21-batch-dyn.patch` è
+ancora la v1 (solo CUDA0): va rigenerata.
+
+1. Rimisurare (b) con la correzione della RAM, dalla cartella `corse_2080ti/20261019_batch_dyn` (prende il turno da sé):
+
+       python -u run_replay_dyn.py b-dyn2 -- --tag dyn2-g2cc --exe ..\20261004_routed_keep\build-batchdyn-c4af6851\strata.exe --t0 3600 --span 1200 --extra "--batch 4 --batch-groups 2 --conversation-cache-mib 28672 --conversation-cache-slots 16" --env "STRATA_PIPED_CONCURRENT=1 STRATA_BATCH_DYNAMIC=1 STRATA_BATCH_IDLE_S=30"
+
+   Riferimento c2: 298 / 302 s. Controllare `RAM disponibile` nelle righe `strata batch-dyn: modo` e che `privata` resti stabile.
+2. Rigenerare la patch 21 sul capo della pila d06429ee: `git diff 34cf6351 c4af6851 -- src include`, applicata 3-way sul capo
+   come il 19/10 (tre conflitti di contesto: cancello della pipeline senza `batch_pipe`, slot di pacco assenti), poi
+   manifest/INDEX/BLOCKS e `python stack/check_anchors.py --verify-docs`.
+3. Aggregato del modo agenti (criterio owner: il massimo aggregato): provare `--batch 8 --batch-groups 2` e `4` col
+   passaggio a caldo, es. `python -u run_dyn.py c8 D:\ds4_work\strata\Strata\strata-0145-daily.json ..\20261004_routed_keep\build-batchdyn-c4af6851\strata.exe --env STRATA_BATCH_DYNAMIC=1 --args "--vram-reserve-mib 1393 --batch 8 --batch-groups 2" --conc 2,4,8`.
+   PIPED_MTP nel modo agenti richiede drafter di slot creati e distrutti all'entrata e all'uscita (`MtpDrafter` ha il
+   distruttore completo), `init_deferred_commit` + rilascio di `dc_arena_` in `release_slots`, e `pmtp` oggi è una costante
+   calcolata all'avvio: S ~150-250 righe. Il drafter della chat singola sta sull'ultima scheda (come senza batch), quindi
+   nessun conflitto con le catene di PIPED_MTP.
+4. Prefisso comune mai riletto (owner): `STRATA_PREFIX_DISK_MULTI` era già attivo col batch; la copia unica del prefisso nella
+   cache conversazioni (upstream #2325, #110/#175) non è fatta. Il replay toglie `--prompt-cache-file`: per misurarlo serve
+   una variante del replay che lo tenga.
+5. Upstream 0.2.0-beta: nessun batch dinamico; `bslot_ss` e `init_slots` hanno la stessa struttura, la patch si riporta
+   (lab/upsync-020 di un altro agente).

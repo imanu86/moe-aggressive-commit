@@ -41,13 +41,10 @@ def excl(p, text):
 
 
 t0 = time.time()
-while True:
-    if not (LOCKS / 'pause').exists() and not (LOCKS / 'build.lock').exists() and not (LOCKS / 'bench.lock').exists():
-        if excl(LOCKS / 'bench.lock', f'BUILD-{SRC.name}'):
-            if engine_running() or not excl(LOCKS / 'build.lock', str(SRC)):
-                (LOCKS / 'bench.lock').unlink(missing_ok=True)
-            else:
-                break
+# prenotazione (come turno.py): build.lock, poi bench.lock appena il braccio in corso lo rilascia
+while (LOCKS / 'pause').exists() or not excl(LOCKS / 'build.lock', str(SRC)):
+    time.sleep(0.5)
+while (LOCKS / 'pause').exists() or (LOCKS / 'bench.lock').exists() or engine_running() or         not excl(LOCKS / 'bench.lock', f'BUILD-{SRC.name}'):
     time.sleep(0.25)
 print(f'turno preso dopo {time.time() - t0:.0f} s', flush=True)
 try:

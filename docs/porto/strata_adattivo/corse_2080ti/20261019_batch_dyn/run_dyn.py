@@ -30,6 +30,7 @@ ap.add_argument('--args', default='')
 ap.add_argument('--community', action='store_true')
 ap.add_argument('--switch', type=int, default=0)
 ap.add_argument('--idle', type=float, default=30.0, help='STRATA_BATCH_IDLE_S atteso dal test di passaggio')
+ap.add_argument('--conc', default='', help='es. 2,3,4: decode aggregato con N conversazioni insieme (prompt corti)')
 a = ap.parse_args()
 
 OUT = H / a.tag
@@ -146,6 +147,42 @@ def switch_test(n):
     return rows
 
 
+def conc_test(ns):
+    """N conversazioni insieme con prompt corti (~600 token, diversi) e 384 token: l'aggregato in decode = token generati da
+    tutte / tempo dal primo token dell'ultima a partire alla fine della prima a finire (finestra in cui decodificano tutte)."""
+    rows = []
+    for n in ns:
+        for rep in (1, 2):
+            res = [None] * n
+            starts = [None] * n
+            def one(i):
+                starts[i] = time.perf_counter()
+                res[i] = chat(fresh(f'conc{n}-{rep}-{i}', lines=20), max_tokens=384)
+                res[i]['t_start'] = starts[i]
+                res[i]['t_end'] = time.perf_counter()
+            th = [threading.Thread(target=one, args=(i,)) for i in range(n)]
+            t0 = time.perf_counter()
+            for t in th:
+                t.start()
+            for t in th:
+                t.join()
+            wall = time.perf_counter() - t0
+            first_all = max(r['t_start'] + r['ttft_s'] for r in res)
+            end_first = min(r['t_end'] for r in res)
+            gen = sum(r['gen'] for r in res)
+            # token generati da tutte nella finestra comune, stimati dal ritmo di ciascuna
+            overlap = max(end_first - first_all, 1e-3)
+            agg_overlap = sum(r['decode_tok_s'] or 0 for r in res) if end_first > first_all else None
+            row = {'n': n, 'rep': rep, 'wall_s': wall, 'gen': gen, 'agg_wall_tok_s': gen / wall,
+                   'per_conv_decode_tok_s': [r['decode_tok_s'] for r in res], 'sum_decode_tok_s': agg_overlap,
+                   'ttft_s': [r['ttft_s'] for r in res], 'overlap_s': overlap}
+            rows.append(row)
+            print('conc', json.dumps(row), flush=True)
+            (OUT / 'conc.json').write_text(json.dumps(rows, indent=1), encoding='utf-8')
+            time.sleep(3)
+    return rows
+
+
 sys.path.insert(0, str(H))
 import turno_lock  # noqa: E402
 if not turno_lock.take(f'BATCHDYN-{a.tag}'):
@@ -193,6 +230,8 @@ try:
         subprocess.run([str(S / '.venv/Scripts/python.exe'), str(BENCH), '--root', str(BLD / 'source'),
                         '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs', '--url', f'http://127.0.0.1:{PORT}',
                         '--out', str(OUT)], check=False)
+    if a.conc:
+        conc_test([int(x) for x in a.conc.split(',')])
     if a.switch:
         switch_test(a.switch)
 finally:

@@ -154,14 +154,14 @@ while True:
     busy = (LOCKS / 'build.lock').exists() or any((q.info['name'] or '').lower() == 'strata.exe'
                                                   for q in psutil.process_iter(['name']))
     if busy:
-        time.sleep(5)
+        time.sleep(0.5)
         continue
     try:
         fd = os.open(LOCKS / 'bench.lock', os.O_CREAT | os.O_EXCL | os.O_WRONLY)
         os.write(fd, f'BATCHDYN-{a.tag}'.encode()); os.close(fd)
         break
     except FileExistsError:
-        time.sleep(5)
+        time.sleep(0.5)
 print('lock preso', time.strftime('%H:%M:%S'), flush=True)
 amb = OUT / 'ambiente.txt'
 amb.write_text(f'inizio {time.strftime("%H:%M:%S")} jump_cpu_s {jump_cpu()}\n', encoding='utf-8')

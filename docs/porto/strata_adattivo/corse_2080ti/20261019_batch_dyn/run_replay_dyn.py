@@ -38,7 +38,7 @@ while True:
             break
         except FileExistsError:
             pass
-    time.sleep(5)
+    time.sleep(0.5)
 print('lock preso', time.strftime('%H:%M:%S'), flush=True)
 amb = OUT / 'ambiente.txt'
 amb.write_text(f'inizio {time.strftime("%H:%M:%S")} jump_cpu_s {jump_cpu()}\n', encoding='utf-8')

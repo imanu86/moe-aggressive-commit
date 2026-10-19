@@ -1,0 +1,60 @@
+turno preso dopo 825 s
+
+-- GGML_SYSTEM_ARCH: x86
+-- Including CPU backend
+-- x86 detected
+-- Performing Test HAS_AVX_1
+-- Performing Test HAS_AVX_1 - Success
+-- Performing Test HAS_AVX2_1
+-- Performing Test HAS_AVX2_1 - Success
+-- Performing Test HAS_FMA_1
+-- Performing Test HAS_FMA_1 - Success
+-- Performing Test HAS_AVX512_1
+-- Performing Test HAS_AVX512_1 - Failed
+-- Performing Test HAS_AVX512_2
+-- Performing Test HAS_AVX512_2 - Failed
+-- Adding CPU backend variant ggml-cpu: /arch:AVX2 GGML_AVX2;GGML_FMA;GGML_F16C
+-- ggml version: 0.24.0
+-- ggml commit:  46aa04bd
+-- Configuring done (24.5s)
+-- Generating done (0.4s)
+-- Build files have been written to: C:/Users/imanu/source/repos/Strata-wt/batch-dyn/build-sm7586
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    FETCHCONTENT_FULLY_DISCONNECTED
+
+ 
+rc 0
+C:\Users\imanu\source\repos\Strata-wt\batch-dyn\src\core\expert_source.cpp(2980): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\batch-dyn\src\core\conversation_file.cpp(301): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\batch-dyn\src\core\conversation_file.cpp(307): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\batch-dyn\src\core\conversation_file.cpp(572): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+              return -((float)(1e+300));
+                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+D:\ds4_work\strata\Strata\third_party\llama.cpp\ggml\src\ggml-cuda\common.cuh(638): warning #221-D: floating-point value does not fit in required floating-point type
+              return make_half2(-((float)(1e+300)), -((float)(1e+300)));
+                                  ^
+
+D:\ds4_work\strata\Strata\third_party\llama.cpp\ggml\src\ggml-cuda\common.cuh(638): warning #221-D: floating-point value does not fit in required floating-point type
+
+              return make_half2(-((float)(1e+300)), -((float)(1e+300)));
+
+                                                      ^
+
+
+
+mmq-instance-q8_0.cu
+
+tmpxft_00007d94_00000000-10_mmq-instance-q8_0.compute_86.cudafe1.cpp
+
+[152/155] Linking CXX static library strata_mmq.lib
+[153/155] Linking CXX static library strata_prefill.lib
+[154/155] Linking CXX static library strata_qwen35.lib
+[155/155] Linking CXX executable strata.exe 
+rc 0
+sha256 b412a9cc8ce887dc2357d2f494cbd307dc5bc69d5ef22493b50488f341dbffc6
+turno rilasciato, 1214 s in tutto

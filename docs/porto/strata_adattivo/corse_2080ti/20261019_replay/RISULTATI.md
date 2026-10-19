@@ -80,3 +80,45 @@ contava il processo idle come carico altrui (corretto).
 
 File: `build_trace.py` (DSH + log -> traccia), `dshread.py`, `replay_trace.py`, `coda_replay.sh`, `trace_dsh_20261016.json`,
 `*.run.log`, `replay_*/res.json` e `config.json`. Rilancio: `python ..\20261006_due_schede\bench_lock.py REPLAY-x -- python -u replay_trace.py --tag x --t0 3600 --span 1200 [--extra "..." --env "..."]`.
+
+## C. Le cinque domande dell'owner (stato 19/10, laboratorio in pausa)
+
+**Da rifare dopo la pausa (GPU): punti 1 e 4.** Corse scartate o interrotte, tenute in `run_scartate/` e `run_interrotte/`:
+- 8 agenti con `--batch 4` e riserva di VRAM del Daily (1393 MiB): a meta' corsa la 3060 aveva 0 MiB liberi (Windows sposta la memoria
+  grafica nella RAM), il motore e' rimasto fermo 240 s e il server l'ha riavviato: corsa non valida (il suo 1 603 s non vale). Con
+  `--batch 8 --batch-groups 2` la 2080 Ti restava con 154 MiB liberi e la lettura iniziale era gia' piu' lenta (234 s per 135K contro 95 s);
+  interrotta dalla pausa.
+- Chat singola con `STRATA_BATCH_PIPELINE=1` sulla build `multichat45` con riserva 1393 MiB: 0 MiB liberi, lettura di 8K in 980 s;
+  uccisa. Il 50,5 t/s «di stanotte» puo' avere la stessa causa (avvio a 436 s, contaminata): da verificare con la riserva piu' larga.
+- Misura valida finora: Daily su `multichat45`, chat singola, `solo:S`: 65,5 e 59,6 t/s (decode medio).
+- Pronto da lanciare: `coda_domande3.sh` (riserva 1905/700 MiB per 4 slot, 3400/1100 per 8, cache conversazioni 20 GiB, poi nucleo RAM 6 900).
+
+**2. Tetto di contesto per agente.** Esiste solo `--max-context` globale, uguale per ogni slot (le sessioni sono scavate con le stesse celle).
+Una richiesta con prompt + `max_tokens` oltre il limite riceve **400** («request exceeds the context window ... never truncated»,
+`serve/server.py` ~r.4053-4078); `fit_max_tokens` accorcia solo l'output. Niente troncamento. Per un tetto per richiesta bastano 6 righe
+nel server: `patch_tetto_prompt_per_richiesta.diff` (`STRATA_MAX_PROMPT_TOKENS`, stesso 400; non applicata, non provata). Il posto giusto per
+far *compattare* invece di fallire e' la finestra di contesto che DSH dichiara per il modello (nelle sessioni e' 262144; DSH compatta
+da solo quando la raggiunge): abbassarla a 100K li' fa compattare l'agente prima; il server resta la rete di sicurezza.
+
+**3. Prefisso comune.** Oggi **duplicato**, non condiviso: ogni conversazione parcheggiata e' un'immagine intera (K/V + stato) e ogni slot
+ha la sua sessione. Misurato sui log (28 parcheggi): **18,1 KB per token + 295 MB fissi** per immagine; un prefisso di 40K token pesa
+**0,69 GiB per copia** (1,0 GiB con la parte fissa); sessioni degli slot: 0,36 GiB sulla 3060 + 0,66 GiB sulla 2080 Ti ciascuna,
+allocate per intero. Il prestito di prefisso (#1164) copia da una conversazione parcheggiata invece di rubarla, ma con lo split «le
+fasi ripristinano solo immagini intere», quindi qui non agisce. Servirebbe: ripristino del solo prefisso per ogni scheda, donatore bloccato
+su tutte le schede, e per la VRAM degli slot un blocco di K/V di prefisso in sola lettura referenziato dalle sessioni (copia alla scrittura):
+lavoro di settimane (stima). Risparmio: RAM ~0,69 GiB per agente oltre il primo (8 agenti: ~4,9 GiB su ~24); VRAM ~0 (le sessioni sono a
+dimensione fissa); ammissione: lettura una tantum del prefisso ~29 s a 1 400 tok/s (gia' coperta dal file di prefisso del Daily), poi
+parcheggio mediano 0,22 s: il guadagno per turno e' sotto il mezzo secondo.
+
+**5. Memoria (Daily, build 0.1.43 e 0.1.45).** Il Daily ha working set 33,5-46,3 GiB (mediana 39) e privata 65,6-77,2 GiB (mediana 73,5)
+su 1 185 richieste; il PC a ~69 GB usati = Strata ~35-40 + ~30 GiB di altri programmi (misurato 33 GiB di altri). Dopo il nucleo RAM:
+arena esperti **29,7-30 GiB** (era 39,97), 5 500 esperti della 2080 Ti (9,56 GiB) e 352-636 della 3060 (0,5-0,8 GiB) senza copia in RAM; il
+resto del working set (~4-6 GiB all'avvio, fino a +6 con la cache conversazioni del Daily) e' K/V fissato 1,03 GiB, cache conversazioni,
+cache di prefisso, embedding 0,26 GiB. PLE: **non in RAM** (lettura diretta dal file, 26 K righe/s; cache di righe 16 MiB; il file sta
+nella cache del sistema e non nel working set). Pesi densi in VRAM. Si puo' liberare di piu': `STRATA_RAM_CORE_SLOTS_DEV1` fino a ~6 900
+(+2,5 GiB, meno slot che ruotano per l'adattamento: costo da misurare, in coda), registrazione dell'arena sulla 3060 (7,4 GiB fissati nel prefisso
+registrato, `STRATA_ARENA_PIN_GIB`: cambia la banda PCIe dei prompt); l'arena in mmap (`STRATA_ARENA_MMAP`) esiste **solo su Linux**.
+Cache conversazioni senza swap: con 4 slot e 27,5 GiB di cache (10 parcheggi) il sistema e' sceso a **2,9 GiB disponibili** (working
+set 72,5 GiB, impegnata 109 GiB su 95,9 + file di paging 75 GiB, swap usato 0,5 GiB; corsa poi scartata per il riavvio, ma la memoria e'
+reale) - troppo stretto; la quota sicura, lasciando ~8 GiB liberi con gli altri programmi al livello attuale, e' **~16-20 GiB
+(8-10 conversazioni da 100K)**. Dato da una sola corsa, da riconfermare.

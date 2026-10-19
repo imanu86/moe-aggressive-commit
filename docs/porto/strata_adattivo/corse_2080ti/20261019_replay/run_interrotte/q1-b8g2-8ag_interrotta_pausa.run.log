@@ -1,0 +1,26 @@
+bench lock taken after 0 s
+FINESTRA 3600-4800 s del lavoro: {'requests': 24, 'makespan': 1582.7, 'ttft_p50': 216.1, 'ttft_p90': 427.5, 'ttft_max': 485.3, 'ttft_mean': 227.2, 'prompt': 2713178, 'reused': 920652, 'new': 1792526, 'out': 6851, 'server_read_s': 1505.8, 'server_gen_s': 117.5, 'server_busy_s': 1623.4}
+  P: 7 richieste, warm P=140211, primo invio 0 s, P 140396..147993, reset 0
+  A: 4 richieste, warm P=63990, primo invio 0 s, P 68904..82515, reset 0
+  B: 7 richieste, warm P=92568, primo invio 0 s, P 94999..122549, reset 0
+  C: 6 richieste, warm -, primo invio 0 s, P 85206..138524, reset 0
+  P2: 7 richieste, warm P=140211, primo invio 0 s, P 140396..147993, reset 0
+  A2: 4 richieste, warm P=63990, primo invio 0 s, P 68904..82515, reset 0
+  B2: 7 richieste, warm P=92568, primo invio 0 s, P 94999..122549, reset 0
+  C2: 6 richieste, warm -, primo invio 0 s, P 85206..138524, reset 0
+engine up in 91 s
+warm P: target 140211 prompt 134826 cached 0 in 234 s 
+warm P2: target 140211 prompt 137783 cached 8409 in 224 s 
+warm A: target 63990 prompt 65609 cached 8409 in 102 s 
+warm A2: target 63990 prompt 62275 cached 8409 in 95 s 
+warm B: target 92568 prompt 89374 cached 8409 in 143 s 
+warm B2: target 92568 prompt 93745 cached 8409 in 147 s 
+  P#19: send      0 ttft    4.9 end     16 prompt 135096/140396 cached 134826 out 108/108
+  P2#19: send      2 ttft    8.1 end     22 prompt 138020/140396 cached 137783 out 104/108
+  B2#19: send      2 ttft   18.1 end    110 prompt 96791/94999 cached 93745 out 432/432
+  A2#20: send      2 ttft   32.9 end    117 prompt 67274/68904 cached 62275 out 417/440
+  A#20: send      0 ttft  203.9 end    205 prompt 70151/68904 cached 65609 out 7/440
+  C2#22: send      2 ttft  180.0 end    237 prompt 83843/85206 cached 8409 out 265/265
+  A2#21: send    117 ttft  108.9 end    266 prompt 75629/75949 cached 67274 out 190/190
+  B2#20: send    112 ttft   73.6 end    277 prompt 97309/96053 cached 97222 out 463/463
+  B#19: send      0 ttft  235.2 end    315 prompt 91938/94999 cached 89374 out 432/432

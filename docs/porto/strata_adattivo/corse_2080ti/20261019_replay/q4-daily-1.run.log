@@ -1,0 +1,15 @@
+bench lock taken after 0 s
+engine up in 76 s
+warm S0: 13.0 s prompt 8195 cached 0 
+warm S1: 13.0 s prompt 8351 cached 0 
+  00_soloS_0_S0L01: {"ok": true, "out": 384, "ttft": 1.22, "dec_tps": 64.5, "wall": 7.2, "prompt": 8273, "cached": 8168, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per chi ha dimestichezza con C++ (quindi capi", "err": null}
+  00_soloS_1_S1L02: {"ok": true, "out": 384, "ttft": 1.11, "dec_tps": 66.4, "wall": 6.9, "prompt": 8420, "cached": 8324, "distinct4": 1.0, "bad": 0.0, "head": "La gestione della cache degli esperti (MoE - Mixture of Experts) su GPU è critic", "err": null}
+   | strata serve: prompt 8273 tokens = 8168 reused + 105 read in 1171 ms (89.7 tok/s), 384 generated in 5955 ms (64.5 tok/s), drafts accepted 194 of 318, 2 checkpoints
+   | strata serve: prompt 8420 tokens = 8324 reused + 96 read in 1077 ms (89.1 tok/s), 384 generated in 5793 ms (66.3 tok/s), drafts accepted 198 of 319, 2 checkpoints
+solo:S: 2 chat, 768 token in 14.1 s = 54.6 t/s aggregati (decode 59.6 t/s, dec medio 65.5)
+  01_soloS_0_S0L01: {"ok": true, "out": 384, "ttft": 0.22, "dec_tps": 65.4, "wall": 6.1, "prompt": 8273, "cached": 8266, "distinct4": 1.0, "bad": 0.0, "head": "Ciao! Ecco una spiegazione pensata per un collega C++: useremo termini come *mem", "err": null}
+  01_soloS_1_S1L02: {"ok": true, "out": 384, "ttft": 0.2, "dec_tps": 53.8, "wall": 7.3, "prompt": 8420, "cached": 8413, "distinct4": 0.973, "bad": 0.0, "head": "Questa è una domanda eccellente che tocca il cuore dell'ottimizzazione dei model", "err": null}
+   | strata serve: prompt 8273 tokens = 8266 reused + 7 read in 170 ms (41.2 tok/s), 384 generated in 5880 ms (65.3 tok/s), drafts accepted 185 of 321, 2 checkpoints
+   | strata serve: prompt 8420 tokens = 8413 reused + 7 read in 166 ms (42.2 tok/s), 384 generated in 7146 ms (53.7 tok/s), drafts accepted 198 of 300, 2 checkpoints
+solo:S: 2 chat, 768 token in 13.4 s = 57.3 t/s aggregati (decode 58.1 t/s, dec medio 59.6)
+fine q4-daily-1

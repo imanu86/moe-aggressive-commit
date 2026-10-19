@@ -47,6 +47,8 @@ ap.add_argument('--shared-tok', type=int, default=9218)
 ap.add_argument('--ratio', type=float, default=3.9, help='caratteri per token iniziali (poi corretti sul conteggio del server)')
 ap.add_argument('--deadline', type=float, default=3600.0, help='s dal via oltre i quali si chiude (richieste non finite segnalate)')
 ap.add_argument('--no-warm', action='store_true')
+ap.add_argument('--dup', type=int, default=1, help='duplica ogni sessione N volte (testo privato diverso): N*4 agenti dalle 4 della traccia')
+ap.add_argument('--dup-stagger', type=float, default=1.5, help='s di sfasamento fra le copie')
 ap.add_argument('--dry', action='store_true', help='stampa il piano e basta (niente server, niente GPU)')
 a = ap.parse_args()
 
@@ -93,6 +95,13 @@ def pct(v, q):
 
 
 OS = orig_stats()
+NSESS0 = len(plan)
+if a.dup > 1:
+    for sid in list(plan):
+        for d in range(2, a.dup + 1):
+            nsid = f'{sid}{d}'
+            plan[nsid] = dict(plan[sid], stagger=(d - 1) * a.dup_stagger)
+            bys[nsid] = bys[sid]
 print('FINESTRA', f'{T0:.0f}-{T1:.0f} s del lavoro:', {k: (round(v, 1) if isinstance(v, float) else v) for k, v in OS.items()}, flush=True)
 for sid, v in plan.items():
     w = v['warm']
@@ -115,13 +124,13 @@ def tool_q(outtok):
             f"successivo, spiegando nel dettaglio perche'. Rispondi in modo esteso, circa {max(10, int(outtok * 0.7))} parole.")
 ratio = [a.ratio]
 cursor = collections.Counter()
-SIDX = {s: i for i, s in enumerate(sorted(bys))}
+SIDX = {s: i for i, s in enumerate(sorted(plan))}
 
 
 def piece(sid, ntok):
     """Testo sintetico di ~ntok token, preso in sequenza dal pool a partire da un offset per sessione (mai lo stesso testo fra sessioni)."""
     n = max(8, int(ntok * ratio[0]))
-    st = (SIDX[sid] * 262144 + cursor[sid]) % len(POOL)
+    st = ((SIDX[sid] * 262144 if a.dup == 1 else SIDX[sid] * (len(POOL) // len(SIDX)) + 7777) + cursor[sid]) % len(POOL)
     cursor[sid] += n
     pool2 = POOL + POOL
     return pool2[st: st + n]
@@ -213,6 +222,29 @@ class Server:
                 kd.kill()
             except psutil.Error:
                 pass
+
+
+class MemSampler(threading.Thread):
+    """Memoria ogni 3 s: working set e privata dei processi strata.exe, RAM disponibile e swap del sistema."""
+    def __init__(self):
+        super().__init__(daemon=True)
+        self.halt = threading.Event()
+        self.rows = []
+
+    def run(self):
+        import psutil
+        while not self.halt.wait(3.0):
+            ws = pv = 0
+            for q in psutil.process_iter(['name']):
+                try:
+                    if (q.info['name'] or '').lower() == 'strata.exe':
+                        mi = q.memory_info()
+                        ws += mi.wset
+                        pv += getattr(mi, 'private', mi.vms)
+                except psutil.Error:
+                    pass
+            vm, sw = psutil.virtual_memory(), psutil.swap_memory()
+            self.rows.append((time.monotonic(), ws / 2**30, pv / 2**30, vm.available / 2**30, sw.used / 2**30, vm.total / 2**30))
 
 
 class LoadSampler(threading.Thread):
@@ -336,6 +368,8 @@ res, convs = [], {}
 allres = dict(tag=a.tag, exe=a.exe, extra=a.extra, env=a.env, window=[T0, T1], original=OS, args=None)
 with Server() as srv:
     allres['args'] = srv.args
+    mem = MemSampler()
+    mem.start()
     # ---- riscaldamento: nell'ordine di servizio originale
     ws = sorted([(v['warm']['end'], sid, v['warm']) for sid, v in plan.items() if v['warm'] and not a.no_warm])
     for _, sid, w in ws:
@@ -359,7 +393,7 @@ with Server() as srv:
         conv = convs.get(sid) or Conv(sid)
         convs[sid] = conv
         prev = v['warm']
-        first_arrival = max(0.0, v['reqs'][0]['send'] - T0)
+        first_arrival = max(0.0, v['reqs'][0]['send'] - T0) + v.get('stagger', 0.0)
         wait = T_START + first_arrival - time.monotonic()
         if wait > 0:
             time.sleep(wait)
@@ -396,6 +430,7 @@ with Server() as srv:
         time.sleep(1)
     unfinished = [x for x in th if x.is_alive()]
     smp.halt.set()
+    mem.halt.set()
     lines = log_since(off)
 
 wall = max((r['t_end_rel'] for r in res if r.get('ok')), default=0)
@@ -412,6 +447,9 @@ summ = dict(requests_planned=OS['requests'], requests_ok=len(ok), failed=len(res
             server_read_s=sum(s[0] for s in srv) / 1000, server_gen_s=sum(s[2] for s in srv) / 1000, server_read_tok=sum(s[3] for s in srv),
             server_gen_tok=sum(s[1] for s in srv), server_log_requests=len(srv),
             cpu_other_mean=sum(smp.vals) / max(1, len(smp.vals)), cpu_other_p90=pct(smp.vals, .9), cpu_okto_mean=sum(smp.okto) / max(1, len(smp.okto)),
+            mem_strata_wset_max_gib=max((r[1] for r in mem.rows), default=None), mem_strata_private_max_gib=max((r[2] for r in mem.rows), default=None),
+            mem_avail_min_gib=min((r[3] for r in mem.rows), default=None), mem_swap_used_max_gib=max((r[4] for r in mem.rows), default=None),
+            mem_total_gib=mem.rows[0][5] if mem.rows else None, agents=len(plan),
             cpu_other_top=[(k, round(v / max(1.0, wall), 1)) for k, v in smp.byname.most_common(5)])
 summ['disturbed'] = bool(summ['cpu_other_mean'] > 30 or (summ['cpu_other_p90'] or 0) > 30)
 summ['server_busy_frac'] = (summ['server_read_s'] + summ['server_gen_s']) / wall if wall else None

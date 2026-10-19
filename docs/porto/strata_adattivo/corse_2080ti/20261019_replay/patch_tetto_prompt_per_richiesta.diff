@@ -1,0 +1,15 @@
+--- a/serve/server.py
++++ b/serve/server.py
+@@ -4059,6 +4059,12 @@
+             ctx = getattr(self.engine, "known_ctx", 0)
+             if ctx <= 0:
+                 raise EngineStarting("the engine is starting (a minute or two); try again shortly")
++        cap = int(os.environ.get("STRATA_MAX_PROMPT_TOKENS", "0") or 0)    # per-request (per-agent) cap, 0 = only --max-context
++        if cap > 0 and len(ids) > cap:
++            self.forget_prompt(encoded_ids)
++            raise ValueError("request exceeds the context window: "
++                             f"prompt ({len(ids)} tokens) is over this server's per-request limit ({cap}); "
++                             "requests are never truncated - compact the conversation and resend")
+         room = ctx - CTX_SLACK - len(ids)
+         if max_new is None or max_new <= 0 or (self.fit_max_tokens and room < 1):
+             if room < 1:

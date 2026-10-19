@@ -10,8 +10,9 @@ W="STRATA_FORCE_WINDOWS=C:\Users\imanu\source\repos\moe-aggressive-commit\docs\p
 P="--add-opt=--pipeline-windows=2 --add-opt=--vram-reserve-later-mib=384 --add-opt=--host-core=last --set-opt=--ple-gguf=D:\ds4_work\strata\Strata-data\gguf\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf"
 A="--env STRATA_VRAM_FREE=device --env STRATA_ROUTE_TAIL_SKIP=0 --env STRATA_ATTN_DAILY=1 --env STRATA_B6_MMVQ_ROWS=1 --env STRATA_MTP_SHARED_BRANCH=0 --env STRATA_SIDE_MIXER=2 --env STRATA_RAM_CORE=1 --env STRATA_RAM_CORE_SLOTS_DEV1=5500 --env STRATA_EXPDEC=1 --env STRATA_QSA_ROWS=1 --env STRATA_SA_BET=1 --env STRATA_SA_CHAIN=1 --env STRATA_P2_FLUSH_NOSWITCH=1 --env STRATA_MMVQ_IL=0"
 B=$1; BENV=$2; ONLY=$3
+export STRATA_TURNO_LOCK=CODA-bf16
 J=$(dirname "$0")/jump_stato.sh
-run() { echo "$1 $(date +%H:%M) $(bash $J)"; bash $D/det_force.sh "$@" >/dev/null 2>&1; echo "$1 fine $(bash $J)"; }
+run() { echo "$1 $(date +%H:%M) $(bash $J)"; bash $(dirname "$0")/det_force_turno.sh "$@" >/dev/null 2>&1; echo "$1 fine $(bash $J)"; }
 show() { grep -aEh "decode timing|PLE primary|prompt [0-9]+ tokens|strata work|strata hc:" $K/$1/engine.log 2>/dev/null | cut -c1-240; }
 if [ "$ONLY" != solo2 ]; then
   echo "== decode $(date +%H:%M)"

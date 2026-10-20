@@ -42,3 +42,8 @@
   leve sm_86 a mano (ADAPT_NOWAIT, ADAPT_LAG=2, CPU_IQ_ALL_EXACT1, GR_UP75, GU_SWIGLU). PR: aggiornare #2073/#2081, ritirare #2080.
 - `MISURE_STADIO0_2026-10-19.md`, `STIMA_5060TI_2026-10-19.md` — 5060 Ti allo stadio 0: decode +9/+18% (centrale +14%);
   OktoCGControl tiene ~1,9 GB sulla 3060 (ogni GiB liberato ≈ −1,48 ms/token).
+
+## Aggiunta 20/10 mattina
+- 4 agenti locali in corso sulla passata unica (`corse_2080ti/20261020_4agenti/`, brief1-4, stato in agente1-4.md). Per fermarli: chiudere i python di `locale_agent.py`.
+- Misura reale 4 agenti (primi 4,4 min): ~12-13,5 t/s per agente in decode (~50 aggregati); letture seriali ~560 tok/s; durante una lettura gli altri slot decodificano 14 righe/s; motore occupato 66% del muro. Misura: `misura_4agenti.py` (segna / misura), parziale in `misura_parziale.txt`.
+- Albero (lab/overlap): livelli 1-2 compilati, misure in CODA_MISURE.md blocchi 16-18; livello 3 dopo le misure.

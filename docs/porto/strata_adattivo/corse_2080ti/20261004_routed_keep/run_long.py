@@ -25,6 +25,10 @@ def main():
     ap.add_argument('--env', action='append', default=[], help='KEY=VALUE lab probe for this arm')
     ap.add_argument('--mtp-dir', default=None)
     ap.add_argument('--tokens', type=int, default=1024)
+    ap.add_argument('--startup-s', type=int, default=300,
+                    help='seconds allowed for the engine to load its weights before Startup deadline (default 300, as '
+                         'before).  With --pipeline-windows 2 on this pair the load is slower than the 300 s the bench '
+                         'allowed, and the arm dies before any measure (20/10, DET-ov2-A0)')
     ap.add_argument('--set-opt', action='append', default=[], help='--option=value override of the Daily args')
     ap.add_argument('--add-opt', action='append', default=[], help='--option=value appended (repeatable options)')
     ap.add_argument('--drop-opt', action='append', default=[], help='--option removed from the Daily args')
@@ -83,7 +87,7 @@ def main():
     assert not now['competing'], now['competing']
     assert now['commit_free_gib'] >= 52, f"Too little commit charge: {now['commit_free_gib']} GiB"
     out.mkdir()
-    plan = dict(build=a.build, daily_exe=a.daily_exe, set_opt=a.set_opt, add_opt=a.add_opt, env_probe=a.env, mtp_dir=a.mtp_dir, args=args, tokens=a.tokens, state=now,
+    plan = dict(build=a.build, daily_exe=a.daily_exe, set_opt=a.set_opt, add_opt=a.add_opt, env_probe=a.env, mtp_dir=a.mtp_dir, args=args, tokens=a.tokens, startup_s=a.startup_s, state=now,
                 state_diff=diff, prompt_tokens={c: len(i) for c, i in requests},
                 executable_sha256=pin['executable_sha256'], daily_sha256=sha(Path(cfg['exe'])),
                 config_sha256=sha(CONFIG), env={k: v for k, v in env.items() if k.startswith(('STRATA_', 'CUDA_'))})
@@ -98,7 +102,7 @@ def main():
         # has been measured yet, so the arm stays valid; the engine's log is appended, not replaced.
         for attempt in (1, 2):
             try:
-                bounded(engine.restart, 300, engine, owned, 'Startup deadline')
+                bounded(engine.restart, a.startup_s, engine, owned, 'Startup deadline')
                 break
             except Exception as e:
                 rc = getattr(getattr(engine, 'proc', None), 'returncode', None)

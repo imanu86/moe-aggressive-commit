@@ -308,7 +308,9 @@ Giro di codice di questa sera (nessuna GPU: l'agente gira sul motore Strata acce
 - build **`build-overlap3-168d3fa5`** (sha256 `4f09094e184395ec635a44dc55798c6928a27396a2855ea80c0a5fcf7c13d44f`), copia
   di `lab/overlap` HEAD `168d3fa5` con le patch 19, 20, 21 e **22** (B ad albero, livelli 1 e 2). Log:
   `..\20261019_overlap\build4.log` (`rc 0`, 17 s incrementale). `strata-vision.exe` dal Daily build-0143-daily.
-  **Compilata sì, installata no, provata no, misurata no.**
+  **Compilata sì, installata no, provata no, misurata no.** Dopo la copia `lab/overlap` ha un solo commit di codice in
+  più, `3d3f0441`, che **corregge due commenti e non cambia una riga eseguibile** (ricompilato: `build5.log`, `rc 0`):
+  la copia qui sopra è quella con cui correre i blocchi 16-18, e il suo `build.json` ha lo sha del suo exe.
 - config nuove in `corse_2080ti\20261019_overlap\`: **`cfg-overlap3.json`** (copia di `cfg-overlap.json` con cambiati
   **solo** `exe`/`vision.exe` → build-overlap3, `log`, `--prompt-cache-file` → file proprio; `env` identico e `args`
   verificato per confronto dei due JSON: 54 opzioni, una sola riga diversa) e **`cfg-overlap3-minp.json`** (uguale, con

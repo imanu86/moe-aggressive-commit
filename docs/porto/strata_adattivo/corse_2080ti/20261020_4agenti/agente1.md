@@ -71,9 +71,13 @@ fallito, non solo «niente da impacchettare».
 ## Comandi pronti (dopo di me)
 
 Build copiata (eseguita da me, esito sotto nel file): `corse_2080ti/20261004_routed_keep/build-passata-<sha8>/`.
-Misura (agente 4, braccia B-A-B; l'agente 1 non lancia corse GPU):
-`bash corse_2080ti/20261019_passata_unica/coda_lc.sh build-passata-<sha8>`
-`bash corse_2080ti/20261019_passata_unica/coda_replay_pu.sh build-passata-<sha8> 1`
+Misura (agente 4, braccia B-A-B; l'agente 1 non lancia corse GPU) — nome di build reale da usare:
+`bash corse_2080ti/20261019_passata_unica/coda_lc.sh build-passata-e29c8065`
+`bash corse_2080ti/20261019_passata_unica/coda_replay_pu.sh build-passata-e29c8065 1`
+Exe diretto se un runner lo chiede:
+`corse_2080ti\20261004_routed_keep\build-passata-e29c8065\strata.exe` (sha256 `2490f283…`, 0.1.45, sm_75+86).
+Braccio A = `STRATA_PACK_PREFILL=3 STRATA_PIPED_CONCURRENT=1 STRATA_PACK_CONCURRENT=1`; non accendere
+`STRATA_PACK_CHUNK` finché F2 non è sistemata.
 
 ## Secondo giro di correttezza — `serve/server.py` dell'agente 3 (`e29c8065`)
 
@@ -106,7 +110,35 @@ Segnalazioni per l'agente 3 (non ho toccato i suoi file):
   decode non trovano gli esperti prestati e li calcolano su CPU come fra i pezzi → **il t/s degli scrittori nel ramo
   A va letto come parte del verdetto**, non come rumore.
 
+## Build 2 (`--tests --target all`): fallita per un motivo vecchio, estraneo alla leva
+
+`build2_tests_e29c8065.log`: `rc 1` in 35 s. Errore: `src/kernels/hc_persist_parity.cpp(55,56): error C3861:
+'unsetenv' / 'setenv' identificatore non trovato` — MSVC non ha `unsetenv` e quel file include solo `<cstdlib>`.
+Non è la leva (la leva tocca solo `src/program/generate.cpp`, che compila): nella stessa condizione si trovano anche
+`src/core/arch_defaults_test.cpp`, `src/core/conversation_file_test.cpp`, `src/kernels/decode_cluster_parity.cpp` →
+**la build `--tests` di questo branch non è mai girata su Windows**. Non l'ho corretto: bruciava l'ultimo slot di
+build e i file non sono miei. Da fare se serve un check C++ su CPU: una piccola shim MSVC (`_putenv_s` / `_unsetenv`)
+in quei 3-4 sorgenti di test.
+Verificato dopo: `build-sm7586\strata.exe` **non è stato ricompilato** (sha256 ancora `2490f283…`) → la copia
+`build-passata-e29c8065` resta valida. Attenzione però: il `CMakeCache` di `build-sm7586` ora ha
+`STRATA_BUILD_TESTS=ON`; la prossima build senza `--tests` lo riporta a OFF.
+
+## Check CPU-only eseguiti (niente GPU, niente slot build)
+
+- `tests/program/batch_read_test.cpp` compilato a parte (`cl /std:c++17`, header-only) e eseguito: **`batch_read_test: ok`**
+  → le regole di `batch_read_piece`, `piped_read_piece`, `concurrent_read_off`, `piped_read_lead_in` (le funzioni che
+  il percorso concorrente usa) passano col codice della leva in posto.
+- `git apply --check --reverse stack/21-pack-concurrent.patch` sull'HEAD: **ok** → la patch registrata nel `stack/`
+  è esattamente il codice del worktree. Se l'agente 2 committa C++, la 21 va rigenerata
+  (`20261019_passata_unica/stack_add.py <worktree> <sha> entry21.json`) prima di chiamarla verificata.
+- `strata.exe --version` → `strata 0.1.45`; `--help` ok.
+
 ## Ricompilazioni
 
-Max 3 build (1 già partita). Controllo `git log` ogni ~20 min; build incrementale su `build-sm7586` (ninja), quindi
-veloce. Ogni build: log in questa cartella `buildN_<sha8>.log` con `rc` e `sha256` dell'exe.
+**3 build di mandato: 1 usata (ok), 2 usata (fallita per i test, exe intatto), 1 rimasta** per il C++ dell'agente 2.
+Giro di build: `python -u build_lock_noeng.py 'C:/Users/imanu/source/repos/Strata-wt/passata-unica' --jobs 6
+--bench-held "servizio agenti 8100: bench.lock tenuto da servi_agenti.py"` (incrementale su `build-sm7586`, ~2-4 min
+dopo la prima), poi `python -u copia_build.py 'C:/Users/imanu/source/repos/Strata-wt/passata-unica' passata "<nota>"`
+→ `build-passata-<sha8>`; `copia_build.py` **rifiuta il lavoro se il worktree ha file non committati** (a 06:29 ha
+bloccato finché l'agente 3 non ha committato `serve/server.py`: coordinate i commit).
+Controllo `git log` ogni ~20 min. Nessun C++ nuovo è arrivato fino alle 07:4x:HEAD resta `e29c8065`.

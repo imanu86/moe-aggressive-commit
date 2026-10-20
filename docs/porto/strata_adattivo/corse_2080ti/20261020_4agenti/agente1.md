@@ -75,6 +75,37 @@ Misura (agente 4, braccia B-A-B; l'agente 1 non lancia corse GPU):
 `bash corse_2080ti/20261019_passata_unica/coda_lc.sh build-passata-<sha8>`
 `bash corse_2080ti/20261019_passata_unica/coda_replay_pu.sh build-passata-<sha8> 1`
 
+## Secondo giro di correttezza — `serve/server.py` dell'agente 3 (`e29c8065`)
+
+Prove eseguite da me (solo CPU, niente GPU): `python -m unittest serve.test_pack_gather` → **8/8 ok**;
+`serve.test_pack_hint serve.test_admit_order serve.test_control_cancel serve.test_parallel serve.test_prometheus`
+→ **47/47 ok**. Lettura del diff reale (`git diff --ignore-cr-at-eol 5c97ab45 e29c8065 -- serve/server.py`:
+67+/8-): con `STRATA_PACK_CONCURRENT` spento `PACK_CONCURRENT=false`, `PACK_WAIT_MS=0`, `_pack_gather` esce subito
+senza toccare nulla e il conteggio in `_pack_hint` non parte → percorso di rilascio invariato (il `pack=` passato a
+`_take_control` serve solo a chiamare `_pack_gather`, che con l'interruttore spento torna 0).
+
+Segnalazioni per l'agente 3 (non ho toccato i suoi file):
+- **CRLF su tutto `serve/server.py`**: il commit è a CRLF, il file prima era LF → il diff segna 14457 righe cambiate
+  (67 reali). `copia_build.py`/`stack_add.py` e la patch 21 ne escono gonfie. Da ri-normalizzare a LF.
+- **P1**: la finestra (default 30 ms) viene scontata **dentro** `_take_control`, dopo il `ctl_epoch += 1` e mentre
+  `self.ctl` è tenuto: chi legge per primo paga 30 ms di TTFT prima di mandare il proprio prompt. È il costo scritto
+  nel design, ma va misurato come TTFT del primo lettore, non solo come aggregato.
+- **P2**: `self.pack_pending` viene azzerato solo in `_pack_gather`; gli `_pack_hint` arrivati quando nessuno tiene
+  `self.ctl` restano contati e possono far chiudere una finestra successiva in anticipo (`base >= slots`).
+- **P3**: `pack=embeddings is None` è vero anche per le ripartenze del percorso solo (3 punti del diff): una lettura
+  corta (gli ultimi token di una già impacchettata) paga comunque la finestra.
+
+## Lettura di `Prefill::run_packed` per l'agente 2 (src/prefill/prefill.cpp:5237-5263)
+
+- `run_packed` mette tutti i segmenti in un `Pack` locale (`pack_ = &p`, guardia `Unpack` che lo azzera su tutti gli
+  stage) e poi chiama **`run(...)`**, che in fondo chiama **`drain_pipeline()`** (prefill.cpp:5276-5285): nel percorso
+  concorrente il drain del prefill avviene sul thread del lettore mentre il thread host pompa le finestre. Da
+  verificare da lui che i due drain (prefill e `pipe_drain` delle finestre, generate.cpp:14946) non si aspettino a
+  vicenda.
+- Il prestito è `lend(total)` dove `total` = prompt proprio + token degli altri (r.14501): nel braccio A gli slot in
+  decode non trovano gli esperti prestati e li calcolano su CPU come fra i pezzi → **il t/s degli scrittori nel ramo
+  A va letto come parte del verdetto**, non come rumore.
+
 ## Ricompilazioni
 
 Max 3 build (1 già partita). Controllo `git log` ogni ~20 min; build incrementale su `build-sm7586` (ninja), quindi

@@ -43,7 +43,16 @@ server (l'agente 3). Poi la **parità**: l'ultima lettura di ogni agente rimanda
 testo salvato per il confronto fra bracci. Campiona anche il carico CPU altrui e JumpConnect.
 
 Parametri utili: `--ctx 2000,8000,30000,90000`, `--tails 1000,2000,3000,4000`, `--split 2`, `--rounds 2 --burst 1`,
-`--wmaxt 400 --smaxt 600 --rmaxt 8 --pmaxt 64`, `--port 8105` (non toca il 8104 del banco vecchio né il 8100).
+`--wmaxt 400 --smaxt 600 --rmaxt 8 --pmaxt 64`, `--port 8105` (non tocca il 8104 del banco vecchio né il 8100).
+
+Prova senza GPU (stampa i contesti e il programma dei giri e chiude — la ho girata):
+
+```bash
+python letture_miste.py --tag dry1 --exe ../20261004_routed_keep/build-passata-e29c8065/strata.exe --dry
+```
+
+Ogni giro riporta anche `send_span`, `finish_span` e `overlap_min_s`: se gli invii delle 4 letture non sono davvero
+sovrapposti (`overlap_min_s` vicino a 0) il giro **non è** una passata unica e va scartato.
 
 ## Comandi pronti (nell'ordine, da Git Bash)
 

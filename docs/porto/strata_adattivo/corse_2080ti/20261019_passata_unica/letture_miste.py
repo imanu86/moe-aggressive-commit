@@ -48,6 +48,7 @@ ap.add_argument('--rmaxt', type=int, default=8, help='token di risposta di una l
 ap.add_argument('--wmaxt', type=int, default=400, help='token di uno scrittore nel giro misto')
 ap.add_argument('--smaxt', type=int, default=600, help='token dello scrittore di supporto')
 ap.add_argument('--pmaxt', type=int, default=64, help='token della ripetizione da soli (parita)')
+ap.add_argument('--dry', action='store_true', help='stampa contesti e programma dei giri e chiude (niente server, niente GPU)')
 a = ap.parse_args()
 SERVE = Path(a.serve) if a.serve else Path(a.exe).parent / 'source' / 'serve'
 OUT = H / f'lc_{a.tag}'
@@ -308,6 +309,24 @@ last_read = {c: None for c in AG}      # messaggio dell'ultima lettura di ogni a
 allres = dict(tag=a.tag, exe=a.exe, extra=a.extra, env=a.env, agents=AG, side=SIDES, ctx_tok=ctx_tok,
               tail_tok=tail_tok, split=a.split, rounds=[])
 smp = LoadSampler()
+plan = []
+for rd in range(a.rounds):
+    rd_readers = AG[:a.split] if rd % 2 == 0 else AG[a.split:]
+    plan.append(('mixed', rd, rd_readers, [c for c in AG if c not in rd_readers], SIDES[:0]))
+for b in range(a.burst):
+    plan.append(('burst', a.rounds + b, AG, [], SIDES))
+
+if a.dry:     # niente server, niente GPU: stampa contesti e programma dei giri
+    print(f'exe {a.exe}\nenv {a.env}\nport {a.port}\nagenti {AG} + scrittori di supporto {SIDES}')
+    for c in ALL:
+        print(f'  contesto {c}: {len(CTX[c])} caratteri =~ {round(len(CTX[c]) / CPT)} token')
+    for kind, rd, readers, writers, sides in plan:
+        new = {c: tail_tok[AG.index(c)] for c in readers}
+        mt = {**{c: a.wmaxt for c in writers}, **{c: a.smaxt for c in sides}}
+        print(f'  {kind}{rd}: lettori {readers} (nuovi {new} token, max_tokens {a.rmaxt}) | scrittori '
+              f'{writers + sides} (max_tokens {mt}) | lettori inviati a +{a.lead:.0f} s dagli scrittori')
+    print(f'poi ogni giro: readers_wall, ttft, t/s scrittori durante, righe pack; e parita` da sola a {a.pmaxt} token')
+    sys.exit(0)
 
 with Server() as srv:
     allres['startup_log'] = log_lines(log_slice(0))[-8:]
@@ -330,13 +349,6 @@ with Server() as srv:
         if r.get('err'):
             raise SystemExit(f'warming {c} failed: {r["err"]}')
     smp.start()
-    plan = []
-    for rd in range(a.rounds):
-        rd_readers = AG[:a.split] if rd % 2 == 0 else AG[a.split:]
-        plan.append(('mixed', rd, rd_readers, [c for c in AG if c not in rd_readers], SIDES[:0]))
-    for b in range(a.burst):
-        plan.append(('burst', a.rounds + b, AG, [], SIDES))
-
     for kind, rd, readers, writers, sides in plan:
         off, soff = log_size(), log_size('server.log')
         res = {}
@@ -377,6 +389,10 @@ with Server() as srv:
         after_tok = sum(tokens_in(r['ticks'], t_rd1, w_end) for r in okw)
         summ = dict(kind=kind, round=rd, readers=readers, writers=writers + sides,
                     readers_wall=round(rd_wall, 2),
+                    # validita` del giro: se gli invii sono davvero sovrapposti (altrimenti non e` una passata insieme)
+                    send_span=round(max(r['t0'] for r in rr) - min(r['t0'] for r in rr), 2),
+                    finish_span=round(max(r['end'] for r in rr) - min(r['end'] for r in rr), 2),
+                    overlap_min_s=round(min(min(r['end'] for r in rr) - max(x['t0'] for x in rr), default=0), 2),
                     ttft=[r.get('ttft') for r in rr], ttft_p50=pct([r['ttft'] for r in okr], 0.5),
                     ttft_max=max([r['ttft'] for r in okr] or [None]),
                     new_tokens_read=new_tok, read_tps_wall=round(new_tok / max(1e-9, rd_wall), 0),

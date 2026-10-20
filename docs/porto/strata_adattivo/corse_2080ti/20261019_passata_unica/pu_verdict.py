@@ -48,6 +48,10 @@ METRICS = [
     ('conc_rows_s', 'motore: rows/s in lettura', lambda r: max([x.get('rows_s') for x in (r.get('engine') or {}).get('conc_reads') or []] or [None]), 'giu'),
     ('pack_lines', 'righe strata pack:', lambda r: len(r.get('pack_lines') or []), 'presenza'),
     ('gather_lines', 'finestre server (righe)', lambda r: len(r.get('gather_lines') or []), 'presenza'),
+    # solo da leggere in tabella: quanto erano davvero sovrapposte le letture (un giro seriale non e` una passata unica)
+    ('send_span', 'invii span s', lambda r: r.get('send_span'), 'info'),
+    ('finish_span', 'fine letture span s', lambda r: r.get('finish_span'), 'info'),
+    ('overlap_min_s', 'sovrapposizione min s', lambda r: r.get('overlap_min_s'), 'info'),
 ]
 
 keys = sorted({k for _, res, _ in arms for k in rounds(res)})
@@ -78,7 +82,7 @@ for key in keys:
         vb0, vb1 = get(rs[0]), get(rs[-1])
         if vb0 is None or vb1 is None:
             continue
-        if name not in rs[0] and name not in rs[-1]:      # metric non prodotto da questo script (es. gather in letture_concorrenti)
+        if role == 'info' or (name not in rs[0] and name not in rs[-1]):   # info, o metric non prodotto da questo script
             continue
         disp = abs(vb1 - vb0)
         for i in range(1, len(arms) - 1):

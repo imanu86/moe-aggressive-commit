@@ -1,0 +1,215 @@
+20 comandi
+== 0 02:24 bash det_force.sh DET-ov2-A0 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-A0 rc=1
+
+== 1 02:29 bash det_force.sh DET-ov2-A0b build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-A0b rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 539 windows, rows/window 1:207 2:109 3:67 4:156, accepted 485 of 711 drafts, 1024 tokens; target picks replaced on verified rows 32; trace windows 0, misses 0
+strata decode timing: 539 windows, avg T 2.32, 1.90 tokens/window, 30.83 ms/window = verify 30.83 (GPU-reach wait 17.01 + per-layer host 1.32 [plan 0.15 actq 0.04 jobs 0.02 CPU 1.69] + stage 0.56) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89006 ms (1474.6 tok/s), 1024 generated in 16620 ms (61.6 tok/s), drafts accepted 485 of 711, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 618 windows, rows/window 1:266 2:180 3:77 4:90 6:5, accepted 408 of 629 drafts, 1024 tokens; target picks replaced on verified rows 44; trace windows 0, misses 0
+strata decode timing: 618 windows, avg T 2.02, 1.66 tokens/window, 29.30 ms/window = verify 29.30 (GPU-reach wait 16.66 + per-layer host 1.15 [plan 0.13 actq 0.03 jobs 0.01 CPU 1.19] + stage 0.57) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1974 ms (84.6 tok/s), 1024 generated in 18107 ms (56.6 tok/s), drafts accepted 408 of 629, 6 checkpoints
+
+== 2 02:33 python bab_verdict.py DET-ov2-A0 DET-ov2-A0b
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\bab_verdict.py", line 19, in <module>
+    print(f'{n:<18} L01 {g[0]:6.2f}s ({1024 / g[0]:5.1f} t/s)  L02 {g[1]:6.2f}s ({1024 / g[1]:5.1f} t/s)  finestre {"/".join(w)}')
+                         ~^^^
+IndexError: list index out of range
+
+== 3 02:33 bash det_force.sh DET-ov2-nsw-A1 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-nsw-A1 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 534 windows, rows/window 1:199 2:117 3:61 4:157, accepted 490 of 710 drafts, 1024 tokens; target picks replaced on verified rows 36; trace windows 0, misses 0
+strata decode timing: 534 windows, avg T 2.33, 1.92 tokens/window, 31.13 ms/window = verify 31.12 (GPU-reach wait 17.35 + per-layer host 1.40 [plan 0.15 actq 0.04 jobs 0.02 CPU 1.87] + stage 0.50) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89364 ms (1468.7 tok/s), 1024 generated in 16621 ms (61.6 tok/s), drafts accepted 490 of 710, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 620 windows, rows/window 1:274 2:179 3:72 4:90 6:5, accepted 406 of 618 drafts, 1024 tokens; target picks replaced on verified rows 39; trace windows 0, misses 0
+strata decode timing: 620 windows, avg T 2.00, 1.65 tokens/window, 29.94 ms/window = verify 29.94 (GPU-reach wait 16.77 + per-layer host 1.62 [plan 0.14 actq 0.03 jobs 0.01 CPU 1.28] + stage 0.97) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2008 ms (83.2 tok/s), 1024 generated in 18564 ms (55.2 tok/s), drafts accepted 406 of 618, 6 checkpoints
+
+== 4 02:36 bash det_force.sh DET-ov2-nsw-B1 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2 --env STRATA_P2_FLUSH_NOSWITCH=1
+DET-ov2-nsw-B1 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 534 windows, rows/window 1:195 2:120 3:65 4:153 6:1, accepted 490 of 714 drafts, 1024 tokens; target picks replaced on verified rows 37; trace windows 0, misses 0
+strata decode timing: 534 windows, avg T 2.34, 1.92 tokens/window, 30.50 ms/window = verify 30.50 (GPU-reach wait 17.07 + per-layer host 1.18 [plan 0.15 actq 0.04 jobs 0.02 CPU 1.62] + stage 0.52) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 88958 ms (1475.4 tok/s), 1024 generated in 16287 ms (62.9 tok/s), drafts accepted 490 of 714, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 619 windows, rows/window 1:264 2:180 3:83 4:89 6:3, accepted 407 of 628 drafts, 1024 tokens; target picks replaced on verified rows 44; trace windows 0, misses 0
+strata decode timing: 619 windows, avg T 2.01, 1.65 tokens/window, 29.00 ms/window = verify 28.99 (GPU-reach wait 16.70 + per-layer host 1.08 [plan 0.13 actq 0.02 jobs 0.01 CPU 1.03] + stage 0.63) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1961 ms (85.2 tok/s), 1024 generated in 17948 ms (57.1 tok/s), drafts accepted 407 of 628, 6 checkpoints
+
+== 5 02:39 bash det_force.sh DET-ov2-nsw-A2 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-nsw-A2 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 543 windows, rows/window 1:207 2:120 3:64 4:152, accepted 481 of 704 drafts, 1024 tokens; target picks replaced on verified rows 39; trace windows 0, misses 0
+strata decode timing: 543 windows, avg T 2.30, 1.89 tokens/window, 30.82 ms/window = verify 30.82 (GPU-reach wait 16.96 + per-layer host 1.39 [plan 0.16 actq 0.04 jobs 0.02 CPU 1.87] + stage 0.50) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89359 ms (1468.8 tok/s), 1024 generated in 16735 ms (61.2 tok/s), drafts accepted 481 of 704, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 616 windows, rows/window 1:272 2:171 3:81 4:87 6:5, accepted 410 of 619 drafts, 1024 tokens; target picks replaced on verified rows 33; trace windows 0, misses 0
+strata decode timing: 616 windows, avg T 2.00, 1.66 tokens/window, 30.66 ms/window = verify 30.65 (GPU-reach wait 16.45 + per-layer host 2.54 [plan 0.14 actq 0.03 jobs 0.02 CPU 1.29] + stage 1.90) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1968 ms (84.8 tok/s), 1024 generated in 18884 ms (54.2 tok/s), drafts accepted 410 of 619, 6 checkpoints
+
+== 6 02:43 python bab_verdict.py DET-ov2-nsw-B1 DET-ov2-nsw-A1 DET-ov2-nsw-A2
+DET-ov2-nsw-B1     L01  16.29s ( 62.9 t/s)  L02  17.95s ( 57.1 t/s)  finestre 534/619
+DET-ov2-nsw-A1     L01  16.62s ( 61.6 t/s)  L02  18.56s ( 55.2 t/s)  finestre 534/620
+DET-ov2-nsw-A2     L01  16.73s ( 61.2 t/s)  L02  18.88s ( 54.2 t/s)  finestre 543/616
+guadagno di ogni B su A (L01+L02) %: [-2.8, -4.0]
+guadagno medio B su A: -3.4 %
+
+== 7 02:43 bash det_force.sh DET-ov2-prio-A1 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-prio-A1 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 537 windows, rows/window 1:199 2:121 3:71 4:146, accepted 487 of 701 drafts, 1024 tokens; target picks replaced on verified rows 36; trace windows 0, misses 0
+strata decode timing: 537 windows, avg T 2.31, 1.91 tokens/window, 30.76 ms/window = verify 30.76 (GPU-reach wait 17.22 + per-layer host 1.19 [plan 0.15 actq 0.04 jobs 0.02 CPU 1.68] + stage 0.55) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89021 ms (1474.4 tok/s), 1024 generated in 16519 ms (62.0 tok/s), drafts accepted 487 of 701, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 626 windows, rows/window 1:282 2:177 3:78 4:84 6:5, accepted 400 of 610 drafts, 1024 tokens; target picks replaced on verified rows 34; trace windows 0, misses 0
+strata decode timing: 626 windows, avg T 1.97, 1.64 tokens/window, 28.55 ms/window = verify 28.55 (GPU-reach wait 16.22 + per-layer host 1.05 [plan 0.13 actq 0.02 jobs 0.01 CPU 1.10] + stage 0.56) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1975 ms (84.6 tok/s), 1024 generated in 17873 ms (57.3 tok/s), drafts accepted 400 of 610, 6 checkpoints
+
+== 8 02:46 bash det_force.sh DET-ov2-prio-B1 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2 --env STRATA_OV_CHAIN_PRIO=1
+DET-ov2-prio-B1 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 536 windows, rows/window 1:204 2:115 3:66 4:151, accepted 488 of 700 drafts, 1024 tokens; target picks replaced on verified rows 34; trace windows 0, misses 0
+strata decode timing: 536 windows, avg T 2.31, 1.91 tokens/window, 30.80 ms/window = verify 30.79 (GPU-reach wait 17.52 + per-layer host 1.12 [plan 0.15 actq 0.04 jobs 0.02 CPU 1.60] + stage 0.50) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 88935 ms (1475.8 tok/s), 1024 generated in 16506 ms (62.0 tok/s), drafts accepted 488 of 700, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 611 windows, rows/window 1:267 2:175 3:77 4:87 6:5, accepted 415 of 615 drafts, 1024 tokens; target picks replaced on verified rows 43; trace windows 0, misses 0
+strata decode timing: 611 windows, avg T 2.01, 1.68 tokens/window, 29.42 ms/window = verify 29.42 (GPU-reach wait 16.90 + per-layer host 1.10 [plan 0.14 actq 0.02 jobs 0.01 CPU 1.11] + stage 0.59) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1951 ms (85.6 tok/s), 1024 generated in 17975 ms (57.0 tok/s), drafts accepted 415 of 615, 6 checkpoints
+
+== 9 02:50 bash det_force.sh DET-ov2-prio-A2 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-prio-A2 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 539 windows, rows/window 1:210 2:116 3:62 4:151, accepted 485 of 693 drafts, 1024 tokens; target picks replaced on verified rows 33; trace windows 0, misses 0
+strata decode timing: 539 windows, avg T 2.29, 1.90 tokens/window, 30.47 ms/window = verify 30.47 (GPU-reach wait 16.89 + per-layer host 1.34 [plan 0.14 actq 0.04 jobs 0.02 CPU 1.85] + stage 0.49) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89125 ms (1472.6 tok/s), 1024 generated in 16425 ms (62.3 tok/s), drafts accepted 485 of 693, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 620 windows, rows/window 1:272 2:176 3:78 4:89 6:5, accepted 406 of 624 drafts, 1024 tokens; target picks replaced on verified rows 44; trace windows 0, misses 0
+strata decode timing: 620 windows, avg T 2.01, 1.65 tokens/window, 29.12 ms/window = verify 29.12 (GPU-reach wait 16.65 + per-layer host 1.18 [plan 0.13 actq 0.03 jobs 0.01 CPU 1.27] + stage 0.56) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1997 ms (83.6 tok/s), 1024 generated in 18057 ms (56.7 tok/s), drafts accepted 406 of 624, 6 checkpoints
+
+== 10 02:53 python bab_verdict.py DET-ov2-prio-B1 DET-ov2-prio-A1 DET-ov2-prio-A2
+DET-ov2-prio-B1    L01  16.51s ( 62.0 t/s)  L02  17.98s ( 57.0 t/s)  finestre 536/611
+DET-ov2-prio-A1    L01  16.52s ( 62.0 t/s)  L02  17.87s ( 57.3 t/s)  finestre 537/626
+DET-ov2-prio-A2    L01  16.43s ( 62.3 t/s)  L02  18.06s ( 56.7 t/s)  finestre 539/620
+guadagno di ogni B su A (L01+L02) %: [0.3, -0.0]
+guadagno medio B su A: 0.1 %
+
+== 11 02:53 bash det_force.sh DET-ov2-stg-A1 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-stg-A1 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 539 windows, rows/window 1:200 2:115 3:67 4:157, accepted 485 of 720 drafts, 1024 tokens; target picks replaced on verified rows 35; trace windows 0, misses 0
+strata decode timing: 539 windows, avg T 2.34, 1.90 tokens/window, 30.99 ms/window = verify 30.99 (GPU-reach wait 17.29 + per-layer host 1.21 [plan 0.16 actq 0.04 jobs 0.02 CPU 1.65] + stage 0.55) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89210 ms (1471.2 tok/s), 1024 generated in 16704 ms (61.3 tok/s), drafts accepted 485 of 720, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 617 windows, rows/window 1:274 2:173 3:74 4:91 6:5, accepted 407 of 619 drafts, 1024 tokens; target picks replaced on verified rows 38; trace windows 0, misses 0
+strata decode timing: 617 windows, avg T 2.00, 1.66 tokens/window, 29.32 ms/window = verify 29.32 (GPU-reach wait 16.67 + per-layer host 1.12 [plan 0.14 actq 0.02 jobs 0.01 CPU 1.14] + stage 0.59) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1944 ms (85.9 tok/s), 1024 generated in 18093 ms (56.6 tok/s), drafts accepted 407 of 619, 6 checkpoints
+
+== 12 02:57 bash det_force.sh DET-ov2-stg-B1 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2 --env STRATA_MTP_STAGE0=1
+DET-ov2-stg-B1 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 534 windows, rows/window 1:206 2:112 3:68 4:148, accepted 490 of 692 drafts, 1024 tokens; target picks replaced on verified rows 39; trace windows 0, misses 0
+strata decode timing: 534 windows, avg T 2.30, 1.92 tokens/window, 36.88 ms/window = verify 36.87 (GPU-reach wait 23.49 + per-layer host 1.63 [plan 0.16 actq 0.05 jobs 0.02 CPU 2.35] + stage 0.12) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89362 ms (1468.7 tok/s), 1024 generated in 19691 ms (52.0 tok/s), drafts accepted 490 of 692, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 623 windows, rows/window 1:272 2:181 3:71 4:90 6:9, accepted 403 of 638 drafts, 1024 tokens; target picks replaced on verified rows 38; trace windows 0, misses 0
+strata decode timing: 623 windows, avg T 2.02, 1.64 tokens/window, 35.68 ms/window = verify 35.68 (GPU-reach wait 23.43 + per-layer host 1.12 [plan 0.14 actq 0.03 jobs 0.02 CPU 1.51] + stage 0.14) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 2007 ms (83.2 tok/s), 1024 generated in 22231 ms (46.1 tok/s), drafts accepted 403 of 638, 6 checkpoints
+
+== 13 03:02 bash det_force.sh DET-ov2-stg-A2 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+DET-ov2-stg-A2 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 544 windows, rows/window 1:213 2:116 3:65 4:150, accepted 480 of 696 drafts, 1024 tokens; target picks replaced on verified rows 40; trace windows 0, misses 0
+strata decode timing: 544 windows, avg T 2.28, 1.88 tokens/window, 30.30 ms/window = verify 30.30 (GPU-reach wait 16.76 + per-layer host 1.29 [plan 0.14 actq 0.04 jobs 0.02 CPU 1.76] + stage 0.45) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89457 ms (1467.2 tok/s), 1024 generated in 16485 ms (62.1 tok/s), drafts accepted 480 of 696, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 615 windows, rows/window 1:266 2:172 3:78 4:96 6:3, accepted 411 of 631 drafts, 1024 tokens; target picks replaced on verified rows 42; trace windows 0, misses 0
+strata decode timing: 615 windows, avg T 2.03, 1.67 tokens/window, 29.18 ms/window = verify 29.18 (GPU-reach wait 16.67 + per-layer host 1.08 [plan 0.13 actq 0.03 jobs 0.01 CPU 1.13] + stage 0.51) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1941 ms (86.1 tok/s), 1024 generated in 17944 ms (57.1 tok/s), drafts accepted 411 of 631, 6 checkpoints
+
+== 14 03:06 python bab_verdict.py DET-ov2-stg-B1 DET-ov2-stg-A1 DET-ov2-stg-A2
+DET-ov2-stg-B1     L01  19.69s ( 52.0 t/s)  L02  22.23s ( 46.1 t/s)  finestre 534/623
+DET-ov2-stg-A1     L01  16.70s ( 61.3 t/s)  L02  18.09s ( 56.6 t/s)  finestre 539/617
+DET-ov2-stg-A2     L01  16.48s ( 62.1 t/s)  L02  17.94s ( 57.1 t/s)  finestre 544/615
+guadagno di ogni B su A (L01+L02) %: [17.0, 17.9]
+guadagno medio B su A: 17.4 %
+
+== 15 03:06 bash det_force.sh DET-ov2-top2 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2 --env STRATA_OV_TOP2_STAT=1 --env STRATA_DECODE_TIMING=1
+DET-ov2-top2 rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 532 windows, rows/window 1:200 2:115 3:65 4:152, accepted 492 of 701 drafts, 1024 tokens; target picks replaced on verified rows 32; trace windows 0, misses 0
+strata decode timing: 532 windows, avg T 2.32, 1.92 tokens/window, 32.64 ms/window = verify 32.64 (GPU-reach wait 18.72 + per-layer host 1.31 [plan 0.15 actq 0.04 jobs 0.02 CPU 1.70] + stage 0.55) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 89470 ms (1466.9 tok/s), 1024 generated in 17363 ms (59.0 tok/s), drafts accepted 492 of 701, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 616 windows, rows/window 1:271 2:176 3:75 4:90 6:4, accepted 410 of 616 drafts, 1024 tokens; target picks replaced on verified rows 48; trace windows 0, misses 0
+strata decode timing: 616 windows, avg T 2.00, 1.66 tokens/window, 30.57 ms/window = verify 30.57 (GPU-reach wait 17.71 + per-layer host 1.13 [plan 0.13 actq 0.03 jobs 0.01 CPU 1.23] + stage 0.48) + commit/emit 0.00 + draft 0.00; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 131072 reused + 167 read in 1992 ms (83.8 tok/s), 1024 generated in 18830 ms (54.4 tok/s), drafts accepted 410 of 616, 6 checkpoints
+
+== 16 03:09 bash det_force.sh DET-ov2-t2s build-overlap2-f20bd46e --env STRATA_MTP_TOP2=1 --env STRATA_DECODE_TIMING=1
+DET-ov2-t2s rc=0
+strata force: list 0: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L01.txt, 1024 ids (text)
+strata force: list 1: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261006_due_schede\force_ids\force_L02.txt, 1024 ids (text)
+strata force: request 0 generates the 1024 ids of list 0 (max_new 1024)
+strata work: request 0 (forced), 518 windows, rows/window 1:184 2:112 3:61 4:161, accepted 506 of 717 drafts, 1024 tokens; target picks replaced on verified rows 33; trace windows 0, misses 0
+strata decode timing: 518 windows, avg T 2.38, 1.98 tokens/window, 34.52 ms/window = verify 29.91 (GPU-reach wait 10.77 + per-layer host 0.81 [plan 0.13 actq 0.03 jobs 0.02 CPU 1.44] + stage 0.25) + commit/emit 0.68 + draft 3.14; per layer-window: CPU experts 
+strata serve: prompt 131248 tokens = 0 reused + 131248 read in 94918 ms (1382.8 tok/s), 1024 generated in 17881 ms (57.3 tok/s), drafts accepted 506 of 717, 6 checkpoints
+strata force: request 1 generates the 1024 ids of list 1 (max_new 1024)
+strata work: request 1 (forced), 602 windows, rows/window 1:253 2:181 3:76 4:92, accepted 424 of 609 drafts, 1024 tokens; target picks replaced on verified rows 46; trace windows 0, misses 0
+strata decode timing: 602 windows, avg T 2.01, 1.70 tokens/window, 31.39 ms/window = verify 27.78 (GPU-reach wait 10.14 + per-layer host 0.58 [plan 0.11 actq 0.02 jobs 0.01 CPU 0.81] + stage 0.26) + commit/emit 0.63 + draft 2.76; per layer-window: CPU experts 
+strata serve: prompt 131239 tokens = 123648 reused + 7591 read in 10727 ms (707.7 tok/s), 1024 generated in 18896 ms (54.2 tok/s), drafts accepted 424 of 609, 6 checkpoints
+
+== 17 03:15 python ..\20261019_banco_comunita\community_bench.py COMM-ov-minp-A "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261019_overlap\cfg-overlap.json" "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-overlap2-f20bd46e"
+one tokens-128000-run-2 {"ttft_s": 84.2816469000536, "elapsed_s": 87.75940620002802, "engine": {"projection": null, "time": 1792459292.5741317, "duration_s": 87.7, "finish": "length", "prompt_tokens": 128000, "reused": 0, "output_tokens": 256, "prompt_total": 128000, "prompt_read": 128000, "reasoning_recoveries": 0, "reasoning_repeat_coverage": 0.0, "engine_generated": 256, "prompt_ms": 84168.8, "decode_ms": 3498.5, "decode_tok_s": 73.2, "hit_rate": 0.991, "pcie_share": 0.0, "ram_blobs": 0, "file_blobs": 0, "file_mb": 0, "drafts_offered": 213, "drafts_accepted": 150}}
+start tokens-128000-run-3 tokens 128000
+done tokens-128000-run-3 {"ttft_s": 84.0351158999838, "elapsed_s": 87.55562190001365, "engine": {"projection": null, "time": 1792459381.52412, "duration_s": 87.5, "finish": "length", "prompt_tokens": 128000, "reused": 0, "output_tokens": 256, "prompt_total": 128000, "prompt_read": 128000, "reasoning_recoveries": 0, "reasoning_repeat_coverage": 0.0, "engine_generated": 256, "prompt_ms": 83916.9, "decode_ms": 3546.6, "decode_tok_s": 72.2, "hit_rate": 0.991, "pcie_share": 0.0, "ram_blobs": 0, "file_blobs": 0, "file_mb": 0, "drafts_offered": 215, "drafts_accepted": 152}}
+summary {"4096": {"prompt_tokens": {"median": 4096, "min": 4096, "max": 4096}, "cached_tokens": {"median": 0, "min": 0, "max": 0}, "output_tokens": {"median": 256, "min": 256, "max": 256}, "client_ttft_s": {"median": 5.976332599995658, "min": 5.795752900012303, "max": 6.241388399968855}, "client_elapsed_s": {"median": 9.635292700026184, "min": 9.220098700025119, "max": 10.219416200008709}, "prefill_tok_s": {"median": 688.7506305700354, "min": 659.8363296604163, "max": 710.0755842174607}, "decode_tok_s": {"median": 69.56143687843053, "min": 64.00800100012502, "max": 74.32569752925123}}, "32768": {"prompt_tokens": {"median": 32768, "min": 32768, "max": 32768}, "cached_tokens": {"median": 0, "min": 0, "max": 0}, "output_tokens": {"median": 256, "min": 256, "max": 256}, "client_ttft_s": {"median": 24.910634300031234, "min": 24.805348200025037, "max": 25.063181899953634}, "client_elapsed_s": {"median": 28.60539909999352, "min": 28.578255100001115, "max": 28.699287299998105}, "prefill_tok_s": {"median": 1317.804517083843, "min": 1309.9759336696754, "max": 1323.4943676364267}, "decode_tok_s": {"median": 68.92281183533909, "min": 67.50164798945286, "max": 70.00082032211316}}, "128000": {"prompt_tokens": {"median": 128000, "min": 128000, "max": 128000}, "cached_tokens": {"median": 0, "min": 0, "max": 0}, "output_tokens": {"median": 256, "min": 256, "max": 256}, "client_ttft_s": {"median": 84.0351158999838, "min": 83.28957020002417, "max": 84.2816469000536}, "client_elapsed_s": {"median": 87.55562190001365, "min": 86.83737790002488, "max": 87.75940620002802}, "prefill_tok_s": {"median": 1525.3184996109246, "min": 1520.7535333757876, "max": 1538.9387574512289}, "decode_tok_s": {"median": 72.18180792872047, "min": 71.69061021031112, "max": 73.17421752179506}}}
+motore fermato, lock rilasciato
+
+== 18 03:24 python ..\20261019_banco_comunita\community_bench.py COMM-ov-minp-B  "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261019_overlap\cfg-overlap-minp.json" "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-overlap2-f20bd46e"
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261019_banco_comunita\community_bench.py", line 14, in <module>
+    c = json.loads((S / CFG).read_text(encoding='utf-8-sig'))
+                   ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\pathlib.py", line 1027, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors) as f:
+         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\AppData\Local\Programs\Python\Python312\Lib\pathlib.py", line 1013, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: 'C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261019_overlap\\cfg-overlap-minp.json'
+
+== 19 03:24 python ..\20261019_banco_comunita\community_bench.py COMM-ov-minp-A2 "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261019_overlap\cfg-overlap.json" "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-overlap2-f20bd46e"
+one tokens-128000-run-2 {"ttft_s": 84.1076356000267, "elapsed_s": 87.57773890002863, "engine": {"projection": null, "time": 1792459763.6604714, "duration_s": 87.5, "finish": "length", "prompt_tokens": 128000, "reused": 0, "output_tokens": 256, "prompt_total": 128000, "prompt_read": 128000, "reasoning_recoveries": 0, "reasoning_repeat_coverage": 0.0, "engine_generated": 256, "prompt_ms": 83992.9, "decode_ms": 3493.5, "decode_tok_s": 73.3, "hit_rate": 0.99, "pcie_share": 0.0, "ram_blobs": 0, "file_blobs": 0, "file_mb": 0, "drafts_offered": 212, "drafts_accepted": 150}}
+start tokens-128000-run-3 tokens 128000
+done tokens-128000-run-3 {"ttft_s": 84.01821750000818, "elapsed_s": 87.4149207000155, "engine": {"projection": null, "time": 1792459852.3784635, "duration_s": 87.3, "finish": "length", "prompt_tokens": 128000, "reused": 0, "output_tokens": 256, "prompt_total": 128000, "prompt_read": 128000, "reasoning_recoveries": 0, "reasoning_repeat_coverage": 0.0, "engine_generated": 256, "prompt_ms": 83888.9, "decode_ms": 3417.7, "decode_tok_s": 74.9, "hit_rate": 0.993, "pcie_share": 0.0, "ram_blobs": 0, "file_blobs": 0, "file_mb": 0, "drafts_offered": 212, "drafts_accepted": 157}}
+summary {"4096": {"prompt_tokens": {"median": 4096, "min": 4096, "max": 4096}, "cached_tokens": {"median": 0, "min": 0, "max": 0}, "output_tokens": {"median": 256, "min": 256, "max": 256}, "client_ttft_s": {"median": 6.151027200045064, "min": 5.928935500036459, "max": 6.220007699972484}, "client_elapsed_s": {"median": 10.01473100000294, "min": 9.419142600032501, "max": 10.497857199981809}, "prefill_tok_s": {"median": 670.9694328866756, "min": 661.6589936192553, "max": 695.4749978775787}, "decode_tok_s": {"median": 65.88937791161558, "min": 59.557044481667596, "max": 72.93239508845902}}, "32768": {"prompt_tokens": {"median": 32768, "min": 32768, "max": 32768}, "cached_tokens": {"median": 0, "min": 0, "max": 0}, "output_tokens": {"median": 256, "min": 256, "max": 256}, "client_ttft_s": {"median": 25.122677400009707, "min": 24.90556079999078, "max": 25.289436399994884}, "client_elapsed_s": {"median": 28.712996100017335, "min": 28.541572999965865, "max": 28.883007199969143}, "prefill_tok_s": {"median": 1307.253164607461, "min": 1299.3738673899509, "max": 1318.6477100327165}, "decode_tok_s": {"median": 70.81800326426733, "min": 70.02762808764395, "max": 70.86309029507834}}, "128000": {"prompt_tokens": {"median": 128000, "min": 128000, "max": 128000}, "cached_tokens": {"median": 0, "min": 0, "max": 0}, "output_tokens": {"median": 256, "min": 256, "max": 256}, "client_ttft_s": {"median": 84.01821750000818, "min": 83.33971369999927, "max": 84.1076356000267}, "client_elapsed_s": {"median": 87.4149207000155, "min": 86.82892790000187, "max": 87.57773890002863}, "prefill_tok_s": {"median": 1525.827612473164, "min": 1523.9383328828985, "max": 1538.2748007753864}, "decode_tok_s": {"median": 73.2789466151424, "min": 72.90954659375713, "max": 74.90417532258536}}}
+motore fermato, lock rilasciato
+

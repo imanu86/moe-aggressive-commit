@@ -135,6 +135,18 @@ completo ≈ 30-40 min; replay 4 sessioni ≈ 5-7 min a braccio, 8 sessioni di p
 - Serve (non è mio): quando i numeri ci sono, writing in `docs/MULTICHAT.md` + `stack/manifest.json` con
   `20261019_passata_unica/stack_add.py` e `--verify-docs` — passo 4 della «ripresa» nel doc PASSATA_UNICA.
 
+## Tabella da compilare (per chi scrive i numeri in `docs/MULTICHAT.md`)
+
+| braccio | burst: 4 letture (s) | TTFT max (s) | t/s scrittori durante | t/s lettura (motore) | righe pack | parità |
+|---|---|---|---|---|---|---|
+| b1 | | | | | 0 | |
+| a1 (pacco + finestra 30 ms) | | | | | | |
+| a2 (pacco, finestra 0) | | | | | | |
+| b2 | | | | | 0 | |
+
+Valori: mediana dei giri, con la dispersione b1↔b2 accanto a ogni numero; replay sotto a parte (tempo totale, TTFT
+p50/p90, token riletti, decode aggregato) confrontato con i 298-302 s del 19/10.
+
 ## Se una corsa si rompe a metà
 
 `res.json` viene riscritto dopo ogni giro, quindi il giro già finito resta. Per riprendere un solo braccio senza

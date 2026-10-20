@@ -1,6 +1,10 @@
 # Agente 1 — build e correttezza (20/10/2026, dalle 05:56)
 
- Stato mio: **compilato in corso (build 1), installato no, provato no, misurato no**.
+ Stato mio (aggiornato 06:32): **compilato sì, installato no, provato solo `--version`/`--help` (niente GPU), misurato no**.
+Build 1 `rc 0` in 624 s, exe sha256 `2490f2832c28ef6aec64946f72808180adb0cac0a4839556580fedf70c709e03`.
+Copia pronta per le misure: **`corse_2080ti/20261004_routed_keep/build-passata-e29c8065/`** (155 target, sm_75+86 Release;
+`strata.exe` + `strata-vision.exe` dal Daily + `source/serve`, `source/tools`; `strata --version` → `strata 0.1.45`).
+L'HEAD del worktree è `e29c8065` (solo `serve/`, nessun C++ cambiato): il C++ della copia è quello di `5c97ab45`.
 GPU mai toccata, `strata.exe` della 8100 mai fermato, `bench.lock` mai cancellato (deroga dichiarata nel log build).
 
 ## Cosa ho fatto

@@ -386,7 +386,9 @@ esserci, e va scritta la riga `--pipeline-windows 2: <N> MiB of CUDA0 kept out o
 lane)` con il suo numero (atteso ~270 + 144 MiB di riserva, cioè ~160 MiB in meno di cache esperti sulla prima scheda).
 Se compare `the tree lane's GDN snapshot … does not fit`, o `the tree lane's hand-off does not fit`, o la corsia non
 compare: **la 3060 non tiene la terza finestra** → il livello 3 è chiuso su questa coppia di schede, e questo è un
-numero, non un fallimento. Se la corsia c'è e il preload regge, il passo successivo è il livello 3 (lancio delle due
+numero, non un fallimento. Lo stesso verdetto vale se il braccio parte ma l'engine chiude con una riga `ERR` che nomina
+`capture_all` / `verify: capture` (i grafi della terza verifier non stanno): non è un crash del loop, è la corsia che non
+si può fare su questa coppia — scrivere le ultime 20 righe dell'`engine.log` e non ripetere il braccio. Se la corsia c'è e il preload regge, il passo successivo è il livello 3 (lancio delle due
 ipotesi, scelta al verdetto, scarto con un metodo restore-only nuovo sul `Verifier`: oggi `pl_commit_async` rifiuta
 `n_keep < 1`).
 

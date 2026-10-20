@@ -1,0 +1,87 @@
+{
+  "build": "build-overlap-bc2e87a0",
+  "daily_exe": false,
+  "set_opt": [],
+  "add_opt": [
+    "--layer-split=16",
+    "--trim-stage-weights"
+  ],
+  "env_probe": [
+    "CUDA_VISIBLE_DEVICES=1,0",
+    "STRATA_POOL_SPIN_US=100",
+    "STRATA_FORCE_IDS=C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261006_due_schede\\force_ids\\force_L01.txt;C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261006_due_schede\\force_ids\\force_L02.txt",
+    "STRATA_FORCE_TRACE=C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261004_routed_keep\\DET-ov-nsw-A2\\force_trace.txt"
+  ],
+  "mtp_dir": null,
+  "args": [
+    "--pack",
+    "D:\\ds4_work\\strata\\Strata-data\\packs\\iq3_xxs",
+    "--native",
+    "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+    "--ple-gguf",
+    "D:\\ds4_work\\strata\\Strata-data\\gguf\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+    "--native-dense-gguf",
+    "C:\\Users\\imanu\\Downloads\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf",
+    "--native-dense-gguf",
+    "D:\\ds4_work\\strata\\Strata-data\\gguf\\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf",
+    "--ple-row-cache",
+    "16777216",
+    "--expert-profile",
+    "D:\\ds4_work\\strata\\Strata\\data\\expert-profile.bin",
+    "--expert-cache",
+    "auto",
+    "--prefill",
+    "auto",
+    "--spec",
+    "4",
+    "--spec-min-p",
+    "0.5",
+    "--mtp",
+    "D:\\ds4_work\\strata\\Strata-data\\mtp\\rt_it48k",
+    "--max-context",
+    "262144",
+    "--kv",
+    "int8",
+    "--kv-resident",
+    "32768",
+    "--vram-reserve-mib",
+    "1393",
+    "--elastic",
+    "--prompt-cache-tail",
+    "--prompt-cache-every",
+    "16384",
+    "--layer-split",
+    "16",
+    "--trim-stage-weights"
+  ],
+  "tokens": 1024,
+  "state": {
+    "available_ram_gib": 81.0,
+    "commit_free_gib": 144.6,
+    "gpu_error": "ValueError('too many values to unpack (expected 2)')",
+    "cgcontrol": true,
+    "competing": []
+  },
+  "state_diff": [
+    "VRAM occupata None MiB (base 8365)",
+    "RAM libera 81.0 GiB (base 64.6)"
+  ],
+  "prompt_tokens": {
+    "L01": 131248,
+    "L02": 131239
+  },
+  "executable_sha256": "c8a1a437b5ff2e8bdf87facc6162db88ef6b25c2873deb56a4dae3d072b53479",
+  "daily_sha256": "dd82377ab682108bb6a8e2480727a27e211400df8dd01a4801144a0843270791",
+  "config_sha256": "fcb4052bb2fcc2bff21c73478c67b2a913901bbd7d206913d4dc20947b13b1d7",
+  "env": {
+    "STRATA_WATCHDOG_S": "240",
+    "STRATA_IQ_MT_MIN": "1",
+    "STRATA_NO_LARGEPAGES": "1",
+    "STRATA_ARENA_PIN_GIB": "8",
+    "STRATA_DECODE_TIMING": "1",
+    "CUDA_VISIBLE_DEVICES": "1,0",
+    "STRATA_POOL_SPIN_US": "100",
+    "STRATA_FORCE_IDS": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261006_due_schede\\force_ids\\force_L01.txt;C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261006_due_schede\\force_ids\\force_L02.txt",
+    "STRATA_FORCE_TRACE": "C:\\Users\\imanu\\source\\repos\\moe-aggressive-commit\\docs\\porto\\strata_adattivo\\corse_2080ti\\20261004_routed_keep\\DET-ov-nsw-A2\\force_trace.txt"
+  }
+}

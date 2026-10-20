@@ -267,6 +267,34 @@ decisione se accettare risposte diverse per 75,3 → 81,1 t/s. **Attenzione:** `
 `taskkill /F /IM strata.exe` e rilascia `bench.lock` → ferma anche il servizio agenti sulla 8100: blocco da eseguire solo
 con l'ok dell'owner.
 
+## Chiusura blocchi 8-14 — corsa del 20/10 02:24-03:32 (`misura_ov2.log`)
+
+Pipeline partita in tutti i bracci 9-12 (righe `pipeline classes` presenti). Esiti nel doc
+`OVERLAP_2026-10-19.md`, sezione «CODA 20 OTTOBRE MATTINA». Conferma per il piano:
+
+- **Metro blocco 8 ROTTO**: `DET-ov2-A0 rc=1` (`TimeoutError: Startup deadline`, engine oltre 300 s), `bab_verdict`
+  → IndexError. Nessun metro A/A con pipeline. Da rifare a PC fermo prima di promuovere qualunque leva.
+- **17 NOSWITCH**: B più veloce 3,4% ma metro assente e identità token non dimostrabile (force_trace differisce anche
+  A1-vs-A2 in pipeline) → **inconclusiva, non promossa**. Nessuna config di prova.
+- **19 CHAIN_PRIO**: 0,1%, speculative non calate → **chiusa, codice opt-in**.
+- **MTP_STAGE0**: B perde **17,4%** (reali, `drafter on CUDA0` solo in B, GPU-reach wait 23,5 vs ~17 ms) → **chiuso «no»**.
+- **20/21 top-2**: 29,5% (pipeline) e **45,2% (seriale = percorso Daily)** → B ad albero **segnalata all'owner** come
+  lavoro da modello grande; non implementata.
+- **min-p 0,70 (blocco 14)**: braccio B **fallito** — `FileNotFoundError: cfg-overlap-minp.json` (la riga `python -c`
+  che lo genera non è stata eseguita). Solo i due A: 128K 72,2 / 73,3. Da rifare.
+
+Nessuna leva raggiunge i criteri del piano 1.5 (128K ≥ 78 con token identici): **nessuna config di prova preparata**.
+
+Comandi di riapertura (solo con l'ok dell'owner per la parte GPU; il `python -c` non tocca il Daily):
+```
+# metro pulito, PC fermo / Jump scollegato
+bash det_force.sh DET-ov2-A0 build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+bash det_force.sh DET-ov2-A0b build-overlap2-f20bd46e --add-opt=--pipeline-windows=2
+python bab_verdict.py DET-ov2-A0 DET-ov2-A0b
+# rigenerare la copia min-p (da corse_2080ti\), poi i tre bracci del blocco 14
+python -c "import json,io;p=r'corse_2080ti\20261019_overlap\cfg-overlap.json';c=json.load(io.open(p,encoding='utf-8'));a=c['args'];a[a.index('--spec-min-p')+1]='0.70';io.open(r'corse_2080ti\20261019_overlap\cfg-overlap-minp.json','w',encoding='utf-8').write(json.dumps(c,indent=1,ensure_ascii=False))"
+```
+
 ## 15. Da non rifare (già misurato, il piano lo vieta)
 
 `STRATA_P2_SWITCH_STAT=1` in un B-A-B; nsys/hop_bench/census di PIPELINE2; expert-parallel, tensor-parallel,

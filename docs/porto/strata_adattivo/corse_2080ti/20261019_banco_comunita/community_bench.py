@@ -14,7 +14,8 @@ BLD = sys.argv[3] if len(sys.argv) > 3 else 'build-0145-daily'
 c = json.loads((S / CFG).read_text(encoding='utf-8-sig'))
 c['log'] = str(OUT / 'engine.log')
 a = c['args']
-pf = a.index('--prompt-cache-file'); a[pf + 1] = str(OUT / 'prefix.bin')
+if '--prompt-cache-file' in a:   # la 0.2.6 pura non ha l'opzione (25/10)
+    pf = a.index('--prompt-cache-file'); a[pf + 1] = str(OUT / 'prefix.bin')
 cfg = OUT / 'config.json'; cfg.write_text(json.dumps(c, indent=1), encoding='utf-8')
 
 while True:

@@ -1,0 +1,63 @@
+BENCH LOCK TENUTO: LC-a1
+  deroga dichiarata: build senza GPU (lock LC-a1 del 20/10 fermo; nessun processo vivo)
+  strata.exe vivo: False - la build non tocca la GPU, non ferma e non tocca il motore
+lock taken after 0 s
+
+-- Including CPU backend
+-- x86 detected
+-- Performing Test HAS_AVX_1
+-- Performing Test HAS_AVX_1 - Success
+-- Performing Test HAS_AVX2_1
+-- Performing Test HAS_AVX2_1 - Success
+-- Performing Test HAS_FMA_1
+-- Performing Test HAS_FMA_1 - Success
+-- Performing Test HAS_AVX512_1
+-- Performing Test HAS_AVX512_1 - Failed
+-- Performing Test HAS_AVX512_2
+-- Performing Test HAS_AVX512_2 - Failed
+-- Adding CPU backend variant ggml-cpu: /arch:AVX2 GGML_AVX2;GGML_FMA;GGML_F16C
+-- ggml version: 0.24.0
+-- ggml commit:  46aa04bd
+-- trellis MMQ (Gyro prompts): overlay on the pinned ggml-cuda in C:/Users/imanu/source/repos/Strata-wt/upsync-026-pure/build-sm7586/ggml-tq-overlay
+-- Configuring done (20.4s)
+-- Generating done (0.5s)
+-- Build files have been written to: C:/Users/imanu/source/repos/Strata-wt/upsync-026-pure/build-sm7586
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    FETCHCONTENT_FULLY_DISCONNECTED
+
+ 
+rc 0
+C:\Users\imanu\source\repos\Strata-wt\upsync-026-pure\src\core\expert_source.cpp(3837): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\upsync-026-pure\src\core\conversation_file.cpp(301): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\upsync-026-pure\src\core\conversation_file.cpp(307): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\upsync-026-pure\src\core\conversation_file.cpp(572): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+              return -((float)(1e+300));
+                       ^
+
+Remark: The warnings can be suppressed with "-diag-suppress <warning-number>"
+
+C:\Users\imanu\source\repos\Strata-wt\upsync-026-pure\build-sm7586\ggml-tq-overlay\common.cuh(638): warning #221-D: floating-point value does not fit in required floating-point type
+              return make_half2(-((float)(1e+300)), -((float)(1e+300)));
+                                  ^
+
+C:\Users\imanu\source\repos\Strata-wt\upsync-026-pure\build-sm7586\ggml-tq-overlay\common.cuh(638): warning #221-D: floating-point value does not fit in required floating-point type
+
+              return make_half2(-((float)(1e+300)), -((float)(1e+300)));
+
+                                                      ^
+
+
+
+mmq-instance-tqk7.cu
+
+tmpxft_0000cde4_00000000-10_mmq-instance-tqk7.compute_86.cudafe1.cpp
+
+[162/165] Linking CXX static library strata_mmq.lib
+[163/165] Linking CXX static library strata_prefill.lib
+[164/165] Linking CXX static library strata_qwen35.lib
+[165/165] Linking CXX executable strata.exe 
+rc 0
+sha256 ca941d041893d7deb4184be56966e72e6154d6e43dd1297d6eb308b059980169
+lock released, 892 s total

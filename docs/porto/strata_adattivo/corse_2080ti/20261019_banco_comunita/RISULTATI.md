@@ -20,19 +20,27 @@ Mediane (prompt tok/s | decode tok/s):
   18/10 dava parità con finestre forzate).
 - Contro la comunità: decode -10/-19%, prompt -23/-31%.
 
-## 25/10/2026 - Strata v0.2.6 (motore 0.1.51): pura e con la pila (banco NON eseguito)
+## 25/10/2026 - Strata v0.2.6 (motore 0.1.51): pura e con la pila
 
-Fatto: branch `lab/upsync-026` (v0.2.6 + 18 patch, nessuna ritirata, 3 adattate: 04, 05, 06) e `lab/upsync-026-pure`; due build sm_75+86
-(`build-up026-4b9e05a2`, `build-up026pila-ffe66174`) e config in `20261025_upsync026\`. Dettagli: `docs/UPSYNC_026.md` del fork.
-Compilato si, installato no, provato no, misurato no.
+Branch `lab/upsync-026` (v0.2.6 + 18 patch, nessuna ritirata, 3 adattate: 04, 05, 06) e `lab/upsync-026-pure`; build sm_75+86 `build-up026-4b9e05a2`
+(A) e `build-up026pila-ffe66174` (B); config e log in `20261025_upsync026\`; dettagli in `docs/UPSYNC_026.md` del fork. Ordine Daily, A, B, Daily
+(`run_all.sh`), corse del 25/10 dalle 18:00 alle 18:53. Compilato si, installato no. **Jump Desktop (sessione 1) e OktoCGControl aperti in tutte le
+corse** (Jump ~6 s di CPU a corsa), priorita' normale, `STRATA_NO_PRESET=1`. bench.lock di `LC-a1` (agente morto il 20/10) rimosso dal coordinatore.
 
-Bloccato: `D:\ds4_work\strata\lab_locks\bench.lock` contiene `LC-a1` dal 20/10 08:05; nessun `strata.exe` e nessun processo del banco in vita,
-GPU a riposo. Il runner aspetterebbe all'infinito e il lock non lo cancella un agente. Sbloccato, lanciare `bash 20261025_upsync026/run_all.sh`
-(ordine Daily, A, B, Daily; tag `up026-daily-1`, `up026-A-pura`, `up026-B-pila`, `up026-daily-2`; Jump e OktoCGControl restano aperti, annotato in `ambiente.txt`).
-`community_bench.py` ora accetta una config senza `--prompt-cache-file` (A).
+Mediane (prompt tok/s | decode tok/s):
 
 | config | 4K | 32K | 128K |
 |---|---|---|---|
-| Daily 0.1.43 r2 (riferimento del 19/10) | 701 / 75,9 | 1439 / 70,4 | 1720 / 75,3 |
-| A: 0.2.6 pura, default due schede | da misurare | | |
-| B: 0.2.6 + pila, config Daily | da misurare | | |
+| Daily 0.1.43 r2, 19/10 (riferimento, Jump scollegato) | 701 / 75,9 | 1439 / 70,4 | 1720 / 75,3 |
+| Daily 0.1.43, 25/10 corsa 1 | 494 / 39,2 | 1038 / 40,6 | 1172 / 40,1 |
+| A: 0.2.6 pura, default due schede | 540 / 33,4 | 630 / 39,5 | 681 / 21,8 |
+| B: 0.2.6 + pila, config Daily + `HC16_SM75=1` | 507 / 34,9 | 998 / 33,0 | 1236 / 34,6 |
+| Daily 0.1.43, 25/10 corsa 2 | 481 / 37,9 | 966 / 36,7 | 1171 / 39,6 |
+
+- **Il PC oggi e' circa la meta' del 19/10**: il Daily scende da 75/70/75 a 39/41/40 decode. Causa probabile: VRAM occupata da altri processi (la 2080 Ti
+  aveva 1,7 GB gia' presi dal desktop prima della corsa; in B la scheda CUDA1 parte con 31 MiB liberi, in A con 62, nel Daily 1,3 GB liberi), paging WDDM.
+  Non e' un confronto con la tabella del 19/10: contano solo le righe del 25/10, Daily prima e dopo concordi entro ~10%.
+- A (pura, default) ha decode 33/40/22 con forte varianza (18-50 al 128K) e prompt 32K/128K piu' bassi di meta' del Daily: senza cache elastica, senza
+  leve sm_86/sm_75 e con 62 MiB liberi su una scheda, va peggio del Daily. B (pila + config Daily) recupera il prompt 128K (1236, pari al Daily) ma il
+  decode sta a 33-35 contro 37-41 del Daily (-8/-15%), compatibile con soli 31 MiB liberi in avvio (il Daily ne aveva 1,3 GB). Da ripetere a VRAM libera
+  (desktop chiuso o prova fra le ore calme) prima di concludere sulla pila; qualita' (token, accettazione bozze) non confrontata.

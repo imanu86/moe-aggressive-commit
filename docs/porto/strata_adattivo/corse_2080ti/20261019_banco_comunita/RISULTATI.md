@@ -51,3 +51,7 @@ Mediane (prompt tok/s | decode tok/s):
 - v0.2.6 + pila (B, build-up026pila-ffe66174): 643-690/61-69 · 1419-1432/58-66 · 1621-1640/66-69
 - Daily 0.1.43 (2, interrotta): 654-675/56-78 · 1398-1401/69-72 · 1604/73
 - Verdetto: pila sulla 0.2.6 = +27% prompt a 128K sulla pura e sopra la Daily (1630 vs 1570); decode -4/-6% sotto la Daily. Prossimo: braccio Bx (Daily senza NODECUT/QFUSE_HC/TOPK_GRID/B6_HEAD_MINB), non eseguito (owner ha chiesto il PC).
+
+### 25/10 sera, Bx (Daily 0.1.43 senza NODECUT/QFUSE_HC/TOPK_GRID/B6_HEAD_MINB) contro Daily, 4K/32K, PC pulito (OktoCGControl chiuso dalla 2a corsa)
+- Bx-1 739-778/77-85 · 1471-1497/62-82 | Dly-1 741-786/78-87 · 1392-1516/80-84 | Bx-2 762-781/80-92 · 1514-1530/82-86 | Dly-2 742-791/76-90 · 1510-1532/79-85
+- Verdetto: le 4 leve di struct-a NON spiegano il calo (Bx = Daily). Il calo 0.1.43 -> 0.1.45+ viene da upstream o dalla pila portata: serve bisezione dei commit. Nota: a OktoCGControl chiuso la Daily fa 80-90 t/s a 4K-32K.

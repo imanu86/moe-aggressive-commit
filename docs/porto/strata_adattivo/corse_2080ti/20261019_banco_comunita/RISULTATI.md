@@ -44,3 +44,10 @@ Mediane (prompt tok/s | decode tok/s):
   leve sm_86/sm_75 e con 62 MiB liberi su una scheda, va peggio del Daily. B (pila + config Daily) recupera il prompt 128K (1236, pari al Daily) ma il
   decode sta a 33-35 contro 37-41 del Daily (-8/-15%), compatibile con soli 31 MiB liberi in avvio (il Daily ne aveva 1,3 GB). Da ripetere a VRAM libera
   (desktop chiuso o prova fra le ore calme) prima di concludere sulla pila; qualita' (token, accettazione bozze) non confrontata.
+
+### 25/10 PC pulito (Jump staccato, OktoCGControl aperto) — prompt / decode t/s, 3 corse per 4K, 32K, 128K
+- Daily 0.1.43 (1): 629-662/66-71 · 1370-1385/67-73 · 1547-1580/71-73
+- v0.2.6 pura (A): 624-655/57-64 · 1228-1241/51-59 · 1264-1294/58-62
+- v0.2.6 + pila (B, build-up026pila-ffe66174): 643-690/61-69 · 1419-1432/58-66 · 1621-1640/66-69
+- Daily 0.1.43 (2, interrotta): 654-675/56-78 · 1398-1401/69-72 · 1604/73
+- Verdetto: pila sulla 0.2.6 = +27% prompt a 128K sulla pura e sopra la Daily (1630 vs 1570); decode -4/-6% sotto la Daily. Prossimo: braccio Bx (Daily senza NODECUT/QFUSE_HC/TOPK_GRID/B6_HEAD_MINB), non eseguito (owner ha chiesto il PC).

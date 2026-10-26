@@ -50,6 +50,9 @@ ap.add_argument('--no-warm', action='store_true')
 ap.add_argument('--dup', type=int, default=1, help='duplica ogni sessione N volte (testo privato diverso): N*4 agenti dalle 4 della traccia')
 ap.add_argument('--dup-stagger', type=float, default=1.5, help='s di sfasamento fra le copie')
 ap.add_argument('--dry', action='store_true', help='stampa il piano e basta (niente server, niente GPU)')
+ap.add_argument('--config', default='strata-0143-daily.json', help='config del Daily (in D:/ds4_work/strata/Strata) da cui prendere args e env; 26/10: strata-026-daily.json o una copia con percorso assoluto')
+ap.add_argument('--out-base', default=str(H), help='cartella che contiene replay_<tag> (default: questa; 26/10: 20261026_leve/corse)')
+ap.add_argument('--only', default='', help='solo queste sessioni della traccia, es. A,B,C (26/10: i 3 sotto-agenti senza l orchestratore P)')
 a = ap.parse_args()
 
 tr = json.loads(Path(a.trace).read_text(encoding='utf-8'))
@@ -76,6 +79,10 @@ for sid, rs in bys.items():
     if warm is not None and not extends(warm, win[0]):
         warm = None      # il primo turno della finestra ricomincia da zero: scaldare non serve
     plan[sid] = dict(warm=warm, reqs=win)
+if a.only:
+    plan = {k: v for k, v in plan.items() if k in set(a.only.split(','))}
+    if not plan:
+        raise SystemExit('--only: nessuna sessione della finestra corrisponde')
 
 
 def orig_stats():
@@ -113,8 +120,8 @@ if a.dry:
 
 import banco_p0 as P0   # noqa: E402
 
-OUT = H / f'replay_{a.tag}'
-OUT.mkdir(exist_ok=True)
+OUT = Path(a.out_base) / f'replay_{a.tag}'
+OUT.mkdir(parents=True, exist_ok=True)
 man, casi, prefissi, prompts = P0.carica_fixture()
 POOL = prefissi['ctx131k'] + prefissi['aghi131k']
 INSTR = 'Materiale di riferimento (codice e documenti di un progetto):\n\n'
@@ -162,7 +169,7 @@ def http(path, payload=None, timeout=10):
 
 class Server:
     def __init__(self):
-        cfg = json.loads((D / 'strata-0143-daily.json').read_text(encoding='utf-8-sig'))   # SOLA LETTURA
+        cfg = json.loads((D / a.config).read_text(encoding='utf-8-sig'))   # SOLA LETTURA (a.config assoluto vince su D)
         base = split_opts(cfg['args'])
         extra = split_opts(shlex.split(a.extra))
         drop = set(shlex.split(a.drop)) | {'--prompt-cache-file', '--vision'} | {e[0] for e in extra}
@@ -182,6 +189,8 @@ class Server:
         with socket.socket() as s:
             s.bind(('127.0.0.1', a.port))
         env = {k: v for k, v in os.environ.items() if k != 'STRATA_API_KEY'}
+        for kv in shlex.split(a.env):   # il server legge STRATA_PACK_CONCURRENT / STRATA_PACK_WAIT_MS solo dal suo ambiente (come con un .bat)
+            env[kv.split('=', 1)[0]] = kv.split('=', 1)[1]
         env['PYTHONIOENCODING'] = 'utf-8'
         self.p = subprocess.Popen([str(D / '.venv/Scripts/python.exe'), '-B', str(self.serve / 'server.py'),
                                    '--engine', 'strata', '--config', str(self.cfg_path), '--host', '127.0.0.1',

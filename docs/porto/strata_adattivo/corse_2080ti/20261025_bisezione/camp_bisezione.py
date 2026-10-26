@@ -56,11 +56,17 @@ def main():
     ap.add_argument("--vai", action="store_true", help="lancia davvero (usa la GPU)")
     ap.add_argument("--solo", choices=[k for k in SAMPLING if k not in ("base",)], help="una terna base-X-base")
     ap.add_argument("--motore", choices=sorted(MOTORI), default="B")
+    ap.add_argument("--config", help="config JSON assoluto al posto di quello del motore (26/10: copie in 20261026_leve)")
+    ap.add_argument("--build", help="cartella build assoluta al posto di quella del motore")
+    ap.add_argument("--out", help="cartella di uscita (default: questa)")
     ap.add_argument("--corse", type=int, default=4, help="richieste per contesto (4K e 32K); la prima da 4K e' fredda")
     a = ap.parse_args()
     seq = ["base", a.solo, "base"] if a.solo else SEQUENZA
     cfg, build = MOTORI[a.motore]
-    print(f"motore {a.motore}: config {cfg}\n  build {build}\nuscita {HERE}\\camp_NN_<braccio>\n")
+    cfg, build = a.config or cfg, a.build or build
+    out = Path(a.out) if a.out else HERE
+    out.mkdir(parents=True, exist_ok=True)
+    print(f"motore {a.motore}: config {cfg}\n  build {build}\nuscita {out}\\camp_NN_<braccio>\n")
     for i, arm in enumerate(seq, 1):
         print(f"{i:02d} {arm:7s} {json.dumps(SAMPLING[arm])}")
     if not a.vai:
@@ -71,10 +77,10 @@ def main():
         raise SystemExit("PC non libero: " + "; ".join(problemi))
     for i, arm in enumerate(seq, 1):
         tag = f"camp_{i:02d}_{arm}"
-        env = dict(os.environ, CAMP_SAMPLING=json.dumps(SAMPLING[arm]), CAMP_RUNS=str(a.corse), CAMP_OUT=str(HERE))
+        env = dict(os.environ, CAMP_SAMPLING=json.dumps(SAMPLING[arm]), CAMP_RUNS=str(a.corse), CAMP_OUT=str(out))
         print(f"[{time.strftime('%H:%M:%S')}] {tag}", flush=True)
         r = subprocess.run([sys.executable, str(RUNNER), tag, cfg, build], env=env)
-        log = HERE / tag / "engine.log"
+        log = out / tag / "engine.log"
         seriale = log.exists() and "decodes serially" in log.read_text(encoding="utf-8", errors="replace")
         print(f"[{time.strftime('%H:%M:%S')}] {tag} uscita {r.returncode}; pipeline spenta dalla penalita': {'SI' if seriale else 'no'}", flush=True)
         if r.returncode != 0:

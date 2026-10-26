@@ -41,7 +41,7 @@ try:
             time.sleep(5)
     print('pronto in %.0f s' % (time.time() - t0), flush=True)
     subprocess.run([str(S / '.venv/Scripts/python.exe'), str(BENCH), '--root', str(S / (BLD + '/source')),
-                    '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs', '--url', 'http://127.0.0.1:8105', '--out', str(OUT), '--targets', '4096,32768', '--runs', os.environ.get('CAMP_RUNS', '4')], check=False)
+                    '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs', '--url', 'http://127.0.0.1:8105', '--out', str(OUT), '--targets', os.environ.get('CAMP_TARGETS', '4096,32768'), '--runs', os.environ.get('CAMP_RUNS', '4')], check=False)
 finally:
     jump = subprocess.run(['powershell', '-NoProfile', '-Command', '(Get-Process JumpConnect | Where-Object SessionId -eq 1 | Measure-Object CPU -Sum).Sum'], capture_output=True, text=True).stdout.strip()
     with open(OUT / 'ambiente.txt', 'a', encoding='utf-8') as f: f.write(f'fine {time.strftime("%H:%M")} jump_cpu_s {jump}\n')

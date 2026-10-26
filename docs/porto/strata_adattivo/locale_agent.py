@@ -27,7 +27,11 @@ async def main():
     opts = ClaudeAgentOptions(
         model=a.model, cwd=a.cwd, max_turns=a.max_turns,
         permission_mode="bypassPermissions", max_buffer_size=64 * 2**20,
+        # 26/10: elenco tool fisso e niente MCP, così il prefisso (tools prima del system) è uguale a ogni turno
+        # e la cache del motore lo riusa (DIAGNOSI.md in corse_2080ti/20261026_cache_prompt).
+        tools=["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
         allowed_tools=["Bash", "Read", "Write", "Edit", "Glob", "Grep"],
+        extra_args={"strict-mcp-config": None},
         env={"ANTHROPIC_BASE_URL": a.url,
              "ANTHROPIC_API_KEY": os.environ.get("STRATA_API_KEY") or "locale",
              "ANTHROPIC_SMALL_FAST_MODEL": a.model,

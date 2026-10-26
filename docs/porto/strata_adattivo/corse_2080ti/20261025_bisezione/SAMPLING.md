@@ -42,3 +42,8 @@ Riferimento atteso (BISEZIONE_NOTTE.md): con la scheda spenta il decode torna ai
 | Daily 0.1.43 (2) | 69,8 / 74,1 | 60,5 / 69,9 |
 - T=0: la patch chiude il divario (B dentro la forbice dei due Daily, sopra a 32K).
 - T=0.7 (uso reale): B -6% a 4K e -9% a 32K sulla media dei Daily, a parità di accettazione: resta un costo del percorso con campionamento nella 0.2.6 da isolare. In uso reale il decode è ~10-15% sotto il T=0.
+
+## 4 coppie alternate a T=0.7 (26/10 10:30-11:05, prima risposta di ogni avvio scartata)
+- Daily 0.1.43: 73,7 t/s a 4K (8 corse), 72,3 a 32K (12); accettazione 63,6%
+- 0.2.6 + pila + greedy-temp0: 75,4 a 4K, 72,0 a 32K; accettazione 64,6%
+- B/D: +2,4% a 4K, -0,4% a 32K: pari. Lo scarto -6/-9% della prima coppia era rumore (riscaldamento incluso).

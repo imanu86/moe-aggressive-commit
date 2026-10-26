@@ -1,0 +1,1 @@
+Rispondi in italiano. Fai in ordine: 1) con Glob elenca i file *.md in C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo (solo i primi), 2) con Grep cerca la parola "Daily" nel file HANDOFF_STRATA_2026-10-20.md, 3) con Bash esegui "git log --oneline -3", 4) rispondi con una riga per ciascun risultato. Non modificare nulla. Ultima riga: FINE LAVORO

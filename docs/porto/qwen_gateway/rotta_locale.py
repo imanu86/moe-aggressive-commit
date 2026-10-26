@@ -17,8 +17,11 @@ Cosa cambia sulla rotta locale (dalla sonda del 21/9):
 from __future__ import annotations
 import asyncio
 import json
+import hashlib
 import os
+import re
 import time
+from collections import OrderedDict
 import urllib.parse
 from pathlib import Path
 
@@ -54,6 +57,40 @@ def _blocchi(contenuto) -> list[dict]:
     return out
 
 
+# Elenco tool STABILE per conversazione (26/10, DIAGNOSI 20261026_cache_prompt): il template del modello mette i tool PRIMA di
+# system e messaggi, quindi ogni variazione dell'elenco fra due turni (MCP che si connette dopo, strumenti caricati su
+# richiesta) invalida l'intero prompt in cache. Per ogni conversazione si ricorda in memoria (mai su disco, mai nei log)
+# l'unione dei tool gia' visti, in ordine di prima apparizione: solo aggiunte in coda, nessuna rimozione ne' riordino.
+MAX_CONVERSAZIONI = 50
+_tools_visti: OrderedDict[str, dict[str, dict]] = OrderedDict()
+
+
+def _chiave_conversazione(j: dict, sistema, messaggi: list[dict]) -> str:
+    """Session id da metadata.user_id (stringa «..._session_<uuid>» o JSON con session_id), altrimenti nulla; in ogni caso
+    si aggiunge l'hash del primo blocco system + primo messaggio utente, cosi' un subagent (stessa sessione, altri tool)
+    non si mescola con la chat principale."""
+    uid = (j.get("metadata") or {}).get("user_id") if isinstance(j.get("metadata"), dict) else None
+    sid = ""
+    if isinstance(uid, str):
+        m = re.search(r'session[_-]?id"?\s*[:=]\s*"?([0-9A-Za-z-]+)', uid) or re.search(r"_session_([0-9A-Za-z-]+)", uid)
+        sid = m.group(1) if m else ""
+    primo_sys = sistema[0].get("text", "") if isinstance(sistema, list) and sistema and isinstance(sistema[0], dict) else (sistema if isinstance(sistema, str) else "")
+    primo_user = next((json.dumps(m["content"], sort_keys=True, ensure_ascii=False) for m in messaggi if m["role"] == "user"), "")
+    return sid + ":" + hashlib.sha256((primo_sys + "\x00" + primo_user).encode("utf-8", "replace")).hexdigest()[:16]
+
+
+def stabilizza_tools(chiave: str, tools: list[dict]) -> list[dict]:
+    """Unione ordinata dei tool gia' visti per `chiave` + quelli di questa richiesta in coda. Vale il primo esemplare visto
+    di ciascun nome (se cambiasse la descrizione il prefisso cambierebbe)."""
+    visti = _tools_visti.pop(chiave, None) or {}
+    for t in tools:
+        visti.setdefault(t["name"], t)
+    _tools_visti[chiave] = visti  # in fondo = piu' recente
+    while len(_tools_visti) > MAX_CONVERSAZIONI:
+        _tools_visti.popitem(last=False)
+    return list(visti.values())
+
+
 def pulisci(j: dict) -> dict:
     out = {k: j[k] for k in TENUTI if k in j}
     if isinstance(out.get("system"), list):
@@ -80,6 +117,7 @@ def pulisci(j: dict) -> dict:
     if "tools" in out:
         out["tools"] = [{k: t[k] for k in ("name", "description", "input_schema") if k in t}
                         for t in out["tools"] or [] if isinstance(t, dict) and "input_schema" in t and not t.get("defer_loading")]
+        out["tools"] = stabilizza_tools(_chiave_conversazione(j, out.get("system"), messaggi), [t for t in out["tools"] if "name" in t])
         if not out["tools"]:
             out.pop("tools")
             out.pop("tool_choice", None)

@@ -33,3 +33,12 @@ python R samp0_daily2 D:\ds4_work\strata\Strata\strata-0143-daily.json D:\ds4_wo
 | (b) Daily / B patchata / Daily | da misurare | da misurare | da misurare |
 
 Riferimento atteso (BISEZIONE_NOTTE.md): con la scheda spenta il decode torna ai livelli 0.1.43 (~76 t/s a 4K, ~72 a 32K contro ~68 / ~64,5 con la scheda).
+
+## Risultati 26/10 10:00-10:25 (PC pulito; mediane decode t/s 4K / 32K, bozze accettate ~140-155 su 210-240 in tutti i bracci)
+| braccio | T=0 | T=0.7 coding (top_p 0.8, top_k 20, presence 1.5) |
+|---|---|---|
+| Daily 0.1.43 (1) | 88,1 / 72,9 | 68,4 / 65,2 |
+| 0.2.6 + pila + greedy-temp0 | 82,0 / 78,3 | 60,3 / 61,7 |
+| Daily 0.1.43 (2) | 69,8 / 74,1 | 60,5 / 69,9 |
+- T=0: la patch chiude il divario (B dentro la forbice dei due Daily, sopra a 32K).
+- T=0.7 (uso reale): B -6% a 4K e -9% a 32K sulla media dei Daily, a parità di accettazione: resta un costo del percorso con campionamento nella 0.2.6 da isolare. In uso reale il decode è ~10-15% sotto il T=0.

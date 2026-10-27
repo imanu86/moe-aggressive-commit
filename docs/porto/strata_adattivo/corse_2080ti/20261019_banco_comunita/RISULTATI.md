@@ -55,3 +55,8 @@ Mediane (prompt tok/s | decode tok/s):
 ### 25/10 sera, Bx (Daily 0.1.43 senza NODECUT/QFUSE_HC/TOPK_GRID/B6_HEAD_MINB) contro Daily, 4K/32K, PC pulito (OktoCGControl chiuso dalla 2a corsa)
 - Bx-1 739-778/77-85 · 1471-1497/62-82 | Dly-1 741-786/78-87 · 1392-1516/80-84 | Bx-2 762-781/80-92 · 1514-1530/82-86 | Dly-2 742-791/76-90 · 1510-1532/79-85
 - Verdetto: le 4 leve di struct-a NON spiegano il calo (Bx = Daily). Il calo 0.1.43 -> 0.1.45+ viene da upstream o dalla pila portata: serve bisezione dei commit. Nota: a OktoCGControl chiuso la Daily fa 80-90 t/s a 4K-32K.
+
+### 27/10 RTX 3080 Ti al posto della 3060 (stadio 0, Oculink 4.0 x4, regge anche il desktop), Daily 0.2.6 identica (solo CUDA_DEVICE_ORDER=PCI_BUS_ID, VISIBLE 0,1)
+- prompt/decode t/s: 4K 936-937/95,5-98,9 (prima corsa 849/86) · 32K 1619-1632/86-91 · 128K 1824-1858/93,2-93,9; bozze 135-156 su 212-233
+- contro la stessa Daily con la 3060 (25/10): decode +40% circa, prompt +36% a 4K, +14% a 32K, +13% a 128K; contro 2x5060 Ti comunità: decode sopra (93,5 contro 83,8 a 128K), prompt ancora sotto (1836 contro 2440)
+- consumo durante il banco: 3080 Ti media 202 W (max 282, 67 C), 2080 Ti media 231 W (max 256, 64 C)

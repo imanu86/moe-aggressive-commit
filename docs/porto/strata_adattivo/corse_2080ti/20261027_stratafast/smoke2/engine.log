@@ -1,0 +1,38 @@
+[strata] 2026-10-27 06:14:29 engine started: C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-stratafast-dd0390fb\strata.exe --serve --pack D:\ds4_work\strata\Strata-data\packs\iq3_xxs --native C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf --ple-gguf D:\ds4_work\strata\Strata-data\gguf\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf --native-dense-gguf C:\Users\imanu\Downloads\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00001-of-00002.gguf --native-dense-gguf D:\ds4_work\strata\Strata-data\gguf\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf --ple-row-cache 16777216 --expert-profile D:\ds4_work\strata\Strata\data\expert-profile.bin --expert-cache auto --prefill 16384 --feed-max 46 --spec 4 --spec-min-p 0.5 --spec-lookup 16 --adapt-every 1 --mtp D:\ds4_work\strata\Strata-data\mtp\rt_it48k --max-context 131072 --kv fp16 --kv-grow --hc-q8 --prompt-shift 0.2 --pcie-mode kernel --pcie-frac 0 --second-gpu 0 --main-gpu 1
+strata generate: this CPU has no AVX-512: the expert kernels run on AVX2
+strata generate: native pack: D:\ds4_work\strata\Strata-data\packs\iq3_xxs experts (largest blob 2.33 MB), token embedding type 21 in mapped host memory (260 MiB)
+strata generate: 254 MiB of weights loaded from D:\ds4_work\strata\Strata-data\packs\iq3_xxs (496 canonical tensors skipped: served natively)
+strata generate: 300 native projection matrices, 1781.11 MiB of weights
+strata generate: 194 hyper-connection matrices in 8 bits (0 as the GGUF stores them), 644.14 MiB
+strata generate: PLE on, table 320001536 rows of D:\ds4_work\strata\Strata-data\gguf\Qwen3.8-Flash-Next-GSQ-RCO-IQ3_XXS-00002-of-00002.gguf
+strata generate: expert arena: 48 of 48 layers pinned (39 GiB, a cudaHostAlloc block each)
+strata generate: loaded 39.97 GiB at 0.65 GiB/s
+strata mtp: draft layer loaded, 791 MiB of VRAM (experts 675 as Q2_0 blobs, dense 111)
+strata generate: session is up; locating the head
+strata generate: native head, type 13, 437043200 bytes
+strata mtp: draft head over 48542 tokens (81.5 MiB)
+strata mtp: draft head over 48542 tokens: the exact head (no 2-bit copy for it)
+strata generate: the head's rows 136448-248320 on the second GPU (188 MiB), the first 136448 here
+strata generate: profile D:\ds4_work\strata\Strata\data\expert-profile.bin: 24576 ranked pairs, built for 24576 slots
+strata generate: expert cache auto: 16.27 GiB free, 700 MiB reserved -> 7181 slots
+strata generate: expert cache 9607 slots, 15.58 GiB of VRAM; policy is
+strata generate: GPU expert math fast (llama.cpp q8_1; agrees with the CPU pool to rounding)
+                 PROFILE, ranked by routing frequency, no eviction.
+strata generate: pre-filled 9607 of 9607 slots from the profile; slot 0 verified
+strata generate: R4 hit path ON - resident experts are computed on the GPU
+strata generate: 6 pool workers on logical processors 2,4,6,8,10,12, the host thread on 14 (draining too)
+strata generate: token graph hit path: 9607 resident experts, decided on the device
+strata generate: second GPU: only 489 MiB free once its slots are written (reserve 2048 MiB); shrinking its cache
+strata generate: second GPU 0 (NVIDIA GeForce RTX 3060): 4445 experts from the profile and 0 empty slots, 7.23 GiB
+strata serve: the prompt path borrows up to 1027 cache slots (1.68 GiB), 437 (0.67 GiB) on the second GPU
+strata serve: elastic K/V: 16384 of 131072 cells in VRAM (0.46 of 3.51 GiB); the expert cache (9607 slots) gives the K/V room below slot 7852 as the context grows
+strata verify: window up to 8 tokens, 88.2 MiB of device buffers
+strata serve: prompt cache on: up to 16 checkpoints of 112.6 MiB, 16384 MiB for stashed sequences
+strata serve: 562 MiB of VRAM free with everything loaded, 1989 MiB on the second GPU
+strata verify: captured the 8-token window (upload no error, sync no error)
+strata verify: captured the 4-token window (upload no error, sync no error)
+strata verify: captured the 7-token window (upload no error, sync no error)
+strata verify: captured the 2-token window (upload no error, sync no error)
+strata serve: 19 prompt tokens (0 cached) in 555 ms (34.2 tok/s), 2 generated in 171 ms (11.7 tok/s)
+strata serve: prompt cache: live 21 cells; 1 checkpoints (113 MiB); 0 stashed sequences (0 MiB)
+gdn_scan: the kernel's shared memory

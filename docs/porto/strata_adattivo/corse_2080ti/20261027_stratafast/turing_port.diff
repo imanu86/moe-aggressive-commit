@@ -1,0 +1,407 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index e0bdd88e..8d68ede8 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -50,7 +50,7 @@ if(STRATA_ENABLE_CUDA)
+     if(_base STREQUAL "native" OR _base STREQUAL "all" OR _base STREQUAL "all-major")
+       continue()
+     endif()
+-    if(_base LESS 80)
++    if(_base LESS 75)
+       message(FATAL_ERROR
+         "Strata needs an NVIDIA GPU of compute capability 8.0 or newer (RTX 30 / 40 / 50 series), but "
+         "CMAKE_CUDA_ARCHITECTURES is '${CMAKE_CUDA_ARCHITECTURES}'.")
+diff --git a/include/strata/core/turing_compat.cuh b/include/strata/core/turing_compat.cuh
+new file mode 100644
+index 00000000..9436393d
+--- /dev/null
++++ b/include/strata/core/turing_compat.cuh
+@@ -0,0 +1,21 @@
++// Local Turing (sm_75) port: what sm_80 has as one instruction, done otherwise below sm_80.
++#pragma once
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++// warp reductions by shuffles
++template <class T> __device__ __forceinline__ T sf_rmax(unsigned m, T v) {
++    for (int o = 16; o; o >>= 1) { const T u = __shfl_xor_sync(m, v, o); v = u > v ? u : v; }
++    return v;
++}
++template <class T> __device__ __forceinline__ T sf_rmin(unsigned m, T v) {
++    for (int o = 16; o; o >>= 1) { const T u = __shfl_xor_sync(m, v, o); v = u < v ? u : v; }
++    return v;
++}
++#define __reduce_max_sync(m, v) sf_rmax((m), (v))
++#define __reduce_min_sync(m, v) sf_rmin((m), (v))
++// cp.async as plain copies: the same data in shared memory at the same barriers, without the overlap
++#define SF_CP_COMMIT() ((void) 0)
++#define SF_CP_WAIT(n) ((void) 0)
++#else
++#define SF_CP_COMMIT() asm volatile("cp.async.commit_group;\n" ::)
++#define SF_CP_WAIT(n) asm volatile("cp.async.wait_group " #n ";\n" ::)
++#endif
+diff --git a/src/core/expert_cache.cpp b/src/core/expert_cache.cpp
+index a28c8c0d..2a40a750 100644
+--- a/src/core/expert_cache.cpp
++++ b/src/core/expert_cache.cpp
+@@ -724,11 +724,17 @@ bool ExpertCache::fill_slot(int32_t slot, const uint8_t* host_blob, void* stream
+ 
+ bool copy_blobs(void* const* dst, const void* const* src, const size_t* bytes, size_t n, void* stream) {
+     if (n == 0) return true;
++#if defined(CUDART_VERSION) && CUDART_VERSION >= 13000
+     cudaMemcpyAttributes attr{};
+     attr.srcAccessOrder = cudaMemcpySrcAccessOrderStream;
+     attr.flags = cudaMemcpyFlagPreferOverlapWithCompute;   // the copy engines, beside the kernels
+     size_t first = 0;
+     return cudaMemcpyBatchAsync(dst, src, bytes, n, &attr, &first, 1, (cudaStream_t) stream) == cudaSuccess;
++#else   // local CUDA 12.6 port: one copy at a time
++    for (size_t i = 0; i < n; ++i)
++        if (cudaMemcpyAsync(dst[i], src[i], bytes[i], cudaMemcpyHostToDevice, (cudaStream_t) stream) != cudaSuccess) return false;
++    return true;
++#endif
+ }
+ 
+ bool ExpertCache::fill_slot_blocking(int32_t slot, const uint8_t* host_blob, std::string& err, int64_t bytes) {
+diff --git a/src/kernels/cuda/native_mma.cu b/src/kernels/cuda/native_mma.cu
+index a00f56fa..933c0383 100644
+--- a/src/kernels/cuda/native_mma.cu
++++ b/src/kernels/cuda/native_mma.cu
+@@ -297,6 +297,7 @@ template <class F, int TM, int ST>
+ __launch_bounds__(TM * F::UPT * 32)
+ __global__ void native_mma_kernel(const uint8_t* __restrict__ w, Acts acts, float* __restrict__ y, int n_in,
+                                   int n_out, int ncols) {
++#if !defined(__CUDA_ARCH__) || __CUDA_ARCH__ >= 800
+     constexpr int UPT = F::UPT, W = UPT * TM, ROWS = 16 * TM, PITCH = F::PITCH, BYTES = F::SB * F::BLOCK;
+     constexpr int CH = PITCH / 16, NCP = (ROWS * CH + W * 32 - 1) / (W * 32);
+     extern __shared__ __align__(16) uint8_t smem[];
+@@ -372,6 +373,7 @@ __global__ void native_mma_kernel(const uint8_t* __restrict__ w, Acts acts, floa
+         const int row = row0 + 16 * tl + r;
+         if (c < ncols && row < n_out) y[(size_t) c * n_out + row] = sum;
+     }
++#endif  // sm_80+ only (local Turing port)
+ }
+ 
+ template <class F, int TM, int ST>
+@@ -413,6 +415,7 @@ bool run(const Rule& r, const void* w, const Acts& a, float* y, int n_in, int n_
+ 
+ bool native_mma(int ggml_type, const void* weights, const void* x_il, float* y, int n_in, int n_out, int ncols,
+                 void* stream) {
++    { static int ccs[16] = {0}; int d = 0; cudaGetDevice(&d); if (d < 0 || d > 15) return false; if (ccs[d] == 0) { int m = 0; cudaDeviceGetAttribute(&m, cudaDevAttrComputeCapabilityMajor, d); ccs[d] = m; } if (ccs[d] < 8) return false; }  // local Turing port
+     if (ncols < 2 || ncols > 8) return false;
+     const Rule* r = nullptr;
+     for (const Rule& e : kRules)
+diff --git a/src/kernels/cuda/native_router.cu b/src/kernels/cuda/native_router.cu
+index 2190a3be..f5e0c667 100644
+--- a/src/kernels/cuda/native_router.cu
++++ b/src/kernels/cuda/native_router.cu
+@@ -20,6 +20,7 @@
+ // LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ // OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ // SOFTWARE.
++#include "strata/core/turing_compat.cuh"
+ #include "strata/kernels/native_router.hpp"
+ #include "strata/kernels/q8_1_finite.hpp"
+ #include "strata/kernels/bf16_bits.hpp"
+diff --git a/src/kernels/cuda/qsa_decode_attn.cu b/src/kernels/cuda/qsa_decode_attn.cu
+index 9d9fd822..705527e9 100644
+--- a/src/kernels/cuda/qsa_decode_attn.cu
++++ b/src/kernels/cuda/qsa_decode_attn.cu
+@@ -1,4 +1,5 @@
+ // src/kernels/cuda/qsa_decode_attn.cu - see include/strata/kernels/qsa_decode_attn.hpp.
++#include "strata/core/turing_compat.cuh"
+ #include "strata/kernels/qsa_decode_attn.hpp"
+ #include "strata/kernels/kv_q4.hpp"
+ #include "strata/kernels/kv_q8.hpp"
+@@ -272,14 +273,44 @@ __device__ __forceinline__ void bar_arrive(int id, int n) {
+ // where cell c of probability row r lives in Smem::p
+ __device__ __forceinline__ int p_at(int r, int c) { return (((c >> 2) ^ ((r & 1) << 2)) << 2) | (c & 3); }
+ __device__ __forceinline__ void mma_u8s8(int (&d)[4], const unsigned (&a)[4], unsigned b0, unsigned b1) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.u8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[0]), "+r"(d[1])
++                 : "r"(a[0]), "r"(b0));
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.u8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[2]), "+r"(d[3])
++                 : "r"(a[1]), "r"(b0));
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.u8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[0]), "+r"(d[1])
++                 : "r"(a[2]), "r"(b1));
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.u8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[2]), "+r"(d[3])
++                 : "r"(a[3]), "r"(b1));
++#else
+     asm volatile("mma.sync.aligned.m16n8k32.row.col.s32.u8.s8.s32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+                  : "+r"(d[0]), "+r"(d[1]), "+r"(d[2]), "+r"(d[3])
+                  : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
++#endif
+ }
+ __device__ __forceinline__ void mma_s8s8(int (&d)[4], const unsigned (&a)[4], unsigned b0, unsigned b1) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[0]), "+r"(d[1])
++                 : "r"(a[0]), "r"(b0));
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[2]), "+r"(d[3])
++                 : "r"(a[1]), "r"(b0));
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[0]), "+r"(d[1])
++                 : "r"(a[2]), "r"(b1));
++    asm volatile("mma.sync.aligned.m8n8k16.row.col.s32.s8.s8.s32 {%0,%1}, {%2}, {%3}, {%0,%1};\n"
++                 : "+r"(d[2]), "+r"(d[3])
++                 : "r"(a[3]), "r"(b1));
++#else
+     asm volatile("mma.sync.aligned.m16n8k32.row.col.s32.s8.s8.s32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, {%0,%1,%2,%3};\n"
+                  : "+r"(d[0]), "+r"(d[1]), "+r"(d[2]), "+r"(d[3])
+                  : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
++#endif
+ }
+ __device__ __forceinline__ void ldsm4(unsigned (&r)[4], const void* s) {
+     asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
+@@ -292,10 +323,18 @@ __device__ __forceinline__ void ldsm4t(unsigned (&r)[4], const void* s) {
+                  : "r"((unsigned) __cvta_generic_to_shared(s)));
+ }
+ __device__ __forceinline__ void cp_async16(void* s, const void* g) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    *reinterpret_cast<uint4*>(s) = *reinterpret_cast<const uint4*>(g);
++#else
+     asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"((unsigned) __cvta_generic_to_shared(s)), "l"(g));
++#endif
+ }
+ __device__ __forceinline__ void cp_async8(void* s, const void* g) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    *reinterpret_cast<unsigned long long*>(s) = *reinterpret_cast<const unsigned long long*>(g);
++#else
+     asm volatile("cp.async.ca.shared.global [%0], [%1], 8;\n" ::"r"((unsigned) __cvta_generic_to_shared(s)), "l"(g));
++#endif
+ }
+ __device__ __forceinline__ int exp_of(float x) { return (__float_as_int(x) >> 23) & 255; }   // x < 2^(E - 126)
+ __device__ __forceinline__ float pow2f(int e) { return __int_as_float((e + 127) << 23); }     // -126 <= e <= 127
+@@ -468,9 +507,9 @@ __global__ void __launch_bounds__(pf::NT, 1) attn_mma_kernel(const float* __rest
+                                       : nullptr,
+                           cl < n_here);
+             }
+-            asm volatile("cp.async.commit_group;\n" ::);
++            SF_CP_COMMIT();
+             if (i >= 1) {
+-                asm volatile("cp.async.wait_group 1;\n" ::);
++                SF_CP_WAIT(1);
+                 bar_arrive(FULL_K + (i - 1) % KS, NKB);
+                 bar_arrive(FULL_V + (i - 1) % VS, NVB);
+             }
+@@ -479,7 +518,7 @@ __global__ void __launch_bounds__(pf::NT, 1) attn_mma_kernel(const float* __rest
+             pg1 = c0 + 2 * PT + cl < n_ids ? p.page_table[id2 / page_size] : 0;
+             id2 = c0 + 3 * PT + cl < n_ids ? ids[c0 + 3 * PT + cl] : 0;
+         }
+-        asm volatile("cp.async.wait_group 0;\n" ::);
++        SF_CP_WAIT(0);
+         bar_arrive(FULL_K + (n_tiles - 1) % KS, NKB);
+         bar_arrive(FULL_V + (n_tiles - 1) % VS, NVB);
+     } else if (warp < 4) {
+diff --git a/src/kernels/cuda/qsa_select.cu b/src/kernels/cuda/qsa_select.cu
+index 093118a7..78af21fd 100644
+--- a/src/kernels/cuda/qsa_select.cu
++++ b/src/kernels/cuda/qsa_select.cu
+@@ -1,4 +1,5 @@
+ // src/kernels/cuda/qsa_select.cu - see include/strata/kernels/qsa_select.hpp.
++#include "strata/core/turing_compat.cuh"
+ #include "strata/kernels/qsa_select.hpp"
+ 
+ #include <cuda_runtime.h>
+@@ -242,7 +243,11 @@ __host__ __device__ constexpr int popc5(int i) {
+ // key rows in shared memory, 16-byte chunk c of row r at c ^ (r & 7): a quarter warp's rows on distinct bank quads
+ __device__ __forceinline__ int key_at(int r, int c) { return r * IDX_DIM + 4 * (c ^ (r & 7)); }
+ __device__ __forceinline__ void cp_async16(void* s, const void* g) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    *reinterpret_cast<uint4*>(s) = *reinterpret_cast<const uint4*>(g);
++#else
+     asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"((unsigned) __cvta_generic_to_shared(s)), "l"(g));
++#endif
+ }
+ 
+ // The same scores for batches of queries, in a per-thread GEMM form.  Lane l of a warp scores key blocks l + 32 j
+@@ -287,7 +292,7 @@ __global__ void __launch_bounds__(BATCH_T, 1) batch_scores_kernel(const float* _
+             const int a = e / (IDX_HEADS * 16), off = (e / 16) % IDX_HEADS * IDX_DIM + 4 * (2 * (e % 16) + half);
+             if (q0 + a < nq) cp_async16(qs + a * QD + off, q_idx + (int64_t) (q0 + a) * QD + off);
+         }
+-        asm volatile("cp.async.commit_group;\n" ::);
++        SF_CP_COMMIT();
+     };
+     int have = -1;                                             // the first query of the slot's rows
+     for (int u = (int) ((int64_t) blockIdx.x * units / gridDim.x); u < u1;) {
+@@ -297,8 +302,8 @@ __global__ void __launch_bounds__(BATCH_T, 1) batch_scores_kernel(const float* _
+             const int r = e >> 5, c = e & 31;
+             cp_async16(ks + key_at(r, c), pooled + (int64_t) min(b0 + r, top) * IDX_DIM + 4 * c);
+         }
+-        asm volatile("cp.async.commit_group;\n" ::);
+-        asm volatile("cp.async.wait_group 0;\n" ::);
++        SF_CP_COMMIT();
++        SF_CP_WAIT(0);
+         __syncthreads();
+         for (; u < ue; ++u) {
+             const int q0 = u % n_chunks * BATCH_QC + warp * BATCH_QT;
+@@ -313,7 +318,7 @@ __global__ void __launch_bounds__(BATCH_T, 1) batch_scores_kernel(const float* _
+             if (wlast < b0) continue;                          // the warp's queries end before the tile
+             if (have != q0) {
+                 // a skipped unit's prefetch may still be landing in the slot: copies to one address are unordered
+-                asm volatile("cp.async.wait_group 0;\n" ::);
++                SF_CP_WAIT(0);
+                 __syncwarp();
+                 stage(q0, 0);
+                 stage(q0, 1);
+@@ -321,7 +326,7 @@ __global__ void __launch_bounds__(BATCH_T, 1) batch_scores_kernel(const float* _
+             }
+             const int q0n = u + 1 < u1 ? (u + 1) % n_chunks * BATCH_QC + warp * BATCH_QT : -1;
+             const bool ahead = q0n >= 0 && q0n != q0;
+-            asm volatile("cp.async.wait_group 1;\n" ::);       // the even leaves
++            SF_CP_WAIT(1);       // the even leaves
+             __syncwarp();
+             float stk[BATCH_QT][IDX_HEADS][BATCH_BT][6];
+             auto leaves = [&](auto first) {
+@@ -357,9 +362,9 @@ __global__ void __launch_bounds__(BATCH_T, 1) batch_scores_kernel(const float* _
+             __syncwarp();
+             if (ahead) {
+                 stage(q0n, 0);
+-                asm volatile("cp.async.wait_group 1;\n" ::);   // this unit's odd leaves
++                SF_CP_WAIT(1);   // this unit's odd leaves
+             } else {
+-                asm volatile("cp.async.wait_group 0;\n" ::);
++                SF_CP_WAIT(0);
+             }
+             __syncwarp();
+             leaves(std::integral_constant<int, 16>());
+diff --git a/src/prefill/kernels.cu b/src/prefill/kernels.cu
+index ee05128d..b9b71efe 100644
+--- a/src/prefill/kernels.cu
++++ b/src/prefill/kernels.cu
+@@ -1,5 +1,6 @@
+ // src/prefill/kernels.cu - see include/strata/prefill/kernels.hpp.
+ #include "strata/prefill/kernels.hpp"
++#include "strata/core/turing_compat.cuh"
+ #include "strata/kernels/bf16_bits.hpp"
+ #include "strata/kernels/mrope.hpp"
+ #include "strata/kernels/verify_kernels.hpp"
+@@ -114,19 +115,38 @@ __global__ void gr_mix_r_kernel(const float* __restrict__ R, const float* __rest
+ // costs 8%).  The last tile's missing rows are zeros (a cp.async of 0 bytes): read from one row, they ran 2-3x slower.
+ constexpr int UM_BM = 128, UM_BD = 32, UM_KC = 32, UM_LD = UM_KC + 8;   // tokens, columns a stream, k a slice, a row
+ __device__ __forceinline__ void um_cp16(void* s, const void* g, unsigned bytes = 16) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    *reinterpret_cast<uint4*>(s) = bytes ? *reinterpret_cast<const uint4*>(g) : make_uint4(0, 0, 0, 0);
++#else
+     asm volatile("cp.async.cg.shared.global [%0], [%1], 16, %2;\n" ::"r"((unsigned) __cvta_generic_to_shared(s)), "l"(g),
+                  "r"(bytes));
++#endif
+ }
+ __device__ __forceinline__ void um_ldm4(unsigned (&r)[4], const void* p) {
+     asm volatile("ldmatrix.sync.aligned.m8n8.x4.shared.b16 {%0,%1,%2,%3}, [%4];\n"
+                  : "=r"(r[0]), "=r"(r[1]), "=r"(r[2]), "=r"(r[3])
+                  : "r"((unsigned) __cvta_generic_to_shared(p)));
+ }
++__device__ __forceinline__ unsigned sf_bf2h(unsigned v) {   // two bf16 -> two f16 (Turing has no bf16 mma)
++    const __half2 h = __floats2half2_rn(__uint_as_float(v << 16), __uint_as_float(v & 0xffff0000u));
++    return *reinterpret_cast<const unsigned*>(&h);
++}
++__device__ __forceinline__ void sf_mma_k8(float (&d)[4], unsigned a0, unsigned a1, unsigned b) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ >= 750
++    asm volatile("mma.sync.aligned.m16n8k8.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5}, {%6}, {%0,%1,%2,%3};"
++                 : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3]) : "r"(a0), "r"(a1), "r"(b));
++#endif
++}
+ __device__ __forceinline__ void um_mma(float (&d)[4], const unsigned (&a)[4], unsigned b0, unsigned b1) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    sf_mma_k8(d, sf_bf2h(a[0]), sf_bf2h(a[1]), sf_bf2h(b0));
++    sf_mma_k8(d, sf_bf2h(a[2]), sf_bf2h(a[3]), sf_bf2h(b1));
++#else
+     asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.bf16.bf16.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
+                  "{%0,%1,%2,%3};\n"
+                  : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
+                  : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
++#endif
+ }
+ template <bool PF>
+ __global__ void __launch_bounds__(256, 2) gr_upmix_kernel(const uint16_t* __restrict__ lo16, const uint16_t* __restrict__ wu,
+@@ -155,7 +175,7 @@ __global__ void __launch_bounds__(256, 2) gr_upmix_kernel(const uint16_t* __rest
+             const int r = i / (UM_KC / 8), q = i % (UM_KC / 8);
+             um_cp16(&sB[buf][r][q * 8], wu + ((int64_t) (r / UM_BD) * N + d0 + r % UM_BD) * LR + kc * UM_KC + q * 8);
+         }
+-        asm volatile("cp.async.commit_group;\n" ::);
++        SF_CP_COMMIT();
+     };
+     float acc[2][HC][2][4];
+ #pragma unroll
+@@ -172,9 +192,9 @@ __global__ void __launch_bounds__(256, 2) gr_upmix_kernel(const uint16_t* __rest
+         const int buf = kc & 1;
+         if (kc + 1 < NK) {
+             stage(kc + 1, buf ^ 1);
+-            asm volatile("cp.async.wait_group 1;\n" ::);
++            SF_CP_WAIT(1);
+         } else {
+-            asm volatile("cp.async.wait_group 0;\n" ::);
++            SF_CP_WAIT(0);
+         }
+         __syncthreads();
+ #pragma unroll
+@@ -585,15 +605,27 @@ __device__ __forceinline__ void gsplit(float x, float y, uint32_t& hi, uint32_t&
+ }
+ __device__ __forceinline__ uint32_t gld32(const __half* p) { return *reinterpret_cast<const uint32_t*>(p); }
+ __device__ __forceinline__ void gmma(float (&d)[4], const uint32_t (&a)[4], uint32_t b0, uint32_t b1) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    sf_mma_k8(d, a[0], a[1], b0);
++    sf_mma_k8(d, a[2], a[3], b1);
++#else
+     asm volatile("mma.sync.aligned.m16n8k16.row.col.f32.f16.f16.f32 {%0,%1,%2,%3}, {%4,%5,%6,%7}, {%8,%9}, "
+                  "{%0,%1,%2,%3};"
+                  : "+f"(d[0]), "+f"(d[1]), "+f"(d[2]), "+f"(d[3])
+                  : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
+-}
+-__device__ __forceinline__ void gmmah(uint32_t (&d)[2], const uint32_t (&a)[4], uint32_t b0, uint32_t b1) {   // FP16 sums
++#endif
++}
++__device__ __forceinline__ void gmmah(uint32_t (&d)[2], const uint32_t (&a)[4], uint32_t b0, uint32_t b1) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    asm volatile("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3}, {%4}, {%0,%1};"
++                 : "+r"(d[0]), "+r"(d[1]) : "r"(a[0]), "r"(a[1]), "r"(b0));
++    asm volatile("mma.sync.aligned.m16n8k8.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3}, {%4}, {%0,%1};"
++                 : "+r"(d[0]), "+r"(d[1]) : "r"(a[2]), "r"(a[3]), "r"(b1));
++#else   // FP16 sums
+     asm volatile("mma.sync.aligned.m16n8k16.row.col.f16.f16.f16.f16 {%0,%1}, {%2,%3,%4,%5}, {%6,%7}, {%0,%1};"
+                  : "+r"(d[0]), "+r"(d[1])
+                  : "r"(a[0]), "r"(a[1]), "r"(a[2]), "r"(a[3]), "r"(b0), "r"(b1));
++#endif
+ }
+ __device__ __forceinline__ void ga_of(const float (&x)[4], const float (&y)[4], uint32_t (&a)[4]) {
+     a[0] = gh2(x[0], x[1]);
+@@ -612,10 +644,18 @@ __device__ __forceinline__ void gldsm_t(uint32_t (&r)[4], const void* p) {
+                  : "r"((unsigned) __cvta_generic_to_shared(p)));
+ }
+ __device__ __forceinline__ void gcp16(void* dst, const void* src) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    *reinterpret_cast<uint4*>(dst) = *reinterpret_cast<const uint4*>(src);
++#else
+     asm volatile("cp.async.cg.shared.global [%0], [%1], 16;\n" ::"r"((unsigned) __cvta_generic_to_shared(dst)), "l"(src));
++#endif
+ }
+ __device__ __forceinline__ void gcp4(void* dst, const void* src) {
++#if defined(__CUDA_ARCH__) && __CUDA_ARCH__ < 800
++    *reinterpret_cast<unsigned*>(dst) = *reinterpret_cast<const unsigned*>(src);
++#else
+     asm volatile("cp.async.ca.shared.global [%0], [%1], 4;\n" ::"r"((unsigned) __cvta_generic_to_shared(dst)), "l"(src));
++#endif
+ }
+ __device__ __forceinline__ float gex2(float x) {   // 2^x, subnormal results flushed
+     float y;
+@@ -783,14 +823,14 @@ __global__ void __launch_bounds__(GWALK + GPREP + GLOAD, 1) gdn_chunk_kernel(flo
+                     else *reinterpret_cast<float4*>(d) = make_float4(0.f, 0.f, 0.f, 0.f);
+                 }
+             }
+-            asm volatile("cp.async.commit_group;\n" ::);
++            SF_CP_COMMIT();
+         };
+         copy(0, 0);
+         copy(1, -1);
+-        asm volatile("cp.async.wait_group 1;\n" ::);
++        SF_CP_WAIT(1);
+         __syncthreads();
+         for (int ch = 0; ch < nch; ++ch) {
+-            asm volatile("cp.async.wait_group 0;\n" ::);
++            SF_CP_WAIT(0);
+             __syncthreads();
+             copy(ch + 2, ch + 1);
+         }

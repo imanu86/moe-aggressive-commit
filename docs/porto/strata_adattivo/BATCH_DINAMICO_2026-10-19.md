@@ -189,3 +189,14 @@ ancora la v1 (solo CUDA0): va rigenerata.
    una variante del replay che lo tenga.
 5. Upstream 0.2.0-beta: nessun batch dinamico; `bslot_ss` e `init_slots` hanno la stessa struttura, la patch si riporta
    (lab/upsync-020 di un altro agente).
+
+## 8. Porto su 0.2.6 (27/10/2026): lab/dyn-026
+
+Fork `imanu86/Strata-2080Ti`, branch `lab/dyn-026` da `lab/leve-026` (fa5963d5), worktree `C:\Users\imanu\source\repos\Strata-wt\dyn-026`. Codice `d680b440`, patch `stack/24-batch-dyn.patch` (`74139291`; `--build` e `--verify-docs` verdi, `--check` su v0.2.6: le 24 patch applicano pulite in ordine).
+
+- Riportati con un 3-way i sei commit di `lab/batch-dyn` (20de720d..c4af6851, compresa la correzione della RAM pinned). Un solo conflitto vero: gli slot di pacco (`STRATA_PACK_PREFILL`) di 0.1.45 non esistono su 0.2.6 e il loro contesto e stato lasciato fuori. Il cancello della pipeline e `batch_blocks_pw` (patch 22, `STRATA_PW_WITH_BATCH`): con `STRATA_BATCH_DYNAMIC` si azzera, cosi la chat singola gira come senza `--batch`.
+- **Cache elastica con `--batch-groups`** (richiesta di verifica): su 0.2.6 l esclusione c e ancora (`strata: elastic cache is not validated with --batch-groups`, due punti, riga ~3137 e ~6658 di `generate.cpp`), e `STRATA_BATCH_DYNAMIC` la scavalca. Il passo elastico (`elastic_step`) non gira nel ciclo dei gruppi in pipeline (`if (!piped)`): solo all inizio di una richiesta singola e nel passaggio, dove i gruppi sono drenati (`pipe_inflight()` e il primo ramo del ciclo di lettura; l uscita aspetta `bdyn_idle_ok()` dopo di esso). Letto dal codice, **non provato a caldo**: la prova e il passo c1 della coda.
+- In modo agenti usare **`--batch 4 --batch-groups 2` espliciti**: il default 0.2.6 (gruppo seriale) e molto peggio (misure della notte 26-27/10, `20261026_leve/ESITO_20261027.md`: 354 s contro 251 s a 3 agenti). `PIPED_CONCURRENT` facoltativo e non nella config Auto. `--batch-mtp` e `STRATA_PIPED_MTP` restano esclusi dall interruttore.
+- Build `corse_2080ti/20261004_routed_keep/build-dyn026-d680b440` (sha256 251a68c0, sm_75+86, 429 s a priorita normale, solo CPU). **Compilato si, installato no, provato no.**
+- Config pronta: `D:\ds4_work\strata\Strata\strata-026-auto.json` e bat `Strata 0.2.6 Auto - porta 8100.bat` sul Desktop (SERVER IA LOCALE). Coda di misure: `corse_2080ti/20261027_auto/coda_auto_026.py` (25 passi, 5 h, non eseguita).
+- Ancora aperti dal 19/10: PIPED_MTP nel modo agenti, prefisso comune mai riletto, `--batch 8` con il passaggio a caldo.

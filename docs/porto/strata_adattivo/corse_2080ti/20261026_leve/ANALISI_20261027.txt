@@ -1,0 +1,69 @@
+01 base     serial=si  n  8  tok/fin 2.427  ms/fin 31.54  accett 0.663  t/s 76.4
+02 nopp     serial=no  n  8  tok/fin 2.276  ms/fin 28.35  accett 0.617  t/s 79.6
+     contro i due base adiacenti: t/s +4.1%  tok/fin -5.3%  ms/fin -10.1%
+03 base     serial=si  n  8  tok/fin 2.381  ms/fin 31.57  accett 0.667  t/s 76.9
+
+== a1 presence_penalty 0 contro 1,5 a T=0,7 (camp_bisezione.py --solo nopp, Daily 0.2.6)
+
+== b1 #4121 STRATA_PIPED_MTP=1 sul replay   [02_R3L | 03_L1 | 04_R3L]
+  makespan               228.5     242.8     241.6   leva   -3.2%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_mean               20.5      20.8      18.6   leva   -6.2%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_p90                55.1      58.9      38.2   leva  -20.9%   TERNA INSTABILE (basi a piu del 5%)
+  queue_wait_mean          8.8       9.2       7.0   leva  -14.2%   TERNA INSTABILE (basi a piu del 5%)
+  decode agg tok/s        17.1      17.9      17.9   leva   -2.1%
+
+== b2 scala del batch: Daily senza batch contro R3   [05_R0 | 06_R3 | 07_R0]
+  makespan               443.0     243.0     448.9   leva  +83.5%
+  ttft_mean               67.5      19.3      68.0   leva +251.9%
+  ttft_p90               115.8      38.1     116.0   leva +204.3%
+  queue_wait_mean         44.7       7.7      45.2   leva +486.2%
+  decode agg tok/s         9.1      18.7       9.9   leva  -49.2%   TERNA INSTABILE (basi a piu del 5%)
+
+== b3 scala del batch: R2 (senza PIPED_CONCURRENT)   [07_R0 | 08_R2 | 09_R0]
+  makespan               448.9     251.2     449.2   leva  +78.8%
+  ttft_mean               68.0      12.9      68.0   leva +426.1%
+  ttft_p90               116.0      21.5     117.3   leva +442.6%
+  queue_wait_mean         45.2       2.2      45.2   leva +1932.1%
+  decode agg tok/s         9.9      15.2      10.3   leva  -33.7%
+
+== b4 scala del batch: R1 (gruppo seriale, default 0.2.6)   [09_R0 | 10_R1 | 11_R0]
+  makespan               449.2     354.0     409.9   leva  +21.3%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_mean               68.0      30.6      59.6   leva +108.6%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_p90               117.3      93.4     127.4   leva  +31.0%   TERNA INSTABILE (basi a piu del 5%)
+  queue_wait_mean         45.2      12.7      39.2   leva +231.2%   TERNA INSTABILE (basi a piu del 5%)
+  decode agg tok/s        10.3      11.2      11.2   leva   -4.4%   TERNA INSTABILE (basi a piu del 5%)
+
+== a2 STRATA_BF16_TC=1 a T=0, lettura prompt a 128K   [12_bf-base | 13_bf-leva | 14_bf-base]
+  decode 4K               88.2      89.4      89.5   leva   +0.6%
+  prompt 4K              808.1     813.1     803.6   leva   +0.9%
+  decode 32K              80.2      78.9      84.1   leva   -3.9%   TERNA INSTABILE (basi a piu del 3%)
+  prompt 32K            1551.1    1568.8    1550.1   leva   +1.2%
+  decode 125K             83.7      84.7      83.7   leva   +1.2%
+  prompt 125K           1826.1    1856.6    1836.0   leva   +1.4%
+
+== a3 STRATA_PW_WITH_BATCH=1, chat singola con batch acceso (extra)   [15_pw-base | 16_pw-leva | 17_pw-base]
+  decode 4K               73.4      78.3      73.5   leva   +6.6%
+  prompt 4K              741.5     735.1     741.0   leva   -0.8%
+  decode 32K              74.2      73.3      74.2   leva   -1.2%
+  prompt 32K            1380.9    1395.7    1380.5   leva   +1.1%
+
+== b5 #3095 STRATA_PW_WITH_BATCH=1 sul replay   [18_R3L | 19_L2 | 20_R3L]
+  makespan               240.5     250.1     244.0   leva   -3.1%
+  ttft_mean               17.3      13.9      18.4   leva  +28.1%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_p90                28.8      19.1      40.7   leva  +81.8%   TERNA INSTABILE (basi a piu del 5%)
+  queue_wait_mean          5.6       2.6       6.6   leva +132.7%   TERNA INSTABILE (basi a piu del 5%)
+  decode agg tok/s        17.9      17.4      19.2   leva   +6.6%   TERNA INSTABILE (basi a piu del 5%)
+
+== b6 #4010 STRATA_PIPE_ADAPT_EVERY=128 sul replay   [20_R3L | 21_L3 | 22_R3L]
+  makespan               244.0     231.1     234.7   leva   +3.6%
+  ttft_mean               18.4      18.1      19.5   leva   +4.6%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_p90                40.7      55.1      55.2   leva  -13.1%   TERNA INSTABILE (basi a piu del 5%)
+  queue_wait_mean          6.6       6.6       7.7   leva   +8.1%   TERNA INSTABILE (basi a piu del 5%)
+  decode agg tok/s        19.2      17.2      18.8   leva  +10.5%
+
+== b7 #2527/#2528/#2843 checkpoint di ramo sul replay   [22_R3L | 23_L4 | 24_R3L]
+  makespan               234.7     245.2     236.0   leva   -4.0%
+  ttft_mean               19.5      17.8      17.9   leva   +5.0%   TERNA INSTABILE (basi a piu del 5%)
+  ttft_p90                55.2      37.6      34.0   leva  +18.6%   TERNA INSTABILE (basi a piu del 5%)
+  queue_wait_mean          7.7       5.8       6.3   leva  +19.9%   TERNA INSTABILE (basi a piu del 5%)
+  decode agg tok/s        18.8      19.0      17.2   leva   -5.0%   TERNA INSTABILE (basi a piu del 5%)

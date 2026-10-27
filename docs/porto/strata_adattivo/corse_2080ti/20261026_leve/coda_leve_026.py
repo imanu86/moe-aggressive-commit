@@ -234,6 +234,12 @@ def main():
         if a.riprendi and ok.exists():
             continue
         pr = occupato()
+        for _ in range(12):   # 26/10 notte: il motore del passo prima può metterci qualche secondo a uscire
+            if not pr:
+                break
+            subprocess.run(['taskkill', '/F', '/IM', 'strata.exe'], capture_output=True)
+            time.sleep(10)
+            pr = occupato()
         if pr:
             raise SystemExit(f'PC non libero al passo {p["n"]:02d}: ' + '; '.join(pr))
         argv, env = comando(p)
@@ -241,7 +247,13 @@ def main():
         r = subprocess.run(argv, env=dict(os.environ, **env))
         print(f'[{time.strftime("%H:%M:%S")}] passo {p["n"]:02d} uscita {r.returncode}', flush=True)
         if r.returncode != 0:
-            raise SystemExit(f'passo {p["n"]:02d} {p["tag"]} fallito: coda interrotta (riprendere con --riprendi)')
+            # 26/10 notte: un passo fallito non ferma più la coda (si annota e si va avanti; motore e lock ripuliti)
+            print(f'passo {p["n"]:02d} {p["tag"]} FALLITO: annotato, si prosegue', flush=True)
+            (OUT / 'fatto' / (p['tag'] + '.fallito')).write_text(time.strftime('%Y-%m-%d %H:%M'), encoding='utf-8')
+            subprocess.run(['taskkill', '/F', '/IM', 'strata.exe'], capture_output=True)
+            subprocess.run(['taskkill', '/F', '/IM', 'strata-vision.exe'], capture_output=True)
+            Path(r'D:\ds4_work\strata\lab_locks\bench.lock').unlink(missing_ok=True)
+            continue
         ok.write_text(time.strftime('%Y-%m-%d %H:%M'), encoding='utf-8')
     print('fatto. Analisi: python coda_leve_026.py --analisi')
 

@@ -225,12 +225,17 @@ class Server:
                 kd.terminate()
             except psutil.Error:
                 pass
-        _, alive = psutil.wait_procs(kids, timeout=20)
+        try:
+            _, alive = psutil.wait_procs(kids, timeout=20)
+        except psutil.Error:   # 26/10: AccessDenied su un figlio già in chiusura fermava tutta la coda
+            alive = kids
         for kd in alive:
             try:
                 kd.kill()
             except psutil.Error:
                 pass
+        subprocess.run(['taskkill', '/F', '/IM', 'strata.exe'], capture_output=True)
+        subprocess.run(['taskkill', '/F', '/IM', 'strata-vision.exe'], capture_output=True)
 
 
 class MemSampler(threading.Thread):

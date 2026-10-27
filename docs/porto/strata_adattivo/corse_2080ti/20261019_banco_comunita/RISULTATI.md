@@ -60,3 +60,4 @@ Mediane (prompt tok/s | decode tok/s):
 - prompt/decode t/s: 4K 936-937/95,5-98,9 (prima corsa 849/86) · 32K 1619-1632/86-91 · 128K 1824-1858/93,2-93,9; bozze 135-156 su 212-233
 - contro la stessa Daily con la 3060 (25/10): decode +40% circa, prompt +36% a 4K, +14% a 32K, +13% a 128K; contro 2x5060 Ti comunità: decode sopra (93,5 contro 83,8 a 128K), prompt ancora sotto (1836 contro 2440)
 - consumo durante il banco: 3080 Ti media 202 W (max 282, 67 C), 2080 Ti media 231 W (max 256, 64 C)
+- 27/10 stessa config a T=0,7 (top_p 0,8, top_k 20, presence 1,5 -> decode seriale): 4K prompt 951-955/decode 84,9-88,2 (prima 77) · 32K 1612-1632/76,7-81,7; contro la 3060 a T=0,7 (75,4/72,0): +14%/+10%; contro T=0 con la 3080 Ti: -10% (la penalità spegne le finestre sovrapposte).

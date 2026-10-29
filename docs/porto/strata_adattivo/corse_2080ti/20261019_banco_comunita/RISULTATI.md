@@ -62,3 +62,11 @@ Mediane (prompt tok/s | decode tok/s):
 - consumo durante il banco: 3080 Ti media 202 W (max 282, 67 C), 2080 Ti media 231 W (max 256, 64 C)
 - 27/10 stessa config a T=0,7 (top_p 0,8, top_k 20, presence 1,5 -> decode seriale): 4K prompt 951-955/decode 84,9-88,2 (prima 77) · 32K 1612-1632/76,7-81,7; contro la 3060 a T=0,7 (75,4/72,0): +14%/+10%; contro T=0 con la 3080 Ti: -10% (la penalità spegne le finestre sovrapposte).
 - 27/10 T=0, 3080 Ti, una corsa per braccio (4K/32K, prima a 4K scartata): split 16 prompt 936/1626 decode 97/88 · split 18 912/1673 · 101/91 · split 20 869/1751 · 92/88 · MTP_STAGE0 (split 16) 846/1610 · 91/92 (rumoroso). Split 18 il più equilibrato; 20 migliora il prompt a 32K (+8%) ma perde a 4K. MTP_STAGE0 niente guadagno. Tutti con avviso VRAM LOW (desktop sulla 3080 Ti).
+
+### 29/10 v0.2.7.1 + pila (build-up0271pila-5fbc4784), 3080 Ti stadio 0, split 16, T=0, config = strata-026-3080ti.json, novita' ROUTE_PRIOR 1.5 ACCESA di default (log: "residency-biased routing is on by default")
+- Ambiente: Jump Desktop aperto (CPU Jump +0,02 s durante il banco, inattivo); OktoCGControl non in esecuzione. Corsa up0271-3080ti, config in 20261029_upsync0271/.
+- Nota: contro la riga 0.2.6 cambiano anche altri default di 0.2.7 (prefill a strati su split CUDA, batch a pipeline), non isolati: un solo test.
+- Mediane prompt / decode t/s (3 corse): 4K 903 / 95,4 · 32K 1598 / 93,6 · 128K 1821 / 93,3. Riferimento 0.2.6 (27/10): 936/95,5 · 1627/87,3 · 1836/93,6.
+- Bozze accettate/offerte: 0.2.6 442/667 (66,3%), 412/661 (62,3%), 464/684 (67,8%); 0.2.7.1 440/659 (66,8%), 436/632 (69,0%), 463/678 (68,3%).
+- Qualita': parole distinte/totali sulle 256 uscite (media su 3): 0.2.6 0,62/0,63/0,63; 0.2.7.1 0,63/0,62/0,62. Testi coerenti, stesso tema (modulo sintetico `task_XXXXX`), nessuna ripetizione o deriva.
+- Interruttore: STRATA_ROUTE_PRIOR=0 (o riga "Faster answers on 12 GB NVIDIA cards" nelle Expert settings); STRATA_DEFAULTS=026 riporta tutti i default di 0.2.6.

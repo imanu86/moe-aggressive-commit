@@ -167,3 +167,39 @@ In coda: `t22`, multichat `t` a 20 e 22 con 3 e 6 agenti, F15. Poi F16 (leve res
 - La somma chiude la verifica (22-23 ms): non c'e' tempo perso. I ms mancanti erano la 2080 Ti, che la riga dei tempi non legge.
 - Costo per strato: 2080 Ti 0,44-0,45 ms costanti con 24, 26 e 28 strati; 3080 Ti 0,40-0,41 ms tutto compreso a 20-22, 0,49 a 24 quando la VRAM finisce e gli esperti vanno sulla CPU. La 2080 Ti e' circa il 20% piu' lenta a strato: pesa di piu' soprattutto perche' ha 28 strati su 48.
 - In serie la finestra e' 48 strati per ~0,45 ms. Se le schede lavorassero davvero insieme il limite sarebbe la piu' lenta, 13,7 ms invece di 21,8; la catena oggi ne prende solo ~4% perche' butta le finestre sbagliate.
+
+## Giro veloce a contesto lungo (2/11, `banco_lungo.py`, divisione 20, tutte le leve)
+
+Una lettura da 128K e 6 turni sullo stesso contesto, una corsa, solo filtro. Il testo cambia tra le corse anche a parita' di impostazioni.
+
+| leva | scrittura t/s | esito |
+|---|---:|---|
+| riferimento | 93,2 / 94,6 / 95,0 | |
+| `STRATA_MTP_STAGE0=1` | 120,1 (702 token) | da validare, testo non salvato |
+| `--adapt-swaps 32` | 98,9 | candidata |
+| `--spec 3` | 98,0 | nel rumore |
+| `--no-host-worker` | 92,8 | neutra |
+| solo `STRATA_EXP_MODE=8` | 91,5 | neutra |
+| `--spec 6` | 93,6 | neutra |
+| `--spec-min-p 0.7` | 91,4 | neutra |
+| `STRATA_VERIFY_DEVICE_PLAN=1` | 90,4 | neutra |
+| `STRATA_MTP_SHARED_BRANCH` tolta | 82,2 | bocciata |
+| `--spec-min-p 0.35` | 76,5 | bocciata |
+
+Con 6 core occupati: riferimento 81,4; senza `STRATA_POOL_SPIN_US=100` 88,4; `--adapt-swaps 32` 89,2; `--no-host-worker` 83,2.
+
+## RAM e tabella n-grammi (2/11)
+
+- Working set ~61 GiB: arena esperti 28,25 + tabella n-grammi 26,8 + ~6 altro. L'arena torna: 16 esperti fuori dalle schede + 10 di copie che ruotano + 2,2 fissi con copia. La memoria privata di 70-74 GiB comprende ~34 GiB di blocchi che con ogni probabilita' rispecchiano la VRAM (dedotto).
+- Da v0.2.7 la tabella va in RAM da sola se il motore trova ~75 GiB liberi: da 03:39 del 2/11 quasi tutte le corse, a volte alternate. Dal confronto spontaneo la RAM vale 1-2% in lettura, nel rumore.
+- `Rple_a` (`STRATA_PLE_AUTO_RAM=0`): lettura 128K 2108 contro 2162 di `Rrif_a`, working set 39 GiB contro 61. Una corsa, entrambe con campionamento `nvidia-smi` a 1 s attivo, scrittura non confrontabile col resto. Avvio 380 s, arena a 0,13 GiB/s con altre chat al lavoro: da rimisurare.
+- Da qui le code fissano `--ple-io direct`. F19 fermata alle 12:47 su richiesta dell'owner, `Rcore7000` e `Rrif2` non fatte.
+
+## Traffico (2/11, `passaggio.csv`, `nvidia-smi dmon`, scheda <-> host)
+
+| fase | 3080 Ti rx/tx MB/s, calcolo | 2080 Ti rx/tx MB/s, calcolo |
+|---|---:|---:|
+| lettura | 4515/610, 71% | 5786/743, 93% |
+| scrittura | 743/203, 45% | 881/185, 60% |
+
+Tra le schede passano ~51 KB per riga (`ANALISI_FABLE.md`, misura del 13/10): stimati ~6 MB/s in scrittura e ~110 MB/s in lettura, poche unita' percentuali del traffico. Il resto sono esperti, righe e K/V da e verso la RAM. In scrittura 183/168 W medi e 229 W di picco (11 campioni), nessun freno; i picchi da 270-280 W sono della lettura.

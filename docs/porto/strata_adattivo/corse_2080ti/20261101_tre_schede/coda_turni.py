@@ -32,7 +32,7 @@ for spec in sys.argv[1:]:
         del c['env']['STRATA_MMVQ_IL']
     cfg = OUT / f'cfg-{nome}.json'
     cfg.write_text(json.dumps(c, indent=1), encoding='utf-8')
-    extra = f'--layer-split {split} --vram-reserve-mib {r0} --vram-reserve-later-mib 384'
+    extra = f'--layer-split {split} --vram-reserve-mib {r0} --vram-reserve-later-mib 384 --ple-io direct'
     cmd = [sys.executable, '-u', str(CORSE / '20261006_due_schede' / 'bench_lock.py'), f'TURNI-{nome}', '--',
            sys.executable, '-u', '-X', 'utf8', str(CORSE / '20261019_replay' / 'replay_trace.py'), '--tag', nome, '--t0', '80', '--span', '640',
            '--only', 'A', '--think-scale', '0', '--config', str(cfg), '--exe', str(build / 'strata.exe'),

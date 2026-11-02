@@ -12,7 +12,7 @@ CORSE = HERE.parent
 K = CORSE / '20261004_routed_keep'
 B0271, B029 = K / 'build-up0271pila-5fbc4784', K / 'build-up029pila-b6ba3fa6'
 OUT = HERE / 'corse_mc'
-G = '--batch 4 --conversation-cache-mib 18432 --conversation-cache-slots 16 --vram-reserve-mib 1905 --vram-reserve-later-mib 700'
+G = '--batch 4 --conversation-cache-mib 18432 --conversation-cache-slots 16 --vram-reserve-mib 1905 --vram-reserve-later-mib 700 --ple-io direct'
 PC = 'STRATA_ROUTE_PRIOR=0 STRATA_PIPED_CONCURRENT=1'
 COAL = PC + ' STRATA_COALESCE_PREFILL=4 STRATA_COALESCE_MIN_REQS=2 STRATA_COALESCE_BURST_MS=1000 STRATA_COALESCE_WAIT_MS=50'
 ARMS = {

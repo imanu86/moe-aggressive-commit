@@ -139,6 +139,14 @@ FASI = {
             ('minp70', {'_args': ['--spec-min-p', '0.7'], '_togli': ['--spec-min-p']}),
         )
     ],
+    'F19': [   # RAM: tabella n-grammi (26,8 GiB) letta dall'SSD invece che tenuta in RAM; piu' esperti fissi sulla 2080 Ti = meno copie in RAM
+        (f'R{n}_{r}', B029, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **e}) for r in 'a' for n, e in (
+            ('rif', {}),
+            ('ple', {'STRATA_PLE_AUTO_RAM': '0'}),
+            ('core7000', {'STRATA_RAM_CORE_SLOTS_DEV1': '7000'}),
+            ('rif2', {}),
+        )
+    ],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }
@@ -188,7 +196,7 @@ def braccio(nome, build, split, schede, r0, r1, env):
     bersagli = env.pop('_targets', '4096,32768')
     corse = env.pop('_corse', '3')
     lungo = env.pop('_lungo', False)
-    a += env.pop('_args', [])
+    a += ['--ple-io', 'direct'] + env.pop('_args', [])   # sempre SSD: la scelta automatica cambiava tra una corsa e l'altra
     for k in env.pop('_togli', []):
         i = a.index(k)
         del a[i:i + 2]

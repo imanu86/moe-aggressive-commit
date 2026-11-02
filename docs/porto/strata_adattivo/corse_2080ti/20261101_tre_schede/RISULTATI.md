@@ -113,6 +113,20 @@ Le corse di prima si fermavano a 32K: era un taglio di tempo mio, il banco della
 
 **Profilo della catena fallito.** `STRATA_DECODE_TIMING=1 STRATA_VERIFY_PROFILE=1` in `Ptempi`: dopo il riscaldamento il motore si ferma con finestre in volo («the GPU did not finish within 5 s», `strata-stall-*.dmp`), il server lo riavvia ogni 8 minuti, 3 volte. Le stesse leve senza quelle variabili (`Ltutte`) non hanno dato problemi. Sospetta `STRATA_VERIFY_PROFILE`, non provato. Da rifare col solo `STRATA_DECODE_TIMING=1`.
 
-**Non fatti:** leve di Fable (`ANALISI_FABLE.md`), tutte le leve a 22/24, multichat con la configurazione vincente, prova a piu' turni completa, prova sotto carico CPU, Jump durante la scrittura, PR #4942.
+**Non fatti:** leve di Fable (`ANALISI_FABLE.md`), tutte le leve a 22/24, multichat con la configurazione vincente, prova a piu' turni completa, prova sotto carico CPU, PR #4942.
 
 Daily: `strata-026-3080ti-daily.json` portata a `0,2`, non ancora avviata; split 16 e riserva 1393/384 invariati.
+
+## Jump e OktoCGControl durante la scrittura (2/11, 07:29-07:43)
+
+`prova_jump.py`, dati in `corse_jump/j1/secondi.csv`. v0.2.9, divisione 20, tutte le leve, scrittura continua su richieste da 3000 token; una sola corsa, secondi senza token (cambio richiesta) esclusi.
+
+| tratto | secondi | media t/s | 5 percento dei secondi peggiori sotto | CPU Jump, core |
+|---|---:|---:|---:|---:|
+| solo motore | 449 | 102 | 83 | 0 |
+| Jump collegato | 93 | 103 | 85 | 0,5 |
+| Jump + OktoCGControl | 253 | 95 | 66 | 0,2 |
+
+- Jump da solo non pesa sulla scrittura; solo 3-4 secondi a 42-65 t/s all'aggancio, con 2,5 core per Jump.
+- Con OktoCGControl la media perde il 7% e i secondi peggiori il 20%. La 3060 non calcola per il motore, quindi il colpo passa per la CPU: la media del banco nasconde questo effetto.
+- Lag di tastiera con Jump + OktoCGControl: 3060 al 100% e riser a ~600 MB/s in arrivo. **A motore spento restano uguali**: il lag non viene dal motore ma dal collegamento x1.

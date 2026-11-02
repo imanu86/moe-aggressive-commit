@@ -1,0 +1,60 @@
+lock taken after 0 s
+
+-- Including CPU backend
+-- x86 detected
+-- Performing Test HAS_AVX_1
+-- Performing Test HAS_AVX_1 - Success
+-- Performing Test HAS_AVX2_1
+-- Performing Test HAS_AVX2_1 - Success
+-- Performing Test HAS_FMA_1
+-- Performing Test HAS_FMA_1 - Success
+-- Performing Test HAS_AVX512_1
+-- Performing Test HAS_AVX512_1 - Failed
+-- Performing Test HAS_AVX512_2
+-- Performing Test HAS_AVX512_2 - Failed
+-- Adding CPU backend variant ggml-cpu: /arch:AVX2 GGML_AVX2;GGML_FMA;GGML_F16C
+-- ggml version: 0.24.0
+-- ggml commit:  46aa04bd
+-- trellis MMQ (Gyro prompts): overlay on the pinned ggml-cuda in C:/Users/imanu/source/repos/Strata-wt/upsync-v0.2.9/build-sm7586/ggml-tq-overlay
+-- Configuring done (20.4s)
+-- Generating done (0.5s)
+-- Build files have been written to: C:/Users/imanu/source/repos/Strata-wt/upsync-v0.2.9/build-sm7586
+CMake Warning:
+  Manually-specified variables were not used by the project:
+
+    FETCHCONTENT_FULLY_DISCONNECTED
+
+ 
+rc 0
+C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.9\src\core\expert_source.cpp(3887): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.9\src\core\conversation_file.cpp(301): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.9\src\core\conversation_file.cpp(307): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.9\src\core\conversation_file.cpp(572): warning C4996: 'strerror': This function or variable may be unsafe. Consider using strerror_s instead. To disable deprecation, use _CRT_SECURE_NO_WARNINGS. See online help for details.
+      for (int j = 0; j < NCOLS; ++j) {
+      ^
+          detected during:
+            instantiation of "void strata::kernels::<unnamed>::native_mmvq_multi_kernel<F,NCOLS,NW,ROWS,TS,PAIR>(const F::Block *, const strata::kernels::<unnamed>::Q81Block *, float *, int, int, const F::Block *, float *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8, NW=4, ROWS=1, TS=true, PAIR=false]" at line 1568
+            instantiation of "void strata::kernels::<unnamed>::launch_multi_n<F,NCOLS>(const void *, const void *, float *, int, int, cudaStream_t) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8]" at line 1589
+            instantiation of "void strata::kernels::<unnamed>::launch_multi<F>(const void *, const void *, float *, int, int, int, void *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>]" at line 2433
+            instantiation of "void strata::kernels::<unnamed>::small_mmvq<Weight,Qi>(const void *, const void *, float *, int, int, int, void *) [with Weight=strata::kernels::<unnamed>::IQ4NLBlock, Qi=4]" at line 3487
+
+C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.9\src\kernels\cuda\native_mmvq.cu(1328): warning #128-D: loop is not reachable
+      for (int j = 0; j < NCOLS; ++j) {
+      ^
+          detected during:
+            instantiation of "void strata::kernels::<unnamed>::native_mmvq_multi_kernel<F,NCOLS,NW,ROWS,TS,PAIR>(const F::Block *, const strata::kernels::<unnamed>::Q81Block *, float *, int, int, const F::Block *, float *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8, NW=4, ROWS=2, TS=true, PAIR=false]" at line 1574
+            instantiation of "void strata::kernels::<unnamed>::launch_multi_n<F,NCOLS>(const void *, const void *, float *, int, int, cudaStream_t) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>, NCOLS=8]" at line 1589
+            instantiation of "void strata::kernels::<unnamed>::launch_multi<F>(const void *, const void *, float *, int, int, int, void *) [with F=strata::kernels::<unnamed>::SmallTraits<strata::kernels::<unnamed>::IQ4NLBlock, 4>]" at line 2433
+            instantiation of "void strata::kernels::<unnamed>::small_mmvq<Weight,Qi>(const void *, const void *, float *, int, int, int, void *) [with Weight=strata::kernels::<unnamed>::IQ4NLBlock, Qi=4]" at line 3487
+
+native_mmvq.cu
+tmpxft_00005050_00000000-10_native_mmvq.compute_86.cudafe1.cpp
+
+[167/171] Linking CXX static library strata_kernels.lib
+[168/171] Linking CXX static library strata_engine.lib
+[169/171] Linking CXX static library strata_prefill.lib
+[170/171] Linking CXX static library strata_qwen35.lib
+[171/171] Linking CXX executable strata.exe 
+rc 0
+sha256 30753f4e49e03eea78ec12e47b96463d98d6824b55bbc2df2a3a89c11beb593c
+lock released, 573 s total

@@ -1,0 +1,48 @@
+loading the vision encoder ...
+loading the model (the first start takes a minute or two) ...
+[strata] starting the engine: reading the model's weights ...
+[strata] still starting (20 s) - please wait ...
+[strata] loading the experts into RAM (about 47 GB) and locking part of them for the GPU.
+         YOUR PC CAN BE SLOW OR STOP RESPONDING FOR 1-3 MINUTES NOW - this is normal.
+         Please wait and don't close this window; the server says when it is ready.
+[strata] still starting (42 s) - please wait ...
+[strata] still starting (62 s) - please wait ...
+[strata] still starting (83 s) - please wait ...
+[strata] still starting (103 s) - please wait ...
+[strata] experts loaded: 39.97 GiB at 0.55 GiB/s (113 s so far)
+[strata] filling the GPU's expert cache (5654 experts, 7.97 GiB of VRAM) ...
+[strata] still starting (133 s) - please wait ...
+[strata] almost ready ...
+[strata] still starting (174 s) - please wait ...
+Traceback (most recent call last):
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-up0271pila-5fbc4784\source\serve\server.py", line 9275, in <module>
+    sys.exit(main())
+             ^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-up0271pila-5fbc4784\source\serve\server.py", line 8961, in main
+    engine = StrataEngine(exe, engine_args(cfg) + (effort_end or []), cwd=cfg.get("cwd"), log=cfg.get("log"),
+             ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261004_routed_keep\build-up0271pila-5fbc4784\source\serve\server.py", line 1126, in __init__
+    raise EngineDied(why + (f" (see {log})" if log else "") + note +
+EngineDied: the engine exited before it was ready (see C:\Users\imanu\source\repos\moe-aggressive-commit\docs\porto\strata_adattivo\corse_2080ti\20261101_tre_schede\corse\t20_42\engine.log)
+the engine process ended: exit code 1
+the engine log's last lines:
+                   PROFILE, ranked by routing frequency, no eviction.
+  strata generate: pre-filled 5654 of 5654 slots from the profile in 1.5 s (5558 MB/s); slot 0 verified
+  strata generate: layer split, CUDA1: 18.67 GiB free of 22.00, room for experts 18.04 GiB
+  strata generate: layer split: CUDA1 runs layers 20-41, expert cache 10284 slots (18.04 GiB), 10284 of its 11264 profiled pairs; slot 0 verified
+  strata generate: layer split, CUDA2: 8.96 GiB free of 12.00, room for experts 8.33 GiB
+  strata generate: layer split: CUDA2 runs layers 42-47, expert cache 3072 slots (5.88 GiB), 3072 of its 3072 profiled pairs; slot 0 verified
+  strata generate: layer split: CUDA0 runs layers 0-19
+  strata generate: R4 hit path ON - resident experts are computed on the GPU
+  strata generate: 7 expert-pool workers + the host thread
+  strata generate: session is up (engine 0.1.53)
+  strata generate: token graph hit path: 19010 resident experts, decided on the device
+  strata serve: Windows commit: 46.5 GiB left of a 157.9 GiB limit (RAM + page file)
+  strata serve: layer split: 77% of the experts resident, the prompt path's streamed ring 96 slots
+  strata serve: the prompt path allocates its own buffers (too few cache slots to borrow)
+  strata hc: CUDA1: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+  strata verify: window up to 6 tokens, 70.8 MiB of device buffers
+  strata hc: CUDA2: the hyper-connection read runs as staged (the norm per token and stream, the down projection's activations staged ahead by cp.async); checked bit for bit against the plain read on this card (STRATA_HC_SPLIT=1 or 0 for the earlier ones)
+  strata verify: window up to 6 tokens, 70.8 MiB of device buffers (100% VRAM resident: zero-doorbell graph)
+  strata serve: layer split: layers 0-19 (CUDA0), 20-41 (CUDA1), 42-47 (CUDA2), one hand-off per window
+  strata serve: --pipeline-windows: the second verifier on CUDA1 (stage 2): verify: the device arena (70 MiB) does not fit (raise --vram-reserve-mib by ~200, or --pipeline-windows 0)

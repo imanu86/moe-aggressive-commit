@@ -213,3 +213,20 @@ Tabella su SSD: avvio 107-120 s (una volta 288). Riferimento 77-87 contro 93-95 
 Punto Fable: `STRATA_MTP_DEVICE=1` scritto, compilato (`build-up029pila-835f73b2`), non provato; esperti sulla 3060 con catena: non conviene ora. Con `STRATA_MTP_STAGE0=1` salvataggio e ripristino conversazione su disco usano la scheda sbagliata, da correggere.
 
 `Vgpu` (visione sulla 3060) fermata alle 13:24: il PC era in crisi e CGControl si e' chiuso con errore in CoreMessagingXP.dll alle 13:24:20, nello stesso momento dello stop del motore. Causa non isolata. Nessun dato utile dalla corsa. A desktop 3840x2160 senza programmi la 3060 resta al 100%, `dwm` 65%: la risoluzione 8K non spiega da sola il carico.
+
+## SSD contro RAM a PC riavviato (2/11, 14:05-14:21, OktoCGControl acceso)
+
+Dopo il riavvio la 3060 scende all'8% a vuoto e sta a 31-35% di media con OktoCGControl, picchi 42-59%, contro l'86-100% di prima. Il carico alto non era strutturale.
+
+| corsa | lettura 128K | scrittura t/s | token |
+|---|---:|---:|---:|
+| `Cssd1` | 2223 | 92,9 | 1481 |
+| `Cram1` | 2193 | 107,7 | 932 |
+| `Cssd2` | 2241 | 93,1 | 1218 |
+| `Cram2` | 2203 | 95,2 | 1636 |
+
+La lettura su SSD non perde. In scrittura pari, `Cram1` ha testo facile (932 token). Gli 87 t/s delle BAB dipendevano dalla macchina in sofferenza: quelle corse non valgono per le bozze e vanno ripetute.
+
+Con la tabella in RAM il motore arriva a 76 GB e il totale a 90-91 su 96 durante il caricamento. OktoCGControl segnalato spesso senza risposta dall'owner; `Responding` vero quando letto, 0 pagine/s. `Cpieno` fermata.
+
+Decisione: tabella su SSD.

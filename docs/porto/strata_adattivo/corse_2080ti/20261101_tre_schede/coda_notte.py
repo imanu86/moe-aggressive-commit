@@ -35,6 +35,7 @@ TUTTE = {'STRATA_SM75_PERF': '1', 'STRATA_EXP_MODE': '8', 'STRATA_MMVQ_IL': None
 SPIN = {'STRATA_POOL_SPIN_US': None}
 TEMPI = {'STRATA_DECODE_TIMING': '1'}
 BOZZE0 = {'STRATA_MTP_STAGE0': '1'}
+PLE_RAM = {'_args': ['--ple-io', 'ram']}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
 
 # nome, build, split, schede, riserva stadio 0, riserva stadi dopo, env in piu'
@@ -157,6 +158,11 @@ FASI = {
     'F21': [   # visione sulla 3060: solo configurazione, nessuna modifica al motore
         ('Vgpu', B029, '20', DUE, 700, 384, {'_lungo': True, '_visione': True, **TUTTE}),
     ],
+    'F22': [   # PC appena riavviato, 3060 scarica: gli 87 t/s erano la macchina o l'SSD? Alternate SSD e RAM, poi il banco completo
+        (f'C{n}{i}', B029, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'ssd', {}), (1, 'ram', PLE_RAM), (2, 'ssd', {}), (2, 'ram', PLE_RAM),
+        )
+    ] + [('Cpieno', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **TEMPI})],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }

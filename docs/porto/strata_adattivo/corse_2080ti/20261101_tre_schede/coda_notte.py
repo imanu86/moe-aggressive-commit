@@ -14,6 +14,12 @@ CFG = QUI.parent / '20261029_upsync0271' / 'strata-0271-pila-3080ti.json'
 B0271 = QUI.parent / '20261004_routed_keep' / 'build-up0271pila-5fbc4784'
 B029 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-b6ba3fa6'
 B835 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-835f73b2'
+B3FF = QUI.parent / '20261004_routed_keep' / 'build-up029pila-3ff7b1db'
+BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
+BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
+BEPB = QUI.parent / '20261004_routed_keep' / 'build-up029pila-SHA0B'   # PIPELINE3_PIANO tappa 0b: STRATA_PEER_REFILL_FLUSH, 'adapt ms host' nella riga del peer
+BREF = QUI.parent / '20261004_routed_keep' / 'build-up029pila-67908ef8'   # riferimento delle leve sui kernel della 2080 Ti (tappa 0b spenta = bee277a0)
+BLEV = QUI.parent / '20261004_routed_keep' / 'build-up029pila-7a837206'   # PR #4942 (IQ3_S/IQ3_XXS interleaved, righe a 0 su sm_75) + STRATA_GU_FUSED_MINB + STRATA_PEER_ONE_COPY, tutte spente
 DUE, TRE = '0,2', '0,2,1'   # PCI_BUS_ID: 0=3080 Ti, 1=3060, 2=2080 Ti
 
 
@@ -39,8 +45,24 @@ BOZZE0 = {'STRATA_MTP_STAGE0': '1'}
 PLE_RAM = {'_args': ['--ple-io', 'ram']}
 # bozze sulla 3060, che non fa stadi: la 2080 Ti diventa CUDA2, quindi anche il suo nucleo RAM
 TRE_BOZZE = '0,1,2'
+SWAP32 = {'_args': ['--adapt-swaps', '32']}
+# 2080 Ti come livello di esperti della 3080 Ti: i due calcolano parti dello stesso strato. Non convive con divisione, catena, elastica e nucleo RAM
+PEER = {'_args': ['--peer-device', '1', '--peer-reserve-mib', '3000'],
+         '_togli': ['--layer-split', '--pipeline-windows', '--prompt-cache-file', '--vram-reserve-later-mib'],
+        '_togli1': ['--elastic', '--trim-stage-weights'], 'STRATA_ARENA_PIN_GIB': '8',   # l'arena intera esaurisce la memoria bloccabile e il flusso CUDA della seconda scheda non si apre
+        'STRATA_RAM_CORE': None, 'STRATA_RAM_CORE_SLOTS_DEV1': None,
+        'STRATA_CONV_DISK': None, 'STRATA_PREFIX_DISK_MULTI': None}
 BOZZE3060 = {'_args': ['--split-device', '2'], 'STRATA_MTP_DEVICE': '1', 'STRATA_RAM_CORE_SLOTS_DEV1': None, 'STRATA_RAM_CORE_SLOTS_DEV2': '5500'}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
+STAMP = {'STRATA_PEER_STAMP': '1'}   # due stamp %globaltimer sul flusso del peer per strato: lo span GPU del server nella riga 'strata decode peer:'
+FLUSH = {'STRATA_PEER_REFILL_FLUSH': '1'}   # tappa 0b: cudaStreamQuery sul flusso refill del peer dopo le copie dell'adattamento + apply_pending a sondaggio dal pool fra gli strati
+# leve sui kernel della 2080 Ti (02/11 sera, build 7a837206). PR #4942: la tabella emessa sulla 2080 Ti da' 0 in ogni cella IQ3_S/IQ3_XXS
+# (pareggio con native_mmvq nel bench, come #4962), quindi le righe si forzano con STRATA_MMVQ_IL_ROWS (2 righe per warp, come IQ4_XS in
+# kIlRows_75; vale per entrambe le schede) e decide il banco. STRATA_GU_FUSED_MINB=4 e' gia' bocciata da native_expert_bench (gate/up +7-10%):
+# non entra. STRATA_PEER_ONE_COPY conta solo col peer: FK3.
+LEVE = {'STRATA_MMVQ_IL_ROWS': ';'.join(f'{t}:{n}:2,2,2,2,2' for t in (21, 18) for n in (2, 3, 4))}
+ONE = {'STRATA_PEER_ONE_COPY': '1'}
+CACHE_FISSA = {'_args': ['--adapt-swaps', '0']}   # nessuno scambio di esperti: a T=0 il testo dipende solo dai kernel
 
 # nome, build, split, schede, riserva stadio 0, riserva stadi dopo, env in piu'
 FASI = {
@@ -174,6 +196,73 @@ FASI = {
             (3, 'rif', DUE, {}),
         )
     ] + [('Epieno', B835, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **TEMPI})],
+    'F24': [   # prima la seconda scheda come aiuto dentro lo stesso strato, poi BAB col banco completo sulle candidate del giro veloce
+        ('Vpeer', B835, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER})] + [
+        (f'V{n}{i}', B835, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'b0', BOZZE0), (1, 'swap', SWAP32), (1, 'spin', SPIN),
+            (2, 'rif', {}), (2, 'b0', BOZZE0), (2, 'swap', SWAP32), (2, 'spin', SPIN),
+            (3, 'rif', {}),
+        )
+    ],
+    'F25': [   # build con la riga delle due meta' della scommessa: STRATA_SA_BET spenta (Fable: 90% perse sulle T=2) e bozze con riuso del prefisso su SSD
+        (f'W{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'bet0', {'STRATA_SA_BET': '0'}), (2, 'rif', {}), (2, 'bet0', {'STRATA_SA_BET': '0'}),
+        )
+    ],
+    'FEP0': [   # PIPELINE3_PIANO tappa 0: span GPU del server (2080 Ti) a strato con due stamp sul suo flusso (STRATA_PEER_STAMP), con e senza cambio di scheda
+        (f'V{n}{i}', BEP0, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **e}) for i, n, e in (
+            (1, 'st', STAMP), (1, 'ns', {**STAMP, 'STRATA_PEER_NOSWITCH': '1'}),
+            (2, 'st', STAMP), (2, 'ns', {**STAMP, 'STRATA_PEER_NOSWITCH': '1'}),
+            (3, 'st', STAMP), (3, 'ns', {**STAMP, 'STRATA_PEER_NOSWITCH': '1'}),
+        )
+    ],
+    'FEP0b': [   # PIPELINE3_PIANO tappa 0b: il join dell'adattamento. Riferimento (pr), flush (fl), meno swap (sw4, sw0), flush a cache fissa (fl0: testo contro sw0)
+        (f'V{n}', BEPB, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **e}) for n, e in (
+            ('pr1', {}), ('fl1', FLUSH),
+            ('sw4', {'_args': ['--adapt-swaps', '4']}), ('sw0', {'_args': ['--adapt-swaps', '0']}),
+            ('fl0', {**FLUSH, '_args': ['--adapt-swaps', '0']}),
+            ('pr2', {}), ('fl2', FLUSH),
+        )
+    ],
+    'FEP1': [   # span del server col modo degli esperti: 8 di oggi, default Turing (4), 0 con EXPDEC. Se scende sotto 250 us il parallelo vero si riapre
+        (f'X{n}{i}', BEP0, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP, **e}) for i, n, e in (
+            (1, 'm8', {}), (1, 'm4', {'STRATA_EXP_MODE': None}), (1, 'm0', {'STRATA_EXP_MODE': '0'}),
+            (2, 'm8', {}), (2, 'm4', {'STRATA_EXP_MODE': None}), (2, 'm0', {'STRATA_EXP_MODE': '0'}),
+        )
+    ],
+    'F27': [   # la tabella sm_86 non si applica con schede miste: mancano i due adattamenti in testa alla tabella (-6,3 punti su A4000 se tolti). Dopo il riavvio delle 22:22
+        (f'A{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'lag', {'STRATA_ADAPT_NOWAIT': '1', 'STRATA_ADAPT_LAG': '2'}),
+            (2, 'rif', {}), (2, 'lag', {'STRATA_ADAPT_NOWAIT': '1', 'STRATA_ADAPT_LAG': '2'}),
+            (3, 'rif', {}),
+        )
+    ],
+    'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse
+        (f'T{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'griglia', {'STRATA_IQ_STAGE_GRID_MMVQ': '1'}), (1, 'swiglu', {'STRATA_GU_SWIGLU': '1'}),
+            (2, 'rif', {}), (1, 'kq', {'STRATA_KQ_SPLIT': '1'}), (1, 'tsum', {'STRATA_TSUM': '1'}), (3, 'rif', {}),
+        )
+    ],
+    'FL1': [   # PR #4876: la ricorrenza GDN del prompt sui tensor core della 2080 Ti (STRATA_GDN_TC=2, piano a un buffer da 62.480 B).
+               # Il riferimento non imposta STRATA_GDN_TC (su Windows il server non lo accende): =2 accende il tc anche sulla 3080 Ti (piano split, come =1)
+        (f'G{n}{i}', BGDN, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'tc2', {'STRATA_GDN_TC': '2'}), (2, 'rif', {}), (2, 'tc2', {'STRATA_GDN_TC': '2'}), (3, 'rif', {}),
+        )
+    ],
+    'FK0': [   # testo identico a cache fissa: riferimento e leve con --adapt-swaps 0, una corsa su 4K e 32K; si confrontano i raw
+        ('Krif0', BREF, '20', DUE, 700, 384, {'_targets': '4096,32768', '_corse': '1', **TUTTE, **CACHE_FISSA}),
+        ('Klev0', BLEV, '20', DUE, 700, 384, {'_targets': '4096,32768', '_corse': '1', **TUTTE, **CACHE_FISSA, **LEVE}),
+    ],
+    'FK1': [   # banco completo alternato: riferimento, leve, riferimento, leve, riferimento
+        (f'K{n}{i}', b, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, b, e in (
+            (1, 'rif', BREF, {}), (1, 'lev', BLEV, LEVE), (2, 'rif', BREF, {}), (2, 'lev', BLEV, LEVE), (3, 'rif', BREF, {}),
+        )
+    ],
+    'FK3': [   # una copia H2D nel peer (STRATA_PEER_ONE_COPY) contro due, come FEP1: stamp sul flusso del peer, contesto lungo, coppie alternate
+        (f'V{n}{i}', BLEV, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP, **e}) for i, n, e in (
+            (1, 'two', {}), (1, 'one', ONE), (2, 'two', {}), (2, 'one', ONE),
+        )
+    ],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }
@@ -233,6 +322,8 @@ def braccio(nome, build, split, schede, r0, r1, env):
     for k in env.pop('_togli', []):
         i = a.index(k)
         del a[i:i + 2]
+    for k in env.pop('_togli1', []):
+        a.remove(k)
     for k, v in env.items():
         if v is None:
             c['env'].pop(k, None)

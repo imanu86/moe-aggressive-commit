@@ -1,0 +1,41 @@
+== v16_a: --layer-split 16 --vram-reserve-mib 1393 --vram-reserve-later-mib 384
+bench lock taken after 0 s
+FINESTRA 80-720 s del lavoro: {'requests': 7, 'makespan': 747.4, 'ttft_p50': 119.6, 'ttft_p90': 265.6, 'ttft_max': 265.6, 'ttft_mean': 105.2, 'prompt': 390529, 'reused': 201569, 'new': 188960, 'out': 844, 'server_read_s': 179.6, 'server_gen_s': 10.6, 'server_busy_s': 190.2}
+  A: 7 richieste, warm P=13621, primo invio 0 s, P 14502..96594, reset 0
+engine up in 238 s
+warm A: target 13621 prompt 12937 cached 0 in 13 s 
+  A#2: send      0 ttft    2.2 end      2 prompt 13835/14502 cached 12937 out 10/111
+  A#3: send      2 ttft   10.7 end     13 prompt 28848/28713 cached 13844 out 2/126
+  A#4: send     13 ttft   10.6 end     24 prompt 43240/42897 cached 28849 out 1/101
+  A#5: send     24 ttft   10.0 end     34 prompt 55688/55494 cached 43240 out 2/133
+  A#6: send     34 ttft   10.8 end     44 prompt 70168/69494 cached 55692 out 2/96
+  A#7: send     44 ttft    9.9 end     54 prompt 81921/82835 cached 70169 out 2/144
+  A#8: send     54 ttft   11.0 end     65 prompt 96122/96594 cached 81922 out 2/133
+RIASSUNTO {"requests_planned": 7, "requests_ok": 7, "failed": 0, "unfinished_agents": 0, "makespan": 65.44, "ttft_p50": 10.61, "ttft_p90": 11.0, "ttft_max": 11.0, "ttft_mean": 9.31, "queue_wait_mean": 0.08, "queue_wait_sum": 0.53, "prompt": 389822, "reused": 306653, "new": 83169, "out": 21, "out_target": 844, "server_read_s": 64.64, "server_gen_s": 0.42, "server_read_tok": 83169, "server_gen_tok": 21, "server_log_requests": 7, "cpu_other_mean": 10.46, "cpu_other_p90": 12.63, "cpu_okto_mean": 0.0, "mem_strata_wset_max_gib": 62.31, "mem_strata_private_max_gib": 71.86, "mem_avail_min_gib": 14.65, "mem_swap_used_max_gib": 0.1, "mem_total_gib": 95.89, "agents": 1, "cpu_other_top": [["claude.exe", 7.2], ["system", 0.8], ["dwm.exe", 0.6], ["msiafterburner.exe", 0.2], ["msmpeng.exe", 0.2]], "disturbed": false, "server_busy_frac": 0.99, "reuse_frac": 0.79, "orig_reuse_frac": 0.52}
+ORIGINALE {"requests": 7, "makespan": 747.39, "ttft_p50": 119.64, "ttft_p90": 265.61, "ttft_max": 265.61, "ttft_mean": 105.22, "prompt": 390529, "reused": 201569, "new": 188960, "out": 844, "server_read_s": 179.59, "server_gen_s": 10.64, "server_busy_s": 190.24}
+fine v16_a
+== v16_a uscita 0
+== u16_a: --layer-split 16 --vram-reserve-mib 700 --vram-reserve-later-mib 384
+bench lock taken after 0 s
+FINESTRA 80-720 s del lavoro: {'requests': 7, 'makespan': 747.4, 'ttft_p50': 119.6, 'ttft_p90': 265.6, 'ttft_max': 265.6, 'ttft_mean': 105.2, 'prompt': 390529, 'reused': 201569, 'new': 188960, 'out': 844, 'server_read_s': 179.6, 'server_gen_s': 10.6, 'server_busy_s': 190.2}
+  A: 7 richieste, warm P=13621, primo invio 0 s, P 14502..96594, reset 0
+engine up in 182 s
+warm A: target 13621 prompt 12937 cached 0 in 12 s 
+  A#2: send      0 ttft    2.1 end      2 prompt 13835/14502 cached 12937 out 10/111
+  A#3: send      2 ttft   10.6 end     13 prompt 28848/28713 cached 13844 out 2/126
+  A#4: send     13 ttft   10.4 end     23 prompt 43240/42897 cached 28849 out 1/101
+  A#5: send     23 ttft    9.8 end     33 prompt 55688/55494 cached 43240 out 2/133
+  A#6: send     33 ttft   10.8 end     44 prompt 70168/69494 cached 55689 out 2/96
+  A#7: send     44 ttft    9.9 end     54 prompt 81921/82835 cached 70169 out 2/144
+  A#8: send     54 ttft   11.0 end     65 prompt 96122/96594 cached 81922 out 2/133
+RIASSUNTO {"requests_planned": 7, "requests_ok": 7, "failed": 0, "unfinished_agents": 0, "makespan": 64.84, "ttft_p50": 10.41, "ttft_p90": 11.0, "ttft_max": 11.0, "ttft_mean": 9.23, "queue_wait_mean": 0.07, "queue_wait_sum": 0.47, "prompt": 389822, "reused": 306650, "new": 83172, "out": 21, "out_target": 844, "server_read_s": 64.11, "server_gen_s": 0.35, "server_read_tok": 83172, "server_gen_tok": 21, "server_log_requests": 7, "cpu_other_mean": 2.82, "cpu_other_p90": 3.82, "cpu_okto_mean": 0.0, "mem_strata_wset_max_gib": 62.2, "mem_strata_private_max_gib": 71.7, "mem_avail_min_gib": 15.05, "mem_swap_used_max_gib": 0.1, "mem_total_gib": 95.89, "agents": 1, "cpu_other_top": [["claude.exe", 1.1], ["dwm.exe", 0.4], ["system", 0.4], ["msiafterburner.exe", 0.2], ["msmpeng.exe", 0.2]], "disturbed": false, "server_busy_frac": 0.99, "reuse_frac": 0.79, "orig_reuse_frac": 0.52}
+ORIGINALE {"requests": 7, "makespan": 747.39, "ttft_p50": 119.64, "ttft_p90": 265.61, "ttft_max": 265.61, "ttft_mean": 105.22, "prompt": 390529, "reused": 201569, "new": 188960, "out": 844, "server_read_s": 179.59, "server_gen_s": 10.64, "server_busy_s": 190.24}
+fine u16_a
+== u16_a uscita 0
+== u20_a: --layer-split 20 --vram-reserve-mib 700 --vram-reserve-later-mib 384
+bench lock taken after 0 s
+FINESTRA 80-720 s del lavoro: {'requests': 7, 'makespan': 747.4, 'ttft_p50': 119.6, 'ttft_p90': 265.6, 'ttft_max': 265.6, 'ttft_mean': 105.2, 'prompt': 390529, 'reused': 201569, 'new': 188960, 'out': 844, 'server_read_s': 179.6, 'server_gen_s': 10.6, 'server_busy_s': 190.2}
+  A: 7 richieste, warm P=13621, primo invio 0 s, P 14502..96594, reset 0
+engine up in 179 s
+warm A: target 13621 prompt 12937 cached 0 in 13 s 
+  A#2: send      0 ttft    2.3 end      4 prompt 13835/14502 cached 12937 out 111/111

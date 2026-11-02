@@ -29,6 +29,12 @@ def confronto(rip):
             for n, b in (('u', B029), ('p', B0271))]
 
 
+SENZA_CATENA = {'_togli': ['--prompt-cache-file', '--pipeline-windows']}
+PIENO = '4096,32768,128000'   # i tre bersagli del banco della comunita'
+TUTTE = {'STRATA_SM75_PERF': '1', 'STRATA_EXP_MODE': '8', 'STRATA_MMVQ_IL': None}
+SPIN = {'STRATA_POOL_SPIN_US': None}
+SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
+
 # nome, build, split, schede, riserva stadio 0, riserva stadi dopo, env in piu'
 FASI = {
     'F1': [
@@ -55,6 +61,43 @@ FASI = {
         ('n20_b', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file', '--pipeline-windows']}),
         ('f20_3000', B0271, '20', '0,1,2', 700, 384, freddi(3000)),
     ],
+    'F8': [   # 02/11, OktoCGControl chiuso: stesse build delle corse col programma aperto, a coppie alternate
+        ('oku20_a', B029, '20', DUE, 700, 384, {}),
+        ('okp20_a', B0271, '20', DUE, 700, 384, {}),
+        ('okn20_a', B0271, '20', DUE, 700, 384, SENZA_CATENA),
+        ('okf20_2000_a', B0271, '20', '0,1,2', 700, 384, freddi(2000)),
+        ('okf20_4000_a', B0271, '20', '0,1,2', 700, 384, freddi(4000)),
+        ('oku20_b', B029, '20', DUE, 700, 384, {}),
+        ('okp20_b', B0271, '20', DUE, 700, 384, {}),
+        ('okn20_b', B0271, '20', DUE, 700, 384, SENZA_CATENA),
+        ('okf20_2000_b', B0271, '20', '0,1,2', 700, 384, freddi(2000)),
+        ('okt20_44', B0271, '20,44', TRE, 700, 1000, {}),
+    ],
+    'F9': [   # prompt grandi: l'uso vero parte da 30K. 128K = stesso prompt del banco 19/10; la vecchia configurazione e' split 16 con riserva 1393
+        (f'g{n}_{r}', b, s, DUE, r0, 384, {'_targets': '64000,128000'}) for r in 'ab' for n, b, s, r0 in
+        (('16_vecchia', B0271, '16', 1393), ('20u', B029, '20', 700), ('22u', B029, '22', 700), ('24u', B029, '24', 700))
+    ],
+    'F10': [   # leve della 2080 Ti mai misurate qui (#2197, #4962), banco comunita' completo, a coppie alternate col riferimento
+        (f'L{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **e}) for r in 'ab' for n, e in (
+            ('base', {}),
+            ('il', {'STRATA_MMVQ_IL': None}),
+            ('sm75', {'STRATA_SM75_PERF': '1'}),
+            ('sm75m8', {'STRATA_SM75_PERF': '1', 'STRATA_EXP_MODE': '8'}),
+            ('tutte', {'STRATA_SM75_PERF': '1', 'STRATA_EXP_MODE': '8', 'STRATA_MMVQ_IL': None}))
+    ],
+    'F11': [   # divisioni e vecchia configurazione sul banco completo
+        (f'D{n}_{r}', b, s, DUE, r0, 384, {'_targets': PIENO}) for r in 'ab' for n, b, s, r0 in
+        (('16vecchia', B0271, '16', 1393), ('22u', B029, '22', 700), ('24u', B029, '24', 700))
+    ],
+    'F12': [('Ptempi', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, 'STRATA_DECODE_TIMING': '1', 'STRATA_VERIFY_PROFILE': '1'})] + [
+        # dall'analisi di Fable: lavoratori CPU col valore normale, e i tre interruttori sm_86 che con due architetture il motore non applica
+        (f'M{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **e}) for r in 'ab' for n, e in (
+            ('rif', {}),
+            ('spin', SPIN),
+            ('sm86', SM86),
+            ('spin86', {**SPIN, **SM86}))
+    ],
+    'F13': [('Z24tutte_a', B029, '24', DUE, 700, 384, {'_targets': PIENO, **TUTTE})],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }
@@ -101,6 +144,7 @@ def braccio(nome, build, split, schede, r0, r1, env):
     c['log'] = str(out / 'engine.log')
     c['env'].update({'CUDA_DEVICE_ORDER': 'PCI_BUS_ID', 'CUDA_VISIBLE_DEVICES': schede, 'STRATA_ROUTE_PRIOR': '0'})
     env = dict(env)
+    bersagli = env.pop('_targets', '4096,32768')
     a += env.pop('_args', [])
     for k in env.pop('_togli', []):
         i = a.index(k)
@@ -143,7 +187,7 @@ def braccio(nome, build, split, schede, r0, r1, env):
                 time.sleep(5)
         log(f'{nome}: pronto in {time.time() - t0:.0f} s')
         r = subprocess.run([str(PY), str(BENCH), '--root', str(build / 'source'), '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs',
-                            '--url', 'http://127.0.0.1:8105', '--out', str(out), '--targets', '4096,32768'],
+                            '--url', 'http://127.0.0.1:8105', '--out', str(out), '--targets', bersagli],
                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=3000)
         (out / 'banco.txt').write_text(r.stdout + r.stderr, encoding='utf-8')
         esito = f'finito rc={r.returncode}'

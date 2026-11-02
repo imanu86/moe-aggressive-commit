@@ -1,6 +1,6 @@
 # Prove notturne con la 3060 su riser - 1-2 novembre 2026
 
-**Verdetto.** La macchina migliore oggi e' a **due schede (3080 Ti + 2080 Ti), divisione 20, riserva 700/384, v0.2.9 + pila**. La 3060 non deve fare calcolo: strati ed esperti freddi peggiorano o non portano nulla, e OktoCGControl la rende instabile. Compilato si', provato si' su questa postazione, installato no: Daily non toccata.
+**Verdetto, aggiornato il 2/11 mattina (vedi in fondo).** La macchina migliore oggi e' a **due schede (3080 Ti + 2080 Ti), riserva 700/384, v0.2.9 + pila + leve della 2080 Ti**. Divisione da scegliere tra 20 e 24. La 3060 col riser non deve fare calcolo: strati ed esperti freddi peggiorano o non portano nulla. Compilato si', provato si' su questa postazione, installato no: Daily non toccata.
 
 Banco della comunita': prompt freschi 4K e 32K, 3 corse, 256 token (`coda_notte.py`, dati in `corse/`, tabella con `riepilogo.py`). Replay DSH 3600+1200 s (`coda_multichat.py`, dati in `corse_mc/`, tabelle in `fasi_generato.md`).
 Ordine schede con `CUDA_DEVICE_ORDER=PCI_BUS_ID`: 0=3080 Ti (Oculink), 1=3060 (riser x1 seconda generazione, ~500 MB/s), 2=2080 Ti. `STRATA_ROUTE_PRIOR=0` in tutte le corse.
@@ -45,9 +45,9 @@ Una corsa per braccio; distanza di 5-6 volte, non serve ripetere. Il freno e' il
 | f20 4000 | 930 / 1789 | 79,0 / 80,4 | 1,3 | 0,6 |
 
 - Lettura 32K +1% su n20, nel rumore. **Scrittura sempre sotto**: -11...-18% nel caso buono, -52...-66% nel caso cattivo.
-- La scrittura ha due stati e non dipende da N: lo stato cattivo coincide con OktoCGControl sopra ~1,8 core. Coincidenza su 5 corse, non causa provata.
+- La scrittura ha due stati e non dipende da N. **Il legame con OktoCGControl e' smentito**: a programma chiuso (sezione finale) restano nello stato basso.
 - Il tasso di riuso alla fine della corsa e' 99,3% contro 99,1%: le altre due schede tengono gia' quasi tutto, quindi la 3060 ha poco da aggiungere. Anche a Okto chiuso il massimo atteso e' il caso buono, comunque sotto n20.
-- Ripeterla a OktoCGControl chiuso vale poco: gli esperti in piu' guadagnano solo 0,2 punti di riuso.
+- Rifatta a OktoCGControl chiuso: nessun recupero (sezione finale).
 
 ## Catena doppia a due schede
 
@@ -76,5 +76,43 @@ Una corsa per braccio, tutte le richieste riuscite (17/17, 34/34), batch 4, PIPE
 
 - Da fare a mano nella Daily, con decisione dell'owner: `CUDA_VISIBLE_DEVICES=0,2` e' **obbligatorio** prima di riavviarla (`0,1` ora prende la 3060). Split 20 e riserva 700/384 sono il miglioramento consigliato; v0.2.9 + pila va installata come nuova versione a parte.
 - 3060: solo schermo, OktoCGControl e visione, finche' sta sul riser.
-- Con un secondo Oculink il verdetto sugli **strati** va rimisurato, perche' il freno misurato e' il riser. Quello sugli esperti freddi no: il limite e' il poco riuso in piu'. La scheda resterebbe condivisa con OktoCGControl.
+- Con un secondo Oculink il verdetto sugli **strati** va rimisurato, perche' il freno misurato e' il riser. Anche quello sugli esperti, per la lettura: qui e' misurato solo a 4K/32K, e Lamina usa la scheda in piu' anche per gli esperti della lettura.
 - Non provato: `STRATA_PF_W16_CACHE_MIB`, divisioni 19/21, target 128K.
+
+## Aggiornamento 2 novembre mattina: OktoCGControl chiuso e banco completo 4K/32K/128K
+
+Le corse di prima si fermavano a 32K: era un taglio di tempo mio, il banco della comunita' arriva a 128K. Sotto, 2 corse per riga, alternate, stessi prompt del 19/10 (hash identici).
+
+| v0.2.9, divisione 20 | lettura 4K / 32K / 128K | scrittura 4K / 32K / 128K |
+|---|---:|---:|
+| riferimento (`Lbase`) | 923 / 1766 / 2068 | 103 / 95 / 96 |
+| togli `STRATA_MMVQ_IL=0` (`Lil`) | 924 / 1775 / 2072 | 102 / 97 / 100 |
+| `STRATA_SM75_PERF=1` (`Lsm75`) | 924 / 1868 / 2212 | 95 / 92 / 97 |
+| piu' `STRATA_EXP_MODE=8` (`Lsm75m8`) | 915 / 1867 / 2217 | 102 / 102 / 103 |
+| **tutte** (`Ltutte`) | **939 / 1860 / 2199** | **109 / 102 / 106** |
+
+| divisione, senza leve | lettura 4K / 32K / 128K | scrittura 4K / 32K / 128K |
+|---|---:|---:|
+| 16, 0.2.7.1, riserva 1393 | 986 / 1644 / 1851 | 99 / 94 / 95 |
+| 20, v0.2.9 | 923 / 1766 / 2068 | 103 / 95 / 96 |
+| 22, v0.2.9 | 882 / 1843 / 2208 | 97 / 96 / 95 |
+| 24, v0.2.9 | 856 / 1948 / 2373 | 94 / 93 / 93 |
+
+- Le leve danno +5-6% in lettura grande e +6-10% in scrittura. Rumore fino al 10%, 2 sole coppie: da confermare.
+- Salire di divisione costa poco in scrittura e rende molto in lettura grande. Mai provate insieme leve e divisione 22/24.
+- Riferimento 19/10, due schede, divisione 16: 1836 lettura e 94 t/s a 128K.
+
+**OktoCGControl chiuso, 2 corse.** Due schede v0.2.9 922/1774 e 102/98 contro 918/1769 e 99/97 da aperto: nel rumore. Esperti freddi 2000: 934-947/1795-1805, scrittura 28-30/28-39; 4000: 932/1812, 26/35; niente divisione per stato di OktoCGControl. Strati 20,44: 421/503, 23,5/20,8. La 3060 resta all'86% con 300-650 MB/s dal riser anche senza programmi: causa ignota, non e' il video dei telefoni.
+
+**Prova a piu' turni (29K -> 97K, sessione A, pensiero azzerato).** Solo le corse finite prima dello stop, senza ripetizione:
+
+| corsa | tempo s | TTFT medio s | richieste |
+|---|---:|---:|---:|
+| u16_a | 65 | 9.2 | 7/7 |
+| v16_a | 65 | 9.3 | 7/7 |
+
+**Profilo della catena fallito.** `STRATA_DECODE_TIMING=1 STRATA_VERIFY_PROFILE=1` in `Ptempi`: dopo il riscaldamento il motore si ferma con finestre in volo («the GPU did not finish within 5 s», `strata-stall-*.dmp`), il server lo riavvia ogni 8 minuti, 3 volte. Le stesse leve senza quelle variabili (`Ltutte`) non hanno dato problemi. Sospetta `STRATA_VERIFY_PROFILE`, non provato. Da rifare col solo `STRATA_DECODE_TIMING=1`.
+
+**Non fatti:** leve di Fable (`ANALISI_FABLE.md`), tutte le leve a 22/24, multichat con la configurazione vincente, prova a piu' turni completa, prova sotto carico CPU, Jump durante la scrittura, PR #4942.
+
+Daily: `strata-026-3080ti-daily.json` portata a `0,2`, non ancora avviata; split 16 e riserva 1393/384 invariati.

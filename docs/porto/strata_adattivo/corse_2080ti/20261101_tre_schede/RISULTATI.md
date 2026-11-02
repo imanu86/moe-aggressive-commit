@@ -244,3 +244,26 @@ Bozze sulla 3080 Ti +7% di media, dentro l'escursione del riferimento: non confe
 Banco completo `Epieno`: 937/1862/2190, 101/102/104, come `Z20tutte`: a tabella su SSD e con la build di Fable a variabili spente i ~100 t/s restano. `banco_lungo.py` dà valori piu' bassi del banco, 85-95: i due non si confrontano tra loro.
 
 Caricamento 105-519 s secondo l'occupazione del disco C:, da cui si legge la prima parte del modello.
+
+## Tappa 0 del parallelo vero: span GPU del server (2/11, 18:10-18:45, `FEP0`, build `8ad3bef3`, `banco_lungo.py`, OktoCGControl acceso)
+
+`PIPELINE3_PIANO.md` tappa 0: con `STRATA_PEER_STAMP=1` due stamp `%globaltimer` sul flusso della 2080 Ti per strato (prima della prima copia di `PeerExperts::launch`, dopo `scatter_rows_f32`), configurazione `PEER` (`--peer-device 1 --peer-reserve-mib 3000`, `STRATA_ARENA_PIN_GIB=8`) + tutte le leve + `STRATA_DECODE_TIMING`. `Vst` = stamp; `Vns` = stamp + `STRATA_PEER_NOSWITCH=1`. Tre coppie alternate, 7 richieste a contesto 128K ciascuna (42 righe `strata decode peer:` per braccio). Tutto M.
+
+| braccio | span GPU a strato p50 (mediana delle 7 richieste, min-max) | p90 | somma span ms/finestra | host launch + finish ms/finestra | ms/finestra | scrittura t/s mediana | lettura 128K |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| Vst1 | **310** (291-353) | 422 | 14,9 | 2,3 + 9,8 = 12,1 | 35,2 | 64,3 | 1466 |
+| Vns1 | **311** (265-360) | 410 | 14,6 | 2,3 + 9,7 = 11,9 | 34,3 | 66,0 | 1457 |
+| Vst2 | **313** (270-358) | 424 | 15,1 | 2,4 + 9,4 = 11,7 | 34,6 | 64,9 | 1454 |
+| Vns2 | **311** (246-338) | 424 | 15,1 | 2,7 + 8,9 = 11,4 | 34,8 | 68,9 | 1454 |
+| Vst3 | **297** (242-355) | 399 | 14,2 | 2,3 + 8,7 = 11,4 | 33,9 | 67,2 | 1452 |
+| Vns3 | **315** (249-347) | 418 | 15,0 | 2,3 + 9,0 = 11,4 | 34,5 | 71,1 | 1460 |
+
+- **Span GPU del server a strato: p50 ~300 µs (242-360 su 42 richieste), p90 ~400-460.** Il criterio della tappa 0 era: < 150 → server a grafo; 150-250 → solo con caldi alla padrona e righe bf16; **≥ 250 → `procede = false`**. Siamo a 300: **il parallelo vero come disegnato in `PIPELINE3.md` §3a (esposto 125-140 µs a strato, 109-121 t/s) non è sostenuto dalla misura e si ferma qui.**
+- Che cosa c'è dentro lo span: le due copie H2D (x fp32 30 KB + piano), `hadamard_rows`, `quantize_q8_1_rows`, 3-5 lanci di `native_expert_grouped` (14-15 esperti, 19-21 voci a strato-finestra), lo `scatter_rows_f32` sulle righe mappate dell'host (~200 KB a strato sull'x16), e i vuoti in cui la 2080 Ti aspetta la sottomissione successiva dell'host. La somma degli span (14-15 ms a finestra) è maggiore dell'attesa in `finish` (6-11): il flusso parte prima che `launch` sia finita, quindi lo span può contenere fino al tempo di `launch` (2,1-3,1 ms a finestra, cioè ≤ 45-65 µs a strato). **Limite inferiore del lavoro GPU puro**: l'attesa in `finish` (l'host non fa altro che girare) = 120-230 µs a strato; limite superiore = lo span, ~300. Anche al limite inferiore si sta sopra i 150 del server a grafo semplice, e al centro sopra i 250 dello stop.
+- Il banco `ep_bench` (`exp.host` 118 µs con esperti come letture di banda) sottostimava il server di 2-2,5 volte: i kernel veri sulla 2080 Ti costano quel che restava «non spiegato» nel piano (200-285 µs a strato, S, ora M ~300). La banda non è il collo: 14 blob da 1,7 MB a 616 GB/s sono ~40 µs.
+- `STRATA_PEER_NOSWITCH=1`: nessuna differenza misurabile (launch 2,2-2,7 ms in entrambi, finish uguale), mai rifiutata dal driver (nessuna riga «refused»). Si può lasciare spenta.
+- Testo: `Vns1 = Vst2 = Vst3` identici in tutti i 7 turni, `Vns2 = Vns3` identici fra loro, `Vst1` diverge dal turno 2: le differenze seguono l'adattamento (quale scheda calcola quale esperto: sm_75 contro sm_86), non lo stamp né il cambio di scheda. Il confronto «testo identico a `Vpeer` con STAMP=0 sulla stessa build» non era fra i bracci (`Vpeer` è di un'altra build e di un altro banco) e **non è misurato**; a cache fissa resta da fare se serve.
+- Finestra 34-35 ms a 128K contro 39,8-53 di `Vpeer` sul banco della comunità (altro banco, altra build: non si confrontano). `host launch+finish` 11,4-12,1 ms a finestra = 237-251 µs a strato, di cui launch 44-64 e finish 120-230.
+- Lettura 128K 1452-1466 t/s contro 2063-2225 del riferimento a divisione 20 (`Erif*`): −34%, come `Vpeer`.
+
+**Che cosa resta da misurare se si vuole riaprire** (non fatto): un terzo stamp dopo le copie e prima di `hadamard`, e un quarto dopo i kernel esperti e prima dello scatter: dicono se i ~300 µs stanno nelle copie e nello scatter sulle righe mappate (righe bf16 o sommate per token dimezzerebbero) o nei kernel esperti stessi (allora serve un kernel più veloce, non un server a grafo). Finché non c'è, `procede = false`.

@@ -129,4 +129,4 @@ Daily: `strata-026-3080ti-daily.json` portata a `0,2`, non ancora avviata; split
 
 - Jump da solo non pesa sulla scrittura; solo 3-4 secondi a 42-65 t/s all'aggancio, con 2,5 core per Jump.
 - Con OktoCGControl la media perde il 7% e i secondi peggiori il 20%. La 3060 non calcola per il motore, quindi il colpo passa per la CPU: la media del banco nasconde questo effetto.
-- Lag di tastiera con Jump + OktoCGControl: 3060 al 100% e riser a ~600 MB/s in arrivo. **A motore spento restano uguali**: il lag non viene dal motore ma dal collegamento x1.
+- Lag di tastiera con motore + Jump + OktoCGControl, desktop a 2732x2008: 3060 al 100% e riser a ~600 MB/s in arrivo. Questi due numeri restano uguali a motore spento, ma l'owner riferisce che a motore spento e schermo a 4K il lag sparisce: non misurano il lag e **la causa non e' isolata**. Da provare a 4K con motore acceso, una variabile alla volta.

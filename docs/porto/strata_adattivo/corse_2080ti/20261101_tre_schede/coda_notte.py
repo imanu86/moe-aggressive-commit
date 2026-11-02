@@ -13,6 +13,7 @@ BENCH = Path(r'C:\Users\imanu\source\repos\Strata-wt\upsync-main\bench\results\2
 CFG = QUI.parent / '20261029_upsync0271' / 'strata-0271-pila-3080ti.json'
 B0271 = QUI.parent / '20261004_routed_keep' / 'build-up0271pila-5fbc4784'
 B029 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-b6ba3fa6'
+B835 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-835f73b2'
 DUE, TRE = '0,2', '0,2,1'   # PCI_BUS_ID: 0=3080 Ti, 1=3060, 2=2080 Ti
 
 
@@ -36,6 +37,9 @@ SPIN = {'STRATA_POOL_SPIN_US': None}
 TEMPI = {'STRATA_DECODE_TIMING': '1'}
 BOZZE0 = {'STRATA_MTP_STAGE0': '1'}
 PLE_RAM = {'_args': ['--ple-io', 'ram']}
+# bozze sulla 3060, che non fa stadi: la 2080 Ti diventa CUDA2, quindi anche il suo nucleo RAM
+TRE_BOZZE = '0,1,2'
+BOZZE3060 = {'_args': ['--split-device', '2'], 'STRATA_MTP_DEVICE': '1', 'STRATA_RAM_CORE_SLOTS_DEV1': None, 'STRATA_RAM_CORE_SLOTS_DEV2': '5500'}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
 
 # nome, build, split, schede, riserva stadio 0, riserva stadi dopo, env in piu'
@@ -163,6 +167,13 @@ FASI = {
             (1, 'ssd', {}), (1, 'ram', PLE_RAM), (2, 'ssd', {}), (2, 'ram', PLE_RAM),
         )
     ] + [('Cpieno', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **TEMPI})],
+    'F23': [   # BAB a PC riavviato, stessa build per tutti: bozze sulla 3080 Ti e sulla 3060 contro il riferimento, poi il banco completo
+        (f'E{n}{i}', B835, '20', sc, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **e}) for i, n, sc, e in (
+            (1, 'rif', DUE, {}), (1, 'b0', DUE, BOZZE0), (1, 'b3060', TRE_BOZZE, BOZZE3060),
+            (2, 'rif', DUE, {}), (2, 'b0', DUE, BOZZE0), (2, 'b3060', TRE_BOZZE, BOZZE3060),
+            (3, 'rif', DUE, {}),
+        )
+    ] + [('Epieno', B835, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **TEMPI})],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }

@@ -230,3 +230,17 @@ La lettura su SSD non perde. In scrittura pari, `Cram1` ha testo facile (932 tok
 Con la tabella in RAM il motore arriva a 76 GB e il totale a 90-91 su 96 durante il caricamento. OktoCGControl segnalato spesso senza risposta dall'owner; `Responding` vero quando letto, 0 pagine/s. `Cpieno` fermata.
 
 Decisione: tabella su SSD.
+
+## BAB bozze a PC riavviato (2/11, 14:26-15:20, build `835f73b2`, tabella su SSD, OktoCGControl acceso)
+
+| corsa | riferimento | bozze sulla 3080 Ti | bozze sulla 3060 |
+|---|---:|---:|---:|
+| scrittura t/s | 85,2 / 85,3 / 94,6 | 97,2 / 92,0 | 84,5 / 92,8 |
+| media | 88,4 | 94,6 | 88,7 |
+| lettura 128K | 2063-2212 | 2222-2225 | 1950-1975 |
+
+Bozze sulla 3080 Ti +7% di media, dentro l'escursione del riferimento: non confermata. Bozze sulla 3060: scrittura pari, lettura 128K -9%, 3060 fino al 100%, costo riser 0,07 ms a catena. Finestre riuscite in parallelo 14,3-17 ms ma 75-80% scartate.
+
+Banco completo `Epieno`: 937/1862/2190, 101/102/104, come `Z20tutte`: a tabella su SSD e con la build di Fable a variabili spente i ~100 t/s restano. `banco_lungo.py` dà valori piu' bassi del banco, 85-95: i due non si confrontano tra loro.
+
+Caricamento 105-519 s secondo l'occupazione del disco C:, da cui si legge la prima parte del modello.

@@ -89,7 +89,7 @@ FASI = {
         (f'D{n}_{r}', b, s, DUE, r0, 384, {'_targets': PIENO}) for r in 'ab' for n, b, s, r0 in
         (('16vecchia', B0271, '16', 1393), ('22u', B029, '22', 700), ('24u', B029, '24', 700))
     ],
-    'F12': [('Ptempi', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, 'STRATA_DECODE_TIMING': '1', 'STRATA_VERIFY_PROFILE': '1'})] + [
+    'F12': [
         # dall'analisi di Fable: lavoratori CPU col valore normale, e i tre interruttori sm_86 che con due architetture il motore non applica
         (f'M{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **e}) for r in 'ab' for n, e in (
             ('rif', {}),
@@ -97,7 +97,38 @@ FASI = {
             ('sm86', SM86),
             ('spin86', {**SPIN, **SM86}))
     ],
-    'F13': [('Z24tutte_a', B029, '24', DUE, 700, 384, {'_targets': PIENO, **TUTTE})],
+    'F13': [   # OktoCGControl acceso: si confronta solo dentro questa fase. STRATA_VERIFY_PROFILE=1 ha bloccato il motore (Ptempi), qui non c'e'
+        ('Ptempi2', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, 'STRATA_DECODE_TIMING': '1'})] + [
+        (f'Z{s}tutte_{r}', B029, s, DUE, 700, 384, {'_targets': PIENO, **TUTTE}) for r in 'ab' for s in ('20', '22', '24')
+    ],
+    'F14': [   # i ~11 ms non scomposti: senza catena la riga dei tempi e' a somma esatta; con soglia 0.35 meno finestre buttate (Ptempi2: 66%)
+        ('Pserie', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **SENZA_CATENA, 'STRATA_DECODE_TIMING': '1'}),
+        ('Ptheta35', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, 'STRATA_DECODE_TIMING': '1',
+                                                 'STRATA_PIPELINE_DEBUG': '1', 'STRATA_PIPELINE_THETA': '0.35'}),
+    ],
+    'F15': [   # la riga dei tempi legge solo lo stadio 0 (ver.ms_wait): STRATA_SPLIT_TIMING da' l'attesa di ogni scheda, senza toccare i percorsi
+        (f'Pstadi{s}', B029, s, DUE, 700, 384, {'_targets': PIENO, **TUTTE, **SENZA_CATENA, 'STRATA_DECODE_TIMING': '1', 'STRATA_SPLIT_TIMING': '1'})
+        for s in ('20', '22', '24')
+    ],
+    'F16': [   # leve residue di Fable, una alla volta contro il riferimento nella stessa serie, OktoCGControl acceso
+        (f'Y{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **e}) for r in 'ab' for n, e in (
+            ('rif', {}),
+            ('modo8', {'STRATA_SM75_PERF': None}),
+            ('piano', {'STRATA_VERIFY_DEVICE_PLAN': '1'}),
+            ('ramo', {'STRATA_MTP_SHARED_BRANCH': None}),
+            ('nohost', {'_args': ['--no-host-worker']}),
+            ('swap32', {'_args': ['--adapt-swaps', '32']}),
+            ('bozze0', {'STRATA_MTP_STAGE0': '1'}),
+        )
+    ],
+    'F17': [   # sotto carico: va lanciata con carico_cpu.py acceso, conta anche il secondo peggiore
+        (f'K{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **e}) for r in 'ab' for n, e in (
+            ('rif', {}),
+            ('spin', SPIN),
+            ('nohost', {'_args': ['--no-host-worker']}),
+            ('swap32', {'_args': ['--adapt-swaps', '32']}),
+        )
+    ],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }

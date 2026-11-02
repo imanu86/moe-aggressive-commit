@@ -19,12 +19,16 @@ ARMS = {
     'p': (B0271, PC),      # v0.2.7.1 + pila
     'u': (B029, PC),       # v0.2.9 + pila
     'c': (B029, COAL),     # v0.2.9 + lettura condivisa
+    't': (B029, PC + ' STRATA_SM75_PERF=1 STRATA_EXP_MODE=8'),   # v0.2.9 + leve del 02/11 (e senza STRATA_MMVQ_IL: vedi cfg_t)
 }
 cfg = OUT / 'cfg-due-schede.json'
+cfg_t = OUT / 'cfg-due-schede-leve.json'
 OUT.mkdir(exist_ok=True)
 c = json.loads((CORSE / '20261029_multichat' / 'cfg-up0271-3080ti.json').read_text(encoding='utf-8-sig'))
 c['env'].update({'CUDA_DEVICE_ORDER': 'PCI_BUS_ID', 'CUDA_VISIBLE_DEVICES': '0,2', 'STRATA_ROUTE_PRIOR': '0'})
 cfg.write_text(json.dumps(c, indent=1), encoding='utf-8')
+del c['env']['STRATA_MMVQ_IL']
+cfg_t.write_text(json.dumps(c, indent=1), encoding='utf-8')
 split = sys.argv[1]
 n = len([p for p in OUT.iterdir() if p.name.startswith('replay_')])
 for spec in sys.argv[2:]:
@@ -34,7 +38,7 @@ for spec in sys.argv[2:]:
     tag = f'{n:02d}_{arm}_s{split}' + (f'_{int(dup) * 3}ag' if dup else '')
     cmd = [sys.executable, '-u', str(CORSE / '20261006_due_schede' / 'bench_lock.py'), f'MULTICHAT-{tag}', '--',
            sys.executable, '-u', '-X', 'utf8', str(CORSE / '20261019_replay' / 'replay_trace.py'), '--tag', tag, '--t0', '3600', '--span', '1200',
-           '--only', 'A,B,C', '--config', str(cfg), '--exe', str(build / 'strata.exe'),
+           '--only', 'A,B,C', '--config', str(cfg_t if arm == 't' else cfg), '--exe', str(build / 'strata.exe'),
            '--out-base', str(OUT), '--port', '8102', f'--extra={G} --layer-split {split}', '--env=' + env]
     if dup:
         cmd += ['--dup', dup]

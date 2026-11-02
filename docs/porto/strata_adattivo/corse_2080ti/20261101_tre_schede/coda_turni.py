@@ -15,7 +15,7 @@ BASE = CORSE / '20261029_upsync0271' / 'strata-0271-pila-3080ti.json'
 OUT = HERE / 'corse_turni'
 OUT.mkdir(exist_ok=True)
 for spec in sys.argv[1:]:
-    nome, b, split, r0 = spec.split(':')
+    nome, b, split, r0, *leve = spec.split(':')   # quinto campo «t» = leve del 02/11
     build = BUILD[b]
     if (OUT / f'replay_{nome}' / 'res.json').exists():
         print(f'== {nome}: gia fatto, salto', flush=True)
@@ -27,6 +27,9 @@ for spec in sys.argv[1:]:
     c['exe'] = str(build / 'strata.exe')
     c['vision']['exe'] = str(build / 'strata-vision.exe')
     c['env'].update({'CUDA_DEVICE_ORDER': 'PCI_BUS_ID', 'CUDA_VISIBLE_DEVICES': '0,2', 'STRATA_ROUTE_PRIOR': '0'})
+    if leve:
+        c['env'].update({'STRATA_SM75_PERF': '1', 'STRATA_EXP_MODE': '8'})
+        del c['env']['STRATA_MMVQ_IL']
     cfg = OUT / f'cfg-{nome}.json'
     cfg.write_text(json.dumps(c, indent=1), encoding='utf-8')
     extra = f'--layer-split {split} --vram-reserve-mib {r0} --vram-reserve-later-mib 384'

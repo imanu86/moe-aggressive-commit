@@ -130,3 +130,26 @@ Daily: `strata-026-3080ti-daily.json` portata a `0,2`, non ancora avviata; split
 - Jump da solo non pesa sulla scrittura; solo 3-4 secondi a 42-65 t/s all'aggancio, con 2,5 core per Jump.
 - Con OktoCGControl la media perde il 7% e i secondi peggiori il 20%. La 3060 non calcola per il motore, quindi il colpo passa per la CPU: la media del banco nasconde questo effetto.
 - Lag di tastiera con motore + Jump + OktoCGControl, desktop a 2732x2008: 3060 al 100% e riser a ~600 MB/s in arrivo. Questi due numeri restano uguali a motore spento, ma l'owner riferisce che a motore spento e schermo a 4K il lag sparisce: non misurano il lag e **la causa non e' isolata**. Da provare a 4K con motore acceso, una variabile alla volta.
+
+## Divisioni con tutte le leve e correzioni di Fable (2/11, OktoCGControl acceso, Jump spento)
+
+Banco completo, medie di due corse, v0.2.9 + pila, riserva 700/384, `TUTTE` = `STRATA_SM75_PERF=1 STRATA_EXP_MODE=8`, senza `STRATA_MMVQ_IL`.
+
+| divisione | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| 20 | 936/1876/2210 | 104/100/106 |
+| 22 | 904/1937/2323 | 104/97/99 |
+| 24 | 856/2014/2336 | 90/92/91 |
+
+Correzioni di Fable a divisione 20, due corse, stessa fase (`rif`, senza attesa attiva, tre impostazioni sm_86, entrambe): lettura 128K 2140-2210 e scrittura 98-109 in tutti i bracci. Nessuna distacca il riferimento, nel rumore.
+
+## I ms non scomposti (2/11)
+
+- `Pserie` (senza catena): 101/102/104 t/s, 25,3-25,6 ms/finestra = verifica 22,4 + bozze 2,5 + emissione 0,5. Nella verifica le voci nominate fanno 7,7 ms: ~14,7 non scomposti.
+- `Ptheta35` (catena, soglia 0,35): 99/104/107 t/s, 22,5-23,8 ms/finestra, scarti dal 66% al 54% (ultima richiesta), nel rumore. Le finestre scartate non sono la causa; la catena a due schede non da' un guadagno misurabile.
+- Nel codice la riga dei tempi usa `ver`, cioe' solo lo stadio 0: l'attesa della 2080 Ti non compare. Deduzione, da misurare con `STRATA_SPLIT_TIMING=1` (`Pstadi20/22/24`, F15).
+- Le bozze costano 2,5 ms a finestra, il 10%: `bozze0` in F16 prova il drafter sulla 3080 Ti.
+
+Prova a piu' turni con tutte le leve, divisione 20 (`t20`): 65,0 s, TTFT mediano 10,1, massimo 10,6; 16 senza leve 64,8-65,4 s. Pari: su 83K token nuovi il tempo e' tutto lettura a 1300-1400 t/s. Prova sintetica: genera solo 127 token su 844 previsti.
+
+In coda: `t22`, multichat `t` a 20 e 22 con 3 e 6 agenti, F15. Poi F16 (leve residue) e F17 (sotto carico con `carico_cpu.py 6`).

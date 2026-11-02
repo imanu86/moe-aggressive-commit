@@ -203,3 +203,13 @@ Con 6 core occupati: riferimento 81,4; senza `STRATA_POOL_SPIN_US=100` 88,4; `--
 | scrittura | 743/203, 45% | 881/185, 60% |
 
 Tra le schede passano ~51 KB per riga (`ANALISI_FABLE.md`, misura del 13/10): stimati ~6 MB/s in scrittura e ~110 MB/s in lettura, poche unita' percentuali del traffico. Il resto sono esperti, righe e K/V da e verso la RAM. In scrittura 183/168 W medi e 229 W di picco (11 campioni), nessun freno; i picchi da 270-280 W sono della lettura.
+
+## BAB bozze sulla prima scheda e parallelismo (2/11, tabella su SSD, `banco_lungo.py`)
+
+Riferimento 87,3 / 80,2 / 76,6 t/s, `STRATA_MTP_STAGE0=1` 86,6 / 88,2: +7% su poche corse, riferimento in calo. Finestre riuscite in parallelo 14,4-14,7 ms contro 19-24 e 13,7 teorici, ma l'81% delle anticipate scartato (73 su 90 in `Bbozze1`). Il limite della catena e' indovinare, non il calcolo. Il 120 del giro veloce e' stato quasi certamente testo facile.
+
+Tabella su SSD: avvio 107-120 s (una volta 288). Riferimento 77-87 contro 93-95 in RAM: causa da separare, altre chat al lavoro. Riuso da SSD non riuscito: `prefissi/` vuota, il banco non ha messaggio di sistema.
+
+Punto Fable: `STRATA_MTP_DEVICE=1` scritto, compilato (`build-up029pila-835f73b2`), non provato; esperti sulla 3060 con catena: non conviene ora. Con `STRATA_MTP_STAGE0=1` salvataggio e ripristino conversazione su disco usano la scheda sbagliata, da correggere.
+
+`Vgpu` (visione sulla 3060) fermata alle 13:24: il PC era in crisi e CGControl si e' chiuso con errore in CoreMessagingXP.dll alle 13:24:20, nello stesso momento dello stop del motore. Causa non isolata. Nessun dato utile dalla corsa. A desktop 3840x2160 senza programmi la 3060 resta al 100%, `dwm` 65%: la risoluzione 8K non spiega da sola il carico.

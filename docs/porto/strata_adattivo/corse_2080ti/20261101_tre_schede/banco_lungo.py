@@ -47,7 +47,7 @@ for i in range(a.turni + 1):
     testo, ttft, e = turno(a.url, base)
     nuovi = e['prompt_tokens'] - (e.get('reused') or 0)
     riga = {'turno': i, 'prompt_tokens': e['prompt_tokens'], 'riusati': e.get('reused') or 0, 'ttft_s': ttft, 'generati': e['engine_generated'],
-            'lettura_tok_s': nuovi / (e['prompt_ms'] / 1000), 'scrittura_tok_s': e['engine_generated'] / (e['decode_ms'] / 1000)}
+            'lettura_tok_s': nuovi / max(e['prompt_ms'] / 1000, 1e-3), 'scrittura_tok_s': e['engine_generated'] / (e['decode_ms'] / 1000)}
     print(json.dumps(riga), flush=True)
     righe.append({**riga, 'testo': testo})   # il testo cambia tra le corse: serve a capire se un picco e' velocita' o ripetizione
     (a.out / 'lungo.json').write_text(json.dumps(righe, indent=1) + '\n', encoding='utf-8')

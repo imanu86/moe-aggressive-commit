@@ -33,6 +33,8 @@ SENZA_CATENA = {'_togli': ['--prompt-cache-file', '--pipeline-windows']}
 PIENO = '4096,32768,128000'   # i tre bersagli del banco della comunita'
 TUTTE = {'STRATA_SM75_PERF': '1', 'STRATA_EXP_MODE': '8', 'STRATA_MMVQ_IL': None}
 SPIN = {'STRATA_POOL_SPIN_US': None}
+TEMPI = {'STRATA_DECODE_TIMING': '1'}
+BOZZE0 = {'STRATA_MTP_STAGE0': '1'}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
 
 # nome, build, split, schede, riserva stadio 0, riserva stadi dopo, env in piu'
@@ -147,6 +149,14 @@ FASI = {
             ('rif2', {}),
         )
     ],
+    'F20': [   # BAB della catena con le bozze sulla prima scheda; il prefisso resta su SSD per configurazione, la seconda volta niente rilettura dei 128K
+        (f'B{n}{i}', B029, '20', DUE, 700, 384, {'_lungo': True, '_prefisso': n, **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'bozze', BOZZE0), (2, 'rif', {}), (2, 'bozze', BOZZE0), (3, 'rif', {}),
+        )
+    ],
+    'F21': [   # visione sulla 3060: solo configurazione, nessuna modifica al motore
+        ('Vgpu', B029, '20', DUE, 700, 384, {'_lungo': True, '_visione': True, **TUTTE}),
+    ],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
           [('p20_senzaprefisso', B0271, '20', DUE, 700, 384, {'_togli': ['--prompt-cache-file']})],
 }
@@ -196,6 +206,12 @@ def braccio(nome, build, split, schede, r0, r1, env):
     bersagli = env.pop('_targets', '4096,32768')
     corse = env.pop('_corse', '3')
     lungo = env.pop('_lungo', False)
+    prefisso = env.pop('_prefisso', None)
+    if prefisso:
+        (QUI / 'prefissi' / prefisso).mkdir(parents=True, exist_ok=True)
+        a[a.index('--prompt-cache-file') + 1] = str(QUI / 'prefissi' / prefisso / 'prefix.bin')
+    if env.pop('_visione', False):
+        c['vision'].update({'gpu': True, 'cuda_device': 1})   # numerazione di nvidia-smi: 1 = 3060
     a += ['--ple-io', 'direct'] + env.pop('_args', [])   # sempre SSD: la scelta automatica cambiava tra una corsa e l'altra
     for k in env.pop('_togli', []):
         i = a.index(k)

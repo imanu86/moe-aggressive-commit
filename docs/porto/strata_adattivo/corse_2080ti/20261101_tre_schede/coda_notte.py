@@ -110,8 +110,8 @@ FASI = {
         (f'Pstadi{s}', B029, s, DUE, 700, 384, {'_targets': PIENO, **TUTTE, **SENZA_CATENA, 'STRATA_DECODE_TIMING': '1', 'STRATA_SPLIT_TIMING': '1'})
         for s in ('20', '22', '24')
     ],
-    'F16': [   # leve residue di Fable, una alla volta contro il riferimento nella stessa serie, OktoCGControl acceso
-        (f'Y{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **e}) for r in 'ab' for n, e in (
+    'F16': [   # giro veloce delle leve residue di Fable a contesto lungo (banco_lungo.py), riferimento in testa e in coda: filtra, poi BAB sulle vincenti
+        (f'Y{n}_{r}', B029, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **e}) for r in 'a' for n, e in (
             ('rif', {}),
             ('modo8', {'STRATA_SM75_PERF': None}),
             ('piano', {'STRATA_VERIFY_DEVICE_PLAN': '1'}),
@@ -119,14 +119,24 @@ FASI = {
             ('nohost', {'_args': ['--no-host-worker']}),
             ('swap32', {'_args': ['--adapt-swaps', '32']}),
             ('bozze0', {'STRATA_MTP_STAGE0': '1'}),
+            ('rif2', {}),
         )
     ],
     'F17': [   # sotto carico: va lanciata con carico_cpu.py acceso, conta anche il secondo peggiore
-        (f'K{n}_{r}', B029, '20', DUE, 700, 384, {'_targets': PIENO, **TUTTE, **e}) for r in 'ab' for n, e in (
+        (f'K{n}_{r}', B029, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **e}) for r in 'a' for n, e in (
             ('rif', {}),
             ('spin', SPIN),
             ('nohost', {'_args': ['--no-host-worker']}),
             ('swap32', {'_args': ['--adapt-swaps', '32']}),
+        )
+    ],
+    'F18': [   # 61 finestre su 95 sono gia' a 4 righe, il massimo: si prova il bordo della finestra a contesto lungo
+        (f'S{n}_{r}', B029, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **e}) for r in 'a' for n, e in (
+            ('rif', {}),
+            ('spec3', {'_args': ['--spec', '3'], '_togli': ['--spec']}),
+            ('spec6', {'_args': ['--spec', '6'], '_togli': ['--spec']}),
+            ('minp35', {'_args': ['--spec-min-p', '0.35'], '_togli': ['--spec-min-p']}),
+            ('minp70', {'_args': ['--spec-min-p', '0.7'], '_togli': ['--spec-min-p']}),
         )
     ],
     'F6': [(f'f20_{n}', B0271, '20', '0,1,2', 700, 384, freddi(n)) for n in (1000, 2000, 4000)] +
@@ -176,6 +186,8 @@ def braccio(nome, build, split, schede, r0, r1, env):
     c['env'].update({'CUDA_DEVICE_ORDER': 'PCI_BUS_ID', 'CUDA_VISIBLE_DEVICES': schede, 'STRATA_ROUTE_PRIOR': '0'})
     env = dict(env)
     bersagli = env.pop('_targets', '4096,32768')
+    corse = env.pop('_corse', '3')
+    lungo = env.pop('_lungo', False)
     a += env.pop('_args', [])
     for k in env.pop('_togli', []):
         i = a.index(k)
@@ -217,8 +229,11 @@ def braccio(nome, build, split, schede, r0, r1, env):
                     raise RuntimeError('avvio oltre 15 min')
                 time.sleep(5)
         log(f'{nome}: pronto in {time.time() - t0:.0f} s')
-        r = subprocess.run([str(PY), str(BENCH), '--root', str(build / 'source'), '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs',
-                            '--url', 'http://127.0.0.1:8105', '--out', str(out), '--targets', bersagli],
+        cmd = [str(PY), str(BENCH), '--root', str(build / 'source'), '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs',
+               '--url', 'http://127.0.0.1:8105', '--out', str(out), '--targets', bersagli, '--runs', corse]
+        if lungo:
+            cmd = [str(PY), str(QUI / 'banco_lungo.py'), '--out', str(out), '--base', str(QUI / 'corse/Z20tutte_a/tokens-128000-run-1-request.json')]
+        r = subprocess.run(cmd,
                            capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=3000)
         (out / 'banco.txt').write_text(r.stdout + r.stderr, encoding='utf-8')
         esito = f'finito rc={r.returncode}'
@@ -234,7 +249,8 @@ def braccio(nome, build, split, schede, r0, r1, env):
         riser.terminate()
         slog.close()
         LOCK.unlink(missing_ok=True)
-        (out / 'prefix.bin').unlink(missing_ok=True)
+        for f in out.glob('prefix.bin*'):
+            f.unlink(missing_ok=True)
         time.sleep(10)
     log(f'{nome}: {esito}')
     if esito.startswith('finito'):

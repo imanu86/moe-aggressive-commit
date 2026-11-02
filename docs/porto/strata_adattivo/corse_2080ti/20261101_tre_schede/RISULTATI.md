@@ -153,3 +153,17 @@ Correzioni di Fable a divisione 20, due corse, stessa fase (`rif`, senza attesa 
 Prova a piu' turni con tutte le leve, divisione 20 (`t20`): 65,0 s, TTFT mediano 10,1, massimo 10,6; 16 senza leve 64,8-65,4 s. Pari: su 83K token nuovi il tempo e' tutto lettura a 1300-1400 t/s. Prova sintetica: genera solo 127 token su 844 previsti.
 
 In coda: `t22`, multichat `t` a 20 e 22 con 3 e 6 agenti, F15. Poi F16 (leve residue) e F17 (sotto carico con `carico_cpu.py 6`).
+
+## Attesa di ogni scheda (2/11, `Pstadi*`, senza catena, tutte le leve)
+
+`STRATA_SPLIT_TIMING=1`, medie su ~950 finestre di scrittura, ms a finestra.
+
+| divisione | 3080 Ti attesa + CPU | 2080 Ti attesa + CPU | somma | esperti su CPU per strato |
+|---|---:|---:|---:|---:|
+| 20 | 6,5 + 1,6 | 12,6 + 1,1 | 21,8 | 0,24 |
+| 22 | 5,7 + 3,3 | 11,5 + 1,0 | 21,5 | 0,44 |
+| 24 | 6,0 + 5,7 | 10,6 + 0,7 | 23,0 | 1,04 |
+
+- La somma chiude la verifica (22-23 ms): non c'e' tempo perso. I ms mancanti erano la 2080 Ti, che la riga dei tempi non legge.
+- Costo per strato: 2080 Ti 0,44-0,45 ms costanti con 24, 26 e 28 strati; 3080 Ti 0,40-0,41 ms tutto compreso a 20-22, 0,49 a 24 quando la VRAM finisce e gli esperti vanno sulla CPU. La 2080 Ti e' circa il 20% piu' lenta a strato: pesa di piu' soprattutto perche' ha 28 strati su 48.
+- In serie la finestra e' 48 strati per ~0,45 ms. Se le schede lavorassero davvero insieme il limite sarebbe la piu' lenta, 13,7 ms invece di 21,8; la catena oggi ne prende solo ~4% perche' butta le finestre sbagliate.

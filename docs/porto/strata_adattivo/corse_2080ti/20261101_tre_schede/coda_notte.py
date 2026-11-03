@@ -46,6 +46,7 @@ PLE_RAM = {'_args': ['--ple-io', 'ram']}
 # bozze sulla 3060, che non fa stadi: la 2080 Ti diventa CUDA2, quindi anche il suo nucleo RAM
 TRE_BOZZE = '0,1,2'
 SWAP32 = {'_args': ['--adapt-swaps', '32']}
+INSIEME = {'STRATA_ADAPT_NOWAIT': '1', 'STRATA_ADAPT_LAG': '2', 'STRATA_KQ_SPLIT': '1', 'STRATA_GU_SWIGLU': '1'}
 # 2080 Ti come livello di esperti della 3080 Ti: i due calcolano parti dello stesso strato. Non convive con divisione, catena, elastica e nucleo RAM
 PEER = {'_args': ['--peer-device', '1', '--peer-reserve-mib', '3000'],
          '_togli': ['--layer-split', '--pipeline-windows', '--prompt-cache-file', '--vram-reserve-later-mib'],
@@ -235,6 +236,11 @@ FASI = {
             (1, 'rif', {}), (1, 'lag', {'STRATA_ADAPT_NOWAIT': '1', 'STRATA_ADAPT_LAG': '2'}),
             (2, 'rif', {}), (2, 'lag', {'STRATA_ADAPT_NOWAIT': '1', 'STRATA_ADAPT_LAG': '2'}),
             (3, 'rif', {}),
+        )
+    ],
+    'F28': [   # insieme delle leve da tenere sulla 3080 Ti e sulla 2080 Ti contro il riferimento: adattamenti sm_86 + KQ_SPLIT + GU_SWIGLU. Coda staccata dalla sessione
+        (f'C{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', {}), (1, 'ins', INSIEME), (2, 'rif', {}), (2, 'ins', INSIEME), (3, 'rif', {}), (3, 'ins', INSIEME),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

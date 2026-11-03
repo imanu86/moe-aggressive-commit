@@ -267,3 +267,30 @@ Caricamento 105-519 s secondo l'occupazione del disco C:, da cui si legge la pri
 - Lettura 128K 1452-1466 t/s contro 2063-2225 del riferimento a divisione 20 (`Erif*`): −34%, come `Vpeer`.
 
 **Che cosa resta da misurare se si vuole riaprire** (non fatto): un terzo stamp dopo le copie e prima di `hadamard`, e un quarto dopo i kernel esperti e prima dello scatter: dicono se i ~300 µs stanno nelle copie e nello scatter sulle righe mappate (righe bf16 o sommate per token dimezzerebbero) o nei kernel esperti stessi (allora serve un kernel più veloce, non un server a grafo). Finché non c'è, `procede = false`.
+
+## Leve sui kernel della 2080 Ti (2/11 sera, `lab/upsync-v0.2.9` 9102270f..7a837206, build `7a837206`, riferimento `67908ef8`)
+
+Obiettivo: accorciare i kernel sulla 2080 Ti a testo identico (0,45 ms a strato nello stadio 1, ~300 µs a strato come server del peer). Tre leve, ognuna in un commit, tutte spente di default.
+
+| leva | commit | che cosa | misura a livello kernel (2080 Ti, `bench.lock`) |
+|---|---|---|---|
+| PR #4942 (IQ3_S/IQ3_XXS interleaved) | 9102270f | porto com'è, `git apply --3way` senza conflitti | `mmvq_il_parity`: OK bit a bit (T 1-8, righe 1/2/4). `--bench --emit-table` due corse: **ogni cella IQ3_S/IQ3_XXS a 0** (2-4, 5-8 e 1 colonna). Le forme grandi pareggiano al decimo di µs (IQ3_S 2560x6144 T=2: multi 43,2, il 43,2; 2560x12288 T=4: 112,2 / 112,1). Anche i tipi già in `kIlRows_75` escono a 0 (IQ4_XS 2560x10240 T=4: 72,0 contro 72,5 µs, documentati 81→37; testa Q5_K 1696 contro 1694, documentati 1671→1045): il bench su questa scheda oggi non distingue i due percorsi, come #4962 sulla T4 |
+| `STRATA_GU_FUSED_MINB=4` (gate/up fuso a 64 registri) | 04608b02 + 7a837206 | `native_gu_fused_kernel_minb4` con `__launch_bounds__(256, 4)`: 64 registri e 32-48 B di stack (da 71-78 registri, 3 blocchi/SM) | `native_expert_bench`, 14 esperti x 2 token, modo 8 contro modo 8, due giri alternati: gate/up **IQ3_S 65,5 → 72 µs, IQ3_XXS 61 → 65,5, IQ2_S 55 → 59 (+7-10%)**, hash uguali. **Bocciata**: gli spill costano più dei 4 blocchi; non entra nel banco |
+| `STRATA_PEER_ONE_COPY=1` (una copia H2D nel peer) | 3c779296 | piano (1,9 KB, arrotondato a 2 KB) e righe x in un blocco bloccato, una `cudaMemcpyAsync` per strato invece di due; sul percorso diretto le righe passano da un memcpy di n_tok x 10 KB | solo col peer: `FK3` |
+
+Incidente: un `ninja -n` con il ninja 1.13 di Python ha cancellato `.ninja_log` (v6) di `build-sm7586`; ricostruito da `ninja -t compdb` + MurmurHash64A (357/357 hash verificati sul registro di `_tmp-up`), così la build del riferimento è restata incrementale (6 oggetti + link, 220 s) invece di un rifacimento intero.
+
+Primo tentativo della leva 2 con `template<int TG, int MINB = 1>`: `__launch_bounds__(256, 1)` non equivale a `__launch_bounds__(256)`, ptxas dava al kernel di default 87-95 registri (2 blocchi/SM). Corretto in 7a837206 con il corpo in una device function e due kernel; cuobjdump: default 71/77/78/63/77 come bee277a0.
+
+Banco: `FK0` (testo a cache fissa, `--adapt-swaps 0`, 4K e 32K una corsa), `FK1` (banco completo alternato rif/lev/rif/lev/rif, due corse, leva = righe IQ3 forzate con `STRATA_MMVQ_IL_ROWS=21:n:2,2,2,2,2;18:n:2,2,2,2,2` per n 2-4 su entrambe le schede), `FK3` (peer: due copie contro una, `STRATA_PEER_STAMP`, contesto lungo, due coppie). Risultati sotto.
+
+**FK0, testo a cache fissa**: `Krif0` (67908ef8) e `Klev0` (7a837206 + righe IQ3 forzate) **identici** a 4K (1217 caratteri) e a 32K (1137 caratteri), 256 token a T=0. Il motore prende le righe forzate da `STRATA_MMVQ_IL_ROWS` prima delle tabelle (`native_mmvq_il_rows_for`) con `STRATA_SM75_PERF=1`: il percorso interleaved IQ3_S era acceso su entrambe le schede.
+
+## Sera del 2/11 e notte sul 3/11: parallelo vero, kernel, leve sm_86
+
+- `--peer-device` provato sul serio (`Vpeer`): 52-56 t/s, attese host 21-31 ms a finestra. Banco `ep_bench`: server persistente 98-113 µs esposti a strato, quello guidato dall'host 118: il salto non e' il problema.
+- Tappa 0 del parallelo vero (`STRATA_PEER_STAMP`): il server sulla 2080 Ti impiega ~300 µs di GPU a strato (p50 297-334), sopra la soglia di 250: workflow fermato dalla sessione. Modo esperti (`Xm*`): 8 resta il migliore (~290 µs), 4 ~325, 0 ~305.
+- PR #4876 (`STRATA_GDN_TC=2`): +1,4/+1,5/+0,1% in lettura, nel rumore. PR #4942 con tabella: sotto il riferimento, la tabella emessa sulla 2080 Ti da' zeri per IQ3_XXS. Una sola copia d'ingresso nel peer: invariato. Variabili su Turing (`T*`): nessuna stacca.
+- `STRATA_SA_BET=0`: invariato. Riga della scommessa: A intera 61-63%, bonus indovinato 56-57%.
+- Con le schede miste la tabella sm_86 del motore non si applica. `STRATA_ADAPT_NOWAIT=1 STRATA_ADAPT_LAG=2` (`A*`): scrittura +1/+3%. Insieme con `STRATA_KQ_SPLIT=1 STRATA_GU_SWIGLU=1` (`C*`, coda staccata dalla sessione): lettura 925/1881/2234 contro 914/1837/2236, scrittura 101,0/101,5/105,0 contro 100,1/102,1/103,2: +0,7%, nel rumore, niente peggiora.
+- Il motore lanciato come figlio della sessione l'ha fatta cadere e ha costretto a due riavvii: da qui le code partono con `lancia_staccato.ps1`.

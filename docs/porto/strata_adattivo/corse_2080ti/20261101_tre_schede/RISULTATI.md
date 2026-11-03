@@ -309,3 +309,19 @@ Banco: `FK0` (testo a cache fissa, `--adapt-swaps 0`, 4K e 32K una corsa), `FK1`
 
 - La tappa 4 non raggiunge l'obiettivo: lettura -23% a 128K (il prompt col peer va a blocchi, non per strato) e scrittura -20% (densi e sessione degli strati 20-47 sulla 2080 Ti tolgono posti agli esperti del server; passaggio di stato 120-310 ms a richiesta). Il mega-kernel da solo scrive il 5% sotto la divisione a strati e legge il 35% sotto.
 - Banco del passaggio di stato `ep_split_test`: 63/63 OK in streaming e residente.
+
+## #5036 e tappa 4b (3/11, code staccate dalla sessione)
+
+- PR #5036 (`--expert-parallel-device`, build-ep5036-bb01432e, fase FEP7): il motore non parte, chiede tutti gli esperti in VRAM sulle due schede ("card 1 cannot hold the other 35.83 GiB"). Non applicabile a un modello che legge gli esperti dalla RAM. Riferimenti della stessa fase: divisione a strati 921/1883/2242 e 922/1894/2240; mega-kernel 970/1377/1459 in lettura, 86,2/101,7/98,5 in scrittura.
+- Tappa 4b (c9643043, sha256 6822a6ff; buffer di lettura della 2080 Ti in prestito dagli slot del tier), fase FEP8, banco completo, 2 corse:
+
+| configurazione | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| divisione a strati, prima corsa | 916/1528/2119 | 103,8/101,1/104,8 |
+| divisione a strati, ultima corsa | 913/1877/2228 | 104,9/106,7/101,2 |
+| mega-kernel | 967/1376/1455 | 93,0/99,6/98,0 |
+| tappa 4b, prima corsa | 854/1538/1740 | 84,3/90,3/95,5 |
+| tappa 4b, seconda corsa | 853/1525/1655 | 76,9/90,5/94,5 |
+
+- La tappa 4b migliora la 4 in scrittura (da 67-84 a 77-95) ma resta sotto la divisione a strati: scrittura -8/-15%, lettura -7/-19/-22% (passaggio di stato 123-344 ms a richiesta, 886-3145 MB). Il 1528 della prima corsa di riferimento a 32K e' un valore isolato: le altre corse di riferimento stanno a 1877-1898.
+- Esito: la strada a una scheda server (peer + lettura a strati) e' chiusa. Resta in piedi la divisione a strati; il prossimo passo e' il mega-kernel con due server, con la 3060 dopo il secondo Oculink.

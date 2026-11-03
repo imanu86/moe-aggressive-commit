@@ -17,6 +17,8 @@ B835 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-835f73b2'
 B3FF = QUI.parent / '20261004_routed_keep' / 'build-up029pila-3ff7b1db'
 BFUS2 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8cb752a4'   # mega-kernel su tutti i tipi
 BT4 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-1fe8e46d'   # tappa 4
+BEPD = QUI.parent / '20261004_routed_keep' / 'build-ep5036-bb01432e'   # PR #5036 adattata
+BT4B = QUI.parent / '20261004_routed_keep' / 'build-up029pila-c9643043'   # tappa 4b
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -51,6 +53,9 @@ TRE_BOZZE = '0,1,2'
 SWAP32 = {'_args': ['--adapt-swaps', '32']}
 INSIEME = {'STRATA_ADAPT_NOWAIT': '1', 'STRATA_ADAPT_LAG': '2', 'STRATA_KQ_SPLIT': '1', 'STRATA_GU_SWIGLU': '1'}
 # 2080 Ti come livello di esperti della 3080 Ti: i due calcolano parti dello stesso strato. Non convive con divisione, catena, elastica e nucleo RAM
+EPD = {'_args': ['--expert-parallel-device', '1'], '_togli': ['--layer-split', '--pipeline-windows', '--prompt-cache-file', '--vram-reserve-later-mib'],
+       '_togli1': ['--elastic', '--trim-stage-weights'], 'STRATA_ARENA_PIN_GIB': '8', 'STRATA_RAM_CORE': None, 'STRATA_RAM_CORE_SLOTS_DEV1': None,
+       'STRATA_CONV_DISK': None, 'STRATA_PREFIX_DISK_MULTI': None}   # PR #5036: rifiuta divisione, catena, peer e cache elastica
 PEER = {'_args': ['--peer-device', '1', '--peer-reserve-mib', '3000'],
          '_togli': ['--layer-split', '--pipeline-windows', '--prompt-cache-file', '--vram-reserve-later-mib'],
         '_togli1': ['--elastic', '--trim-stage-weights'], 'STRATA_ARENA_PIN_GIB': '8',   # l'arena intera esaurisce la memoria bloccabile e il flusso CUDA della seconda scheda non si apre
@@ -283,6 +288,19 @@ FASI = {
     ],
     'FEP6': [   # tappa 4: lettura a strati + scrittura col mega-kernel, banco completo, contro divisione a strati e mega-kernel da solo
         (f'Z4{n}{i}', BT4, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', INSIEME), (1, 'fus', {**PEER, 'STRATA_PEER_FUSED': '1'}), (1, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}),
+            (2, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}), (2, 'rif', INSIEME),
+        )
+    ],
+    'FEP7': [   # PR #5036 (--expert-parallel-device 1) contro la divisione a strati con la stessa build e contro il nostro mega-kernel, banco completo
+        ('Yrif1', BEPD, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}),
+        ('Yepd1', BEPD, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **EPD}),
+        ('Yfus1', BFUS2, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER, 'STRATA_PEER_FUSED': '1'}),
+        ('Yepd2', BEPD, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **EPD}),
+        ('Yrif2', BEPD, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}),
+    ],
+    'FEP8': [   # tappa 4b: lettura a strati con i buffer della 2080 Ti in prestito dal tier, contro divisione a strati e mega-kernel da solo
+        (f'X4{n}{i}', BT4B, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
             (1, 'rif', INSIEME), (1, 'fus', {**PEER, 'STRATA_PEER_FUSED': '1'}), (1, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}),
             (2, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}), (2, 'rif', INSIEME),
         )

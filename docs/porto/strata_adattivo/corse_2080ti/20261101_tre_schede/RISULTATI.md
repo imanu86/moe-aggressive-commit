@@ -390,3 +390,13 @@ Motore, due server con salto e stage, `--peer-reserve-mib 3000,1000`, schermo su
 | 1, `ROW_US=6` | 457/776/928 | 85,7/97,3/97,0 |
 
 - Il modello di costo da' alla 3060 73 esperti e ~3450 righe a strato: la padrona aspetta nel combine (78,7% della lettura a 4K). Banda della padrona misurata 0,85 GB/s (falsa), risparmio stimato 423 s su 134 s di lettura: il tetto non limita, `ROW_US` non entra nel piano. Rimandato all'agente per un controllo a ciclo chiuso.
+
+### Stesure 4-6 della lettura sul secondo server (FP7-FP9, banco sempre PASS)
+
+| stesura | lettura =0 | lettura =1 (due corse) | nota |
+|---|---:|---:|---|
+| 4a 076e7d90, anello sullo stallo | 963/1376/1464 | 878/1274/1297, 879/1268/1294 | bande vere (0,38 / 6,72 GB/s), fattore 1 -> 0,03; costo fisso ~6 ms a strato sul riser |
+| 5a 4d38da47, acceso/spento sul tempo per token | 962/1376/1467 | 803/1182/1290, 802/1182/1298 | resta acceso: il tempo per token dipende da dimensione e posizione del pezzo |
+| 6a bb02371b, coppie di pezzi vicini, parte spento | 965/1379/1468 | 827/1181/1301, 828/1182/1301 | la coppia confronta un pezzo con se stesso (ON = OFF); il 4K senza prova perde il 14%: lo spento non e' gratis |
+
+Scrittura invariata (96-103) in tutte. Sul riser la lettura con la 3060 non puo' guadagnare: l'obiettivo e' che con `STRATA_PEER2_PREFILL=1` resti entro l'1-2% della versione spenta e si accenda da sola con l'Oculink.

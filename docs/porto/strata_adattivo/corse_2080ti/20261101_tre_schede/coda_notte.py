@@ -346,6 +346,17 @@ FASI = {
             (1, 'ep2'),
         )
     ],
+    'FP5': [   # schermo sulla 2080 Ti (margini come prima: la VRAM libera e' letta col desktop gia' dentro), 3060 senza desktop: due server (salto + righe q8_1), un server, divisione a strati
+        (f'P5{n}{i}', BP4, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, sch, e in (
+            (1, 'rif', DUE, INSIEME),
+            (1, 'fus', DUE, {**PEER, '_args': ['--peer-device', '1', '--peer-reserve-mib', '3000'], 'STRATA_PEER_FUSED': '1'}),
+            (1, 'stg', TRE, {**PEER, '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,400'], 'STRATA_PEER_FUSED': '1',
+                             'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1'}),
+            (2, 'stg', TRE, {**PEER, '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,400'], 'STRATA_PEER_FUSED': '1',
+                             'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1'}),
+            (2, 'rif', DUE, INSIEME),
+        )
+    ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse
         (f'T{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
             (1, 'rif', {}), (1, 'griglia', {'STRATA_IQ_STAGE_GRID_MMVQ': '1'}), (1, 'swiglu', {'STRATA_GU_SWIGLU': '1'}),

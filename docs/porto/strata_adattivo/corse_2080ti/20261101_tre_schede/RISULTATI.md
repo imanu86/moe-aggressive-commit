@@ -361,3 +361,19 @@ Build 1fe8d044 (FP3, FP3B) e 020c723e (FP4, FP4B). Il salto di 1fe8d044 cadeva n
 - Quota calda bocciata sul riser: ogni coppia calda sulla 3060 costa piu' di quanto toglie alla 2080 Ti, e le fredde che cede finiscono sulla CPU.
 - Salto + stage: il migliore a due server, alla pari con un server (92,8/101,0/97,0), sotto la divisione a strati.
 - Tappa 4b con due server: parte e regge (2080 Ti 9350 esperti, 3060 5776, 17491 sulle schede), ma come con un server: lettura -8/-18/-21%, scrittura -20%.
+
+## Schermo sulla 2080 Ti, 3060 senza desktop (3/11 sera, FP5, build 020c723e)
+
+PC spento, cavo spostato, OktoCGControl spento. 3060 a riposo 85 MiB; 2080 Ti col desktop ~1,5 GiB. Margini come prima (3000 sulla 2080 Ti: la VRAM libera e' letta col desktop gia' dentro), 400 sulla 3060. Una prima partenza con 4000 fermata a mano: il bench.lock rimasto della coda uccisa ha bloccato la seconda per 20 minuti (togliere il lucchetto dopo uno stop a mano).
+
+| configurazione | lettura 4K/32K/128K | scrittura 4K/32K/128K | finestra |
+|---|---:|---:|---:|
+| divisione a strati, prima | 903/1820/2144 | 103,0/109,5/105,0 | 23,46 ms |
+| divisione a strati, ultima | 893/1811/2141 | 99,3/104,9/105,3 | 23,53 ms |
+| un server, mega-kernel | 971/1382/1466 | 93,6/101,2/98,0 | 26,87 ms |
+| due server, salto + stage | 962/1379/1465 | 98,8/95,6/94,7 | 25,82 ms |
+| due server, salto + stage (2a) | 963/1379/1466 | 99,0/95,8/95,4 | 25,67 ms |
+
+- La 3060 senza desktop tiene 6408 esperti (10,51 GiB) contro 5747: 19938 di 24576 sulle schede.
+- Due server: finestra 25,7 ms contro 28,0 con lo schermo sulla 3060 (-2,3 ms), CPU 0,97 ms contro 3,82 di un server; attesa GPU 21,2 ms contro 16,8 di un server: il riser.
+- La divisione a strati non cambia con lo schermo spostato.

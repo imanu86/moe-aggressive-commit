@@ -19,6 +19,7 @@ BFUS2 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8cb752a4'   # meg
 BT4 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-1fe8e46d'   # tappa 4
 BEPD = QUI.parent / '20261004_routed_keep' / 'build-ep5036-bb01432e'   # PR #5036 adattata
 BT4B = QUI.parent / '20261004_routed_keep' / 'build-up029pila-c9643043'   # tappa 4b
+BP2 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-3422ae78'   # secondo server di esperti
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -61,6 +62,7 @@ PEER = {'_args': ['--peer-device', '1', '--peer-reserve-mib', '3000'],
         '_togli1': ['--elastic', '--trim-stage-weights'], 'STRATA_ARENA_PIN_GIB': '8',   # l'arena intera esaurisce la memoria bloccabile e il flusso CUDA della seconda scheda non si apre
         'STRATA_RAM_CORE': None, 'STRATA_RAM_CORE_SLOTS_DEV1': None,
         'STRATA_CONV_DISK': None, 'STRATA_PREFIX_DISK_MULTI': None}
+PEER2 = {**PEER, '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,1500']}   # con TRE: 1 = 2080 Ti, 2 = 3060
 BOZZE3060 = {'_args': ['--split-device', '2'], 'STRATA_MTP_DEVICE': '1', 'STRATA_RAM_CORE_SLOTS_DEV1': None, 'STRATA_RAM_CORE_SLOTS_DEV2': '5500'}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
 STAMP = {'STRATA_PEER_STAMP': '1'}   # due stamp %globaltimer sul flusso del peer per strato: lo span GPU del server nella riga 'strata decode peer:'
@@ -303,6 +305,14 @@ FASI = {
         (f'X4{n}{i}', BT4B, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
             (1, 'rif', INSIEME), (1, 'fus', {**PEER, 'STRATA_PEER_FUSED': '1'}), (1, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}),
             (2, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}), (2, 'rif', INSIEME),
+        )
+    ],
+    'FP2': [   # due server di esperti (2080 Ti + 3060 sul riser, schermo sulla 3060) contro divisione a strati e un server
+        (f'P2{n}{i}', BP2, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, sch, e in (
+            (1, 'rif', DUE, INSIEME), (1, 'fus', DUE, {**PEER, 'STRATA_PEER_FUSED': '1'}),
+            (1, 'due', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '0'}),
+            (1, 'duf', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1'}),
+            (2, 'duf', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1'}), (2, 'rif', DUE, INSIEME),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

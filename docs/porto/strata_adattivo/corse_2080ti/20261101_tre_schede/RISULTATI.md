@@ -325,3 +325,20 @@ Banco: `FK0` (testo a cache fissa, `--adapt-swaps 0`, 4K e 32K una corsa), `FK1`
 
 - La tappa 4b migliora la 4 in scrittura (da 67-84 a 77-95) ma resta sotto la divisione a strati: scrittura -8/-15%, lettura -7/-19/-22% (passaggio di stato 123-344 ms a richiesta, 886-3145 MB). Il 1528 della prima corsa di riferimento a 32K e' un valore isolato: le altre corse di riferimento stanno a 1877-1898.
 - Esito: la strada a una scheda server (peer + lettura a strati) e' chiusa. Resta in piedi la divisione a strati; il prossimo passo e' il mega-kernel con due server, con la 3060 dopo il secondo Oculink.
+
+## Due server di esperti, schermo sulla 3060 (3/11, FP2, build 3422ae78)
+
+`--peer-device 1,2 --peer-reserve-mib 3000,1500` con `CUDA_VISIBLE_DEVICES=0,2,1` (1 = 2080 Ti, 2 = 3060 sul riser x1). Banco `peer_fused_test --second`: PASS misto e uniforme, tenuta PASS su entrambi. Esperti sulle schede: 3080 Ti 2559, 2080 Ti 10971 (17,8 GiB), 3060 5747 (9,4 GiB, caricati in 28 s): 19277 di 24576 contro 13530 con un server.
+
+| configurazione | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| divisione a strati, prima | 924/1890/2242 | 104,4/105,0/105,9 |
+| divisione a strati, ultima | 901/1861/2172 | 102,6/100,7/105,6 |
+| un server, mega-kernel | 968/1375/1454 | 92,8/101,0/97,0 |
+| due server, 3060 per strato | 932/1364/1446 | 82,8/70,4/71,4 |
+| due server, mega-kernel su entrambi | 948/1373/1464 | 88,4/89,4/88,6 |
+| due server, mega-kernel su entrambi (2a) | 931/1298/1425 | 87,7/83,5/88,9 |
+
+- Riga dei tempi (decode timing), finestra: divisione a strati 22,72 ms (attesa GPU 9,37); un server 27,40 (attesa GPU 16,38, CPU 4,58, esperti CPU 1,10 a strato-finestra); due server 29,77 (attesa GPU 24,00, CPU 1,61, esperti CPU 0,37).
+- Il secondo server toglie quasi tutto il lavoro della CPU (-3 ms) ma aggiunge ~7,6 ms di attesa a finestra: ~160 us a strato sul riser, per 2-3 voci a strato-finestra e su 34-37 strati su 48 con voci. In linea con la stima di PEER_FUSED2.md (letture per warp della pagina mappata a latenza alta).
+- La lettura del prompt con il peer resta ~1450 a 128K: la 3060 non entra nella lettura.

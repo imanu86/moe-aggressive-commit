@@ -26,6 +26,7 @@ BP6 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-4512b587'   # lettu
 BP7 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-076e7d90'   # lettura a ciclo chiuso
 BP8 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-4d38da47'   # lettura a ciclo chiuso
 BP9 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bb02371b'   # lettura a ciclo chiuso
+BP10 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-38871bec'   # lettura a ciclo chiuso
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -395,6 +396,25 @@ FASI = {
             (1, 'off', {'STRATA_PEER2_PREFILL': '0'}),
             (1, 'on', {'STRATA_PEER2_PREFILL': '1', 'STRATA_PREFILL_TIMING': '1'}),
             (2, 'on', {'STRATA_PEER2_PREFILL': '1', 'STRATA_PREFILL_TIMING': '1'}),
+        )
+    ],
+    'FP10': [   # lettura del prompt sul secondo server a ciclo chiuso (3060, riser, senza desktop), due server con salto e stage
+        (f'PA{n}{i}', BP10, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER,
+                                                 '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,1000'], 'STRATA_PEER_FUSED': '1',
+                                                 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1', **e}) for i, n, e in (
+            (1, 'off', {'STRATA_PEER2_PREFILL': '0'}),
+            (1, 'on', {'STRATA_PEER2_PREFILL': '1', 'STRATA_PREFILL_TIMING': '1'}),
+            (2, 'on', {'STRATA_PEER2_PREFILL': '1', 'STRATA_PREFILL_TIMING': '1'}),
+        )
+    ],
+    'FP10B': [   # prova pulita: registro dei tempi separato dalla 3060 accesa; (3060, riser, senza desktop), due server con salto e stage
+        (f'PB{n}{i}', BP10, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER,
+                                                 '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,1000'], 'STRATA_PEER_FUSED': '1',
+                                                 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1', **e}) for i, n, e in (
+            (1, 'tim', {'STRATA_PEER2_PREFILL': '0', 'STRATA_PREFILL_TIMING': '1'}),   # il registro dei tempi da solo, con la 3060 spenta
+            (1, 'on', {'STRATA_PEER2_PREFILL': '1'}),                                  # accesa senza registro
+            (2, 'on', {'STRATA_PEER2_PREFILL': '1'}),
+            (2, 'off', {'STRATA_PEER2_PREFILL': '0'}),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

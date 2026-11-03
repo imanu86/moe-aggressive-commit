@@ -400,3 +400,18 @@ Motore, due server con salto e stage, `--peer-reserve-mib 3000,1000`, schermo su
 | 6a bb02371b, coppie di pezzi vicini, parte spento | 965/1379/1468 | 827/1181/1301, 828/1182/1301 | la coppia confronta un pezzo con se stesso (ON = OFF); il 4K senza prova perde il 14%: lo spento non e' gratis |
 
 Scrittura invariata (96-103) in tutte. Sul riser la lettura con la 3060 non puo' guadagnare: l'obiettivo e' che con `STRATA_PEER2_PREFILL=1` resti entro l'1-2% della versione spenta e si accenda da sola con l'Oculink.
+
+### Settima stesura e prova pulita (4/11 notte, FP10 e FP10B, build 38871bec)
+
+Le corse FP6-FP10 con `STRATA_PEER2_PREFILL=1` avevano anche `STRATA_PREFILL_TIMING=1`, quelle spente no: il registro dei tempi da solo costa il 14-15% della lettura e falsava i confronti. Prova pulita:
+
+| corsa | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| `STRATA_PEER2_PREFILL=0` | 962/1379/1467 | 97,3/102,1/97,0 |
+| =0 con `STRATA_PREFILL_TIMING=1` | 828/1181/1249 | 97,6/102,1/96,4 |
+| =1 (settima stesura) | 962/1360/1502 | 97,8/96,9/101,5 |
+| =1, seconda corsa | 965/1359/1504 | 97,6/97,4/95,3 |
+
+- Sul riser la lettura con la 3060 da' +2,4/+2,5% a 128K, pari a 4K (un pezzo, mai provato) e -1,4% a 32K (la prova cade li'). Coppie a parete: pezzi ON il 5-8% piu' veloci degli OFF vicini, EWMA +3,7/+4,1%, modo acceso.
+- Le misure delle stesure 4-6 vanno rilette alla luce del registro: erano tutte con il registro acceso dalla parte "=1".
+- Le leve di oggi non si confrontano piu' con il registro dei tempi acceso da una parte sola.

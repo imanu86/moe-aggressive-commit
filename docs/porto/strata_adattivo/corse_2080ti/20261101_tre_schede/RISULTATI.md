@@ -342,3 +342,22 @@ Banco: `FK0` (testo a cache fissa, `--adapt-swaps 0`, 4K e 32K una corsa), `FK1`
 - Riga dei tempi (decode timing), finestra: divisione a strati 22,72 ms (attesa GPU 9,37); un server 27,40 (attesa GPU 16,38, CPU 4,58, esperti CPU 1,10 a strato-finestra); due server 29,77 (attesa GPU 24,00, CPU 1,61, esperti CPU 0,37).
 - Il secondo server toglie quasi tutto il lavoro della CPU (-3 ms) ma aggiunge ~7,6 ms di attesa a finestra: ~160 us a strato sul riser, per 2-3 voci a strato-finestra e su 34-37 strati su 48 con voci. In linea con la stima di PEER_FUSED2.md (letture per warp della pagina mappata a latenza alta).
 - La lettura del prompt con il peer resta ~1450 a 128K: la 3060 non entra nella lettura.
+
+## Secondo server: salto, righe q8_1, quota calda (3/11, schermo sulla 3060)
+
+Build 1fe8d044 (FP3, FP3B) e 020c723e (FP4, FP4B). Il salto di 1fe8d044 cadeva nel motore (`plan mismatch ... device 2 x 2, host 0 x 0`: la 3060 leggeva gli ids del passo dopo); 020c723e legge la parola vuota dopo gli ids, banco con `--skip-delay 200` PASS. Lo stage (righe q8_1 pubblicate dalla padrona) al banco: -30/-70 us a passo con voci.
+
+| configurazione | lettura 4K/32K/128K | scrittura 4K/32K/128K | finestra |
+|---|---:|---:|---:|
+| due server, senza salto (FP3) | 954/1375/1463 | 90,3/92,0/91,5 | 28,9 ms |
+| quota calda 0,2, senza salto | 943/1350/1397 | 79,6/81,2/77,2 | 32,5 ms |
+| quota calda 0,33, senza salto | 793/1369/1455 | 69,3/75,3/66,9 | 36,5 ms |
+| due server, senza salto (FP4) | 950/1361/1410 | 89,7/86,1/87,5 | 29,5 ms |
+| salto | 953/1371/1455 | 80,9/91,1/91,1 | 28,8 ms |
+| salto + stage | 953/1371/1445 | 97,2/96,9/94,9 | 28,0 ms |
+| tappa 4b + due server, senza salto | 823/1523/1737 | 78,9/81,9/81,5 | 31,9 ms |
+| divisione a strati | 899-932/1856-1870/2184-2202 | 95,5-107,7/98,5-103,6/104,1-104,8 | 23,1-23,4 ms |
+
+- Quota calda bocciata sul riser: ogni coppia calda sulla 3060 costa piu' di quanto toglie alla 2080 Ti, e le fredde che cede finiscono sulla CPU.
+- Salto + stage: il migliore a due server, alla pari con un server (92,8/101,0/97,0), sotto la divisione a strati.
+- Tappa 4b con due server: parte e regge (2080 Ti 9350 esperti, 3060 5776, 17491 sulle schede), ma come con un server: lettura -8/-18/-21%, scrittura -20%.

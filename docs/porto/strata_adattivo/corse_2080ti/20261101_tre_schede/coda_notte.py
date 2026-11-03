@@ -20,6 +20,8 @@ BT4 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-1fe8e46d'   # tappa
 BEPD = QUI.parent / '20261004_routed_keep' / 'build-ep5036-bb01432e'   # PR #5036 adattata
 BT4B = QUI.parent / '20261004_routed_keep' / 'build-up029pila-c9643043'   # tappa 4b
 BP2 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-3422ae78'   # secondo server di esperti
+BP3 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-1fe8d044'   # secondo server: salto, quota, stage
+BP4 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-020c723e'   # salto corretto, stage
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -313,6 +315,35 @@ FASI = {
             (1, 'due', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '0'}),
             (1, 'duf', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1'}),
             (2, 'duf', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1'}), (2, 'rif', DUE, INSIEME),
+        )
+    ],
+    'FP3': [   # secondo server: salto dei passi vuoti e quota calda, schermo sulla 3060 (stage spento: FAIL al banco)
+        (f'P3{n}{i}', BP3, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, sch, e in (
+            (1, 'nos', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '0'}),
+            (1, 'skp', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1'}),
+            (1, 'sh2', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_SHARE': '0.2'}),
+            (1, 'sh3', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_SHARE': '0.33'}),
+            (1, 'rif', DUE, INSIEME),
+        )
+    ],
+    'FP3B': [   # quota calda al secondo server con il salto spento (il salto cade nel motore: plan mismatch)
+        (f'P3{n}{i}', BP3, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER2, 'STRATA_PEER_FUSED': '1',
+                                                 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '0', 'STRATA_PEER2_SHARE': f}) for i, n, f in (
+            (1, 'q2', '0.2'), (1, 'q3', '0.33'),
+        )
+    ],
+    'FP4': [   # salto corretto e righe q8_1 sul riser, schermo sulla 3060
+        (f'P4{n}{i}', BP4, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, sch, e in (
+            (1, 'nos', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '0'}),
+            (1, 'skp', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1'}),
+            (1, 'stg', TRE, {**PEER2, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1'}),
+            (1, 'rif', DUE, INSIEME),
+        )
+    ],
+    'FP4B': [   # tappa 4b (lettura a strati, buffer in prestito) con i due server di esperti, salto spento
+        (f'P4{n}{i}', BP4, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER2, 'STRATA_PEER_FUSED': '1',
+                                                 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '0', 'STRATA_EP_SPLIT_PREFILL': '1'}) for i, n in (
+            (1, 'ep2'),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

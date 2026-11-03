@@ -15,6 +15,9 @@ B0271 = QUI.parent / '20261004_routed_keep' / 'build-up0271pila-5fbc4784'
 B029 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-b6ba3fa6'
 B835 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-835f73b2'
 B3FF = QUI.parent / '20261004_routed_keep' / 'build-up029pila-3ff7b1db'
+BFUS2 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8cb752a4'   # mega-kernel su tutti i tipi
+BT4 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-1fe8e46d'   # tappa 4
+BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
 BEPB = QUI.parent / '20261004_routed_keep' / 'build-up029pila-SHA0B'   # PIPELINE3_PIANO tappa 0b: STRATA_PEER_REFILL_FLUSH, 'adapt ms host' nella riga del peer
@@ -241,6 +244,47 @@ FASI = {
     'F28': [   # insieme delle leve da tenere sulla 3080 Ti e sulla 2080 Ti contro il riferimento: adattamenti sm_86 + KQ_SPLIT + GU_SWIGLU. Coda staccata dalla sessione
         (f'C{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
             (1, 'rif', {}), (1, 'ins', INSIEME), (2, 'rif', {}), (2, 'ins', INSIEME), (3, 'rif', {}), (3, 'ins', INSIEME),
+        )
+    ],
+    'F29': [   # dove mettere lo schermo togliendo la 3060: 3 GB in meno sulla 3080 Ti (riserva 3700) o sulla 2080 Ti (riserva dopo 3384), config della 0.2.9 nuova
+        (f'S{n}{i}', B3FF, '20', DUE, r0, r1, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}) for i, n, r0, r1 in (
+            (1, 'rif', 700, 384), (1, 'su3080', 3700, 384), (1, 'su2080', 700, 3384), (2, 'rif', 700, 384),
+        )
+    ],
+    'FEP2': [   # mega-kernel del server (STRATA_PEER_FUSED) contro il peer di oggi, stessa build; in testa e in coda la divisione a strati di riferimento
+        ('Qrif1', BFUS, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **INSIEME}),
+        ('Qpeer1', BFUS, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP}),
+        ('Qfus1', BFUS, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP, 'STRATA_PEER_FUSED': '1'}),
+        ('Qpeer2', BFUS, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP}),
+        ('Qfus2', BFUS, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP, 'STRATA_PEER_FUSED': '1'}),
+        ('Qrif2', BFUS, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **INSIEME}),
+    ],
+    'FEP3': [   # mega-kernel con tutti i 48 strati coperti (8cb752a4) contro il peer di oggi; riferimento a strati in testa e in coda
+        ('Grif1', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **INSIEME}),
+        ('Gpeer1', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP}),
+        ('Gfus1', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP, 'STRATA_PEER_FUSED': '1'}),
+        ('Gpeer2', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP}),
+        ('Gfus2', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, **STAMP, 'STRATA_PEER_FUSED': '1'}),
+        ('Grif2', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **INSIEME}),
+    ],
+    'FEP4': [   # mega-kernel acceso: col join dell'adattamento tolto dal giro (STRATA_PEER_REFILL_FLUSH, tappa 0b) e no; riferimento a strati nello stesso formato
+        ('Hrif1', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **INSIEME}),
+        ('Hfus1', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, 'STRATA_PEER_FUSED': '1'}),
+        ('Hfl1', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER_REFILL_FLUSH': '1'}),
+        ('Hfus2', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, 'STRATA_PEER_FUSED': '1'}),
+        ('Hfl2', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_PEER_REFILL_FLUSH': '1'}),
+        ('Hrif2', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **INSIEME}),
+    ],
+    'FEP5': [   # mega-kernel: quota degli esperti caldi data alla 2080 Ti (STRATA_PEER_HOT, default 0,45 sui primi 8700, pensato per una padrona con ~8700 posti; la 3080 Ti ne ha 2561)
+        (f'K{n}', BFUS2, '20', DUE, 700, 384, {'_lungo': True, **TUTTE, **TEMPI, **PEER, 'STRATA_PEER_FUSED': '1', **e}) for n, e in (
+            ('h45a', {}), ('h0', {'STRATA_PEER_HOT': '0'}), ('h20', {'STRATA_PEER_HOT': '0.2'}),
+            ('h20at', {'STRATA_PEER_HOT': '0.2', 'STRATA_PEER_HOT_AT': '2561'}), ('h45b', {}),
+        )
+    ],
+    'FEP6': [   # tappa 4: lettura a strati + scrittura col mega-kernel, banco completo, contro divisione a strati e mega-kernel da solo
+        (f'Z4{n}{i}', BT4, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
+            (1, 'rif', INSIEME), (1, 'fus', {**PEER, 'STRATA_PEER_FUSED': '1'}), (1, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}),
+            (2, 'ep', {**PEER, 'STRATA_PEER_FUSED': '1', 'STRATA_EP_SPLIT_PREFILL': '1'}), (2, 'rif', INSIEME),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

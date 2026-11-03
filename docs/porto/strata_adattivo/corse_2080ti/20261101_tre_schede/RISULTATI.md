@@ -294,3 +294,18 @@ Banco: `FK0` (testo a cache fissa, `--adapt-swaps 0`, 4K e 32K una corsa), `FK1`
 - `STRATA_SA_BET=0`: invariato. Riga della scommessa: A intera 61-63%, bonus indovinato 56-57%.
 - Con le schede miste la tabella sm_86 del motore non si applica. `STRATA_ADAPT_NOWAIT=1 STRATA_ADAPT_LAG=2` (`A*`): scrittura +1/+3%. Insieme con `STRATA_KQ_SPLIT=1 STRATA_GU_SWIGLU=1` (`C*`, coda staccata dalla sessione): lettura 925/1881/2234 contro 914/1837/2236, scrittura 101,0/101,5/105,0 contro 100,1/102,1/103,2: +0,7%, nel rumore, niente peggiora.
 - Il motore lanciato come figlio della sessione l'ha fatta cadere e ha costretto a due riavvii: da qui le code partono con `lancia_staccato.ps1`.
+
+## Mega-kernel del server e tappa 4 (3/11, code staccate dalla sessione)
+
+- Mega-kernel `STRATA_PEER_FUSED` (156240a9, poi 8cb752a4 per i 10 tipi di esperti del pack): banco bit per bit PASS, uniforme e misto. Nel motore l'attesa host del peer va da 10 ms a 0; finestra 22,6-22,9 ms contro 30-33 del peer per strato e 23,7-25 della divisione a strati.
+- `STRATA_PEER_REFILL_FLUSH` (tappa 0b): invariato. `STRATA_PEER_HOT` 0 / 0,2 / 0,45: finestra sempre ~23 ms e attesa 15-16 ms, differenze di t/s dal testo.
+- Banco completo, 2 corse (`Z4*`):
+
+| configurazione | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| divisione a strati (2 corse) | 914/1898/2240 | 104,7/99,0/105,8 |
+| mega-kernel | 970/1380/1457 | 94,4/100,6/98,3 |
+| tappa 4, `STRATA_EP_SPLIT_PREFILL=1` (2 corse) | 847/1532/1716 | 67,1/78,2/84,0 |
+
+- La tappa 4 non raggiunge l'obiettivo: lettura -23% a 128K (il prompt col peer va a blocchi, non per strato) e scrittura -20% (densi e sessione degli strati 20-47 sulla 2080 Ti tolgono posti agli esperti del server; passaggio di stato 120-310 ms a richiesta). Il mega-kernel da solo scrive il 5% sotto la divisione a strati e legge il 35% sotto.
+- Banco del passaggio di stato `ep_split_test`: 63/63 OK in streaming e residente.

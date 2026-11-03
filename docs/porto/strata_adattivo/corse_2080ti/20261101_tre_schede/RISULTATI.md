@@ -377,3 +377,16 @@ PC spento, cavo spostato, OktoCGControl spento. 3060 a riposo 85 MiB; 2080 Ti co
 - La 3060 senza desktop tiene 6408 esperti (10,51 GiB) contro 5747: 19938 di 24576 sulle schede.
 - Due server: finestra 25,7 ms contro 28,0 con lo schermo sulla 3060 (-2,3 ms), CPU 0,97 ms contro 3,82 di un server; attesa GPU 21,2 ms contro 16,8 di un server: il riser.
 - La divisione a strati non cambia con lo schermo spostato.
+
+## Lettura del prompt sul secondo server (3/11 notte, FP6, build 4512b587)
+
+Banco `peer_prefill2_test` (terza stesura: righe q8 per blocchi di colonna, lanci MMQ imbottiti a 16 esperti): `0 0`, `0 1`, `0 1 2048 64 4`, `0 2` PASS bit per bit. Sul riser la 3060 fa 0,37-0,38 GB/s compresi i prodotti; la padrona su se stessa 5,3-5,5.
+Motore, due server con salto e stage, `--peer-reserve-mib 3000,1000`, schermo sulla 2080 Ti:
+
+| `STRATA_PEER2_PREFILL` | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| 0 | 966/1378/1466 | 98,2/101,7/96,8 |
+| 1 | 446/778/929 | 100,8/100,3/94,3 |
+| 1, `ROW_US=6` | 457/776/928 | 85,7/97,3/97,0 |
+
+- Il modello di costo da' alla 3060 73 esperti e ~3450 righe a strato: la padrona aspetta nel combine (78,7% della lettura a 4K). Banda della padrona misurata 0,85 GB/s (falsa), risparmio stimato 423 s su 134 s di lettura: il tetto non limita, `ROW_US` non entra nel piano. Rimandato all'agente per un controllo a ciclo chiuso.

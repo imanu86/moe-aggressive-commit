@@ -22,6 +22,7 @@ BT4B = QUI.parent / '20261004_routed_keep' / 'build-up029pila-c9643043'   # tapp
 BP2 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-3422ae78'   # secondo server di esperti
 BP3 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-1fe8d044'   # secondo server: salto, quota, stage
 BP4 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-020c723e'   # salto corretto, stage
+BP6 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-4512b587'   # lettura sul secondo server
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -355,6 +356,15 @@ FASI = {
             (2, 'stg', TRE, {**PEER, '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,400'], 'STRATA_PEER_FUSED': '1',
                              'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1'}),
             (2, 'rif', DUE, INSIEME),
+        )
+    ],
+    'FP6': [   # lettura del prompt sul secondo server (3060, riser, senza desktop), due server con salto e stage
+        (f'P6{n}{i}', BP6, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **PEER,
+                                                 '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,1000'], 'STRATA_PEER_FUSED': '1',
+                                                 'STRATA_PEER2_FUSED': '1', 'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1', **e}) for i, n, e in (
+            (1, 'off', {'STRATA_PEER2_PREFILL': '0'}),
+            (1, 'on', {'STRATA_PEER2_PREFILL': '1', 'STRATA_PREFILL_TIMING': '1'}),
+            (1, 'r6', {'STRATA_PEER2_PREFILL': '1', 'STRATA_PREFILL_TIMING': '1', 'STRATA_PEER2_PREFILL_ROW_US': '6'}),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

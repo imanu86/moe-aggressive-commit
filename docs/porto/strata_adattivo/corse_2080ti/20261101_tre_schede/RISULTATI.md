@@ -429,3 +429,19 @@ Divisione a strati 20, leve vincenti, MTP `rt_it48k`, corse alternate:
 | 0.2.10 | 897/1819/2144 | 104,3/103,5/106,4 |
 
 - Pari, nel rumore (finestra 22,98 contro 23,26 ms). Primo avvio della 0.2.10 473 s, poi 106. Avviso del motore: 750 MiB liberi a inizio richiesta, sotto 1024: alzare il margine prima del Daily.
+
+## DFlash2 contro il nostro MTP (4/11 mattina, FQ2 e FQ3, build ed6c8aa2)
+
+Pacchetto `D:\ds4_work\strata\Strata-data\dflash2\dflash2-q4sel.pack` (339.694.592 B, sha256 4a42b982... uguale al programma di avvio) da `incoai/Qwen3.8-Flash-Next-DFlash2` rev a22a1744; opzioni del programma di avvio (`--draft dflash2 --draft-fallback none --mtp-draft-vocab data/draft_vocab.bin --spec 6 --draft-conf`), senza `--mtp`. Con DFlash2 il motore spegne `--pipeline-windows`; di base il drafter va sull'ultimo stadio (2080 Ti), `STRATA_DF2_STAGE=first` lo porta sulla 3080 Ti.
+
+| corsa | lettura 4K/32K/128K | scrittura 4K/32K/128K | finestra |
+|---|---:|---:|---:|
+| MTP rt_it48k (3 corse) | 900-909/1817-1832/2140-2147 | 101,3-104,8/89,4-103,1/105,2-106,7 | 23,1-23,2 ms |
+| DFlash2 2080 Ti, conf 0,35 (2 corse) | 942-945/2029-2037/2234-2241 | 87,7-88,1/92,2-95,3/97,7-99,3 | 28,6 ms |
+| DFlash2 2080 Ti, conf 0,5 | 951/2031/2237 | 92,6/92,6/103,0 | 27,0 ms |
+| DFlash2 2080 Ti, conf 0,7 | 962/2027/2233 | 87,8/86,9/94,5 | 25,1 ms |
+| DFlash2 3080 Ti, conf 0,5 (2 corse) | 921-922/1913-1920/2211-2215 | 86,8-87,9/93,0-94,6/99,9-104,7 | 27,6 ms |
+| DFlash2 3080 Ti, conf 0,7 | 926/1912/2213 | 86,2/94,9/97,1 | 23,5 ms |
+
+- Scrittura: DFlash2 sotto del 5-14% ovunque (2,8 token a finestra contro 2,5, ma finestre piu' lunghe senza la pipeline). Lettura: +2-11%, perche' il prompt non passa dal drafter.
+- Esito: resta il nostro MTP con la pipeline.

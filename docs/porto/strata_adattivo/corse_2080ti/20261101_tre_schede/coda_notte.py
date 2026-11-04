@@ -71,6 +71,10 @@ PEER = {'_args': ['--peer-device', '1', '--peer-reserve-mib', '3000'],
         'STRATA_RAM_CORE': None, 'STRATA_RAM_CORE_SLOTS_DEV1': None,
         'STRATA_CONV_DISK': None, 'STRATA_PREFIX_DISK_MULTI': None}
 PEER2 = {**PEER, '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,1500']}   # con TRE: 1 = 2080 Ti, 2 = 3060
+def DF2(conf, spec='6'):   # DFlash2 come lo avvia il programma di avvio della 0.2.10 (strata_control/drafting.py engine_flags), al posto del nostro MTP
+    return {'_togli': ['--mtp', '--spec', '--spec-min-p', '--pipeline-windows'],
+            '_args': ['--draft', 'dflash2', '--draft-model', r'D:\ds4_work\strata\Strata-data\dflash2\dflash2-q4sel.pack', '--draft-fallback', 'none',
+                      '--mtp-draft-vocab', r'C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.10\data\draft_vocab.bin', '--spec', spec, '--draft-conf', conf]}
 BOZZE3060 = {'_args': ['--split-device', '2'], 'STRATA_MTP_DEVICE': '1', 'STRATA_RAM_CORE_SLOTS_DEV1': None, 'STRATA_RAM_CORE_SLOTS_DEV2': '5500'}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
 STAMP = {'STRATA_PEER_STAMP': '1'}   # due stamp %globaltimer sul flusso del peer per strato: lo span GPU del server nella riga 'strata decode peer:'
@@ -421,6 +425,22 @@ FASI = {
     'FQ1': [   # 0.2.10 + pila contro 0.2.9 + pila: divisione a strati, leve vincenti, MTP nostro, alternate
         (f'Q1{n}{i}', b, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}) for i, n, b in (
             (1, 'v29', B3FF), (1, 'v210', BQ1), (2, 'v29', B3FF), (2, 'v210', BQ1),
+        )
+    ],
+    'FQ2': [   # DFlash2 (senza pipeline: la spegne da se') contro il nostro MTP rt_it48k con la pipeline, 0.2.10 + pila, divisione a strati, alternate
+        (f'Q2{n}{i}', BQ1, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME, **e}) for i, n, e in (
+            (1, 'mtp', {}), (1, 'd35', DF2('0.35')), (1, 'd50', DF2('0.5')), (2, 'mtp', {}), (2, 'd35', DF2('0.35')),
+        )
+    ],
+    'FQ3': [   # DFlash2 sulla 3080 Ti (STRATA_DF2_STAGE=first) e soglia 0,7, contro il nostro MTP; 0.2.10 + pila, divisione a strati, alternate
+        (f'Q3{n}{i}', BQ1, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME, **e}) for i, n, e in (
+            (1, 'f50', {**DF2('0.5'), 'STRATA_DF2_STAGE': 'first'}), (1, 'mtp', {}), (1, 'f70', {**DF2('0.7'), 'STRATA_DF2_STAGE': 'first'}),
+            (1, 'l70', DF2('0.7')), (2, 'f50', {**DF2('0.5'), 'STRATA_DF2_STAGE': 'first'}),
+        )
+    ],
+    'FQ4': [   # candidato Daily 0.2.10: margine 1000 contro 700, piu' scambi per giro, senza attesa attiva dei thread; MTP, divisione a strati, alternate
+        (f'Q4{n}{i}', BQ1, '20', DUE, r0, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME, **e}) for i, n, r0, e in (
+            (1, 'r7', 700, {}), (1, 'r10', 1000, {}), (1, 'sw32', 1000, SWAP32), (1, 'nospin', 1000, {'STRATA_POOL_SPIN_US': None}), (2, 'r7', 700, {}),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

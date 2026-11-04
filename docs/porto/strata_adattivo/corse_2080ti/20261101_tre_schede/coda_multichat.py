@@ -11,6 +11,7 @@ HERE = Path(__file__).resolve().parent
 CORSE = HERE.parent
 K = CORSE / '20261004_routed_keep'
 B0271, B029 = K / 'build-up0271pila-5fbc4784', K / 'build-up029pila-b6ba3fa6'
+B0210 = K / 'build-up0210pila-ed6c8aa2'   # 04/11: 0.2.10 + pila + richieste 5149 5108 5137 (il candidato Daily)
 OUT = HERE / 'corse_mc'
 G = '--batch 4 --conversation-cache-mib 18432 --conversation-cache-slots 16 --vram-reserve-mib 1905 --vram-reserve-later-mib 700 --ple-io direct'
 PC = 'STRATA_ROUTE_PRIOR=0 STRATA_PIPED_CONCURRENT=1'
@@ -20,6 +21,7 @@ ARMS = {
     'u': (B029, PC),       # v0.2.9 + pila
     'c': (B029, COAL),     # v0.2.9 + lettura condivisa
     't': (B029, PC + ' STRATA_SM75_PERF=1 STRATA_EXP_MODE=8'),   # v0.2.9 + leve del 02/11 (e senza STRATA_MMVQ_IL: vedi cfg_t)
+    'w': (B0210, PC + ' STRATA_SM75_PERF=1 STRATA_EXP_MODE=8 STRATA_ADAPT_NOWAIT=1 STRATA_ADAPT_LAG=2 STRATA_KQ_SPLIT=1 STRATA_GU_SWIGLU=1'),   # 04/11: 0.2.10 + tutte le leve vincenti
 }
 cfg = OUT / 'cfg-due-schede.json'
 cfg_t = OUT / 'cfg-due-schede-leve.json'
@@ -38,7 +40,7 @@ for spec in sys.argv[2:]:
     tag = f'{n:02d}_{arm}_s{split}' + (f'_{int(dup) * 3}ag' if dup else '')
     cmd = [sys.executable, '-u', str(CORSE / '20261006_due_schede' / 'bench_lock.py'), f'MULTICHAT-{tag}', '--',
            sys.executable, '-u', '-X', 'utf8', str(CORSE / '20261019_replay' / 'replay_trace.py'), '--tag', tag, '--t0', '3600', '--span', '1200',
-           '--only', 'A,B,C', '--config', str(cfg_t if arm == 't' else cfg), '--exe', str(build / 'strata.exe'),
+           '--only', 'A,B,C', '--config', str(cfg_t if arm in ('t', 'w') else cfg), '--exe', str(build / 'strata.exe'),
            '--out-base', str(OUT), '--port', '8102', f'--extra={G} --layer-split {split}', '--env=' + env]
     if dup:
         cmd += ['--dup', dup]

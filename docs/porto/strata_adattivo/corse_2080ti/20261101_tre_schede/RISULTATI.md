@@ -457,3 +457,14 @@ Pacchetto `D:\ds4_work\strata\Strata-data\dflash2\dflash2-q4sel.pack` (339.694.5
 
 - Tutto nel rumore (1-2%). Scambi a 32 e attesa attiva tolta: nessuna leva.
 - Config preparata, non avviata: `D:\ds4_work\strata\Strata\strata-0210-due-schede.json` (copia della 0.2.9 a due schede con margine 1000), build `build-0210-due-schede` (ed6c8aa2), collegamento `SERVER IA LOCALE\Strata 0.2.10 Due schede - porta 8100.bat`.
+
+## Divisione 20 / 22 / 24 con le leve (4/11 mattina, FQ5, build ed6c8aa2, margine 1000)
+
+| divisione | lettura 4K/32K/128K (2 corse) | scrittura 4K/32K/128K | slot 3080 Ti | finestra |
+|---|---:|---:|---:|---:|
+| 20 | 887-891/1813-1823/2142-2144 | 99,8-104,1/97,5-104,1/100,9-104,5 | 3420 | 23,41 ms |
+| 22 | 860-868/1889-1895/2268-2270 | 98,5-100,3/93,6-97,8/96,4-100,0 | 3354 | 23,81 ms |
+| 24 | 830-834/1976-1978/2382 | 94,4-98,4/89,4-92,5/93,7-95,9 | 3256 | 24,76 ms |
+
+- 22: lettura -3% a 4K, +4% a 32K, +6% a 128K; scrittura -1/-5%. 24: lettura -7/+8/+11%, scrittura -3/-8%.
+- La scelta passa dal replay delle chat multiple (lavoro vero): 20 contro 22, 3 e 6 agenti, braccio `w` di `coda_multichat.py` (`prova_mc_0210.cmd`).

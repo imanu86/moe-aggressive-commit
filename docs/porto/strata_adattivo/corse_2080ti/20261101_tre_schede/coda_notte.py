@@ -443,6 +443,11 @@ FASI = {
             (1, 'r7', 700, {}), (1, 'r10', 1000, {}), (1, 'sw32', 1000, SWAP32), (1, 'nospin', 1000, {'STRATA_POOL_SPIN_US': None}), (2, 'r7', 700, {}),
         )
     ],
+    'FQ5': [   # divisione a 20 / 22 / 24 strati con le leve vincenti, 0.2.10 + pila, nostro MTP, margine del Daily 1000, alternate
+        (f'Q5s{s}{i}', BQ1, s, DUE, 1000, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}) for i, s in (
+            (1, '20'), (1, '22'), (1, '24'), (2, '22'), (2, '20'), (2, '24'),
+        )
+    ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse
         (f'T{n}{i}', B3FF, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, e in (
             (1, 'rif', {}), (1, 'griglia', {'STRATA_IQ_STAGE_GRID_MMVQ': '1'}), (1, 'swiglu', {'STRATA_GU_SWIGLU': '1'}),

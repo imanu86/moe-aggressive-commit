@@ -445,3 +445,15 @@ Pacchetto `D:\ds4_work\strata\Strata-data\dflash2\dflash2-q4sel.pack` (339.694.5
 
 - Scrittura: DFlash2 sotto del 5-14% ovunque (2,8 token a finestra contro 2,5, ma finestre piu' lunghe senza la pipeline). Lettura: +2-11%, perche' il prompt non passa dal drafter.
 - Esito: resta il nostro MTP con la pipeline.
+
+## Candidato Daily 0.2.10 (4/11 mattina, FQ4, build ed6c8aa2)
+
+| corsa | lettura 4K/32K/128K | scrittura 4K/32K/128K | slot 3080 Ti | VRAM libera a inizio richiesta |
+|---|---:|---:|---:|---:|
+| margine 700 (2 corse) | 897-909/1818-1827/2144-2150 | 102,5-104,9/100,8-104,5/103,9-106,3 | 3555 | 750 MiB |
+| margine 1000 | 884/1815/2143 | 102,2/102,2/101,8 | 3420 | 964 MiB |
+| 1000 + `--adapt-swaps 32` | 900/1824/2144 | 101,7/104,5/105,8 | 3420 | 964 MiB |
+| 1000 senza `STRATA_POOL_SPIN_US` | 882/1811/2143 | 99,4/102,9/105,4 | 3420 | 964 MiB |
+
+- Tutto nel rumore (1-2%). Scambi a 32 e attesa attiva tolta: nessuna leva.
+- Config preparata, non avviata: `D:\ds4_work\strata\Strata\strata-0210-due-schede.json` (copia della 0.2.9 a due schede con margine 1000), build `build-0210-due-schede` (ed6c8aa2), collegamento `SERVER IA LOCALE\Strata 0.2.10 Due schede - porta 8100.bat`.

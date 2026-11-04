@@ -27,6 +27,7 @@ BP7 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-076e7d90'   # lettu
 BP8 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-4d38da47'   # lettura a ciclo chiuso
 BP9 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bb02371b'   # lettura a ciclo chiuso
 BP10 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-38871bec'   # lettura a ciclo chiuso
+BQ1 = QUI.parent / '20261004_routed_keep' / 'build-up0210pila-ed6c8aa2'   # 0.2.10 + pila
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -415,6 +416,11 @@ FASI = {
             (1, 'on', {'STRATA_PEER2_PREFILL': '1'}),                                  # accesa senza registro
             (2, 'on', {'STRATA_PEER2_PREFILL': '1'}),
             (2, 'off', {'STRATA_PEER2_PREFILL': '0'}),
+        )
+    ],
+    'FQ1': [   # 0.2.10 + pila contro 0.2.9 + pila: divisione a strati, leve vincenti, MTP nostro, alternate
+        (f'Q1{n}{i}', b, '20', DUE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}) for i, n, b in (
+            (1, 'v29', B3FF), (1, 'v210', BQ1), (2, 'v29', B3FF), (2, 'v210', BQ1),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

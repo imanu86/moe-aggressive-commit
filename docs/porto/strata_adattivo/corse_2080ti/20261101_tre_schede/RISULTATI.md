@@ -415,3 +415,17 @@ Le corse FP6-FP10 con `STRATA_PEER2_PREFILL=1` avevano anche `STRATA_PREFILL_TIM
 - Sul riser la lettura con la 3060 da' +2,4/+2,5% a 128K, pari a 4K (un pezzo, mai provato) e -1,4% a 32K (la prova cade li'). Coppie a parete: pezzi ON il 5-8% piu' veloci degli OFF vicini, EWMA +3,7/+4,1%, modo acceso.
 - Le misure delle stesure 4-6 vanno rilette alla luce del registro: erano tutte con il registro acceso dalla parte "=1".
 - Le leve di oggi non si confrontano piu' con il registro dei tempi acceso da una parte sola.
+
+## 0.2.10 con la pila (4/11 notte, FQ1)
+
+`lab/upsync-v0.2.10` (ed6c8aa2): unione di v0.2.10 sopra `lab/upsync-v0.2.9` (conflitti in 5 file, 31 blocchi, risolti da due Sonnet), `dflash2.cpp` con la `native_mmvq_il_supported` a 4 argomenti, poi le richieste #5149 (pipeline-windows 2: niente prefill del drafter accanto a una finestra dello stadio 0), #5108 (margine dopo la tabella delle righe MMQ) e #5137 (sm_75: righe intrecciate a 5-8 colonne; secondo commit con conflitto risolto da Sonnet). `peer_fused_test`, `peer_prefill2_test` e `mmvq_il_parity` (2080 Ti con `STRATA_SM75_PERF=1` e 3080 Ti) PASS.
+Divisione a strati 20, leve vincenti, MTP `rt_it48k`, corse alternate:
+
+| corsa | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| 0.2.9 (3ff7b1db) | 891/1822/2149 | 101,5/105,6/103,7 |
+| 0.2.10 (ed6c8aa2) | 900/1823/2149 | 106,1/101,8/105,6 |
+| 0.2.9 | 905/1819/2145 | 88,7/104,0/107,6 |
+| 0.2.10 | 897/1819/2144 | 104,3/103,5/106,4 |
+
+- Pari, nel rumore (finestra 22,98 contro 23,26 ms). Primo avvio della 0.2.10 473 s, poi 106. Avviso del motore: 750 MiB liberi a inizio richiesta, sotto 1024: alzare il margine prima del Daily.

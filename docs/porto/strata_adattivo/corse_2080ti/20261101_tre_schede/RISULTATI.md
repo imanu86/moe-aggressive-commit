@@ -468,3 +468,17 @@ Pacchetto `D:\ds4_work\strata\Strata-data\dflash2\dflash2-q4sel.pack` (339.694.5
 
 - 22: lettura -3% a 4K, +4% a 32K, +6% a 128K; scrittura -1/-5%. 24: lettura -7/+8/+11%, scrittura -3/-8%.
 - La scelta passa dal replay delle chat multiple (lavoro vero): 20 contro 22, 3 e 6 agenti, braccio `w` di `coda_multichat.py` (`prova_mc_0210.cmd`).
+
+## Chat multiple sulla 0.2.10 (4/11 mattina, `prova_mc_0210.cmd`, fermata a meta')
+
+Replay DSH 3600+1200 s, `--batch 4`, `STRATA_PIPED_CONCURRENT=1`, braccio `w` (ed6c8aa2 + tutte le leve):
+
+| corsa | richieste ok | token scritti / attesi | durata | blocchi (no progress for 240 s) |
+|---|---:|---:|---:|---:|
+| 07 w, divisione 20, 3 agenti | 13/17 | 164/4229 | 1932 s | 10 |
+| 08 w, divisione 22, 3 agenti | 13/17 | 1360/4229 | 1270 s | 3 |
+| 09 w, divisione 20, 6 agenti | fermata | | | 16 fino all'arresto |
+| u 0.2.9 del 01/11, 3 agenti | 17/17 | 4600 | 237 s | 0 |
+
+- Con piu' richieste insieme la 0.2.10 + pila si blocca durante la lettura del prompt; le corse a una richiesta alla volta (FQ1-FQ5) non si sono mai bloccate. Causa non isolata: unione 0.2.10 nel percorso `--batch`, richiesta #5149, o le leve nel percorso a lotti. Da isolare con la 0.2.10 senza leve e con la 0.2.9 nello stesso replay.
+- Il candidato Daily 0.2.10 NON va promosso finche' questo non e' chiarito; il Daily non usa `--batch`, ma il rischio non e' misurato.

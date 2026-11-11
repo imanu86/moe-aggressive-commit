@@ -52,6 +52,7 @@ ap.add_argument('--dup-stagger', type=float, default=1.5, help='s di sfasamento 
 ap.add_argument('--dry', action='store_true', help='stampa il piano e basta (niente server, niente GPU)')
 ap.add_argument('--config', default='strata-0143-daily.json', help='config del Daily (in D:/ds4_work/strata/Strata) da cui prendere args e env; 26/10: strata-026-daily.json o una copia con percorso assoluto')
 ap.add_argument('--out-base', default=str(H), help='cartella che contiene replay_<tag> (default: questa; 26/10: 20261026_leve/corse)')
+ap.add_argument('--save-text', action='store_true', help='salva in <corsa>/testi/<sessione>_<indice>.json il testo generato (mai il prompt)')
 ap.add_argument('--only', default='', help='solo queste sessioni della traccia, es. A,B,C (26/10: i 3 sotto-agenti senza l orchestratore P)')
 a = ap.parse_args()
 
@@ -296,12 +297,34 @@ def chat(model, msgs, maxt, rec):
                 chat_template_kwargs=dict(enable_thinking=False))
     t0 = time.monotonic()
     first, parts, last = None, [], None
+    finish, tcalls = None, {}      # motivo di fine e chiamate a strumenti (--save-text)
     rec['t_send'] = t0
+
+    def add_tool_calls(lst, key):
+        for j, tc in enumerate(lst or []):
+            slot = tcalls.setdefault(tc.get('index', j) if key == 'delta' else j, dict(id=None, name='', arguments=''))
+            slot['id'] = tc.get('id') or slot['id']
+            fn = tc.get('function') or {}
+            slot['name'] += fn.get('name') or ''
+            slot['arguments'] += fn.get('arguments') or ''
     try:
         req = urllib.request.Request(f'http://127.0.0.1:{a.port}/v1/chat/completions', data=json.dumps(body).encode(),
                                      headers={'Content-Type': 'application/json'})
         with urllib.request.urlopen(req, timeout=7200) as r:
-            for raw in r:
+            streaming = 'text/event-stream' in (r.headers.get('Content-Type') or '')
+            if not streaming:
+                # risposta intera (non in streaming): un solo JSON
+                c = json.loads(r.read().decode('utf-8', 'replace'))
+                ch = (c.get('choices') or [{}])[0]
+                m = ch.get('message') or {}
+                if m.get('content'):
+                    first = time.monotonic()
+                    parts.append(m['content'])
+                finish = ch.get('finish_reason')
+                add_tool_calls(m.get('tool_calls'), 'message')
+                if c.get('usage'):
+                    last = c
+            for raw in (r if streaming else []):
                 line = raw.decode('utf-8', 'replace').strip()
                 if not line.startswith('data:'):
                     continue
@@ -314,6 +337,9 @@ def chat(model, msgs, maxt, rec):
                         last = c
                     continue
                 d = c['choices'][0].get('delta') or {}
+                if c['choices'][0].get('finish_reason'):
+                    finish = c['choices'][0]['finish_reason']
+                add_tool_calls(d.get('tool_calls'), 'delta')
                 if d.get('content'):
                     if first is None:
                         first = time.monotonic()
@@ -324,7 +350,7 @@ def chat(model, msgs, maxt, rec):
         u, tm = (last or {}).get('usage') or {}, (last or {}).get('timings') or {}
         rec.update(ok=True, t_first=first or end, t_end=end, out=u.get('completion_tokens') or 0, prompt=u.get('prompt_tokens'),
                    cached=(u.get('prompt_tokens_details') or {}).get('cached_tokens'), prompt_ms=tm.get('prompt_ms'),
-                   text=''.join(parts))
+                   text=''.join(parts), finish=finish, tool_calls=[tcalls[k] for k in sorted(tcalls)])
     except Exception as e:   # noqa: BLE001
         rec.update(ok=False, t_end=time.monotonic(), err=repr(e)[:300], text='')
     return rec
@@ -359,6 +385,22 @@ def do_request(model, conv, rec, maxt):
             ratio[0] = 0.5 * ratio[0] + 0.5 * (rec['msgs_chars'] / rec['prompt'])
         conv.prompt, conv.out, conv.last_text = rec['prompt'], rec['out'], rec['text']
     return rec
+
+
+def save_text(sid, r, rec):
+    """--save-text: <corsa>/testi/<sessione>_<indice>.json con il testo generato; il prompt NON si salva (dati di sessioni reali)."""
+    try:
+        d = OUT / 'testi'
+        d.mkdir(exist_ok=True)
+        doc = dict(sessione=sid, indice=r['k'], token_generati=rec.get('out'), bersaglio=r['out'], motivo_fine=rec.get('finish'),
+                   ok=bool(rec.get('ok')), testo=rec.get('text') or '')
+        if rec.get('err'):
+            doc['errore'] = rec['err']
+        if rec.get('tool_calls'):
+            doc['chiamate_strumenti'] = rec['tool_calls']
+        (d / f'{sid}_{r["k"]}.json').write_text(json.dumps(doc, ensure_ascii=False, indent=1), encoding='utf-8')
+    except Exception as e:   # noqa: BLE001  - il salvataggio non deve fermare la corsa
+        print(f'  save-text {sid}#{r["k"]} fallito: {e!r}', flush=True)
 
 
 def log_size():
@@ -430,6 +472,8 @@ with Server() as srv:
             rec['t_first_rel'] = (rec.get('t_first') or rec['t_end']) - T_START
             rec['t_end_rel'] = rec['t_end'] - T_START
             res.append(rec)
+            if a.save_text:
+                save_text(sid, r, rec)
             if not rec.get('ok'):
                 print(f'  {sid}#{r["k"]} ERRORE {rec.get("err")}', flush=True)
             else:
@@ -470,7 +514,7 @@ summ['server_busy_frac'] = (summ['server_read_s'] + summ['server_gen_s']) / wall
 summ['reuse_frac'] = summ['reused'] / summ['prompt'] if summ['prompt'] else None
 summ['orig_reuse_frac'] = OS['reused'] / OS['prompt']
 allres['summary'] = summ
-allres['res'] = [{k: v for k, v in r.items() if k != 'text'} for r in res]      # niente testo: solo numeri
+allres['res'] = [{k: v for k, v in r.items() if k not in ('text', 'tool_calls')} for r in res]      # niente testo: solo numeri
 allres['engine_log'] = [ln[:300] for ln in lines if any(k in ln for k in ('strata batch', 'gave back', 'on a thread', 'pipelined', 'the prompt was read'))][:200]
 (OUT / 'res.json').write_text(json.dumps(allres, ensure_ascii=False, indent=1), encoding='utf-8')
 print('RIASSUNTO', json.dumps({k: (round(v, 2) if isinstance(v, float) else v) for k, v in summ.items()}, ensure_ascii=False), flush=True)

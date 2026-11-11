@@ -501,3 +501,34 @@ Postazione dall'11/11: 3080 Ti su Oculink x4 Gen4, 3060 su Oculink x4 Gen3 (prim
 - Con la 3060 su Oculink i due server battono la divisione a strati in scrittura (+5-12%); in lettura dei prompt lunghi la divisione resta avanti (1815/2130 contro 1490/1570).
 - Tappa 4b coi due server: scrittura -2/-3% (sul riser -20%), lettura +10% a 128K e -12% a 4K rispetto ai due server: e' il caso della soglia della 4c.
 - 0.2.13.1 (`lab/upsync-v0.2.13` 8eb601e3) pari alla 0.2.10 in tutte le configurazioni.
+
+## Tappa 4c (11-12/11 notte, ramo `lab/tappa4c`, FT1-FT4)
+
+Lettura a strati solo sopra `STRATA_EP_SPLIT_MIN_TOKENS`, densi dello stadio e (da 9a610f59) la sua sessione nella coda del tier della 2080 Ti solo durante una lettura a strati, passaggio di stato sovrapposto. Due server sull'Oculink con `STRATA_PEER2_PREFILL=1`. Il controllo 5 di `ep_split_test` falliva su due schede anche senza 4c: gara fra lo stream legacy del banco e gli stream non-blocking del mover (corretto nel banco e, per prudenza, con una sincronizzazione dello stadio prima di `rows_to_primary` nel motore).
+
+| corsa | lettura 4K/32K/128K | scrittura 4K/32K/128K |
+|---|---:|---:|
+| 4c prima stesura (497edc7e), soglia 16K (2) | 911-915/1503-1517/1724-1727 | 106,6-107,4/109,3-111,2/109,1-110,9 |
+| 4c, sempre a strati | 808/1525/1731 | 102,8/115,2/107,3 |
+| 4c righe del drafter in coda alla cache (da51cc27, 3) | 927-930/1491-1500/1757-1762 | 103,9-104,6/107,4-111,6/111,5-113,0 |
+| **4c sessione in prestito (9a610f59), soglia 16K (3)** | 943-945/1484-1493/1754-1755 | 109,9-111,5/111,3-113,0/107,3-111,1 |
+| 4c 9a610f59, soglia 8K (2) | 942-945/1483-1491/1755-1756 | 110,6-111,5/112,4-113,0/109,2-110,0 |
+| 4c 9a610f59, soglia 32K (2) | 941-946/1483-1498/1750-1757 | 110,4-110,7/109,5-113,0/110,1-110,9 |
+| 4b coi due server | 845-850/1524-1526/1728-1731 | 105,6-105,9/103,2-104,0/106,5-106,6 |
+| due server + lettura sulla 3060 (6 corse) | 966-969/1484-1501/1564-1577 | 107,1-108,9/104,8-113,1/105,3-111,8 |
+| divisione a strati (6 corse) | 892-915/1794-1821/2110-2133 | 93,9-104,6/95,9-105,5/101,3-106,2 |
+
+- 4c finale: rispetto ai due server -2% a 4K, pari a 32K, +12% a 128K, scrittura pari o +2-4%. Rispetto alla divisione: scrittura +5-10%, lettura -18% a 32K e -17% a 128K (la divisione tiene in ogni scheda solo gli esperti dei suoi strati).
+- Soglia: 8K, 16K e 32K pari; resta 16K. Esperti sulla 2080 Ti: 10966 (come senza 4c).
+
+## Chat multiple sulla 0.2.13.1 (11/11 sera, braccio `x`, divisione a strati, `--batch 4`)
+
+| corsa | richieste | durata | primo token p50/p90 | token scritti/attesi | blocchi |
+|---|---:|---:|---:|---:|---:|
+| 20 strati, 3 agenti | 17/17 | 242 s | 13,7/37,0 s | 3700/5157 | 0 |
+| 22 strati, 3 agenti | 17/17 | 243 s | 13,9/25,4 s | 4319/5157 | 0 |
+| 20 strati, 6 agenti | 34/34 | 421 s | 31,7/109,2 s | 5226/10314 | 0 |
+| 22 strati, 6 agenti | 34/34 | 409 s | 25,9/144,3 s | 4570/10314 | 0 |
+
+- Il blocco della 0.2.10 non c'e' piu'. 20 e 22 strati pari.
+- Da chiarire: con 6 agenti 10-11 risposte della copia di B (indici 19-25) finiscono dopo 2-4 token, sempre le stesse; la 0.2.9 nessuna sotto 10. Testo non salvato: `replay_trace.py --save-text` (MC_SAVE_TEXT=1) aggiunto per rifarle.

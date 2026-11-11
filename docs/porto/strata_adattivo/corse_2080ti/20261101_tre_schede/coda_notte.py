@@ -29,6 +29,9 @@ BP9 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bb02371b'   # lettu
 BP10 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-38871bec'   # lettura a ciclo chiuso
 BQ1 = QUI.parent / '20261004_routed_keep' / 'build-up0210pila-ed6c8aa2'   # 0.2.10 + pila
 BS1 = QUI.parent / '20261004_routed_keep' / 'build-up02131pila-8eb601e3'   # 0.2.13.1 + pila
+B4C = QUI.parent / '20261004_routed_keep' / 'build-tappa4c-497edc7e'   # tappa 4c, non salvata
+B4C2 = QUI.parent / '20261004_routed_keep' / 'build-tappa4c-da51cc27'   # tappa 4c corretta
+B4C3 = QUI.parent / '20261004_routed_keep' / 'build-tappa4c-9a610f59'   # 4c con la sessione in prestito
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -478,6 +481,33 @@ FASI = {
             (1, 'p210', BQ1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}), (1, 'p213', BS1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
             (1, 'ep213', BS1, TRE, {**P2OK, 'STRATA_EP_SPLIT_PREFILL': '1'}),
             (2, 'r213', BS1, DUE, INSIEME), (2, 'p213', BS1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
+        )
+    ],
+    'FT1': [   # 11/11 notte: tappa 4c (lettura a strati sopra soglia, densi dello stadio solo in lettura) contro 4b, due server e divisione
+        (f'T1{n}{i}', b, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, b, sch, e in (
+            (1, 'c16', B4C, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_EP_SPLIT_PREFILL': '2'}),
+            (1, 'p', BS1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
+            (1, 'c0', B4C, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_EP_SPLIT_PREFILL': '2', 'STRATA_EP_SPLIT_MIN_TOKENS': '0'}),
+            (1, 'b', BS1, TRE, {**P2OK, 'STRATA_EP_SPLIT_PREFILL': '1'}),
+            (1, 'csync', B4C, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_EP_SPLIT_PREFILL': '2', 'STRATA_EP_SPLIT_DENSE_SYNC': '1'}),
+            (1, 'rif', BS1, DUE, INSIEME),
+            (2, 'c16', B4C, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_EP_SPLIT_PREFILL': '2'}),
+        )
+    ],
+    'FT2': [   # 11/11 notte: tappa 4c corretta (righe del drafter nella coda della cache) contro i due server, alternate
+        (f'T2{n}{i}', b, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, b in (
+            (1, 'c16', B4C2), (1, 'p', BS1), (2, 'c16', B4C2), (2, 'p', BS1), (3, 'c16', B4C2),
+        ) for e in [({**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_EP_SPLIT_PREFILL': '2'} if n == 'c16' else {**P2OK, 'STRATA_PEER2_PREFILL': '1'})]
+    ],
+    'FT3': [   # 11/11 notte: 4c con la sessione dello stadio in prestito contro 4c di prima e due server, alternate
+        (f'T3{n}{i}', b, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, b in (
+            (1, 'c3', B4C3), (1, 'p', BS1), (1, 'c2', B4C2), (2, 'c3', B4C3), (2, 'p', BS1),
+        ) for e in [({**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_EP_SPLIT_PREFILL': '2'} if n.startswith('c') else {**P2OK, 'STRATA_PEER2_PREFILL': '1'})]
+    ],
+    'FT4': [   # 12/11 notte: soglia della 4c (sessione in prestito) a 8K e 32K contro 16K, alternate
+        (f'T4m{m}{i}', B4C3, '20', TRE, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **P2OK, 'STRATA_PEER2_PREFILL': '1',
+                                                    'STRATA_EP_SPLIT_PREFILL': '2', 'STRATA_EP_SPLIT_MIN_TOKENS': str(m * 1024)}) for i, m in (
+            (1, 8), (1, 32), (1, 16), (2, 8), (2, 32),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

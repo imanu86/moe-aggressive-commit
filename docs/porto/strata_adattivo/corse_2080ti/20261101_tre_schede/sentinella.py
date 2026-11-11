@@ -55,7 +55,8 @@ if not finita and not code and righe:
 
 if motore:
     m = min(motore, key=lambda p: p[2])
-    corse = sorted([d for d in CORSE.iterdir() if d.is_dir()], key=lambda d: d.stat().st_mtime)
+    corse = sorted([d for base in (CORSE, QUI / 'corse_mc') if base.exists() for d in base.iterdir() if d.is_dir()],
+                   key=lambda d: max((f.stat().st_mtime for f in d.iterdir() if f.is_file()), default=d.stat().st_mtime))
     cur = corse[-1] if corse else None
     if cur is not None:
         sl, el = cur / 'server.log', cur / 'engine.log'

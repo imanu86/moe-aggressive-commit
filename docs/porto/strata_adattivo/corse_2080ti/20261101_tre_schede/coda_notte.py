@@ -28,6 +28,7 @@ BP8 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-4d38da47'   # lettu
 BP9 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bb02371b'   # lettura a ciclo chiuso
 BP10 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-38871bec'   # lettura a ciclo chiuso
 BQ1 = QUI.parent / '20261004_routed_keep' / 'build-up0210pila-ed6c8aa2'   # 0.2.10 + pila
+BS1 = QUI.parent / '20261004_routed_keep' / 'build-up02131pila-8eb601e3'   # 0.2.13.1 + pila
 BFUS = QUI.parent / '20261004_routed_keep' / 'build-up029pila-156240a9'   # mega-kernel del server, STRATA_PEER_FUSED
 BEP0 = QUI.parent / '20261004_routed_keep' / 'build-up029pila-8ad3bef3'   # PIPELINE3_PIANO tappa 0: STRATA_PEER_STAMP
 BGDN = QUI.parent / '20261004_routed_keep' / 'build-up029pila-bee277a0'   # PR #4876 (xrip): STRATA_GDN_TC=2, GDN a tensor core su sm_75
@@ -75,6 +76,8 @@ def DF2(conf, spec='6'):   # DFlash2 come lo avvia il programma di avvio della 0
     return {'_togli': ['--mtp', '--spec', '--spec-min-p', '--pipeline-windows'],
             '_args': ['--draft', 'dflash2', '--draft-model', r'D:\ds4_work\strata\Strata-data\dflash2\dflash2-q4sel.pack', '--draft-fallback', 'none',
                       '--mtp-draft-vocab', r'C:\Users\imanu\source\repos\Strata-wt\upsync-v0.2.10\data\draft_vocab.bin', '--spec', spec, '--draft-conf', conf]}
+P2OK = {**PEER, '_args': ['--peer-device', '1,2', '--peer-reserve-mib', '3000,1000', '--lookup-max-t', '8'], 'STRATA_PEER_FUSED': '1', 'STRATA_PEER2_FUSED': '1',
+        'STRATA_PEER2_SKIP': '1', 'STRATA_PEER2_STAGE': '1'}   # due server, salto e righe q8_1; con TRE: 1 = 2080 Ti, 2 = 3060
 BOZZE3060 = {'_args': ['--split-device', '2'], 'STRATA_MTP_DEVICE': '1', 'STRATA_RAM_CORE_SLOTS_DEV1': None, 'STRATA_RAM_CORE_SLOTS_DEV2': '5500'}
 SM86 = {'STRATA_GU_SWIGLU': '1', 'STRATA_GR_UP75': '1', 'STRATA_CPU_IQ_ALL_EXACT1': '1'}
 STAMP = {'STRATA_PEER_STAMP': '1'}   # due stamp %globaltimer sul flusso del peer per strato: lo span GPU del server nella riga 'strata decode peer:'
@@ -446,6 +449,35 @@ FASI = {
     'FQ5': [   # divisione a 20 / 22 / 24 strati con le leve vincenti, 0.2.10 + pila, nostro MTP, margine del Daily 1000, alternate
         (f'Q5s{s}{i}', BQ1, s, DUE, 1000, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **INSIEME}) for i, s in (
             (1, '20'), (1, '22'), (1, '24'), (2, '22'), (2, '20'), (2, '24'),
+        )
+    ],
+    'FR1': [   # 11/11: la 3060 su Oculink (x4 Gen3) invece del riser; schermo sulla 2080 Ti. Due server, lettura sulla 3060, quota calda, contro divisione e un server
+        (f'R1{n}{i}', BQ1, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, sch, e in (
+            (1, 'rif', DUE, INSIEME),
+            (1, 'fus', DUE, {**PEER, '_args': PEER['_args'] + ['--lookup-max-t', '8'], 'STRATA_PEER_FUSED': '1'}),   # 0.2.10: senza, finestre da 12 e il mega-kernel le rifiuta (max 8)
+            (1, 'due', TRE, {**P2OK}),
+            (1, 'pre', TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
+            (1, 'q20', TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_PEER2_SHARE': '0.2'}),
+            (2, 'pre', TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
+            (2, 'rif', DUE, INSIEME),
+        )
+    ],
+    'FR1B': [   # 11/11 sera, desktop remoto chiuso: le corse di FR1 sporcate dalla finestra remota sulla 2080 Ti, alternate
+        (f'R2{n}{i}', BQ1, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, sch, e in (
+            (1, 'rif', DUE, INSIEME),
+            (1, 'fus', DUE, {**PEER, '_args': PEER['_args'] + ['--lookup-max-t', '8'], 'STRATA_PEER_FUSED': '1'}),
+            (1, 'due', TRE, {**P2OK}),
+            (1, 'pre', TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
+            (1, 'q20', TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1', 'STRATA_PEER2_SHARE': '0.2'}),   # la prima e' girata sopra la compilazione
+            (2, 'rif', DUE, INSIEME),
+        )
+    ],
+    'FS1': [   # 11/11 notte: 0.2.13.1 + pila contro 0.2.10 + pila, divisione e due server; tappa 4b coi due server sull'Oculink; alternate
+        (f'S1{n}{i}', b, '20', sch, 700, 384, {'_targets': PIENO, '_corse': '2', **TUTTE, **TEMPI, **e}) for i, n, b, sch, e in (
+            (1, 'r210', BQ1, DUE, INSIEME), (1, 'r213', BS1, DUE, INSIEME),
+            (1, 'p210', BQ1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}), (1, 'p213', BS1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
+            (1, 'ep213', BS1, TRE, {**P2OK, 'STRATA_EP_SPLIT_PREFILL': '1'}),
+            (2, 'r213', BS1, DUE, INSIEME), (2, 'p213', BS1, TRE, {**P2OK, 'STRATA_PEER2_PREFILL': '1'}),
         )
     ],
     'F26': [   # variabili bit-identiche mai provate su Turing, una per volta: banco completo, due corse

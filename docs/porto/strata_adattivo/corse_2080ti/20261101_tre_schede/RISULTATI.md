@@ -482,3 +482,22 @@ Replay DSH 3600+1200 s, `--batch 4`, `STRATA_PIPED_CONCURRENT=1`, braccio `w` (e
 
 - Con piu' richieste insieme la 0.2.10 + pila si blocca durante la lettura del prompt; le corse a una richiesta alla volta (FQ1-FQ5) non si sono mai bloccate. Causa non isolata: unione 0.2.10 nel percorso `--batch`, richiesta #5149, o le leve nel percorso a lotti. Da isolare con la 0.2.10 senza leve e con la 0.2.9 nello stesso replay.
 - Il candidato Daily 0.2.10 NON va promosso finche' questo non e' chiarito; il Daily non usa `--batch`, ma il rischio non e' misurato.
+
+## 3060 su Oculink (11/11, FR1, FR1B, FS1)
+
+Postazione dall'11/11: 3080 Ti su Oculink x4 Gen4, 3060 su Oculink x4 Gen3 (prima riser x1 Gen2), 2080 Ti x16 Gen3 con lo schermo; C: su adattatore PCIe. La prima serie FR1 e' sporcata da un desktop remoto aperto sullo schermo (2080 Ti) e da una compilazione partita fra due corse: rifatta in FR1B. Con la 0.2.10 le corse a server vogliono `--lookup-max-t 8` (finestre da 12 rifiutate dal mega-kernel). Margini 3000 (2080 Ti) e 1000 (3060).
+
+| corsa (PC pulito) | lettura 4K/32K/128K | scrittura 4K/32K/128K | finestra |
+|---|---:|---:|---:|
+| divisione a strati, 0.2.10 (3 corse) | 897-915/1815-1821/2114-2133 | 100,2-101,7/97,4-104,9/104,3-105,5 | 22,9-23,1 ms |
+| divisione a strati, 0.2.13.1 (2 corse) | 895-900/1806-1813/2117-2119 | 93,9-98,9/95,9-103,9/104,5-106,2 | 22,7-23,4 ms |
+| un server | 975/1396/1472 | 96,9/96,2/95,0 | 26,6 ms |
+| due server | 969/1395/1472 | 109,6/108,7/112,1 | 23,8 ms |
+| due server + lettura sulla 3060, 0.2.10 (2 corse) | 968-969/1489/1564-1567 | 108,8-108,9/104,8-109,6/108,9-109,3 | 23,5-23,9 ms |
+| due server + lettura sulla 3060, 0.2.13.1 (2 corse) | 966-967/1491-1501/1576 | 107,8-107,9/106,6-113,1/108,5-109,5 | 23,0-23,7 ms |
+| due server + lettura + quota calda 0,2 | 964/1492/1574 | 106,6/111,4/110,8 | 23,8 ms |
+| tappa 4b + due server, 0.2.13.1 | 850/1526/1731 | 105,6/103,2/106,5 | 24,9 ms |
+
+- Con la 3060 su Oculink i due server battono la divisione a strati in scrittura (+5-12%); in lettura dei prompt lunghi la divisione resta avanti (1815/2130 contro 1490/1570).
+- Tappa 4b coi due server: scrittura -2/-3% (sul riser -20%), lettura +10% a 128K e -12% a 4K rispetto ai due server: e' il caso della soglia della 4c.
+- 0.2.13.1 (`lab/upsync-v0.2.13` 8eb601e3) pari alla 0.2.10 in tutte le configurazioni.

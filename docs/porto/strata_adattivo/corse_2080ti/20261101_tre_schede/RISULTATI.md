@@ -544,7 +544,18 @@ Lettura a strati solo sopra `STRATA_EP_SPLIT_MIN_TOKENS`, densi dello stadio e (
 | due server, `STRATA_PEER_BATCH=1` | 17/17 | 787 s | 70,2/326,5 s |
 | + `STRATA_PF_SMALL=0` | 17/17 | 772 s | 57,5/313,9 s |
 | + `--kv-resident 16384` | 17/17 | 666 s | 48,2/268,4 s |
-| due server `STRATA_PEER_BATCH=1`, 6 agenti | interrotta a 20 min dal riavvio automatico di Windows Update (12/11 02:44), da rifare | | |
+| due server `STRATA_PEER_BATCH=1`, 6 agenti (rifatta 12/11 06:06, la prima interrotta dal riavvio di Windows Update) | 34/34 | 1508 s | 83,8/665,3 s |
+
+Aggregato in token/s (lettura = token nuovi letti / durata; scrittura = token scritti / durata; il lavoro e' per il 97% lettura):
+
+| corsa | letti/s | scritti/s |
+|---|---:|---:|
+| divisione 0.2.13.1, 3 agenti | 752 | 15,3 |
+| divisione 0.2.13.1, 6 agenti | 852-876 | 11-13 |
+| due server, 3 agenti | 219-272 | 4-6 |
+| due server, 6 agenti | 237 | 4,1 |
+
+Nella corsa 21 le risposte corte sono 2 su 34: B2_19 (copia) e B_21 (originale), quindi il difetto non tocca solo le copie.
 
 - In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.
 - Risposte da 1-7 caratteri: con `--dup 2` le copie A2/B2 delle sessioni, con prompt identici alle originali e in parallelo, rispondono con la coda di una parola («ndary», «use_src») e si fermano; le originali sono regolari. Succede uguale sulla 0.2.9 (replay 15) e sulla 0.2.13.1 (replay 14): difetto vecchio di due richieste identiche insieme, probabilmente la cache delle conversazioni o dei prefissi che riprende dallo stato dell'altra con la sua risposta. Da provare: replay a 6 agenti con la cache delle conversazioni spenta.

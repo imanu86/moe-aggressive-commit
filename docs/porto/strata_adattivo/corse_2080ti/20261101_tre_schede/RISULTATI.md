@@ -565,6 +565,17 @@ Stima delle repliche (ogni scheda le sue chat), replay a 3 agenti col motore su 
 
 La 2080 Ti da 22 GB da sola fa quasi quanto la divisione; la 3080 Ti da sola, con dense e sessioni nei suoi 12 GB, resta con 0,35 GiB di esperti. Repliche pure: 92 + 689 = ~780 t/s, appena sopra la divisione. Ma la scheda principale (dense, sessioni, cache delle conversazioni) e' sempre stata la 3080 Ti: da provare la 2080 Ti come principale, coi server (3080 Ti e 3060) e nella divisione (`2,0`).
 
+La 2080 Ti come scheda principale (12/11 mattina), replay a 3 agenti:
+
+| corsa | durata | letti/s (durata / lettura) | scritti/s | primo token p50/p90 |
+|---|---:|---:|---:|---:|
+| divisione `0,2` split 20 (riferimento) | 242 s | 752 / 897 | 15,3 | 13,7/37,0 s |
+| divisione `2,0` split auto (K=24), senza `STRATA_RAM_CORE_SLOTS_DEV1` | 646 s | 283 / 298 | | 50,3/268,0 s |
+| due server s3 con la 3080 Ti principale (riferimento) | 666 s | 272 / 283 | 6,0 | 48,2/268,4 s |
+| **due server s3 con la 2080 Ti principale** (`2,0,1`, riserve 1905 e 1000,1000) | **271 s** | **665 / 834** | **16,7** | **14,0/37,7 s** |
+
+Coi server la 2080 Ti principale porta le chat multiple da 666 a 271 s (2,5 volte), alla pari della divisione: 4170 posti di cache sulla principale (contro ~600 della 3080 Ti con le sessioni). Nessuna risposta corta (0 su 17). La divisione `2,0` invece crolla, ma con due cambi insieme (ordine e regolazione della RAM per la seconda scheda): da separare.
+
 Nella corsa 21 le risposte corte sono 2 su 34: B2_19 (copia) e B_21 (originale), quindi il difetto non tocca solo le copie.
 
 - In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.

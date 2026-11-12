@@ -42,6 +42,12 @@ ARMS['r0'] = (B02131, ARMS['x'][1])
 ARMS['r2'] = (B02131, ARMS['x'][1])
 ONE = {'r0': '0', 'r2': '2'}
 G1 = G.replace(' --vram-reserve-later-mib 700', '')
+# 12/11 mattina: la 2080 Ti (22 GB, x16, schermo) come scheda principale. y = divisione a strati `2,0`; v = due server
+# (3080 Ti e 3060, nessuno schermo: riserva 1000 ciascuno) come s3, la principale con la riserva dello schermo (1905)
+ARMS['y'] = (B02131, ARMS['x'][1])
+ARMS['v'] = (BLOTTI, ARMS['s3'][1])
+TWO = TWO + ('v',)
+GV = G2K.replace('--vram-reserve-mib 700', '--vram-reserve-mib 1905').replace('--peer-reserve-mib 3000,1000', '--peer-reserve-mib 1000,1000')
 cfg = OUT / 'cfg-due-schede.json'
 cfg_t = OUT / 'cfg-due-schede-leve.json'
 cfg_2s = OUT / 'cfg-due-server.json'
@@ -64,6 +70,14 @@ while i < len(a):
         out_args.append(a[i]); i += 1
 c['args'] = out_args
 cfg_2s.write_text(json.dumps(c, indent=1), encoding='utf-8')
+cfg_v = OUT / 'cfg-due-server-2080ti.json'      # come cfg-due-server, principale la 2080 Ti
+c['env']['CUDA_VISIBLE_DEVICES'] = '2,0,1'
+cfg_v.write_text(json.dumps(c, indent=1), encoding='utf-8')
+cy = json.loads(cfg_t.read_text(encoding='utf-8'))   # divisione a strati con la 2080 Ti prima
+cy['env']['CUDA_VISIBLE_DEVICES'] = '2,0'
+cy['env'].pop('STRATA_RAM_CORE_SLOTS_DEV1', None)   # tarato sulla 2080 Ti come seconda scheda
+cfg_y = OUT / 'cfg-due-schede-2080ti-prima.json'
+cfg_y.write_text(json.dumps(cy, indent=1), encoding='utf-8')
 cfg_1 = {}
 for arm, dev in ONE.items():      # come cfg-due-server ma con una scheda sola
     c['env']['CUDA_VISIBLE_DEVICES'] = dev
@@ -79,8 +93,8 @@ for spec in sys.argv[2:]:
     tag = f'{n:02d}_{arm}_s{split}' + (f'_{int(dup) * 3}ag' if dup else '')
     cmd = [sys.executable, '-u', str(CORSE / '20261006_due_schede' / 'bench_lock.py'), f'MULTICHAT-{tag}', '--',
            sys.executable, '-u', '-X', 'utf8', str(CORSE / '20261019_replay' / 'replay_trace.py'), '--tag', tag, '--t0', '3600', '--span', '1200',
-           '--only', 'A,B,C', '--config', str(cfg_1[arm] if arm in ONE else cfg_2s if arm in TWO else cfg_t if arm in ('t', 'w', 'x') else cfg), '--exe', str(build / 'strata.exe'),
-           '--out-base', str(OUT), '--port', '8102', f'--extra={G1}' if arm in ONE else f'--extra={G2K if arm == "s3" else G2}' if arm in TWO else f'--extra={G} --layer-split {split}', '--env=' + env]
+           '--only', 'A,B,C', '--config', str(cfg_1[arm] if arm in ONE else cfg_y if arm == 'y' else cfg_v if arm == 'v' else cfg_2s if arm in TWO else cfg_t if arm in ('t', 'w', 'x') else cfg), '--exe', str(build / 'strata.exe'),
+           '--out-base', str(OUT), '--port', '8102', f'--extra={G1}' if arm in ONE else f'--extra={GV}' if arm == 'v' else f'--extra={G2K if arm == "s3" else G2}' if arm in TWO else f'--extra={G} --layer-split {split}', '--env=' + env]
     if dup:
         cmd += ['--dup', dup]
     if os.environ.get('MC_SAVE_TEXT') == '1':      # testo generato in <corsa>/testi/ (mai il prompt)

@@ -586,6 +586,15 @@ Una richiesta alla volta (`--batch 1`, stessa configurazione dei due server con 
 
 Con le schede sature dalla lettura il parallelo non aggiunge capacita': una alla volta finisce prima (202 s), legge a ~1200 t/s e ogni risposta scrive a ~85 t/s; si paga solo l'attesa in coda del primo token. Risposta corta anche qui (B_19, 4 token, `stop`), senza richieste in parallelo: il difetto non e' delle richieste identiche insieme. B_19 e' la prima di B dopo la conversazione ripresa dalla cache (warm 92568, ripresi 87246): sospetto sulla cache delle conversazioni.
 
+La 3060 in lettura (12/11 pomeriggio). Nella 26 il secondo server ha letto in 2 pezzi di prompt su 27: il modello dei costi aveva misurato il collegamento della 2080 Ti a 3,91 GB/s (all'avvio la prova generale dava 13,1; nella 25 13,09), stimava troppo risparmio e le prove a coppie con la 3060 perdevano (-5,7%, -10,8%). Corsa 27 = 26 con `STRATA_PREFILL_BW_GBS=13.1`:
+
+| corsa | durata | lettura (s / t/s) | scrittura (s / t/s) | pezzi con la 3060 | prove a coppie | risparmio stimato | risposte corte |
+|---|---:|---:|---:|---:|---|---:|---:|
+| 26, misurato 3,91 | 202 s | 150,9 / 1200 | 50,7 / 80,3 | 2 su 27 | -5,7%, -10,8% | 4,1 s | 1 (B_19) |
+| 27, dato 13,1 | 208 s | 149,3 / 1210 | 58,4 / 79,7 | 2 su 27 | -6,6%, +2,4% | 0,8 s | 0 |
+
+Con la misura giusta il modello stesso stima meno di un secondo di risparmio su 150 s di lettura: a pezzi da 8192 token quasi ogni esperto lavora oltre ~178 righe e portarne i pesi (~1,6 MB) costa meno che mandare e riprendere le attivazioni (~13 KB a riga). La lettura dalla RAM e' la scelta giusta, non una ridondanza; la misura disturbata (`measure_h2d_gbs` una volta all'avvio, mentre si riempiono le altre schede) e' da correggere ma non cambia la velocita'. I 6 s in piu' della 27 sono 587 token scritti in piu' (4655 contro 4068). B_19 stavolta regolare: il difetto delle risposte corte e' intermittente.
+
 Nella corsa 21 le risposte corte sono 2 su 34: B2_19 (copia) e B_21 (originale), quindi il difetto non tocca solo le copie.
 
 - In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.

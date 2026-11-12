@@ -532,3 +532,19 @@ Lettura a strati solo sopra `STRATA_EP_SPLIT_MIN_TOKENS`, densi dello stadio e (
 
 - Il blocco della 0.2.10 non c'e' piu'. 20 e 22 strati pari.
 - Da chiarire: con 6 agenti 10-11 risposte della copia di B (indici 19-25) finiscono dopo 2-4 token, sempre le stesse; la 0.2.9 nessuna sotto 10. Testo non salvato: `replay_trace.py --save-text` (MC_SAVE_TEXT=1) aggiunto per rifarle.
+
+## Chat multiple coi due server e risposte corte (12/11 notte)
+
+`lab/server-lotti` 7988205b: `STRATA_PEER_FUSED_MAX_T` (32, fino a 64) e `STRATA_PEER_BATCH=1` (le finestre di `--batch N` dai mega-kernel). Banco `peer_fused_test --wide` (16/24/32 e 64 righe, uno e due server, salto e stage) e banchi di prima PASS. Replay DSH, 3 agenti, `--batch 4`:
+
+| corsa | richieste | durata | primo token p50/p90 |
+|---|---:|---:|---:|
+| divisione a strati, 0.2.13.1 | 17/17 | 242 s | 13,7/37,0 s |
+| due server, `STRATA_PEER_BATCH=0` | 17/17 | 823 s | 61,0/334,3 s |
+| due server, `STRATA_PEER_BATCH=1` | 17/17 | 787 s | 70,2/326,5 s |
+| + `STRATA_PF_SMALL=0` | 17/17 | 772 s | 57,5/313,9 s |
+| + `--kv-resident 16384` | 17/17 | 666 s | 48,2/268,4 s |
+| due server `STRATA_PEER_BATCH=1`, 6 agenti | fermata dal replay a 20 min | | |
+
+- In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.
+- Risposte da 1-7 caratteri: con `--dup 2` le copie A2/B2 delle sessioni, con prompt identici alle originali e in parallelo, rispondono con la coda di una parola («ndary», «use_src») e si fermano; le originali sono regolari. Succede uguale sulla 0.2.9 (replay 15) e sulla 0.2.13.1 (replay 14): difetto vecchio di due richieste identiche insieme, probabilmente la cache delle conversazioni o dei prefissi che riprende dallo stato dell'altra con la sua risposta. Da provare: replay a 6 agenti con la cache delle conversazioni spenta.

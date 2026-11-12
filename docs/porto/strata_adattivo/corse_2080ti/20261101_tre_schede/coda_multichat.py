@@ -14,7 +14,7 @@ K = CORSE / '20261004_routed_keep'
 B0271, B029 = K / 'build-up0271pila-5fbc4784', K / 'build-up029pila-b6ba3fa6'
 B0210 = K / 'build-up0210pila-ed6c8aa2'
 B02131 = K / 'build-up02131pila-8eb601e3'   # 11/11: 0.2.13.1 + pila   # 04/11: 0.2.10 + pila + richieste 5149 5108 5137 (il candidato Daily)
-BLOTTI = K / 'build-server-lotti-PLACEHOLDER'   # da sostituire col nome vero
+BLOTTI = K / 'build-server-lotti-7988205b'   # da sostituire col nome vero
 OUT = HERE / 'corse_mc'
 G = '--batch 4 --conversation-cache-mib 18432 --conversation-cache-slots 16 --vram-reserve-mib 1905 --vram-reserve-later-mib 700 --ple-io direct'
 PC = 'STRATA_ROUTE_PRIOR=0 STRATA_PIPED_CONCURRENT=1'
@@ -31,8 +31,12 @@ ARMS = {
 PEER = ' STRATA_PEER_FUSED=1 STRATA_PEER2_FUSED=1 STRATA_PEER2_SKIP=1 STRATA_PEER2_STAGE=1 STRATA_PEER2_PREFILL=1 STRATA_ARENA_PIN_GIB=8'
 ARMS['s0'] = (BLOTTI, ARMS['x'][1] + PEER + ' STRATA_PEER_BATCH=0')
 ARMS['s1'] = (BLOTTI, ARMS['x'][1] + PEER + ' STRATA_PEER_BATCH=1')
-TWO = ('s0', 's1')
+# 12/11: con --batch 4 le sessioni a slot (0,95 GiB ciascuna) restringono la cache della 3080 Ti e la lettura scende a pezzi da 1024
+ARMS['s2'] = (BLOTTI, ARMS['s1'][1] + ' STRATA_PF_SMALL=0')   # lettura a pezzi grandi comunque
+ARMS['s3'] = (BLOTTI, ARMS['s1'][1])                          # K/V residente a 16K per slot (vedi G2K)
+TWO = ('s0', 's1', 's2', 's3')
 G2 = G.replace(' --vram-reserve-later-mib 700', '').replace('--vram-reserve-mib 1905', '--vram-reserve-mib 700 --peer-device 1,2 --peer-reserve-mib 3000,1000')
+G2K = G2 + ' --kv-resident 16384'
 cfg = OUT / 'cfg-due-schede.json'
 cfg_t = OUT / 'cfg-due-schede-leve.json'
 cfg_2s = OUT / 'cfg-due-server.json'
@@ -66,7 +70,7 @@ for spec in sys.argv[2:]:
     cmd = [sys.executable, '-u', str(CORSE / '20261006_due_schede' / 'bench_lock.py'), f'MULTICHAT-{tag}', '--',
            sys.executable, '-u', '-X', 'utf8', str(CORSE / '20261019_replay' / 'replay_trace.py'), '--tag', tag, '--t0', '3600', '--span', '1200',
            '--only', 'A,B,C', '--config', str(cfg_2s if arm in TWO else cfg_t if arm in ('t', 'w', 'x') else cfg), '--exe', str(build / 'strata.exe'),
-           '--out-base', str(OUT), '--port', '8102', f'--extra={G2}' if arm in TWO else f'--extra={G} --layer-split {split}', '--env=' + env]
+           '--out-base', str(OUT), '--port', '8102', f'--extra={G2K if arm == "s3" else G2}' if arm in TWO else f'--extra={G} --layer-split {split}', '--env=' + env]
     if dup:
         cmd += ['--dup', dup]
     if os.environ.get('MC_SAVE_TEXT') == '1':      # testo generato in <corsa>/testi/ (mai il prompt)

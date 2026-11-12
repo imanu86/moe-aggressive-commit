@@ -555,6 +555,16 @@ Aggregato in token/s (lettura = token nuovi letti / durata; scrittura = token sc
 | due server, 3 agenti | 219-272 | 4-6 |
 | due server, 6 agenti | 237 | 4,1 |
 
+Stima delle repliche (ogni scheda le sue chat), replay a 3 agenti col motore su una scheda sola, 0.2.13.1 + leve:
+
+| corsa | durata | letti/s (durata / lettura) | scritti/s | primo token p50/p90 | cache esperti |
+|---|---:|---:|---:|---:|---:|
+| sola 3080 Ti (12 GB, Oculink x4 Gen4) | 1964 s | 92 / 94 | 2,0 | 136/871 s | 162-211 posti, 0,35 GiB, 16% trovati |
+| sola 2080 Ti (22 GB, x16 Gen3) | 262 s | 689 / 890 | 14,7 | 10/17 s | 3759-5025 posti, 8,15 GiB, 81% trovati |
+| divisione a strati `0,2` | 242 s | 752 / 897 | 15,3 | 14/37 s | |
+
+La 2080 Ti da 22 GB da sola fa quasi quanto la divisione; la 3080 Ti da sola, con dense e sessioni nei suoi 12 GB, resta con 0,35 GiB di esperti. Repliche pure: 92 + 689 = ~780 t/s, appena sopra la divisione. Ma la scheda principale (dense, sessioni, cache delle conversazioni) e' sempre stata la 3080 Ti: da provare la 2080 Ti come principale, coi server (3080 Ti e 3060) e nella divisione (`2,0`).
+
 Nella corsa 21 le risposte corte sono 2 su 34: B2_19 (copia) e B_21 (originale), quindi il difetto non tocca solo le copie.
 
 - In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.

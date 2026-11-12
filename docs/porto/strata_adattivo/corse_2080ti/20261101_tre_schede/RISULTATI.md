@@ -599,3 +599,11 @@ Nella corsa 21 le risposte corte sono 2 su 34: B2_19 (copia) e B_21 (originale),
 
 - In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.
 - Risposte da 1-7 caratteri: con `--dup 2` le copie A2/B2 delle sessioni, con prompt identici alle originali e in parallelo, rispondono con la coda di una parola («ndary», «use_src») e si fermano; le originali sono regolari. Succede uguale sulla 0.2.9 (replay 15) e sulla 0.2.13.1 (replay 14): difetto vecchio di due richieste identiche insieme, probabilmente la cache delle conversazioni o dei prefissi che riprende dallo stato dell'altra con la sua risposta. Da provare: replay a 6 agenti con la cache delle conversazioni spenta.
+
+## Daily 0.2.13 4c (12/11 sera, richiesta dell'owner)
+
+Le chat multiple con agenti che si aspettano non rendono su questa postazione: il Daily va sulla migliore a chat singola, la 4c con la sessione in prestito (FT3).
+- Pacchetto `D:\ds4_work\strata\Strata\build-02131-4c-daily` = copia di `20261004_routed_keep\build-tappa4c-9a610f59` (exe sha256 cd4f58c7..., lab/tappa4c 9a610f59, v0.2.13.1-59).
+- Configurazione `D:\ds4_work\strata\Strata\strata-02131-4c-daily.json` = `corse\T3c31\config.json` con exe, visione e log nel Daily e senza `STRATA_DECODE_TIMING`. Due server, 3080 Ti principale (`0,2,1`), niente `--batch`.
+- Avvio: `Desktop\SERVER IA LOCALE\Strata 0.2.13 4c Daily - porta 8100.bat`; le bat vecchie restano.
+- Prova dalla bat (`fumo_daily4c.cmd`): pronto in 130 s, domanda corta 98,6 t/s a freddo e 126,6 t/s con il prefisso in cache, risposta regolare, motore spento dopo.

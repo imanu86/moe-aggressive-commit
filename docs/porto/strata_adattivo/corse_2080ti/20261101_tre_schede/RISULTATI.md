@@ -576,6 +576,16 @@ La 2080 Ti come scheda principale (12/11 mattina), replay a 3 agenti:
 
 Coi server la 2080 Ti principale porta le chat multiple da 666 a 271 s (2,5 volte), alla pari della divisione: 4170 posti di cache sulla principale (contro ~600 della 3080 Ti con le sessioni). Nessuna risposta corta (0 su 17). La divisione `2,0` invece crolla, ma con due cambi insieme (ordine e regolazione della RAM per la seconda scheda): da separare.
 
+Una richiesta alla volta (`--batch 1`, stessa configurazione dei due server con la 2080 Ti principale), replay a 3 agenti:
+
+| corsa | durata | primo token p50/p90 | attesa in coda media | scrittura per risposta (mediana, pesata) |
+|---|---:|---:|---:|---:|
+| `--batch 4` (corsa 25) | 271 s | 14,0/37,7 s | 4,9 s | 11,6 / 12,0 t/s |
+| **`--batch 1` (corsa 26)** | **202 s** | 21,0/68,1 s | 19,0 s | **85,3 / 82,4 t/s** |
+| divisione `0,2` `--batch 4` (riferimento) | 242 s | 13,7/37,0 s | | ~15-19 t/s |
+
+Con le schede sature dalla lettura il parallelo non aggiunge capacita': una alla volta finisce prima (202 s), legge a ~1200 t/s e ogni risposta scrive a ~85 t/s; si paga solo l'attesa in coda del primo token. Risposta corta anche qui (B_19, 4 token, `stop`), senza richieste in parallelo: il difetto non e' delle richieste identiche insieme. B_19 e' la prima di B dopo la conversazione ripresa dalla cache (warm 92568, ripresi 87246): sospetto sulla cache delle conversazioni.
+
 Nella corsa 21 le risposte corte sono 2 su 34: B2_19 (copia) e B_21 (originale), quindi il difetto non tocca solo le copie.
 
 - In scrittura i lotti dai mega-kernel vanno (70-80 t/s per risposta). Il collo e' la lettura dei prompt con piu' richieste: ~300 t/s. Le sessioni a slot (0,95 GiB ciascuna, 3,8 GiB con 4 slot) stanno tutte sulla 3080 Ti, la cui cache scende e la lettura prende in prestito solo 602-660 posti (2119 a richiesta singola). Da fare: sessioni a slot (o il loro K/V) fuori dalla 3080 Ti, per esempio sulla 2080 Ti come nella divisione.

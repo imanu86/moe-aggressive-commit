@@ -48,6 +48,10 @@ ARMS['y'] = (B02131, ARMS['x'][1])
 ARMS['v'] = (BLOTTI, ARMS['s3'][1])
 TWO = TWO + ('v',)
 GV = G2K.replace('--vram-reserve-mib 700', '--vram-reserve-mib 1905').replace('--peer-reserve-mib 3000,1000', '--peer-reserve-mib 1000,1000')
+# v1 = v con una richiesta alla volta (le altre in coda): scrittura piena per risposta, confronto col tempo totale
+ARMS['v1'] = ARMS['v']
+TWO = TWO + ('v1',)
+GV1 = GV.replace('--batch 4', '--batch 1')
 cfg = OUT / 'cfg-due-schede.json'
 cfg_t = OUT / 'cfg-due-schede-leve.json'
 cfg_2s = OUT / 'cfg-due-server.json'
@@ -93,8 +97,8 @@ for spec in sys.argv[2:]:
     tag = f'{n:02d}_{arm}_s{split}' + (f'_{int(dup) * 3}ag' if dup else '')
     cmd = [sys.executable, '-u', str(CORSE / '20261006_due_schede' / 'bench_lock.py'), f'MULTICHAT-{tag}', '--',
            sys.executable, '-u', '-X', 'utf8', str(CORSE / '20261019_replay' / 'replay_trace.py'), '--tag', tag, '--t0', '3600', '--span', '1200',
-           '--only', 'A,B,C', '--config', str(cfg_1[arm] if arm in ONE else cfg_y if arm == 'y' else cfg_v if arm == 'v' else cfg_2s if arm in TWO else cfg_t if arm in ('t', 'w', 'x') else cfg), '--exe', str(build / 'strata.exe'),
-           '--out-base', str(OUT), '--port', '8102', f'--extra={G1}' if arm in ONE else f'--extra={GV}' if arm == 'v' else f'--extra={G2K if arm == "s3" else G2}' if arm in TWO else f'--extra={G} --layer-split {split}', '--env=' + env]
+           '--only', 'A,B,C', '--config', str(cfg_1[arm] if arm in ONE else cfg_y if arm == 'y' else cfg_v if arm in ('v', 'v1') else cfg_2s if arm in TWO else cfg_t if arm in ('t', 'w', 'x') else cfg), '--exe', str(build / 'strata.exe'),
+           '--out-base', str(OUT), '--port', '8102', f'--extra={G1}' if arm in ONE else f'--extra={GV}' if arm == 'v' else f'--extra={GV1}' if arm == 'v1' else f'--extra={G2K if arm == "s3" else G2}' if arm in TWO else f'--extra={G} --layer-split {split}', '--env=' + env]
     if dup:
         cmd += ['--dup', dup]
     if os.environ.get('MC_SAVE_TEXT') == '1':      # testo generato in <corsa>/testi/ (mai il prompt)

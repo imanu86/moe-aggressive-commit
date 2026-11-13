@@ -607,3 +607,11 @@ Le chat multiple con agenti che si aspettano non rendono su questa postazione: i
 - Configurazione `D:\ds4_work\strata\Strata\strata-02131-4c-daily.json` = `corse\T3c31\config.json` con exe, visione e log nel Daily e senza `STRATA_DECODE_TIMING`. Due server, 3080 Ti principale (`0,2,1`), niente `--batch`.
 - Avvio: `Desktop\SERVER IA LOCALE\Strata 0.2.13 4c Daily - porta 8100.bat`; le bat vecchie restano.
 - Prova dalla bat (`fumo_daily4c.cmd`): pronto in 130 s, domanda corta 98,6 t/s a freddo e 126,6 t/s con il prefisso in cache, risposta regolare, motore spento dopo.
+
+## Schermo sulla 3060 (13/11)
+
+La 2080 Ti ha HDMI 2.0 (al massimo 4K60): l'8K del Samsung li' esce solo come DSR e da' schermo verde e immagine nell'angolo. Cavo spostato dall'owner sulla 3060 (HDMI 2.1), 7680x4320 a 60 Hz, OktoCGControl spento. Daily 0.2.13 4c con le riserve invertite (`--peer-reserve-mib 1000,3000`, `strata-02131-4c-daily-schermo3060.json`, `fumo_schermo3060.cmd`):
+- esperti: 2080 Ti 12172 (prima 10966), 3060 4839 (prima 6045), principale 2554; sulle schede 19565 come prima;
+- domanda corta 104,6 e 116,3 t/s; tre scritture da 1500 token 106,3 / 101,9 / 103,7 t/s, media 104,0;
+- 3060 al 100% per tutta la prova (l'app di Claude da sola 44-99% a motore spento), 2080 Ti 76% di media; il collegamento della 3060 misurato a 0,9-1,2 GB/s (2,9 con lo schermo sulla 2080 Ti).
+Confronto pulito con lo schermo sulla 2080 Ti a stessa prova non fatto (cavo gia' spostato); banco della comunita' del Daily: 110-113 t/s.

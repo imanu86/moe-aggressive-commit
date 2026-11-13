@@ -615,3 +615,32 @@ La 2080 Ti ha HDMI 2.0 (al massimo 4K60): l'8K del Samsung li' esce solo come DS
 - domanda corta 104,6 e 116,3 t/s; tre scritture da 1500 token 106,3 / 101,9 / 103,7 t/s, media 104,0;
 - 3060 al 100% per tutta la prova (l'app di Claude da sola 44-99% a motore spento), 2080 Ti 76% di media; il collegamento della 3060 misurato a 0,9-1,2 GB/s (2,9 con lo schermo sulla 2080 Ti).
 Confronto pulito con lo schermo sulla 2080 Ti a stessa prova non fatto (cavo gia' spostato); banco della comunita' del Daily: 110-113 t/s.
+
+## Banco completo del Daily con lo schermo sulla 3060 (13/11, `banco_daily.py`, OktoCGControl spento, app di Claude aperta a 8K)
+
+Seconda bat sul Desktop: `Strata 0.2.13 4c Daily schermo 3060 - porta 8100.bat` (config `strata-02131-4c-daily-schermo3060.json`); la prima resta.
+
+Banco della comunita' di sempre (`D1schermo3060`, 3 corse) contro FT3 (schermo sulla 2080 Ti):
+
+| corsa | lettura 4K/32K/128K | scrittura 4K/32K/128K (mediana) | scrittura minima |
+|---|---:|---:|---:|
+| FT3 T3c31-32, T4m161 | 943-945/1484-1493/1754-1755 | 109,9-111,5/111,3-113,0/107,3-111,1 | 105/111/104 |
+| D1, schermo sulla 3060 | 996/1499/1769 | 94,7/101,1/109,7 | 88,5/92,1/108,9 |
+
+Lettura pari o +5% (1206 esperti in piu' sulla 2080 Ti); scrittura -10/-15% a 4K e 32K, pari a 128K. 3060 al 90% di media nel banco (2080 Ti 51%): schermo 8K + app di Claude contro la sua parte di esperti.
+
+Banchi della comunita' di oggi (`D2standard3060`): protocollo `strata bench run` standard-v1 (traccia custom, 12/12 controlli, 0 falliti) e suite rapida `tools/strata_bench.py --long`:
+
+| | corta, scrittura | 4K lettura / scrittura | 16K lettura / scrittura | 32K lettura | agente | 4 insieme, somma |
+|---|---:|---:|---:|---:|---:|---:|
+| **noi, standard** | 113,4 | 1034 / 104,8 | 1314 / 99,7 | | | 85-91 (1 posto) |
+| **noi, rapida** | 92,0 | 1003 | 1356 | 1464 | 101,8 t/s, cache 70% | |
+| RTX 5080 16 GB, 0.2.13.1, standard (#5732) | 89,6 | 2523 / 79,9 | 2728 / 79,1 | | | |
+| RTX 4090 24 GB, standard (#5396) | 153,5 | 2443 / 149,1 | 4484 / 140,4 | | | |
+| RTX 4090, standard, DFlash2 (#5227) | 164,2 | 2868 / 134,8 | 4906 / 153,6 | | | |
+| RTX 4080 SUPER 16 GB, rapida (#5709) | 95,0 | 2388 | 3697 | | 113,6 | |
+| RTX 2080 Ti 22 GB sola, IQ4_XS, rapida (#5851) | 66,9 | 791 | 1410 | | 64,1 | |
+| RX 9070, rapida (#5461) | 44,1 | 796 | 982 | | 53,3 | |
+| RTX PRO 5000 48 GB, 4 posti (#5891) | 230-238 da sola | | | | | 4 x 66-77 |
+
+In scrittura il Daily sta sopra 5080 e 4080 SUPER e sotto la 4090 (-25/-30%); in lettura 2-3 volte sotto ogni scheda singola recente a x16 (4090 3,4x a 16K). Il parallelo da centinaia di t/s viene da schede con il modello intero in memoria (PRO 5000 48 GB: ~270-300 in somma a 4 richieste).

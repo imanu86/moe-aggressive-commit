@@ -644,3 +644,15 @@ Banchi della comunita' di oggi (`D2standard3060`): protocollo `strata bench run`
 | RTX PRO 5000 48 GB, 4 posti (#5891) | 230-238 da sola | | | | | 4 x 66-77 |
 
 In scrittura il Daily sta sopra 5080 e 4080 SUPER e sotto la 4090 (-25/-30%); in lettura 2-3 volte sotto ogni scheda singola recente a x16 (4090 3,4x a 16K). Il parallelo da centinaia di t/s viene da schede con il modello intero in memoria (PRO 5000 48 GB: ~270-300 in somma a 4 richieste).
+
+## Maschera degli esperti residenti (idea dell'owner dal REAP loop, 14/11) - PIANO DA RIPRENDERE
+
+Idea: come il REAP loop (`docs/REAP_LOOP_NOVELTY.md`, `REAP_DS4_design.md`; ledger I10: keep 50% = 99,3% della massa, 8,2% di reroute) una
+bias-mask sul router che lascia scegliere solo gli esperti sulle schede (complemento dei residenti, aggiornata dalla cache adattiva),
+con il sensore "massa del router sugli esclusi" che riapre la RAM per il passo o accelera lo scambio. Effetto atteso: scrittura e lettura
+senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello intero in VRAM (somma che sale).
+- In Strata oggi c'e' solo `STRATA_ROUTE_TAIL_SKIP` (azzera, non dirotta; rango >= 7 su 10 di tutti i token del passo; spento con `--batch` e con i server; -1,6% l'11/10 sulla divisione) e la cache adattiva. `--top-k` e' del campionamento, non degli esperti. Niente prefetch L+1 utile (chiuso a settembre).
+- Stima (`massa_fuori.py`: ordine del profilo `expert-profile.bin` = residenza statica, tracce `--dump-routing`, i pesi nelle tracce sono 0: solo conteggi per posizione):
+  con 19565 esperti sulle schede (80%) cadono fuori il 5,8% (traccia DET-ST0) - 10,6% (traccia f0) delle scelte; per posizione 1..10 dal 3,2 all'8,7% (DET) e dal 7,0 al 13,9% (f0);
+  il 37-55% dei token-strato ha almeno una scelta fuori. Con il profilo statico e' piu' del previsto; la cache adattiva della sessione lo abbassa (in scrittura la principale trova il 99%), da misurare dal vivo.
+- Prossimi passi: (1) misura dal vivo con i pesi (dump con i pesi veri o contatori nel motore: massa sui non residenti per strato); (2) maschera come innesto opzionale sul ramo `lab/tappa4c` (lavoro da Fable), dirottando al miglior residente; (3) KL contro senza maschera + 12 controlli standard-v1, scrittura singola, somma con 4 e 8 richieste (divisione a strati e server).

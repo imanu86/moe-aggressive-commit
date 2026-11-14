@@ -656,3 +656,13 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   con 19565 esperti sulle schede (80%) cadono fuori il 5,8% (traccia DET-ST0) - 10,6% (traccia f0) delle scelte; per posizione 1..10 dal 3,2 all'8,7% (DET) e dal 7,0 al 13,9% (f0);
   il 37-55% dei token-strato ha almeno una scelta fuori. Con il profilo statico e' piu' del previsto; la cache adattiva della sessione lo abbassa (in scrittura la principale trova il 99%), da misurare dal vivo.
 - Prossimi passi: (1) misura dal vivo con i pesi (dump con i pesi veri o contatori nel motore: massa sui non residenti per strato); (2) maschera come innesto opzionale sul ramo `lab/tappa4c` (lavoro da Fable), dirottando al miglior residente; (3) KL contro senza maschera + 12 controlli standard-v1, scrittura singola, somma con 4 e 8 richieste (divisione a strati e server).
+- **Punto 1 (14/11 mattina, `traccia_pesi.py` + `analisi_massa.py`, traccia in `D:\ds4_work\strata\lab_runs\maschera_20261114\routing_pesi.bin`).** Motore a domanda singola sulla 2080 Ti (config del Daily senza servizio e server), prompt di revisione di codice C++ (2695 token, 130 righe di `prefill.cpp`), 3000 token scritti a 90,2 t/s; 174144 righe token-strato. I pesi restano 0 anche qui: con il pack nativo servono le bozze (`--spec`) e il percorso a finestre scrive pesi unitari (generate.cpp:1567). Solo conteggi:
+
+  | esperti sulle schede | residenza fissa del profilo: scelte fuori | cache adattiva simulata (LRU per strato, si parte dal profilo): scelte fuori | righe token-strato con almeno una fuori |
+  |---|---:|---:|---:|
+  | 13323 (54%) | 25,4% | 1,57% | 12,2% |
+  | 17491 (71%) | 15,1% | 0,53% | 4,7% |
+  | **19565 (80%, il Daily)** | **10,0%** | **0,31%** | **2,8%** |
+  | 22000 (90%) | 4,9% | 0,14% | 1,3% |
+
+  Con la cache che segue la conversazione la maschera dirotterebbe circa lo 0,3% delle scelte (contro l'8,2% del REAP loop a keep 50%, gia' quasi senza perdita): strada aperta. La simulazione scambia all'istante; nel motore lo scambio ha un budget (`--adapt-swaps`), e con piu' richieste di argomenti diversi la quota sale: da misurare dal vivo con la maschera. Pesi veri: servirebbe scriverli nel percorso a finestre (non indispensabile ora).

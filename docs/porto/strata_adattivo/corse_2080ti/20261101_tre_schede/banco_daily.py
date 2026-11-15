@@ -76,6 +76,10 @@ try:
         elif tipo == 'rapido':
             cmd, cwd = [str(PY), str(SRC / 'tools' / 'strata_bench.py'), '--url', 'http://127.0.0.1:8105', '--config', str(out / 'config.json'), '--runs', n or '3', '--long',
                         '--out', str(out / 'rapido')], str(SRC)
+        elif tipo == 'carico':   # carico:1-3-6 = tools/par_load.py w2 (prompt 1024, 256 scritti) a quelle chat insieme, 2 giri
+            cmd, cwd = [str(PY), str(SRC / 'tools' / 'par_load.py'), 'http://127.0.0.1:8105', '--workload', 'w2', '--conc',
+                        (n or '1-2-4').replace('-', ','), '--rounds', '2', '--warm-requests', '1', '--label', nome,
+                        '--out', str(out / 'carico.json')], str(SRC)
         else:
             raise RuntimeError(f'modo sconosciuto {modo}')
         log(f'{nome}: {tipo} parte')

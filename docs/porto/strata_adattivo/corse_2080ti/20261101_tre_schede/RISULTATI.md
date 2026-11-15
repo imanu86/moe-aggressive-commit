@@ -704,3 +704,17 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   Nella divisione le schede tengono 12148 esperti su 24576 (49%, la 3060 fuori); con la maschera e la cache adattiva le dirottate restano al 2-5% e la somma sale del 15% (+20 t/s rispetto ai server). I gruppi in fila (default) battono il gruppo unico con le bozze per chat (piu' dirottate, 13-15%).
   Conclusione: per le chat multiple la migliore oggi e' **divisione 20 + `--batch 4` + `STRATA_RESIDENT_MASK=2`**: somma ~105 t/s con lettura 870/1500 (i server con `--batch` leggono a 250). Per la chat singola resta il Daily 4c a due server (110-115).
   Prossimi: divisione con la 3060 come terzo stadio o come server (piu' esperti residenti, meno dirottate), `--batch 8`, KL della maschera sulla divisione.
+- **Correzione 16/11 su S4m2:** le dirottate «2-5%» erano solo le ultime richieste brevi; sulle richieste lunghe e sulle fasi a 4 chat la divisione su due schede con =2 dirotta il 5-19% (massa 4-18%), su tre schede il 5-12% (punta 22%). 12/12 ovunque, ma serve il KL contro la maschera spenta prima di fidarsi.
+- **Divisione su tre schede (15-16/11 notte, `banco_tre_stadi.cmd`, config da `fai_cfg_15nov_3060.py`, maschera =2, `--vram-reserve-later-mib 1200`, GPU 0,2,1).**
+
+  | corsa | strati 3080 Ti / 2080 Ti / 3060 | residenti | standard: somma 4 chat | una chat corta / 4K / 16K | lettura 4K / 16K | carico w2 1/2(3)/4(6) chat | esito |
+  |---|---|---:|---:|---:|---:|---:|---|
+  | S4m2 (due schede, rif.) | 0-19 / 20-47 / - | 12148 (49%) | 106,5 / 101,8 / 107,9 | 93,9 / 90,3 / 78,5 | 870 / 1501 | 37,2 / 36,3 / 43,2 (S4ref) | 12/12 |
+  | **U4a** | 0-19 / 20-39 / 40-47 | 15722 (64%) | **131,0 / 132,1 / 132,3** | 75,4 / 48,0 / 54,3 | 537 / 602 | 20,3 / 36,8 / 41,9 | 12/12 |
+  | U4b | 0-15 / 16-37 / 38-47 | 16818 (68%) | fallita | 38,1 / 31,9 / 30,4 | 360 / 379 | fallito | 3060 piena (11,95 GiB), stallo |
+  | U6a, `--batch 6` (3 gruppi) | come U4a | 15341 | | | | fallito | 3060 piena con 6 sessioni, stallo 240 s e logit non finiti (#879) |
+  | S6, `--batch 6`, due schede | 0-19 / 20-47 | | | | | 36,1 / 38,9 / 44,2 | |
+
+  Il carico `tools/par_load.py w2` (prompt nuovi da 1046 token, 256 scritti) e' limitato dalla lettura dei prompt col percorso a lotti (~230 t/s, 4,5 s a prompt): ~42-44 t/s con 4 o 6 chat in ogni configurazione. La somma dello standard (prompt corti) misura la scrittura.
+  Conclusione: la 3060 come terzo stadio alza la somma in scrittura (+25%, 131 t/s) ma dimezza la chat singola e la lettura (collegamento x4 Gen3) e con lo schermo a 8K non regge piu' di 8 strati ne' piu' di 4 sessioni (si riempie e si pianta). Non da Daily.
+  Il collo vero delle chat multiple con prompt nuovi e' la lettura a lotti (230-250 t/s): prossimo lavoro, la lettura dei prompt nuovi col percorso a strati pieno anche con `--batch` (oggi un prompt in arrivo si legge a pezzi dentro le finestre).

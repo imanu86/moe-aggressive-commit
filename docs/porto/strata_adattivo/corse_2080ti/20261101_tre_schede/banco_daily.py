@@ -26,6 +26,7 @@ out.mkdir(parents=True, exist_ok=True)
 c = json.loads(cfg_src.read_text(encoding='utf-8-sig'))
 c['log'] = str(out / 'engine.log')
 build = Path(c['exe']).parent
+SRV = build / 'source' if (build / 'source').exists() else SRC   # pacchetto: source/ accanto all'exe; build di laboratorio: i sorgenti
 (out / 'config.json').write_text(json.dumps(c, indent=1), encoding='utf-8')
 
 
@@ -46,7 +47,7 @@ sonda = subprocess.Popen(['nvidia-smi', '--query-gpu=timestamp,index,memory.used
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
 slog = open(out / 'server.log', 'w', encoding='utf-8')
 env = dict(os.environ, STRATA_PROMPT_ENCODER='1')
-p = subprocess.Popen([str(PY), str(build / 'source/serve/server.py'), '--engine', 'strata', '--config', str(out / 'config.json'),
+p = subprocess.Popen([str(PY), str(SRV / 'serve/server.py'), '--engine', 'strata', '--config', str(out / 'config.json'),
                       '--host', '127.0.0.1', '--port', '8105'], stdout=slog, stderr=subprocess.STDOUT, env=env)
 esito = 'fallito'
 try:
@@ -66,7 +67,7 @@ try:
     for modo in modi:
         tipo, _, n = modo.partition(':')
         if tipo == 'comunita':
-            cmd, cwd = [str(PY), str(BENCH), '--root', str(build / 'source'), '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs',
+            cmd, cwd = [str(PY), str(BENCH), '--root', str(SRV), '--pack', r'D:\ds4_work\strata\Strata-data\packs\iq3_xxs',
                         '--url', 'http://127.0.0.1:8105', '--out', str(out), '--targets', PIENO, '--runs', n or '3'], None
         elif tipo == 'standard':
             cmd, cwd = [str(PY), str(SRC / 'strata.py'), 'bench', 'run', '--url', 'http://127.0.0.1:8105', '--optional-concurrency',

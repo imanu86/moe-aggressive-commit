@@ -666,3 +666,18 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   | 22000 (90%) | 4,9% | 0,14% | 1,3% |
 
   Con la cache che segue la conversazione la maschera dirotterebbe circa lo 0,3% delle scelte (contro l'8,2% del REAP loop a keep 50%, gia' quasi senza perdita): strada aperta. La simulazione scambia all'istante; nel motore lo scambio ha un budget (`--adapt-swaps`), e con piu' richieste di argomenti diversi la quota sale: da misurare dal vivo con la maschera. Pesi veri: servirebbe scriverli nel percorso a finestre (non indispensabile ora).
+- **Punto 2 (14/11, ramo `lab/tappa4c` 0612d631, build `build-sm7586`).** `STRATA_RESIDENT_MASK` scritto da Fable: =1 tutto, =2 solo scrittura (finestre di verifica), sensore per richiesta, domanda pesata alla cache adattiva (`STRATA_RESIDENT_MASK_DEMAND`).
+  Oggi la 3060 con lo schermo a 8K non teneva il secondo server con riserva 3000 (4,34 GiB occupati dal desktop): M1/M2 a un server; dal giro R riserva 1000,4500 (3936 esperti sulla 3060, 18662 residenti = 76%).
+
+  | corsa (banco comunita', 2 corse) | lettura 4K/32K/128K | scrittura 4K/32K/128K | dirottate (ultime richieste) |
+  |---|---:|---:|---:|
+  | M1off / M2off (un server) | 1000-1014/1532-1536/1808-1809 | 97,3-97,8/99,2-103,8/99,1-106,6 | |
+  | M1on / M2on, =1, 60% residente | 1005-1013/1442-1463/1676-1699 | 82,0-91,1/84,0-87,6/81,4-82,9 | 19-28% |
+  | R1off / R2off (due server) | 1002-1015/1532-1538/1808-1814 | 110,7-110,9/114,3-114,6/109,2-113,7 | |
+  | R1m2 / R2m2, =2 | 1014-1017/1484-1524/1792-1815 | 106,1-110,5/109,0-116,1/107,4-112,6 | 6,7% -> 1,0% (massa 0,76%) |
+  | R1m2nodem, =2 senza domanda | 1007/1493/1813 | 98,1/112,8/113,3 | fisse 5-6% |
+
+  standard-v1 12/12 in M2on (=1) e R2m2 (=2: corta 112,8, 4K 1038/103,3, 16K 1305/95,0).
+- **Chat multiple con la maschera (`--batch 4`, standard-v1 con 4 domande insieme, B1/B2 off e =2 alternati): nessuna differenza.**
+  Somma a 4 richieste: off 79,5-87,2 t/s, =2 82,1-88,3 t/s (una sola richiesta 103-113). Lettura con `--batch`: 250 t/s a 4K e 16K (contro 1035/1305: `STRATA_EP_SPLIT_PREFILL off: not with --batch`, lettura a pezzi piccoli). Dirottate con =2 e 4 richieste: 1,7-5,2%. 12/12 ovunque.
+  Conclusione: con la maschera la memoria del PC esce dalla scrittura, eppure la somma resta ~85 t/s: il limite delle chat multiple qui non sono gli esperti fuori dalle schede ma il percorso a lotti (passo di scrittura che cresce con le righe: server di esperti e passaggi per strato per riga, piu' la lettura a 250 t/s). Prossimo: profilo del passo di scrittura a lotti (`STRATA_DECODE_TIMING` con 1 e 4 richieste), e la divisione a strati (pipeline) con la maschera =2 e `--batch`.

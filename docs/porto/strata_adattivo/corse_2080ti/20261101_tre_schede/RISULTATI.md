@@ -681,3 +681,26 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
 - **Chat multiple con la maschera (`--batch 4`, standard-v1 con 4 domande insieme, B1/B2 off e =2 alternati): nessuna differenza.**
   Somma a 4 richieste: off 79,5-87,2 t/s, =2 82,1-88,3 t/s (una sola richiesta 103-113). Lettura con `--batch`: 250 t/s a 4K e 16K (contro 1035/1305: `STRATA_EP_SPLIT_PREFILL off: not with --batch`, lettura a pezzi piccoli). Dirottate con =2 e 4 richieste: 1,7-5,2%. 12/12 ovunque.
   Conclusione: con la maschera la memoria del PC esce dalla scrittura, eppure la somma resta ~85 t/s: il limite delle chat multiple qui non sono gli esperti fuori dalle schede ma il percorso a lotti (passo di scrittura che cresce con le righe: server di esperti e passaggi per strato per riga, piu' la lettura a 250 t/s). Prossimo: profilo del passo di scrittura a lotti (`STRATA_DECODE_TIMING` con 1 e 4 richieste), e la divisione a strati (pipeline) con la maschera =2 e `--batch`.
+- **Profilo e divisione a strati (15/11, `banco_profilo_divisione.cmd`, config da `D:\ds4_work\strata\lab_runs\maschera_20261114\fai_cfg_15nov.py`, build `build-sm7586` 0612d631).**
+  Profilo del passo (righe `strata decode timing` e `strata batch:` del motore):
+
+  | caso | righe/finestra | token/finestra | ms/finestra | di cui |
+  |---|---:|---:|---:|---|
+  | una chat (P1, server, bozze) | 3,06 | 2,51 | 25,3 | attesa GPU 16,1 + esperti 3,2 + bozza 1,4 + cache 2,5 |
+  | 4 chat `--batch 4` (P4, server) | 3,4-4,0 | = righe | 36-41 | attesa GPU 14,6-15,9 + esperti/server 17-18,6 + scrittura 1,8 |
+  | 4 chat `--batch 4 --batch-mtp` (P4mtp, server) | 5,8-6,3 | | 49-60 | attesa GPU 24 + esperti/server 24-25 |
+
+  Il tempo cresce con le righe (~9 ms per riga coi server): ogni riga sceglie i suoi 10 esperti su 512 e le letture dei pesi (~0,9 GB per riga, 88% sui server) non si dividono fra le chat. Con i server il tetto e' ~105-110 righe/s comunque spese (bozze o chat).
+
+  | `--batch 4`, standard-v1 | somma 4 chat (3 giri) | corta / 4K / 16K una chat | lettura 4K / 16K | controlli | dirottate |
+  |---|---:|---:|---:|---:|---:|
+  | due server (B1off di ieri) | 84,3 / 86,1 / 87,2 | 102,8 / 89,9 / 85,4 | 249 / 250 | 12/12 | |
+  | due server + profilo (P4prof) | 79,1 / 84,2 / 77,1 | | | 12/12 | |
+  | due server + `--batch-mtp` (P4mtp) | 84,6 / 87,8 / 88,7 | | | 12/12 | |
+  | divisione 20 (0,2), 2 gruppi da 2 (S4off) | 86,5 / 94,5 / 93,6 | 82,2 / 79,0 / 85,4 | 870 / 1491 | 12/12 | |
+  | **divisione 20 + maschera =2 (S4m2)** | **106,5 / 101,8 / 107,9** | 93,9 / 90,3 / 78,5 | **870 / 1501** | **12/12** | 2,3-4,7% (massa 1-2,8%) |
+  | divisione 20 + =2 + `--batch-groups 1 --batch-mtp` (S4m2mtp) | 96,0 / 94,1 / 91,4 | 95,4 / 79,5 / 92,6 | 855 / 1394 | 12/12 | 12,9-14,8% |
+
+  Nella divisione le schede tengono 12148 esperti su 24576 (49%, la 3060 fuori); con la maschera e la cache adattiva le dirottate restano al 2-5% e la somma sale del 15% (+20 t/s rispetto ai server). I gruppi in fila (default) battono il gruppo unico con le bozze per chat (piu' dirottate, 13-15%).
+  Conclusione: per le chat multiple la migliore oggi e' **divisione 20 + `--batch 4` + `STRATA_RESIDENT_MASK=2`**: somma ~105 t/s con lettura 870/1500 (i server con `--batch` leggono a 250). Per la chat singola resta il Daily 4c a due server (110-115).
+  Prossimi: divisione con la 3060 come terzo stadio o come server (piu' esperti residenti, meno dirottate), `--batch 8`, KL della maschera sulla divisione.

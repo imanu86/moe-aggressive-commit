@@ -790,3 +790,8 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   serve una chat alla volta va quanto la divisione con la serie; a 128K la divisione con la serie e' piu' regolare (la conversazione
   resta nello slot), il Daily perde una chat dalla cache e paga ~80 s. Il Daily con `--batch` coi server resta da evitare.
   Strada piu' corta per il Daily: cache delle conversazioni piu' grande (o su disco) perche' due chat da 128K non si rileggano.
+- **Daily con cache delle conversazioni piu' grande (16/11, `banco_daily_cache.cmd`, D1cache = D1 con `--conversation-cache-mib 10240
+  --conversation-cache-slots 3`), chat da 128K.** Nessuna rilettura intera: ogni turno trova 129,7-132,7K token in cache (D1: 1 giro su 4
+  rileggeva 132K token, 84 s). Due chat parcheggiate = 6,9 GB. Giri insieme 15,6 / 15,9 / 11,3 / 10,0 s (D1: 10,7 / 10,6 / **84,3** /
+  10,2), sfalsate primo token 2,3-3,2 s e 78-102 t/s. Nei primi due giri una delle due chat ha scritto a 42-48 t/s invece di ~100
+  (da capire: ripresa dei 3,4 GB parcheggiati accanto all'altra chat). Conclusione: 10240 MiB / 3 posti tolgono il difetto a 128K.

@@ -752,3 +752,17 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   standard a 4 chat di V4slot era +7% (86-101 contro 82-93). Il resto del +40-55% di V2slot veniva con la lettura nello slot, che qui
   costa il primo token. Conclusione: sulla postazione la serie vale +7-15% sulle chat multiple, meno della nostra maschera (+15-20%), e
   portarla sulla pila sono ~2400 righe con conflitti: non ora. Il limite resta il costo per riga (~9 ms con gli esperti in RAM/PCIe).
+- **Serie 5860-5868 con conversazioni lunghe (16/11, `banco_lunghe.cmd`, riserva della 2080 Ti a 730: sparito l'avviso «LOW»
+  che c'era in tutte le corse con 384).** `turni.py` con primo turno da 64K e 128K, poi 4 turni da ~600 token e risposte da 300.
+  Correzione delle conclusioni sopra: la prova a 8-12K non era quella giusta, la serie e' fatta per le chat lunghe (l'autore: 177-440K).
+
+  | due chat | L4base insieme: primo / scrittura per chat / turno | L2slot insieme | L4base sfalsate: primo / scrittura | L2slot sfalsate |
+  |---|---:|---:|---:|---:|
+  | 8-12K (V4base / V2slot) | 3,13 s / 39,1 / ~10,8 s | 5,46 s / 61,0 / ~10,4 s | 2,12 s / 89,9 | 2,64 s / 77,6 |
+  | 64K | 5,04 s / 22,0 / ~18,6 s | 6,06 s / **52,8** / **~11,7 s (-37%)** | 2,53 s / 86,9 | 2,77 s / 73,3 |
+  | 128K | 5,97 s / 30,1 / ~15,9 s | **5,23 s / 55,1 / ~10,7 s (-33%)** | 2,93 s / 84,2 | 2,69 s / 76,8 |
+
+  Senza la serie, con due chat lunghe insieme la scrittura crolla (22-30 t/s per chat): ogni turno passa dalle sessioni principali
+  con copia del K/V, parcheggio e ripresa, e il costo cresce con la conversazione. Con la serie resta a 53-55 t/s e il turno intero
+  dura un terzo in meno; a 128K anche il primo token e' piu' svelto. Chat sfalsate (una alla volta): -9/-16% in scrittura, primo token pari.
+  Conclusione nuova: per agenti con conversazioni lunghe la serie vale il porto sulla pila (+80-140% in scrittura con due chat insieme).

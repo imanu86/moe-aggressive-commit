@@ -80,9 +80,11 @@ try:
             cmd, cwd = [str(PY), str(SRC / 'tools' / 'par_load.py'), 'http://127.0.0.1:8105', '--workload', 'w2', '--conc',
                         (n or '1-2-4').replace('-', ','), '--rounds', '2', '--warm-requests', '1', '--label', nome,
                         '--out', str(out / 'carico.json')], str(SRC)
-        elif tipo == 'turni':    # turni:2 = turni.py, 2 chat che continuano (8K poi 4 turni da 600), insieme e sfalsate
-            cmd, cwd = [str(PY), str(QUI / 'turni.py'), 'http://127.0.0.1:8105', '--src', str(SRC), '--conv', n or '2',
-                        '--out', str(out / f'turni{n or 2}.json')], str(QUI)
+        elif tipo == 'turni':    # turni:2 = turni.py, 2 chat che continuano (8K poi 4 turni da 600), insieme e sfalsate;
+            conv, _, start = (n or '2').partition('-')   # turni:2-64000 = primo turno da 64000 token
+            cmd, cwd = [str(PY), str(QUI / 'turni.py'), 'http://127.0.0.1:8105', '--src', str(SRC), '--conv', conv,
+                        '--start', start or '8000', '--out', str(out / f'turni{n or 2}.json')], str(QUI)
+            tipo = f'turni{n or 2}'
         else:
             raise RuntimeError(f'modo sconosciuto {modo}')
         log(f'{nome}: {tipo} parte')

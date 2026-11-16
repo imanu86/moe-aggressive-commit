@@ -739,3 +739,16 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   (5,4 -> 6,5 s): con `STRATA_PARALLEL_STICKY_S` a 20 s una chat che lavora da sola resta nello slot invece della strada singola.
   Conclusione: cosi' com'e' la serie non conviene su questa postazione; prova successiva a costo zero (solo variabili): bozze negli slot
   con `STRATA_SLOT_READ=0` (il turno letto sulla strada principale, primo token veloce) e `STRATA_PARALLEL_STICKY_S=0` (chat sola sulla strada singola).
+- **Serie 5860-5868, variante B (16/11, `banco_upstream_slot_b.cmd`):** bozze negli slot ma `STRATA_SLOT_READ=0` (il turno sulla strada
+  principale) e `STRATA_PARALLEL_STICKY_S=0` (chat sola sulla strada singola), in config e nell'ambiente del server.
+
+  | corsa | standard | turni insieme: primo token / scrittura per chat | turni sfalsati |
+  |---|---|---:|---:|
+  | V2slotB (`--batch 2`) | 84-89 t/s con 2 slot, lettura 828 / 1352, 12/12 | 3,26 s / 44,6 | 2,14 s / 91,0 |
+  | V4slotB (`--batch 4`) | client del banco bloccato prima della prima richiesta (nessuna connessione al server, motore sano): fermato dopo 7,5 min | 3,47 s / 45,0 | 2,23 s / 91,5 |
+  | rif. V4base / S4m2t | | 3,13 / 39,1 - 3,15 / 37,1 | 2,12 / 89,9 - 2,09 / 91,5 |
+
+  Primo token e chat sola tornano come senza la serie; con due chat insieme resta +15% in scrittura (39 -> 45 t/s per chat), e la somma
+  standard a 4 chat di V4slot era +7% (86-101 contro 82-93). Il resto del +40-55% di V2slot veniva con la lettura nello slot, che qui
+  costa il primo token. Conclusione: sulla postazione la serie vale +7-15% sulle chat multiple, meno della nostra maschera (+15-20%), e
+  portarla sulla pila sono ~2400 righe con conflitti: non ora. Il limite resta il costo per riga (~9 ms con gli esperti in RAM/PCIe).

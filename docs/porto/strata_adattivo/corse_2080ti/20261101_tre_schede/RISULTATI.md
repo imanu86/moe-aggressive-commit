@@ -766,3 +766,12 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   con copia del K/V, parcheggio e ripresa, e il costo cresce con la conversazione. Con la serie resta a 53-55 t/s e il turno intero
   dura un terzo in meno; a 128K anche il primo token e' piu' svelto. Chat sfalsate (una alla volta): -9/-16% in scrittura, primo token pari.
   Conclusione nuova: per agenti con conversazioni lunghe la serie vale il porto sulla pila (+80-140% in scrittura con due chat insieme).
+- **La 3060 come cache di esperti di aiuto accanto alla divisione (16/11, `banco_aiuto3060.cmd`, H2slot = V2slot con riserva 730,
+  GPU 0,2,1 e `--expert-cache-device1 3500`).** Il motore la accetta (il divieto e' solo per `--peer-device` con `--layer-split`):
+  3500 esperti in piu' sulla 3060 (4,87 GiB), 16724 su 24576 sulle schede (68% contro 49%), ma i risultati tornano «through pinned
+  host rows» (niente P2P) e spegne da solo `--batch-mtp` (le bozze negli slot) e `--pipeline-windows`.
+  Standard: corta / 4K / 16K 88,8 / 80,8 / 77,2 t/s (V2slot 100,5 / 82,5 / 98,4), lettura 829 / 1342, 12/12, 4 richieste con 2 slot
+  67-69 t/s (V2slot 85-90). Turni a 8-12K: insieme 3,15 s / 34,4 t/s, sfalsati 2,12 s / 87,4 (V4base 3,13 / 39,1 e 2,12 / 89,9).
+  Conclusione: cosi' la 3060 non aggiunge niente alla divisione (pari o peggio, e toglie la serie); resta utile come server di esperti
+  nella configurazione a due server (Daily). Il banco standard ora passa `--skip-model-hash`: l'impronta dei ~50 GB del modello col
+  disco lento teneva fermo il client minuti prima della prima richiesta (V4slotB fermato per questo, non era bloccato).

@@ -72,7 +72,8 @@ try:
         elif tipo == 'standard':
             cmd, cwd = [str(PY), str(SRC / 'strata.py'), 'bench', 'run', '--url', 'http://127.0.0.1:8105', '--optional-concurrency',
                         '--track', 'custom', '--track-notes', os.environ.get('BANCO_NOTE', f'OktoCGC Daily {nome}: 0.2.13.1 + pila + tappa 4c (9a610f59), due server di esperti'),
-                        '--quantization', 'IQ3_XXS (GSQ-RCO)', '--out', str(out / 'standard')], None
+                        '--quantization', 'IQ3_XXS (GSQ-RCO)', '--skip-model-hash',   # l'impronta dei ~50 GB del modello: minuti di attesa col disco lento
+                        '--out', str(out / 'standard')], None
         elif tipo == 'rapido':
             cmd, cwd = [str(PY), str(SRC / 'tools' / 'strata_bench.py'), '--url', 'http://127.0.0.1:8105', '--config', str(out / 'config.json'), '--runs', n or '3', '--long',
                         '--out', str(out / 'rapido')], str(SRC)

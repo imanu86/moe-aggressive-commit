@@ -20,7 +20,7 @@ PIENO = '4096,32768,128000'
 
 nome, cfg_src = sys.argv[1], Path(sys.argv[2])
 modi = (sys.argv[3] if len(sys.argv) > 3 else 'comunita:3').split(',')
-SRC = Path(r'C:\Users\imanu\source\repos\Strata-wt\tappa4c')   # sorgenti della build del Daily (strata.py, bench/prompts/standard-v1)
+SRC = Path(os.environ.get('BANCO_SRC', r'C:\Users\imanu\source\repos\Strata-wt\tappa4c'))   # sorgenti della build (strata.py, bench/prompts/standard-v1); BANCO_SRC per un altro ramo
 out = QUI / 'corse' / nome
 out.mkdir(parents=True, exist_ok=True)
 c = json.loads(cfg_src.read_text(encoding='utf-8-sig'))
@@ -71,7 +71,7 @@ try:
                         '--url', 'http://127.0.0.1:8105', '--out', str(out), '--targets', PIENO, '--runs', n or '3'], None
         elif tipo == 'standard':
             cmd, cwd = [str(PY), str(SRC / 'strata.py'), 'bench', 'run', '--url', 'http://127.0.0.1:8105', '--optional-concurrency',
-                        '--track', 'custom', '--track-notes', f'OktoCGC Daily {nome}: 0.2.13.1 + pila + tappa 4c (9a610f59), due server di esperti',
+                        '--track', 'custom', '--track-notes', os.environ.get('BANCO_NOTE', f'OktoCGC Daily {nome}: 0.2.13.1 + pila + tappa 4c (9a610f59), due server di esperti'),
                         '--quantization', 'IQ3_XXS (GSQ-RCO)', '--out', str(out / 'standard')], None
         elif tipo == 'rapido':
             cmd, cwd = [str(PY), str(SRC / 'tools' / 'strata_bench.py'), '--url', 'http://127.0.0.1:8105', '--config', str(out / 'config.json'), '--runs', n or '3', '--long',
@@ -80,6 +80,9 @@ try:
             cmd, cwd = [str(PY), str(SRC / 'tools' / 'par_load.py'), 'http://127.0.0.1:8105', '--workload', 'w2', '--conc',
                         (n or '1-2-4').replace('-', ','), '--rounds', '2', '--warm-requests', '1', '--label', nome,
                         '--out', str(out / 'carico.json')], str(SRC)
+        elif tipo == 'turni':    # turni:2 = turni.py, 2 chat che continuano (8K poi 4 turni da 600), insieme e sfalsate
+            cmd, cwd = [str(PY), str(QUI / 'turni.py'), 'http://127.0.0.1:8105', '--src', str(SRC), '--conv', n or '2',
+                        '--out', str(out / f'turni{n or 2}.json')], str(QUI)
         else:
             raise RuntimeError(f'modo sconosciuto {modo}')
         log(f'{nome}: {tipo} parte')

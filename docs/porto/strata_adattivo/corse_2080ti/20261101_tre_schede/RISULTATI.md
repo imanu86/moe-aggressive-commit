@@ -718,3 +718,24 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   Il carico `tools/par_load.py w2` (prompt nuovi da 1046 token, 256 scritti) e' limitato dalla lettura dei prompt col percorso a lotti (~230 t/s, 4,5 s a prompt): ~42-44 t/s con 4 o 6 chat in ogni configurazione. La somma dello standard (prompt corti) misura la scrittura.
   Conclusione: la 3060 come terzo stadio alza la somma in scrittura (+25%, 131 t/s) ma dimezza la chat singola e la lettura (collegamento x4 Gen3) e con lo schermo a 8K non regge piu' di 8 strati ne' piu' di 4 sessioni (si riempie e si pianta). Non da Daily.
   Il collo vero delle chat multiple con prompt nuovi e' la lettura a lotti (230-250 t/s): prossimo lavoro, la lettura dei prompt nuovi col percorso a strati pieno anche con `--batch` (oggi un prompt in arrivo si legge a pezzi dentro le finestre).
+- **Serie upstream PR 5860-5868 (16/11 mattina, `banco_upstream_slot.cmd`, config da `fai_cfg_16nov_slot.py`).** Build `lab/upstream-slot` in
+  `Strata-wt/upstream-slot` = fork bitaccesscomau `pr/slot-read-ahead` (a23b8707b, upstream 13eedf552 dell'11/11 + 14 commit), stesse opzioni
+  di tappa4c piu' `-DCMAKE_CUDA_RUNTIME_LIBRARY=Shared` (senza: LNK2005 cudart statico/dinamico). Divisione 20 (GPU 0,2) come S4m2, senza
+  `--elastic` ne' maschera (sono della nostra pila). Slot = `--batch-mtp`, `STRATA_PIPED_MTP=2`, `STRATA_BATCH_SELF_COMMIT=0`,
+  `STRATA_PIPE_ADAPT_EVERY=auto`, `STRATA_PW_WITH_BATCH=1`. Nuova prova `turni.py`: 2 chat, primo turno 8K, poi 4 turni da ~600 token nuovi
+  e risposte da 300, insieme o sfalsate di 8 s (una alla volta).
+
+  | corsa | standard: somma 4 chat | corta / 4K / 16K | lettura 4K / 16K | controlli | w2 1/2/4 | turni insieme: primo token / scrittura per chat | turni sfalsati |
+  |---|---:|---:|---:|---|---:|---:|---:|
+  | V4base (`--batch 4`, senza bozze) | 81,8 / 88,2 / 92,6 | 88,0 / 85,1 / 85,7 | 790 / 1310 | 11/12 (T2) | 32,9 / 35,0 / 42,1 | 3,13 s / 39,1 | 2,12 s / 89,9 |
+  | V4slot (`--batch 4` + slot) | 85,9 / 100,6 / 98,0 | 89,1 / 85,7 / 79,2 | 779 / 1310 | 12/12 | 32,6 / 38,9 / 42,7 | 5,42 s / 54,6 | 2,65 s / 78,0 |
+  | V2slot (`--batch 2` + slot, forma dell'autore) | 84,9 / 87,1 / 89,7 (2 slot) | 100,5 / 82,5 / 98,4 | 823 / 1338 | 12/12 | | 5,46 s / 61,0 | 2,64 s / 77,6 |
+  | S4m2t (nostra pila, tappa4c + maschera) | (106,5 / 101,8 / 107,9) | | (870 / 1501) | | (37,2 / 36,3 / 43,2) | 3,15 s / 37,1 | 2,09 s / 91,5 |
+
+  La lettura nello slot funziona (ogni turno da ~609 token letto nello slot, 36-37 finestre mandate avanti), ma sulla nostra divisione
+  legge ~110 t/s (5,4 s per 600 token) contro i 243 dell'autore su 2x 3090 tutto in VRAM: il primo token delle due chat insieme passa da
+  2,0/4,4 s (una dopo l'altra sulla strada principale) a 5,3/5,3. La scrittura mentre scrivono entrambe sale del 40-55% (39 -> 55-61 t/s
+  per chat). Un turno intero (primo token + 300 scritti) resta pari insieme (~10,8 s base, ~10,4 V2slot) e peggiora del ~20% sfalsato
+  (5,4 -> 6,5 s): con `STRATA_PARALLEL_STICKY_S` a 20 s una chat che lavora da sola resta nello slot invece della strada singola.
+  Conclusione: cosi' com'e' la serie non conviene su questa postazione; prova successiva a costo zero (solo variabili): bozze negli slot
+  con `STRATA_SLOT_READ=0` (il turno letto sulla strada principale, primo token veloce) e `STRATA_PARALLEL_STICKY_S=0` (chat sola sulla strada singola).

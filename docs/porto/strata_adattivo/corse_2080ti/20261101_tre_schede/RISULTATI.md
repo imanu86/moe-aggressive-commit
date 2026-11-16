@@ -775,3 +775,18 @@ senza memoria del PC, quindi pipeline con piu' richieste come chi ha il modello 
   Conclusione: cosi' la 3060 non aggiunge niente alla divisione (pari o peggio, e toglie la serie); resta utile come server di esperti
   nella configurazione a due server (Daily). Il banco standard ora passa `--skip-model-hash`: l'impronta dei ~50 GB del modello col
   disco lento teneva fermo il client minuti prima della prima richiesta (V4slotB fermato per questo, non era bloccato).
+- **Daily a due server sulle chat lunghe (16/11, `banco_daily_lunghe.cmd`, config da `fai_cfg_16nov_daily.py`: copia di
+  `strata-02131-4c-daily-schermo3060.json` con riserva della 3060 a 4500).** D1 = il Daily com'e' (una richiesta alla volta),
+  D2 = con `--batch 2`. Confronto per giro di due chat insieme (i turni 1-4: tempo dal primo invio all'ultima risposta di entrambe):
+
+  | config | 64K: prima lettura (2 chat) / giro tipico | 128K: prima lettura / giro tipico | note |
+  |---|---:|---:|---|
+  | divisione 20, senza serie (L4base) | 100 s / ~16,5 s | 161 s / ~16 s | scrittura 22-30 t/s per chat |
+  | **divisione 20 + serie (L2slot)** | 110 s / **~11,2 s** | 157 s / **~10,1 s** | 53-55 t/s per chat, nessuna rilettura |
+  | **Daily, una alla volta (D1)** | 95 s / **~10,2 s** | 154 s / ~10,5 s, **ma 1 giro su 4 da 84 s** | 92-106 t/s; a 128K la cache delle conversazioni (6144 MiB, 2 posti) perde una chat e la rilegge tutta (132K token) |
+  | Daily `--batch 2` (D2) | 245 s / ~17,9 s | 366 s / ~19,5 s | 15-28 t/s per chat, prima lettura a lotti ~315 t/s |
+
+  Sfalsate (una alla volta): il Daily D1/D2 2,3-2,6 s e 95-99 t/s, il migliore. Conclusione: fino a 64K il Daily a due server che
+  serve una chat alla volta va quanto la divisione con la serie; a 128K la divisione con la serie e' piu' regolare (la conversazione
+  resta nello slot), il Daily perde una chat dalla cache e paga ~80 s. Il Daily con `--batch` coi server resta da evitare.
+  Strada piu' corta per il Daily: cache delle conversazioni piu' grande (o su disco) perche' due chat da 128K non si rileggano.
